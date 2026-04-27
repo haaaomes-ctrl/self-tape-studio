@@ -14,7 +14,101 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      auditions: {
+        Row: {
+          brief: string | null
+          brief_source: string
+          created_at: string
+          id: string
+          mode: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brief?: string | null
+          brief_source?: string
+          created_at?: string
+          id?: string
+          mode?: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brief?: string | null
+          brief_source?: string
+          created_at?: string
+          id?: string
+          mode?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      takes: {
+        Row: {
+          audition_id: string
+          checklist: Json | null
+          confidence: number | null
+          created_at: string
+          error_message: string | null
+          id: string
+          overall_score: number | null
+          report: Json | null
+          scores: Json | null
+          signals: Json | null
+          status: string
+          take_number: number
+          updated_at: string
+          user_id: string
+          video_path: string
+        }
+        Insert: {
+          audition_id: string
+          checklist?: Json | null
+          confidence?: number | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          overall_score?: number | null
+          report?: Json | null
+          scores?: Json | null
+          signals?: Json | null
+          status?: string
+          take_number?: number
+          updated_at?: string
+          user_id: string
+          video_path: string
+        }
+        Update: {
+          audition_id?: string
+          checklist?: Json | null
+          confidence?: number | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          overall_score?: number | null
+          report?: Json | null
+          scores?: Json | null
+          signals?: Json | null
+          status?: string
+          take_number?: number
+          updated_at?: string
+          user_id?: string
+          video_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "takes_audition_id_fkey"
+            columns: ["audition_id"]
+            isOneToOne: false
+            referencedRelation: "auditions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
