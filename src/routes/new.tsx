@@ -22,6 +22,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { authHeaders } from "@/lib/server-auth";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 
 export const Route = createFileRoute("/new")({
