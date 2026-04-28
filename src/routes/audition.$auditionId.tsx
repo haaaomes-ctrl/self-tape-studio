@@ -365,6 +365,9 @@ function TakeView({ take }: { take: Take }) {
         <p className="mt-2 font-display text-2xl font-semibold leading-snug tracking-tight">
           {r.casting_headline}
         </p>
+        {r.casting_insight && (
+          <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
+        )}
         <div className="mt-6 flex items-end justify-between gap-6">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Confidence</p>
@@ -389,6 +392,79 @@ function TakeView({ take }: { take: Take }) {
           </div>
         )}
       </div>
+
+      {/* Submission risk flags */}
+      {riskFlags.length > 0 && (
+        <div className="rounded-2xl border border-warning/40 bg-warning/5 p-6">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-warning" />
+            <h3 className="font-display text-base font-semibold">Submission risk</h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Casting-compliance issues that could cause rejection.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm">
+            {riskFlags.map((f, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span
+                  className={cn(
+                    "mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full",
+                    f.severity === "high"
+                      ? "bg-destructive"
+                      : f.severity === "medium"
+                        ? "bg-warning"
+                        : "bg-muted-foreground",
+                  )}
+                />
+                <span>
+                  <span className="mr-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    {f.severity}
+                  </span>
+                  {f.flag}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Component breakdown (multi-part auditions) */}
+      {showComponents && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <h2 className="font-display text-lg font-semibold">Component breakdown</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This tape contains multiple performance components. Each is scored separately.
+          </p>
+          <div className="mt-5 space-y-4">
+            {components.map((c, i) => (
+              <div key={i}>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium capitalize">
+                    {c.type.replace(/_/g, " ")}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      weight {Math.round(c.weight * 100)}%
+                    </span>
+                  </span>
+                  <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${c.score}%` }}
+                  />
+                </div>
+                {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
+              </div>
+            ))}
+          </div>
+          {typeof r.consistency_modifier === "number" && r.consistency_modifier !== 0 && (
+            <p className="mt-5 text-xs text-muted-foreground">
+              Cross-component consistency: {r.consistency_modifier > 0 ? "+" : ""}
+              {r.consistency_modifier}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Categories */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
