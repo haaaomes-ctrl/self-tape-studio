@@ -167,6 +167,7 @@ function NewAuditionPage() {
 
       // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
       const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+      if (!uploadUrl) throw new Error("Could not get an upload URL");
 
       // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
       await uploadFileToMux(uploadUrl, file, setUploadPct);
