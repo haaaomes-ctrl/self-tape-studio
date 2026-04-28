@@ -449,10 +449,19 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
         confidence: null,
         signals: signals ?? null,
         checklist: checklist ?? null,
+        // Reset Mux + retry state so the new file walks the ladder fresh.
+        attempt_count: 0,
+        analysis_tier: null,
+        mux_status: "none",
+        mux_upload_id: null,
+        mux_asset_id: null,
+        mux_playback_id: null,
+        mux_mp4_standard_url: null,
+        mux_mp4_high_url: null,
       })
       .eq("id", takeId);
 
-    // Re-kick processing.
+    // Re-kick processing (will fall through to original-tier since no Mux yet).
     await processTake({ data: { takeId } }).catch((e) => {
       console.error("replaceTakeVideo: re-process failed", e);
     });
