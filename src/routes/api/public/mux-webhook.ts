@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMux, muxMp4Url } from "@/server/mux.server";
-import { processTake } from "@/server/process-take.functions";
+import { runProcessTake } from "@/server/process-take.server";
 
 // Mux webhook receiver. Configure in Mux dashboard:
 //   URL:     https://<project>.lovable.app/api/public/mux-webhook
@@ -117,9 +117,9 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             .update({ status: "pending", processing_phase: "analysing" })
             .eq("id", takeId);
 
-          // Fire-and-forget: kick off Gemini analysis.
-          processTake({ data: { takeId } }).catch((e) => {
-            console.error("processTake from webhook failed", e);
+          // Fire-and-forget: kick off Gemini analysis via internal helper.
+          runProcessTake(takeId).catch((e: unknown) => {
+            console.error("runProcessTake from webhook failed", e);
           });
           return new Response("ok", { status: 200 });
         }

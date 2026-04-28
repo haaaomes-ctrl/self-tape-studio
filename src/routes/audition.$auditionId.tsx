@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
-import { processTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
+import { retryProcessTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
 
@@ -288,7 +288,7 @@ function FailedTakeView({ take }: { take: Take }) {
           onClick={async () => {
             setBusy(true);
             try {
-              await processTake({ data: { takeId: take.id } });
+              await retryProcessTake({ data: { takeId: take.id } });
               toast.success("Retrying analysis");
             } catch (e) {
               toast.error(e instanceof Error ? e.message : "Retry failed");
@@ -305,7 +305,7 @@ function FailedTakeView({ take }: { take: Take }) {
           onClick={async () => {
             setBusy(true);
             try {
-              await processTake({ data: { takeId: take.id, allowOriginal: true } });
+              await retryProcessTake({ data: { takeId: take.id, allowOriginal: true } });
               toast.success("Retrying with highest quality");
             } catch (e) {
               toast.error(e instanceof Error ? e.message : "Retry failed");
