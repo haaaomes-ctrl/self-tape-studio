@@ -3,6 +3,7 @@ import { z } from "zod";
 import { startOfDay } from "date-fns";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { getMux } from "./mux.server";
 
 // Daily analysis cap per user. Counts takes created today.
@@ -29,7 +30,7 @@ async function assertUnderDailyCap(userId: string): Promise<void> {
 //
 // We pass `passthrough=takeId` so the webhook can locate our take row.
 export const createMuxDirectUpload = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z
       .object({
