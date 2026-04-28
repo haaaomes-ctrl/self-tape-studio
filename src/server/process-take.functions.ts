@@ -461,11 +461,7 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
       })
       .eq("id", takeId);
 
-    // Re-kick processing (will fall through to original-tier since no Mux yet).
-    await processTake({ data: { takeId } }).catch((e) => {
-      console.error("replaceTakeVideo: re-process failed", e);
-    });
-
+    // Caller should follow up with ingestTakeToMux() to kick off the Mux pipeline.
     return { ok: true };
   });
 
