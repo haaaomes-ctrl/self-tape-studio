@@ -846,6 +846,15 @@ function AddTakeBlock({
           </span>
         )}
       </div>
+      {busy && uploadPct > 0 && uploadPct < 100 && (
+        <div className="mt-4 space-y-2">
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-muted-foreground">Uploading…</span>
+            <span className="tabular-nums font-medium">{uploadPct}%</span>
+          </div>
+          <Progress value={uploadPct} />
+        </div>
+      )}
       {checklist && (
         <div className="mt-4">
           <ChecklistView checklist={checklist} briefSource={audition.brief_source} />
