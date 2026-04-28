@@ -221,40 +221,48 @@ Confidence (0–100):
 Output via the submit_audition_report tool. The casting_headline must be ONE plain-language sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read. Keep all feedback constructive, specific, and actionable.`;
 }
 
-// Pick the video URL Gemini should analyse, based on how many attempts we've made.
-// Tier 0 → Standard (Mux ~720p MP4)
-// Tier 1 → High     (Mux ~1080p MP4)
-// Tier 2 → Original (signed Supabase URL of the raw upload — last resort)
+// Pick the Mux MP4 URL Gemini should analyse, based on attempt count.
+//   Tier 0 → Standard (Mux ~720p MP4)
+//   Tier 1 → High     (Mux ~1080p MP4)
+//   Tier 2 → Highest available Mux rendition (only when caller passes allowOriginal)
+// We never auto-fall-back to the original Supabase upload — there is no
+// Supabase upload anymore (direct-to-Mux). Original-tier retry simply uses
+// the high rendition again with a freshly fetched playback URL.
 type Tier = "standard" | "high" | "original";
 
-async function pickAnalysisSource(take: {
-  id: string;
-  video_path: string;
-  attempt_count: number | null;
-  mux_mp4_standard_url: string | null;
-  mux_mp4_high_url: string | null;
-  mux_status: string | null;
-}): Promise<{ url: string; tier: Tier }> {
+async function pickAnalysisSource(
+  take: {
+    id: string;
+    attempt_count: number | null;
+    mux_mp4_standard_url: string | null;
+    mux_mp4_high_url: string | null;
+    mux_playback_id: string | null;
+    mux_status: string | null;
+  },
+  allowOriginal: boolean,
+): Promise<{ url: string; tier: Tier }> {
   const attempt = take.attempt_count ?? 0;
 
-  // Tier order: Standard → High → Original
+  if (take.mux_status !== "ready") {
+    throw new Error("Video is still being optimised — please try again in a moment.");
+  }
+
   if (attempt === 0 && take.mux_mp4_standard_url) {
     return { url: take.mux_mp4_standard_url, tier: "standard" };
   }
   if (attempt === 1 && take.mux_mp4_high_url) {
     return { url: take.mux_mp4_high_url, tier: "high" };
   }
-  if (attempt >= 2 || (!take.mux_mp4_standard_url && !take.mux_mp4_high_url)) {
-    // Fall back to the original file in Supabase storage via a short-lived signed URL.
-    const { data: signed, error } = await supabaseAdmin.storage
-      .from("audition-videos")
-      .createSignedUrl(take.video_path, 60 * 60);
-    if (error || !signed) throw new Error("Could not create signed URL for original video");
-    return { url: signed.signedUrl, tier: "original" };
+  if (allowOriginal && take.mux_playback_id) {
+    // User-triggered Tier 2 — re-derive the high-rendition URL fresh.
+    return { url: muxMp4Url(take.mux_playback_id, "high"), tier: "original" };
   }
 
-  // Mux is still transcoding — bail and let the webhook re-trigger us when ready.
-  throw new Error("Video is still being optimised — please try again in a moment.");
+  // We've exhausted automatic tiers. Surface a clear message so the UI can
+  // offer the explicit "retry with highest quality" button.
+  throw new Error(
+    "Standard analysis attempts have been exhausted. Use 'Retry with highest quality' to try once more.",
+  );
 }
 
 export const processTake = createServerFn({ method: "POST" })
