@@ -20,7 +20,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
-import { processTake } from "@/server/process-take.functions";
+import { ingestTakeToMux } from "@/server/mux.functions";
 
 export const Route = createFileRoute("/new")({
   head: () => ({ meta: [{ title: "New audition — SelfTape" }] }),
@@ -153,12 +153,13 @@ function NewAuditionPage() {
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
 
-      // 5. Kick off processing (fire-and-forget; report page polls)
-      processTake({ data: { takeId: take.id } }).catch((err) => {
-        console.error("processTake error", err);
+      // 5. Hand the file off to Mux for transcoding. The webhook will fire
+      //    `processTake` once the optimised renditions are ready.
+      ingestTakeToMux({ data: { takeId: take.id } }).catch((err) => {
+        console.error("ingestTakeToMux error", err);
       });
 
-      toast.success("Uploaded — analysing your tape now");
+      toast.success("Uploaded — optimising and analysing your tape");
       navigate({ to: "/audition/$auditionId", params: { auditionId: aud.id } });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Upload failed";
