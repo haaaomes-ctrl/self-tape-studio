@@ -35,11 +35,11 @@ export const ingestTakeToMux = createServerFn({ method: "POST" })
 
     const mux = getMux();
     const asset = await mux.video.assets.create({
-      input: [{ url: signed.signedUrl }],
-      playback_policy: ["public"],
+      inputs: [{ url: signed.signedUrl }],
+      playback_policies: ["public"],
       mp4_support: "standard",
       max_resolution_tier: "1080p",
-      encoding_tier: "smart",
+      video_quality: "basic",
       passthrough: takeId,
     });
 
