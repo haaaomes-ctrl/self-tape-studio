@@ -439,14 +439,14 @@ export const processTake = createServerFn({ method: "POST" })
     }
   });
 
-// Replace the video file for an existing take and re-run processing.
-// Used to recover from failed or stuck takes without creating a new take row.
-export const replaceTakeVideo = createServerFn({ method: "POST" })
+// Reset a take so the user can re-upload a new video to Mux directly.
+// Clears Mux + analysis state. The client then calls createMuxDirectUpload
+// to get a fresh upload URL for the same take row.
+export const resetTakeForReupload = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) =>
     z
       .object({
         takeId: z.string().uuid(),
-        newVideoPath: z.string().min(1).max(500),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         signals: z.any().optional(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -455,25 +455,12 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    const { takeId, newVideoPath, signals, checklist } = data;
-
-    const { data: take, error: takeErr } = await supabaseAdmin
-      .from("takes")
-      .select("id, video_path")
-      .eq("id", takeId)
-      .single();
-    if (takeErr || !take) return { ok: false, error: "Take not found" };
-
-    // Best-effort delete of the old file so we don't leak storage.
-    if (take.video_path && take.video_path !== newVideoPath) {
-      await supabaseAdmin.storage.from("audition-videos").remove([take.video_path]).catch(() => {});
-    }
-
+    const { takeId, signals, checklist } = data;
     await supabaseAdmin
       .from("takes")
       .update({
-        video_path: newVideoPath,
         status: "pending",
+        processing_phase: "uploading",
         error_message: null,
         report: null,
         scores: null,
@@ -481,7 +468,6 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
         confidence: null,
         signals: signals ?? null,
         checklist: checklist ?? null,
-        // Reset Mux + retry state so the new file walks the ladder fresh.
         attempt_count: 0,
         analysis_tier: null,
         mux_status: "none",
@@ -490,20 +476,25 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
         mux_playback_id: null,
         mux_mp4_standard_url: null,
         mux_mp4_high_url: null,
+        mux_duration_seconds: null,
+        video_path: null,
       })
       .eq("id", takeId);
-
-    // Caller should follow up with ingestTakeToMux() to kick off the Mux pipeline.
     return { ok: true };
   });
 
-// Manually reset a stuck/errored take so the user can retry or replace it.
+// Cancel a stuck/errored take.
 export const resetTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     await supabaseAdmin
       .from("takes")
-      .update({ status: "error", error_message: "Cancelled by user — ready to replace." })
+      .update({
+        status: "error",
+        processing_phase: "error",
+        error_message: "Cancelled by user — upload a new take to retry.",
+      })
       .eq("id", data.takeId);
     return { ok: true };
   });
+
