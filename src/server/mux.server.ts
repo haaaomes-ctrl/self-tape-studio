@@ -17,8 +17,6 @@ export function getMux(): Mux {
 
 // Build the static MP4 URL for a Mux playback id at a given rendition quality.
 // Requires the asset to have been created with mp4_support: 'standard'.
-// Quality maps roughly to:
-//   low     → ~480p (lightweight fallback)
 //   medium  → ~720p (standard / first attempt)
 //   high    → ~1080p (high-quality retry)
 export function muxMp4Url(playbackId: string, quality: "low" | "medium" | "high"): string {

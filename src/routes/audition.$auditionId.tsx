@@ -6,12 +6,14 @@ import { SiteHeader } from "@/components/site-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { processTake, replaceTakeVideo, resetTake } from "@/server/process-take.functions";
-import { ingestTakeToMux } from "@/server/mux.functions";
+import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { processTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
+import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/audition/$auditionId")({
@@ -33,6 +35,7 @@ interface Take {
   checklist: any;
   created_at: string;
   mux_status?: string | null;
+  processing_phase?: string | null;
 }
 
 interface Audition {
@@ -209,12 +212,21 @@ function FailedTakeView({ take }: { take: Take }) {
       } catch {
         // best-effort
       }
-      const ext = f.name.split(".").pop()?.toLowerCase() || "mp4";
-      const path = `${user.id}/${take.id}-retake-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("audition-videos")
-        .upload(path, f, { contentType: f.type || "video/mp4" });
-      if (upErr) throw upErr;
+
+      // Pre-upload preflight.
+      if (checklist) {
+        const pf = preflightVideoBasics(
+          f,
+          checklist.duration.seconds,
+          checklist.audio.peak,
+        );
+        if (!pf.ok) {
+          toast.error(pf.error ?? "Video failed pre-upload checks");
+          return;
+        }
+        if (pf.warning) toast.warning(pf.warning);
+      }
+
       const signals = checklist
         ? {
             orientation: checklist.orientation.value,
@@ -226,11 +238,13 @@ function FailedTakeView({ take }: { take: Take }) {
             audio_rms: checklist.audio.rms,
           }
         : null;
-      await replaceTakeVideo({
-        data: { takeId: take.id, newVideoPath: path, signals, checklist },
-      });
-      // Hand the new file off to Mux for transcoding; the webhook fires processTake.
-      await ingestTakeToMux({ data: { takeId: take.id } });
+
+      // Reset the take row, then ask Mux for a fresh direct-upload URL,
+      // then PUT the new file straight to Mux.
+      await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      await uploadFileToMux(uploadUrl, f);
       toast.success("Replacement uploaded — optimising and analysing now");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Replace failed");
@@ -285,6 +299,23 @@ function FailedTakeView({ take }: { take: Take }) {
         >
           Retry analysis
         </Button>
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await processTake({ data: { takeId: take.id, allowOriginal: true } });
+              toast.success("Retrying with highest quality");
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Retry failed");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Retry with highest quality
+        </Button>
         {stuck && (
           <Button
             variant="ghost"
@@ -302,21 +333,58 @@ function FailedTakeView({ take }: { take: Take }) {
   );
 }
 
+function PhaseStep({ label, active, done }: { label: string; active: boolean; done: boolean }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span
+        className={cn(
+          "inline-block h-2 w-2 rounded-full",
+          done ? "bg-success" : active ? "bg-primary animate-pulse" : "bg-border",
+        )}
+      />
+      <span className={cn(done || active ? "text-foreground" : "text-muted-foreground")}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
-    const muxStatus = (take as Take & { mux_status?: string }).mux_status;
-    const isOptimising = muxStatus === "transcoding" || muxStatus === "uploading";
+    const phase = take.processing_phase ?? "uploading";
+    const copy =
+      phase === "uploading"
+        ? {
+            title: "Uploading your tape…",
+            sub: "Sending to secure storage. This is the only network step that depends on your connection.",
+          }
+        : phase === "transcoding"
+          ? {
+              title: "Optimising your video…",
+              sub: "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.",
+            }
+          : {
+              title: "Watching your tape…",
+              sub: "Reading the brief, checking technicals, writing notes. Usually under a minute.",
+            };
     return (
       <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-        <p className="mt-4 font-display text-lg font-semibold">
-          {isOptimising ? "Optimising your video…" : "Watching your tape…"}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {isOptimising
-            ? "Standardising format for fast, accurate analysis. Your performance is not altered."
-            : "Reading the brief, checking technicals, writing notes. Usually under a minute."}
-        </p>
+        <p className="mt-4 font-display text-lg font-semibold">{copy.title}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{copy.sub}</p>
+        <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
+          <PhaseStep label="Upload" active={phase === "uploading"} done={phase !== "uploading"} />
+          <PhaseStep
+            label="Optimise"
+            active={phase === "transcoding"}
+            done={phase === "analysing" || phase === "complete"}
+          />
+          <PhaseStep
+            label="Analyse"
+            active={phase === "analysing"}
+            done={phase === "complete"}
+          />
+        </div>
       </div>
     );
   }
@@ -696,6 +764,7 @@ function AddTakeBlock({
   const [file, setFile] = useState<File | null>(null);
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
 
   async function pick(f: File | null) {
     setFile(f);
@@ -710,14 +779,19 @@ function AddTakeBlock({
 
   async function upload() {
     if (!file || !user) return;
+
+    if (checklist) {
+      const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
+      if (!pf.ok) {
+        toast.error(pf.error ?? "Video failed pre-upload checks");
+        return;
+      }
+      if (pf.warning) toast.warning(pf.warning);
+    }
+
     setBusy(true);
+    setUploadPct(0);
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "mp4";
-      const path = `${user.id}/${audition.id}/take-${nextNumber}-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("audition-videos")
-        .upload(path, file, { contentType: file.type || "video/mp4" });
-      if (upErr) throw upErr;
       const signals = checklist
         ? {
             orientation: checklist.orientation.value,
@@ -736,8 +810,10 @@ function AddTakeBlock({
             audition_id: audition.id,
             user_id: user.id,
             take_number: nextNumber,
-            video_path: path,
+            video_path: null,
             status: "pending",
+            mux_status: "uploading",
+            processing_phase: "uploading",
             signals: signals as never,
             checklist: (checklist ?? null) as never,
           },
@@ -745,13 +821,18 @@ function AddTakeBlock({
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
-      processTake({ data: { takeId: take.id } }).catch(console.error);
-      toast.success(`Take ${nextNumber} uploaded — analysing now`);
+
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      await uploadFileToMux(uploadUrl, file, setUploadPct);
+
+      toast.success(`Take ${nextNumber} uploaded — optimising and analysing now`);
       onUploaded();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setBusy(false);
+      setUploadPct(0);
     }
   }
 
@@ -781,6 +862,15 @@ function AddTakeBlock({
           </span>
         )}
       </div>
+      {busy && uploadPct > 0 && uploadPct < 100 && (
+        <div className="mt-4 space-y-2">
+          <div className="flex items-baseline justify-between text-sm">
+            <span className="text-muted-foreground">Uploading…</span>
+            <span className="tabular-nums font-medium">{uploadPct}%</span>
+          </div>
+          <Progress value={uploadPct} />
+        </div>
+      )}
       {checklist && (
         <div className="mt-4">
           <ChecklistView checklist={checklist} briefSource={audition.brief_source} />

@@ -58,12 +58,14 @@ export type Database = {
           error_message: string | null
           id: string
           mux_asset_id: string | null
+          mux_duration_seconds: number | null
           mux_mp4_high_url: string | null
           mux_mp4_standard_url: string | null
           mux_playback_id: string | null
           mux_status: string
           mux_upload_id: string | null
           overall_score: number | null
+          processing_phase: string
           report: Json | null
           scores: Json | null
           signals: Json | null
@@ -71,7 +73,7 @@ export type Database = {
           take_number: number
           updated_at: string
           user_id: string
-          video_path: string
+          video_path: string | null
         }
         Insert: {
           analysis_tier?: string | null
@@ -83,12 +85,14 @@ export type Database = {
           error_message?: string | null
           id?: string
           mux_asset_id?: string | null
+          mux_duration_seconds?: number | null
           mux_mp4_high_url?: string | null
           mux_mp4_standard_url?: string | null
           mux_playback_id?: string | null
           mux_status?: string
           mux_upload_id?: string | null
           overall_score?: number | null
+          processing_phase?: string
           report?: Json | null
           scores?: Json | null
           signals?: Json | null
@@ -96,7 +100,7 @@ export type Database = {
           take_number?: number
           updated_at?: string
           user_id: string
-          video_path: string
+          video_path?: string | null
         }
         Update: {
           analysis_tier?: string | null
@@ -108,12 +112,14 @@ export type Database = {
           error_message?: string | null
           id?: string
           mux_asset_id?: string | null
+          mux_duration_seconds?: number | null
           mux_mp4_high_url?: string | null
           mux_mp4_standard_url?: string | null
           mux_playback_id?: string | null
           mux_status?: string
           mux_upload_id?: string | null
           overall_score?: number | null
+          processing_phase?: string
           report?: Json | null
           scores?: Json | null
           signals?: Json | null
@@ -121,7 +127,7 @@ export type Database = {
           take_number?: number
           updated_at?: string
           user_id?: string
-          video_path?: string
+          video_path?: string | null
         }
         Relationships: [
           {

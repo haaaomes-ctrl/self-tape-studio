@@ -1,9 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getMux, muxMp4Url } from "./mux.server";
 
 const inputSchema = z.object({
   takeId: z.string().uuid(),
+  // Caller may explicitly opt into Tier 2 (original/highest quality) — we
+  // never auto-escalate to it because original files are slow + expensive.
+  allowOriginal: z.boolean().optional().default(false),
 });
 
 // Scoring v2 — multi-component aware, split brief adherence, submission risk flags.
@@ -217,51 +221,59 @@ Confidence (0–100):
 Output via the submit_audition_report tool. The casting_headline must be ONE plain-language sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read. Keep all feedback constructive, specific, and actionable.`;
 }
 
-// Pick the video URL Gemini should analyse, based on how many attempts we've made.
-// Tier 0 → Standard (Mux ~720p MP4)
-// Tier 1 → High     (Mux ~1080p MP4)
-// Tier 2 → Original (signed Supabase URL of the raw upload — last resort)
+// Pick the Mux MP4 URL Gemini should analyse, based on attempt count.
+//   Tier 0 → Standard (Mux ~720p MP4)
+//   Tier 1 → High     (Mux ~1080p MP4)
+//   Tier 2 → Highest available Mux rendition (only when caller passes allowOriginal)
+// We never auto-fall-back to the original Supabase upload — there is no
+// Supabase upload anymore (direct-to-Mux). Original-tier retry simply uses
+// the high rendition again with a freshly fetched playback URL.
 type Tier = "standard" | "high" | "original";
 
-async function pickAnalysisSource(take: {
-  id: string;
-  video_path: string;
-  attempt_count: number | null;
-  mux_mp4_standard_url: string | null;
-  mux_mp4_high_url: string | null;
-  mux_status: string | null;
-}): Promise<{ url: string; tier: Tier }> {
+async function pickAnalysisSource(
+  take: {
+    id: string;
+    attempt_count: number | null;
+    mux_mp4_standard_url: string | null;
+    mux_mp4_high_url: string | null;
+    mux_playback_id: string | null;
+    mux_status: string | null;
+  },
+  allowOriginal: boolean,
+): Promise<{ url: string; tier: Tier }> {
   const attempt = take.attempt_count ?? 0;
 
-  // Tier order: Standard → High → Original
+  if (take.mux_status !== "ready") {
+    throw new Error("Video is still being optimised — please try again in a moment.");
+  }
+
   if (attempt === 0 && take.mux_mp4_standard_url) {
     return { url: take.mux_mp4_standard_url, tier: "standard" };
   }
   if (attempt === 1 && take.mux_mp4_high_url) {
     return { url: take.mux_mp4_high_url, tier: "high" };
   }
-  if (attempt >= 2 || (!take.mux_mp4_standard_url && !take.mux_mp4_high_url)) {
-    // Fall back to the original file in Supabase storage via a short-lived signed URL.
-    const { data: signed, error } = await supabaseAdmin.storage
-      .from("audition-videos")
-      .createSignedUrl(take.video_path, 60 * 60);
-    if (error || !signed) throw new Error("Could not create signed URL for original video");
-    return { url: signed.signedUrl, tier: "original" };
+  if (allowOriginal && take.mux_playback_id) {
+    // User-triggered Tier 2 — re-derive the high-rendition URL fresh.
+    return { url: muxMp4Url(take.mux_playback_id, "high"), tier: "original" };
   }
 
-  // Mux is still transcoding — bail and let the webhook re-trigger us when ready.
-  throw new Error("Video is still being optimised — please try again in a moment.");
+  // We've exhausted automatic tiers. Surface a clear message so the UI can
+  // offer the explicit "retry with highest quality" button.
+  throw new Error(
+    "Standard analysis attempts have been exhausted. Use 'Retry with highest quality' to try once more.",
+  );
 }
 
 export const processTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => inputSchema.parse(data))
   .handler(async ({ data }) => {
-    const { takeId } = data;
+    const { takeId, allowOriginal } = data;
 
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
       .select(
-        "id, user_id, audition_id, video_path, signals, checklist, status, attempt_count, mux_status, mux_mp4_standard_url, mux_mp4_high_url",
+        "id, user_id, audition_id, signals, checklist, status, attempt_count, mux_status, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url",
       )
       .eq("id", takeId)
       .single();
@@ -285,14 +297,17 @@ export const processTake = createServerFn({ method: "POST" })
 
     await supabaseAdmin
       .from("takes")
-      .update({ status: "processing", error_message: null })
+      .update({
+        status: "processing",
+        processing_phase: "analysing",
+        error_message: null,
+      })
       .eq("id", takeId);
 
     try {
-      const { url: videoUrl, tier } = await pickAnalysisSource(take);
+      const { url: initialUrl, tier } = await pickAnalysisSource(take, allowOriginal);
 
-      // Bump attempt counter + record which tier we tried, so a future retry
-      // walks up the ladder (Standard → High → Original).
+      // Bump attempt counter + record which tier we tried.
       await supabaseAdmin
         .from("takes")
         .update({
@@ -322,7 +337,7 @@ export const processTake = createServerFn({ method: "POST" })
       const apiKey = process.env.LOVABLE_API_KEY;
       if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-      const callAI = (mediaPart: { type: "image_url"; image_url: { url: string } }) =>
+      const callAI = (videoUrl: string) =>
         fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -335,7 +350,10 @@ export const processTake = createServerFn({ method: "POST" })
               { role: "system", content: buildSystemPrompt() },
               {
                 role: "user",
-                content: [{ type: "text", text: userText }, mediaPart],
+                content: [
+                  { type: "text", text: userText },
+                  { type: "image_url", image_url: { url: videoUrl } },
+                ],
               },
             ],
             tools: [REPORT_TOOL],
@@ -344,30 +362,19 @@ export const processTake = createServerFn({ method: "POST" })
           }),
         });
 
-      // First try: pass the public Mux URL (or signed-url fallback) directly.
-      let aiResp = await callAI({ type: "image_url", image_url: { url: videoUrl } });
-
-      // If the gateway rejects the URL (some gateways only accept inline media for
-      // video), download the (already-compressed) rendition and inline it as base64.
-      if (!aiResp.ok && aiResp.status === 400) {
+      // URL-only ingestion. If the gateway rejects on first try (e.g. cached
+      // Mux URL went stale), re-derive a fresh URL from the playback id and
+      // retry once. We never inline base64 — it spikes payload size + cost.
+      let aiResp = await callAI(initialUrl);
+      if (!aiResp.ok && aiResp.status === 400 && take.mux_playback_id) {
         const errText = await aiResp.text();
-        console.warn("AI gateway rejected URL; retrying with inline base64", errText.slice(0, 200));
-        const dl = await fetch(videoUrl);
-        if (!dl.ok) throw new Error(`Could not download rendition (${dl.status})`);
-        const buf = new Uint8Array(await dl.arrayBuffer());
-        // Safety: only inline if reasonably small (Mux 'medium' MP4s typically are).
-        if (buf.byteLength > 120 * 1024 * 1024) {
-          throw new Error(
-            `Rendition is ${(buf.byteLength / 1024 / 1024).toFixed(0)}MB — too large to inline. Please retry; we'll try a smaller tier next.`,
-          );
-        }
-        let bin = "";
-        const CHUNK = 0x8000;
-        for (let i = 0; i < buf.length; i += CHUNK) {
-          bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + CHUNK)));
-        }
-        const dataUrl = `data:video/mp4;base64,${btoa(bin)}`;
-        aiResp = await callAI({ type: "image_url", image_url: { url: dataUrl } });
+        console.warn(
+          "AI gateway rejected URL; retrying with fresh Mux URL",
+          errText.slice(0, 200),
+        );
+        const freshQuality = tier === "standard" ? "medium" : "high";
+        const freshUrl = muxMp4Url(take.mux_playback_id, freshQuality);
+        aiResp = await callAI(freshUrl);
       }
 
       if (!aiResp.ok) {
@@ -406,6 +413,7 @@ export const processTake = createServerFn({ method: "POST" })
         .from("takes")
         .update({
           status: "complete",
+          processing_phase: "complete",
           report,
           scores: report.scores,
           overall_score: overall,
@@ -425,20 +433,20 @@ export const processTake = createServerFn({ method: "POST" })
       console.error("processTake failed", message);
       await supabaseAdmin
         .from("takes")
-        .update({ status: "error", error_message: message })
+        .update({ status: "error", processing_phase: "error", error_message: message })
         .eq("id", takeId);
       return { ok: false, error: message };
     }
   });
 
-// Replace the video file for an existing take and re-run processing.
-// Used to recover from failed or stuck takes without creating a new take row.
-export const replaceTakeVideo = createServerFn({ method: "POST" })
+// Reset a take so the user can re-upload a new video to Mux directly.
+// Clears Mux + analysis state. The client then calls createMuxDirectUpload
+// to get a fresh upload URL for the same take row.
+export const resetTakeForReupload = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) =>
     z
       .object({
         takeId: z.string().uuid(),
-        newVideoPath: z.string().min(1).max(500),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         signals: z.any().optional(),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -447,25 +455,12 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    const { takeId, newVideoPath, signals, checklist } = data;
-
-    const { data: take, error: takeErr } = await supabaseAdmin
-      .from("takes")
-      .select("id, video_path")
-      .eq("id", takeId)
-      .single();
-    if (takeErr || !take) return { ok: false, error: "Take not found" };
-
-    // Best-effort delete of the old file so we don't leak storage.
-    if (take.video_path && take.video_path !== newVideoPath) {
-      await supabaseAdmin.storage.from("audition-videos").remove([take.video_path]).catch(() => {});
-    }
-
+    const { takeId, signals, checklist } = data;
     await supabaseAdmin
       .from("takes")
       .update({
-        video_path: newVideoPath,
         status: "pending",
+        processing_phase: "uploading",
         error_message: null,
         report: null,
         scores: null,
@@ -473,7 +468,6 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
         confidence: null,
         signals: signals ?? null,
         checklist: checklist ?? null,
-        // Reset Mux + retry state so the new file walks the ladder fresh.
         attempt_count: 0,
         analysis_tier: null,
         mux_status: "none",
@@ -482,20 +476,25 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
         mux_playback_id: null,
         mux_mp4_standard_url: null,
         mux_mp4_high_url: null,
+        mux_duration_seconds: null,
+        video_path: null,
       })
       .eq("id", takeId);
-
-    // Caller should follow up with ingestTakeToMux() to kick off the Mux pipeline.
     return { ok: true };
   });
 
-// Manually reset a stuck/errored take so the user can retry or replace it.
+// Cancel a stuck/errored take.
 export const resetTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     await supabaseAdmin
       .from("takes")
-      .update({ status: "error", error_message: "Cancelled by user — ready to replace." })
+      .update({
+        status: "error",
+        processing_phase: "error",
+        error_message: "Cancelled by user — upload a new take to retry.",
+      })
       .eq("id", data.takeId);
     return { ok: true };
   });
+
