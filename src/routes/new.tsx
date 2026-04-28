@@ -413,7 +413,12 @@ function NewAuditionPage() {
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {submitting && uploadPct < 100 && (
+              <Button size="lg" variant="ghost" onClick={cancelUpload}>
+                <X className="mr-2 h-4 w-4" /> Cancel upload
+              </Button>
+            )}
             <Button size="lg" onClick={submit} disabled={!file || submitting || checking}>
               {submitting ? (
                 <>
