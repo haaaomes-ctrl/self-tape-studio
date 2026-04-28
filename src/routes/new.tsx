@@ -21,8 +21,9 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
-import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { createMuxDirectUpload } from "@/server/mux.functions";
+import { resetTake } from "@/server/process-take.functions";
 
 export const Route = createFileRoute("/new")({
   head: () => ({ meta: [{ title: "New audition — SelfTape" }] }),
