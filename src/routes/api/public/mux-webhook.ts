@@ -2,6 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMux, muxMp4Url } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
+import {
+  assertWithinAnalysisQuota,
+  QuotaExceededError,
+  resolveTakeIdentity,
+} from "@/server/quota.server";
 
 // Mux webhook receiver. Configure in Mux dashboard:
 //   URL:     https://<project>.lovable.app/api/public/mux-webhook
@@ -116,6 +121,30 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             existing?.processing_phase === "analysing"
           ) {
             return new Response("ok", { status: 200 });
+          }
+
+          // Quota gate before triggering AI: covers the case where the row
+          // was created before this cap existed, or where a race slipped
+          // past createMuxDirectUpload. We mark the take as errored and
+          // skip the AI call rather than burning credits.
+          const identity = await resolveTakeIdentity(takeId);
+          if (identity) {
+            try {
+              await assertWithinAnalysisQuota(identity, "mux-webhook:asset.ready");
+            } catch (qerr) {
+              if (qerr instanceof QuotaExceededError) {
+                await supabaseAdmin
+                  .from("takes")
+                  .update({
+                    status: "error",
+                    processing_phase: "error",
+                    error_message: qerr.message,
+                  })
+                  .eq("id", takeId);
+                return new Response("ok", { status: 200 });
+              }
+              throw qerr;
+            }
           }
 
           await supabaseAdmin
