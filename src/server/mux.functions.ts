@@ -72,7 +72,6 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
       cors_origin: "*",
       new_asset_settings: {
         playback_policies: ["public"],
-        mp4_support: "standard",
         max_resolution_tier: "1080p",
         video_quality: "basic",
         passthrough: takeId,
