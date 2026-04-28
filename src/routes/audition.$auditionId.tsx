@@ -301,12 +301,18 @@ function FailedTakeView({ take }: { take: Take }) {
 
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
+    const muxStatus = (take as Take & { mux_status?: string }).mux_status;
+    const isOptimising = muxStatus === "transcoding" || muxStatus === "uploading";
     return (
       <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-        <p className="mt-4 font-display text-lg font-semibold">Watching your tape…</p>
+        <p className="mt-4 font-display text-lg font-semibold">
+          {isOptimising ? "Optimising your video…" : "Watching your tape…"}
+        </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Reading the brief, checking technicals, writing notes. Usually under a minute.
+          {isOptimising
+            ? "Standardising format for fast, accurate analysis. Your performance is not altered."
+            : "Reading the brief, checking technicals, writing notes. Usually under a minute."}
         </p>
       </div>
     );
