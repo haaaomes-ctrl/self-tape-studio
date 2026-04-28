@@ -49,12 +49,20 @@ export type Database = {
       }
       takes: {
         Row: {
+          analysis_tier: string | null
+          attempt_count: number
           audition_id: string
           checklist: Json | null
           confidence: number | null
           created_at: string
           error_message: string | null
           id: string
+          mux_asset_id: string | null
+          mux_mp4_high_url: string | null
+          mux_mp4_standard_url: string | null
+          mux_playback_id: string | null
+          mux_status: string
+          mux_upload_id: string | null
           overall_score: number | null
           report: Json | null
           scores: Json | null
@@ -66,12 +74,20 @@ export type Database = {
           video_path: string
         }
         Insert: {
+          analysis_tier?: string | null
+          attempt_count?: number
           audition_id: string
           checklist?: Json | null
           confidence?: number | null
           created_at?: string
           error_message?: string | null
           id?: string
+          mux_asset_id?: string | null
+          mux_mp4_high_url?: string | null
+          mux_mp4_standard_url?: string | null
+          mux_playback_id?: string | null
+          mux_status?: string
+          mux_upload_id?: string | null
           overall_score?: number | null
           report?: Json | null
           scores?: Json | null
@@ -83,12 +99,20 @@ export type Database = {
           video_path: string
         }
         Update: {
+          analysis_tier?: string | null
+          attempt_count?: number
           audition_id?: string
           checklist?: Json | null
           confidence?: number | null
           created_at?: string
           error_message?: string | null
           id?: string
+          mux_asset_id?: string | null
+          mux_mp4_high_url?: string | null
+          mux_mp4_standard_url?: string | null
+          mux_playback_id?: string | null
+          mux_status?: string
+          mux_upload_id?: string | null
           overall_score?: number | null
           report?: Json | null
           scores?: Json | null
