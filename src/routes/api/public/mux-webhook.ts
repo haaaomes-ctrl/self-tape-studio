@@ -189,9 +189,16 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             .eq("id", takeId);
 
           // Fire-and-forget: kick off Gemini analysis via internal helper.
-          runProcessTake(takeId).catch((e: unknown) => {
-            console.error("runProcessTake from webhook failed", e);
-          });
+          console.log("MUX WEBHOOK invoking runProcessTake →", { takeId, timestamp: new Date().toISOString() });
+          const processPromise = runProcessTake(takeId);
+          console.log("MUX WEBHOOK runProcessTake invoked (fire-and-forget)", { takeId, timestamp: new Date().toISOString() });
+          processPromise
+            .then(() => {
+              console.log("MUX WEBHOOK runProcessTake resolved ✓", { takeId, timestamp: new Date().toISOString() });
+            })
+            .catch((e: unknown) => {
+              console.error("MUX WEBHOOK runProcessTake from webhook failed", { takeId, error: e });
+            });
           return new Response("ok", { status: 200 });
         }
 
