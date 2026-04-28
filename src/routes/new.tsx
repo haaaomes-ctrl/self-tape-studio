@@ -48,6 +48,7 @@ function NewAuditionPage() {
   const [checking, setChecking] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
