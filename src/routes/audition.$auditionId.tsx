@@ -188,7 +188,9 @@ function AuditionPage() {
 function isStuck(take: Take): boolean {
   if (take.status !== "processing" && take.status !== "pending") return false;
   const created = new Date(take.created_at).getTime();
-  return Date.now() - created > 5 * 60 * 1000; // 5 min watchdog
+  // Mux transcoding for large files can take a couple of minutes; give the
+  // pipeline 10 min before flagging as stuck.
+  return Date.now() - created > 10 * 60 * 1000;
 }
 
 function FailedTakeView({ take }: { take: Take }) {
