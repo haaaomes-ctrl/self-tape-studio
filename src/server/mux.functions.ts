@@ -1,34 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { startOfDay } from "date-fns";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { getMux } from "./mux.server";
-
-// Daily analysis cap per user. Counts takes created today.
-const DAILY_ANALYSIS_CAP = 5;
-
-async function assertUnderDailyCap(userId: string): Promise<void> {
-  const since = startOfDay(new Date()).toISOString();
-  const { count, error } = await supabaseAdmin
-    .from("takes")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .gte("created_at", since);
-  if (error) throw new Error("Could not check daily usage");
-  if ((count ?? 0) >= DAILY_ANALYSIS_CAP) {
-    throw new Error(
-      `Daily analysis limit reached (${DAILY_ANALYSIS_CAP}/day). Try again tomorrow.`,
-    );
-  }
-}
+import {
+  assertWithinAnalysisQuota,
+  QuotaExceededError,
+  quotaErrorToResponse,
+} from "./quota.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
 // then `video.asset.ready` once renditions exist.
 //
-// We pass `passthrough=takeId` so the webhook can locate our take row.
+// Quota: this is the first server-side gate — we refuse to mint an upload URL
+// if the caller is already at their cap. The webhook handler re-checks before
+// triggering AI, and a DB trigger catches any race.
 export const createMuxDirectUpload = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) =>
@@ -42,7 +30,12 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     const { takeId } = data;
     const { userId } = context;
 
-    await assertUnderDailyCap(userId);
+    try {
+      await assertWithinAnalysisQuota({ kind: "user", userId }, "createMuxDirectUpload");
+    } catch (err) {
+      if (err instanceof QuotaExceededError) throw quotaErrorToResponse(err);
+      throw err;
+    }
 
     // Make sure the take belongs to the caller.
     const { data: take, error: takeErr } = await supabaseAdmin
