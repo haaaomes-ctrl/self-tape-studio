@@ -49,7 +49,7 @@ export function scheduleBackground(promise: Promise<unknown>, label = "backgroun
 }
 
 export default {
-  async fetch(request: Request, env: unknown, ctx: RequestExecutionContext): Promise<Response> {
-    return ctxStorage.run(ctx, () => startEntry.fetch(request, env, ctx));
+  async fetch(request: Request, _env: unknown, ctx: RequestExecutionContext): Promise<Response> {
+    return ctxStorage.run(ctx, () => (startEntry as { fetch: (req: Request) => Promise<Response> }).fetch(request));
   },
 };
