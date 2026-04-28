@@ -44,7 +44,15 @@ export const retryProcessTake = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertTakeOwnership(data.takeId, context.userId, "retryProcessTake");
-    await assertUnderDailyCap(context.userId);
+    try {
+      await assertWithinAnalysisQuota(
+        { kind: "user", userId: context.userId },
+        "retryProcessTake",
+      );
+    } catch (err) {
+      if (err instanceof QuotaExceededError) throw quotaErrorToResponse(err);
+      throw err;
+    }
     return runProcessTake(data.takeId, data.allowOriginal);
   });
 
