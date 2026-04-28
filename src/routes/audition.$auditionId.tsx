@@ -332,7 +332,28 @@ function TakeView({ take }: { take: Take }) {
     { key: "audio", label: "Audio" },
     { key: "technical", label: "Technical" },
     { key: "brief_adherence", label: r.mode === "brief" ? "Brief fit" : "Standards" },
+    { key: "professional_presentation", label: "Professional presentation" },
   ];
+
+  const components: Array<{ type: string; weight: number; score: number; note: string }> =
+    Array.isArray(r.detected_components) ? r.detected_components : [];
+  const showComponents = components.length > 1;
+
+  const brk = r.brief_adherence_breakdown as
+    | {
+        material_compliance: number;
+        technical_compliance: number;
+        instruction_precision: number;
+        professionalism_signals: number;
+        note?: string;
+      }
+    | undefined;
+
+  const riskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }> = Array.isArray(
+    r.submission_risk_flags,
+  )
+    ? r.submission_risk_flags
+    : [];
 
   return (
     <div className="space-y-6">
@@ -344,6 +365,9 @@ function TakeView({ take }: { take: Take }) {
         <p className="mt-2 font-display text-2xl font-semibold leading-snug tracking-tight">
           {r.casting_headline}
         </p>
+        {r.casting_insight && (
+          <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
+        )}
         <div className="mt-6 flex items-end justify-between gap-6">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Confidence</p>
@@ -368,6 +392,79 @@ function TakeView({ take }: { take: Take }) {
           </div>
         )}
       </div>
+
+      {/* Submission risk flags */}
+      {riskFlags.length > 0 && (
+        <div className="rounded-2xl border border-warning/40 bg-warning/5 p-6">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-warning" />
+            <h3 className="font-display text-base font-semibold">Submission risk</h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Casting-compliance issues that could cause rejection.
+          </p>
+          <ul className="mt-4 space-y-2 text-sm">
+            {riskFlags.map((f, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span
+                  className={cn(
+                    "mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full",
+                    f.severity === "high"
+                      ? "bg-destructive"
+                      : f.severity === "medium"
+                        ? "bg-warning"
+                        : "bg-muted-foreground",
+                  )}
+                />
+                <span>
+                  <span className="mr-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    {f.severity}
+                  </span>
+                  {f.flag}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Component breakdown (multi-part auditions) */}
+      {showComponents && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <h2 className="font-display text-lg font-semibold">Component breakdown</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            This tape contains multiple performance components. Each is scored separately.
+          </p>
+          <div className="mt-5 space-y-4">
+            {components.map((c, i) => (
+              <div key={i}>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-medium capitalize">
+                    {c.type.replace(/_/g, " ")}
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      weight {Math.round(c.weight * 100)}%
+                    </span>
+                  </span>
+                  <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{ width: `${c.score}%` }}
+                  />
+                </div>
+                {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
+              </div>
+            ))}
+          </div>
+          {typeof r.consistency_modifier === "number" && r.consistency_modifier !== 0 && (
+            <p className="mt-5 text-xs text-muted-foreground">
+              Cross-component consistency: {r.consistency_modifier > 0 ? "+" : ""}
+              {r.consistency_modifier}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Categories */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
@@ -396,6 +493,44 @@ function TakeView({ take }: { take: Take }) {
           })}
         </div>
       </div>
+
+      {/* Brief adherence breakdown */}
+      {brk && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <h3 className="font-display text-base font-semibold">
+            {r.mode === "brief" ? "Brief adherence breakdown" : "Professional standards breakdown"}
+          </h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[
+              { key: "material_compliance", label: "Material compliance", weight: "35%" },
+              { key: "technical_compliance", label: "Technical compliance", weight: "35%" },
+              { key: "instruction_precision", label: "Instruction precision", weight: "20%" },
+              { key: "professionalism_signals", label: "Professionalism", weight: "10%" },
+            ].map((sub) => {
+              const v = brk[sub.key as keyof typeof brk] as number | undefined;
+              if (typeof v !== "number") return null;
+              return (
+                <div key={sub.key} className="rounded-md border border-border bg-secondary/30 p-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs font-medium">{sub.label}</span>
+                    <span className="text-xs text-muted-foreground">{sub.weight}</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-display text-xl font-semibold tabular-nums">{v}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${v}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {brk.note && <p className="mt-4 text-xs text-muted-foreground">{brk.note}</p>}
+        </div>
+      )}
 
       {/* Fix first */}
       {r.fix_first && (
