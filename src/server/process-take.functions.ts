@@ -217,15 +217,52 @@ Confidence (0–100):
 Output via the submit_audition_report tool. The casting_headline must be ONE plain-language sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read. Keep all feedback constructive, specific, and actionable.`;
 }
 
+// Pick the video URL Gemini should analyse, based on how many attempts we've made.
+// Tier 0 → Standard (Mux ~720p MP4)
+// Tier 1 → High     (Mux ~1080p MP4)
+// Tier 2 → Original (signed Supabase URL of the raw upload — last resort)
+type Tier = "standard" | "high" | "original";
+
+async function pickAnalysisSource(take: {
+  id: string;
+  video_path: string;
+  attempt_count: number | null;
+  mux_mp4_standard_url: string | null;
+  mux_mp4_high_url: string | null;
+  mux_status: string | null;
+}): Promise<{ url: string; tier: Tier }> {
+  const attempt = take.attempt_count ?? 0;
+
+  // Tier order: Standard → High → Original
+  if (attempt === 0 && take.mux_mp4_standard_url) {
+    return { url: take.mux_mp4_standard_url, tier: "standard" };
+  }
+  if (attempt === 1 && take.mux_mp4_high_url) {
+    return { url: take.mux_mp4_high_url, tier: "high" };
+  }
+  if (attempt >= 2 || (!take.mux_mp4_standard_url && !take.mux_mp4_high_url)) {
+    // Fall back to the original file in Supabase storage via a short-lived signed URL.
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from("audition-videos")
+      .createSignedUrl(take.video_path, 60 * 60);
+    if (error || !signed) throw new Error("Could not create signed URL for original video");
+    return { url: signed.signedUrl, tier: "original" };
+  }
+
+  // Mux is still transcoding — bail and let the webhook re-trigger us when ready.
+  throw new Error("Video is still being optimised — please try again in a moment.");
+}
+
 export const processTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => inputSchema.parse(data))
   .handler(async ({ data }) => {
     const { takeId } = data;
 
-    // Fetch take + parent audition.
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
-      .select("id, user_id, audition_id, video_path, signals, checklist, status")
+      .select(
+        "id, user_id, audition_id, video_path, signals, checklist, status, attempt_count, mux_status, mux_mp4_standard_url, mux_mp4_high_url",
+      )
       .eq("id", takeId)
       .single();
 
@@ -252,52 +289,17 @@ export const processTake = createServerFn({ method: "POST" })
       .eq("id", takeId);
 
     try {
-      // The Lovable AI Gateway (OpenAI-compatible) does NOT accept remote video URLs in
-      // `image_url` — it rejects non-image URLs with HTTP 400. Gemini does, however, accept
-      // inline video when the content part is a base64 data URL with a video MIME type.
-      // So we download the file from storage and inline it as `data:video/<ext>;base64,...`.
-      const { data: signed, error: signErr } = await supabaseAdmin.storage
-        .from("audition-videos")
-        .createSignedUrl(take.video_path, 60 * 60);
-      if (signErr || !signed) throw new Error("Could not create signed URL for video");
+      const { url: videoUrl, tier } = await pickAnalysisSource(take);
 
-      const videoResp = await fetch(signed.signedUrl);
-      if (!videoResp.ok) throw new Error(`Could not download video (${videoResp.status})`);
-      const videoBuf = await videoResp.arrayBuffer();
-
-      // Inline-video hard cap for the gateway request. ~100MB keeps us safely under
-      // request-body limits on the Worker / gateway path. Users can still upload up to
-      // 750MB — they'll just see a clear message asking them to compress for analysis.
-      const MAX_INLINE_BYTES = 100 * 1024 * 1024;
-      if (videoBuf.byteLength > MAX_INLINE_BYTES) {
-        throw new Error(
-          `Video is ${(videoBuf.byteLength / 1024 / 1024).toFixed(0)}MB — too large to analyse. Please export a compressed version under 100MB (720p H.264 is ideal) and re-upload.`,
-        );
-      }
-
-      // Infer mime from the stored path; default to mp4.
-      const ext = (take.video_path.split(".").pop() || "mp4").toLowerCase();
-      const mimeMap: Record<string, string> = {
-        mp4: "video/mp4",
-        mov: "video/quicktime",
-        webm: "video/webm",
-        m4v: "video/mp4",
-        avi: "video/x-msvideo",
-      };
-      const videoMime = mimeMap[ext] ?? "video/mp4";
-
-      // Base64-encode in chunks to avoid "Maximum call stack exceeded" on large buffers.
-      const bytes = new Uint8Array(videoBuf);
-      let binary = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode.apply(
-          null,
-          Array.from(bytes.subarray(i, i + CHUNK)),
-        );
-      }
-      const base64 = btoa(binary);
-      const dataUrl = `data:${videoMime};base64,${base64}`;
+      // Bump attempt counter + record which tier we tried, so a future retry
+      // walks up the ladder (Standard → High → Original).
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          attempt_count: (take.attempt_count ?? 0) + 1,
+          analysis_tier: tier,
+        })
+        .eq("id", takeId);
 
       const briefBlock = audition.brief
         ? `CASTING BRIEF (${audition.brief_source}):\n${audition.brief}`
@@ -313,39 +315,60 @@ export const processTake = createServerFn({ method: "POST" })
         `Audition title: ${audition.title}`,
         briefBlock,
         signalsBlock,
+        `Analysis tier: ${tier} rendition (the user's original performance is intact — only technical encoding was standardised).`,
         "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Be specific, prioritised, and constructive.",
       ].join("\n\n");
 
       const apiKey = process.env.LOVABLE_API_KEY;
       if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-      // Send the signed URL directly — avoids inlining base64 for huge files.
-      const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
-          messages: [
-            { role: "system", content: buildSystemPrompt() },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: userText },
-                { type: "image_url", image_url: { url: dataUrl } },
-              ],
-            },
-          ],
-          tools: [REPORT_TOOL],
-          tool_choice: { type: "function", function: { name: "submit_audition_report" } },
-          // The v2 report schema is large (multi-component, risk flags, breakdowns, drills,
-          // timestamped notes). The default output cap truncates the tool-call JSON and we
-          // get "Unexpected end of JSON input" on parse. Give Gemini enough headroom.
-          max_tokens: 8192,
-        }),
-      });
+      const callAI = (mediaPart: { type: "image_url"; image_url: { url: string } }) =>
+        fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-pro",
+            messages: [
+              { role: "system", content: buildSystemPrompt() },
+              {
+                role: "user",
+                content: [{ type: "text", text: userText }, mediaPart],
+              },
+            ],
+            tools: [REPORT_TOOL],
+            tool_choice: { type: "function", function: { name: "submit_audition_report" } },
+            max_tokens: 8192,
+          }),
+        });
+
+      // First try: pass the public Mux URL (or signed-url fallback) directly.
+      let aiResp = await callAI({ type: "image_url", image_url: { url: videoUrl } });
+
+      // If the gateway rejects the URL (some gateways only accept inline media for
+      // video), download the (already-compressed) rendition and inline it as base64.
+      if (!aiResp.ok && aiResp.status === 400) {
+        const errText = await aiResp.text();
+        console.warn("AI gateway rejected URL; retrying with inline base64", errText.slice(0, 200));
+        const dl = await fetch(videoUrl);
+        if (!dl.ok) throw new Error(`Could not download rendition (${dl.status})`);
+        const buf = new Uint8Array(await dl.arrayBuffer());
+        // Safety: only inline if reasonably small (Mux 'medium' MP4s typically are).
+        if (buf.byteLength > 120 * 1024 * 1024) {
+          throw new Error(
+            `Rendition is ${(buf.byteLength / 1024 / 1024).toFixed(0)}MB — too large to inline. Please retry; we'll try a smaller tier next.`,
+          );
+        }
+        let bin = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < buf.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + CHUNK)));
+        }
+        const dataUrl = `data:video/mp4;base64,${btoa(bin)}`;
+        aiResp = await callAI({ type: "image_url", image_url: { url: dataUrl } });
+      }
 
       if (!aiResp.ok) {
         if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
@@ -366,7 +389,6 @@ export const processTake = createServerFn({ method: "POST" })
       try {
         report = JSON.parse(toolCall.function.arguments);
       } catch (parseErr) {
-        // Most common cause: model hit max_tokens mid-JSON. Surface a clear, actionable message.
         if (choice?.finish_reason === "length") {
           throw new Error(
             "The AI response was cut off before it finished writing the report. Please retry — if it keeps failing, try a shorter take.",
@@ -376,7 +398,6 @@ export const processTake = createServerFn({ method: "POST" })
         throw new Error("The AI returned an incomplete report. Please retry.");
       }
 
-      // Arbitration: hard audio cap.
       let overall = report.overall_score as number;
       const audioScore = report.scores?.audio ?? 100;
       if (audioScore < 50 && overall > 65) overall = 65;
@@ -393,13 +414,12 @@ export const processTake = createServerFn({ method: "POST" })
         })
         .eq("id", takeId);
 
-      // Sync audition mode if the AI resolved it differently from the initial guess.
       await supabaseAdmin
         .from("auditions")
         .update({ mode: report.mode })
         .eq("id", audition.id);
 
-      return { ok: true };
+      return { ok: true, tier };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown processing error";
       console.error("processTake failed", message);
@@ -453,14 +473,19 @@ export const replaceTakeVideo = createServerFn({ method: "POST" })
         confidence: null,
         signals: signals ?? null,
         checklist: checklist ?? null,
+        // Reset Mux + retry state so the new file walks the ladder fresh.
+        attempt_count: 0,
+        analysis_tier: null,
+        mux_status: "none",
+        mux_upload_id: null,
+        mux_asset_id: null,
+        mux_playback_id: null,
+        mux_mp4_standard_url: null,
+        mux_mp4_high_url: null,
       })
       .eq("id", takeId);
 
-    // Re-kick processing.
-    await processTake({ data: { takeId } }).catch((e) => {
-      console.error("replaceTakeVideo: re-process failed", e);
-    });
-
+    // Caller should follow up with ingestTakeToMux() to kick off the Mux pipeline.
     return { ok: true };
   });
 

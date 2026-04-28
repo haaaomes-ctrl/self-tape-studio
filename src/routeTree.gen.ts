@@ -15,6 +15,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
+import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 
 const NewRoute = NewRouteImport.update({
   id: '/new',
@@ -46,6 +47,11 @@ const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
   path: '/audition/$auditionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
+  id: '/api/public/mux-webhook',
+  path: '/api/public/mux-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/mux-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/mux-webhook'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/mux-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
+  ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuditionAuditionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/mux-webhook': {
+      id: '/api/public/mux-webhook'
+      path: '/api/public/mux-webhook'
+      fullPath: '/api/public/mux-webhook'
+      preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,16 +182,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
+  ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
