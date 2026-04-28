@@ -413,6 +413,7 @@ export const processTake = createServerFn({ method: "POST" })
         .from("takes")
         .update({
           status: "complete",
+          processing_phase: "complete",
           report,
           scores: report.scores,
           overall_score: overall,
@@ -432,7 +433,7 @@ export const processTake = createServerFn({ method: "POST" })
       console.error("processTake failed", message);
       await supabaseAdmin
         .from("takes")
-        .update({ status: "error", error_message: message })
+        .update({ status: "error", processing_phase: "error", error_message: message })
         .eq("id", takeId);
       return { ok: false, error: message };
     }
