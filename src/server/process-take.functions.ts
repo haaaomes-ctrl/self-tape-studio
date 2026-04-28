@@ -1,9 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getMux, muxMp4Url } from "./mux.server";
 
 const inputSchema = z.object({
   takeId: z.string().uuid(),
+  // Caller may explicitly opt into Tier 2 (original/highest quality) — we
+  // never auto-escalate to it because original files are slow + expensive.
+  allowOriginal: z.boolean().optional().default(false),
 });
 
 // Scoring v2 — multi-component aware, split brief adherence, submission risk flags.
