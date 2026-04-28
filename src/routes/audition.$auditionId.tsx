@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Plus, ShieldAlert, Upload, Video } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, ShieldAlert, Upload, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { ChecklistView } from "@/components/checklist-view";
