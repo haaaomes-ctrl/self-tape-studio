@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMux, muxMp4Url } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
+import { scheduleBackground } from "@/worker-entry";
 import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
@@ -152,10 +153,20 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             })
             .eq("id", takeId);
 
+          // Idempotency: skip if this take is already complete or has an
+          // analysis in flight (analysis_pending = scheduled but not started,
+          // analysing = currently running). The stale-analysis cron job is
+          // responsible for retrying anything that gets stuck in either state.
           if (
             existing?.status === "complete" ||
-            existing?.processing_phase === "analysing"
+            existing?.processing_phase === "analysing" ||
+            existing?.processing_phase === "analysis_pending"
           ) {
+            console.log("MUX WEBHOOK skipping — analysis already underway", {
+              takeId,
+              status: existing?.status,
+              processing_phase: existing?.processing_phase,
+            });
             return new Response("ok", { status: 200 });
           }
 
@@ -183,22 +194,31 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             }
           }
 
+          // Mark the take as queued — runProcessTake itself will flip the
+          // phase to "analysing" once it actually begins work. This lets the
+          // stale-analysis reconciler distinguish "scheduled but never
+          // picked up" from "started but never finished".
           await supabaseAdmin
             .from("takes")
-            .update({ status: "pending", processing_phase: "analysing" })
+            .update({ status: "pending", processing_phase: "analysis_pending" })
             .eq("id", takeId);
 
-          // Fire-and-forget: kick off Gemini analysis via internal helper.
-          console.log("MUX WEBHOOK invoking runProcessTake →", { takeId, timestamp: new Date().toISOString() });
-          const processPromise = runProcessTake(takeId);
-          console.log("MUX WEBHOOK runProcessTake invoked (fire-and-forget)", { takeId, timestamp: new Date().toISOString() });
-          processPromise
-            .then(() => {
-              console.log("MUX WEBHOOK runProcessTake resolved ✓", { takeId, timestamp: new Date().toISOString() });
-            })
-            .catch((e: unknown) => {
-              console.error("MUX WEBHOOK runProcessTake from webhook failed", { takeId, error: e });
-            });
+          // Schedule the AI analysis as a background task that the Cloudflare
+          // Worker runtime is required to keep alive past the response via
+          // ctx.waitUntil. No un-awaited promise leak: scheduleBackground
+          // wraps it in waitUntil when an ExecutionContext is available.
+          console.log("MUX WEBHOOK scheduling runProcessTake (waitUntil) →", {
+            takeId,
+            timestamp: new Date().toISOString(),
+          });
+          scheduleBackground(
+            (async () => {
+              const result = await runProcessTake(takeId);
+              console.log("MUX WEBHOOK runProcessTake completed", { takeId, result });
+              return result;
+            })(),
+            `runProcessTake:${takeId}`,
+          );
           return new Response("ok", { status: 200 });
         }
 
