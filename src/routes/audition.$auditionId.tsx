@@ -762,14 +762,19 @@ function AddTakeBlock({
 
   async function upload() {
     if (!file || !user) return;
+
+    if (checklist) {
+      const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
+      if (!pf.ok) {
+        toast.error(pf.error ?? "Video failed pre-upload checks");
+        return;
+      }
+      if (pf.warning) toast.warning(pf.warning);
+    }
+
     setBusy(true);
+    setUploadPct(0);
     try {
-      const ext = file.name.split(".").pop()?.toLowerCase() || "mp4";
-      const path = `${user.id}/${audition.id}/take-${nextNumber}-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("audition-videos")
-        .upload(path, file, { contentType: file.type || "video/mp4" });
-      if (upErr) throw upErr;
       const signals = checklist
         ? {
             orientation: checklist.orientation.value,
@@ -788,8 +793,10 @@ function AddTakeBlock({
             audition_id: audition.id,
             user_id: user.id,
             take_number: nextNumber,
-            video_path: path,
+            video_path: null,
             status: "pending",
+            mux_status: "uploading",
+            processing_phase: "uploading",
             signals: signals as never,
             checklist: (checklist ?? null) as never,
           },
@@ -797,13 +804,18 @@ function AddTakeBlock({
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
-      processTake({ data: { takeId: take.id } }).catch(console.error);
-      toast.success(`Take ${nextNumber} uploaded — analysing now`);
+
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      await uploadFileToMux(uploadUrl, file, setUploadPct);
+
+      toast.success(`Take ${nextNumber} uploaded — optimising and analysing now`);
       onUploaded();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setBusy(false);
+      setUploadPct(0);
     }
   }
 
