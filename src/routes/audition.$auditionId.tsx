@@ -226,7 +226,9 @@ function FailedTakeView({ take }: { take: Take }) {
       await replaceTakeVideo({
         data: { takeId: take.id, newVideoPath: path, signals, checklist },
       });
-      toast.success("Replacement uploaded — analysing now");
+      // Hand the new file off to Mux for transcoding; the webhook fires processTake.
+      await ingestTakeToMux({ data: { takeId: take.id } });
+      toast.success("Replacement uploaded — optimising and analysing now");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Replace failed");
     } finally {
