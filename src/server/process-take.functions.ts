@@ -510,8 +510,10 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
 
 // Cancel a stuck/errored take.
 export const resetTake = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    await assertTakeOwnership(data.takeId, context.userId, "resetTake");
     await supabaseAdmin
       .from("takes")
       .update({
