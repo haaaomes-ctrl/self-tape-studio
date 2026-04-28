@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Plus, ShieldAlert, Upload, Video } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, ShieldAlert, Upload, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { ChecklistView } from "@/components/checklist-view";
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { processTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
@@ -765,6 +765,12 @@ function AddTakeBlock({
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const takeIdRef = useRef<string | null>(null);
+
+  function cancelUpload() {
+    abortRef.current?.abort();
+  }
 
   async function pick(f: File | null) {
     setFile(f);
@@ -821,18 +827,29 @@ function AddTakeBlock({
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
+      takeIdRef.current = take.id;
 
       const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
-      await uploadFileToMux(uploadUrl, file, setUploadPct);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
 
       toast.success(`Take ${nextNumber} uploaded — optimising and analysing now`);
       onUploaded();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+      if (err instanceof UploadCancelledError) {
+        toast.message("Upload cancelled");
+        if (takeIdRef.current) {
+          resetTake({ data: { takeId: takeIdRef.current } }).catch(() => {});
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : "Upload failed");
+      }
     } finally {
       setBusy(false);
       setUploadPct(0);
+      abortRef.current = null;
     }
   }
 
@@ -878,8 +895,13 @@ function AddTakeBlock({
       )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel} disabled={busy}>
-          Cancel
+          Close
         </Button>
+        {busy && uploadPct < 100 && (
+          <Button variant="ghost" onClick={cancelUpload}>
+            <X className="mr-2 h-4 w-4" /> Cancel upload
+          </Button>
+        )}
         <Button onClick={upload} disabled={!file || busy}>
           {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Upload take {nextNumber}

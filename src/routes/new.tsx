@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Upload } from "lucide-react";
+import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { SiteHeader } from "@/components/site-header";
@@ -21,8 +21,9 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
-import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { createMuxDirectUpload } from "@/server/mux.functions";
+import { resetTake } from "@/server/process-take.functions";
 
 export const Route = createFileRoute("/new")({
   head: () => ({ meta: [{ title: "New audition — SelfTape" }] }),
@@ -49,6 +50,14 @@ function NewAuditionPage() {
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const takeIdRef = useRef<string | null>(null);
+
+  function cancelUpload() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+  }
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
@@ -164,21 +173,33 @@ function NewAuditionPage() {
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
+      takeIdRef.current = take.id;
 
       // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
       const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
 
       // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
-      await uploadFileToMux(uploadUrl, file, setUploadPct);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
 
       toast.success("Uploaded — optimising and analysing your tape");
       navigate({ to: "/audition/$auditionId", params: { auditionId: aud.id } });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      toast.error(msg);
+      if (err instanceof UploadCancelledError) {
+        toast.message("Upload cancelled");
+        if (takeIdRef.current) {
+          resetTake({ data: { takeId: takeIdRef.current } }).catch(() => {});
+        }
+      } else {
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        toast.error(msg);
+      }
       setSubmitting(false);
       setUploadPct(0);
+    } finally {
+      abortRef.current = null;
     }
   }
 
@@ -392,7 +413,12 @@ function NewAuditionPage() {
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            {submitting && uploadPct < 100 && (
+              <Button size="lg" variant="ghost" onClick={cancelUpload}>
+                <X className="mr-2 h-4 w-4" /> Cancel upload
+              </Button>
+            )}
             <Button size="lg" onClick={submit} disabled={!file || submitting || checking}>
               {submitting ? (
                 <>
