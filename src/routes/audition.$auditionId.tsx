@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { processTake } from "@/server/process-take.functions";
+import { processTake, replaceTakeVideo, resetTake } from "@/server/process-take.functions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/audition/$auditionId")({
@@ -183,6 +183,119 @@ function AuditionPage() {
   );
 }
 
+function isStuck(take: Take): boolean {
+  if (take.status !== "processing" && take.status !== "pending") return false;
+  const created = new Date(take.created_at).getTime();
+  return Date.now() - created > 5 * 60 * 1000; // 5 min watchdog
+}
+
+function FailedTakeView({ take }: { take: Take }) {
+  const { user } = useAuth();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const stuck = take.status === "processing" || take.status === "pending";
+
+  async function onReplace(f: File | null) {
+    if (!f || !user) return;
+    setBusy(true);
+    try {
+      let checklist: ChecklistResult | null = null;
+      try {
+        checklist = await analyzeVideoFile(f);
+      } catch {
+        // best-effort
+      }
+      const ext = f.name.split(".").pop()?.toLowerCase() || "mp4";
+      const path = `${user.id}/${take.id}-retake-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("audition-videos")
+        .upload(path, f, { contentType: f.type || "video/mp4" });
+      if (upErr) throw upErr;
+      const signals = checklist
+        ? {
+            orientation: checklist.orientation.value,
+            width: checklist.resolution.width,
+            height: checklist.resolution.height,
+            duration: checklist.duration.seconds,
+            brightness: checklist.brightness.value,
+            audio_peak: checklist.audio.peak,
+            audio_rms: checklist.audio.rms,
+          }
+        : null;
+      await replaceTakeVideo({
+        data: { takeId: take.id, newVideoPath: path, signals, checklist },
+      });
+      toast.success("Replacement uploaded — analysing now");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Replace failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
+      <div className="flex items-center gap-2 text-destructive">
+        <ShieldAlert className="h-4 w-4" />
+        <p className="font-medium">
+          {stuck ? "This take has been analysing for a while" : "Couldn't analyse this take"}
+        </p>
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {stuck
+          ? "Processing appears stuck. You can cancel and replace the video, or try again."
+          : (take.error_message ?? "Something went wrong.")}
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="video/mp4,video/quicktime,video/*"
+          className="hidden"
+          onChange={(e) => onReplace(e.target.files?.[0] ?? null)}
+        />
+        <Button
+          variant="outline"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+        >
+          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+          Replace video
+        </Button>
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await processTake({ data: { takeId: take.id } });
+              toast.success("Retrying analysis");
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Retry failed");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Retry analysis
+        </Button>
+        {stuck && (
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={async () => {
+              await resetTake({ data: { takeId: take.id } });
+              toast.success("Cancelled — you can replace the video now.");
+            }}
+          >
+            Cancel stuck analysis
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
     return (
@@ -196,18 +309,8 @@ function TakeView({ take }: { take: Take }) {
     );
   }
 
-  if (take.status === "error") {
-    return (
-      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
-        <div className="flex items-center gap-2 text-destructive">
-          <ShieldAlert className="h-4 w-4" />
-          <p className="font-medium">Couldn't analyse this take</p>
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {take.error_message ?? "Something went wrong."}
-        </p>
-      </div>
-    );
+  if (take.status === "error" || (take.status === "processing" && isStuck(take))) {
+    return <FailedTakeView take={take} />;
   }
 
   const r = take.report;
@@ -481,15 +584,17 @@ function AddTakeBlock({
         : null;
       const { data: take, error: takeErr } = await supabase
         .from("takes")
-        .insert({
-          audition_id: audition.id,
-          user_id: user.id,
-          take_number: nextNumber,
-          video_path: path,
-          status: "pending",
-          signals,
-          checklist,
-        })
+        .insert([
+          {
+            audition_id: audition.id,
+            user_id: user.id,
+            take_number: nextNumber,
+            video_path: path,
+            status: "pending",
+            signals: signals as never,
+            checklist: (checklist ?? null) as never,
+          },
+        ])
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");

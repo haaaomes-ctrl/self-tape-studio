@@ -6,6 +6,7 @@ const inputSchema = z.object({
   takeId: z.string().uuid(),
 });
 
+// Scoring v2 — multi-component aware, split brief adherence, submission risk flags.
 const REPORT_TOOL = {
   type: "function" as const,
   function: {
@@ -17,7 +18,36 @@ const REPORT_TOOL = {
         mode: { type: "string", enum: ["brief", "baseline"] },
         audition_type: {
           type: "string",
-          description: "Inferred type: singing, acting, musical_theatre, dance, commercial, or unknown",
+          description:
+            "Inferred type: acting_scene, song, musical_theatre, dance, commercial, hybrid, or unknown",
+        },
+        detected_components: {
+          type: "array",
+          description:
+            "Performance components detected in the tape. For MT tapes with song + scene, include both.",
+          items: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: ["acting_scene", "song", "monologue", "dance", "commercial", "slate", "other"],
+              },
+              weight: {
+                type: "number",
+                description: "Relative weight of this component 0–1; weights across components should sum ~1.",
+              },
+              score: { type: "integer", minimum: 0, maximum: 100 },
+              note: { type: "string" },
+            },
+            required: ["type", "weight", "score", "note"],
+          },
+        },
+        consistency_modifier: {
+          type: "integer",
+          minimum: -10,
+          maximum: 10,
+          description:
+            "Emotional/tonal continuity between components (-10 bad mismatch, +10 excellent continuity). 0 if single-component.",
         },
         confidence: { type: "integer", minimum: 0, maximum: 100 },
         confidence_reason: { type: "string" },
@@ -27,6 +57,11 @@ const REPORT_TOOL = {
           description:
             "One plain-language sentence at the top of the report, e.g. 'This tape is strongest for voice.' or 'This tape is most weakened by unclear audio.'",
         },
+        casting_insight: {
+          type: "string",
+          description:
+            "A one-line interpretive read of the tape's castability, e.g. 'Highly castable commercially, less suited for dramatic roles.'",
+        },
         scores: {
           type: "object",
           properties: {
@@ -35,8 +70,34 @@ const REPORT_TOOL = {
             vocal: { type: ["integer", "null"], minimum: 0, maximum: 100 },
             acting: { type: "integer", minimum: 0, maximum: 100 },
             brief_adherence: { type: "integer", minimum: 0, maximum: 100 },
+            professional_presentation: { type: "integer", minimum: 0, maximum: 100 },
           },
-          required: ["technical", "audio", "acting", "brief_adherence"],
+          required: [
+            "technical",
+            "audio",
+            "acting",
+            "brief_adherence",
+            "professional_presentation",
+          ],
+        },
+        brief_adherence_breakdown: {
+          type: "object",
+          description:
+            "Split of Brief Adherence into its four sub-components (each 0–100). In baseline mode, treat these as professional-standards equivalents.",
+          properties: {
+            material_compliance: { type: "integer", minimum: 0, maximum: 100 },
+            technical_compliance: { type: "integer", minimum: 0, maximum: 100 },
+            instruction_precision: { type: "integer", minimum: 0, maximum: 100 },
+            professionalism_signals: { type: "integer", minimum: 0, maximum: 100 },
+            note: { type: "string" },
+          },
+          required: [
+            "material_compliance",
+            "technical_compliance",
+            "instruction_precision",
+            "professionalism_signals",
+            "note",
+          ],
         },
         category_notes: {
           type: "object",
@@ -46,8 +107,9 @@ const REPORT_TOOL = {
             vocal: { type: "string" },
             acting: { type: "string" },
             brief_adherence: { type: "string" },
+            professional_presentation: { type: "string" },
           },
-          required: ["technical", "audio", "acting", "brief_adherence"],
+          required: ["technical", "audio", "acting", "brief_adherence", "professional_presentation"],
         },
         strengths: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
         improvements: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
@@ -64,21 +126,39 @@ const REPORT_TOOL = {
           },
         },
         coaching_drills: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 5 },
+        submission_risk_flags: {
+          type: "array",
+          description:
+            "Specific casting-compliance risks that could cause rejection (e.g. 'Uploaded as portrait but brief required landscape', 'Song not performed within the requested bar count').",
+          items: {
+            type: "object",
+            properties: {
+              severity: { type: "string", enum: ["low", "medium", "high"] },
+              flag: { type: "string" },
+            },
+            required: ["severity", "flag"],
+          },
+        },
         at_risk: { type: "boolean" },
       },
       required: [
         "mode",
         "audition_type",
+        "detected_components",
+        "consistency_modifier",
         "confidence",
         "overall_score",
         "casting_headline",
+        "casting_insight",
         "scores",
+        "brief_adherence_breakdown",
         "category_notes",
         "strengths",
         "improvements",
         "fix_first",
         "timestamped_notes",
         "coaching_drills",
+        "submission_risk_flags",
         "at_risk",
       ],
     },
@@ -95,19 +175,38 @@ You will receive:
 - An optional casting brief.
 - Lightweight technical signals (orientation, resolution, audio peak/rms) and a checklist.
 
-Use TWO modes:
+Pipeline:
+1) Normalise the inputs.
+2) STRUCTURE the audition — detect whether this is a single performance or multi-component (e.g. acting scene + song, very common in MT). Populate detected_components with a weight per component. If single-component, return one entry with weight 1.
+3) Evaluate EACH component independently (scene vs song vs dance), score each 0–100, then recombine with its weight into the final score.
+4) Cross-component consistency: if multiple components exist, judge emotional/tonal continuity (consistency_modifier -10..+10). 0 if single-component or intentionally contrasting in a way the brief permits.
+
+Modes:
 - BRIEF mode: when a casting brief is supplied, extract intent (audition type, constraints, priority skills) and weight scoring accordingly.
 - BASELINE mode: when no brief is supplied, apply a balanced professional rubric. Do NOT penalise unknown constraints.
 
-Scoring rubric (0–100 per category):
-- Technical Setup, Audio Clarity, Vocal Performance (only when singing is present), Acting/Performance, Brief Adherence (Mode A) or Professional Standards (Mode B).
+Scoring categories (0–100):
+- Technical Setup, Audio Clarity, Vocal Performance (only when singing is present — otherwise null), Acting/Performance, Brief Adherence, Professional Presentation.
+
+BRIEF ADHERENCE is now structured (all 0–100, then combined into the single brief_adherence score using 35/35/20/10 weights):
+- Material Compliance (35%): right sides, right song type, nothing missing, nothing extra.
+- Technical Compliance (35%): orientation, framing, single-file / naming rules.
+- Instruction Precision (20%): accent, ordering, continuity, use of guides.
+- Professionalism Signals (10%): slate clarity, submission cleanliness, audition etiquette.
+In BASELINE mode treat these as professional-standards equivalents and do NOT penalise for unknown constraints.
+
+Professional Presentation is SEPARATE from compliance — it covers slate clarity, pacing discipline, camera awareness, and single-take logic.
 
 Hard rules:
-- If audio quality is poor (clarity < 50), cap overall at 65.
-- If brief explicitly required something missing, mark at_risk=true.
+- If audio clarity < 50, cap final overall at 65.
+- If brief_adherence < 40 and mode is BRIEF, set at_risk=true.
 - Don't penalise portrait orientation unless the brief required landscape.
-- First 5 seconds matter: strong start gives a small bonus, weak start a small penalty.
+- First 5 seconds matter: strong start +5, weak start −5 on acting.
 - Treat technical signals as MODIFIERS, not dominant inputs. The video itself is your primary evidence.
+
+Submission Risk Flags:
+- Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
+- Keep empty if none.
 
 Confidence (0–100):
 - 90+ when full brief and clean signals.
@@ -115,7 +214,7 @@ Confidence (0–100):
 - 60–74 baseline with no brief.
 - <60 if data is poor.
 
-Output via the submit_audition_report tool. The casting_headline must be one plain-language sentence pinpointing the single most important thing the user should know — e.g. "This tape is strongest for voice." or "Weakened most by unclear audio." Keep all feedback constructive, specific, and actionable.`;
+Output via the submit_audition_report tool. The casting_headline must be ONE plain-language sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read. Keep all feedback constructive, specific, and actionable.`;
 }
 
 export const processTake = createServerFn({ method: "POST" })
@@ -123,7 +222,7 @@ export const processTake = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { takeId } = data;
 
-    // Fetch take + parent audition (admin client; we already validated takeId is a UUID).
+    // Fetch take + parent audition.
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
       .select("id, user_id, audition_id, video_path, signals, checklist, status")
@@ -153,27 +252,12 @@ export const processTake = createServerFn({ method: "POST" })
       .eq("id", takeId);
 
     try {
-      // Signed URL so Gemini can fetch the video.
+      // Long-lived signed URL. We pass the URL directly to Gemini (via Lovable AI Gateway) so
+      // large tapes (up to ~750MB) don't have to be downloaded + base64-encoded inside the Worker.
       const { data: signed, error: signErr } = await supabaseAdmin.storage
         .from("audition-videos")
-        .createSignedUrl(take.video_path, 60 * 30);
+        .createSignedUrl(take.video_path, 60 * 60);
       if (signErr || !signed) throw new Error("Could not create signed URL for video");
-
-      // Download the file and convert to base64 for inline_data — most reliable for Gemini through the gateway.
-      const videoResp = await fetch(signed.signedUrl);
-      if (!videoResp.ok) throw new Error(`Could not fetch video (${videoResp.status})`);
-      const videoBuf = await videoResp.arrayBuffer();
-      // Cap to ~20MB inline; bigger files we still try but warn.
-      const sizeMb = videoBuf.byteLength / (1024 * 1024);
-      if (sizeMb > 25) {
-        throw new Error(
-          `Video is ${sizeMb.toFixed(1)}MB. Please upload a clip under 25MB for now.`,
-        );
-      }
-      const base64 = btoa(
-        new Uint8Array(videoBuf).reduce((acc, b) => acc + String.fromCharCode(b), ""),
-      );
-      const mimeType = videoResp.headers.get("content-type") || "video/mp4";
 
       const briefBlock = audition.brief
         ? `CASTING BRIEF (${audition.brief_source}):\n${audition.brief}`
@@ -189,12 +273,13 @@ export const processTake = createServerFn({ method: "POST" })
         `Audition title: ${audition.title}`,
         briefBlock,
         signalsBlock,
-        "Watch and listen to the attached self-tape, then submit a structured report via the submit_audition_report tool. Be specific and constructive.",
+        "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Be specific, prioritised, and constructive.",
       ].join("\n\n");
 
       const apiKey = process.env.LOVABLE_API_KEY;
       if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
+      // Send the signed URL directly — avoids inlining base64 for huge files.
       const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -209,10 +294,7 @@ export const processTake = createServerFn({ method: "POST" })
               role: "user",
               content: [
                 { type: "text", text: userText },
-                {
-                  type: "image_url",
-                  image_url: { url: `data:${mimeType};base64,${base64}` },
-                },
+                { type: "image_url", image_url: { url: signed.signedUrl } },
               ],
             },
           ],
@@ -222,12 +304,9 @@ export const processTake = createServerFn({ method: "POST" })
       });
 
       if (!aiResp.ok) {
-        if (aiResp.status === 429) {
-          throw new Error("Rate limited — please try again in a minute.");
-        }
-        if (aiResp.status === 402) {
+        if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
+        if (aiResp.status === 402)
           throw new Error("AI credits exhausted on this workspace. Add funds to continue.");
-        }
         const t = await aiResp.text();
         console.error("AI gateway error", aiResp.status, t.slice(0, 500));
         throw new Error(`AI gateway error (${aiResp.status})`);
@@ -245,7 +324,7 @@ export const processTake = createServerFn({ method: "POST" })
         throw new Error("AI returned malformed JSON");
       }
 
-      // Apply hard arbitration rules
+      // Arbitration: hard audio cap.
       let overall = report.overall_score as number;
       const audioScore = report.scores?.audio ?? 100;
       if (audioScore < 50 && overall > 65) overall = 65;
@@ -258,10 +337,11 @@ export const processTake = createServerFn({ method: "POST" })
           scores: report.scores,
           overall_score: overall,
           confidence: report.confidence,
+          error_message: null,
         })
         .eq("id", takeId);
 
-      // Update audition mode if it was set to baseline but a brief was used in this run
+      // Sync audition mode if the AI resolved it differently from the initial guess.
       await supabaseAdmin
         .from("auditions")
         .update({ mode: report.mode })
@@ -277,4 +357,68 @@ export const processTake = createServerFn({ method: "POST" })
         .eq("id", takeId);
       return { ok: false, error: message };
     }
+  });
+
+// Replace the video file for an existing take and re-run processing.
+// Used to recover from failed or stuck takes without creating a new take row.
+export const replaceTakeVideo = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        takeId: z.string().uuid(),
+        newVideoPath: z.string().min(1).max(500),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        signals: z.any().optional(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        checklist: z.any().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    const { takeId, newVideoPath, signals, checklist } = data;
+
+    const { data: take, error: takeErr } = await supabaseAdmin
+      .from("takes")
+      .select("id, video_path")
+      .eq("id", takeId)
+      .single();
+    if (takeErr || !take) return { ok: false, error: "Take not found" };
+
+    // Best-effort delete of the old file so we don't leak storage.
+    if (take.video_path && take.video_path !== newVideoPath) {
+      await supabaseAdmin.storage.from("audition-videos").remove([take.video_path]).catch(() => {});
+    }
+
+    await supabaseAdmin
+      .from("takes")
+      .update({
+        video_path: newVideoPath,
+        status: "pending",
+        error_message: null,
+        report: null,
+        scores: null,
+        overall_score: null,
+        confidence: null,
+        signals: signals ?? null,
+        checklist: checklist ?? null,
+      })
+      .eq("id", takeId);
+
+    // Re-kick processing.
+    await processTake({ data: { takeId } }).catch((e) => {
+      console.error("replaceTakeVideo: re-process failed", e);
+    });
+
+    return { ok: true };
+  });
+
+// Manually reset a stuck/errored take so the user can retry or replace it.
+export const resetTake = createServerFn({ method: "POST" })
+  .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    await supabaseAdmin
+      .from("takes")
+      .update({ status: "error", error_message: "Cancelled by user — ready to replace." })
+      .eq("id", data.takeId);
+    return { ok: true };
   });
