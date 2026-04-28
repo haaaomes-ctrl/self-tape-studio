@@ -287,9 +287,11 @@ async function pickAnalysisSource(
 }
 
 export const processTake = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) => inputSchema.parse(data))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { takeId, allowOriginal } = data;
+    await assertTakeOwnership(takeId, context.userId, "processTake");
 
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
