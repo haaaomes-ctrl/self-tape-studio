@@ -298,6 +298,23 @@ function FailedTakeView({ take }: { take: Take }) {
         >
           Retry analysis
         </Button>
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await processTake({ data: { takeId: take.id, allowOriginal: true } });
+              toast.success("Retrying with highest quality");
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Retry failed");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Retry with highest quality
+        </Button>
         {stuck && (
           <Button
             variant="ghost"
