@@ -211,12 +211,21 @@ function FailedTakeView({ take }: { take: Take }) {
       } catch {
         // best-effort
       }
-      const ext = f.name.split(".").pop()?.toLowerCase() || "mp4";
-      const path = `${user.id}/${take.id}-retake-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("audition-videos")
-        .upload(path, f, { contentType: f.type || "video/mp4" });
-      if (upErr) throw upErr;
+
+      // Pre-upload preflight.
+      if (checklist) {
+        const pf = preflightVideoBasics(
+          f,
+          checklist.duration.seconds,
+          checklist.audio.peak,
+        );
+        if (!pf.ok) {
+          toast.error(pf.error ?? "Video failed pre-upload checks");
+          return;
+        }
+        if (pf.warning) toast.warning(pf.warning);
+      }
+
       const signals = checklist
         ? {
             orientation: checklist.orientation.value,
@@ -228,11 +237,13 @@ function FailedTakeView({ take }: { take: Take }) {
             audio_rms: checklist.audio.rms,
           }
         : null;
-      await replaceTakeVideo({
-        data: { takeId: take.id, newVideoPath: path, signals, checklist },
-      });
-      // Hand the new file off to Mux for transcoding; the webhook fires processTake.
-      await ingestTakeToMux({ data: { takeId: take.id } });
+
+      // Reset the take row, then ask Mux for a fresh direct-upload URL,
+      // then PUT the new file straight to Mux.
+      await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      await uploadFileToMux(uploadUrl, f);
       toast.success("Replacement uploaded — optimising and analysing now");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Replace failed");
