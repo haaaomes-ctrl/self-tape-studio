@@ -83,7 +83,22 @@ function NewAuditionPage() {
       return;
     }
 
+    // Pre-upload preflight: hard reject oversized / overlong files.
+    if (checklist) {
+      const pf = preflightVideoBasics(
+        file,
+        checklist.duration.seconds,
+        checklist.audio.peak,
+      );
+      if (!pf.ok) {
+        toast.error(pf.error ?? "Video failed pre-upload checks");
+        return;
+      }
+      if (pf.warning) toast.warning(pf.warning);
+    }
+
     setSubmitting(true);
+    setUploadPct(0);
     try {
       // 1. Determine brief
       let brief: string | null = null;
@@ -118,15 +133,7 @@ function NewAuditionPage() {
         .single();
       if (audErr || !aud) throw audErr ?? new Error("Could not create audition");
 
-      // 3. Upload file under user-id folder so storage RLS passes
-      const ext = file.name.split(".").pop()?.toLowerCase() || "mp4";
-      const path = `${user.id}/${aud.id}/take-1-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("audition-videos")
-        .upload(path, file, { contentType: file.type || "video/mp4", upsert: false });
-      if (upErr) throw upErr;
-
-      // 4. Insert take
+      // 3. Insert take row (no video_path — Mux owns the file)
       const signals = checklist
         ? {
             orientation: checklist.orientation.value,
@@ -146,8 +153,10 @@ function NewAuditionPage() {
             audition_id: aud.id,
             user_id: user.id,
             take_number: 1,
-            video_path: path,
+            video_path: null,
             status: "pending",
+            mux_status: "uploading",
+            processing_phase: "uploading",
             signals: signals as never,
             checklist: (checklist ?? null) as never,
           },
@@ -156,11 +165,11 @@ function NewAuditionPage() {
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
 
-      // 5. Hand the file off to Mux for transcoding. The webhook will fire
-      //    `processTake` once the optimised renditions are ready.
-      ingestTakeToMux({ data: { takeId: take.id } }).catch((err) => {
-        console.error("ingestTakeToMux error", err);
-      });
+      // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+
+      // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
+      await uploadFileToMux(uploadUrl, file, setUploadPct);
 
       toast.success("Uploaded — optimising and analysing your tape");
       navigate({ to: "/audition/$auditionId", params: { auditionId: aud.id } });
@@ -168,6 +177,7 @@ function NewAuditionPage() {
       const msg = err instanceof Error ? err.message : "Upload failed";
       toast.error(msg);
       setSubmitting(false);
+      setUploadPct(0);
     }
   }
 
