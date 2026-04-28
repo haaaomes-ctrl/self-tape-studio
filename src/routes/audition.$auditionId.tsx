@@ -6,12 +6,14 @@ import { SiteHeader } from "@/components/site-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { processTake, replaceTakeVideo, resetTake } from "@/server/process-take.functions";
-import { ingestTakeToMux } from "@/server/mux.functions";
+import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { processTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
+import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/audition/$auditionId")({
