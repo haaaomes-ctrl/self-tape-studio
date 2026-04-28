@@ -382,11 +382,22 @@ function NewAuditionPage() {
             )}
           </section>
 
+          {submitting && uploadPct > 0 && uploadPct < 100 && (
+            <div className="space-y-2">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="text-muted-foreground">Uploading to secure storage…</span>
+                <span className="tabular-nums font-medium">{uploadPct}%</span>
+              </div>
+              <Progress value={uploadPct} />
+            </div>
+          )}
+
           <div className="flex justify-end">
             <Button size="lg" onClick={submit} disabled={!file || submitting || checking}>
               {submitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading…
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {uploadPct >= 100 ? "Finalising…" : "Uploading…"}
                 </>
               ) : (
                 "Upload & analyse"
