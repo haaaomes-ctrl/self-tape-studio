@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       auditions: {
         Row: {
+          anon_id: string | null
           brief: string | null
           brief_source: string
           created_at: string
@@ -23,9 +24,10 @@ export type Database = {
           mode: string
           title: string
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
+          anon_id?: string | null
           brief?: string | null
           brief_source?: string
           created_at?: string
@@ -33,9 +35,10 @@ export type Database = {
           mode?: string
           title?: string
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
+          anon_id?: string | null
           brief?: string | null
           brief_source?: string
           created_at?: string
@@ -43,13 +46,14 @@ export type Database = {
           mode?: string
           title?: string
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: []
       }
       takes: {
         Row: {
           analysis_tier: string | null
+          anon_id: string | null
           attempt_count: number
           audition_id: string
           checklist: Json | null
@@ -72,11 +76,12 @@ export type Database = {
           status: string
           take_number: number
           updated_at: string
-          user_id: string
+          user_id: string | null
           video_path: string | null
         }
         Insert: {
           analysis_tier?: string | null
+          anon_id?: string | null
           attempt_count?: number
           audition_id: string
           checklist?: Json | null
@@ -99,11 +104,12 @@ export type Database = {
           status?: string
           take_number?: number
           updated_at?: string
-          user_id: string
+          user_id?: string | null
           video_path?: string | null
         }
         Update: {
           analysis_tier?: string | null
+          anon_id?: string | null
           attempt_count?: number
           audition_id?: string
           checklist?: Json | null
@@ -126,7 +132,7 @@ export type Database = {
           status?: string
           take_number?: number
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
           video_path?: string | null
         }
         Relationships: [
