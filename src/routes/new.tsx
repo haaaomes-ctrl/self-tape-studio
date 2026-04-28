@@ -319,7 +319,8 @@ function NewAuditionPage() {
           <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
             <h2 className="font-display text-lg font-semibold">Upload video</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              MP4 or MOV, up to 750MB. Landscape preferred. We'll run a quick pre-upload check.
+              MP4 or MOV, up to 750MB. Large files are automatically optimised for fast,
+              accurate feedback — your performance is not altered.
             </p>
             <div className="mt-5 flex items-center gap-3">
               <input

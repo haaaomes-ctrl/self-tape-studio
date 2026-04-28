@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
 import { processTake, replaceTakeVideo, resetTake } from "@/server/process-take.functions";
+import { ingestTakeToMux } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/audition/$auditionId")({
