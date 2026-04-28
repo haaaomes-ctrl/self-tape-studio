@@ -333,6 +333,22 @@ function FailedTakeView({ take }: { take: Take }) {
   );
 }
 
+function PhaseStep({ label, active, done }: { label: string; active: boolean; done: boolean }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span
+        className={cn(
+          "inline-block h-2 w-2 rounded-full",
+          done ? "bg-success" : active ? "bg-primary animate-pulse" : "bg-border",
+        )}
+      />
+      <span className={cn(done || active ? "text-foreground" : "text-muted-foreground")}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
     const phase = take.processing_phase ?? "uploading";
