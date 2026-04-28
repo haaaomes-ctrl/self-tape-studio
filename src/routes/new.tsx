@@ -173,21 +173,33 @@ function NewAuditionPage() {
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
+      takeIdRef.current = take.id;
 
       // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
       const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
 
       // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
-      await uploadFileToMux(uploadUrl, file, setUploadPct);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
 
       toast.success("Uploaded — optimising and analysing your tape");
       navigate({ to: "/audition/$auditionId", params: { auditionId: aud.id } });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      toast.error(msg);
+      if (err instanceof UploadCancelledError) {
+        toast.message("Upload cancelled");
+        if (takeIdRef.current) {
+          resetTake({ data: { takeId: takeIdRef.current } }).catch(() => {});
+        }
+      } else {
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        toast.error(msg);
+      }
       setSubmitting(false);
       setUploadPct(0);
+    } finally {
+      abortRef.current = null;
     }
   }
 
