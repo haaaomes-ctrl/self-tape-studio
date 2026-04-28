@@ -8,6 +8,7 @@ import { ChecklistView } from "@/components/checklist-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -20,7 +21,8 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
-import { ingestTakeToMux } from "@/server/mux.functions";
+import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { createMuxDirectUpload } from "@/server/mux.functions";
 
 export const Route = createFileRoute("/new")({
   head: () => ({ meta: [{ title: "New audition — SelfTape" }] }),
