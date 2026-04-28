@@ -332,7 +332,28 @@ function TakeView({ take }: { take: Take }) {
     { key: "audio", label: "Audio" },
     { key: "technical", label: "Technical" },
     { key: "brief_adherence", label: r.mode === "brief" ? "Brief fit" : "Standards" },
+    { key: "professional_presentation", label: "Professional presentation" },
   ];
+
+  const components: Array<{ type: string; weight: number; score: number; note: string }> =
+    Array.isArray(r.detected_components) ? r.detected_components : [];
+  const showComponents = components.length > 1;
+
+  const brk = r.brief_adherence_breakdown as
+    | {
+        material_compliance: number;
+        technical_compliance: number;
+        instruction_precision: number;
+        professionalism_signals: number;
+        note?: string;
+      }
+    | undefined;
+
+  const riskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }> = Array.isArray(
+    r.submission_risk_flags,
+  )
+    ? r.submission_risk_flags
+    : [];
 
   return (
     <div className="space-y-6">
