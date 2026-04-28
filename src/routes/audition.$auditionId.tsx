@@ -243,7 +243,7 @@ function FailedTakeView({ take }: { take: Take }) {
       // Reset the take row, then ask Mux for a fresh direct-upload URL,
       // then PUT the new file straight to Mux.
       await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id }, headers: await authHeaders() });
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
       await uploadFileToMux(uploadUrl, f);
       toast.success("Replacement uploaded — optimising and analysing now");
@@ -823,7 +823,7 @@ function AddTakeBlock({
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
 
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id }, headers: await authHeaders() });
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
       await uploadFileToMux(uploadUrl, file, setUploadPct);
 
