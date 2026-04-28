@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
+import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { processTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
