@@ -765,6 +765,12 @@ function AddTakeBlock({
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const takeIdRef = useRef<string | null>(null);
+
+  function cancelUpload() {
+    abortRef.current?.abort();
+  }
 
   async function pick(f: File | null) {
     setFile(f);
@@ -821,18 +827,29 @@ function AddTakeBlock({
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
+      takeIdRef.current = take.id;
 
       const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
-      await uploadFileToMux(uploadUrl, file, setUploadPct);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
 
       toast.success(`Take ${nextNumber} uploaded — optimising and analysing now`);
       onUploaded();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+      if (err instanceof UploadCancelledError) {
+        toast.message("Upload cancelled");
+        if (takeIdRef.current) {
+          resetTake({ data: { takeId: takeIdRef.current } }).catch(() => {});
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : "Upload failed");
+      }
     } finally {
       setBusy(false);
       setUploadPct(0);
+      abortRef.current = null;
     }
   }
 
