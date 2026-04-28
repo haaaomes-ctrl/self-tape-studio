@@ -334,7 +334,7 @@ export const processTake = createServerFn({ method: "POST" })
               role: "user",
               content: [
                 { type: "text", text: userText },
-                { type: "image_url", image_url: { url: signed.signedUrl } },
+                { type: "image_url", image_url: { url: dataUrl } },
               ],
             },
           ],
