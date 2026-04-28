@@ -50,6 +50,14 @@ function NewAuditionPage() {
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const takeIdRef = useRef<string | null>(null);
+
+  function cancelUpload() {
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+  }
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
