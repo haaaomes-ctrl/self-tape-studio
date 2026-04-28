@@ -22,7 +22,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux } from "@/lib/mux-upload";
-import { authHeaders } from "@/lib/server-auth";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 
 export const Route = createFileRoute("/new")({
@@ -167,7 +166,7 @@ function NewAuditionPage() {
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
 
       // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id }, headers: await authHeaders() });
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
 
       // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
