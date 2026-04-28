@@ -270,7 +270,7 @@ export async function runProcessTake(
   const { data: take, error: takeErr } = await supabaseAdmin
     .from("takes")
     .select(
-      "id, user_id, audition_id, signals, checklist, status, attempt_count, mux_status, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url",
+      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url",
     )
     .eq("id", takeId)
     .single();
@@ -279,6 +279,13 @@ export async function runProcessTake(
     return { ok: false, error: "Take not found" };
   }
   if (take.status === "complete") {
+    return { ok: true, alreadyDone: true };
+  }
+  // Idempotency: if another worker is already actively analysing this take
+  // (and it hasn't gone stale), bail out. The stale-analysis reconciler will
+  // re-trigger us if needed.
+  if (take.processing_phase === "analysing" && take.status === "processing") {
+    console.log("runProcessTake: take already in active analysis, skipping", { takeId });
     return { ok: true, alreadyDone: true };
   }
 
@@ -292,6 +299,10 @@ export async function runProcessTake(
     return { ok: false, error: "Audition not found" };
   }
 
+  // Flip into the active analysing phase NOW that work is actually starting.
+  // The webhook only marks takes as analysis_pending; this handler is the
+  // single point where analysing is set, ensuring processing_phase reflects
+  // real in-flight work.
   await supabaseAdmin
     .from("takes")
     .update({
