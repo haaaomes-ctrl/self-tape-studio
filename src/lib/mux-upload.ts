@@ -1,12 +1,24 @@
 // Direct upload helper: PUTs a File to a Mux direct-upload URL.
 // Mux uses a signed Google Cloud Storage URL that accepts a single PUT for
 // files up to a few GB. We stream progress via XHR so the UI can show %.
+export class UploadCancelledError extends Error {
+  constructor() {
+    super("Upload cancelled");
+    this.name = "UploadCancelledError";
+  }
+}
+
 export function uploadFileToMux(
   url: string,
   file: File,
   onProgress?: (pct: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new UploadCancelledError());
+      return;
+    }
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
     xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
@@ -20,6 +32,9 @@ export function uploadFileToMux(
       else reject(new Error(`Upload failed (${xhr.status})`));
     };
     xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.onabort = () => reject(new UploadCancelledError());
+    const onAbort = () => xhr.abort();
+    signal?.addEventListener("abort", onAbort, { once: true });
     xhr.send(file);
   });
 }
