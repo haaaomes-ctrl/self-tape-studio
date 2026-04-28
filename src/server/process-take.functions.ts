@@ -1,9 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { startOfDay } from "date-fns";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { runProcessTake } from "./process-take.server";
+
+const DAILY_ANALYSIS_CAP = 5;
+
+async function assertUnderDailyCap(userId: string): Promise<void> {
+  const since = startOfDay(new Date()).toISOString();
+  const { count, error } = await supabaseAdmin
+    .from("takes")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", since);
+  if (error) throw new Error("Could not check daily usage");
+  if ((count ?? 0) >= DAILY_ANALYSIS_CAP) {
+    throw new Error(
+      `Daily analysis limit reached (${DAILY_ANALYSIS_CAP}/day). Try again tomorrow.`,
+    );
+  }
+}
 
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin
