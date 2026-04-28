@@ -57,6 +57,7 @@ export const retryProcessTake = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertTakeOwnership(data.takeId, context.userId, "retryProcessTake");
+    await assertUnderDailyCap(context.userId);
     return runProcessTake(data.takeId, data.allowOriginal);
   });
 
