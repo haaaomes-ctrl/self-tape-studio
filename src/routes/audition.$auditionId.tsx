@@ -32,6 +32,7 @@ interface Take {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   checklist: any;
   created_at: string;
+  mux_status?: string | null;
 }
 
 interface Audition {
