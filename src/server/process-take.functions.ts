@@ -322,29 +322,53 @@ export const processTake = createServerFn({ method: "POST" })
       const apiKey = process.env.LOVABLE_API_KEY;
       if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-      const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
-          messages: [
-            { role: "system", content: buildSystemPrompt() },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: userText },
-                { type: "image_url", image_url: { url: videoUrl } },
-              ],
-            },
-          ],
-          tools: [REPORT_TOOL],
-          tool_choice: { type: "function", function: { name: "submit_audition_report" } },
-          max_tokens: 8192,
-        }),
-      });
+      const callAI = (mediaPart: { type: "image_url"; image_url: { url: string } }) =>
+        fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-pro",
+            messages: [
+              { role: "system", content: buildSystemPrompt() },
+              {
+                role: "user",
+                content: [{ type: "text", text: userText }, mediaPart],
+              },
+            ],
+            tools: [REPORT_TOOL],
+            tool_choice: { type: "function", function: { name: "submit_audition_report" } },
+            max_tokens: 8192,
+          }),
+        });
+
+      // First try: pass the public Mux URL (or signed-url fallback) directly.
+      let aiResp = await callAI({ type: "image_url", image_url: { url: videoUrl } });
+
+      // If the gateway rejects the URL (some gateways only accept inline media for
+      // video), download the (already-compressed) rendition and inline it as base64.
+      if (!aiResp.ok && aiResp.status === 400) {
+        const errText = await aiResp.text();
+        console.warn("AI gateway rejected URL; retrying with inline base64", errText.slice(0, 200));
+        const dl = await fetch(videoUrl);
+        if (!dl.ok) throw new Error(`Could not download rendition (${dl.status})`);
+        const buf = new Uint8Array(await dl.arrayBuffer());
+        // Safety: only inline if reasonably small (Mux 'medium' MP4s typically are).
+        if (buf.byteLength > 120 * 1024 * 1024) {
+          throw new Error(
+            `Rendition is ${(buf.byteLength / 1024 / 1024).toFixed(0)}MB — too large to inline. Please retry; we'll try a smaller tier next.`,
+          );
+        }
+        let bin = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < buf.length; i += CHUNK) {
+          bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + CHUNK)));
+        }
+        const dataUrl = `data:video/mp4;base64,${btoa(bin)}`;
+        aiResp = await callAI({ type: "image_url", image_url: { url: dataUrl } });
+      }
 
       if (!aiResp.ok) {
         if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
