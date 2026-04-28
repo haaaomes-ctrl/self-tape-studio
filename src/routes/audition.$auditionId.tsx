@@ -35,6 +35,7 @@ interface Take {
   checklist: any;
   created_at: string;
   mux_status?: string | null;
+  processing_phase?: string | null;
 }
 
 interface Audition {
