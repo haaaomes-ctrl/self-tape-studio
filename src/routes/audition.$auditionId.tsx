@@ -494,6 +494,44 @@ function TakeView({ take }: { take: Take }) {
         </div>
       </div>
 
+      {/* Brief adherence breakdown */}
+      {brk && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <h3 className="font-display text-base font-semibold">
+            {r.mode === "brief" ? "Brief adherence breakdown" : "Professional standards breakdown"}
+          </h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[
+              { key: "material_compliance", label: "Material compliance", weight: "35%" },
+              { key: "technical_compliance", label: "Technical compliance", weight: "35%" },
+              { key: "instruction_precision", label: "Instruction precision", weight: "20%" },
+              { key: "professionalism_signals", label: "Professionalism", weight: "10%" },
+            ].map((sub) => {
+              const v = brk[sub.key as keyof typeof brk] as number | undefined;
+              if (typeof v !== "number") return null;
+              return (
+                <div key={sub.key} className="rounded-md border border-border bg-secondary/30 p-3">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-xs font-medium">{sub.label}</span>
+                    <span className="text-xs text-muted-foreground">{sub.weight}</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-display text-xl font-semibold tabular-nums">{v}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${v}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {brk.note && <p className="mt-4 text-xs text-muted-foreground">{brk.note}</p>}
+        </div>
+      )}
+
       {/* Fix first */}
       {r.fix_first && (
         <div className="rounded-2xl border border-primary/30 bg-primary/5 p-6">
