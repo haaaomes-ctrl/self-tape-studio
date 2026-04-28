@@ -45,6 +45,12 @@ export const Route = createRootRoute({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "SelfTape — Honest feedback on your audition tape" },
+      { name: "description", content: "Self-Tape Studio provides AI-powered feedback for audition tapes." },
+      { property: "og:description", content: "Self-Tape Studio provides AI-powered feedback for audition tapes." },
+      { name: "twitter:description", content: "Self-Tape Studio provides AI-powered feedback for audition tapes." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9798fe19-4dbb-45b5-9487-32c83e228598/id-preview-b7d444ff--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app-1777409239157.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9798fe19-4dbb-45b5-9487-32c83e228598/id-preview-b7d444ff--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app-1777409239157.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
