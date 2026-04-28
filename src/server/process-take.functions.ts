@@ -357,15 +357,23 @@ export const processTake = createServerFn({ method: "POST" })
       }
 
       const json = await aiResp.json();
-      const toolCall = json.choices?.[0]?.message?.tool_calls?.[0];
+      const choice = json.choices?.[0];
+      const toolCall = choice?.message?.tool_calls?.[0];
       if (!toolCall?.function?.arguments) {
         throw new Error("AI did not return a structured report");
       }
       let report;
       try {
         report = JSON.parse(toolCall.function.arguments);
-      } catch {
-        throw new Error("AI returned malformed JSON");
+      } catch (parseErr) {
+        // Most common cause: model hit max_tokens mid-JSON. Surface a clear, actionable message.
+        if (choice?.finish_reason === "length") {
+          throw new Error(
+            "The AI response was cut off before it finished writing the report. Please retry — if it keeps failing, try a shorter take.",
+          );
+        }
+        console.error("AI JSON parse failed", parseErr, toolCall.function.arguments?.slice(-300));
+        throw new Error("The AI returned an incomplete report. Please retry.");
       }
 
       // Arbitration: hard audio cap.
