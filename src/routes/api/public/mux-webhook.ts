@@ -24,6 +24,24 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const receivedAt = new Date().toISOString();
+        // Sanitised headers: drop signature/auth values, keep names + safe metadata.
+        const sanitisedHeaders: Record<string, string> = {};
+        request.headers.forEach((value, key) => {
+          const lower = key.toLowerCase();
+          if (lower === "mux-signature" || lower === "authorization" || lower === "cookie") {
+            sanitisedHeaders[key] = "[redacted]";
+          } else {
+            sanitisedHeaders[key] = value;
+          }
+        });
+        console.log("MUX WEBHOOK RECEIVED", {
+          timestamp: receivedAt,
+          method: request.method,
+          url: request.url,
+          headers: sanitisedHeaders,
+        });
+
         const secret = process.env.MUX_WEBHOOK_SECRET;
         if (!secret) {
           console.error("MUX_WEBHOOK_SECRET is not configured — rejecting webhook");
@@ -32,15 +50,33 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
 
         const sigHeader = request.headers.get("mux-signature");
         if (!sigHeader) {
-          console.warn("Mux webhook missing mux-signature header");
+          console.warn("Mux webhook missing mux-signature header", { timestamp: receivedAt });
           return new Response("missing signature", { status: 401 });
         }
 
         const rawBody = await request.text();
+        console.log("MUX WEBHOOK RAW BODY", {
+          timestamp: receivedAt,
+          length: rawBody.length,
+          body: rawBody,
+        });
 
+        // Surface event.type as early as possible (pre-verification peek for logging only).
+        try {
+          const peek = JSON.parse(rawBody) as { type?: string };
+          console.log("MUX WEBHOOK EVENT TYPE (pre-verify)", {
+            timestamp: receivedAt,
+            type: peek?.type ?? "(unknown)",
+          });
+        } catch {
+          console.warn("MUX WEBHOOK body is not valid JSON (pre-verify)", { timestamp: receivedAt });
+        }
+
+        console.log("MUX WEBHOOK verifying signature…", { timestamp: receivedAt });
         try {
           const mux = getMux();
           mux.webhooks.verifySignature(rawBody, { "mux-signature": sigHeader }, secret);
+          console.log("MUX WEBHOOK signature verified ✓", { timestamp: receivedAt });
         } catch (err) {
           console.error("Mux webhook signature verification failed", err);
           return new Response("invalid signature", { status: 401 });
