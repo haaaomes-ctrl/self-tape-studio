@@ -466,6 +466,7 @@ export const processTake = createServerFn({ method: "POST" })
 // Clears Mux + analysis state. The client then calls createMuxDirectUpload
 // to get a fresh upload URL for the same take row.
 export const resetTakeForReupload = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z
       .object({
@@ -477,8 +478,9 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
       })
       .parse(data),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { takeId, signals, checklist } = data;
+    await assertTakeOwnership(takeId, context.userId, "resetTakeForReupload");
     await supabaseAdmin
       .from("takes")
       .update({
