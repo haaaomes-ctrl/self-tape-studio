@@ -1,7 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { getMux, muxMp4Url } from "./mux.server";
+
+async function assertTakeOwnership(takeId: string, userId: string, op: string) {
+  const { data, error } = await supabaseAdmin
+    .from("takes")
+    .select("user_id")
+    .eq("id", takeId)
+    .single();
+  if (error || !data) {
+    console.warn(`[auth] ${op} denied — take ${takeId} not found for user ${userId}`);
+    throw new Response("Not found", { status: 404 });
+  }
+  if (data.user_id !== userId) {
+    console.warn(
+      `[auth] ${op} forbidden — user ${userId} attempted to access take ${takeId} owned by ${data.user_id}`,
+    );
+    throw new Response("Forbidden", { status: 403 });
+  }
+  console.log(`[auth] ${op} authorized — user ${userId} on take ${takeId}`);
+}
 
 const inputSchema = z.object({
   takeId: z.string().uuid(),
@@ -266,9 +287,11 @@ async function pickAnalysisSource(
 }
 
 export const processTake = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) => inputSchema.parse(data))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { takeId, allowOriginal } = data;
+    await assertTakeOwnership(takeId, context.userId, "processTake");
 
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
@@ -443,6 +466,7 @@ export const processTake = createServerFn({ method: "POST" })
 // Clears Mux + analysis state. The client then calls createMuxDirectUpload
 // to get a fresh upload URL for the same take row.
 export const resetTakeForReupload = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z
       .object({
@@ -454,8 +478,9 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
       })
       .parse(data),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { takeId, signals, checklist } = data;
+    await assertTakeOwnership(takeId, context.userId, "resetTakeForReupload");
     await supabaseAdmin
       .from("takes")
       .update({
@@ -485,8 +510,10 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
 
 // Cancel a stuck/errored take.
 export const resetTake = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    await assertTakeOwnership(data.takeId, context.userId, "resetTake");
     await supabaseAdmin
       .from("takes")
       .update({
