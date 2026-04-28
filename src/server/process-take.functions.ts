@@ -1,7 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { getMux, muxMp4Url } from "./mux.server";
+
+async function assertTakeOwnership(takeId: string, userId: string, op: string) {
+  const { data, error } = await supabaseAdmin
+    .from("takes")
+    .select("user_id")
+    .eq("id", takeId)
+    .single();
+  if (error || !data) {
+    console.warn(`[auth] ${op} denied — take ${takeId} not found for user ${userId}`);
+    throw new Response("Not found", { status: 404 });
+  }
+  if (data.user_id !== userId) {
+    console.warn(
+      `[auth] ${op} forbidden — user ${userId} attempted to access take ${takeId} owned by ${data.user_id}`,
+    );
+    throw new Response("Forbidden", { status: 403 });
+  }
+  console.log(`[auth] ${op} authorized — user ${userId} on take ${takeId}`);
+}
 
 const inputSchema = z.object({
   takeId: z.string().uuid(),
