@@ -20,19 +20,25 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
     handlers: {
       POST: async ({ request }) => {
         const secret = process.env.MUX_WEBHOOK_SECRET;
+        if (!secret) {
+          console.error("MUX_WEBHOOK_SECRET is not configured — rejecting webhook");
+          return new Response("webhook secret not configured", { status: 401 });
+        }
+
+        const sigHeader = request.headers.get("mux-signature");
+        if (!sigHeader) {
+          console.warn("Mux webhook missing mux-signature header");
+          return new Response("missing signature", { status: 401 });
+        }
+
         const rawBody = await request.text();
 
-        if (secret) {
-          const sigHeader = request.headers.get("mux-signature") ?? "";
-          try {
-            const mux = getMux();
-            mux.webhooks.verifySignature(rawBody, { "mux-signature": sigHeader }, secret);
-          } catch (err) {
-            console.error("Mux webhook signature failed", err);
-            return new Response("invalid signature", { status: 401 });
-          }
-        } else {
-          console.warn("MUX_WEBHOOK_SECRET not set — accepting webhook unverified");
+        try {
+          const mux = getMux();
+          mux.webhooks.verifySignature(rawBody, { "mux-signature": sigHeader }, secret);
+        } catch (err) {
+          console.error("Mux webhook signature verification failed", err);
+          return new Response("invalid signature", { status: 401 });
         }
 
         let payload: { type?: string; data?: Record<string, unknown> };
