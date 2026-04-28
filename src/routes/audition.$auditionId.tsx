@@ -748,6 +748,7 @@ function AddTakeBlock({
   const [file, setFile] = useState<File | null>(null);
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
 
   async function pick(f: File | null) {
     setFile(f);
