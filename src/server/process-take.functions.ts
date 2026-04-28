@@ -252,12 +252,52 @@ export const processTake = createServerFn({ method: "POST" })
       .eq("id", takeId);
 
     try {
-      // Long-lived signed URL. We pass the URL directly to Gemini (via Lovable AI Gateway) so
-      // large tapes (up to ~750MB) don't have to be downloaded + base64-encoded inside the Worker.
+      // The Lovable AI Gateway (OpenAI-compatible) does NOT accept remote video URLs in
+      // `image_url` — it rejects non-image URLs with HTTP 400. Gemini does, however, accept
+      // inline video when the content part is a base64 data URL with a video MIME type.
+      // So we download the file from storage and inline it as `data:video/<ext>;base64,...`.
       const { data: signed, error: signErr } = await supabaseAdmin.storage
         .from("audition-videos")
         .createSignedUrl(take.video_path, 60 * 60);
       if (signErr || !signed) throw new Error("Could not create signed URL for video");
+
+      const videoResp = await fetch(signed.signedUrl);
+      if (!videoResp.ok) throw new Error(`Could not download video (${videoResp.status})`);
+      const videoBuf = await videoResp.arrayBuffer();
+
+      // Inline-video hard cap for the gateway request. ~100MB keeps us safely under
+      // request-body limits on the Worker / gateway path. Users can still upload up to
+      // 750MB — they'll just see a clear message asking them to compress for analysis.
+      const MAX_INLINE_BYTES = 100 * 1024 * 1024;
+      if (videoBuf.byteLength > MAX_INLINE_BYTES) {
+        throw new Error(
+          `Video is ${(videoBuf.byteLength / 1024 / 1024).toFixed(0)}MB — too large to analyse. Please export a compressed version under 100MB (720p H.264 is ideal) and re-upload.`,
+        );
+      }
+
+      // Infer mime from the stored path; default to mp4.
+      const ext = (take.video_path.split(".").pop() || "mp4").toLowerCase();
+      const mimeMap: Record<string, string> = {
+        mp4: "video/mp4",
+        mov: "video/quicktime",
+        webm: "video/webm",
+        m4v: "video/mp4",
+        avi: "video/x-msvideo",
+      };
+      const videoMime = mimeMap[ext] ?? "video/mp4";
+
+      // Base64-encode in chunks to avoid "Maximum call stack exceeded" on large buffers.
+      const bytes = new Uint8Array(videoBuf);
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(
+          null,
+          Array.from(bytes.subarray(i, i + CHUNK)),
+        );
+      }
+      const base64 = btoa(binary);
+      const dataUrl = `data:${videoMime};base64,${base64}`;
 
       const briefBlock = audition.brief
         ? `CASTING BRIEF (${audition.brief_source}):\n${audition.brief}`
