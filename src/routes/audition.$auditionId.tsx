@@ -823,7 +823,7 @@ function AddTakeBlock({
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
 
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
+      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id }, headers: await authHeaders() });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
       await uploadFileToMux(uploadUrl, file, setUploadPct);
 
