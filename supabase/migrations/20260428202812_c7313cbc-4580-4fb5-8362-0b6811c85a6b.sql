@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.enforce_daily_takes_cap() FROM PUBLIC, anon, authenticated;
