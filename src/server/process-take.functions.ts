@@ -268,12 +268,12 @@ async function pickAnalysisSource(
 export const processTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => inputSchema.parse(data))
   .handler(async ({ data }) => {
-    const { takeId } = data;
+    const { takeId, allowOriginal } = data;
 
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
       .select(
-        "id, user_id, audition_id, video_path, signals, checklist, status, attempt_count, mux_status, mux_mp4_standard_url, mux_mp4_high_url",
+        "id, user_id, audition_id, signals, checklist, status, attempt_count, mux_status, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url",
       )
       .eq("id", takeId)
       .single();
@@ -297,14 +297,17 @@ export const processTake = createServerFn({ method: "POST" })
 
     await supabaseAdmin
       .from("takes")
-      .update({ status: "processing", error_message: null })
+      .update({
+        status: "processing",
+        processing_phase: "analysing",
+        error_message: null,
+      })
       .eq("id", takeId);
 
     try {
-      const { url: videoUrl, tier } = await pickAnalysisSource(take);
+      const { url: initialUrl, tier } = await pickAnalysisSource(take, allowOriginal);
 
-      // Bump attempt counter + record which tier we tried, so a future retry
-      // walks up the ladder (Standard → High → Original).
+      // Bump attempt counter + record which tier we tried.
       await supabaseAdmin
         .from("takes")
         .update({
@@ -334,7 +337,7 @@ export const processTake = createServerFn({ method: "POST" })
       const apiKey = process.env.LOVABLE_API_KEY;
       if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-      const callAI = (mediaPart: { type: "image_url"; image_url: { url: string } }) =>
+      const callAI = (videoUrl: string) =>
         fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -347,7 +350,10 @@ export const processTake = createServerFn({ method: "POST" })
               { role: "system", content: buildSystemPrompt() },
               {
                 role: "user",
-                content: [{ type: "text", text: userText }, mediaPart],
+                content: [
+                  { type: "text", text: userText },
+                  { type: "image_url", image_url: { url: videoUrl } },
+                ],
               },
             ],
             tools: [REPORT_TOOL],
@@ -356,30 +362,19 @@ export const processTake = createServerFn({ method: "POST" })
           }),
         });
 
-      // First try: pass the public Mux URL (or signed-url fallback) directly.
-      let aiResp = await callAI({ type: "image_url", image_url: { url: videoUrl } });
-
-      // If the gateway rejects the URL (some gateways only accept inline media for
-      // video), download the (already-compressed) rendition and inline it as base64.
-      if (!aiResp.ok && aiResp.status === 400) {
+      // URL-only ingestion. If the gateway rejects on first try (e.g. cached
+      // Mux URL went stale), re-derive a fresh URL from the playback id and
+      // retry once. We never inline base64 — it spikes payload size + cost.
+      let aiResp = await callAI(initialUrl);
+      if (!aiResp.ok && aiResp.status === 400 && take.mux_playback_id) {
         const errText = await aiResp.text();
-        console.warn("AI gateway rejected URL; retrying with inline base64", errText.slice(0, 200));
-        const dl = await fetch(videoUrl);
-        if (!dl.ok) throw new Error(`Could not download rendition (${dl.status})`);
-        const buf = new Uint8Array(await dl.arrayBuffer());
-        // Safety: only inline if reasonably small (Mux 'medium' MP4s typically are).
-        if (buf.byteLength > 120 * 1024 * 1024) {
-          throw new Error(
-            `Rendition is ${(buf.byteLength / 1024 / 1024).toFixed(0)}MB — too large to inline. Please retry; we'll try a smaller tier next.`,
-          );
-        }
-        let bin = "";
-        const CHUNK = 0x8000;
-        for (let i = 0; i < buf.length; i += CHUNK) {
-          bin += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + CHUNK)));
-        }
-        const dataUrl = `data:video/mp4;base64,${btoa(bin)}`;
-        aiResp = await callAI({ type: "image_url", image_url: { url: dataUrl } });
+        console.warn(
+          "AI gateway rejected URL; retrying with fresh Mux URL",
+          errText.slice(0, 200),
+        );
+        const freshQuality = tier === "standard" ? "medium" : "high";
+        const freshUrl = muxMp4Url(take.mux_playback_id, freshQuality);
+        aiResp = await callAI(freshUrl);
       }
 
       if (!aiResp.ok) {
