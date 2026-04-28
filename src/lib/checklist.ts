@@ -94,10 +94,14 @@ export async function analyzeVideoFile(
     const brightnessStatus: "ok" | "warn" | "fail" =
       brightnessVal < 0.18 ? "fail" : brightnessVal < 0.32 ? "warn" : "ok";
 
-    // Audio probe via decodeAudioData on the file (samples whole file but small enough for audition tapes)
+    // Audio probe via decodeAudioData. Skip on very large files — browsers OOM decoding 500MB+.
     let peak = 0;
     let rms = 0;
+    const AUDIO_PROBE_MAX_BYTES = 80 * 1024 * 1024; // 80MB
     try {
+      if (file.size > AUDIO_PROBE_MAX_BYTES) {
+        throw new Error("file too large for in-browser audio probe");
+      }
       const arrayBuf = await file.arrayBuffer();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const Ctx: typeof AudioContext = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;

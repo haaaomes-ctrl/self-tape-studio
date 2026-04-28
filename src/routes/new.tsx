@@ -102,13 +102,15 @@ function NewAuditionPage() {
       // 2. Create audition
       const { data: aud, error: audErr } = await supabase
         .from("auditions")
-        .insert({
-          user_id: user.id,
-          title: titleParsed.data,
-          brief,
-          brief_source: briefSource,
-          mode,
-        })
+        .insert([
+          {
+            user_id: user.id,
+            title: titleParsed.data,
+            brief,
+            brief_source: briefSource,
+            mode,
+          },
+        ])
         .select("id")
         .single();
       if (audErr || !aud) throw audErr ?? new Error("Could not create audition");
@@ -136,15 +138,17 @@ function NewAuditionPage() {
 
       const { data: take, error: takeErr } = await supabase
         .from("takes")
-        .insert({
-          audition_id: aud.id,
-          user_id: user.id,
-          take_number: 1,
-          video_path: path,
-          status: "pending",
-          signals,
-          checklist: checklist ? checklist : null,
-        })
+        .insert([
+          {
+            audition_id: aud.id,
+            user_id: user.id,
+            take_number: 1,
+            video_path: path,
+            status: "pending",
+            signals: signals as never,
+            checklist: (checklist ?? null) as never,
+          },
+        ])
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
@@ -314,7 +318,7 @@ function NewAuditionPage() {
           <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
             <h2 className="font-display text-lg font-semibold">Upload video</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              MP4 or MOV, up to ~25MB. We'll run a quick pre-upload check.
+              MP4 or MOV, up to 750MB. Landscape preferred. We'll run a quick pre-upload check.
             </p>
             <div className="mt-5 flex items-center gap-3">
               <input
