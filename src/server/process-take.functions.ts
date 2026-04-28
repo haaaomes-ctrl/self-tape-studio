@@ -340,6 +340,10 @@ export const processTake = createServerFn({ method: "POST" })
           ],
           tools: [REPORT_TOOL],
           tool_choice: { type: "function", function: { name: "submit_audition_report" } },
+          // The v2 report schema is large (multi-component, risk flags, breakdowns, drills,
+          // timestamped notes). The default output cap truncates the tool-call JSON and we
+          // get "Unexpected end of JSON input" on parse. Give Gemini enough headroom.
+          max_tokens: 8192,
         }),
       });
 
