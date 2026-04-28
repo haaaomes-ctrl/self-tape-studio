@@ -895,8 +895,13 @@ function AddTakeBlock({
       )}
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel} disabled={busy}>
-          Cancel
+          Close
         </Button>
+        {busy && uploadPct < 100 && (
+          <Button variant="ghost" onClick={cancelUpload}>
+            <X className="mr-2 h-4 w-4" /> Cancel upload
+          </Button>
+        )}
         <Button onClick={upload} disabled={!file || busy}>
           {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Upload take {nextNumber}
