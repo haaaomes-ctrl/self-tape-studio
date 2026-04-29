@@ -1,10 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Plus, ShieldAlert, Trash2, Upload, Video, X } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, ShieldAlert, Upload, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { ChecklistView } from "@/components/checklist-view";
-import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -14,7 +13,6 @@ import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { retryProcessTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
-import { deleteTake, deleteAudition } from "@/server/delete.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
 
@@ -136,40 +134,11 @@ function AuditionPage() {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {takes.length < 3 && (
-              <Button variant="outline" onClick={() => setShowAdd(true)}>
-                <Plus className="mr-2 h-4 w-4" /> Add take
-              </Button>
-            )}
-            <ConfirmDestructive
-              title="Delete audition?"
-              description={`This will remove "${audition.title}" and all ${takes.length} take${takes.length === 1 ? "" : "s"} (including reports and stored video). This cannot be undone.`}
-              confirmLabel="Delete audition"
-              trigger={(open) => (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Delete audition"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={open}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-              onConfirm={async () => {
-                try {
-                  await deleteAudition({ data: { auditionId: audition.id } });
-                  toast.success("Audition deleted");
-                  navigate({ to: "/dashboard" });
-                } catch (err) {
-                  toast.error(
-                    err instanceof Error ? err.message : "Could not delete audition",
-                  );
-                }
-              }}
-            />
-          </div>
+          {takes.length < 3 && (
+            <Button variant="outline" onClick={() => setShowAdd(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Add take
+            </Button>
+          )}
         </div>
 
         {showAdd && takes.length < 3 && (
@@ -205,36 +174,7 @@ function AuditionPage() {
 
               {takes.map((t) => (
                 <TabsContent key={t.id} value={t.id} className="mt-6">
-                  <div className="mb-3 flex justify-end">
-                    <ConfirmDestructive
-                      title="Delete take?"
-                      description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
-                      confirmLabel="Delete take"
-                      trigger={(open) => (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={open}
-                        >
-                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete take
-                        </Button>
-                      )}
-                      onConfirm={async () => {
-                        try {
-                          await deleteTake({ data: { takeId: t.id } });
-                          toast.success(`Take ${t.take_number} deleted`);
-                          setTakes((prev) => prev.filter((x) => x.id !== t.id));
-                          if (activeTakeId === t.id) setActiveTakeId(null);
-                        } catch (err) {
-                          toast.error(
-                            err instanceof Error ? err.message : "Could not delete take",
-                          );
-                        }
-                      }}
-                    />
-                  </div>
-                  <TakeView take={t} audition={audition} />
+                  <TakeView take={t} />
                 </TabsContent>
               ))}
 
@@ -255,23 +195,12 @@ function AuditionPage() {
   );
 }
 
-// Tier thresholds for the analysis-stage UX. Tied to the server-side
+// Tier thresholds for the "watching your tape" UX. Tied to the server-side
 // reconciler ceiling (MAX_TOTAL_AGE_SECONDS = 180s) so the UI never shows a
 // hard error before the backend has actually given up.
-//   0–45s: normal copy
-//   45–90s: gentle "still running" reassurance
-//   90–180s: surface continue / retry / cancel actions
-//   ≥180s: failure messaging (FailedTakeView takes over once status flips)
-const TIER_REASSURE_SECONDS = 45;
-const TIER_ACTIONS_SECONDS = 90;
+const TIER_FINALISING_SECONDS = 60;
+const TIER_LONG_SECONDS = 120;
 const TIER_GIVEUP_SECONDS = 180;
-
-function formatElapsed(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}m ${s.toString().padStart(2, "0")}s`;
-}
 
 function useElapsedSeconds(startIso: string) {
   const [elapsed, setElapsed] = useState(() =>
@@ -439,110 +368,70 @@ function PhaseStep({ label, active, done }: { label: string; active: boolean; do
   );
 }
 
-// 6-stage state machine for the take pipeline. Mapped from the
-// `processing_phase` column the server writes at each transition:
-//
-//   uploading          → 1. Uploading your tape
-//   transcoding        → 2. Optimising your video
-//   analysis_pending   → 3. Preparing analysis
-//   analysing          → 4. Watching your tape
-//                          (≥45s into analysing → 5. Writing your report)
-//                          (≥90s into analysing → 6. Finalising results)
-//
-// We never show a percentage we can't honestly compute. Upload % is real
-// (XHR progress); everything else is step-based with elapsed-time copy.
-const STAGES = [
-  { key: "uploading", label: "Uploading your tape" },
-  { key: "transcoding", label: "Optimising video" },
-  { key: "analysis_pending", label: "Preparing analysis" },
-  { key: "analysing", label: "Watching your tape" },
-  { key: "writing", label: "Writing your report" },
-  { key: "finalising", label: "Finalising results" },
-] as const;
-
-type StageKey = (typeof STAGES)[number]["key"];
-
-function stageIndexFor(phase: string, analysisElapsed: number): number {
-  if (phase === "uploading") return 0;
-  if (phase === "transcoding") return 1;
-  if (phase === "analysis_pending") return 2;
-  // analysing — split into watching → writing → finalising by elapsed time
-  if (analysisElapsed >= TIER_ACTIONS_SECONDS) return 5;
-  if (analysisElapsed >= TIER_REASSURE_SECONDS) return 4;
-  return 3;
-}
-
-function StageList({ activeIdx }: { activeIdx: number }) {
-  return (
-    <ol className="mx-auto mt-6 max-w-sm space-y-1.5 text-left">
-      {STAGES.map((s, i) => (
-        <li key={s.key}>
-          <PhaseStep label={s.label} active={i === activeIdx} done={i < activeIdx} />
-        </li>
-      ))}
-    </ol>
-  );
-}
-
 function ProcessingTakeView({ take }: { take: Take }) {
   const elapsed = useElapsedSeconds(take.created_at);
-  const phase = (take.processing_phase ?? "uploading") as StageKey | string;
+  const phase = take.processing_phase ?? "uploading";
   const [busy, setBusy] = useState(false);
 
-  // Elapsed time within the analysis window only (not the whole pipeline).
-  // Treat it as 0 until we're past upload/transcoding so the analysis copy
-  // doesn't fire too early on long uploads.
-  const analysisElapsed =
-    phase === "analysing" || phase === "analysis_pending" ? elapsed : 0;
-  const activeIdx = stageIndexFor(phase, analysisElapsed);
+  // Upload / transcoding tiers are independent of the analysis tiers — Mux
+  // can take a couple of minutes to optimise a large file before analysis
+  // even starts.
+  if (phase === "uploading" || phase === "transcoding") {
+    const copy =
+      phase === "uploading"
+        ? {
+            title: "Uploading your tape…",
+            sub: "Sending to secure storage. This is the only network step that depends on your connection.",
+          }
+        : {
+            title: "Optimising your video…",
+            sub: "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.",
+          };
+    return (
+      <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+        <p className="mt-4 font-display text-lg font-semibold">{copy.title}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{copy.sub}</p>
+        <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
+          <PhaseStep label="Upload" active={phase === "uploading"} done={phase !== "uploading"} />
+          <PhaseStep
+            label="Optimise"
+            active={phase === "transcoding"}
+            done={false}
+          />
+          <PhaseStep label="Analyse" active={false} done={false} />
+        </div>
+      </div>
+    );
+  }
 
-  // Copy per stage. Reassurance / action visibility are driven by the
-  // analysis-window elapsed clock, not the wall clock, so a slow upload
-  // doesn't trigger "this is taking longer than usual" prematurely.
+  // Analysis tiers — driven by elapsed time since the take was created so
+  // the UX doesn't depend on which retry attempt the backend is on.
   let title: string;
   let sub: string;
-  if (phase === "uploading") {
-    title = "Uploading your tape…";
-    sub =
-      "Sending to secure storage. This is the only step that depends on your connection.";
-  } else if (phase === "transcoding") {
-    title = "Optimising your video…";
-    sub =
-      "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.";
-  } else if (phase === "analysis_pending") {
-    title = "Preparing the version we'll analyse…";
-    sub = "Lining up the optimised file before the review begins. Almost there.";
-  } else if (analysisElapsed < TIER_REASSURE_SECONDS) {
+  if (elapsed < TIER_FINALISING_SECONDS) {
     title = "Watching your tape…";
-    sub =
-      "Reading the brief, checking technicals, writing notes. Usually under a minute.";
-  } else if (analysisElapsed < TIER_ACTIONS_SECONDS) {
-    title = "Writing your feedback…";
-    sub =
-      "This is taking a little longer than usual, but it's still running. Hang tight.";
-  } else if (analysisElapsed < TIER_GIVEUP_SECONDS) {
-    title = "Finalising your results…";
-    sub =
-      "This is taking longer than usual, but it hasn't failed. You can keep waiting, retry now, or cancel.";
+    sub = "Reading the brief, checking technicals, writing notes. Usually under a minute.";
+  } else if (elapsed < TIER_LONG_SECONDS) {
+    title = "Finalising your video…";
+    sub = "This can take a few extra seconds while the optimised file finishes preparing. Hang tight.";
   } else {
     title = "This is taking longer than expected";
     sub = "Your tape is still being prepared. You can wait, retry now, or cancel.";
   }
 
-  // Cancel/retry surface as soon as analysis crosses the 90s mark — earlier
-  // than the previous 120s threshold per spec.
-  const showActions =
-    phase === "analysing" && analysisElapsed >= TIER_ACTIONS_SECONDS;
+  const showActions = elapsed >= TIER_LONG_SECONDS;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
       <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
       <p className="mt-4 font-display text-lg font-semibold">{title}</p>
       <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
-      <p className="mt-3 text-xs text-muted-foreground tabular-nums">
-        Elapsed: {formatElapsed(elapsed)}
-      </p>
-      <StageList activeIdx={activeIdx} />
+      <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
+        <PhaseStep label="Upload" active={false} done={true} />
+        <PhaseStep label="Optimise" active={false} done={true} />
+        <PhaseStep label="Analyse" active={true} done={false} />
+      </div>
       {showActions && (
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button
@@ -617,20 +506,16 @@ function verdictTone(label: string | undefined): string {
 
 
 // Translates the underlying confidence + signal data into a friendly,
-// non-technical reliability indicator. Never surfaces the numeric score or
-// "AI confidence" wording — users see one of three plain-language tiers
-// (High / Medium / Low) plus a one-line "Why" naming the actual contributing
-// factors (brief, audio, video quality, performance completeness).
+// non-technical trust indicator. Never surfaces the numeric score or
+// "AI confidence" wording — users see one of three plain-language labels
+// plus a one-line explanation that names the actual contributing factors
+// (brief, audio, video quality, performance completeness).
 function buildTrustIndicator(
   confidence: number,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   report: any,
   take: Take,
-): {
-  label: "Feedback reliability: High" | "Feedback reliability: Medium" | "Feedback reliability: Low";
-  reason: string;
-  tone: string;
-} {
+): { label: "Very reliable" | "Mostly reliable" | "Take with caution"; reason: string; tone: string } {
   const audio = report?.scores?.audio ?? null;
   const technical = report?.scores?.technical ?? null;
   const briefAdherence = report?.scores?.brief_adherence ?? null;
@@ -649,59 +534,56 @@ function buildTrustIndicator(
   const positives: string[] = [];
   const concerns: string[] = [];
 
-  if (hasBrief) positives.push("a casting brief was provided");
+  if (hasBrief) positives.push("a casting brief to compare against");
   else concerns.push("no casting brief was provided");
 
   if (audio != null) {
     if (audio >= 75) positives.push("clear audio");
-    else if (audio >= 50) concerns.push("audio is a little muddy in places");
-    else concerns.push("audio is muffled or noisy");
+    else if (audio >= 50) concerns.push("audio that's a little muddy in places");
+    else concerns.push("muffled or noisy audio");
   }
 
   if (technical != null) {
     if (technical >= 75) positives.push("good video quality");
-    else if (technical < 50) concerns.push("video quality made parts hard to read");
+    else if (technical < 50) concerns.push("video quality that made parts hard to read");
   }
 
-  if (!hasFullPerformance) concerns.push("the performance is short or partial");
+  if (!hasFullPerformance) concerns.push("a short or partial performance");
 
-  let label:
-    | "Feedback reliability: High"
-    | "Feedback reliability: Medium"
-    | "Feedback reliability: Low";
+  let label: "Very reliable" | "Mostly reliable" | "Take with caution";
   let tone: string;
   if (confidence >= 85 && concerns.length === 0) {
-    label = "Feedback reliability: High";
+    label = "Very reliable";
     tone = "text-success";
   } else if (confidence >= 65 && concerns.length <= 1) {
-    label = "Feedback reliability: Medium";
+    label = "Mostly reliable";
     tone = "text-foreground";
   } else {
-    label = "Feedback reliability: Low";
+    label = "Take with caution";
     tone = "text-warning";
   }
 
-  // Build a single "Why: …" sentence from the strongest signals.
+  // Build a single warm sentence from the strongest signal.
   let reason: string;
-  if (label === "Feedback reliability: High") {
-    const lead = positives.slice(0, 2).join(" and ") || "clear video and audio";
-    reason = `Why: ${lead} — you can lean into the feedback below.`;
-  } else if (label === "Feedback reliability: Medium") {
+  if (label === "Very reliable") {
+    const lead = positives.slice(0, 2).join(" and ") || "a clean tape all round";
+    reason = `Based on ${lead} — you can lean into the feedback below.`;
+  } else if (label === "Mostly reliable") {
     if (concerns.length > 0) {
-      reason = `Why: ${concerns[0]} — weigh the notes accordingly.`;
+      reason = `Solid read overall, but ${concerns[0]} — weigh the notes accordingly.`;
     } else {
       const lead = positives[0] ?? "a generally clean tape";
-      reason = `Why: ${lead} — the feedback below is a fair guide.`;
+      reason = `Based on ${lead} — the feedback below is a fair guide.`;
     }
   } else {
     const lead = concerns.slice(0, 2).join(" and ") || "limited information to work from";
-    reason = `Why: ${lead}. Treat the feedback as a directional steer rather than the final word.`;
+    reason = `Heads up: ${lead}. Treat the feedback as a directional steer rather than the final word.`;
   }
 
   return { label, reason, tone };
 }
 
-function TakeView({ take, audition }: { take: Take; audition: Audition }) {
+function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
   }
@@ -1123,7 +1005,7 @@ function TakeView({ take, audition }: { take: Take; audition: Audition }) {
             Show technical signals
           </summary>
           <div className="mt-4">
-            <ChecklistView checklist={take.checklist} briefSource={audition.brief_source} />
+            <ChecklistView checklist={take.checklist} briefSource="none" />
           </div>
         </details>
       )}
