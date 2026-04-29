@@ -1064,6 +1064,7 @@ export async function runProcessTake(
     report.verdict_final = verdict.label;
     report.block_reasons = blockReasons;
     report.extraction_confidence = extractionConfidence;
+    report.safety_rewrite_applied = safetyRewriteApplied;
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
@@ -1075,6 +1076,10 @@ export async function runProcessTake(
       overall_score_model: overallScoreModel,
       overall_before_role_fit: overallBeforeRoleFit,
       role_fit_modifier: roleFitModifier,
+      role_fit_modifier_explanation:
+        roleFitModifier === 0
+          ? "No role-fit adjustment applied."
+          : `Role fit adjusted the score by ${roleFitModifier > 0 ? "+" : ""}${roleFitModifier} based on alignment with the brief's tone, energy, and intent.`,
       role_fit_confidence: report.role_fit_confidence,
       overall_score_final: overall,
       verdict_final: verdict.label,
@@ -1083,6 +1088,7 @@ export async function runProcessTake(
       score_discrepancy: scoreDiscrepancy,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
+      safety_rewrite_applied: safetyRewriteApplied,
     };
 
     await supabaseAdmin
