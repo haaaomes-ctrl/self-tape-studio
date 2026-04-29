@@ -469,6 +469,26 @@ export async function runProcessTake(
     const audioScore = report.scores?.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
 
+    // Cap improvements at 3 (most-impactful first) defensively, in case the
+    // model returns more than the schema asked for.
+    if (Array.isArray(report.improvements) && report.improvements.length > 3) {
+      report.improvements = report.improvements.slice(0, 3);
+    }
+
+    // Deterministic submission verdict — computed server-side so bands are
+    // guaranteed consistent and hard blockers always override the score.
+    report.submission_verdict = computeSubmissionVerdict({
+      overall,
+      audioScore: report.scores?.audio ?? null,
+      technicalScore: report.scores?.technical ?? null,
+      briefAdherence: report.scores?.brief_adherence ?? null,
+      mode: report.mode,
+      atRisk: report.at_risk === true,
+      riskFlags: Array.isArray(report.submission_risk_flags)
+        ? report.submission_risk_flags
+        : [],
+    });
+
     await supabaseAdmin
       .from("takes")
       .update({
