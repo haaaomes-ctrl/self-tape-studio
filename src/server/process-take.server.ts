@@ -505,10 +505,11 @@ export async function runProcessTake(
   takeId: string,
   allowOriginal = false,
 ): Promise<RunProcessTakeResult> {
+  const runStartedAt = Date.now();
   const { data: take, error: takeErr } = await supabaseAdmin
     .from("takes")
     .select(
-      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url",
+      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_asset_id, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url, created_at, updated_at, error_message",
     )
     .eq("id", takeId)
     .single();
@@ -519,6 +520,18 @@ export async function runProcessTake(
   if (take.status === "complete") {
     return { ok: true, alreadyDone: true };
   }
+  // Cancellation guard: if the user cancelled while the webhook was in flight,
+  // do not proceed. resetTake marks the row as errored with a "Cancelled by
+  // user" message — treat that as a terminal stop so a delayed webhook /
+  // reconciler can't restart analysis on a cancelled take.
+  if (
+    take.status === "error" &&
+    typeof take.error_message === "string" &&
+    take.error_message.toLowerCase().includes("cancelled")
+  ) {
+    console.log("runProcessTake: take cancelled by user, skipping", { takeId });
+    return { ok: true, alreadyDone: true };
+  }
   // Idempotency: if another worker is already actively analysing this take
   // (and it hasn't gone stale), bail out. The stale-analysis reconciler will
   // re-trigger us if needed.
@@ -526,6 +539,20 @@ export async function runProcessTake(
     console.log("runProcessTake: take already in active analysis, skipping", { takeId });
     return { ok: true, alreadyDone: true };
   }
+
+  const elapsedSinceCreatedMs = () => Date.now() - new Date(take.created_at).getTime();
+  const baseLog = {
+    take_id: takeId,
+    audition_id: take.audition_id,
+    mux_asset_id: take.mux_asset_id ?? null,
+    mux_playback_id: take.mux_playback_id ?? null,
+    attempt_count: take.attempt_count ?? 0,
+  };
+  console.log("[take-pipeline] runProcessTake started", {
+    ...baseLog,
+    processing_phase: take.processing_phase,
+    elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+  });
 
   const { data: audition, error: audErr } = await supabaseAdmin
     .from("auditions")
@@ -568,15 +595,17 @@ export async function runProcessTake(
     }
   }
 
-  // Flip into the active analysing phase NOW that work is actually starting.
-  // The webhook only marks takes as analysis_pending; this handler is the
-  // single point where analysing is set, ensuring processing_phase reflects
-  // real in-flight work.
+  // Stay in analysis_pending while we poll for the static MP4 rendition.
+  // We DON'T flip to "analysing" yet — that would mislead the UI into
+  // showing "Watching your tape" while we're actually still waiting on Mux
+  // to finish generating the static rendition (highest.mp4). The phase
+  // flips to "analysing" only after the HEAD probe succeeds, immediately
+  // before the Gemini call.
   await supabaseAdmin
     .from("takes")
     .update({
-      status: "processing",
-      processing_phase: "analysing",
+      status: "pending",
+      processing_phase: "analysis_pending",
       error_message: null,
     })
     .eq("id", takeId);
@@ -584,31 +613,75 @@ export async function runProcessTake(
   try {
     const { url: initialUrl, tier } = await pickAnalysisSource(take, allowOriginal);
 
-    // Pre-Gemini URL validation. The static MP4 rendition is generated AFTER
-    // `video.asset.ready` fires, so the URL may 404/403 for a short window
-    // even though the asset is "ready". Probe with HEAD before burning a
-    // Gemini call. If it isn't there, return the take to `analysis_pending`
-    // so the reconciler retries shortly — do NOT mark it as a terminal
-    // error yet (the rendition usually catches up within ~60–90s).
-    console.log("runProcessTake: validating video URL", { takeId, tier, url: initialUrl });
+    // Pre-Gemini URL validation. Mux's static MP4 rendition is generated
+    // AFTER `video.asset.ready` fires, so the URL may 404/403 for a short
+    // window. Poll with HEAD instead of bailing on the first miss — this
+    // collapses the previous "single-probe + wait for cron" loop (which
+    // could stall for minutes) into a tight in-process retry.
+    //
+    // Budget: ~110s wall-clock here. The reconciler's MAX_TOTAL_AGE_SECONDS
+    // (180s) still owns the absolute ceiling; this is just the in-handler
+    // wait so we don't hand control back to cron unnecessarily.
+    const HEAD_PROBE_INTERVAL_MS = 10_000;
+    const HEAD_PROBE_MAX_ATTEMPTS = 12; // 12 × 10s ≈ 120s
+    console.log("[take-pipeline] head-probe loop start", {
+      ...baseLog,
+      tier,
+      processing_phase: "analysis_pending",
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
+
     let probeStatus: number | null = null;
-    let probeThrew = false;
-    try {
-      const probe = await fetch(initialUrl, { method: "HEAD" });
-      probeStatus = probe.status;
-    } catch (probeErr) {
-      console.error("runProcessTake: HEAD probe threw", { takeId, probeErr });
-      probeThrew = true;
-    }
-    if (probeThrew || probeStatus === null || probeStatus < 200 || probeStatus >= 300) {
-      console.warn("runProcessTake: video URL not ready, returning to analysis_pending", {
-        takeId,
-        probeStatus,
-        url: initialUrl,
+    let probeOk = false;
+    for (let probeAttempt = 1; probeAttempt <= HEAD_PROBE_MAX_ATTEMPTS; probeAttempt++) {
+      let attemptStatus: number | null = null;
+      const probeStartedAt = Date.now();
+      try {
+        const probe = await fetch(initialUrl, { method: "HEAD" });
+        attemptStatus = probe.status;
+      } catch (probeErr) {
+        console.warn("[take-pipeline] head-probe threw", {
+          ...baseLog,
+          probe_attempt: probeAttempt,
+          probe_error: probeErr instanceof Error ? probeErr.message : String(probeErr),
+        });
+      }
+      probeStatus = attemptStatus;
+      const probeDurationMs = Date.now() - probeStartedAt;
+      console.log("[take-pipeline] head-probe result", {
+        ...baseLog,
+        probe_attempt: probeAttempt,
+        http_status: attemptStatus,
+        probe_duration_ms: probeDurationMs,
+        elapsed_ms_since_upload: elapsedSinceCreatedMs(),
       });
-      // Return to analysis_pending so the stale-takes reconciler picks it
-      // up again on the next tick. The reconciler enforces the overall
-      // timeout (MAX_ATTEMPTS / total elapsed) before giving up.
+      if (attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
+        probeOk = true;
+        break;
+      }
+      // 404/403 are expected during rendition prep — keep waiting.
+      // Anything else (5xx, fetch failure) we also retry; the reconciler's
+      // wall-clock cap will eventually park the take if Mux never recovers.
+      if (probeAttempt < HEAD_PROBE_MAX_ATTEMPTS) {
+        // Touch updated_at so the reconciler doesn't think we're stale
+        // mid-poll. Cheap no-op write keeps the row "fresh".
+        await supabaseAdmin
+          .from("takes")
+          .update({ processing_phase: "analysis_pending" })
+          .eq("id", takeId);
+        await new Promise((r) => setTimeout(r, HEAD_PROBE_INTERVAL_MS));
+      }
+    }
+
+    if (!probeOk) {
+      console.warn("[take-pipeline] head-probe gave up — handing back to reconciler", {
+        ...baseLog,
+        last_http_status: probeStatus,
+        elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      });
+      // Hand back to the reconciler. It enforces MAX_ATTEMPTS and the
+      // 180s wall-clock cap, which is what surfaces the user-facing
+      // "couldn't prepare your video in time" message.
       await supabaseAdmin
         .from("takes")
         .update({
@@ -622,11 +695,37 @@ export async function runProcessTake(
         error: `Optimised video not ready yet (HTTP ${probeStatus ?? "fetch-failed"}); will retry.`,
       };
     }
-    console.log("runProcessTake: video URL OK", { takeId, probeStatus });
 
+    // Re-check cancellation after the (potentially long) polling window —
+    // user may have cancelled while we were waiting on the rendition.
+    const { data: postPoll } = await supabaseAdmin
+      .from("takes")
+      .select("status, error_message")
+      .eq("id", takeId)
+      .single();
+    if (
+      postPoll?.status === "error" &&
+      typeof postPoll.error_message === "string" &&
+      postPoll.error_message.toLowerCase().includes("cancelled")
+    ) {
+      console.log("[take-pipeline] cancelled during head-probe, aborting", baseLog);
+      return { ok: true, alreadyDone: true };
+    }
+
+    console.log("[take-pipeline] head-probe ok, transitioning to analysing", {
+      ...baseLog,
+      http_status: probeStatus,
+      analysis_tier: tier,
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
+
+    // NOW flip into the active analysing phase — Gemini call is next.
     await supabaseAdmin
       .from("takes")
       .update({
+        status: "processing",
+        processing_phase: "analysing",
+        error_message: null,
         attempt_count: (take.attempt_count ?? 0) + 1,
         analysis_tier: tier,
       })
@@ -690,6 +789,13 @@ export async function runProcessTake(
         }),
       });
 
+    const geminiStartedAt = Date.now();
+    console.log("[take-pipeline] gemini request started", {
+      ...baseLog,
+      analysis_tier: tier,
+      processing_phase: "analysing",
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
     let aiResp = await callAI(initialUrl);
     if (!aiResp.ok && aiResp.status === 400 && take.mux_playback_id) {
       const errText = await aiResp.text();
@@ -701,6 +807,13 @@ export async function runProcessTake(
       const freshUrl = muxMp4Url(take.mux_playback_id, freshQuality);
       aiResp = await callAI(freshUrl);
     }
+    console.log("[take-pipeline] gemini response received", {
+      ...baseLog,
+      analysis_tier: tier,
+      http_status: aiResp.status,
+      gemini_duration_ms: Date.now() - geminiStartedAt,
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
 
     if (!aiResp.ok) {
       if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
@@ -1228,6 +1341,22 @@ export async function runProcessTake(
       material_scrub_triggered: materialScrubTriggered,
     };
 
+    // Final cancellation guard: if the user cancelled while Gemini was
+    // running, do NOT overwrite the cancelled state with a completed report.
+    const { data: preWrite } = await supabaseAdmin
+      .from("takes")
+      .select("status, error_message")
+      .eq("id", takeId)
+      .single();
+    if (
+      preWrite?.status === "error" &&
+      typeof preWrite.error_message === "string" &&
+      preWrite.error_message.toLowerCase().includes("cancelled")
+    ) {
+      console.log("[take-pipeline] discarding result — take was cancelled", baseLog);
+      return { ok: true, alreadyDone: true };
+    }
+
     await supabaseAdmin
       .from("takes")
       .update({
@@ -1247,6 +1376,13 @@ export async function runProcessTake(
       .from("auditions")
       .update({ mode: report.mode })
       .eq("id", audition.id);
+
+    console.log("[take-pipeline] report persisted", {
+      ...baseLog,
+      analysis_tier: tier,
+      total_duration_ms: Date.now() - runStartedAt,
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
 
     return { ok: true, tier };
   } catch (err) {

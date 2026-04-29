@@ -109,6 +109,11 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         if (type === "video.upload.asset_created") {
           const assetId = (data.asset_id as string | undefined) ?? null;
           if (!assetId) return new Response("ok", { status: 200 });
+          console.log("[take-pipeline] mux upload.asset_created", {
+            take_id: takeId,
+            mux_asset_id: assetId,
+            timestamp: receivedAt,
+          });
           await supabaseAdmin
             .from("takes")
             .update({
@@ -137,9 +142,21 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
           // already kicked off (or completed) analysis for this take.
           const { data: existing } = await supabaseAdmin
             .from("takes")
-            .select("status, processing_phase")
+            .select("status, processing_phase, created_at, audition_id")
             .eq("id", takeId)
             .single();
+
+          console.log("[take-pipeline] mux video.asset.ready", {
+            take_id: takeId,
+            audition_id: existing?.audition_id ?? null,
+            mux_asset_id: data.id ?? null,
+            mux_playback_id: playbackId,
+            video_duration_seconds: duration,
+            elapsed_ms_since_upload: existing?.created_at
+              ? Date.now() - new Date(existing.created_at).getTime()
+              : null,
+            timestamp: new Date().toISOString(),
+          });
 
           await supabaseAdmin
             .from("takes")
