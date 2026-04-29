@@ -789,6 +789,13 @@ export async function runProcessTake(
         }),
       });
 
+    const geminiStartedAt = Date.now();
+    console.log("[take-pipeline] gemini request started", {
+      ...baseLog,
+      analysis_tier: tier,
+      processing_phase: "analysing",
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
     let aiResp = await callAI(initialUrl);
     if (!aiResp.ok && aiResp.status === 400 && take.mux_playback_id) {
       const errText = await aiResp.text();
@@ -800,6 +807,13 @@ export async function runProcessTake(
       const freshUrl = muxMp4Url(take.mux_playback_id, freshQuality);
       aiResp = await callAI(freshUrl);
     }
+    console.log("[take-pipeline] gemini response received", {
+      ...baseLog,
+      analysis_tier: tier,
+      http_status: aiResp.status,
+      gemini_duration_ms: Date.now() - geminiStartedAt,
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
 
     if (!aiResp.ok) {
       if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
