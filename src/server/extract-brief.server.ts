@@ -243,18 +243,31 @@ export async function extractBriefFromText(
         },
       );
     }
-    const briefOut: ExtractedBrief & { time_limit_source?: TimeLimitSource } = {
+    const durationOverridden =
+      explicitDuration == null &&
+      typeof briefOnly.time_limit_seconds === "number" &&
+      briefOnly.time_limit_seconds > 0;
+
+    const materialPolicy = detectMaterialPolicy(briefText, briefOnly.material_requested);
+
+    const briefOut: ExtractedBrief & {
+      time_limit_source?: TimeLimitSource;
+      material_policy?: MaterialPolicy;
+    } = {
       ...(briefOnly as ExtractedBrief),
       time_limit_seconds: finalTimeLimit,
       time_limit_source: timeLimitSource,
+      material_policy: materialPolicy,
     };
 
     // Non-PII debug log.
-    console.log("extractBriefFromText: result", {
+    console.info("[extract-brief]", {
       raw_brief_present: true,
       time_limit_seconds: briefOut.time_limit_seconds,
       time_limit_source: briefOut.time_limit_source,
-      material_requested: briefOut.material_requested ?? null,
+      material_requested: briefOut.material_requested ? "[present]" : null,
+      material_policy: briefOut.material_policy,
+      duration_overridden: durationOverridden,
       extraction_confidence: conf,
     });
 
