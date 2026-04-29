@@ -398,12 +398,29 @@ export async function runProcessTake(
 
   const { data: audition, error: audErr } = await supabaseAdmin
     .from("auditions")
-    .select("id, brief, brief_source, mode, title")
+    .select("id, brief, brief_source, mode, title, audition_level, extracted_brief")
     .eq("id", take.audition_id)
     .single();
 
   if (audErr || !audition) {
     return { ok: false, error: "Audition not found" };
+  }
+
+  const auditionLevel = ((audition as { audition_level?: string }).audition_level ??
+    "emerging") as AuditionLevel;
+
+  // Structured brief extraction (cached on the audition row). Skip in baseline
+  // mode (no brief) or when we've already extracted previously.
+  let extractedBrief: ExtractedBrief | null =
+    ((audition as { extracted_brief?: ExtractedBrief | null }).extracted_brief ?? null);
+  if (!extractedBrief && audition.brief && audition.brief.trim().length > 5) {
+    extractedBrief = await extractBriefFromText(audition.brief);
+    if (extractedBrief) {
+      await supabaseAdmin
+        .from("auditions")
+        .update({ extracted_brief: extractedBrief as never })
+        .eq("id", audition.id);
+    }
   }
 
   // Flip into the active analysing phase NOW that work is actually starting.
