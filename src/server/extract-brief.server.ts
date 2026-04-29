@@ -181,7 +181,44 @@ export async function extractBriefFromText(
     // Strip meta from the brief object itself
     const { extraction_confidence: _drop, ...briefOnly } = parsed;
     void _drop;
-    return { brief: briefOnly as ExtractedBrief, extraction_confidence: conf };
+
+    // ---- Duration guard: only allow time_limit_seconds when an explicit
+    // numeric duration phrase appears in the raw brief text. Strips out
+    // industry-default inferences from "32-bar cut", song length, etc.
+    const explicitDuration = parseExplicitDuration(briefText);
+    let timeLimitSource: TimeLimitSource = "none";
+    let finalTimeLimit: number | null = null;
+    if (explicitDuration != null) {
+      finalTimeLimit = explicitDuration;
+      timeLimitSource = "explicit";
+    } else if (
+      typeof briefOnly.time_limit_seconds === "number" &&
+      briefOnly.time_limit_seconds > 0
+    ) {
+      console.warn(
+        "extractBriefFromText: model returned time_limit_seconds without explicit phrase — overriding to null",
+        {
+          model_value: briefOnly.time_limit_seconds,
+          material_requested: briefOnly.material_requested ?? null,
+        },
+      );
+    }
+    const briefOut: ExtractedBrief & { time_limit_source?: TimeLimitSource } = {
+      ...(briefOnly as ExtractedBrief),
+      time_limit_seconds: finalTimeLimit,
+      time_limit_source: timeLimitSource,
+    };
+
+    // Non-PII debug log.
+    console.log("extractBriefFromText: result", {
+      raw_brief_present: true,
+      time_limit_seconds: briefOut.time_limit_seconds,
+      time_limit_source: briefOut.time_limit_source,
+      material_requested: briefOut.material_requested ?? null,
+      extraction_confidence: conf,
+    });
+
+    return { brief: briefOut, extraction_confidence: conf };
   } catch (err) {
     console.warn("extractBriefFromText: failed", err);
     return null;
