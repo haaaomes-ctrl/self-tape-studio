@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Plus, ShieldAlert, Upload, Video, X } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, ShieldAlert, Trash2, Upload, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { ChecklistView } from "@/components/checklist-view";
+import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -13,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { retryProcessTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
+import { deleteTake, deleteAudition } from "@/server/delete.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { cn } from "@/lib/utils";
 
