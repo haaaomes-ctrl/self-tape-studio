@@ -188,12 +188,24 @@ function AuditionPage() {
   );
 }
 
-function isStuck(take: Take): boolean {
-  if (take.status !== "processing" && take.status !== "pending") return false;
-  const created = new Date(take.created_at).getTime();
-  // Mux transcoding for large files can take a couple of minutes; give the
-  // pipeline 10 min before flagging as stuck.
-  return Date.now() - created > 10 * 60 * 1000;
+// Tier thresholds for the "watching your tape" UX. Tied to the server-side
+// reconciler ceiling (MAX_TOTAL_AGE_SECONDS = 180s) so the UI never shows a
+// hard error before the backend has actually given up.
+const TIER_FINALISING_SECONDS = 60;
+const TIER_LONG_SECONDS = 120;
+const TIER_GIVEUP_SECONDS = 180;
+
+function useElapsedSeconds(startIso: string) {
+  const [elapsed, setElapsed] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000)),
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      setElapsed(Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  return elapsed;
 }
 
 function FailedTakeView({ take }: { take: Take }) {
