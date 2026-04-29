@@ -482,14 +482,7 @@ function TakeView({ take }: { take: Take }) {
   if (!r) return null;
 
   const confidence = take.confidence ?? r.confidence ?? 0;
-  const confidenceBand =
-    confidence >= 90
-      ? { label: "Highly reliable", tone: "text-success" }
-      : confidence >= 75
-        ? { label: "Reliable, minor uncertainty", tone: "text-foreground" }
-        : confidence >= 60
-          ? { label: "Moderately reliable", tone: "text-warning" }
-          : { label: "Low confidence", tone: "text-destructive" };
+  const trust = buildTrustIndicator(confidence, r, take);
 
   const categories: { key: string; label: string }[] = [
     { key: "vocal", label: "Vocal" },
@@ -534,21 +527,28 @@ function TakeView({ take }: { take: Take }) {
           <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
         )}
         <div className="mt-6 flex items-end justify-between gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Confidence</p>
-            <p className={cn("mt-1 font-display text-xl font-semibold", confidenceBand.tone)}>
-              {confidence} · {confidenceBand.label}
-            </p>
-            {r.confidence_reason && (
-              <p className="mt-1 text-xs text-muted-foreground">{r.confidence_reason}</p>
-            )}
-          </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Overall</p>
             <p className="font-display text-5xl font-bold leading-none text-primary">
               {take.overall_score}
             </p>
           </div>
+        </div>
+        <div className="mt-5 rounded-md border border-border bg-secondary/30 p-4">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                trust.tone === "text-success"
+                  ? "bg-success"
+                  : trust.tone === "text-warning"
+                    ? "bg-warning"
+                    : "bg-primary",
+              )}
+            />
+            <p className={cn("text-sm font-semibold", trust.tone)}>{trust.label}</p>
+          </div>
+          <p className="mt-1.5 text-sm text-muted-foreground">{trust.reason}</p>
         </div>
         {r.at_risk && (
           <div className="mt-5 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
