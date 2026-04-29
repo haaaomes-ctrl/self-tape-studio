@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Clock, Film, Plus } from "lucide-react";
+import { Clock, Film, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { deleteAudition } from "@/server/delete.functions";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -89,51 +92,86 @@ function DashboardPage() {
                   .sort((x, y) => (y.overall_score ?? 0) - (x.overall_score ?? 0))[0];
                 return (
                   <li key={a.id}>
-                    <Link
-                      to="/audition/$auditionId"
-                      params={{ auditionId: a.id }}
-                      className="group block rounded-2xl border border-border bg-card p-6 shadow-soft transition-shadow hover:shadow-elevated"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <h2 className="truncate font-display text-lg font-semibold text-foreground">
-                            {a.title}
-                          </h2>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <span className="inline-flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {new Date(a.created_at).toLocaleDateString(undefined, {
-                                year: "numeric",
-                                month: "short",
-                                day: "numeric",
-                              })}
-                            </span>
-                            <Badge variant="secondary" className="font-normal">
-                              {a.mode === "brief" ? "Brief-driven" : "Baseline"}
+                    <div className="group relative rounded-2xl border border-border bg-card shadow-soft transition-shadow hover:shadow-elevated">
+                      <Link
+                        to="/audition/$auditionId"
+                        params={{ auditionId: a.id }}
+                        className="block p-6 pr-16"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <h2 className="truncate font-display text-lg font-semibold text-foreground">
+                              {a.title}
+                            </h2>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span className="inline-flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {new Date(a.created_at).toLocaleDateString(undefined, {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </span>
+                              <Badge variant="secondary" className="font-normal">
+                                {a.mode === "brief" ? "Brief-driven" : "Baseline"}
+                              </Badge>
+                              <span>
+                                {a.takes.length} take{a.takes.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                          </div>
+                          {best ? (
+                            <div className="text-right">
+                              <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                                Best
+                              </p>
+                              <p className="font-display text-2xl font-bold text-primary">
+                                {best.overall_score}
+                              </p>
+                            </div>
+                          ) : (
+                            <Badge variant="outline" className="font-normal">
+                              {a.takes.some((t) => t.status === "processing")
+                                ? "Processing…"
+                                : "Awaiting upload"}
                             </Badge>
-                            <span>
-                              {a.takes.length} take{a.takes.length === 1 ? "" : "s"}
-                            </span>
-                          </div>
+                          )}
                         </div>
-                        {best ? (
-                          <div className="text-right">
-                            <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                              Best
-                            </p>
-                            <p className="font-display text-2xl font-bold text-primary">
-                              {best.overall_score}
-                            </p>
-                          </div>
-                        ) : (
-                          <Badge variant="outline" className="font-normal">
-                            {a.takes.some((t) => t.status === "processing")
-                              ? "Processing…"
-                              : "Awaiting upload"}
-                          </Badge>
-                        )}
+                      </Link>
+                      <div className="absolute right-3 top-3">
+                        <ConfirmDestructive
+                          title="Delete audition?"
+                          description={`This will remove "${a.title}" and all ${a.takes.length} take${a.takes.length === 1 ? "" : "s"} (including reports and stored video). This cannot be undone.`}
+                          confirmLabel="Delete audition"
+                          trigger={(open) => (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Delete audition ${a.title}`}
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                open();
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                          onConfirm={async () => {
+                            try {
+                              await deleteAudition({ data: { auditionId: a.id } });
+                              setItems((prev) => prev?.filter((x) => x.id !== a.id) ?? prev);
+                              toast.success("Audition deleted");
+                            } catch (err) {
+                              toast.error(
+                                err instanceof Error ? err.message : "Could not delete audition",
+                              );
+                            }
+                          }}
+                        />
                       </div>
-                    </Link>
+                    </div>
                   </li>
                 );
               })}
