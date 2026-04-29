@@ -532,12 +532,22 @@ export async function runProcessTake(
     console.log("runProcessTake: take cancelled by user, skipping", { takeId });
     return { ok: true, alreadyDone: true };
   }
-  // Idempotency: if another worker is already actively analysing this take
-  // (and it hasn't gone stale), bail out. The stale-analysis reconciler will
-  // re-trigger us if needed.
-  if (take.processing_phase === "analysing" && take.status === "processing") {
-    console.log("runProcessTake: take already in active analysis, skipping", { takeId });
-    return { ok: true, alreadyDone: true };
+  // Idempotency: if a pipeline is already running for this take (either
+  // actively polling for the static rendition in `analysis_pending`, or
+  // currently in the Gemini call in `analysing`), bail out early. Prevents
+  // duplicate Gemini requests and duplicate poll loops when retry is clicked
+  // mid-flight or when the webhook + reconciler race each other.
+  if (
+    take.status === "processing" &&
+    (take.processing_phase === "analysing" ||
+      take.processing_phase === "analysis_pending")
+  ) {
+    console.log("already_running_skip", {
+      take_id: takeId,
+      processing_phase: take.processing_phase,
+      attempt_count: take.attempt_count ?? 0,
+    });
+    return { ok: true, alreadyRunning: true };
   }
 
   const elapsedSinceCreatedMs = () => Date.now() - new Date(take.created_at).getTime();
