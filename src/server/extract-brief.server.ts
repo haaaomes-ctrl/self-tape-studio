@@ -4,13 +4,13 @@
 //
 // Defensive: never throws on parse failure; returns a minimal fallback.
 
-import type { ExtractedBrief, AuditionType } from "@/lib/audition-rules";
+import type { ExtractedBrief, AuditionType, MaterialPolicy } from "@/lib/audition-rules";
 
 export type ExtractionConfidence = "low" | "medium" | "high";
 export type TimeLimitSource = "explicit" | "none";
 
 export type ExtractedBriefWithMeta = {
-  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource };
+  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource; material_policy?: MaterialPolicy };
   extraction_confidence: ExtractionConfidence;
 };
 
@@ -48,6 +48,46 @@ function parseExplicitDuration(raw: string): number | null {
   }
 
   return null;
+}
+
+// Deterministic material-policy classifier. Operates on the raw brief text
+// and the model-extracted material_requested. Used by the alternative-material
+// scrub downstream — only "fixed" triggers the strict scrub.
+const CHOICE_MATERIAL_PATTERNS: RegExp[] = [
+  /\b(of|your)\s+choice\b/i,
+  /\b(any|choose\s+any)\s+(song|monologue|scene|piece|dance|routine|material)\b/i,
+  /\b(song|monologue|scene|piece|dance|routine|material)\s+of\s+your\s+choice\b/i,
+  /\bfree\s+choice\b/i,
+  /\bperformer'?s\s+choice\b/i,
+];
+
+export function detectMaterialPolicy(
+  rawBrief: string,
+  materialRequested?: string | null,
+): MaterialPolicy {
+  const raw = rawBrief || "";
+  const material = (materialRequested || "").trim();
+
+  if (CHOICE_MATERIAL_PATTERNS.some((pattern) => pattern.test(raw))) {
+    return "choice";
+  }
+
+  if (!material) {
+    return "none";
+  }
+
+  const materialLower = material.toLowerCase();
+  if (
+    materialLower.includes("choice") ||
+    materialLower.includes("any song") ||
+    materialLower.includes("any monologue") ||
+    materialLower.includes("any scene") ||
+    materialLower.includes("any piece")
+  ) {
+    return "choice";
+  }
+
+  return "fixed";
 }
 
 const EXTRACT_TOOL = {
@@ -203,18 +243,31 @@ export async function extractBriefFromText(
         },
       );
     }
-    const briefOut: ExtractedBrief & { time_limit_source?: TimeLimitSource } = {
+    const durationOverridden =
+      explicitDuration == null &&
+      typeof briefOnly.time_limit_seconds === "number" &&
+      briefOnly.time_limit_seconds > 0;
+
+    const materialPolicy = detectMaterialPolicy(briefText, briefOnly.material_requested);
+
+    const briefOut: ExtractedBrief & {
+      time_limit_source?: TimeLimitSource;
+      material_policy?: MaterialPolicy;
+    } = {
       ...(briefOnly as ExtractedBrief),
       time_limit_seconds: finalTimeLimit,
       time_limit_source: timeLimitSource,
+      material_policy: materialPolicy,
     };
 
     // Non-PII debug log.
-    console.log("extractBriefFromText: result", {
+    console.info("[extract-brief]", {
       raw_brief_present: true,
       time_limit_seconds: briefOut.time_limit_seconds,
       time_limit_source: briefOut.time_limit_source,
-      material_requested: briefOut.material_requested ?? null,
+      material_requested: briefOut.material_requested ? "[present]" : null,
+      material_policy: briefOut.material_policy,
+      duration_overridden: durationOverridden,
       extraction_confidence: conf,
     });
 

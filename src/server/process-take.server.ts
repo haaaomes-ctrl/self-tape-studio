@@ -916,34 +916,55 @@ export async function runProcessTake(
     }
 
     // ---- Alternative-material scrub ----
-    // When the brief specifies material, strip any phrase suggesting the
-    // performer change song / monologue / scene / dance / piece. Pure rewrite,
-    // never fail the report.
-    const materialRequested =
-      extractedBrief && typeof (extractedBrief as { material_requested?: string | null }).material_requested === "string"
-        ? ((extractedBrief as { material_requested?: string | null }).material_requested ?? "").trim()
-        : "";
-    if (materialRequested.length > 0) {
-      const ALT_MATERIAL_PATTERNS: RegExp[] = [
-        /\bchoose\s+a\s+different\s+(song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
-        /\btry\s+(another|a\s+different)\s+(song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
-        /\bconsider\s+(a\s+)?(different|another|alternative)\s+(song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
-        /\bpick\s+(an?\s+)?alternative\s+(material|song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
-        /\buse\s+another\s+(piece|song|monologue|scene|dance|number)\b[^.!?]*[.!?]?/gi,
-        /\bswitch\s+(to\s+)?(a\s+)?(different|another)\s+(song|monologue|scene|dance|piece|number|material)\b[^.!?]*[.!?]?/gi,
-        /\bselect\s+(a\s+)?(different|another)\s+(song|monologue|scene|dance|piece|material)\b[^.!?]*[.!?]?/gi,
-      ];
+    // Only activates when the brief's material_policy is "fixed" — i.e. the
+    // brief requires specific named material. In "choice" / "none" mode,
+    // repertoire suggestions are allowed and we leave the report untouched.
+    // Falls back to material_requested presence when material_policy is
+    // missing (legacy briefs extracted before the helper landed).
+    const extractedAny = (extractedBrief ?? {}) as {
+      material_requested?: string | null;
+      material_policy?: "fixed" | "choice" | "none";
+    };
+    const materialRequested = (extractedAny.material_requested ?? "").trim();
+    const materialPolicy: "fixed" | "choice" | "none" =
+      extractedAny.material_policy ??
+      (materialRequested.length > 0 ? "fixed" : "none");
+
+    // Patterns covering both direct alternatives and SOFT replacement
+    // suggestions ("not the best choice", "another piece could showcase you
+    // better", "different choice", etc.). Each pattern matches a phrase plus
+    // surrounding sentence boundary so the rewrite reads cleanly.
+    const ALT_MATERIAL_PATTERNS: RegExp[] = [
+      /\b(choose|pick|select|use|try|consider)\s+(an?\s+)?(different|another|alternative)\s+(song|monologue|scene|piece|dance|routine|number|material)\b[^.!?]*[.!?]?/gi,
+      /\b(change|switch)\s+(to\s+)?(the\s+|a\s+|an\s+)?(song|monologue|scene|piece|dance|routine|number|material)\b[^.!?]*[.!?]?/gi,
+      /\bnot\s+the\s+best\s+choice\b[^.!?]*[.!?]?/gi,
+      /\b(better|more)\s+suited\b[^.!?]*[.!?]?/gi,
+      /\b(could|would|might)\s+showcase\s+you\s+better\b[^.!?]*[.!?]?/gi,
+      /\banother\s+(song|monologue|scene|piece|dance|routine|number|material)\b[^.!?]*[.!?]?/gi,
+      /\bdifferent\s+(song|monologue|scene|piece|dance|routine|number|material|choice)\b[^.!?]*[.!?]?/gi,
+      /\bchoose\s+something\s+else\b[^.!?]*[.!?]?/gi,
+      /\bswitch\s+material\b[^.!?]*[.!?]?/gi,
+      /\bpick\s+another\b[^.!?]*[.!?]?/gi,
+    ];
+
+    const containsMaterialReplacementSuggestion = (s: unknown): boolean =>
+      typeof s === "string" && ALT_MATERIAL_PATTERNS.some((re) => re.test(s));
+
+    const rewriteMaterialSuggestion = (s: string): string => {
+      let out = s;
+      for (const re of ALT_MATERIAL_PATTERNS) {
+        out = out.replace(re, "Focus on strengthening the submitted material.");
+      }
+      return out.replace(/\s{2,}/g, " ").trim();
+    };
+
+    let materialScrubTriggered = false;
+
+    if (materialPolicy === "fixed") {
       const stripAlt = (s: string): string => {
-        let out = s;
-        let touched = false;
-        for (const re of ALT_MATERIAL_PATTERNS) {
-          if (re.test(out)) {
-            touched = true;
-            out = out.replace(re, "").replace(/\s{2,}/g, " ").trim();
-          }
-        }
-        if (touched) safetyRewriteApplied = true;
-        return out;
+        if (!containsMaterialReplacementSuggestion(s)) return s;
+        materialScrubTriggered = true;
+        return rewriteMaterialSuggestion(s);
       };
       const stripAltArray = (arr: unknown): string[] => {
         if (!Array.isArray(arr)) return [];
@@ -963,7 +984,65 @@ export async function runProcessTake(
           if (typeof notes[k] === "string") notes[k] = stripAlt(notes[k] as string);
         }
       }
+
+      // Final server-side invariant: walk the entire report once more and
+      // catch anything that slipped past the targeted field-level scrub.
+      const assertNoMaterialSuggestions = (
+        value: unknown,
+      ): { value: unknown; violation: boolean } => {
+        if (typeof value === "string") {
+          if (containsMaterialReplacementSuggestion(value)) {
+            return { value: rewriteMaterialSuggestion(value), violation: true };
+          }
+          return { value, violation: false };
+        }
+        if (Array.isArray(value)) {
+          let v = false;
+          const out = value.map((child) => {
+            const r = assertNoMaterialSuggestions(child);
+            if (r.violation) v = true;
+            return r.value;
+          });
+          return { value: out, violation: v };
+        }
+        if (value && typeof value === "object") {
+          let v = false;
+          const out: Record<string, unknown> = {};
+          for (const [k, child] of Object.entries(value as Record<string, unknown>)) {
+            const r = assertNoMaterialSuggestions(child);
+            if (r.violation) v = true;
+            out[k] = r.value;
+          }
+          return { value: out, violation: v };
+        }
+        return { value, violation: false };
+      };
+
+      const invariant = assertNoMaterialSuggestions(report);
+      if (invariant.violation) {
+        report = invariant.value as typeof report;
+        materialScrubTriggered = true;
+        console.warn(
+          "[material-fidelity] assertNoMaterialSuggestions caught residual phrasing on a fixed-material report",
+          { takeId },
+        );
+      }
+
+      if (materialScrubTriggered) safetyRewriteApplied = true;
     }
+
+    // Lightweight non-PII safety/invariant summary for downstream debugging.
+    const durationOverridden =
+      extractedBrief?.time_limit_source === "none" &&
+      typeof (extractedBrief as { time_limit_seconds?: number | null } | null)?.time_limit_seconds !==
+        "number";
+    console.info("[process-take] safety/invariant summary", {
+      takeId,
+      material_policy: materialPolicy,
+      material_scrub_triggered: materialScrubTriggered,
+      duration_overridden: Boolean(durationOverridden),
+      safety_rewrite_applied: safetyRewriteApplied,
+    });
 
     // ---- Casting risk explanations — keep aligned with risk flags ----
     if (!Array.isArray(report.casting_risk_explanations)) {
@@ -1145,6 +1224,8 @@ export async function runProcessTake(
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,
+      material_policy: materialPolicy,
+      material_scrub_triggered: materialScrubTriggered,
     };
 
     await supabaseAdmin
