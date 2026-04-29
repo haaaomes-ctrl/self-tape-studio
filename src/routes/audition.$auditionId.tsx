@@ -617,16 +617,20 @@ function verdictTone(label: string | undefined): string {
 
 
 // Translates the underlying confidence + signal data into a friendly,
-// non-technical trust indicator. Never surfaces the numeric score or
-// "AI confidence" wording — users see one of three plain-language labels
-// plus a one-line explanation that names the actual contributing factors
-// (brief, audio, video quality, performance completeness).
+// non-technical reliability indicator. Never surfaces the numeric score or
+// "AI confidence" wording — users see one of three plain-language tiers
+// (High / Medium / Low) plus a one-line "Why" naming the actual contributing
+// factors (brief, audio, video quality, performance completeness).
 function buildTrustIndicator(
   confidence: number,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   report: any,
   take: Take,
-): { label: "Very reliable" | "Mostly reliable" | "Take with caution"; reason: string; tone: string } {
+): {
+  label: "Feedback reliability: High" | "Feedback reliability: Medium" | "Feedback reliability: Low";
+  reason: string;
+  tone: string;
+} {
   const audio = report?.scores?.audio ?? null;
   const technical = report?.scores?.technical ?? null;
   const briefAdherence = report?.scores?.brief_adherence ?? null;
@@ -645,50 +649,53 @@ function buildTrustIndicator(
   const positives: string[] = [];
   const concerns: string[] = [];
 
-  if (hasBrief) positives.push("a casting brief to compare against");
+  if (hasBrief) positives.push("a casting brief was provided");
   else concerns.push("no casting brief was provided");
 
   if (audio != null) {
     if (audio >= 75) positives.push("clear audio");
-    else if (audio >= 50) concerns.push("audio that's a little muddy in places");
-    else concerns.push("muffled or noisy audio");
+    else if (audio >= 50) concerns.push("audio is a little muddy in places");
+    else concerns.push("audio is muffled or noisy");
   }
 
   if (technical != null) {
     if (technical >= 75) positives.push("good video quality");
-    else if (technical < 50) concerns.push("video quality that made parts hard to read");
+    else if (technical < 50) concerns.push("video quality made parts hard to read");
   }
 
-  if (!hasFullPerformance) concerns.push("a short or partial performance");
+  if (!hasFullPerformance) concerns.push("the performance is short or partial");
 
-  let label: "Very reliable" | "Mostly reliable" | "Take with caution";
+  let label:
+    | "Feedback reliability: High"
+    | "Feedback reliability: Medium"
+    | "Feedback reliability: Low";
   let tone: string;
   if (confidence >= 85 && concerns.length === 0) {
-    label = "Very reliable";
+    label = "Feedback reliability: High";
     tone = "text-success";
   } else if (confidence >= 65 && concerns.length <= 1) {
-    label = "Mostly reliable";
+    label = "Feedback reliability: Medium";
     tone = "text-foreground";
   } else {
-    label = "Take with caution";
+    label = "Feedback reliability: Low";
     tone = "text-warning";
   }
 
-  // Build a single warm sentence from the strongest signal.
+  // Build a single "Why: …" sentence from the strongest signals.
   let reason: string;
-  if (label === "Very reliable") {
-    const lead = positives.slice(0, 2).join(" and ") || "a clean tape all round";
-    reason = `Based on ${lead} — you can lean into the feedback below.`;
-  } else if (label === "Mostly reliable") {
+  if (label === "Feedback reliability: High") {
+    const lead = positives.slice(0, 2).join(" and ") || "clear video and audio";
+    reason = `Why: ${lead} — you can lean into the feedback below.`;
+  } else if (label === "Feedback reliability: Medium") {
     if (concerns.length > 0) {
-      reason = `Solid read overall, but ${concerns[0]} — weigh the notes accordingly.`;
+      reason = `Why: ${concerns[0]} — weigh the notes accordingly.`;
     } else {
       const lead = positives[0] ?? "a generally clean tape";
-      reason = `Based on ${lead} — the feedback below is a fair guide.`;
+      reason = `Why: ${lead} — the feedback below is a fair guide.`;
     }
   } else {
     const lead = concerns.slice(0, 2).join(" and ") || "limited information to work from";
-    reason = `Heads up: ${lead}. Treat the feedback as a directional steer rather than the final word.`;
+    reason = `Why: ${lead}. Treat the feedback as a directional steer rather than the final word.`;
   }
 
   return { label, reason, tone };
