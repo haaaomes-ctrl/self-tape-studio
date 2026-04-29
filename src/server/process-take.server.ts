@@ -489,7 +489,11 @@ export async function runProcessTake(
 
     const briefBlock = audition.brief
       ? `CASTING BRIEF (${audition.brief_source}):\n${audition.brief}`
-      : `NO BRIEF PROVIDED — apply BASELINE rubric. Do not invent constraints.`;
+      : `NO CASTING BRIEF PROVIDED — apply BASELINE rubric (treat as professional standards). Do not invent constraints.`;
+
+    const extractedBlock = extractedBrief
+      ? `STRUCTURED BRIEF (parsed):\n${JSON.stringify(extractedBrief, null, 2)}`
+      : "STRUCTURED BRIEF: none.";
 
     const signalsBlock = `TECHNICAL SIGNALS (modifiers, not primary):\n${JSON.stringify(
       { signals: take.signals, checklist: take.checklist },
@@ -497,12 +501,16 @@ export async function runProcessTake(
       2,
     )}`;
 
+    const levelBlock = `PERFORMER LEVEL: ${auditionLevel}. Calibrate expectations and tone for this level — encouraging at lower levels, sharper at professional. Never harsh.`;
+
     const userText = [
       `Audition title: ${audition.title}`,
+      levelBlock,
       briefBlock,
+      extractedBlock,
       signalsBlock,
       `Analysis tier: ${tier} rendition (the user's original performance is intact — only technical encoding was standardised).`,
-      "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Be specific, prioritised, and constructive.",
+      "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre). Be specific, prioritised, and constructive.",
     ].join("\n\n");
 
     const apiKey = process.env.LOVABLE_API_KEY;
