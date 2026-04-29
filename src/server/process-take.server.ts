@@ -384,7 +384,11 @@ export async function runProcessTake(
               role: "user",
               content: [
                 { type: "text", text: userText },
-                { type: "image_url", image_url: { url: videoUrl } },
+                // CRITICAL: video MP4s must be sent as `file_url`, NOT
+                // `image_url`. Gemini via the Lovable AI Gateway rejects
+                // `image_url` for video/mp4 with HTTP 400 ("Unsupported
+                // image format … Supported: PNG, JPEG, WebP, GIF").
+                { type: "file_url", file_url: { url: videoUrl } },
               ],
             },
           ],
