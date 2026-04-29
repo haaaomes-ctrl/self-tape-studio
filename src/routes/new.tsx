@@ -229,6 +229,29 @@ function NewAuditionPage() {
               className="mt-2"
               maxLength={120}
             />
+
+            <div className="mt-5">
+              <Label className="text-sm font-medium">Your level</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                We calibrate feedback and submission bands to your level.
+              </p>
+              <Select
+                value={auditionLevel}
+                onValueChange={(v) =>
+                  setAuditionLevel(v as "learning" | "amateur" | "emerging" | "professional")
+                }
+              >
+                <SelectTrigger className="mt-2">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="learning">Learning / School</SelectItem>
+                  <SelectItem value="amateur">Amateur / Community</SelectItem>
+                  <SelectItem value="emerging">Emerging / Training</SelectItem>
+                  <SelectItem value="professional">Professional</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </section>
 
           <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
