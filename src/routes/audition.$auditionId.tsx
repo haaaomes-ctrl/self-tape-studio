@@ -741,6 +741,88 @@ function TakeView({ take }: { take: Take }) {
               </li>
             ))}
           </ul>
+          {Array.isArray(r.casting_risk_explanations) && r.casting_risk_explanations.length > 0 && (
+            <div className="mt-5 space-y-3 border-t border-warning/30 pt-4">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                What this means for casting
+              </p>
+              {(r.casting_risk_explanations as Array<{
+                flag: string;
+                casting_impact: string;
+                recall_impact: "unlikely_to_affect" | "may_reduce" | "likely_to_block";
+              }>).map((e, i) => {
+                const recallLabel =
+                  e.recall_impact === "likely_to_block"
+                    ? "Likely to block recall"
+                    : e.recall_impact === "may_reduce"
+                      ? "May reduce recall chances"
+                      : "Unlikely to affect recall";
+                const recallTone =
+                  e.recall_impact === "likely_to_block"
+                    ? "text-destructive"
+                    : e.recall_impact === "may_reduce"
+                      ? "text-warning"
+                      : "text-muted-foreground";
+                return (
+                  <div key={i} className="text-sm">
+                    <p className="font-medium">{e.flag}</p>
+                    <p className="mt-0.5 text-muted-foreground">{e.casting_impact}</p>
+                    <p className={cn("mt-0.5 text-xs font-medium", recallTone)}>{recallLabel}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Role fit (only when brief mode and notes present) */}
+      {r.mode === "brief" && typeof r.role_fit_notes === "string" && r.role_fit_notes.trim() && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <div className="flex items-baseline justify-between gap-4">
+            <h3 className="font-display text-base font-semibold">Role fit</h3>
+            <div className="flex items-center gap-3 text-xs">
+              {typeof r.role_fit_modifier === "number" && r.role_fit_modifier !== 0 && (
+                <span
+                  className={cn(
+                    "font-medium tabular-nums",
+                    r.role_fit_modifier > 0 ? "text-success" : "text-warning",
+                  )}
+                >
+                  {r.role_fit_modifier > 0 ? "+" : ""}
+                  {r.role_fit_modifier} to overall
+                </span>
+              )}
+              {r.role_fit_confidence && (
+                <span className="text-muted-foreground">
+                  confidence: {r.role_fit_confidence}
+                </span>
+              )}
+            </div>
+          </div>
+          <p className="mt-2 text-sm text-foreground">{r.role_fit_notes}</p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Role fit reflects alignment with the role's function and tone — never likeness or
+            appearance.
+          </p>
+        </div>
+      )}
+
+      {/* Presentation notes — practical, optional, non-personal. Do not affect the score. */}
+      {Array.isArray(r.presentation_notes) && r.presentation_notes.length > 0 && (
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <h3 className="font-display text-base font-semibold">Presentation notes</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Practical camera-readability tips. These do not affect your score.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {(r.presentation_notes as string[]).map((n, i) => (
+              <li key={i} className="flex gap-2">
+                <span className="text-muted-foreground">•</span>
+                <span>{n}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

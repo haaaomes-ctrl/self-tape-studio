@@ -156,6 +156,53 @@ const REPORT_TOOL = {
             required: ["severity", "flag"],
           },
         },
+        casting_risk_explanations: {
+          type: "array",
+          description:
+            "For each material risk in submission_risk_flags, a one-line plain-English explanation of the casting impact and whether it is likely to affect recall (callback) likelihood. Same order as submission_risk_flags where possible.",
+          items: {
+            type: "object",
+            properties: {
+              flag: { type: "string", description: "Short reference to the related risk." },
+              casting_impact: {
+                type: "string",
+                description: "What this means for casting — concrete and non-technical.",
+              },
+              recall_impact: {
+                type: "string",
+                enum: ["unlikely_to_affect", "may_reduce", "likely_to_block"],
+                description:
+                  "Plain mapping of recall likelihood. unlikely_to_affect = cosmetic; may_reduce = noticeable; likely_to_block = will probably get filtered out.",
+              },
+            },
+            required: ["flag", "casting_impact", "recall_impact"],
+          },
+        },
+        role_fit_notes: {
+          type: "string",
+          description:
+            "ONE short paragraph on how the performance aligns with the role's function, tone, energy, and emotional demands as described in the structured brief. Judge alignment with the role only — never likeness, appearance, race, body, age, or imitation. Empty string in BASELINE mode (no brief).",
+        },
+        role_fit_modifier: {
+          type: "integer",
+          minimum: -10,
+          maximum: 5,
+          description:
+            "Bounded role-fit nudge applied to the overall score after recompute. MUST be 0 in BASELINE mode. Positive only when the performance clearly serves the role's function and tone (max +5). Negative when it works against the role's intent (max -10). Never use for likeness, appearance, or imitation.",
+        },
+        role_fit_confidence: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description:
+            "Your confidence that the structured brief gave you enough to judge role-fit. Use 'low' when the brief is thin or the role function is unclear.",
+        },
+        presentation_notes: {
+          type: "array",
+          description:
+            "OPTIONAL practical, non-personal observations about visible presentation that materially affect the tape (e.g. 'Top blends into the background — a contrasting colour would read better on camera', 'Hair drifts across one eye on close-ups'). NEVER comment on body, attractiveness, weight, race, gender presentation, class markers, disability, mobility aids, medical devices, or personal style. Empty array if there is nothing material to say. These notes do NOT affect the score unless they relate to a brief requirement or a visibility issue already reflected in technical/brief categories.",
+          items: { type: "string" },
+          maxItems: 3,
+        },
         at_risk: { type: "boolean" },
       },
       required: [
@@ -176,6 +223,11 @@ const REPORT_TOOL = {
         "timestamped_notes",
         "coaching_drills",
         "submission_risk_flags",
+        "casting_risk_explanations",
+        "role_fit_notes",
+        "role_fit_modifier",
+        "role_fit_confidence",
+        "presentation_notes",
         "at_risk",
       ],
     },
@@ -226,19 +278,41 @@ Performance realism:
 - Reward truth, clarity of intention, and connection. Do NOT reward overacting or pushed/exaggerated delivery.
 - Subtle, grounded work is not a weakness — judge it on intention and clarity, not size.
 
-Role-fit (when a structured brief is present):
-- Read role function, emotional tone, energy level, vocal expectations, physical demands, and tone of show.
-- Judge alignment with the role, not likeness or physical resemblance. Never reward imitation. Never penalise appearance mismatch.
-- Role-fit may colour interpretation only — it cannot compensate for weak fundamentals.
+Role-fit (only in BRIEF mode, when a structured brief is present):
+- Read role function, emotional tone, energy level, vocal expectations, physical demands, and tone of show from the STRUCTURED BRIEF only.
+- Judge alignment with the role's FUNCTION and INTENT — never likeness, physical resemblance, race, age, body, gender presentation, or imitation of a known performance.
+- Write ONE short paragraph in role_fit_notes.
+- role_fit_modifier is BOUNDED and applied to the overall after recompute:
+  - Range -10..+5 (asymmetric on purpose — it's easier to work against a role than to fully serve it).
+  - +1..+5 ONLY when the performance clearly serves the role's function and tone in a way the casting team would notice.
+  - -1..-10 when interpretation actively works against the role's intent or tone.
+  - 0 in BASELINE mode, or when role-fit cannot be fairly judged.
+- Set role_fit_confidence to 'low' when the brief is thin, vague, or missing role function.
+- Role-fit cannot compensate for weak fundamentals; it is a small calibration only.
 
-Safety and fairness — NEVER comment on:
-- attractiveness, weight, body shape, race, class, disability, gender presentation, home/room quality, equipment cost.
-- disabilities, mobility aids, or medical devices. Comment on technical clarity only, never the cause.
-- Presentation notes (clothing blending with background, distracting clothing, wrinkled clothing) are allowed only when they materially affect visibility or violate the brief — never as personal comments.
+Presentation notes (OPTIONAL, do NOT affect score):
+- Only include presentation_notes when there is a PRACTICAL, non-personal observation that materially helps the next take (e.g. "Top blends into the background — a contrasting colour reads better on camera", "Hair drifts across one eye in close-ups", "Background door is open and pulls focus").
+- Safe-clothing guidance is fine: contrast against background, neutral solid colours read cleanly, avoid loud patterns that strobe on camera. Frame as guidance for the camera, never as a comment on the person.
+- Empty array if there is nothing material. Never pad. Never personal.
+- These notes do NOT change the score. They only matter to scoring if a brief explicitly required something (then it lives in brief_adherence) or if visibility is compromised (then it lives in technical/professional_presentation).
 
-Submission Risk Flags:
+Safety and fairness — REINFORCED. NEVER, under any circumstances, comment on:
+- attractiveness, weight, body shape, body type, age, race, ethnicity, class markers, gender presentation, sexuality, religion.
+- disabilities, mobility aids, prosthetics, medical devices, neurodivergence, or any visible health condition. If something affects technical clarity, comment ONLY on the technical clarity, never the cause.
+- home/room quality, equipment cost, or anything that signals socioeconomic status.
+- personal style, hair, makeup, or fashion as personal traits. Camera-readability is fine; personal taste is not.
+If you are tempted to comment on any of the above, drop the note entirely.
+
+Submission Risk Flags + casting_risk_explanations:
 - Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
-- Keep empty if none.
+- For each flag, add a casting_risk_explanations entry: a plain-English casting_impact line and a recall_impact value (unlikely_to_affect / may_reduce / likely_to_block). Keep both arrays in matching order.
+- Empty if there are no material risks.
+
+Tone calibration by performer LEVEL — calibrate the writing voice across ALL text fields:
+- learning (Learning / School): simple, warm, confidence-building. Short sentences. Celebrate effort and one clear next step. Never use industry jargon.
+- amateur (Amateur / Community): warm and practical. Speak like a supportive director at a community show. Concrete suggestions, no harsh critique.
+- emerging (Emerging / Training): craft-focused. Use working vocabulary (intention, beat change, pickup, eyeline). Push specificity, but stay encouraging.
+- professional: concise, industry-realistic. Talk to them as a peer. Trim padding. Be direct about what would or wouldn't get a recall. Never harsh, but no softening either.
 
 Confidence (0–100) — internal signal only, never shown to the user verbatim. Used to derive a plain-language trust indicator downstream:
 - 90+ when full brief and clean signals.
@@ -665,6 +739,96 @@ export async function runProcessTake(
     const audioScore = modelScores.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
 
+    // ---- Bounded role-fit modifier ----
+    // Clamp to [-10, +5]. Force 0 in BASELINE mode. Apply AFTER the audio cap
+    // so a strong role-fit nudge can't lift a tape past the audio ceiling.
+    const overallBeforeRoleFit = overall;
+    let roleFitModifier = 0;
+    if (typeof report.role_fit_modifier === "number" && Number.isFinite(report.role_fit_modifier)) {
+      roleFitModifier = Math.max(-10, Math.min(5, Math.round(report.role_fit_modifier)));
+    }
+    if (report.mode !== "brief") {
+      roleFitModifier = 0;
+    }
+    // Never let role-fit alone push past the audio cap.
+    const postRoleFit = overall + roleFitModifier;
+    overall = Math.max(0, Math.min(100, postRoleFit));
+    if (audioScore < 50 && overall > 65) overall = 65;
+    report.role_fit_modifier = roleFitModifier;
+    if (report.role_fit_confidence !== "low" && report.role_fit_confidence !== "medium" && report.role_fit_confidence !== "high") {
+      report.role_fit_confidence = report.mode === "brief" ? "low" : "low";
+    }
+    if (typeof report.role_fit_notes !== "string") report.role_fit_notes = "";
+    if (report.mode !== "brief") {
+      // BASELINE: blank role-fit notes — we have nothing to fit against.
+      report.role_fit_notes = "";
+      report.role_fit_confidence = "low";
+    }
+
+    // ---- Presentation notes — safety filter (server-side belt-and-braces) ----
+    // The prompt forbids personal/identity comments, but we strip defensively.
+    const FORBIDDEN_PRESENTATION = [
+      /\battractive(ness)?\b/i,
+      /\bweight\b/i,
+      /\bbody\s*(shape|type)?\b/i,
+      /\bskinny\b/i,
+      /\bfat\b/i,
+      /\b(over|under)weight\b/i,
+      /\brace\b/i,
+      /\bethnic(ity)?\b/i,
+      /\bdisab(led|ility|ilities)\b/i,
+      /\bwheelchair\b/i,
+      /\bprosthe(tic|sis)\b/i,
+      /\bmobility\s+aid\b/i,
+      /\bmedical\s+device\b/i,
+      /\bclass\b/i,
+      /\bgender\s+(presentation|identity)\b/i,
+      /\bmasculine\b/i,
+      /\bfeminine\b/i,
+      /\bage(d|ing)?\b/i,
+      /\b(too )?old\b/i,
+      /\b(too )?young\b/i,
+    ];
+    const isSafePresentationNote = (note: string): boolean => {
+      if (typeof note !== "string" || !note.trim()) return false;
+      return !FORBIDDEN_PRESENTATION.some((re) => re.test(note));
+    };
+    let presentationNotes: string[] = Array.isArray(report.presentation_notes)
+      ? report.presentation_notes.filter(isSafePresentationNote).slice(0, 3)
+      : [];
+    report.presentation_notes = presentationNotes;
+
+    // ---- Casting risk explanations — keep aligned with risk flags ----
+    if (!Array.isArray(report.casting_risk_explanations)) {
+      report.casting_risk_explanations = [];
+    }
+    // If the model produced explanations but the merged risk flags now include
+    // deterministic flags it didn't see, top-up with a neutral default.
+    const haveExplanations = new Set(
+      (report.casting_risk_explanations as Array<{ flag?: string }>)
+        .map((e) => (e.flag ?? "").toLowerCase().trim())
+        .filter(Boolean),
+    );
+    for (const cf of complianceFlags) {
+      const key = cf.message.toLowerCase().trim();
+      if (haveExplanations.has(key)) continue;
+      report.casting_risk_explanations.push({
+        flag: cf.message,
+        casting_impact:
+          cf.severity === "high"
+            ? "Casting will likely filter this out before recall — fix before sending."
+            : cf.severity === "medium"
+              ? "Casting will notice this. It can dent recall chances if other tapes are clean."
+              : "Cosmetic — unlikely to affect recall on its own.",
+        recall_impact:
+          cf.severity === "high"
+            ? "likely_to_block"
+            : cf.severity === "medium"
+              ? "may_reduce"
+              : "unlikely_to_affect",
+      });
+    }
+
     // ---- Score sanity guard ----
     // If the model's overall and the recomputed overall diverge by more than
     // 15 points, the model's number is unreliable for display. We've already
@@ -766,12 +930,16 @@ export async function runProcessTake(
       weights: recomputed.usedWeights,
       thresholds: bandsForLevel(auditionLevel),
       overall_score_model: overallScoreModel,
+      overall_before_role_fit: overallBeforeRoleFit,
+      role_fit_modifier: roleFitModifier,
+      role_fit_confidence: report.role_fit_confidence,
       overall_score_final: overall,
       verdict_final: verdict.label,
       block_reasons: blockReasons,
       extraction_confidence: extractionConfidence,
       score_discrepancy: scoreDiscrepancy,
       compliance_flags: complianceFlags,
+      presentation_notes_count: presentationNotes.length,
     };
 
     await supabaseAdmin
