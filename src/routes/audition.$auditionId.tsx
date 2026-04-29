@@ -44,6 +44,9 @@ interface Audition {
   brief: string | null;
   brief_source: "full" | "guided" | "none";
   mode: "brief" | "baseline";
+  audition_level?: "learning" | "amateur" | "emerging" | "professional" | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extracted_brief?: any;
 }
 
 function AuditionPage() {
@@ -62,7 +65,7 @@ function AuditionPage() {
   async function refresh() {
     const { data: aud } = await supabase
       .from("auditions")
-      .select("id, title, brief, brief_source, mode")
+      .select("id, title, brief, brief_source, mode, audition_level, extracted_brief")
       .eq("id", auditionId)
       .single();
     if (aud) setAudition(aud as Audition);
