@@ -496,6 +496,7 @@ function verdictTone(label: string | undefined): string {
 }
 
 
+// Translates the underlying confidence + signal data into a friendly,
 // non-technical trust indicator. Never surfaces the numeric score or
 // "AI confidence" wording — users see one of three plain-language labels
 // plus a one-line explanation that names the actual contributing factors
