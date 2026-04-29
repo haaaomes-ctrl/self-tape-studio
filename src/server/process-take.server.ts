@@ -318,25 +318,40 @@ export async function runProcessTake(
     // Pre-Gemini URL validation. The static MP4 rendition is generated AFTER
     // `video.asset.ready` fires, so the URL may 404/403 for a short window
     // even though the asset is "ready". Probe with HEAD before burning a
-    // Gemini call. If it isn't there, fail the take with a clear message
-    // (the user can retry once the rendition catches up) — never leave
-    // processing_phase stuck on `analysing`.
+    // Gemini call. If it isn't there, return the take to `analysis_pending`
+    // so the reconciler retries shortly — do NOT mark it as a terminal
+    // error yet (the rendition usually catches up within ~60–90s).
     console.log("runProcessTake: validating video URL", { takeId, tier, url: initialUrl });
     let probeStatus: number | null = null;
+    let probeThrew = false;
     try {
       const probe = await fetch(initialUrl, { method: "HEAD" });
       probeStatus = probe.status;
     } catch (probeErr) {
       console.error("runProcessTake: HEAD probe threw", { takeId, probeErr });
-      throw new Error(
-        "Could not reach the optimised video file. Please retry in a moment — Mux may still be finalising the download rendition.",
-      );
+      probeThrew = true;
     }
-    if (probeStatus < 200 || probeStatus >= 300) {
-      console.error("runProcessTake: video URL not ready", { takeId, probeStatus, url: initialUrl });
-      throw new Error(
-        `The optimised video file isn't ready yet (HTTP ${probeStatus}). Please retry in ~30 seconds — Mux is still generating the download rendition.`,
-      );
+    if (probeThrew || probeStatus === null || probeStatus < 200 || probeStatus >= 300) {
+      console.warn("runProcessTake: video URL not ready, returning to analysis_pending", {
+        takeId,
+        probeStatus,
+        url: initialUrl,
+      });
+      // Return to analysis_pending so the stale-takes reconciler picks it
+      // up again on the next tick. The reconciler enforces the overall
+      // timeout (MAX_ATTEMPTS / total elapsed) before giving up.
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          status: "pending",
+          processing_phase: "analysis_pending",
+          error_message: null,
+        })
+        .eq("id", takeId);
+      return {
+        ok: false,
+        error: `Optimised video not ready yet (HTTP ${probeStatus ?? "fetch-failed"}); will retry.`,
+      };
     }
     console.log("runProcessTake: video URL OK", { takeId, probeStatus });
 

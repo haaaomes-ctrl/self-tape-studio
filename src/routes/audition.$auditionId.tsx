@@ -188,12 +188,24 @@ function AuditionPage() {
   );
 }
 
-function isStuck(take: Take): boolean {
-  if (take.status !== "processing" && take.status !== "pending") return false;
-  const created = new Date(take.created_at).getTime();
-  // Mux transcoding for large files can take a couple of minutes; give the
-  // pipeline 10 min before flagging as stuck.
-  return Date.now() - created > 10 * 60 * 1000;
+// Tier thresholds for the "watching your tape" UX. Tied to the server-side
+// reconciler ceiling (MAX_TOTAL_AGE_SECONDS = 180s) so the UI never shows a
+// hard error before the backend has actually given up.
+const TIER_FINALISING_SECONDS = 60;
+const TIER_LONG_SECONDS = 120;
+const TIER_GIVEUP_SECONDS = 180;
+
+function useElapsedSeconds(startIso: string) {
+  const [elapsed, setElapsed] = useState(() =>
+    Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000)),
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      setElapsed(Math.max(0, Math.floor((Date.now() - new Date(startIso).getTime()) / 1000)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [startIso]);
+  return elapsed;
 }
 
 function FailedTakeView({ take }: { take: Take }) {
@@ -349,24 +361,25 @@ function PhaseStep({ label, active, done }: { label: string; active: boolean; do
   );
 }
 
-function TakeView({ take }: { take: Take }) {
-  if (take.status === "pending" || take.status === "processing") {
-    const phase = take.processing_phase ?? "uploading";
+function ProcessingTakeView({ take }: { take: Take }) {
+  const elapsed = useElapsedSeconds(take.created_at);
+  const phase = take.processing_phase ?? "uploading";
+  const [busy, setBusy] = useState(false);
+
+  // Upload / transcoding tiers are independent of the analysis tiers — Mux
+  // can take a couple of minutes to optimise a large file before analysis
+  // even starts.
+  if (phase === "uploading" || phase === "transcoding") {
     const copy =
       phase === "uploading"
         ? {
             title: "Uploading your tape…",
             sub: "Sending to secure storage. This is the only network step that depends on your connection.",
           }
-        : phase === "transcoding"
-          ? {
-              title: "Optimising your video…",
-              sub: "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.",
-            }
-          : {
-              title: "Watching your tape…",
-              sub: "Reading the brief, checking technicals, writing notes. Usually under a minute.",
-            };
+        : {
+            title: "Optimising your video…",
+            sub: "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.",
+          };
     return (
       <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
@@ -377,19 +390,91 @@ function TakeView({ take }: { take: Take }) {
           <PhaseStep
             label="Optimise"
             active={phase === "transcoding"}
-            done={phase === "analysing" || phase === "complete"}
+            done={false}
           />
-          <PhaseStep
-            label="Analyse"
-            active={phase === "analysing"}
-            done={phase === "complete"}
-          />
+          <PhaseStep label="Analyse" active={false} done={false} />
         </div>
       </div>
     );
   }
 
-  if (take.status === "error" || (take.status === "processing" && isStuck(take))) {
+  // Analysis tiers — driven by elapsed time since the take was created so
+  // the UX doesn't depend on which retry attempt the backend is on.
+  let title: string;
+  let sub: string;
+  if (elapsed < TIER_FINALISING_SECONDS) {
+    title = "Watching your tape…";
+    sub = "Reading the brief, checking technicals, writing notes. Usually under a minute.";
+  } else if (elapsed < TIER_LONG_SECONDS) {
+    title = "Finalising your video…";
+    sub = "This can take a few extra seconds while the optimised file finishes preparing. Hang tight.";
+  } else {
+    title = "This is taking longer than expected";
+    sub = "Your tape is still being prepared. You can wait, retry now, or cancel.";
+  }
+
+  const showActions = elapsed >= TIER_LONG_SECONDS;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
+      <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
+      <p className="mt-4 font-display text-lg font-semibold">{title}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
+      <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
+        <PhaseStep label="Upload" active={false} done={true} />
+        <PhaseStep label="Optimise" active={false} done={true} />
+        <PhaseStep label="Analyse" active={true} done={false} />
+      </div>
+      {showActions && (
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await retryProcessTake({ data: { takeId: take.id } });
+                toast.success("Retrying analysis");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Retry failed");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Retry analysis
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await resetTake({ data: { takeId: take.id } });
+                toast.success("Cancelled — you can replace the video now.");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Cancel failed");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TakeView({ take }: { take: Take }) {
+  if (take.status === "pending" || take.status === "processing") {
+    return <ProcessingTakeView take={take} />;
+  }
+
+  if (take.status === "error") {
     return <FailedTakeView take={take} />;
   }
 
