@@ -54,8 +54,14 @@ const EXTRACT_TOOL = {
         material_requested: { type: ["string", "null"] },
         recall_dates: { type: ["string", "null"] },
         confidentiality_notes: { type: ["string", "null"] },
+        extraction_confidence: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description:
+            "Your confidence that the structured fields above accurately reflect the brief. Use 'low' if the brief is vague, very short, or you had to guess multiple fields. 'high' only when the brief is explicit and unambiguous.",
+        },
       },
-      required: ["audition_type"],
+      required: ["audition_type", "extraction_confidence"],
     },
   },
 };
@@ -63,11 +69,12 @@ const EXTRACT_TOOL = {
 const SYSTEM = `You are a UK casting assistant. Extract a structured casting brief from the text below.
 Use British English in any free-text fields ("recall", not "callback"; "self-tape"; "analysing", "prioritised", "behaviour", "centre").
 Only fill fields the brief actually states or strongly implies. Use null / "unspecified" / empty arrays when not stated. Do not invent constraints.
-For time_limit_seconds, convert anything stated (e.g. "under 2 minutes" → 120, "32-bar cut" → 90 as a sensible default).`;
+For time_limit_seconds, convert anything stated (e.g. "under 2 minutes" → 120, "32-bar cut" → 90 as a sensible default).
+Set extraction_confidence honestly: 'high' only when the brief is explicit; 'low' when it is short, vague, or you had to guess multiple fields.`;
 
 export async function extractBriefFromText(
   briefText: string,
-): Promise<ExtractedBrief | null> {
+): Promise<ExtractedBriefWithMeta | null> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) {
     console.warn("extractBriefFromText: LOVABLE_API_KEY missing");
@@ -101,8 +108,9 @@ export async function extractBriefFromText(
     const json = await resp.json();
     const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
     if (!args) return null;
-    const parsed = JSON.parse(args) as ExtractedBrief;
-    // Belt-and-braces: ensure audition_type is valid.
+    const parsed = JSON.parse(args) as ExtractedBrief & {
+      extraction_confidence?: ExtractionConfidence;
+    };
     const validTypes: AuditionType[] = [
       "acting_scene",
       "monologue",
@@ -116,7 +124,14 @@ export async function extractBriefFromText(
     if (!validTypes.includes(parsed.audition_type)) {
       parsed.audition_type = "unknown";
     }
-    return parsed;
+    const conf: ExtractionConfidence =
+      parsed.extraction_confidence === "high" || parsed.extraction_confidence === "medium"
+        ? parsed.extraction_confidence
+        : "low";
+    // Strip meta from the brief object itself
+    const { extraction_confidence: _drop, ...briefOnly } = parsed;
+    void _drop;
+    return { brief: briefOnly as ExtractedBrief, extraction_confidence: conf };
   } catch (err) {
     console.warn("extractBriefFromText: failed", err);
     return null;
