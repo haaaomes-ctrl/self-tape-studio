@@ -16,6 +16,7 @@ import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/l
 import { retryProcessTake, resetTake, resetTakeForReupload } from "@/server/process-take.functions";
 import { deleteTake, deleteAudition } from "@/server/delete.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
+import { describeUploadError } from "@/lib/upload-errors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/audition/$auditionId")({
@@ -326,8 +327,15 @@ function FailedTakeView({ take }: { take: Take }) {
         : null;
 
       await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
-      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      let uploadUrl: string | undefined;
+      try {
+        const res = await createMuxDirectUpload({ data: { takeId: take.id } });
+        uploadUrl = res.uploadUrl;
+      } catch (err) {
+        const info = describeUploadError(err);
+        throw new Error(info.message);
+      }
+      if (!uploadUrl) throw new Error("Video service did not return an upload URL. Please try again.");
       await uploadFileToMux(uploadUrl, f);
       toast.success("Replacement uploaded — optimising and analysing now");
     } catch (err) {
@@ -1215,8 +1223,15 @@ function AddTakeBlock({
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
       takeIdRef.current = take.id;
 
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
-      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      let uploadUrl: string | undefined;
+      try {
+        const res = await createMuxDirectUpload({ data: { takeId: take.id } });
+        uploadUrl = res.uploadUrl;
+      } catch (err) {
+        const info = describeUploadError(err);
+        throw new Error(info.message);
+      }
+      if (!uploadUrl) throw new Error("Video service did not return an upload URL. Please try again.");
       const controller = new AbortController();
       abortRef.current = controller;
       await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
