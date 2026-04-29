@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { createMuxDirectUpload } from "@/server/mux.functions";
+import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server/process-take.functions";
 
 export const Route = createFileRoute("/new")({
@@ -180,8 +181,15 @@ function NewAuditionPage() {
       takeIdRef.current = take.id;
 
       // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
-      const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
-      if (!uploadUrl) throw new Error("Could not get an upload URL");
+      let uploadUrl: string | undefined;
+      try {
+        const res = await createMuxDirectUpload({ data: { takeId: take.id } });
+        uploadUrl = res.uploadUrl;
+      } catch (err) {
+        const info = describeUploadError(err);
+        throw new Error(info.message);
+      }
+      if (!uploadUrl) throw new Error("Video service did not return an upload URL. Please try again.");
 
       // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
       const controller = new AbortController();
