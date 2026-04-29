@@ -488,6 +488,9 @@ function ProcessingTakeView({ take }: { take: Take }) {
   const elapsed = useElapsedSeconds(take.created_at);
   const phase = (take.processing_phase ?? "uploading") as StageKey | string;
   const [busy, setBusy] = useState(false);
+  // "Continue waiting" simply re-hides the action panel for ~20s so the user
+  // isn't repeatedly nagged. The underlying analysis keeps running.
+  const [waitDismissedAt, setWaitDismissedAt] = useState<number | null>(null);
 
   // Elapsed time within the analysis window only (not the whole pipeline).
   // Treat it as 0 until we're past upload/transcoding so the analysis copy
@@ -511,7 +514,8 @@ function ProcessingTakeView({ take }: { take: Take }) {
       "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.";
   } else if (phase === "analysis_pending") {
     title = "Preparing the version we'll analyse…";
-    sub = "Lining up the optimised file before the review begins. Almost there.";
+    sub =
+      "Your optimised video is still being prepared. This is normal and usually resolves within 60–90 seconds.";
   } else if (analysisElapsed < TIER_REASSURE_SECONDS) {
     title = "Watching your tape…";
     sub =
@@ -529,10 +533,36 @@ function ProcessingTakeView({ take }: { take: Take }) {
     sub = "Your tape is still being prepared. You can wait, retry now, or cancel.";
   }
 
-  // Cancel/retry surface as soon as analysis crosses the 90s mark — earlier
-  // than the previous 120s threshold per spec.
+  // Stalled-state actions: surface as soon as the analysis window crosses
+  // 90s, regardless of whether we're still in analysis_pending (waiting on
+  // Mux rendition) or analysing (waiting on Gemini). This is the BUG-006
+  // surface — three labelled actions with explanations + a recommended
+  // option that escalates with elapsed time.
+  const inAnalysisWindow = phase === "analysing" || phase === "analysis_pending";
   const showActions =
-    phase === "analysing" && analysisElapsed >= TIER_ACTIONS_SECONDS;
+    inAnalysisWindow &&
+    analysisElapsed >= TIER_ACTIONS_SECONDS &&
+    (waitDismissedAt === null || elapsed - waitDismissedAt >= 20);
+
+  let stalledTitle = "This is taking longer than expected";
+  let stalledContext =
+    "We're still preparing your video for analysis. This usually resolves shortly.";
+  let recommended: "wait" | "retry" | "retry-or-cancel" = "wait";
+  let recommendedNote = "Your video may still be finishing preparation.";
+  if (analysisElapsed >= 180) {
+    recommended = "retry-or-cancel";
+    recommendedNote = "This attempt may be stuck.";
+    stalledContext =
+      "We're still preparing your video for analysis. It's been a while — you may want to retry or cancel.";
+  } else if (analysisElapsed >= 120) {
+    recommended = "retry";
+    recommendedNote = "The preparation step is taking longer than usual.";
+  }
+
+  const handleContinueWaiting = () => {
+    setWaitDismissedAt(elapsed);
+    toast.success("We'll keep this analysis running.");
+  };
 
   return (
     <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
@@ -544,43 +574,87 @@ function ProcessingTakeView({ take }: { take: Take }) {
       </p>
       <StageList activeIdx={activeIdx} />
       {showActions && (
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await retryProcessTake({ data: { takeId: take.id } });
-                toast.success("Retrying analysis");
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Retry failed");
-              } finally {
-                setBusy(false);
-              }
-            }}
+        <div className="mx-auto mt-8 max-w-md rounded-xl border border-border bg-muted/40 p-5 text-left">
+          <p className="font-display text-base font-semibold">{stalledTitle}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{stalledContext}</p>
+          <div
+            className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground"
+            role="status"
           >
-            Retry analysis
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await resetTake({ data: { takeId: take.id } });
-                toast.success("Cancelled — you can replace the video now.");
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : "Cancel failed");
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Cancel
-          </Button>
+            <span className="font-medium">Recommended:</span>{" "}
+            {recommended === "wait" && "Continue waiting"}
+            {recommended === "retry" && "Retry from this step"}
+            {recommended === "retry-or-cancel" && "Retry from this step or cancel"}
+            <span className="text-muted-foreground"> — {recommendedNote}</span>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div>
+              <Button
+                size="sm"
+                variant={recommended === "wait" ? "default" : "outline"}
+                disabled={busy}
+                onClick={handleContinueWaiting}
+                className="w-full justify-start"
+              >
+                Continue waiting
+              </Button>
+              <p className="mt-1 px-1 text-xs text-muted-foreground">
+                Keep this analysis running. Best choice if the video is still
+                being prepared.
+              </p>
+            </div>
+            <div>
+              <Button
+                size="sm"
+                variant={recommended === "wait" ? "outline" : "default"}
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await retryProcessTake({ data: { takeId: take.id } });
+                    setWaitDismissedAt(elapsed);
+                    toast.success("Retrying analysis from this step");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Retry failed");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="w-full justify-start"
+              >
+                Retry from this step
+              </Button>
+              <p className="mt-1 px-1 text-xs text-muted-foreground">
+                Re-check the video and restart analysis from the current
+                stage. Your upload will not be lost.
+              </p>
+            </div>
+            <div>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await resetTake({ data: { takeId: take.id } });
+                    toast.success("Cancelled — you can replace the video now.");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Cancel failed");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="w-full justify-start text-destructive hover:text-destructive"
+              >
+                Cancel analysis
+              </Button>
+              <p className="mt-1 px-1 text-xs text-muted-foreground">
+                Stop this attempt and return to your audition. You can upload
+                or retry later.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>
