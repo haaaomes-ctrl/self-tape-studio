@@ -372,7 +372,6 @@ export type ExtractedBrief = {
 // -------------------- UK terminology pass --------------------
 
 const UK_REPLACEMENTS: Array<[RegExp, string]> = [
-  [/\bcallbacks?\b/gi, (m) => (m === "Callback" ? "Recall" : m === "CALLBACK" ? "RECALL" : "recall") as unknown as string],
   [/\banalyz(e|ed|ing|er|ation)\b/gi, "analys$1"],
   [/\bprioritiz(e|ed|ing|ation)\b/gi, "prioritis$1"],
   [/\bbehavior\b/gi, "behaviour"],
