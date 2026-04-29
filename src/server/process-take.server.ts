@@ -156,6 +156,53 @@ const REPORT_TOOL = {
             required: ["severity", "flag"],
           },
         },
+        casting_risk_explanations: {
+          type: "array",
+          description:
+            "For each material risk in submission_risk_flags, a one-line plain-English explanation of the casting impact and whether it is likely to affect recall (callback) likelihood. Same order as submission_risk_flags where possible.",
+          items: {
+            type: "object",
+            properties: {
+              flag: { type: "string", description: "Short reference to the related risk." },
+              casting_impact: {
+                type: "string",
+                description: "What this means for casting — concrete and non-technical.",
+              },
+              recall_impact: {
+                type: "string",
+                enum: ["unlikely_to_affect", "may_reduce", "likely_to_block"],
+                description:
+                  "Plain mapping of recall likelihood. unlikely_to_affect = cosmetic; may_reduce = noticeable; likely_to_block = will probably get filtered out.",
+              },
+            },
+            required: ["flag", "casting_impact", "recall_impact"],
+          },
+        },
+        role_fit_notes: {
+          type: "string",
+          description:
+            "ONE short paragraph on how the performance aligns with the role's function, tone, energy, and emotional demands as described in the structured brief. Judge alignment with the role only — never likeness, appearance, race, body, age, or imitation. Empty string in BASELINE mode (no brief).",
+        },
+        role_fit_modifier: {
+          type: "integer",
+          minimum: -10,
+          maximum: 5,
+          description:
+            "Bounded role-fit nudge applied to the overall score after recompute. MUST be 0 in BASELINE mode. Positive only when the performance clearly serves the role's function and tone (max +5). Negative when it works against the role's intent (max -10). Never use for likeness, appearance, or imitation.",
+        },
+        role_fit_confidence: {
+          type: "string",
+          enum: ["low", "medium", "high"],
+          description:
+            "Your confidence that the structured brief gave you enough to judge role-fit. Use 'low' when the brief is thin or the role function is unclear.",
+        },
+        presentation_notes: {
+          type: "array",
+          description:
+            "OPTIONAL practical, non-personal observations about visible presentation that materially affect the tape (e.g. 'Top blends into the background — a contrasting colour would read better on camera', 'Hair drifts across one eye on close-ups'). NEVER comment on body, attractiveness, weight, race, gender presentation, class markers, disability, mobility aids, medical devices, or personal style. Empty array if there is nothing material to say. These notes do NOT affect the score unless they relate to a brief requirement or a visibility issue already reflected in technical/brief categories.",
+          items: { type: "string" },
+          maxItems: 3,
+        },
         at_risk: { type: "boolean" },
       },
       required: [
@@ -176,6 +223,11 @@ const REPORT_TOOL = {
         "timestamped_notes",
         "coaching_drills",
         "submission_risk_flags",
+        "casting_risk_explanations",
+        "role_fit_notes",
+        "role_fit_modifier",
+        "role_fit_confidence",
+        "presentation_notes",
         "at_risk",
       ],
     },
