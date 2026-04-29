@@ -136,11 +136,40 @@ function AuditionPage() {
               </span>
             </div>
           </div>
-          {takes.length < 3 && (
-            <Button variant="outline" onClick={() => setShowAdd(true)}>
-              <Plus className="mr-2 h-4 w-4" /> Add take
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {takes.length < 3 && (
+              <Button variant="outline" onClick={() => setShowAdd(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Add take
+              </Button>
+            )}
+            <ConfirmDestructive
+              title="Delete audition?"
+              description={`This will remove "${audition.title}" and all ${takes.length} take${takes.length === 1 ? "" : "s"} (including reports and stored video). This cannot be undone.`}
+              confirmLabel="Delete audition"
+              trigger={(open) => (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Delete audition"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={open}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+              onConfirm={async () => {
+                try {
+                  await deleteAudition({ data: { auditionId: audition.id } });
+                  toast.success("Audition deleted");
+                  navigate({ to: "/dashboard" });
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : "Could not delete audition",
+                  );
+                }
+              }}
+            />
+          </div>
         </div>
 
         {showAdd && takes.length < 3 && (
