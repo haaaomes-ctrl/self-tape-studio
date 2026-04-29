@@ -940,7 +940,37 @@ export async function runProcessTake(
       });
     }
 
-    // ---- Score sanity guard ----
+    // ---- Reconcile recall_impact ↔ flag severity ----
+    // Authoritative direction: recall_impact wins.
+    //  - likely_to_block  → upgrade matching flag to "high" (gates verdict).
+    //  - unlikely_to_affect → downgrade matching flag to "low" so it cannot block.
+    //  - may_reduce → keep at "medium" unless already higher (don't downgrade
+    //    a deterministic high-severity compliance flag).
+    const explanations = report.casting_risk_explanations as Array<{
+      flag?: string;
+      recall_impact?: "unlikely_to_affect" | "may_reduce" | "likely_to_block";
+    }>;
+    for (const exp of explanations) {
+      const expText = (exp.flag ?? "").toLowerCase().trim();
+      if (!expText) continue;
+      const target = mergedRiskFlags.find((f) => {
+        const ft = (f.flag ?? "").toLowerCase();
+        return ft === expText || ft.includes(expText) || expText.includes(ft.slice(0, 40));
+      });
+      if (!target) continue;
+      // Don't ever downgrade a deterministic compliance flag.
+      const isDeterministic = complianceFlags.some(
+        (cf) => cf.message.toLowerCase() === (target.flag ?? "").toLowerCase(),
+      );
+      if (exp.recall_impact === "likely_to_block") {
+        target.severity = "high";
+      } else if (exp.recall_impact === "unlikely_to_affect" && !isDeterministic) {
+        target.severity = "low";
+      } else if (exp.recall_impact === "may_reduce" && target.severity === "low" && !isDeterministic) {
+        target.severity = "medium";
+      }
+    }
+    report.submission_risk_flags = mergedRiskFlags;
     // If the model's overall and the recomputed overall diverge by more than
     // 15 points, the model's number is unreliable for display. We've already
     // switched to the recomputed value; record the discrepancy for debugging.
