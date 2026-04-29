@@ -268,7 +268,7 @@ In BASELINE mode treat these as professional-standards equivalents and do NOT pe
 Professional Presentation is SEPARATE from compliance — it covers slate clarity, pacing discipline, camera awareness, and single-take logic.
 
 Hard rules:
-- If audio clarity < 50, cap final overall at 65.
+- Audio caps are tiered: <35 → tape can't be fairly judged; 35–49 → "Worth another take"; 50–59 → workable but flag for the user. Do not invent harsher caps than this.
 - If brief_adherence < 40 and mode is BRIEF, set at_risk=true.
 - Don't penalise portrait orientation unless the brief required landscape.
 - First 5 seconds matter: strong start +5, weak start −5 on acting.
