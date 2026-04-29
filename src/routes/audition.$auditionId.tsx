@@ -469,7 +469,33 @@ function ProcessingTakeView({ take }: { take: Take }) {
   );
 }
 
-// Translates the underlying confidence + signal data into a friendly,
+// Server attaches a deterministic submission_verdict to the report. These
+// helpers are local fallbacks (older takes pre-dating the verdict logic
+// won't have one persisted) and styling lookups.
+function deriveVerdictLabel(overall: number | null): string {
+  const o = overall ?? 0;
+  if (o >= 85) return "Strong submit";
+  if (o >= 75) return "Ready to submit";
+  if (o >= 65) return "Worth another take";
+  return "Not ready yet";
+}
+
+function verdictTone(label: string | undefined): string {
+  switch (label) {
+    case "Strong submit":
+      return "text-success";
+    case "Ready to submit":
+      return "text-success";
+    case "Worth another take":
+      return "text-warning";
+    case "Not ready yet":
+      return "text-destructive";
+    default:
+      return "text-foreground";
+  }
+}
+
+
 // non-technical trust indicator. Never surfaces the numeric score or
 // "AI confidence" wording — users see one of three plain-language labels
 // plus a one-line explanation that names the actual contributing factors
