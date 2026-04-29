@@ -171,7 +171,7 @@ const REPORT_TOOL = {
 function buildSystemPrompt(): string {
   return `You are a seasoned musical theatre casting director and vocal coach reviewing a self-tape audition.
 
-Your role is JUDGEMENT, not measurement. Be a credible first-pass casting reader: encouraging, specific, prioritised, never harsh or vague.
+Your role is JUDGEMENT, not measurement. You write like a credible casting assistant or coach: encouraging, specific, prioritised, direct but never harsh, never vague, never overly verbose.
 
 You will receive:
 - The video itself (multimodal) — watch and listen.
@@ -191,7 +191,7 @@ Modes:
 Scoring categories (0–100):
 - Technical Setup, Audio Clarity, Vocal Performance (only when singing is present — otherwise null), Acting/Performance, Brief Adherence, Professional Presentation.
 
-BRIEF ADHERENCE is now structured (all 0–100, then combined into the single brief_adherence score using 35/35/20/10 weights):
+BRIEF ADHERENCE is structured (all 0–100, then combined into the single brief_adherence score using 35/35/20/10 weights):
 - Material Compliance (35%): right sides, right song type, nothing missing, nothing extra.
 - Technical Compliance (35%): orientation, framing, single-file / naming rules.
 - Instruction Precision (20%): accent, ordering, continuity, use of guides.
@@ -211,13 +211,25 @@ Submission Risk Flags:
 - Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
 - Keep empty if none.
 
-Confidence (0–100):
+Confidence (0–100) — internal signal only, never shown to the user verbatim. Used to derive a plain-language trust indicator downstream:
 - 90+ when full brief and clean signals.
 - 75–89 with partial brief or minor signal issues.
 - 60–74 baseline with no brief.
 - <60 if data is poor.
 
-Output via the submit_audition_report tool. The casting_headline must be ONE plain-language sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read. Keep all feedback constructive, specific, and actionable.`;
+WRITING RULES (apply to every text field — strengths, improvements, fix_first, coaching_drills, casting_headline, casting_insight, category_notes, brief_adherence_breakdown.note):
+- Plain English. No technical jargon, no rubric terminology, no acronyms unless universally known. Never use "AI", "model", "confidence score", "rubric", "signal", "metric".
+- Specific, not generic. Never say "good job", "nice work", "be more confident", "work on your acting". Always reference what you actually saw or heard ("Your second chorus opened up — chest voice felt grounded from 'I won't go back'", "Around 0:42 the eyeline drifted off-camera as you turned").
+- Actionable. Every improvement and drill must tell the user what to DO differently next time, in one short sentence.
+- Tone: encouraging, professional, direct. Like a trusted coach in the room. Never harsh, never patronising, never padded.
+- Concise. Aim for one or two short sentences per item. Cut anything that doesn't help the next take.
+- strengths: EXACTLY 3 items. The three biggest things working in this tape.
+- improvements: AT MOST 3 items, ordered most-impactful first. If only one or two genuinely matter, return one or two.
+- fix_first: ONE sentence. The single highest-impact change for the next take.
+- coaching_drills: 2–4 short, practical exercises the user can do before their next take. Each starts with a verb.
+- timestamped_notes: only when there is something specific to point to. Skip if you'd be padding.
+
+Output via the submit_audition_report tool. The casting_headline is ONE plain sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read.`;
 }
 
 type Tier = "standard" | "high" | "original";
@@ -257,6 +269,97 @@ async function pickAnalysisSource(
 export type RunProcessTakeResult =
   | { ok: true; tier?: Tier; alreadyDone?: boolean }
   | { ok: false; error: string };
+
+export type SubmissionVerdict = {
+  // Plain-language label shown directly to the user.
+  label: "Strong submit" | "Ready to submit" | "Worth another take" | "Not ready yet";
+  // One short sentence explaining the verdict.
+  reason: string;
+  // True when a hard blocker forced the verdict below what the score alone would suggest.
+  blocked: boolean;
+};
+
+/**
+ * Deterministic submission verdict.
+ *
+ * Bands (from the score alone):
+ *   85+    → Strong submit
+ *   75–84  → Ready to submit
+ *   65–74  → Worth another take
+ *   <65    → Not ready yet
+ *
+ * Hard blockers — even with a strong score, drop the verdict to at most
+ * "Worth another take" when:
+ *   - Audio clarity is too low to fairly assess the performance (audio < 50).
+ *   - Brief instructions weren't followed in BRIEF mode (brief_adherence < 50,
+ *     or model flagged at_risk, or any high-severity submission risk).
+ *   - Framing / technical setup prevents clear evaluation (technical < 45).
+ */
+export function computeSubmissionVerdict(input: {
+  overall: number;
+  audioScore: number | null;
+  technicalScore: number | null;
+  briefAdherence: number | null;
+  mode: "brief" | "baseline";
+  atRisk: boolean;
+  riskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }>;
+}): SubmissionVerdict {
+  const { overall, audioScore, technicalScore, briefAdherence, mode, atRisk, riskFlags } =
+    input;
+
+  const blockers: string[] = [];
+  if (audioScore != null && audioScore < 50) {
+    blockers.push("audio is too unclear to fairly judge the performance");
+  }
+  if (technicalScore != null && technicalScore < 45) {
+    blockers.push("framing or setup makes it hard to evaluate the take properly");
+  }
+  if (mode === "brief") {
+    if ((briefAdherence != null && briefAdherence < 50) || atRisk) {
+      blockers.push("the casting brief instructions weren't fully followed");
+    }
+  }
+  const hasHighRisk = riskFlags.some((f) => f.severity === "high");
+  if (hasHighRisk) blockers.push("a high-severity submission risk was flagged");
+
+  // Score band first.
+  let label: SubmissionVerdict["label"];
+  if (overall >= 85) label = "Strong submit";
+  else if (overall >= 75) label = "Ready to submit";
+  else if (overall >= 65) label = "Worth another take";
+  else label = "Not ready yet";
+
+  let blocked = false;
+  if (blockers.length > 0) {
+    // Cap at "Worth another take" — never let a hard blocker show as
+    // submit-ready, even if the headline score happened to land high.
+    if (label === "Strong submit" || label === "Ready to submit") {
+      label = "Worth another take";
+      blocked = true;
+    }
+  }
+
+  let reason: string;
+  if (blocked) {
+    reason = `Score sits high, but ${blockers[0]} — fix that before sending it out.`;
+  } else if (label === "Strong submit") {
+    reason = "This tape lands. Send it with confidence.";
+  } else if (label === "Ready to submit") {
+    reason = "Solid, castable tape — safe to send as-is.";
+  } else if (label === "Worth another take") {
+    reason =
+      blockers[0]
+        ? `One more pass will lift this — ${blockers[0]}.`
+        : "There's a clear next take in this. Tighten the priority improvement and re-record.";
+  } else {
+    reason =
+      blockers[0]
+        ? `Hold off on sending — ${blockers[0]}.`
+        : "Hold off on sending. Work the priority fix and shoot a fresh take.";
+  }
+
+  return { label, reason, blocked };
+}
 
 /**
  * Internal Gemini analysis pipeline. NOT auth-gated — the caller is
@@ -456,6 +559,26 @@ export async function runProcessTake(
     let overall = report.overall_score as number;
     const audioScore = report.scores?.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
+
+    // Cap improvements at 3 (most-impactful first) defensively, in case the
+    // model returns more than the schema asked for.
+    if (Array.isArray(report.improvements) && report.improvements.length > 3) {
+      report.improvements = report.improvements.slice(0, 3);
+    }
+
+    // Deterministic submission verdict — computed server-side so bands are
+    // guaranteed consistent and hard blockers always override the score.
+    report.submission_verdict = computeSubmissionVerdict({
+      overall,
+      audioScore: report.scores?.audio ?? null,
+      technicalScore: report.scores?.technical ?? null,
+      briefAdherence: report.scores?.brief_adherence ?? null,
+      mode: report.mode,
+      atRisk: report.at_risk === true,
+      riskFlags: Array.isArray(report.submission_risk_flags)
+        ? report.submission_risk_flags
+        : [],
+    });
 
     await supabaseAdmin
       .from("takes")

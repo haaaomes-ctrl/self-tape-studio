@@ -469,6 +469,33 @@ function ProcessingTakeView({ take }: { take: Take }) {
   );
 }
 
+// Server attaches a deterministic submission_verdict to the report. These
+// helpers are local fallbacks (older takes pre-dating the verdict logic
+// won't have one persisted) and styling lookups.
+function deriveVerdictLabel(overall: number | null): string {
+  const o = overall ?? 0;
+  if (o >= 85) return "Strong submit";
+  if (o >= 75) return "Ready to submit";
+  if (o >= 65) return "Worth another take";
+  return "Not ready yet";
+}
+
+function verdictTone(label: string | undefined): string {
+  switch (label) {
+    case "Strong submit":
+      return "text-success";
+    case "Ready to submit":
+      return "text-success";
+    case "Worth another take":
+      return "text-warning";
+    case "Not ready yet":
+      return "text-destructive";
+    default:
+      return "text-foreground";
+  }
+}
+
+
 // Translates the underlying confidence + signal data into a friendly,
 // non-technical trust indicator. Never surfaces the numeric score or
 // "AI confidence" wording — users see one of three plain-language labels
@@ -605,6 +632,17 @@ function TakeView({ take }: { take: Take }) {
           <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
         )}
         <div className="mt-6 flex items-end justify-between gap-6">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Verdict</p>
+            <p
+              className={cn(
+                "mt-1 font-display text-xl font-semibold",
+                verdictTone(r.submission_verdict?.label),
+              )}
+            >
+              {r.submission_verdict?.label ?? deriveVerdictLabel(take.overall_score)}
+            </p>
+          </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Overall</p>
             <p className="font-display text-5xl font-bold leading-none text-primary">
@@ -612,6 +650,9 @@ function TakeView({ take }: { take: Take }) {
             </p>
           </div>
         </div>
+        {r.submission_verdict?.reason && (
+          <p className="mt-2 text-sm text-muted-foreground">{r.submission_verdict.reason}</p>
+        )}
         <div className="mt-5 rounded-md border border-border bg-secondary/30 p-4">
           <div className="flex items-center gap-2">
             <span
@@ -797,7 +838,7 @@ function TakeView({ take }: { take: Take }) {
           </ul>
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-          <h3 className="font-display text-base font-semibold">Priority improvements</h3>
+          <h3 className="font-display text-base font-semibold">Top improvements (in order)</h3>
           <ul className="mt-3 space-y-2 text-sm">
             {r.improvements?.map((s: string, i: number) => (
               <li key={i} className="flex gap-2">
@@ -829,7 +870,7 @@ function TakeView({ take }: { take: Take }) {
       {/* Drills */}
       {r.coaching_drills?.length > 0 && (
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-          <h3 className="font-display text-base font-semibold">Next take focus</h3>
+          <h3 className="font-display text-base font-semibold">Next take plan</h3>
           <ul className="mt-3 space-y-2 text-sm">
             {r.coaching_drills.map((d: string, i: number) => (
               <li key={i} className="flex gap-2">
