@@ -773,7 +773,69 @@ export async function runProcessTake(
     let overall = recomputed.overall || (report.overall_score as number) || 0;
 
     const audioScore = modelScores.audio ?? 100;
-    if (audioScore < 50 && overall > 65) overall = 65;
+    // Tiered audio caps mirror applyCapsAndLabel:
+    //   <35 → 60, <50 → 62, <60 → 75
+    if (audioScore < 35 && overall > 60) overall = 60;
+    else if (audioScore < 50 && overall > 62) overall = 62;
+    else if (audioScore < 60 && overall > 75) overall = 75;
+
+    // Track safety-validator rewrites for downstream debugging/audit.
+    let safetyRewriteApplied = false;
+
+    // ---- Forbidden-language guard (shared across role-fit + presentation) ----
+    // Catches identity, mobility, medical, class, and physicality-proxy terms.
+    const FORBIDDEN_PATTERNS: RegExp[] = [
+      // Identity
+      /\battractive(ness)?\b/i,
+      /\bweight\b/i,
+      /\bbody\s*(shape|type)?\b/i,
+      /\bskinny\b/i,
+      /\bfat\b/i,
+      /\b(over|under)weight\b/i,
+      /\brace\b/i,
+      /\bethnic(ity)?\b/i,
+      /\bclass\b/i,
+      /\bgender\s+(presentation|identity)\b/i,
+      /\bmasculine\b/i,
+      /\bfeminine\b/i,
+      /\bage(d|ing)?\b/i,
+      /\b(too )?old\b/i,
+      /\b(too )?young\b/i,
+      // Disability / mobility / medical
+      /\bdisab(led|ility|ilities)\b/i,
+      /\bwheelchair\b/i,
+      /\bcrutch(es)?\b/i,
+      /\bprosthe(tic|sis|ses)\b/i,
+      /\bmobility\s+aid\b/i,
+      /\bmedical\s+device\b/i,
+      /\bassistive\s+(device|equipment)\b/i,
+      /\bneurodivergen(t|ce)\b/i,
+      /\bautis(tic|m)\b/i,
+      // Physicality proxies (accessibility-safe rule)
+      /\blimited\s+movement\b/i,
+      /\brestricted\b/i,
+      /\bconstrained\b/i,
+      /\binsufficient\s+kinetic\s+range\b/i,
+      /\bphysicality\s+underdeliver(ed|s)?\b/i,
+      /\bmovement\s+limitation\b/i,
+      /\brestricted\s+physicality\b/i,
+      /\brange\s+of\s+motion\b/i,
+      // Presentation proxies for medical/period devices
+      /\bmodern\s+intrusion\b/i,
+      /\bworld[-\s]?breaker\b/i,
+      /\bperiod[-\s]?breaking\s+item\b/i,
+      /\bdevice\s+visible\b/i,
+      // Class / socioeconomic / appearance
+      /\blook\s+the\s+part\b/i,
+      /\blook(s|ed)?\s+right\b/i,
+      /\bvisual\s+fit\b/i,
+      /\bposh\b/i,
+      /\bcommon\s+(accent|sounding)\b/i,
+      /\buneducated\b/i,
+      /\bcheap[-\s]?looking\b/i,
+    ];
+    const containsForbidden = (s: string): boolean =>
+      typeof s === "string" && FORBIDDEN_PATTERNS.some((re) => re.test(s));
 
     // ---- Bounded role-fit modifier ----
     // Clamp to [-10, +5]. Force 0 in BASELINE mode. Apply AFTER the audio cap
@@ -786,53 +848,66 @@ export async function runProcessTake(
     if (report.mode !== "brief") {
       roleFitModifier = 0;
     }
-    // Never let role-fit alone push past the audio cap.
+    if (typeof report.role_fit_notes !== "string") report.role_fit_notes = "";
+    // Safety: if role_fit_notes contains forbidden language, strip the note
+    // entirely AND zero the modifier — we won't apply an opaque/appearance-
+    // based nudge to the score.
+    if (report.role_fit_notes && containsForbidden(report.role_fit_notes)) {
+      report.role_fit_notes = "";
+      roleFitModifier = 0;
+      safetyRewriteApplied = true;
+    }
+    // Re-apply audio cap after role-fit so role-fit cannot bypass it.
     const postRoleFit = overall + roleFitModifier;
     overall = Math.max(0, Math.min(100, postRoleFit));
-    if (audioScore < 50 && overall > 65) overall = 65;
+    if (audioScore < 35 && overall > 60) overall = 60;
+    else if (audioScore < 50 && overall > 62) overall = 62;
+    else if (audioScore < 60 && overall > 75) overall = 75;
     report.role_fit_modifier = roleFitModifier;
     if (report.role_fit_confidence !== "low" && report.role_fit_confidence !== "medium" && report.role_fit_confidence !== "high") {
       report.role_fit_confidence = report.mode === "brief" ? "low" : "low";
     }
-    if (typeof report.role_fit_notes !== "string") report.role_fit_notes = "";
     if (report.mode !== "brief") {
       // BASELINE: blank role-fit notes — we have nothing to fit against.
       report.role_fit_notes = "";
       report.role_fit_confidence = "low";
     }
 
-    // ---- Presentation notes — safety filter (server-side belt-and-braces) ----
-    // The prompt forbids personal/identity comments, but we strip defensively.
-    const FORBIDDEN_PRESENTATION = [
-      /\battractive(ness)?\b/i,
-      /\bweight\b/i,
-      /\bbody\s*(shape|type)?\b/i,
-      /\bskinny\b/i,
-      /\bfat\b/i,
-      /\b(over|under)weight\b/i,
-      /\brace\b/i,
-      /\bethnic(ity)?\b/i,
-      /\bdisab(led|ility|ilities)\b/i,
-      /\bwheelchair\b/i,
-      /\bprosthe(tic|sis)\b/i,
-      /\bmobility\s+aid\b/i,
-      /\bmedical\s+device\b/i,
-      /\bclass\b/i,
-      /\bgender\s+(presentation|identity)\b/i,
-      /\bmasculine\b/i,
-      /\bfeminine\b/i,
-      /\bage(d|ing)?\b/i,
-      /\b(too )?old\b/i,
-      /\b(too )?young\b/i,
-    ];
-    const isSafePresentationNote = (note: string): boolean => {
-      if (typeof note !== "string" || !note.trim()) return false;
-      return !FORBIDDEN_PRESENTATION.some((re) => re.test(note));
-    };
+    // ---- Presentation notes — safety filter ----
     let presentationNotes: string[] = Array.isArray(report.presentation_notes)
-      ? report.presentation_notes.filter(isSafePresentationNote).slice(0, 3)
+      ? report.presentation_notes.filter(
+          (n: unknown): n is string =>
+            typeof n === "string" && n.trim().length > 0 && !containsForbidden(n),
+        ).slice(0, 3)
       : [];
+    if (
+      Array.isArray(report.presentation_notes) &&
+      presentationNotes.length < (report.presentation_notes as unknown[]).length
+    ) {
+      safetyRewriteApplied = true;
+    }
     report.presentation_notes = presentationNotes;
+    // Standard disclaimer surfaced alongside notes in the UI layer.
+    report.presentation_notes_disclaimer =
+      "These do not affect your score unless they make the tape difficult to see or break a specific brief instruction.";
+
+    // ---- Strengths / improvements / fix_first / drills — safety scrub ----
+    const scrubArray = (arr: unknown): string[] => {
+      if (!Array.isArray(arr)) return [];
+      const cleaned = arr.filter(
+        (s: unknown): s is string =>
+          typeof s === "string" && s.trim().length > 0 && !containsForbidden(s),
+      );
+      if (cleaned.length < arr.length) safetyRewriteApplied = true;
+      return cleaned;
+    };
+    if (Array.isArray(report.strengths)) report.strengths = scrubArray(report.strengths);
+    if (Array.isArray(report.improvements)) report.improvements = scrubArray(report.improvements);
+    if (Array.isArray(report.coaching_drills)) report.coaching_drills = scrubArray(report.coaching_drills);
+    if (typeof report.fix_first === "string" && containsForbidden(report.fix_first)) {
+      report.fix_first = "";
+      safetyRewriteApplied = true;
+    }
 
     // ---- Casting risk explanations — keep aligned with risk flags ----
     if (!Array.isArray(report.casting_risk_explanations)) {
