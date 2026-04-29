@@ -644,22 +644,47 @@ function TakeView({ take }: { take: Take }) {
             <p
               className={cn(
                 "mt-1 font-display text-xl font-semibold",
-                verdictTone(r.submission_verdict?.label),
+                verdictTone(r.verdict_final ?? r.submission_verdict?.label),
               )}
             >
-              {r.submission_verdict?.label ?? deriveVerdictLabel(take.overall_score)}
+              {r.verdict_final ?? r.submission_verdict?.label ?? deriveVerdictLabel(take.overall_score)}
             </p>
           </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Overall</p>
             <p className="font-display text-5xl font-bold leading-none text-primary">
-              {take.overall_score}
+              {r.overall_score_final ?? take.overall_score}
             </p>
           </div>
         </div>
         {r.submission_verdict?.reason && (
           <p className="mt-2 text-sm text-muted-foreground">{r.submission_verdict.reason}</p>
         )}
+
+        {/* Block reasons — explicit, user-facing */}
+        {Array.isArray(r.block_reasons) && r.block_reasons.length > 0 && (
+          <div className="mt-4 rounded-md border border-warning/40 bg-warning/10 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-warning">
+              Why this isn't ready
+            </p>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {r.block_reasons.map((reason: string, i: number) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-warning">•</span>
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {r.extraction_confidence === "low" && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            We may have misread parts of the brief — please review key details before relying on
+            brief-fit feedback.
+          </p>
+        )}
+
         <div className="mt-5 rounded-md border border-border bg-secondary/30 p-4">
           <div className="flex items-center gap-2">
             <span
@@ -676,7 +701,7 @@ function TakeView({ take }: { take: Take }) {
           </div>
           <p className="mt-1.5 text-sm text-muted-foreground">{trust.reason}</p>
         </div>
-        {r.at_risk && (
+        {r.at_risk && (!Array.isArray(r.block_reasons) || r.block_reasons.length === 0) && (
           <div className="mt-5 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
             <p>This tape is flagged <strong>at risk</strong> — a brief requirement appears to be missing.</p>
