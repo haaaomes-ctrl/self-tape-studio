@@ -155,8 +155,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
 
           // Idempotency: skip if this take is already complete or has an
           // analysis in flight (analysis_pending = scheduled but not started,
-          // analysing = currently running). The stale-analysis cron job is
-          // responsible for retrying anything that gets stuck in either state.
+          // analysing = currently running).
           if (
             existing?.status === "complete" ||
             existing?.processing_phase === "analysing" ||
