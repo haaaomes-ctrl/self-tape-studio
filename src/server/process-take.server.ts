@@ -585,29 +585,69 @@ export async function runProcessTake(
       throw new Error("The AI returned an incomplete report. Please retry.");
     }
 
-    let overall = report.overall_score as number;
-    const audioScore = report.scores?.audio ?? 100;
+    // ---- UK terminology pass on all string output ----
+    report = ukifyDeep(report);
+
+    // ---- Deterministic compliance vs signals (orientation/duration/audio) ----
+    const signalsForCompliance = (take.signals ?? null) as
+      | { orientation?: string; duration?: number; audio_peak?: number }
+      | null;
+    const complianceFlags = deterministicCompliance({
+      extracted: extractedBrief,
+      signals: signalsForCompliance,
+    });
+
+    // Promote any high-severity compliance flag into submission_risk_flags so
+    // it participates in gating + is rendered in the existing UI section.
+    const existingRiskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }> =
+      Array.isArray(report.submission_risk_flags) ? report.submission_risk_flags : [];
+    for (const cf of complianceFlags) {
+      existingRiskFlags.push({ severity: cf.severity, flag: cf.message });
+    }
+    report.submission_risk_flags = existingRiskFlags;
+
+    // ---- Server-side overall score recomputation ----
+    // Trust the model's per-category scores; recompute the weighted overall
+    // deterministically using audition-type weights, then apply caps.
+    const auditionType = (report.audition_type ?? "unknown") as AuditionType;
+    const weights = weightsForType(auditionType);
+    const modelScores = (report.scores ?? {}) as Record<string, number | null>;
+    const recomputed = recomputeOverall(modelScores, weights);
+    let overall = recomputed.overall || (report.overall_score as number) || 0;
+
+    const audioScore = modelScores.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
 
-    // Cap improvements at 3 (most-impactful first) defensively, in case the
-    // model returns more than the schema asked for.
+    // Cap improvements at 3 (most-impactful first) defensively.
     if (Array.isArray(report.improvements) && report.improvements.length > 3) {
       report.improvements = report.improvements.slice(0, 3);
     }
 
-    // Deterministic submission verdict — computed server-side so bands are
-    // guaranteed consistent and hard blockers always override the score.
+    // Deterministic, level-aware submission verdict.
     report.submission_verdict = computeSubmissionVerdict({
       overall,
-      audioScore: report.scores?.audio ?? null,
-      technicalScore: report.scores?.technical ?? null,
-      briefAdherence: report.scores?.brief_adherence ?? null,
+      audioScore: modelScores.audio ?? null,
+      technicalScore: modelScores.technical ?? null,
+      briefAdherence: modelScores.brief_adherence ?? null,
       mode: report.mode,
       atRisk: report.at_risk === true,
-      riskFlags: Array.isArray(report.submission_risk_flags)
-        ? report.submission_risk_flags
-        : [],
+      riskFlags: existingRiskFlags,
+      level: auditionLevel,
+      scores: modelScores,
     });
+
+    // Persist the recomputed overall back onto the report so UI is consistent.
+    report.overall_score = overall;
+
+    const scoreBreakdown = {
+      audition_type: auditionType,
+      level: auditionLevel,
+      weights: recomputed.usedWeights,
+      thresholds: bandsForLevel(auditionLevel),
+      model_overall: report.overall_score,
+      recomputed_overall: overall,
+      compliance_flags: complianceFlags,
+    };
 
     await supabaseAdmin
       .from("takes")
@@ -619,6 +659,8 @@ export async function runProcessTake(
         overall_score: overall,
         confidence: report.confidence,
         error_message: null,
+        compliance_flags: complianceFlags as never,
+        score_breakdown: scoreBreakdown as never,
       })
       .eq("id", takeId);
 
