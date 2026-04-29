@@ -67,9 +67,11 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         playback_policies: ["public"],
         max_resolution_tier: "1080p",
         video_quality: "basic",
-        // CRITICAL: without this, the static MP4 URLs (medium.mp4 / high.mp4)
-        // that we hand to Gemini return 404 and the analysis hangs.
-        mp4_support: "standard",
+        // CRITICAL: enable static MP4 renditions so the URLs we hand to Gemini
+        // (medium.mp4 / high.mp4) actually exist. "standard" is deprecated and
+        // not supported with video_quality:"basic"; use "capped-1080p" which
+        // is the current Mux value compatible with the basic tier.
+        mp4_support: "capped-1080p",
         passthrough: takeId,
       },
     });
