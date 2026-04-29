@@ -6,6 +6,13 @@
 
 import type { ExtractedBrief, AuditionType } from "@/lib/audition-rules";
 
+export type ExtractionConfidence = "low" | "medium" | "high";
+
+export type ExtractedBriefWithMeta = {
+  brief: ExtractedBrief;
+  extraction_confidence: ExtractionConfidence;
+};
+
 const EXTRACT_TOOL = {
   type: "function" as const,
   function: {
