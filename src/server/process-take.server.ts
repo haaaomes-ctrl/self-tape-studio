@@ -739,6 +739,96 @@ export async function runProcessTake(
     const audioScore = modelScores.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
 
+    // ---- Bounded role-fit modifier ----
+    // Clamp to [-10, +5]. Force 0 in BASELINE mode. Apply AFTER the audio cap
+    // so a strong role-fit nudge can't lift a tape past the audio ceiling.
+    const overallBeforeRoleFit = overall;
+    let roleFitModifier = 0;
+    if (typeof report.role_fit_modifier === "number" && Number.isFinite(report.role_fit_modifier)) {
+      roleFitModifier = Math.max(-10, Math.min(5, Math.round(report.role_fit_modifier)));
+    }
+    if (report.mode !== "brief") {
+      roleFitModifier = 0;
+    }
+    // Never let role-fit alone push past the audio cap.
+    const postRoleFit = overall + roleFitModifier;
+    overall = Math.max(0, Math.min(100, postRoleFit));
+    if (audioScore < 50 && overall > 65) overall = 65;
+    report.role_fit_modifier = roleFitModifier;
+    if (report.role_fit_confidence !== "low" && report.role_fit_confidence !== "medium" && report.role_fit_confidence !== "high") {
+      report.role_fit_confidence = report.mode === "brief" ? "low" : "low";
+    }
+    if (typeof report.role_fit_notes !== "string") report.role_fit_notes = "";
+    if (report.mode !== "brief") {
+      // BASELINE: blank role-fit notes — we have nothing to fit against.
+      report.role_fit_notes = "";
+      report.role_fit_confidence = "low";
+    }
+
+    // ---- Presentation notes — safety filter (server-side belt-and-braces) ----
+    // The prompt forbids personal/identity comments, but we strip defensively.
+    const FORBIDDEN_PRESENTATION = [
+      /\battractive(ness)?\b/i,
+      /\bweight\b/i,
+      /\bbody\s*(shape|type)?\b/i,
+      /\bskinny\b/i,
+      /\bfat\b/i,
+      /\b(over|under)weight\b/i,
+      /\brace\b/i,
+      /\bethnic(ity)?\b/i,
+      /\bdisab(led|ility|ilities)\b/i,
+      /\bwheelchair\b/i,
+      /\bprosthe(tic|sis)\b/i,
+      /\bmobility\s+aid\b/i,
+      /\bmedical\s+device\b/i,
+      /\bclass\b/i,
+      /\bgender\s+(presentation|identity)\b/i,
+      /\bmasculine\b/i,
+      /\bfeminine\b/i,
+      /\bage(d|ing)?\b/i,
+      /\b(too )?old\b/i,
+      /\b(too )?young\b/i,
+    ];
+    const isSafePresentationNote = (note: string): boolean => {
+      if (typeof note !== "string" || !note.trim()) return false;
+      return !FORBIDDEN_PRESENTATION.some((re) => re.test(note));
+    };
+    let presentationNotes: string[] = Array.isArray(report.presentation_notes)
+      ? report.presentation_notes.filter(isSafePresentationNote).slice(0, 3)
+      : [];
+    report.presentation_notes = presentationNotes;
+
+    // ---- Casting risk explanations — keep aligned with risk flags ----
+    if (!Array.isArray(report.casting_risk_explanations)) {
+      report.casting_risk_explanations = [];
+    }
+    // If the model produced explanations but the merged risk flags now include
+    // deterministic flags it didn't see, top-up with a neutral default.
+    const haveExplanations = new Set(
+      (report.casting_risk_explanations as Array<{ flag?: string }>)
+        .map((e) => (e.flag ?? "").toLowerCase().trim())
+        .filter(Boolean),
+    );
+    for (const cf of complianceFlags) {
+      const key = cf.message.toLowerCase().trim();
+      if (haveExplanations.has(key)) continue;
+      report.casting_risk_explanations.push({
+        flag: cf.message,
+        casting_impact:
+          cf.severity === "high"
+            ? "Casting will likely filter this out before recall — fix before sending."
+            : cf.severity === "medium"
+              ? "Casting will notice this. It can dent recall chances if other tapes are clean."
+              : "Cosmetic — unlikely to affect recall on its own.",
+        recall_impact:
+          cf.severity === "high"
+            ? "likely_to_block"
+            : cf.severity === "medium"
+              ? "may_reduce"
+              : "unlikely_to_affect",
+      });
+    }
+
     // ---- Score sanity guard ----
     // If the model's overall and the recomputed overall diverge by more than
     // 15 points, the model's number is unreliable for display. We've already
