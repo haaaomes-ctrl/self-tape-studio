@@ -625,8 +625,8 @@ function ProcessingTakeView({ take }: { take: Take }) {
                 Retry from this step
               </Button>
               <p className="mt-1 px-1 text-xs text-muted-foreground">
-                Re-check the video and restart analysis from the current
-                stage. Your upload will not be lost.
+                Retry analysis (your upload is safe). We'll re-check the video
+                and continue.
               </p>
             </div>
             <div>
