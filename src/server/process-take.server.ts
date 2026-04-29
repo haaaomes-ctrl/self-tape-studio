@@ -971,6 +971,8 @@ export async function runProcessTake(
       }
     }
     report.submission_risk_flags = mergedRiskFlags;
+
+    // ---- Score sanity guard ----
     // If the model's overall and the recomputed overall diverge by more than
     // 15 points, the model's number is unreliable for display. We've already
     // switched to the recomputed value; record the discrepancy for debugging.
