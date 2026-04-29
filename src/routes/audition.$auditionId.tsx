@@ -838,7 +838,7 @@ function TakeView({ take }: { take: Take }) {
           </ul>
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-          <h3 className="font-display text-base font-semibold">Priority improvements</h3>
+          <h3 className="font-display text-base font-semibold">Top improvements (in order)</h3>
           <ul className="mt-3 space-y-2 text-sm">
             {r.improvements?.map((s: string, i: number) => (
               <li key={i} className="flex gap-2">
@@ -870,7 +870,7 @@ function TakeView({ take }: { take: Take }) {
       {/* Drills */}
       {r.coaching_drills?.length > 0 && (
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-          <h3 className="font-display text-base font-semibold">Next take focus</h3>
+          <h3 className="font-display text-base font-semibold">Next take plan</h3>
           <ul className="mt-3 space-y-2 text-sm">
             {r.coaching_drills.map((d: string, i: number) => (
               <li key={i} className="flex gap-2">
