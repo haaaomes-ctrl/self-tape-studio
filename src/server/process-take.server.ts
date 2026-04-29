@@ -625,16 +625,29 @@ export async function runProcessTake(
 
     // Pre-Gemini URL validation. Mux's static MP4 rendition is generated
     // AFTER `video.asset.ready` fires, so the URL may 404/403 for a short
-    // window. Poll with HEAD instead of bailing on the first miss — this
-    // collapses the previous "single-probe + wait for cron" loop (which
-    // could stall for minutes) into a tight in-process retry.
+    // window. The system owns retries here — the user never sees a "retry"
+    // button during normal preparation.
     //
-    // Budget: ~110s wall-clock here. The reconciler's MAX_TOTAL_AGE_SECONDS
-    // (180s) still owns the absolute ceiling; this is just the in-handler
-    // wait so we don't hand control back to cron unnecessarily.
-    const HEAD_PROBE_INTERVAL_MS = 10_000;
-    const HEAD_PROBE_MAX_ATTEMPTS = 12; // 12 × 10s ≈ 120s
-    console.log("[take-pipeline] head-probe loop start", {
+    // Tiered polling cadence (total ceiling ~10 minutes):
+    //   0–2 min   → every 10s  (12 probes)
+    //   2–6 min   → every 20s  (12 probes)
+    //   6–10 min  → every 30s  ( 8 probes)
+    //
+    // HTTP status handling:
+    //   200       → ready, proceed to Gemini
+    //   404       → still preparing, normal — keep polling, do not count as failure
+    //   403       → possibly transient signing/access — retry with backoff,
+    //               fail if persistent (>=5 consecutive)
+    //   5xx / net → transient — keep polling
+    //   other 4xx → hard failure, stop immediately
+    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min
+    const probeStartedWallclock = Date.now();
+    const intervalMsFor = (elapsedMs: number): number => {
+      if (elapsedMs < 2 * 60_000) return 10_000;
+      if (elapsedMs < 6 * 60_000) return 20_000;
+      return 30_000;
+    };
+    console.log("mux_prepare_probe_loop_start", {
       ...baseLog,
       tier,
       processing_phase: "analysis_pending",
@@ -643,67 +656,130 @@ export async function runProcessTake(
 
     let probeStatus: number | null = null;
     let probeOk = false;
-    for (let probeAttempt = 1; probeAttempt <= HEAD_PROBE_MAX_ATTEMPTS; probeAttempt++) {
+    let consecutive403 = 0;
+    let hardFailReason: string | null = null;
+    let probeAttempt = 0;
+    let retryCount = 0;
+
+    while (Date.now() - probeStartedWallclock < PREPARE_HARD_TIMEOUT_MS) {
+      probeAttempt += 1;
       let attemptStatus: number | null = null;
       const probeStartedAt = Date.now();
       try {
         const probe = await fetch(initialUrl, { method: "HEAD" });
         attemptStatus = probe.status;
       } catch (probeErr) {
-        console.warn("[take-pipeline] head-probe threw", {
+        // Network error — transient.
+        console.warn("mux_prepare_probe_network_error", {
           ...baseLog,
           probe_attempt: probeAttempt,
           probe_error: probeErr instanceof Error ? probeErr.message : String(probeErr),
+          elapsed_ms: Date.now() - probeStartedWallclock,
         });
       }
       probeStatus = attemptStatus;
-      const probeDurationMs = Date.now() - probeStartedAt;
-      console.log("[take-pipeline] head-probe result", {
+      console.log("mux_prepare_probe", {
         ...baseLog,
         probe_attempt: probeAttempt,
         http_status: attemptStatus,
-        probe_duration_ms: probeDurationMs,
-        elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+        probe_duration_ms: Date.now() - probeStartedAt,
+        elapsed_ms: Date.now() - probeStartedWallclock,
       });
+
       if (attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
         probeOk = true;
+        console.log("mux_prepare_ready", {
+          ...baseLog,
+          probe_attempt: probeAttempt,
+          elapsed_ms: Date.now() - probeStartedWallclock,
+        });
         break;
       }
-      // 404/403 are expected during rendition prep — keep waiting.
-      // Anything else (5xx, fetch failure) we also retry; the reconciler's
-      // wall-clock cap will eventually park the take if Mux never recovers.
-      if (probeAttempt < HEAD_PROBE_MAX_ATTEMPTS) {
-        // Touch updated_at so the reconciler doesn't think we're stale
-        // mid-poll. Cheap no-op write keeps the row "fresh".
-        await supabaseAdmin
-          .from("takes")
-          .update({ processing_phase: "analysis_pending" })
-          .eq("id", takeId);
-        await new Promise((r) => setTimeout(r, HEAD_PROBE_INTERVAL_MS));
+
+      // Categorise.
+      if (attemptStatus === 404 || attemptStatus === null) {
+        // Normal preparation OR transient network — do not count as failure.
+        consecutive403 = 0;
+      } else if (attemptStatus === 403) {
+        consecutive403 += 1;
+        if (consecutive403 >= 5) {
+          hardFailReason = "Optimised video URL is not accessible (403).";
+          break;
+        }
+        retryCount += 1;
+        console.log("auto_retry_started", {
+          ...baseLog,
+          retry_count: retryCount,
+          http_status: attemptStatus,
+          elapsed_ms: Date.now() - probeStartedWallclock,
+        });
+      } else if (attemptStatus >= 500 && attemptStatus < 600) {
+        consecutive403 = 0;
+        retryCount += 1;
+        console.log("auto_retry_started", {
+          ...baseLog,
+          retry_count: retryCount,
+          http_status: attemptStatus,
+          elapsed_ms: Date.now() - probeStartedWallclock,
+        });
+      } else if (attemptStatus >= 400 && attemptStatus < 500) {
+        // Other 4xx — fail fast.
+        hardFailReason = `Optimised video request failed (HTTP ${attemptStatus}).`;
+        break;
       }
+
+      // Touch updated_at so the reconciler doesn't think we're stale mid-poll.
+      await supabaseAdmin
+        .from("takes")
+        .update({ processing_phase: "analysis_pending" })
+        .eq("id", takeId);
+
+      // Re-check cancellation between polls.
+      const { data: midPoll } = await supabaseAdmin
+        .from("takes")
+        .select("status, error_message")
+        .eq("id", takeId)
+        .single();
+      if (
+        midPoll?.status === "error" &&
+        typeof midPoll.error_message === "string" &&
+        midPoll.error_message.toLowerCase().includes("cancelled")
+      ) {
+        console.log("[take-pipeline] cancelled during prepare polling", baseLog);
+        return { ok: true, alreadyDone: true };
+      }
+
+      await new Promise((r) =>
+        setTimeout(r, intervalMsFor(Date.now() - probeStartedWallclock)),
+      );
     }
 
     if (!probeOk) {
-      console.warn("[take-pipeline] head-probe gave up — handing back to reconciler", {
+      const totalElapsed = Date.now() - probeStartedWallclock;
+      console.warn("mux_prepare_timeout", {
         ...baseLog,
         last_http_status: probeStatus,
-        elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+        hard_fail_reason: hardFailReason,
+        elapsed_ms: totalElapsed,
       });
-      // Hand back to the reconciler. It enforces MAX_ATTEMPTS and the
-      // 180s wall-clock cap, which is what surfaces the user-facing
-      // "couldn't prepare your video in time" message.
+      const userMessage =
+        hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
       await supabaseAdmin
         .from("takes")
         .update({
-          status: "pending",
-          processing_phase: "analysis_pending",
-          error_message: null,
+          status: "error",
+          processing_phase: "error",
+          error_message: userMessage,
         })
         .eq("id", takeId);
-      return {
-        ok: false,
-        error: `Optimised video not ready yet (HTTP ${probeStatus ?? "fetch-failed"}); will retry.`,
-      };
+      return { ok: false, error: userMessage };
+    }
+    if (retryCount > 0) {
+      console.log("auto_retry_succeeded", {
+        ...baseLog,
+        retry_count: retryCount,
+        elapsed_ms: Date.now() - probeStartedWallclock,
+      });
     }
 
     // Re-check cancellation after the (potentially long) polling window —
@@ -799,6 +875,29 @@ export async function runProcessTake(
         }),
       });
 
+    // Gemini call with system-owned automatic retries.
+    //   - Retry on: network/throw, timeout, 429, 5xx (max 2 retries, backoff 10s/30s).
+    //   - Do NOT retry: 400 (validation/schema — except existing one-shot fresh-URL
+    //     fallback), 402 (quota/credits), other 4xx, cancellation.
+    const GEMINI_MAX_RETRIES = 2;
+    const GEMINI_BACKOFF_MS = [10_000, 30_000];
+
+    const isCancelled = async (): Promise<boolean> => {
+      const { data } = await supabaseAdmin
+        .from("takes")
+        .select("status, error_message")
+        .eq("id", takeId)
+        .single();
+      return (
+        data?.status === "error" &&
+        typeof data.error_message === "string" &&
+        data.error_message.toLowerCase().includes("cancelled")
+      );
+    };
+
+    let aiResp: Response | null = null;
+    let geminiAttempt = 0;
+    let geminiRetryCount = 0;
     const geminiStartedAt = Date.now();
     console.log("[take-pipeline] gemini request started", {
       ...baseLog,
@@ -806,32 +905,102 @@ export async function runProcessTake(
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
     });
-    let aiResp = await callAI(initialUrl);
-    if (!aiResp.ok && aiResp.status === 400 && take.mux_playback_id) {
-      const errText = await aiResp.text();
-      console.warn(
-        "AI gateway rejected URL; retrying with fresh Mux URL",
-        errText.slice(0, 200),
-      );
-      const freshQuality = tier === "standard" ? "medium" : "high";
-      const freshUrl = muxMp4Url(take.mux_playback_id, freshQuality);
-      aiResp = await callAI(freshUrl);
-    }
-    console.log("[take-pipeline] gemini response received", {
-      ...baseLog,
-      analysis_tier: tier,
-      http_status: aiResp.status,
-      gemini_duration_ms: Date.now() - geminiStartedAt,
-      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-    });
 
-    if (!aiResp.ok) {
-      if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
-      if (aiResp.status === 402)
+    let urlForCall = initialUrl;
+    while (geminiAttempt <= GEMINI_MAX_RETRIES) {
+      geminiAttempt += 1;
+      const attemptStart = Date.now();
+      let thrown: unknown = null;
+      try {
+        aiResp = await callAI(urlForCall);
+      } catch (callErr) {
+        thrown = callErr;
+        aiResp = null;
+      }
+      const status = aiResp?.status ?? null;
+      console.log("[take-pipeline] gemini response received", {
+        ...baseLog,
+        analysis_tier: tier,
+        http_status: status,
+        gemini_attempt: geminiAttempt,
+        gemini_duration_ms: Date.now() - attemptStart,
+        elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      });
+
+      // Success.
+      if (aiResp && aiResp.ok) break;
+
+      // One-shot stale-URL recovery for 400 — preserve existing fallback.
+      if (
+        aiResp &&
+        aiResp.status === 400 &&
+        take.mux_playback_id &&
+        urlForCall === initialUrl
+      ) {
+        const errText = await aiResp.text();
+        console.warn(
+          "AI gateway rejected URL; retrying once with fresh Mux URL",
+          errText.slice(0, 200),
+        );
+        const freshQuality = tier === "standard" ? "medium" : "high";
+        urlForCall = muxMp4Url(take.mux_playback_id, freshQuality);
+        // Doesn't count as a transient retry — this is schema/URL recovery.
+        continue;
+      }
+
+      // Hard, non-retryable failures.
+      if (aiResp && aiResp.status === 402) {
         throw new Error("AI credits exhausted on this workspace. Add funds to continue.");
-      const t = await aiResp.text();
-      console.error("AI gateway error", aiResp.status, t.slice(0, 500));
-      throw new Error(`AI gateway error (${aiResp.status})`);
+      }
+      if (aiResp && aiResp.status >= 400 && aiResp.status < 500 && aiResp.status !== 429) {
+        const t = await aiResp.text();
+        console.error("AI gateway hard error", aiResp.status, t.slice(0, 500));
+        throw new Error(`AI gateway error (${aiResp.status})`);
+      }
+
+      // Transient: network throw, 429, 5xx. Retry with backoff if budget left.
+      const transient = thrown !== null || aiResp?.status === 429 ||
+        (aiResp && aiResp.status >= 500 && aiResp.status < 600);
+      if (transient && geminiAttempt <= GEMINI_MAX_RETRIES) {
+        if (await isCancelled()) {
+          console.log("[take-pipeline] cancelled before gemini retry", baseLog);
+          return { ok: true, alreadyDone: true };
+        }
+        geminiRetryCount += 1;
+        console.log("gemini_retry_started", {
+          ...baseLog,
+          retry_count: geminiRetryCount,
+          http_status: status,
+          attempt_count: geminiAttempt,
+          elapsed_ms: Date.now() - geminiStartedAt,
+        });
+        await new Promise((r) =>
+          setTimeout(r, GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000),
+        );
+        continue;
+      }
+
+      // Out of retries.
+      console.warn("gemini_retry_exhausted", {
+        ...baseLog,
+        retry_count: geminiRetryCount,
+        http_status: status,
+        elapsed_ms: Date.now() - geminiStartedAt,
+      });
+      throw new Error(
+        "We couldn't complete the analysis this time. Please try again.",
+      );
+    }
+
+    if (!aiResp || !aiResp.ok) {
+      throw new Error("We couldn't complete the analysis this time. Please try again.");
+    }
+    if (geminiRetryCount > 0) {
+      console.log("gemini_retry_succeeded", {
+        ...baseLog,
+        retry_count: geminiRetryCount,
+        elapsed_ms: Date.now() - geminiStartedAt,
+      });
     }
 
     const json = await aiResp.json();

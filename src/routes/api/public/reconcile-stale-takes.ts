@@ -21,21 +21,18 @@ import { scheduleBackground } from "@/worker-entry";
 // Idempotency is preserved by runProcessTake itself: it only flips a take
 // into "analysing"/"processing" once, and refuses to re-enter if the row
 // already shows active processing.
-// Tightened to match the ~1 min target. analysis_pending should retry
-// quickly (every cron tick) while the MP4 rendition is finalising.
-// analysing is already in-flight against Gemini, so wait longer before
-// declaring it stuck.
+// Tightened to match the ~1 min target for fast handoff. The in-handler
+// poll loop now owns the long wait (up to 10 min); the reconciler only
+// catches takes whose Worker died before runProcessTake started, or
+// whose analysing phase truly stalled.
 const STALE_PENDING_SECONDS = 15;
-const STALE_ANALYSING_MINUTES = 4;
+const STALE_ANALYSING_MINUTES = 11; // > in-handler 10-min ceiling
 const MAX_BATCH = 25;
 // Hard cap on how many times the reconciler will retry a single take.
-// Past this, the take is parked in `error` so a stuck row cannot rack up
-// unbounded Gemini calls (cost protection).
+// Past this, the take is parked in `error`.
 const MAX_ATTEMPTS = 5;
-// Hard wall-clock ceiling. Past this, give up regardless of attempt count
-// so the user sees a clean "couldn't prepare your video in time" message
-// rather than an indefinite spinner.
-const MAX_TOTAL_AGE_SECONDS = 180;
+// Hard wall-clock ceiling — matches the in-handler 10-min preparation budget.
+const MAX_TOTAL_AGE_SECONDS = 600;
 
 export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
   server: {
