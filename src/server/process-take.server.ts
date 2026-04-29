@@ -1355,19 +1355,27 @@ export async function runProcessTake(
     // running, do NOT overwrite the cancelled state with a completed report.
     const { data: preWrite } = await supabaseAdmin
       .from("takes")
-      .select("status, error_message")
+      .select("status, processing_phase, attempt_count, error_message")
       .eq("id", takeId)
       .single();
     if (
-      preWrite?.status === "error" &&
-      typeof preWrite.error_message === "string" &&
-      preWrite.error_message.toLowerCase().includes("cancelled")
+      !preWrite ||
+      preWrite.status !== "processing" ||
+      preWrite.processing_phase !== "analysing"
     ) {
-      console.log("[take-pipeline] discarding result — take was cancelled", baseLog);
+      console.log("result_discarded_state_changed", {
+        take_id: takeId,
+        processing_phase: preWrite?.processing_phase ?? null,
+        attempt_count: preWrite?.attempt_count ?? 0,
+      });
       return { ok: true, alreadyDone: true };
     }
 
-    await supabaseAdmin
+    // Conditional update: only persist if the row is still in the exact
+    // pre-write state. If status/phase changed (cancel, retry, reset, error)
+    // between the read above and this write, the update affects 0 rows and
+    // we discard silently.
+    const { data: updatedRows } = await supabaseAdmin
       .from("takes")
       .update({
         status: "complete",
@@ -1380,7 +1388,19 @@ export async function runProcessTake(
         compliance_flags: complianceFlags as never,
         score_breakdown: scoreBreakdown as never,
       })
-      .eq("id", takeId);
+      .eq("id", takeId)
+      .eq("status", "processing")
+      .eq("processing_phase", "analysing")
+      .select("id");
+
+    if (!updatedRows || updatedRows.length === 0) {
+      console.log("result_discarded_state_changed", {
+        take_id: takeId,
+        processing_phase: preWrite.processing_phase,
+        attempt_count: preWrite.attempt_count ?? 0,
+      });
+      return { ok: true, alreadyDone: true };
+    }
 
     await supabaseAdmin
       .from("auditions")
