@@ -205,6 +205,35 @@ function AuditionPage() {
 
               {takes.map((t) => (
                 <TabsContent key={t.id} value={t.id} className="mt-6">
+                  <div className="mb-3 flex justify-end">
+                    <ConfirmDestructive
+                      title="Delete take?"
+                      description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
+                      confirmLabel="Delete take"
+                      trigger={(open) => (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={open}
+                        >
+                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete take
+                        </Button>
+                      )}
+                      onConfirm={async () => {
+                        try {
+                          await deleteTake({ data: { takeId: t.id } });
+                          toast.success(`Take ${t.take_number} deleted`);
+                          setTakes((prev) => prev.filter((x) => x.id !== t.id));
+                          if (activeTakeId === t.id) setActiveTakeId(null);
+                        } catch (err) {
+                          toast.error(
+                            err instanceof Error ? err.message : "Could not delete take",
+                          );
+                        }
+                      }}
+                    />
+                  </div>
                   <TakeView take={t} />
                 </TabsContent>
               ))}
