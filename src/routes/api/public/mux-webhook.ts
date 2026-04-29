@@ -195,9 +195,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
           }
 
           // Mark the take as queued — runProcessTake itself will flip the
-          // phase to "analysing" once it actually begins work. This lets the
-          // stale-analysis reconciler distinguish "scheduled but never
-          // picked up" from "started but never finished".
+          // phase to "analysing" once it actually begins work.
           await supabaseAdmin
             .from("takes")
             .update({ status: "pending", processing_phase: "analysis_pending" })
