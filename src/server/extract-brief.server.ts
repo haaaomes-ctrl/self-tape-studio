@@ -118,7 +118,7 @@ const EXTRACT_TOOL = {
 const SYSTEM = `You are a UK casting assistant. Extract a structured casting brief from the text below.
 Use British English in any free-text fields ("recall", not "callback"; "self-tape"; "analysing", "prioritised", "behaviour", "centre").
 Only fill fields the brief actually states or strongly implies. Use null / "unspecified" / "unknown" / empty arrays when not stated. Do not invent constraints.
-For time_limit_seconds, convert anything stated (e.g. "under 2 minutes" → 120, "32-bar cut" → 90 as a sensible default).
+time_limit_seconds: ONLY populate when the brief explicitly states a numeric duration (e.g. "90 seconds", "max 90s", "up to 2 minutes", "under 2 mins", "no longer than 120 seconds", "must be 1 minute"). Otherwise return null. Do NOT infer a duration from "32-bar cut", "16-bar cut", song length, audition type, or any industry default. Bar-cut references without an explicit number → null.
 Accent fields: set accent_required="yes" only when the brief explicitly names a required accent or dialect, "no" if it explicitly says any accent is fine, otherwise "unknown". Set accent_importance="central" only when the brief makes accent essential (e.g. "must be authentic ___", "native speaker"); "preferred" when softly preferred ("ideally ___", "RP welcome"); "unspecified" otherwise. Do not infer importance from a casual mention.
 Set extraction_confidence honestly: 'high' only when the brief is explicit; 'low' when it is short, vague, or you had to guess multiple fields.`;
 
