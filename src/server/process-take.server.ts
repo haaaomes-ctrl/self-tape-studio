@@ -8,6 +8,20 @@
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { muxMp4Url } from "./mux.server";
+import { extractBriefFromText } from "./extract-brief.server";
+import {
+  applyCapsAndLabel,
+  bandsForLevel,
+  computeBlockers,
+  deterministicCompliance,
+  recomputeOverall,
+  toUKTerms,
+  ukifyDeep,
+  weightsForType,
+  type AuditionLevel,
+  type AuditionType,
+  type ExtractedBrief,
+} from "@/lib/audition-rules";
 
 // Scoring v2 — multi-component aware, split brief adherence, submission risk flags.
 const REPORT_TOOL = {
