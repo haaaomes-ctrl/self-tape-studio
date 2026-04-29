@@ -270,6 +270,97 @@ export type RunProcessTakeResult =
   | { ok: true; tier?: Tier; alreadyDone?: boolean }
   | { ok: false; error: string };
 
+export type SubmissionVerdict = {
+  // Plain-language label shown directly to the user.
+  label: "Strong submit" | "Ready to submit" | "Worth another take" | "Not ready yet";
+  // One short sentence explaining the verdict.
+  reason: string;
+  // True when a hard blocker forced the verdict below what the score alone would suggest.
+  blocked: boolean;
+};
+
+/**
+ * Deterministic submission verdict.
+ *
+ * Bands (from the score alone):
+ *   85+    → Strong submit
+ *   75–84  → Ready to submit
+ *   65–74  → Worth another take
+ *   <65    → Not ready yet
+ *
+ * Hard blockers — even with a strong score, drop the verdict to at most
+ * "Worth another take" when:
+ *   - Audio clarity is too low to fairly assess the performance (audio < 50).
+ *   - Brief instructions weren't followed in BRIEF mode (brief_adherence < 50,
+ *     or model flagged at_risk, or any high-severity submission risk).
+ *   - Framing / technical setup prevents clear evaluation (technical < 45).
+ */
+export function computeSubmissionVerdict(input: {
+  overall: number;
+  audioScore: number | null;
+  technicalScore: number | null;
+  briefAdherence: number | null;
+  mode: "brief" | "baseline";
+  atRisk: boolean;
+  riskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }>;
+}): SubmissionVerdict {
+  const { overall, audioScore, technicalScore, briefAdherence, mode, atRisk, riskFlags } =
+    input;
+
+  const blockers: string[] = [];
+  if (audioScore != null && audioScore < 50) {
+    blockers.push("audio is too unclear to fairly judge the performance");
+  }
+  if (technicalScore != null && technicalScore < 45) {
+    blockers.push("framing or setup makes it hard to evaluate the take properly");
+  }
+  if (mode === "brief") {
+    if ((briefAdherence != null && briefAdherence < 50) || atRisk) {
+      blockers.push("the casting brief instructions weren't fully followed");
+    }
+  }
+  const hasHighRisk = riskFlags.some((f) => f.severity === "high");
+  if (hasHighRisk) blockers.push("a high-severity submission risk was flagged");
+
+  // Score band first.
+  let label: SubmissionVerdict["label"];
+  if (overall >= 85) label = "Strong submit";
+  else if (overall >= 75) label = "Ready to submit";
+  else if (overall >= 65) label = "Worth another take";
+  else label = "Not ready yet";
+
+  let blocked = false;
+  if (blockers.length > 0) {
+    // Cap at "Worth another take" — never let a hard blocker show as
+    // submit-ready, even if the headline score happened to land high.
+    if (label === "Strong submit" || label === "Ready to submit") {
+      label = "Worth another take";
+      blocked = true;
+    }
+  }
+
+  let reason: string;
+  if (blocked) {
+    reason = `Score sits high, but ${blockers[0]} — fix that before sending it out.`;
+  } else if (label === "Strong submit") {
+    reason = "This tape lands. Send it with confidence.";
+  } else if (label === "Ready to submit") {
+    reason = "Solid, castable tape — safe to send as-is.";
+  } else if (label === "Worth another take") {
+    reason =
+      blockers[0]
+        ? `One more pass will lift this — ${blockers[0]}.`
+        : "There's a clear next take in this. Tighten the priority improvement and re-record.";
+  } else {
+    reason =
+      blockers[0]
+        ? `Hold off on sending — ${blockers[0]}.`
+        : "Hold off on sending. Work the priority fix and shoot a fresh take.";
+  }
+
+  return { label, reason, blocked };
+}
+
 /**
  * Internal Gemini analysis pipeline. NOT auth-gated — the caller is
  * responsible for authorisation (webhook signature verification, or
