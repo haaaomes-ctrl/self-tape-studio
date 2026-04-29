@@ -7,11 +7,48 @@
 import type { ExtractedBrief, AuditionType } from "@/lib/audition-rules";
 
 export type ExtractionConfidence = "low" | "medium" | "high";
+export type TimeLimitSource = "explicit" | "none";
 
 export type ExtractedBriefWithMeta = {
-  brief: ExtractedBrief;
+  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource };
   extraction_confidence: ExtractionConfidence;
 };
+
+// Detects ONLY explicit numeric durations in the raw brief text.
+// Allowed phrasings (examples — not exhaustive but covers the documented set):
+//   "90 seconds", "90s", "90 secs", "max 90 seconds", "up to 2 minutes",
+//   "under 2 mins", "no longer than 120 seconds", "must be 1 minute".
+// Crucially this does NOT match: "32-bar cut", "16-bar cut", song length,
+// audition type, app upload limits, or any non-numeric implied duration.
+function parseExplicitDuration(raw: string): number | null {
+  if (!raw) return null;
+  const text = raw.toLowerCase();
+
+  // Bar-cut phrases must NOT yield a duration. If the brief ONLY contains a
+  // bar-cut reference and no numeric duration phrase, return null.
+  // We still allow "32-bar cut, max 90 seconds" — handled because the seconds
+  // regex below independently matches "90 seconds".
+
+  // Try seconds first: "<num> seconds|secs|s" (with optional qualifier)
+  const secMatch = text.match(
+    /\b(?:max(?:imum)?|up\s*to|under|no\s+longer\s+than|must\s+be|at\s+most|within|<=?|≤)?\s*(\d{1,3})\s*(?:seconds?|secs?|s)\b/,
+  );
+  if (secMatch) {
+    const n = parseInt(secMatch[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 1800) return n;
+  }
+
+  // Then minutes: "<num> minutes|mins|min" (with optional qualifier)
+  const minMatch = text.match(
+    /\b(?:max(?:imum)?|up\s*to|under|no\s+longer\s+than|must\s+be|at\s+most|within|<=?|≤)?\s*(\d{1,2})\s*(?:minutes?|mins?|min)\b/,
+  );
+  if (minMatch) {
+    const n = parseInt(minMatch[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 30) return n * 60;
+  }
+
+  return null;
+}
 
 const EXTRACT_TOOL = {
   type: "function" as const,
