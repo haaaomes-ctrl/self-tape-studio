@@ -875,6 +875,29 @@ export async function runProcessTake(
         }),
       });
 
+    // Gemini call with system-owned automatic retries.
+    //   - Retry on: network/throw, timeout, 429, 5xx (max 2 retries, backoff 10s/30s).
+    //   - Do NOT retry: 400 (validation/schema — except existing one-shot fresh-URL
+    //     fallback), 402 (quota/credits), other 4xx, cancellation.
+    const GEMINI_MAX_RETRIES = 2;
+    const GEMINI_BACKOFF_MS = [10_000, 30_000];
+
+    const isCancelled = async (): Promise<boolean> => {
+      const { data } = await supabaseAdmin
+        .from("takes")
+        .select("status, error_message")
+        .eq("id", takeId)
+        .single();
+      return (
+        data?.status === "error" &&
+        typeof data.error_message === "string" &&
+        data.error_message.toLowerCase().includes("cancelled")
+      );
+    };
+
+    let aiResp: Response | null = null;
+    let geminiAttempt = 0;
+    let geminiRetryCount = 0;
     const geminiStartedAt = Date.now();
     console.log("[take-pipeline] gemini request started", {
       ...baseLog,
@@ -882,32 +905,102 @@ export async function runProcessTake(
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
     });
-    let aiResp = await callAI(initialUrl);
-    if (!aiResp.ok && aiResp.status === 400 && take.mux_playback_id) {
-      const errText = await aiResp.text();
-      console.warn(
-        "AI gateway rejected URL; retrying with fresh Mux URL",
-        errText.slice(0, 200),
-      );
-      const freshQuality = tier === "standard" ? "medium" : "high";
-      const freshUrl = muxMp4Url(take.mux_playback_id, freshQuality);
-      aiResp = await callAI(freshUrl);
-    }
-    console.log("[take-pipeline] gemini response received", {
-      ...baseLog,
-      analysis_tier: tier,
-      http_status: aiResp.status,
-      gemini_duration_ms: Date.now() - geminiStartedAt,
-      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-    });
 
-    if (!aiResp.ok) {
-      if (aiResp.status === 429) throw new Error("Rate limited — please try again in a minute.");
-      if (aiResp.status === 402)
+    let urlForCall = initialUrl;
+    while (geminiAttempt <= GEMINI_MAX_RETRIES) {
+      geminiAttempt += 1;
+      const attemptStart = Date.now();
+      let thrown: unknown = null;
+      try {
+        aiResp = await callAI(urlForCall);
+      } catch (callErr) {
+        thrown = callErr;
+        aiResp = null;
+      }
+      const status = aiResp?.status ?? null;
+      console.log("[take-pipeline] gemini response received", {
+        ...baseLog,
+        analysis_tier: tier,
+        http_status: status,
+        gemini_attempt: geminiAttempt,
+        gemini_duration_ms: Date.now() - attemptStart,
+        elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      });
+
+      // Success.
+      if (aiResp && aiResp.ok) break;
+
+      // One-shot stale-URL recovery for 400 — preserve existing fallback.
+      if (
+        aiResp &&
+        aiResp.status === 400 &&
+        take.mux_playback_id &&
+        urlForCall === initialUrl
+      ) {
+        const errText = await aiResp.text();
+        console.warn(
+          "AI gateway rejected URL; retrying once with fresh Mux URL",
+          errText.slice(0, 200),
+        );
+        const freshQuality = tier === "standard" ? "medium" : "high";
+        urlForCall = muxMp4Url(take.mux_playback_id, freshQuality);
+        // Doesn't count as a transient retry — this is schema/URL recovery.
+        continue;
+      }
+
+      // Hard, non-retryable failures.
+      if (aiResp && aiResp.status === 402) {
         throw new Error("AI credits exhausted on this workspace. Add funds to continue.");
-      const t = await aiResp.text();
-      console.error("AI gateway error", aiResp.status, t.slice(0, 500));
-      throw new Error(`AI gateway error (${aiResp.status})`);
+      }
+      if (aiResp && aiResp.status >= 400 && aiResp.status < 500 && aiResp.status !== 429) {
+        const t = await aiResp.text();
+        console.error("AI gateway hard error", aiResp.status, t.slice(0, 500));
+        throw new Error(`AI gateway error (${aiResp.status})`);
+      }
+
+      // Transient: network throw, 429, 5xx. Retry with backoff if budget left.
+      const transient = thrown !== null || aiResp?.status === 429 ||
+        (aiResp && aiResp.status >= 500 && aiResp.status < 600);
+      if (transient && geminiAttempt <= GEMINI_MAX_RETRIES) {
+        if (await isCancelled()) {
+          console.log("[take-pipeline] cancelled before gemini retry", baseLog);
+          return { ok: true, alreadyDone: true };
+        }
+        geminiRetryCount += 1;
+        console.log("gemini_retry_started", {
+          ...baseLog,
+          retry_count: geminiRetryCount,
+          http_status: status,
+          attempt_count: geminiAttempt,
+          elapsed_ms: Date.now() - geminiStartedAt,
+        });
+        await new Promise((r) =>
+          setTimeout(r, GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000),
+        );
+        continue;
+      }
+
+      // Out of retries.
+      console.warn("gemini_retry_exhausted", {
+        ...baseLog,
+        retry_count: geminiRetryCount,
+        http_status: status,
+        elapsed_ms: Date.now() - geminiStartedAt,
+      });
+      throw new Error(
+        "We couldn't complete the analysis this time. Please try again.",
+      );
+    }
+
+    if (!aiResp || !aiResp.ok) {
+      throw new Error("We couldn't complete the analysis this time. Please try again.");
+    }
+    if (geminiRetryCount > 0) {
+      console.log("gemini_retry_succeeded", {
+        ...baseLog,
+        retry_count: geminiRetryCount,
+        elapsed_ms: Date.now() - geminiStartedAt,
+      });
     }
 
     const json = await aiResp.json();
