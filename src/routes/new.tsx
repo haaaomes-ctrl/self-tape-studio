@@ -38,6 +38,9 @@ function NewAuditionPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState("");
+  const [auditionLevel, setAuditionLevel] = useState<
+    "learning" | "amateur" | "emerging" | "professional"
+  >("emerging");
   const [briefMode, setBriefMode] = useState<"full" | "guided" | "skip">("full");
   const [fullBrief, setFullBrief] = useState("");
   const [guided, setGuided] = useState<GuidedFields>({
