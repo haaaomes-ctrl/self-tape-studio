@@ -1224,6 +1224,8 @@ export async function runProcessTake(
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,
+      material_policy: materialPolicy,
+      material_scrub_triggered: materialScrubTriggered,
     };
 
     await supabaseAdmin
