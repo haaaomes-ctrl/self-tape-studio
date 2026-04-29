@@ -429,33 +429,40 @@ export function computeSubmissionVerdict(input: {
     blockers,
   });
 
-  // Map back to legacy verdict label set the UI already understands.
-  const legacyLabel: SubmissionVerdict["label"] =
-    label === "Strong for this level"
-      ? "Strong submit"
-      : (label as SubmissionVerdict["label"]);
+  // Use canonical labels everywhere — no legacy "Strong submit".
+  const finalLabel: SubmissionVerdict["label"] = label;
+  const isBlocked = blockers.length > 0;
 
   let verdictReason: string;
-  if (capped && reason) {
+  if (isBlocked) {
+    // Blocked → reason MUST reference the main block_reason.
+    verdictReason = `Blocked: ${blockers[0].message}.`;
+  } else if (capped && reason) {
     verdictReason = `Score sits high, but ${reason} — fix that before sending it out.`;
-  } else if (legacyLabel === "Strong submit") {
-    verdictReason = "This tape lands at your level. Send it with confidence.";
-  } else if (legacyLabel === "Ready to submit") {
+  } else if (finalLabel === "Strong for this level") {
+    verdictReason = "Lands strongly at your level — send with confidence.";
+  } else if (finalLabel === "Ready to submit") {
     verdictReason = "Solid, castable tape — safe to send as-is.";
-  } else if (legacyLabel === "Worth another take") {
-    verdictReason = blockers[0]
-      ? `One more pass will lift this — ${blockers[0].message}.`
-      : "There's a clear next take in this. Tighten the priority improvement and re-record.";
+  } else if (finalLabel === "Worth another take") {
+    verdictReason =
+      "Close, but a focused retake will lift this above the submission bar.";
   } else {
-    verdictReason = blockers[0]
-      ? `Hold off on sending — ${blockers[0].message}.`
-      : "Hold off on sending. Work the priority fix and shoot a fresh take.";
+    verdictReason =
+      "Not ready to send — work the priority fix and shoot a fresh take.";
+  }
+
+  // Defensive: never allow an empty reason to escape.
+  if (!verdictReason || !verdictReason.trim()) {
+    verdictReason =
+      finalLabel === "Strong for this level" || finalLabel === "Ready to submit"
+        ? `${finalLabel}.`
+        : "Needs another take before submitting.";
   }
 
   return {
-    label: legacyLabel,
+    label: finalLabel,
     reason: toUKTerms(verdictReason),
-    blocked: capped && blockers.length > 0,
+    blocked: isBlocked,
   };
 }
 
