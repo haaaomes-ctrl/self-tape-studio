@@ -109,6 +109,11 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         if (type === "video.upload.asset_created") {
           const assetId = (data.asset_id as string | undefined) ?? null;
           if (!assetId) return new Response("ok", { status: 200 });
+          console.log("[take-pipeline] mux upload.asset_created", {
+            take_id: takeId,
+            mux_asset_id: assetId,
+            timestamp: receivedAt,
+          });
           await supabaseAdmin
             .from("takes")
             .update({
