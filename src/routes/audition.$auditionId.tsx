@@ -469,6 +469,84 @@ function ProcessingTakeView({ take }: { take: Take }) {
   );
 }
 
+// Translates the underlying confidence + signal data into a friendly,
+// non-technical trust indicator. Never surfaces the numeric score or
+// "AI confidence" wording — users see one of three plain-language labels
+// plus a one-line explanation that names the actual contributing factors
+// (brief, audio, video quality, performance completeness).
+function buildTrustIndicator(
+  confidence: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report: any,
+  take: Take,
+): { label: "Very reliable" | "Mostly reliable" | "Take with caution"; reason: string; tone: string } {
+  const audio = report?.scores?.audio ?? null;
+  const technical = report?.scores?.technical ?? null;
+  const briefAdherence = report?.scores?.brief_adherence ?? null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const signals = (take as any).signals as
+    | { duration?: number; audio_peak?: number }
+    | null
+    | undefined;
+  const hasBrief = report?.mode === "brief";
+  const components = Array.isArray(report?.detected_components) ? report.detected_components : [];
+  const hasFullPerformance =
+    components.length > 0 && (signals?.duration ?? 0) >= 15 && briefAdherence === null
+      ? true
+      : (signals?.duration ?? 0) >= 15;
+
+  const positives: string[] = [];
+  const concerns: string[] = [];
+
+  if (hasBrief) positives.push("a casting brief to compare against");
+  else concerns.push("no casting brief was provided");
+
+  if (audio != null) {
+    if (audio >= 75) positives.push("clear audio");
+    else if (audio >= 50) concerns.push("audio that's a little muddy in places");
+    else concerns.push("muffled or noisy audio");
+  }
+
+  if (technical != null) {
+    if (technical >= 75) positives.push("good video quality");
+    else if (technical < 50) concerns.push("video quality that made parts hard to read");
+  }
+
+  if (!hasFullPerformance) concerns.push("a short or partial performance");
+
+  let label: "Very reliable" | "Mostly reliable" | "Take with caution";
+  let tone: string;
+  if (confidence >= 85 && concerns.length === 0) {
+    label = "Very reliable";
+    tone = "text-success";
+  } else if (confidence >= 65 && concerns.length <= 1) {
+    label = "Mostly reliable";
+    tone = "text-foreground";
+  } else {
+    label = "Take with caution";
+    tone = "text-warning";
+  }
+
+  // Build a single warm sentence from the strongest signal.
+  let reason: string;
+  if (label === "Very reliable") {
+    const lead = positives.slice(0, 2).join(" and ") || "a clean tape all round";
+    reason = `Based on ${lead} — you can lean into the feedback below.`;
+  } else if (label === "Mostly reliable") {
+    if (concerns.length > 0) {
+      reason = `Solid read overall, but ${concerns[0]} — weigh the notes accordingly.`;
+    } else {
+      const lead = positives[0] ?? "a generally clean tape";
+      reason = `Based on ${lead} — the feedback below is a fair guide.`;
+    }
+  } else {
+    const lead = concerns.slice(0, 2).join(" and ") || "limited information to work from";
+    reason = `Heads up: ${lead}. Treat the feedback as a directional steer rather than the final word.`;
+  }
+
+  return { label, reason, tone };
+}
+
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
