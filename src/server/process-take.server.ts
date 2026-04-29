@@ -294,20 +294,11 @@ export type SubmissionVerdict = {
 };
 
 /**
- * Deterministic submission verdict.
+ * Deterministic submission verdict — LEVEL-AWARE.
  *
- * Bands (from the score alone):
- *   85+    → Strong submit
- *   75–84  → Ready to submit
- *   65–74  → Worth another take
- *   <65    → Not ready yet
- *
- * Hard blockers — even with a strong score, drop the verdict to at most
- * "Worth another take" when:
- *   - Audio clarity is too low to fairly assess the performance (audio < 50).
- *   - Brief instructions weren't followed in BRIEF mode (brief_adherence < 50,
- *     or model flagged at_risk, or any high-severity submission risk).
- *   - Framing / technical setup prevents clear evaluation (technical < 45).
+ * Bands come from bandsForLevel(level). Hard blockers cap at "Worth another
+ * take" (or worse). Strong-for-this-level additionally requires no category
+ * < 70 and brief_adherence ≥ 60 in BRIEF mode.
  */
 export function computeSubmissionVerdict(input: {
   overall: number;
@@ -317,62 +308,61 @@ export function computeSubmissionVerdict(input: {
   mode: "brief" | "baseline";
   atRisk: boolean;
   riskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }>;
+  level?: AuditionLevel;
+  scores?: Record<string, number | null | undefined>;
 }): SubmissionVerdict {
-  const { overall, audioScore, technicalScore, briefAdherence, mode, atRisk, riskFlags } =
-    input;
+  const level: AuditionLevel = input.level ?? "emerging";
+  const scoresForGating = {
+    audio: input.audioScore ?? undefined,
+    technical: input.technicalScore ?? undefined,
+    ...(input.scores ?? {}),
+  };
+  const blockers = computeBlockers({
+    scores: scoresForGating,
+    briefAdherence: input.briefAdherence,
+    mode: input.mode,
+    riskFlags: input.atRisk
+      ? [...input.riskFlags, { severity: "high" as const, flag: "Model flagged at_risk" }]
+      : input.riskFlags,
+  });
 
-  const blockers: string[] = [];
-  if (audioScore != null && audioScore < 50) {
-    blockers.push("audio is too unclear to fairly judge the performance");
-  }
-  if (technicalScore != null && technicalScore < 45) {
-    blockers.push("framing or setup makes it hard to evaluate the take properly");
-  }
-  if (mode === "brief") {
-    if ((briefAdherence != null && briefAdherence < 50) || atRisk) {
-      blockers.push("the casting brief instructions weren't fully followed");
-    }
-  }
-  const hasHighRisk = riskFlags.some((f) => f.severity === "high");
-  if (hasHighRisk) blockers.push("a high-severity submission risk was flagged");
+  const { label, capped, reason } = applyCapsAndLabel({
+    overall: input.overall,
+    scores: scoresForGating,
+    briefAdherence: input.briefAdherence,
+    mode: input.mode,
+    level,
+    blockers,
+  });
 
-  // Score band first.
-  let label: SubmissionVerdict["label"];
-  if (overall >= 85) label = "Strong submit";
-  else if (overall >= 75) label = "Ready to submit";
-  else if (overall >= 65) label = "Worth another take";
-  else label = "Not ready yet";
+  // Map back to legacy verdict label set the UI already understands.
+  const legacyLabel: SubmissionVerdict["label"] =
+    label === "Strong for this level"
+      ? "Strong submit"
+      : (label as SubmissionVerdict["label"]);
 
-  let blocked = false;
-  if (blockers.length > 0) {
-    // Cap at "Worth another take" — never let a hard blocker show as
-    // submit-ready, even if the headline score happened to land high.
-    if (label === "Strong submit" || label === "Ready to submit") {
-      label = "Worth another take";
-      blocked = true;
-    }
-  }
-
-  let reason: string;
-  if (blocked) {
-    reason = `Score sits high, but ${blockers[0]} — fix that before sending it out.`;
-  } else if (label === "Strong submit") {
-    reason = "This tape lands. Send it with confidence.";
-  } else if (label === "Ready to submit") {
-    reason = "Solid, castable tape — safe to send as-is.";
-  } else if (label === "Worth another take") {
-    reason =
-      blockers[0]
-        ? `One more pass will lift this — ${blockers[0]}.`
-        : "There's a clear next take in this. Tighten the priority improvement and re-record.";
+  let verdictReason: string;
+  if (capped && reason) {
+    verdictReason = `Score sits high, but ${reason} — fix that before sending it out.`;
+  } else if (legacyLabel === "Strong submit") {
+    verdictReason = "This tape lands at your level. Send it with confidence.";
+  } else if (legacyLabel === "Ready to submit") {
+    verdictReason = "Solid, castable tape — safe to send as-is.";
+  } else if (legacyLabel === "Worth another take") {
+    verdictReason = blockers[0]
+      ? `One more pass will lift this — ${blockers[0].message}.`
+      : "There's a clear next take in this. Tighten the priority improvement and re-record.";
   } else {
-    reason =
-      blockers[0]
-        ? `Hold off on sending — ${blockers[0]}.`
-        : "Hold off on sending. Work the priority fix and shoot a fresh take.";
+    verdictReason = blockers[0]
+      ? `Hold off on sending — ${blockers[0].message}.`
+      : "Hold off on sending. Work the priority fix and shoot a fresh take.";
   }
 
-  return { label, reason, blocked };
+  return {
+    label: legacyLabel,
+    reason: toUKTerms(verdictReason),
+    blocked: capped && blockers.length > 0,
+  };
 }
 
 /**
