@@ -505,10 +505,11 @@ export async function runProcessTake(
   takeId: string,
   allowOriginal = false,
 ): Promise<RunProcessTakeResult> {
+  const runStartedAt = Date.now();
   const { data: take, error: takeErr } = await supabaseAdmin
     .from("takes")
     .select(
-      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url",
+      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_asset_id, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url, created_at, updated_at",
     )
     .eq("id", takeId)
     .single();
@@ -519,6 +520,18 @@ export async function runProcessTake(
   if (take.status === "complete") {
     return { ok: true, alreadyDone: true };
   }
+  // Cancellation guard: if the user cancelled while the webhook was in flight,
+  // do not proceed. resetTake marks the row as errored with a "Cancelled by
+  // user" message — treat that as a terminal stop so a delayed webhook /
+  // reconciler can't restart analysis on a cancelled take.
+  if (
+    take.status === "error" &&
+    typeof take.error_message === "string" &&
+    take.error_message.toLowerCase().includes("cancelled")
+  ) {
+    console.log("runProcessTake: take cancelled by user, skipping", { takeId });
+    return { ok: true, alreadyDone: true };
+  }
   // Idempotency: if another worker is already actively analysing this take
   // (and it hasn't gone stale), bail out. The stale-analysis reconciler will
   // re-trigger us if needed.
@@ -526,6 +539,20 @@ export async function runProcessTake(
     console.log("runProcessTake: take already in active analysis, skipping", { takeId });
     return { ok: true, alreadyDone: true };
   }
+
+  const elapsedSinceCreatedMs = () => Date.now() - new Date(take.created_at).getTime();
+  const baseLog = {
+    take_id: takeId,
+    audition_id: take.audition_id,
+    mux_asset_id: take.mux_asset_id ?? null,
+    mux_playback_id: take.mux_playback_id ?? null,
+    attempt_count: take.attempt_count ?? 0,
+  };
+  console.log("[take-pipeline] runProcessTake started", {
+    ...baseLog,
+    processing_phase: take.processing_phase,
+    elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+  });
 
   const { data: audition, error: audErr } = await supabaseAdmin
     .from("auditions")
