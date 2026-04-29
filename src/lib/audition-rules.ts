@@ -180,13 +180,18 @@ export function computeBlockers(input: {
   const audio = input.scores.audio ?? null;
   const tech = input.scores.technical ?? null;
 
-  if (audio != null && audio < 45) {
+  // Audio only HARD-blocks when fair assessment is genuinely impossible.
+  // Softened from <45 to <35 — 35–49 is handled as a verdict cap (Worth
+  // another take), not an automatic Not-ready blocker.
+  if (audio != null && audio < 35) {
     blockers.push({
       code: "audio_low",
       message: "audio is too unclear to fairly judge the performance",
     });
   }
-  if (tech != null && tech < 45) {
+  // Technical only blocks when assessment is genuinely impaired (was <45).
+  // Modest setups, plain backgrounds and home environments must NOT block.
+  if (tech != null && tech < 35) {
     blockers.push({
       code: "technical_low",
       message: "framing or setup makes it hard to evaluate the take properly",
@@ -198,11 +203,16 @@ export function computeBlockers(input: {
       message: "a major casting brief instruction wasn't followed",
     });
   }
-  // 2+ weak categories
-  const weakCount = (Object.values(input.scores) as Array<number | null | undefined>).filter(
-    (s) => typeof s === "number" && s < 55,
-  ).length;
-  if (weakCount >= 2) {
+  // Stacked-issues guard: stacking two minor weaknesses must NOT trigger a
+  // Not-ready blocker. Only treat as a blocker when at least two categories
+  // are genuinely weak (<50) AND one of them is a fundamental (acting,
+  // vocal, or brief_adherence). Pure presentation/technical/audio stacking
+  // is handled as a verdict cap, not a blocker.
+  const fundamentals: WeightedCategory[] = ["acting", "vocal", "brief_adherence"];
+  const weakEntries = (Object.entries(input.scores) as Array<[string, number | null | undefined]>)
+    .filter(([, s]) => typeof s === "number" && (s as number) < 50);
+  const hasWeakFundamental = weakEntries.some(([k]) => fundamentals.includes(k as WeightedCategory));
+  if (weakEntries.length >= 2 && hasWeakFundamental) {
     blockers.push({
       code: "two_weak_categories",
       message: "two or more areas need work before this is ready",
