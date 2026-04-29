@@ -15,6 +15,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
+import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 
 const NewRoute = NewRouteImport.update({
@@ -47,6 +48,12 @@ const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
   path: '/audition/$auditionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicReconcileStaleTakesRoute =
+  ApiPublicReconcileStaleTakesRouteImport.update({
+    id: '/api/public/reconcile-stale-takes',
+    path: '/api/public/reconcile-stale-takes',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   id: '/api/public/mux-webhook',
   path: '/api/public/mux-webhook',
@@ -61,6 +68,7 @@ export interface FileRoutesByFullPath {
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
+  '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +78,7 @@ export interface FileRoutesByTo {
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
+  '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +89,7 @@ export interface FileRoutesById {
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
+  '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +101,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/audition/$auditionId'
     | '/api/public/mux-webhook'
+    | '/api/public/reconcile-stale-takes'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +111,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/audition/$auditionId'
     | '/api/public/mux-webhook'
+    | '/api/public/reconcile-stale-takes'
   id:
     | '__root__'
     | '/'
@@ -109,6 +121,7 @@ export interface FileRouteTypes {
     | '/new'
     | '/audition/$auditionId'
     | '/api/public/mux-webhook'
+    | '/api/public/reconcile-stale-takes'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +132,7 @@ export interface RootRouteChildren {
   NewRoute: typeof NewRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
+  ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -165,6 +179,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuditionAuditionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/reconcile-stale-takes': {
+      id: '/api/public/reconcile-stale-takes'
+      path: '/api/public/reconcile-stale-takes'
+      fullPath: '/api/public/reconcile-stale-takes'
+      preLoaderRoute: typeof ApiPublicReconcileStaleTakesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/mux-webhook': {
       id: '/api/public/mux-webhook'
       path: '/api/public/mux-webhook'
@@ -183,6 +204,7 @@ const rootRouteChildren: RootRouteChildren = {
   NewRoute: NewRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
+  ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
