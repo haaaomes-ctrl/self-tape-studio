@@ -40,6 +40,18 @@ const EXTRACT_TOOL = {
         tone_or_world: { type: ["string", "null"] },
         performance_style: { type: ["string", "null"] },
         accent_or_dialect_required: { type: ["string", "null"] },
+        accent_required: {
+          type: "string",
+          enum: ["yes", "no", "unknown"],
+          description:
+            "Whether the brief explicitly requires a specific accent or dialect. 'unknown' if the brief doesn't say.",
+        },
+        accent_importance: {
+          type: "string",
+          enum: ["central", "preferred", "unspecified"],
+          description:
+            "How important the accent requirement is. 'central' = essential to the role (e.g. 'must be authentic Glaswegian'); 'preferred' = nice to have ('ideally RP'); 'unspecified' = brief is silent.",
+        },
         vocal_style_required: { type: ["string", "null"] },
         movement_or_dance_required: { type: ["string", "null"] },
         reader_required: { type: "string", enum: ["yes", "no", "unspecified"] },
@@ -68,8 +80,9 @@ const EXTRACT_TOOL = {
 
 const SYSTEM = `You are a UK casting assistant. Extract a structured casting brief from the text below.
 Use British English in any free-text fields ("recall", not "callback"; "self-tape"; "analysing", "prioritised", "behaviour", "centre").
-Only fill fields the brief actually states or strongly implies. Use null / "unspecified" / empty arrays when not stated. Do not invent constraints.
+Only fill fields the brief actually states or strongly implies. Use null / "unspecified" / "unknown" / empty arrays when not stated. Do not invent constraints.
 For time_limit_seconds, convert anything stated (e.g. "under 2 minutes" → 120, "32-bar cut" → 90 as a sensible default).
+Accent fields: set accent_required="yes" only when the brief explicitly names a required accent or dialect, "no" if it explicitly says any accent is fine, otherwise "unknown". Set accent_importance="central" only when the brief makes accent essential (e.g. "must be authentic ___", "native speaker"); "preferred" when softly preferred ("ideally ___", "RP welcome"); "unspecified" otherwise. Do not infer importance from a casual mention.
 Set extraction_confidence honestly: 'high' only when the brief is explicit; 'low' when it is short, vague, or you had to guess multiple fields.`;
 
 export async function extractBriefFromText(

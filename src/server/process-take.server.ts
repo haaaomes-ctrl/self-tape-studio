@@ -268,7 +268,7 @@ In BASELINE mode treat these as professional-standards equivalents and do NOT pe
 Professional Presentation is SEPARATE from compliance — it covers slate clarity, pacing discipline, camera awareness, and single-take logic.
 
 Hard rules:
-- If audio clarity < 50, cap final overall at 65.
+- Audio caps are tiered: <35 → tape can't be fairly judged; 35–49 → "Worth another take"; 50–59 → workable but flag for the user. Do not invent harsher caps than this.
 - If brief_adherence < 40 and mode is BRIEF, set at_risk=true.
 - Don't penalise portrait orientation unless the brief required landscape.
 - First 5 seconds matter: strong start +5, weak start −5 on acting.
@@ -280,7 +280,8 @@ Performance realism:
 
 Role-fit (only in BRIEF mode, when a structured brief is present):
 - Read role function, emotional tone, energy level, vocal expectations, physical demands, and tone of show from the STRUCTURED BRIEF only.
-- Judge alignment with the role's FUNCTION and INTENT — never likeness, physical resemblance, race, age, body, gender presentation, or imitation of a known performance.
+- Judge alignment with the role's FUNCTION and INTENT — never likeness, physical resemblance, race, age, body, gender presentation, class, disability, or imitation of a known performance.
+- ONLY use these dimensions in role_fit_notes: tone, energy, relationship, status, rhythm, vocal style, emotional world, interpretation. Do NOT use: appearance, "look the part", "look right", innate charisma, body, race, age, disability, class, gender presentation, visual fit.
 - Write ONE short paragraph in role_fit_notes.
 - role_fit_modifier is BOUNDED and applied to the overall after recompute:
   - Range -10..+5 (asymmetric on purpose — it's easier to work against a role than to fully serve it).
@@ -293,8 +294,36 @@ Role-fit (only in BRIEF mode, when a structured brief is present):
 Presentation notes (OPTIONAL, do NOT affect score):
 - Only include presentation_notes when there is a PRACTICAL, non-personal observation that materially helps the next take (e.g. "Top blends into the background — a contrasting colour reads better on camera", "Hair drifts across one eye in close-ups", "Background door is open and pulls focus").
 - Safe-clothing guidance is fine: contrast against background, neutral solid colours read cleanly, avoid loud patterns that strobe on camera. Frame as guidance for the camera, never as a comment on the person.
+- NEVER imply class, cost, taste, polish, attractiveness, body, disability, medical devices, mobility aids, or home quality. Modest home environments must never be criticised. A neutral background is a recommendation, not a standard.
+- If an issue is genuinely technical, phrase only the technical result ("the frame is slightly busy", "the lighting makes part of the face harder to read", "some words are difficult to hear") — do NOT attribute the cause.
 - Empty array if there is nothing material. Never pad. Never personal.
-- These notes do NOT change the score. They only matter to scoring if a brief explicitly required something (then it lives in brief_adherence) or if visibility is compromised (then it lives in technical/professional_presentation).
+
+Accessibility-safe physicality (CRITICAL):
+- When evaluating movement, dance, physical comedy, or physicality, score observable PERFORMANCE CHOICES only — timing, intention, rhythm, clarity, commitment, adaptation.
+- Do NOT penalise reduced range of motion, seated performance, mobility aids, prosthetics, medical devices, assistive equipment, or any visible health-related cue.
+- If the brief requires physical movement, assess adaptation and intention within the movement available — never the range itself.
+- Banned phrasings (and any synonym): "limited movement", "restricted", "constrained", "insufficient kinetic range", "physicality underdelivered", "movement limitation", "restricted physicality", "modern intrusion", "world-breaker", "visual distraction" (when referring to a person or device), "period-breaking item", "device visible".
+- Replace with performance-focused notes such as: "Clarify the comic rhythm through timing and facial/upper-body reactions", "Use sharper changes of intention to sell the physical beat", "Make the rhythm of the gag clearer within the movement available".
+
+Accent proportionality:
+- If the structured brief's accent_required is "unknown" or accent_importance is "unspecified", DO NOT assess accent correctness. Natural regional accents are not faults.
+- If accent_importance is "preferred", treat any accent imperfection as an improvement note, never a blocker, and never class-coded language.
+- If accent_importance is "central" and the accent is not attempted, surface a "likely_to_block" risk flag.
+- If accent_importance is "central" and the accent is inconsistent, surface "may_reduce" or "likely_to_block" depending on severity.
+- Never use class-coded descriptors ("posh", "common", "rough", "uneducated"). Describe the technical issue ("vowels drift towards [X] on stressed words").
+
+Socioeconomic fairness:
+- Technical/presentation issues only meaningfully affect score when they MATERIALLY prevent assessment.
+- Modest backgrounds, simple clothing, and home environments must NEVER be criticised or score-reduced. A clear, audible performance in a basic setup is not a fault.
+- Reserve technical penalties for cases where the evaluator genuinely cannot see/hear the performance well enough to judge it.
+
+Submission Risk Flags + casting_risk_explanations:
+- Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
+- For each flag, add a casting_risk_explanations entry: a plain-English casting_impact line and a recall_impact value. Use the recall_impact bands strictly:
+  - unlikely_to_affect = cosmetic, must NOT affect score or verdict.
+  - may_reduce = noticeable, may dent recall but must NOT hard-block on its own.
+  - likely_to_block = will probably get filtered out — set the flag severity to "high" so the verdict layer caps appropriately.
+- Empty if there are no material risks.
 
 Safety and fairness — REINFORCED. NEVER, under any circumstances, comment on:
 - attractiveness, weight, body shape, body type, age, race, ethnicity, class markers, gender presentation, sexuality, religion.
@@ -303,16 +332,11 @@ Safety and fairness — REINFORCED. NEVER, under any circumstances, comment on:
 - personal style, hair, makeup, or fashion as personal traits. Camera-readability is fine; personal taste is not.
 If you are tempted to comment on any of the above, drop the note entirely.
 
-Submission Risk Flags + casting_risk_explanations:
-- Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
-- For each flag, add a casting_risk_explanations entry: a plain-English casting_impact line and a recall_impact value (unlikely_to_affect / may_reduce / likely_to_block). Keep both arrays in matching order.
-- Empty if there are no material risks.
-
 Tone calibration by performer LEVEL — calibrate the writing voice across ALL text fields:
-- learning (Learning / School): simple, warm, confidence-building. Short sentences. Celebrate effort and one clear next step. Never use industry jargon.
-- amateur (Amateur / Community): warm and practical. Speak like a supportive director at a community show. Concrete suggestions, no harsh critique.
+- learning (Learning / School): simple, warm, confidence-building. Short sentences. Celebrate effort and one clear next step. Phrase any blocker as a fixable next step. Never use industry jargon. Never use "would not progress" or final/exclusionary language.
+- amateur (Amateur / Community): warm and practical. Speak like a supportive director at a community show. Concrete suggestions. Never harsh, never final.
 - emerging (Emerging / Training): craft-focused. Use working vocabulary (intention, beat change, pickup, eyeline). Push specificity, but stay encouraging.
-- professional: concise, industry-realistic. Talk to them as a peer. Trim padding. Be direct about what would or wouldn't get a recall. Never harsh, but no softening either.
+- professional: concise, industry-realistic. Talk to them as a peer. Be direct about what would or wouldn't get a recall. Avoid subjective identity-coded language. Never harsh.
 
 Confidence (0–100) — internal signal only, never shown to the user verbatim. Used to derive a plain-language trust indicator downstream:
 - 90+ when full brief and clean signals.
@@ -749,7 +773,69 @@ export async function runProcessTake(
     let overall = recomputed.overall || (report.overall_score as number) || 0;
 
     const audioScore = modelScores.audio ?? 100;
-    if (audioScore < 50 && overall > 65) overall = 65;
+    // Tiered audio caps mirror applyCapsAndLabel:
+    //   <35 → 60, <50 → 62, <60 → 75
+    if (audioScore < 35 && overall > 60) overall = 60;
+    else if (audioScore < 50 && overall > 62) overall = 62;
+    else if (audioScore < 60 && overall > 75) overall = 75;
+
+    // Track safety-validator rewrites for downstream debugging/audit.
+    let safetyRewriteApplied = false;
+
+    // ---- Forbidden-language guard (shared across role-fit + presentation) ----
+    // Catches identity, mobility, medical, class, and physicality-proxy terms.
+    const FORBIDDEN_PATTERNS: RegExp[] = [
+      // Identity
+      /\battractive(ness)?\b/i,
+      /\bweight\b/i,
+      /\bbody\s*(shape|type)?\b/i,
+      /\bskinny\b/i,
+      /\bfat\b/i,
+      /\b(over|under)weight\b/i,
+      /\brace\b/i,
+      /\bethnic(ity)?\b/i,
+      /\bclass\b/i,
+      /\bgender\s+(presentation|identity)\b/i,
+      /\bmasculine\b/i,
+      /\bfeminine\b/i,
+      /\bage(d|ing)?\b/i,
+      /\b(too )?old\b/i,
+      /\b(too )?young\b/i,
+      // Disability / mobility / medical
+      /\bdisab(led|ility|ilities)\b/i,
+      /\bwheelchair\b/i,
+      /\bcrutch(es)?\b/i,
+      /\bprosthe(tic|sis|ses)\b/i,
+      /\bmobility\s+aid\b/i,
+      /\bmedical\s+device\b/i,
+      /\bassistive\s+(device|equipment)\b/i,
+      /\bneurodivergen(t|ce)\b/i,
+      /\bautis(tic|m)\b/i,
+      // Physicality proxies (accessibility-safe rule)
+      /\blimited\s+movement\b/i,
+      /\brestricted\b/i,
+      /\bconstrained\b/i,
+      /\binsufficient\s+kinetic\s+range\b/i,
+      /\bphysicality\s+underdeliver(ed|s)?\b/i,
+      /\bmovement\s+limitation\b/i,
+      /\brestricted\s+physicality\b/i,
+      /\brange\s+of\s+motion\b/i,
+      // Presentation proxies for medical/period devices
+      /\bmodern\s+intrusion\b/i,
+      /\bworld[-\s]?breaker\b/i,
+      /\bperiod[-\s]?breaking\s+item\b/i,
+      /\bdevice\s+visible\b/i,
+      // Class / socioeconomic / appearance
+      /\blook\s+the\s+part\b/i,
+      /\blook(s|ed)?\s+right\b/i,
+      /\bvisual\s+fit\b/i,
+      /\bposh\b/i,
+      /\bcommon\s+(accent|sounding)\b/i,
+      /\buneducated\b/i,
+      /\bcheap[-\s]?looking\b/i,
+    ];
+    const containsForbidden = (s: string): boolean =>
+      typeof s === "string" && FORBIDDEN_PATTERNS.some((re) => re.test(s));
 
     // ---- Bounded role-fit modifier ----
     // Clamp to [-10, +5]. Force 0 in BASELINE mode. Apply AFTER the audio cap
@@ -762,53 +848,66 @@ export async function runProcessTake(
     if (report.mode !== "brief") {
       roleFitModifier = 0;
     }
-    // Never let role-fit alone push past the audio cap.
+    if (typeof report.role_fit_notes !== "string") report.role_fit_notes = "";
+    // Safety: if role_fit_notes contains forbidden language, strip the note
+    // entirely AND zero the modifier — we won't apply an opaque/appearance-
+    // based nudge to the score.
+    if (report.role_fit_notes && containsForbidden(report.role_fit_notes)) {
+      report.role_fit_notes = "";
+      roleFitModifier = 0;
+      safetyRewriteApplied = true;
+    }
+    // Re-apply audio cap after role-fit so role-fit cannot bypass it.
     const postRoleFit = overall + roleFitModifier;
     overall = Math.max(0, Math.min(100, postRoleFit));
-    if (audioScore < 50 && overall > 65) overall = 65;
+    if (audioScore < 35 && overall > 60) overall = 60;
+    else if (audioScore < 50 && overall > 62) overall = 62;
+    else if (audioScore < 60 && overall > 75) overall = 75;
     report.role_fit_modifier = roleFitModifier;
     if (report.role_fit_confidence !== "low" && report.role_fit_confidence !== "medium" && report.role_fit_confidence !== "high") {
       report.role_fit_confidence = report.mode === "brief" ? "low" : "low";
     }
-    if (typeof report.role_fit_notes !== "string") report.role_fit_notes = "";
     if (report.mode !== "brief") {
       // BASELINE: blank role-fit notes — we have nothing to fit against.
       report.role_fit_notes = "";
       report.role_fit_confidence = "low";
     }
 
-    // ---- Presentation notes — safety filter (server-side belt-and-braces) ----
-    // The prompt forbids personal/identity comments, but we strip defensively.
-    const FORBIDDEN_PRESENTATION = [
-      /\battractive(ness)?\b/i,
-      /\bweight\b/i,
-      /\bbody\s*(shape|type)?\b/i,
-      /\bskinny\b/i,
-      /\bfat\b/i,
-      /\b(over|under)weight\b/i,
-      /\brace\b/i,
-      /\bethnic(ity)?\b/i,
-      /\bdisab(led|ility|ilities)\b/i,
-      /\bwheelchair\b/i,
-      /\bprosthe(tic|sis)\b/i,
-      /\bmobility\s+aid\b/i,
-      /\bmedical\s+device\b/i,
-      /\bclass\b/i,
-      /\bgender\s+(presentation|identity)\b/i,
-      /\bmasculine\b/i,
-      /\bfeminine\b/i,
-      /\bage(d|ing)?\b/i,
-      /\b(too )?old\b/i,
-      /\b(too )?young\b/i,
-    ];
-    const isSafePresentationNote = (note: string): boolean => {
-      if (typeof note !== "string" || !note.trim()) return false;
-      return !FORBIDDEN_PRESENTATION.some((re) => re.test(note));
-    };
+    // ---- Presentation notes — safety filter ----
     let presentationNotes: string[] = Array.isArray(report.presentation_notes)
-      ? report.presentation_notes.filter(isSafePresentationNote).slice(0, 3)
+      ? report.presentation_notes.filter(
+          (n: unknown): n is string =>
+            typeof n === "string" && n.trim().length > 0 && !containsForbidden(n),
+        ).slice(0, 3)
       : [];
+    if (
+      Array.isArray(report.presentation_notes) &&
+      presentationNotes.length < (report.presentation_notes as unknown[]).length
+    ) {
+      safetyRewriteApplied = true;
+    }
     report.presentation_notes = presentationNotes;
+    // Standard disclaimer surfaced alongside notes in the UI layer.
+    report.presentation_notes_disclaimer =
+      "These do not affect your score unless they make the tape difficult to see or break a specific brief instruction.";
+
+    // ---- Strengths / improvements / fix_first / drills — safety scrub ----
+    const scrubArray = (arr: unknown): string[] => {
+      if (!Array.isArray(arr)) return [];
+      const cleaned = arr.filter(
+        (s: unknown): s is string =>
+          typeof s === "string" && s.trim().length > 0 && !containsForbidden(s),
+      );
+      if (cleaned.length < arr.length) safetyRewriteApplied = true;
+      return cleaned;
+    };
+    if (Array.isArray(report.strengths)) report.strengths = scrubArray(report.strengths);
+    if (Array.isArray(report.improvements)) report.improvements = scrubArray(report.improvements);
+    if (Array.isArray(report.coaching_drills)) report.coaching_drills = scrubArray(report.coaching_drills);
+    if (typeof report.fix_first === "string" && containsForbidden(report.fix_first)) {
+      report.fix_first = "";
+      safetyRewriteApplied = true;
+    }
 
     // ---- Casting risk explanations — keep aligned with risk flags ----
     if (!Array.isArray(report.casting_risk_explanations)) {
@@ -840,6 +939,38 @@ export async function runProcessTake(
               : "unlikely_to_affect",
       });
     }
+
+    // ---- Reconcile recall_impact ↔ flag severity ----
+    // Authoritative direction: recall_impact wins.
+    //  - likely_to_block  → upgrade matching flag to "high" (gates verdict).
+    //  - unlikely_to_affect → downgrade matching flag to "low" so it cannot block.
+    //  - may_reduce → keep at "medium" unless already higher (don't downgrade
+    //    a deterministic high-severity compliance flag).
+    const explanations = report.casting_risk_explanations as Array<{
+      flag?: string;
+      recall_impact?: "unlikely_to_affect" | "may_reduce" | "likely_to_block";
+    }>;
+    for (const exp of explanations) {
+      const expText = (exp.flag ?? "").toLowerCase().trim();
+      if (!expText) continue;
+      const target = mergedRiskFlags.find((f) => {
+        const ft = (f.flag ?? "").toLowerCase();
+        return ft === expText || ft.includes(expText) || expText.includes(ft.slice(0, 40));
+      });
+      if (!target) continue;
+      // Don't ever downgrade a deterministic compliance flag.
+      const isDeterministic = complianceFlags.some(
+        (cf) => cf.message.toLowerCase() === (target.flag ?? "").toLowerCase(),
+      );
+      if (exp.recall_impact === "likely_to_block") {
+        target.severity = "high";
+      } else if (exp.recall_impact === "unlikely_to_affect" && !isDeterministic) {
+        target.severity = "low";
+      } else if (exp.recall_impact === "may_reduce" && target.severity === "low" && !isDeterministic) {
+        target.severity = "medium";
+      }
+    }
+    report.submission_risk_flags = mergedRiskFlags;
 
     // ---- Score sanity guard ----
     // If the model's overall and the recomputed overall diverge by more than
@@ -933,6 +1064,7 @@ export async function runProcessTake(
     report.verdict_final = verdict.label;
     report.block_reasons = blockReasons;
     report.extraction_confidence = extractionConfidence;
+    report.safety_rewrite_applied = safetyRewriteApplied;
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
@@ -944,6 +1076,10 @@ export async function runProcessTake(
       overall_score_model: overallScoreModel,
       overall_before_role_fit: overallBeforeRoleFit,
       role_fit_modifier: roleFitModifier,
+      role_fit_modifier_explanation:
+        roleFitModifier === 0
+          ? "No role-fit adjustment applied."
+          : `Role fit adjusted the score by ${roleFitModifier > 0 ? "+" : ""}${roleFitModifier} based on alignment with the brief's tone, energy, and intent.`,
       role_fit_confidence: report.role_fit_confidence,
       overall_score_final: overall,
       verdict_final: verdict.label,
@@ -952,6 +1088,7 @@ export async function runProcessTake(
       score_discrepancy: scoreDiscrepancy,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
+      safety_rewrite_applied: safetyRewriteApplied,
     };
 
     await supabaseAdmin
