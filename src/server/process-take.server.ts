@@ -278,6 +278,12 @@ Performance realism:
 - Reward truth, clarity of intention, and connection. Do NOT reward overacting or pushed/exaggerated delivery.
 - Subtle, grounded work is not a weakness — judge it on intention and clarity, not size.
 
+Material fidelity (CRITICAL):
+- When extracted_brief.material_requested is present, the casting brief requires specific material. Do not recommend alternative songs, scenes, monologues, dances, or audition material. Do not imply the performer should switch material. Feedback must focus on improving the submitted material: delivery, technique, interpretation, role fit, vocal/movement/acting choices, and brief adherence. Alternative material suggestions are only allowed when no specific material is required or the user explicitly asks for repertoire advice.
+- Self-check before finalising:
+  - If extracted_brief.material_requested exists, remove any suggestion to change song, monologue, scene, dance, or material.
+  - If extracted_brief.time_limit_seconds is null or extracted_brief.time_limit_source is not "explicit", do NOT mention a time-limit breach, do NOT raise a duration risk flag, and do NOT cite an industry-default cut length as a constraint.
+
 Role-fit (only in BRIEF mode, when a structured brief is present):
 - Read role function, emotional tone, energy level, vocal expectations, physical demands, and tone of show from the STRUCTURED BRIEF only.
 - Judge alignment with the role's FUNCTION and INTENT — never likeness, physical resemblance, race, age, body, gender presentation, class, disability, or imitation of a known performance.
@@ -907,6 +913,56 @@ export async function runProcessTake(
     if (typeof report.fix_first === "string" && containsForbidden(report.fix_first)) {
       report.fix_first = "";
       safetyRewriteApplied = true;
+    }
+
+    // ---- Alternative-material scrub ----
+    // When the brief specifies material, strip any phrase suggesting the
+    // performer change song / monologue / scene / dance / piece. Pure rewrite,
+    // never fail the report.
+    const materialRequested =
+      extractedBrief && typeof (extractedBrief as { material_requested?: string | null }).material_requested === "string"
+        ? ((extractedBrief as { material_requested?: string | null }).material_requested ?? "").trim()
+        : "";
+    if (materialRequested.length > 0) {
+      const ALT_MATERIAL_PATTERNS: RegExp[] = [
+        /\bchoose\s+a\s+different\s+(song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
+        /\btry\s+(another|a\s+different)\s+(song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
+        /\bconsider\s+(a\s+)?(different|another|alternative)\s+(song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
+        /\bpick\s+(an?\s+)?alternative\s+(material|song|monologue|scene|dance|piece|number)\b[^.!?]*[.!?]?/gi,
+        /\buse\s+another\s+(piece|song|monologue|scene|dance|number)\b[^.!?]*[.!?]?/gi,
+        /\bswitch\s+(to\s+)?(a\s+)?(different|another)\s+(song|monologue|scene|dance|piece|number|material)\b[^.!?]*[.!?]?/gi,
+        /\bselect\s+(a\s+)?(different|another)\s+(song|monologue|scene|dance|piece|material)\b[^.!?]*[.!?]?/gi,
+      ];
+      const stripAlt = (s: string): string => {
+        let out = s;
+        let touched = false;
+        for (const re of ALT_MATERIAL_PATTERNS) {
+          if (re.test(out)) {
+            touched = true;
+            out = out.replace(re, "").replace(/\s{2,}/g, " ").trim();
+          }
+        }
+        if (touched) safetyRewriteApplied = true;
+        return out;
+      };
+      const stripAltArray = (arr: unknown): string[] => {
+        if (!Array.isArray(arr)) return [];
+        return (arr as unknown[])
+          .map((x) => (typeof x === "string" ? stripAlt(x) : ""))
+          .filter((s) => s.trim().length > 0);
+      };
+      if (Array.isArray(report.strengths)) report.strengths = stripAltArray(report.strengths);
+      if (Array.isArray(report.improvements)) report.improvements = stripAltArray(report.improvements);
+      if (Array.isArray(report.coaching_drills)) report.coaching_drills = stripAltArray(report.coaching_drills);
+      if (typeof report.fix_first === "string") report.fix_first = stripAlt(report.fix_first);
+      if (typeof report.casting_headline === "string") report.casting_headline = stripAlt(report.casting_headline);
+      if (typeof report.casting_insight === "string") report.casting_insight = stripAlt(report.casting_insight);
+      if (report.category_notes && typeof report.category_notes === "object") {
+        const notes = report.category_notes as Record<string, unknown>;
+        for (const k of Object.keys(notes)) {
+          if (typeof notes[k] === "string") notes[k] = stripAlt(notes[k] as string);
+        }
+      }
     }
 
     // ---- Casting risk explanations — keep aligned with risk flags ----

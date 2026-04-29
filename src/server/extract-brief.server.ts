@@ -7,11 +7,48 @@
 import type { ExtractedBrief, AuditionType } from "@/lib/audition-rules";
 
 export type ExtractionConfidence = "low" | "medium" | "high";
+export type TimeLimitSource = "explicit" | "none";
 
 export type ExtractedBriefWithMeta = {
-  brief: ExtractedBrief;
+  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource };
   extraction_confidence: ExtractionConfidence;
 };
+
+// Detects ONLY explicit numeric durations in the raw brief text.
+// Allowed phrasings (examples — not exhaustive but covers the documented set):
+//   "90 seconds", "90s", "90 secs", "max 90 seconds", "up to 2 minutes",
+//   "under 2 mins", "no longer than 120 seconds", "must be 1 minute".
+// Crucially this does NOT match: "32-bar cut", "16-bar cut", song length,
+// audition type, app upload limits, or any non-numeric implied duration.
+function parseExplicitDuration(raw: string): number | null {
+  if (!raw) return null;
+  const text = raw.toLowerCase();
+
+  // Bar-cut phrases must NOT yield a duration. If the brief ONLY contains a
+  // bar-cut reference and no numeric duration phrase, return null.
+  // We still allow "32-bar cut, max 90 seconds" — handled because the seconds
+  // regex below independently matches "90 seconds".
+
+  // Try seconds first: "<num> seconds|secs|s" (with optional qualifier)
+  const secMatch = text.match(
+    /\b(?:max(?:imum)?|up\s*to|under|no\s+longer\s+than|must\s+be|at\s+most|within|<=?|≤)?\s*(\d{1,3})\s*(?:seconds?|secs?|s)\b/,
+  );
+  if (secMatch) {
+    const n = parseInt(secMatch[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 1800) return n;
+  }
+
+  // Then minutes: "<num> minutes|mins|min" (with optional qualifier)
+  const minMatch = text.match(
+    /\b(?:max(?:imum)?|up\s*to|under|no\s+longer\s+than|must\s+be|at\s+most|within|<=?|≤)?\s*(\d{1,2})\s*(?:minutes?|mins?|min)\b/,
+  );
+  if (minMatch) {
+    const n = parseInt(minMatch[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 30) return n * 60;
+  }
+
+  return null;
+}
 
 const EXTRACT_TOOL = {
   type: "function" as const,
@@ -81,7 +118,7 @@ const EXTRACT_TOOL = {
 const SYSTEM = `You are a UK casting assistant. Extract a structured casting brief from the text below.
 Use British English in any free-text fields ("recall", not "callback"; "self-tape"; "analysing", "prioritised", "behaviour", "centre").
 Only fill fields the brief actually states or strongly implies. Use null / "unspecified" / "unknown" / empty arrays when not stated. Do not invent constraints.
-For time_limit_seconds, convert anything stated (e.g. "under 2 minutes" → 120, "32-bar cut" → 90 as a sensible default).
+time_limit_seconds: ONLY populate when the brief explicitly states a numeric duration (e.g. "90 seconds", "max 90s", "up to 2 minutes", "under 2 mins", "no longer than 120 seconds", "must be 1 minute"). Otherwise return null. Do NOT infer a duration from "32-bar cut", "16-bar cut", song length, audition type, or any industry default. Bar-cut references without an explicit number → null.
 Accent fields: set accent_required="yes" only when the brief explicitly names a required accent or dialect, "no" if it explicitly says any accent is fine, otherwise "unknown". Set accent_importance="central" only when the brief makes accent essential (e.g. "must be authentic ___", "native speaker"); "preferred" when softly preferred ("ideally ___", "RP welcome"); "unspecified" otherwise. Do not infer importance from a casual mention.
 Set extraction_confidence honestly: 'high' only when the brief is explicit; 'low' when it is short, vague, or you had to guess multiple fields.`;
 
@@ -144,7 +181,44 @@ export async function extractBriefFromText(
     // Strip meta from the brief object itself
     const { extraction_confidence: _drop, ...briefOnly } = parsed;
     void _drop;
-    return { brief: briefOnly as ExtractedBrief, extraction_confidence: conf };
+
+    // ---- Duration guard: only allow time_limit_seconds when an explicit
+    // numeric duration phrase appears in the raw brief text. Strips out
+    // industry-default inferences from "32-bar cut", song length, etc.
+    const explicitDuration = parseExplicitDuration(briefText);
+    let timeLimitSource: TimeLimitSource = "none";
+    let finalTimeLimit: number | null = null;
+    if (explicitDuration != null) {
+      finalTimeLimit = explicitDuration;
+      timeLimitSource = "explicit";
+    } else if (
+      typeof briefOnly.time_limit_seconds === "number" &&
+      briefOnly.time_limit_seconds > 0
+    ) {
+      console.warn(
+        "extractBriefFromText: model returned time_limit_seconds without explicit phrase — overriding to null",
+        {
+          model_value: briefOnly.time_limit_seconds,
+          material_requested: briefOnly.material_requested ?? null,
+        },
+      );
+    }
+    const briefOut: ExtractedBrief & { time_limit_source?: TimeLimitSource } = {
+      ...(briefOnly as ExtractedBrief),
+      time_limit_seconds: finalTimeLimit,
+      time_limit_source: timeLimitSource,
+    };
+
+    // Non-PII debug log.
+    console.log("extractBriefFromText: result", {
+      raw_brief_present: true,
+      time_limit_seconds: briefOut.time_limit_seconds,
+      time_limit_source: briefOut.time_limit_source,
+      material_requested: briefOut.material_requested ?? null,
+      extraction_confidence: conf,
+    });
+
+    return { brief: briefOut, extraction_confidence: conf };
   } catch (err) {
     console.warn("extractBriefFromText: failed", err);
     return null;
