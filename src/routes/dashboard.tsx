@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Clock, Film, Plus } from "lucide-react";
+import { Clock, Film, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { deleteAudition } from "@/server/delete.functions";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
