@@ -930,12 +930,16 @@ export async function runProcessTake(
       weights: recomputed.usedWeights,
       thresholds: bandsForLevel(auditionLevel),
       overall_score_model: overallScoreModel,
+      overall_before_role_fit: overallBeforeRoleFit,
+      role_fit_modifier: roleFitModifier,
+      role_fit_confidence: report.role_fit_confidence,
       overall_score_final: overall,
       verdict_final: verdict.label,
       block_reasons: blockReasons,
       extraction_confidence: extractionConfidence,
       score_discrepancy: scoreDiscrepancy,
       compliance_flags: complianceFlags,
+      presentation_notes_count: presentationNotes.length,
     };
 
     await supabaseAdmin
