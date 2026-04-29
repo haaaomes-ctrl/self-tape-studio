@@ -439,70 +439,110 @@ function PhaseStep({ label, active, done }: { label: string; active: boolean; do
   );
 }
 
+// 6-stage state machine for the take pipeline. Mapped from the
+// `processing_phase` column the server writes at each transition:
+//
+//   uploading          → 1. Uploading your tape
+//   transcoding        → 2. Optimising your video
+//   analysis_pending   → 3. Preparing analysis
+//   analysing          → 4. Watching your tape
+//                          (≥45s into analysing → 5. Writing your report)
+//                          (≥90s into analysing → 6. Finalising results)
+//
+// We never show a percentage we can't honestly compute. Upload % is real
+// (XHR progress); everything else is step-based with elapsed-time copy.
+const STAGES = [
+  { key: "uploading", label: "Uploading your tape" },
+  { key: "transcoding", label: "Optimising video" },
+  { key: "analysis_pending", label: "Preparing analysis" },
+  { key: "analysing", label: "Watching your tape" },
+  { key: "writing", label: "Writing your report" },
+  { key: "finalising", label: "Finalising results" },
+] as const;
+
+type StageKey = (typeof STAGES)[number]["key"];
+
+function stageIndexFor(phase: string, analysisElapsed: number): number {
+  if (phase === "uploading") return 0;
+  if (phase === "transcoding") return 1;
+  if (phase === "analysis_pending") return 2;
+  // analysing — split into watching → writing → finalising by elapsed time
+  if (analysisElapsed >= TIER_ACTIONS_SECONDS) return 5;
+  if (analysisElapsed >= TIER_REASSURE_SECONDS) return 4;
+  return 3;
+}
+
+function StageList({ activeIdx }: { activeIdx: number }) {
+  return (
+    <ol className="mx-auto mt-6 max-w-sm space-y-1.5 text-left">
+      {STAGES.map((s, i) => (
+        <li key={s.key}>
+          <PhaseStep label={s.label} active={i === activeIdx} done={i < activeIdx} />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function ProcessingTakeView({ take }: { take: Take }) {
   const elapsed = useElapsedSeconds(take.created_at);
-  const phase = take.processing_phase ?? "uploading";
+  const phase = (take.processing_phase ?? "uploading") as StageKey | string;
   const [busy, setBusy] = useState(false);
 
-  // Upload / transcoding tiers are independent of the analysis tiers — Mux
-  // can take a couple of minutes to optimise a large file before analysis
-  // even starts.
-  if (phase === "uploading" || phase === "transcoding") {
-    const copy =
-      phase === "uploading"
-        ? {
-            title: "Uploading your tape…",
-            sub: "Sending to secure storage. This is the only network step that depends on your connection.",
-          }
-        : {
-            title: "Optimising your video…",
-            sub: "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.",
-          };
-    return (
-      <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
-        <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-        <p className="mt-4 font-display text-lg font-semibold">{copy.title}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{copy.sub}</p>
-        <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
-          <PhaseStep label="Upload" active={phase === "uploading"} done={phase !== "uploading"} />
-          <PhaseStep
-            label="Optimise"
-            active={phase === "transcoding"}
-            done={false}
-          />
-          <PhaseStep label="Analyse" active={false} done={false} />
-        </div>
-      </div>
-    );
-  }
+  // Elapsed time within the analysis window only (not the whole pipeline).
+  // Treat it as 0 until we're past upload/transcoding so the analysis copy
+  // doesn't fire too early on long uploads.
+  const analysisElapsed =
+    phase === "analysing" || phase === "analysis_pending" ? elapsed : 0;
+  const activeIdx = stageIndexFor(phase, analysisElapsed);
 
-  // Analysis tiers — driven by elapsed time since the take was created so
-  // the UX doesn't depend on which retry attempt the backend is on.
+  // Copy per stage. Reassurance / action visibility are driven by the
+  // analysis-window elapsed clock, not the wall clock, so a slow upload
+  // doesn't trigger "this is taking longer than usual" prematurely.
   let title: string;
   let sub: string;
-  if (elapsed < TIER_FINALISING_SECONDS) {
+  if (phase === "uploading") {
+    title = "Uploading your tape…";
+    sub =
+      "Sending to secure storage. This is the only step that depends on your connection.";
+  } else if (phase === "transcoding") {
+    title = "Optimising your video…";
+    sub =
+      "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.";
+  } else if (phase === "analysis_pending") {
+    title = "Preparing the version we'll analyse…";
+    sub = "Lining up the optimised file before the review begins. Almost there.";
+  } else if (analysisElapsed < TIER_REASSURE_SECONDS) {
     title = "Watching your tape…";
-    sub = "Reading the brief, checking technicals, writing notes. Usually under a minute.";
-  } else if (elapsed < TIER_LONG_SECONDS) {
-    title = "Finalising your video…";
-    sub = "This can take a few extra seconds while the optimised file finishes preparing. Hang tight.";
+    sub =
+      "Reading the brief, checking technicals, writing notes. Usually under a minute.";
+  } else if (analysisElapsed < TIER_ACTIONS_SECONDS) {
+    title = "Writing your feedback…";
+    sub =
+      "This is taking a little longer than usual, but it's still running. Hang tight.";
+  } else if (analysisElapsed < TIER_GIVEUP_SECONDS) {
+    title = "Finalising your results…";
+    sub =
+      "This is taking longer than usual, but it hasn't failed. You can keep waiting, retry now, or cancel.";
   } else {
     title = "This is taking longer than expected";
     sub = "Your tape is still being prepared. You can wait, retry now, or cancel.";
   }
 
-  const showActions = elapsed >= TIER_LONG_SECONDS;
+  // Cancel/retry surface as soon as analysis crosses the 90s mark — earlier
+  // than the previous 120s threshold per spec.
+  const showActions =
+    phase === "analysing" && analysisElapsed >= TIER_ACTIONS_SECONDS;
 
   return (
     <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
       <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
       <p className="mt-4 font-display text-lg font-semibold">{title}</p>
       <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
-      <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
-        <PhaseStep label="Upload" active={false} done={true} />
-        <PhaseStep label="Optimise" active={false} done={true} />
-        <PhaseStep label="Analyse" active={true} done={false} />
-      </div>
+      <p className="mt-3 text-xs text-muted-foreground tabular-nums">
+        Elapsed: {formatElapsed(elapsed)}
+      </p>
+      <StageList activeIdx={activeIdx} />
       {showActions && (
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Button
