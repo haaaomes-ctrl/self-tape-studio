@@ -1341,6 +1341,22 @@ export async function runProcessTake(
       material_scrub_triggered: materialScrubTriggered,
     };
 
+    // Final cancellation guard: if the user cancelled while Gemini was
+    // running, do NOT overwrite the cancelled state with a completed report.
+    const { data: preWrite } = await supabaseAdmin
+      .from("takes")
+      .select("status, error_message")
+      .eq("id", takeId)
+      .single();
+    if (
+      preWrite?.status === "error" &&
+      typeof preWrite.error_message === "string" &&
+      preWrite.error_message.toLowerCase().includes("cancelled")
+    ) {
+      console.log("[take-pipeline] discarding result — take was cancelled", baseLog);
+      return { ok: true, alreadyDone: true };
+    }
+
     await supabaseAdmin
       .from("takes")
       .update({
@@ -1360,6 +1376,13 @@ export async function runProcessTake(
       .from("auditions")
       .update({ mode: report.mode })
       .eq("id", audition.id);
+
+    console.log("[take-pipeline] report persisted", {
+      ...baseLog,
+      analysis_tier: tier,
+      total_duration_ms: Date.now() - runStartedAt,
+      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
 
     return { ok: true, tier };
   } catch (err) {
