@@ -33,6 +33,10 @@ interface Take {
   report: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   checklist: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  compliance_flags?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  score_breakdown?: any;
   created_at: string;
   mux_status?: string | null;
   processing_phase?: string | null;
