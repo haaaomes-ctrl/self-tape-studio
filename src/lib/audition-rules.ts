@@ -388,11 +388,14 @@ export function toUKTerms(input: string | null | undefined): string {
   if (!input) return "";
   let out = input;
   for (const [re, rep] of UK_REPLACEMENTS) {
-    if (typeof rep === "string") out = out.replace(re, rep);
-    else out = out.replace(re, rep as never);
+    out = out.replace(re, rep);
   }
   // Callback → Recall (preserve case heuristic).
-  out = out.replace(/\bCallback\b/g, "Recall").replace(/\bcallback\b/g, "recall");
+  out = out
+    .replace(/\bCALLBACKS?\b/g, "RECALLS")
+    .replace(/\bCallbacks?\b/g, "Recalls")
+    .replace(/\bcallbacks?\b/g, "recalls")
+    .replace(/\bRECALLSS\b/g, "RECALLS");
   return out;
 }
 
