@@ -469,6 +469,84 @@ function ProcessingTakeView({ take }: { take: Take }) {
   );
 }
 
+// Translates the underlying confidence + signal data into a friendly,
+// non-technical trust indicator. Never surfaces the numeric score or
+// "AI confidence" wording — users see one of three plain-language labels
+// plus a one-line explanation that names the actual contributing factors
+// (brief, audio, video quality, performance completeness).
+function buildTrustIndicator(
+  confidence: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report: any,
+  take: Take,
+): { label: "Very reliable" | "Mostly reliable" | "Take with caution"; reason: string; tone: string } {
+  const audio = report?.scores?.audio ?? null;
+  const technical = report?.scores?.technical ?? null;
+  const briefAdherence = report?.scores?.brief_adherence ?? null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const signals = (take as any).signals as
+    | { duration?: number; audio_peak?: number }
+    | null
+    | undefined;
+  const hasBrief = report?.mode === "brief";
+  const components = Array.isArray(report?.detected_components) ? report.detected_components : [];
+  const hasFullPerformance =
+    components.length > 0 && (signals?.duration ?? 0) >= 15 && briefAdherence === null
+      ? true
+      : (signals?.duration ?? 0) >= 15;
+
+  const positives: string[] = [];
+  const concerns: string[] = [];
+
+  if (hasBrief) positives.push("a casting brief to compare against");
+  else concerns.push("no casting brief was provided");
+
+  if (audio != null) {
+    if (audio >= 75) positives.push("clear audio");
+    else if (audio >= 50) concerns.push("audio that's a little muddy in places");
+    else concerns.push("muffled or noisy audio");
+  }
+
+  if (technical != null) {
+    if (technical >= 75) positives.push("good video quality");
+    else if (technical < 50) concerns.push("video quality that made parts hard to read");
+  }
+
+  if (!hasFullPerformance) concerns.push("a short or partial performance");
+
+  let label: "Very reliable" | "Mostly reliable" | "Take with caution";
+  let tone: string;
+  if (confidence >= 85 && concerns.length === 0) {
+    label = "Very reliable";
+    tone = "text-success";
+  } else if (confidence >= 65 && concerns.length <= 1) {
+    label = "Mostly reliable";
+    tone = "text-foreground";
+  } else {
+    label = "Take with caution";
+    tone = "text-warning";
+  }
+
+  // Build a single warm sentence from the strongest signal.
+  let reason: string;
+  if (label === "Very reliable") {
+    const lead = positives.slice(0, 2).join(" and ") || "a clean tape all round";
+    reason = `Based on ${lead} — you can lean into the feedback below.`;
+  } else if (label === "Mostly reliable") {
+    if (concerns.length > 0) {
+      reason = `Solid read overall, but ${concerns[0]} — weigh the notes accordingly.`;
+    } else {
+      const lead = positives[0] ?? "a generally clean tape";
+      reason = `Based on ${lead} — the feedback below is a fair guide.`;
+    }
+  } else {
+    const lead = concerns.slice(0, 2).join(" and ") || "limited information to work from";
+    reason = `Heads up: ${lead}. Treat the feedback as a directional steer rather than the final word.`;
+  }
+
+  return { label, reason, tone };
+}
+
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
@@ -482,14 +560,7 @@ function TakeView({ take }: { take: Take }) {
   if (!r) return null;
 
   const confidence = take.confidence ?? r.confidence ?? 0;
-  const confidenceBand =
-    confidence >= 90
-      ? { label: "Highly reliable", tone: "text-success" }
-      : confidence >= 75
-        ? { label: "Reliable, minor uncertainty", tone: "text-foreground" }
-        : confidence >= 60
-          ? { label: "Moderately reliable", tone: "text-warning" }
-          : { label: "Low confidence", tone: "text-destructive" };
+  const trust = buildTrustIndicator(confidence, r, take);
 
   const categories: { key: string; label: string }[] = [
     { key: "vocal", label: "Vocal" },
@@ -534,21 +605,28 @@ function TakeView({ take }: { take: Take }) {
           <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
         )}
         <div className="mt-6 flex items-end justify-between gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Confidence</p>
-            <p className={cn("mt-1 font-display text-xl font-semibold", confidenceBand.tone)}>
-              {confidence} · {confidenceBand.label}
-            </p>
-            {r.confidence_reason && (
-              <p className="mt-1 text-xs text-muted-foreground">{r.confidence_reason}</p>
-            )}
-          </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Overall</p>
             <p className="font-display text-5xl font-bold leading-none text-primary">
               {take.overall_score}
             </p>
           </div>
+        </div>
+        <div className="mt-5 rounded-md border border-border bg-secondary/30 p-4">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                trust.tone === "text-success"
+                  ? "bg-success"
+                  : trust.tone === "text-warning"
+                    ? "bg-warning"
+                    : "bg-primary",
+              )}
+            />
+            <p className={cn("text-sm font-semibold", trust.tone)}>{trust.label}</p>
+          </div>
+          <p className="mt-1.5 text-sm text-muted-foreground">{trust.reason}</p>
         </div>
         {r.at_risk && (
           <div className="mt-5 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
