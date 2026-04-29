@@ -67,6 +67,9 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         playback_policies: ["public"],
         max_resolution_tier: "1080p",
         video_quality: "basic",
+        // CRITICAL: without this, the static MP4 URLs (medium.mp4 / high.mp4)
+        // that we hand to Gemini return 404 and the analysis hangs.
+        mp4_support: "standard",
         passthrough: takeId,
       },
     });
