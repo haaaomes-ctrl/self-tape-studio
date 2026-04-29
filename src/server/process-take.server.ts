@@ -426,14 +426,28 @@ export async function runProcessTake(
 
   // Structured brief extraction (cached on the audition row). Skip in baseline
   // mode (no brief) or when we've already extracted previously.
-  let extractedBrief: ExtractedBrief | null =
-    ((audition as { extracted_brief?: ExtractedBrief | null }).extracted_brief ?? null);
+  const cachedBrief = ((audition as { extracted_brief?: ExtractedBrief | null }).extracted_brief ??
+    null);
+  let extractedBrief: ExtractedBrief | null = cachedBrief;
+  let extractionConfidence: "low" | "medium" | "high" | "unknown" = cachedBrief
+    ? ((cachedBrief as ExtractedBrief & { _extraction_confidence?: "low" | "medium" | "high" })
+        ._extraction_confidence ?? "unknown")
+    : "unknown";
   if (!extractedBrief && audition.brief && audition.brief.trim().length > 5) {
-    extractedBrief = await extractBriefFromText(audition.brief);
-    if (extractedBrief) {
+    const result = await extractBriefFromText(audition.brief);
+    if (result) {
+      extractedBrief = result.brief;
+      extractionConfidence = result.extraction_confidence;
+      // Persist the brief plus the confidence (as a leading underscore field
+      // so it round-trips without polluting the typed schema).
       await supabaseAdmin
         .from("auditions")
-        .update({ extracted_brief: extractedBrief as never })
+        .update({
+          extracted_brief: {
+            ...result.brief,
+            _extraction_confidence: result.extraction_confidence,
+          } as never,
+        })
         .eq("id", audition.id);
     }
   }
