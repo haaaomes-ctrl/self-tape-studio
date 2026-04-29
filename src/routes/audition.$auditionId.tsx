@@ -234,7 +234,7 @@ function AuditionPage() {
                       }}
                     />
                   </div>
-                  <TakeView take={t} />
+                  <TakeView take={t} audition={audition} />
                 </TabsContent>
               ))}
 
@@ -701,7 +701,7 @@ function buildTrustIndicator(
   return { label, reason, tone };
 }
 
-function TakeView({ take }: { take: Take }) {
+function TakeView({ take, audition }: { take: Take; audition: Audition }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
   }
