@@ -393,9 +393,16 @@ export type ExtractedBrief = {
   time_limit_source?: "explicit" | "none";
   explicit_instructions?: string[];
   material_requested?: string | null;
+  // Deterministic policy derived from the raw brief + material_requested.
+  // - "fixed"  → brief requires specific named material; never suggest alternatives.
+  // - "choice" → brief allows performer choice; repertoire suggestions allowed.
+  // - "none"   → no material specified.
+  material_policy?: MaterialPolicy;
   recall_dates?: string | null;
   confidentiality_notes?: string | null;
 };
+
+export type MaterialPolicy = "fixed" | "choice" | "none";
 
 // -------------------- UK terminology pass --------------------
 
