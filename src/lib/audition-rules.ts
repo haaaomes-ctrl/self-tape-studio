@@ -387,6 +387,10 @@ export type ExtractedBrief = {
   orientation_required?: "portrait" | "landscape" | "either" | null;
   framing_required?: string | null;
   time_limit_seconds?: number | null;
+  // "explicit" only when the brief literally states a numeric duration.
+  // "none" otherwise — bar-cut references, song length, audition type, and
+  // app upload limits MUST NOT set this to "explicit".
+  time_limit_source?: "explicit" | "none";
   explicit_instructions?: string[];
   material_requested?: string | null;
   recall_dates?: string | null;
