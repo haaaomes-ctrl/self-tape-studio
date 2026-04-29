@@ -44,6 +44,27 @@ export const retryProcessTake = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertTakeOwnership(data.takeId, context.userId, "retryProcessTake");
+    // Pre-flight: never spawn a duplicate pipeline. If a poll loop or Gemini
+    // call is already in flight for this take, return immediately so the UI
+    // keeps polling the existing run instead of starting a second one.
+    const { data: current } = await supabaseAdmin
+      .from("takes")
+      .select("status, processing_phase, attempt_count")
+      .eq("id", data.takeId)
+      .single();
+    if (
+      current &&
+      current.status === "processing" &&
+      (current.processing_phase === "analysing" ||
+        current.processing_phase === "analysis_pending")
+    ) {
+      console.log("already_running_skip", {
+        take_id: data.takeId,
+        processing_phase: current.processing_phase,
+        attempt_count: current.attempt_count ?? 0,
+      });
+      return { ok: true as const, alreadyRunning: true as const };
+    }
     try {
       await assertWithinAnalysisQuota(
         { kind: "user", userId: context.userId },
