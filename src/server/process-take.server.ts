@@ -937,7 +937,7 @@ export async function runProcessTake(
     const ALT_MATERIAL_PATTERNS: RegExp[] = [
       /\b(choose|pick|select|use|try|consider)\s+(an?\s+)?(different|another|alternative)\s+(song|monologue|scene|piece|dance|routine|number|material)\b[^.!?]*[.!?]?/gi,
       /\b(change|switch)\s+(to\s+)?(the\s+|a\s+|an\s+)?(song|monologue|scene|piece|dance|routine|number|material)\b[^.!?]*[.!?]?/gi,
-      /\bnot\s+the\s+best\s+choice\b[^.!?]*[.!?]?/gi,
+      /\b(?:may|might|would|could)?\s*not\s+(?:be\s+)?the\s+best\s+choice\b[^.!?]*[.!?]?/gi,
       /\b(better|more)\s+suited\b[^.!?]*[.!?]?/gi,
       /\b(could|would|might)\s+showcase\s+you\s+better\b[^.!?]*[.!?]?/gi,
       /\banother\s+(song|monologue|scene|piece|dance|routine|number|material)\b[^.!?]*[.!?]?/gi,
