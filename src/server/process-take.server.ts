@@ -617,6 +617,10 @@ export async function runProcessTake(
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
 
+    // Capture the model's raw overall before any server recomputation.
+    const overallScoreModel =
+      typeof report.overall_score === "number" ? report.overall_score : null;
+
     // ---- Deterministic compliance vs signals (orientation/duration/audio) ----
     const signalsForCompliance = (take.signals ?? null) as
       | { orientation?: string; duration?: number; audio_peak?: number }
@@ -626,14 +630,28 @@ export async function runProcessTake(
       signals: signalsForCompliance,
     });
 
-    // Promote any high-severity compliance flag into submission_risk_flags so
-    // it participates in gating + is rendered in the existing UI section.
-    const existingRiskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }> =
+    // Compliance severity normalisation:
+    // - Deterministic flags take priority over model-generated ones.
+    // - Any deterministic high-severity flag participates in gating via the
+    //   risk-flag pipeline below, so applyCapsAndLabel will trigger.
+    // De-dupe: drop any model risk flag whose text duplicates a deterministic
+    // compliance message (case-insensitive substring match either direction).
+    const modelRiskFlagsRaw: Array<{ severity: "low" | "medium" | "high"; flag: string }> =
       Array.isArray(report.submission_risk_flags) ? report.submission_risk_flags : [];
-    for (const cf of complianceFlags) {
-      existingRiskFlags.push({ severity: cf.severity, flag: cf.message });
-    }
-    report.submission_risk_flags = existingRiskFlags;
+    const complianceMessages = complianceFlags.map((c) => c.message.toLowerCase());
+    const filteredModelRiskFlags = modelRiskFlagsRaw.filter((mf) => {
+      const text = (mf.flag ?? "").toLowerCase();
+      if (!text) return false;
+      return !complianceMessages.some(
+        (cm) => cm.includes(text) || text.includes(cm.slice(0, Math.min(40, cm.length))),
+      );
+    });
+    // Deterministic flags ALWAYS go in first (priority order).
+    const mergedRiskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }> = [
+      ...complianceFlags.map((c) => ({ severity: c.severity, flag: c.message })),
+      ...filteredModelRiskFlags,
+    ];
+    report.submission_risk_flags = mergedRiskFlags;
 
     // ---- Server-side overall score recomputation ----
     // Trust the model's per-category scores; recompute the weighted overall
@@ -647,24 +665,98 @@ export async function runProcessTake(
     const audioScore = modelScores.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
 
+    // ---- Score sanity guard ----
+    // If the model's overall and the recomputed overall diverge by more than
+    // 15 points, the model's number is unreliable for display. We've already
+    // switched to the recomputed value; record the discrepancy for debugging.
+    let scoreDiscrepancy: { delta: number; ignoredModel: boolean } | null = null;
+    if (overallScoreModel != null) {
+      const delta = Math.abs(overallScoreModel - overall);
+      if (delta > 15) {
+        scoreDiscrepancy = { delta, ignoredModel: true };
+        console.warn("runProcessTake: large model/recomputed score delta", {
+          takeId,
+          model: overallScoreModel,
+          recomputed: overall,
+          delta,
+        });
+      }
+    }
+
     // Cap improvements at 3 (most-impactful first) defensively.
     if (Array.isArray(report.improvements) && report.improvements.length > 3) {
       report.improvements = report.improvements.slice(0, 3);
     }
 
-    // Deterministic, level-aware submission verdict.
-    report.submission_verdict = computeSubmissionVerdict({
+    // Deterministic, level-aware submission verdict (the canonical verdict).
+    const verdict = computeSubmissionVerdict({
       overall,
       audioScore: modelScores.audio ?? null,
       technicalScore: modelScores.technical ?? null,
       briefAdherence: modelScores.brief_adherence ?? null,
       mode: report.mode,
       atRisk: report.at_risk === true,
-      riskFlags: existingRiskFlags,
+      riskFlags: mergedRiskFlags,
       level: auditionLevel,
       scores: modelScores,
     });
+    report.submission_verdict = verdict;
 
+    // ---- Block reasons (user-facing, plain language) ----
+    // Always populate when the verdict was capped/blocked, or when any
+    // deterministic high-severity compliance flag is present.
+    const blockReasons: string[] = [];
+    const seenReasons = new Set<string>();
+    const pushReason = (msg: string) => {
+      const m = toUKTerms(msg).trim();
+      if (!m) return;
+      const key = m.toLowerCase();
+      if (seenReasons.has(key)) return;
+      seenReasons.add(key);
+      blockReasons.push(m);
+    };
+    // Deterministic compliance flags first (priority).
+    for (const cf of complianceFlags) {
+      if (cf.severity === "high" || cf.severity === "medium") pushReason(cf.message);
+    }
+    // Then verdict-derived reasons (covers audio cap, brief adherence, weak categories).
+    if (verdict.blocked || verdict.label === "Worth another take" || verdict.label === "Not ready yet") {
+      const reason = verdict.reason;
+      if (reason) pushReason(reason);
+    }
+    // Hard fallback: if verdict is non-positive but no reason, add a generic line.
+    if (
+      blockReasons.length === 0 &&
+      (verdict.label === "Worth another take" || verdict.label === "Not ready yet")
+    ) {
+      pushReason("This take needs another pass before it's ready to send.");
+    }
+
+    // ---- Score–feedback alignment (defensive) ----
+    // For "Not ready yet" and any blocked verdict, ensure fix_first references
+    // a real issue. If improvements is empty but we're not ready, seed it from
+    // block reasons so the user always sees something to act on.
+    if (
+      (verdict.label === "Not ready yet" || verdict.blocked) &&
+      (!Array.isArray(report.improvements) || report.improvements.length === 0) &&
+      blockReasons.length > 0
+    ) {
+      report.improvements = blockReasons.slice(0, 3);
+    }
+    if (
+      (verdict.label === "Not ready yet" || verdict.blocked) &&
+      (!report.fix_first || typeof report.fix_first !== "string") &&
+      blockReasons.length > 0
+    ) {
+      report.fix_first = blockReasons[0];
+    }
+
+    // ---- Persist canonical fields on the report (single source of truth) ----
+    report.overall_score_model = overallScoreModel;
+    report.overall_score_final = overall;
+    report.verdict_final = verdict.label;
+    report.block_reasons = blockReasons;
+    report.extraction_confidence = extractionConfidence;
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
@@ -673,8 +765,12 @@ export async function runProcessTake(
       level: auditionLevel,
       weights: recomputed.usedWeights,
       thresholds: bandsForLevel(auditionLevel),
-      model_overall: report.overall_score,
-      recomputed_overall: overall,
+      overall_score_model: overallScoreModel,
+      overall_score_final: overall,
+      verdict_final: verdict.label,
+      block_reasons: blockReasons,
+      extraction_confidence: extractionConfidence,
+      score_discrepancy: scoreDiscrepancy,
       compliance_flags: complianceFlags,
     };
 
