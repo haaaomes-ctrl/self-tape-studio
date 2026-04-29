@@ -67,11 +67,13 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         playback_policies: ["public"],
         max_resolution_tier: "1080p",
         video_quality: "basic",
-        // CRITICAL: enable static MP4 renditions so the URLs we hand to Gemini
-        // (medium.mp4 / high.mp4) actually exist. "standard" is deprecated and
-        // not supported with video_quality:"basic"; use "capped-1080p" which
-        // is the current Mux value compatible with the basic tier.
-        mp4_support: "capped-1080p",
+        // CRITICAL: enable a downloadable MP4 rendition so we have a single
+        // static URL (https://stream.mux.com/{playback_id}/highest.mp4) we
+        // can hand to Gemini. The legacy `mp4_support` field is deprecated
+        // and conflicts with `video_quality:"basic"` on newer accounts; the
+        // current `static_renditions` API does not. "highest" produces one
+        // MP4 capped at the asset's natural resolution (≤1080p here).
+        static_renditions: [{ resolution: "highest" }],
         passthrough: takeId,
       },
     });
