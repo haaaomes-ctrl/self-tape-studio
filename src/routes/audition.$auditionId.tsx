@@ -1123,7 +1123,7 @@ function TakeView({ take }: { take: Take }) {
             Show technical signals
           </summary>
           <div className="mt-4">
-            <ChecklistView checklist={take.checklist} briefSource="none" />
+            <ChecklistView checklist={take.checklist} briefSource={audition.brief_source} />
           </div>
         </details>
       )}
