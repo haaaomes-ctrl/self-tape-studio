@@ -50,6 +50,46 @@ function parseExplicitDuration(raw: string): number | null {
   return null;
 }
 
+// Deterministic material-policy classifier. Operates on the raw brief text
+// and the model-extracted material_requested. Used by the alternative-material
+// scrub downstream — only "fixed" triggers the strict scrub.
+const CHOICE_MATERIAL_PATTERNS: RegExp[] = [
+  /\b(of|your)\s+choice\b/i,
+  /\b(any|choose\s+any)\s+(song|monologue|scene|piece|dance|routine|material)\b/i,
+  /\b(song|monologue|scene|piece|dance|routine|material)\s+of\s+your\s+choice\b/i,
+  /\bfree\s+choice\b/i,
+  /\bperformer'?s\s+choice\b/i,
+];
+
+export function detectMaterialPolicy(
+  rawBrief: string,
+  materialRequested?: string | null,
+): MaterialPolicy {
+  const raw = rawBrief || "";
+  const material = (materialRequested || "").trim();
+
+  if (CHOICE_MATERIAL_PATTERNS.some((pattern) => pattern.test(raw))) {
+    return "choice";
+  }
+
+  if (!material) {
+    return "none";
+  }
+
+  const materialLower = material.toLowerCase();
+  if (
+    materialLower.includes("choice") ||
+    materialLower.includes("any song") ||
+    materialLower.includes("any monologue") ||
+    materialLower.includes("any scene") ||
+    materialLower.includes("any piece")
+  ) {
+    return "choice";
+  }
+
+  return "fixed";
+}
+
 const EXTRACT_TOOL = {
   type: "function" as const,
   function: {
