@@ -17,9 +17,11 @@ export type Database = {
       auditions: {
         Row: {
           anon_id: string | null
+          audition_level: string
           brief: string | null
           brief_source: string
           created_at: string
+          extracted_brief: Json | null
           id: string
           mode: string
           title: string
@@ -28,9 +30,11 @@ export type Database = {
         }
         Insert: {
           anon_id?: string | null
+          audition_level?: string
           brief?: string | null
           brief_source?: string
           created_at?: string
+          extracted_brief?: Json | null
           id?: string
           mode?: string
           title?: string
@@ -39,9 +43,11 @@ export type Database = {
         }
         Update: {
           anon_id?: string | null
+          audition_level?: string
           brief?: string | null
           brief_source?: string
           created_at?: string
+          extracted_brief?: Json | null
           id?: string
           mode?: string
           title?: string
@@ -57,6 +63,7 @@ export type Database = {
           attempt_count: number
           audition_id: string
           checklist: Json | null
+          compliance_flags: Json | null
           confidence: number | null
           created_at: string
           error_message: string | null
@@ -71,6 +78,7 @@ export type Database = {
           overall_score: number | null
           processing_phase: string
           report: Json | null
+          score_breakdown: Json | null
           scores: Json | null
           signals: Json | null
           status: string
@@ -85,6 +93,7 @@ export type Database = {
           attempt_count?: number
           audition_id: string
           checklist?: Json | null
+          compliance_flags?: Json | null
           confidence?: number | null
           created_at?: string
           error_message?: string | null
@@ -99,6 +108,7 @@ export type Database = {
           overall_score?: number | null
           processing_phase?: string
           report?: Json | null
+          score_breakdown?: Json | null
           scores?: Json | null
           signals?: Json | null
           status?: string
@@ -113,6 +123,7 @@ export type Database = {
           attempt_count?: number
           audition_id?: string
           checklist?: Json | null
+          compliance_flags?: Json | null
           confidence?: number | null
           created_at?: string
           error_message?: string | null
@@ -127,6 +138,7 @@ export type Database = {
           overall_score?: number | null
           processing_phase?: string
           report?: Json | null
+          score_breakdown?: Json | null
           scores?: Json | null
           signals?: Json | null
           status?: string

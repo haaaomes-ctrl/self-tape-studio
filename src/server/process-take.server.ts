@@ -8,6 +8,20 @@
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { muxMp4Url } from "./mux.server";
+import { extractBriefFromText } from "./extract-brief.server";
+import {
+  applyCapsAndLabel,
+  bandsForLevel,
+  computeBlockers,
+  deterministicCompliance,
+  recomputeOverall,
+  toUKTerms,
+  ukifyDeep,
+  weightsForType,
+  type AuditionLevel,
+  type AuditionType,
+  type ExtractedBrief,
+} from "@/lib/audition-rules";
 
 // Scoring v2 — multi-component aware, split brief adherence, submission risk flags.
 const REPORT_TOOL = {
@@ -169,13 +183,14 @@ const REPORT_TOOL = {
 };
 
 function buildSystemPrompt(): string {
-  return `You are a seasoned musical theatre casting director and vocal coach reviewing a self-tape audition.
+  return `You are a UK casting director, agent and acting/vocal/movement coach reviewing a self-tape audition.
 
-Your role is JUDGEMENT, not measurement. You write like a credible casting assistant or coach: encouraging, specific, prioritised, direct but never harsh, never vague, never overly verbose.
+Your role is JUDGEMENT, not measurement. You write like a credible UK casting assistant or coach: encouraging, specific, prioritised, direct but never harsh, never vague, never overly verbose. Use British English throughout — "recall" (never "callback"), "casting brief", "self-tape", "analysing", "prioritised", "behaviour", "centre", "colour".
 
 You will receive:
 - The video itself (multimodal) — watch and listen.
-- An optional casting brief.
+- The performer's level (Learning, Amateur, Emerging, or Professional) — calibrate expectations and tone accordingly. Be more encouraging at lower levels, sharper at professional. Never harsh.
+- An optional casting brief plus a parsed STRUCTURED BRIEF when available — use the structured fields to interpret role function, tone, energy, vocal expectations and physical demands.
 - Lightweight technical signals (orientation, resolution, audio peak/rms) and a checklist.
 
 Pipeline:
@@ -206,6 +221,20 @@ Hard rules:
 - Don't penalise portrait orientation unless the brief required landscape.
 - First 5 seconds matter: strong start +5, weak start −5 on acting.
 - Treat technical signals as MODIFIERS, not dominant inputs. The video itself is your primary evidence.
+
+Performance realism:
+- Reward truth, clarity of intention, and connection. Do NOT reward overacting or pushed/exaggerated delivery.
+- Subtle, grounded work is not a weakness — judge it on intention and clarity, not size.
+
+Role-fit (when a structured brief is present):
+- Read role function, emotional tone, energy level, vocal expectations, physical demands, and tone of show.
+- Judge alignment with the role, not likeness or physical resemblance. Never reward imitation. Never penalise appearance mismatch.
+- Role-fit may colour interpretation only — it cannot compensate for weak fundamentals.
+
+Safety and fairness — NEVER comment on:
+- attractiveness, weight, body shape, race, class, disability, gender presentation, home/room quality, equipment cost.
+- disabilities, mobility aids, or medical devices. Comment on technical clarity only, never the cause.
+- Presentation notes (clothing blending with background, distracting clothing, wrinkled clothing) are allowed only when they materially affect visibility or violate the brief — never as personal comments.
 
 Submission Risk Flags:
 - Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
@@ -280,20 +309,11 @@ export type SubmissionVerdict = {
 };
 
 /**
- * Deterministic submission verdict.
+ * Deterministic submission verdict — LEVEL-AWARE.
  *
- * Bands (from the score alone):
- *   85+    → Strong submit
- *   75–84  → Ready to submit
- *   65–74  → Worth another take
- *   <65    → Not ready yet
- *
- * Hard blockers — even with a strong score, drop the verdict to at most
- * "Worth another take" when:
- *   - Audio clarity is too low to fairly assess the performance (audio < 50).
- *   - Brief instructions weren't followed in BRIEF mode (brief_adherence < 50,
- *     or model flagged at_risk, or any high-severity submission risk).
- *   - Framing / technical setup prevents clear evaluation (technical < 45).
+ * Bands come from bandsForLevel(level). Hard blockers cap at "Worth another
+ * take" (or worse). Strong-for-this-level additionally requires no category
+ * < 70 and brief_adherence ≥ 60 in BRIEF mode.
  */
 export function computeSubmissionVerdict(input: {
   overall: number;
@@ -303,62 +323,61 @@ export function computeSubmissionVerdict(input: {
   mode: "brief" | "baseline";
   atRisk: boolean;
   riskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }>;
+  level?: AuditionLevel;
+  scores?: Record<string, number | null | undefined>;
 }): SubmissionVerdict {
-  const { overall, audioScore, technicalScore, briefAdherence, mode, atRisk, riskFlags } =
-    input;
+  const level: AuditionLevel = input.level ?? "emerging";
+  const scoresForGating = {
+    audio: input.audioScore ?? undefined,
+    technical: input.technicalScore ?? undefined,
+    ...(input.scores ?? {}),
+  };
+  const blockers = computeBlockers({
+    scores: scoresForGating,
+    briefAdherence: input.briefAdherence,
+    mode: input.mode,
+    riskFlags: input.atRisk
+      ? [...input.riskFlags, { severity: "high" as const, flag: "Model flagged at_risk" }]
+      : input.riskFlags,
+  });
 
-  const blockers: string[] = [];
-  if (audioScore != null && audioScore < 50) {
-    blockers.push("audio is too unclear to fairly judge the performance");
-  }
-  if (technicalScore != null && technicalScore < 45) {
-    blockers.push("framing or setup makes it hard to evaluate the take properly");
-  }
-  if (mode === "brief") {
-    if ((briefAdherence != null && briefAdherence < 50) || atRisk) {
-      blockers.push("the casting brief instructions weren't fully followed");
-    }
-  }
-  const hasHighRisk = riskFlags.some((f) => f.severity === "high");
-  if (hasHighRisk) blockers.push("a high-severity submission risk was flagged");
+  const { label, capped, reason } = applyCapsAndLabel({
+    overall: input.overall,
+    scores: scoresForGating,
+    briefAdherence: input.briefAdherence,
+    mode: input.mode,
+    level,
+    blockers,
+  });
 
-  // Score band first.
-  let label: SubmissionVerdict["label"];
-  if (overall >= 85) label = "Strong submit";
-  else if (overall >= 75) label = "Ready to submit";
-  else if (overall >= 65) label = "Worth another take";
-  else label = "Not ready yet";
+  // Map back to legacy verdict label set the UI already understands.
+  const legacyLabel: SubmissionVerdict["label"] =
+    label === "Strong for this level"
+      ? "Strong submit"
+      : (label as SubmissionVerdict["label"]);
 
-  let blocked = false;
-  if (blockers.length > 0) {
-    // Cap at "Worth another take" — never let a hard blocker show as
-    // submit-ready, even if the headline score happened to land high.
-    if (label === "Strong submit" || label === "Ready to submit") {
-      label = "Worth another take";
-      blocked = true;
-    }
-  }
-
-  let reason: string;
-  if (blocked) {
-    reason = `Score sits high, but ${blockers[0]} — fix that before sending it out.`;
-  } else if (label === "Strong submit") {
-    reason = "This tape lands. Send it with confidence.";
-  } else if (label === "Ready to submit") {
-    reason = "Solid, castable tape — safe to send as-is.";
-  } else if (label === "Worth another take") {
-    reason =
-      blockers[0]
-        ? `One more pass will lift this — ${blockers[0]}.`
-        : "There's a clear next take in this. Tighten the priority improvement and re-record.";
+  let verdictReason: string;
+  if (capped && reason) {
+    verdictReason = `Score sits high, but ${reason} — fix that before sending it out.`;
+  } else if (legacyLabel === "Strong submit") {
+    verdictReason = "This tape lands at your level. Send it with confidence.";
+  } else if (legacyLabel === "Ready to submit") {
+    verdictReason = "Solid, castable tape — safe to send as-is.";
+  } else if (legacyLabel === "Worth another take") {
+    verdictReason = blockers[0]
+      ? `One more pass will lift this — ${blockers[0].message}.`
+      : "There's a clear next take in this. Tighten the priority improvement and re-record.";
   } else {
-    reason =
-      blockers[0]
-        ? `Hold off on sending — ${blockers[0]}.`
-        : "Hold off on sending. Work the priority fix and shoot a fresh take.";
+    verdictReason = blockers[0]
+      ? `Hold off on sending — ${blockers[0].message}.`
+      : "Hold off on sending. Work the priority fix and shoot a fresh take.";
   }
 
-  return { label, reason, blocked };
+  return {
+    label: legacyLabel,
+    reason: toUKTerms(verdictReason),
+    blocked: capped && blockers.length > 0,
+  };
 }
 
 /**
@@ -394,12 +413,29 @@ export async function runProcessTake(
 
   const { data: audition, error: audErr } = await supabaseAdmin
     .from("auditions")
-    .select("id, brief, brief_source, mode, title")
+    .select("id, brief, brief_source, mode, title, audition_level, extracted_brief")
     .eq("id", take.audition_id)
     .single();
 
   if (audErr || !audition) {
     return { ok: false, error: "Audition not found" };
+  }
+
+  const auditionLevel = ((audition as { audition_level?: string }).audition_level ??
+    "emerging") as AuditionLevel;
+
+  // Structured brief extraction (cached on the audition row). Skip in baseline
+  // mode (no brief) or when we've already extracted previously.
+  let extractedBrief: ExtractedBrief | null =
+    ((audition as { extracted_brief?: ExtractedBrief | null }).extracted_brief ?? null);
+  if (!extractedBrief && audition.brief && audition.brief.trim().length > 5) {
+    extractedBrief = await extractBriefFromText(audition.brief);
+    if (extractedBrief) {
+      await supabaseAdmin
+        .from("auditions")
+        .update({ extracted_brief: extractedBrief as never })
+        .eq("id", audition.id);
+    }
   }
 
   // Flip into the active analysing phase NOW that work is actually starting.
@@ -468,7 +504,11 @@ export async function runProcessTake(
 
     const briefBlock = audition.brief
       ? `CASTING BRIEF (${audition.brief_source}):\n${audition.brief}`
-      : `NO BRIEF PROVIDED — apply BASELINE rubric. Do not invent constraints.`;
+      : `NO CASTING BRIEF PROVIDED — apply BASELINE rubric (treat as professional standards). Do not invent constraints.`;
+
+    const extractedBlock = extractedBrief
+      ? `STRUCTURED BRIEF (parsed):\n${JSON.stringify(extractedBrief, null, 2)}`
+      : "STRUCTURED BRIEF: none.";
 
     const signalsBlock = `TECHNICAL SIGNALS (modifiers, not primary):\n${JSON.stringify(
       { signals: take.signals, checklist: take.checklist },
@@ -476,12 +516,16 @@ export async function runProcessTake(
       2,
     )}`;
 
+    const levelBlock = `PERFORMER LEVEL: ${auditionLevel}. Calibrate expectations and tone for this level — encouraging at lower levels, sharper at professional. Never harsh.`;
+
     const userText = [
       `Audition title: ${audition.title}`,
+      levelBlock,
       briefBlock,
+      extractedBlock,
       signalsBlock,
       `Analysis tier: ${tier} rendition (the user's original performance is intact — only technical encoding was standardised).`,
-      "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Be specific, prioritised, and constructive.",
+      "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre). Be specific, prioritised, and constructive.",
     ].join("\n\n");
 
     const apiKey = process.env.LOVABLE_API_KEY;
@@ -556,29 +600,69 @@ export async function runProcessTake(
       throw new Error("The AI returned an incomplete report. Please retry.");
     }
 
-    let overall = report.overall_score as number;
-    const audioScore = report.scores?.audio ?? 100;
+    // ---- UK terminology pass on all string output ----
+    report = ukifyDeep(report);
+
+    // ---- Deterministic compliance vs signals (orientation/duration/audio) ----
+    const signalsForCompliance = (take.signals ?? null) as
+      | { orientation?: string; duration?: number; audio_peak?: number }
+      | null;
+    const complianceFlags = deterministicCompliance({
+      extracted: extractedBrief,
+      signals: signalsForCompliance,
+    });
+
+    // Promote any high-severity compliance flag into submission_risk_flags so
+    // it participates in gating + is rendered in the existing UI section.
+    const existingRiskFlags: Array<{ severity: "low" | "medium" | "high"; flag: string }> =
+      Array.isArray(report.submission_risk_flags) ? report.submission_risk_flags : [];
+    for (const cf of complianceFlags) {
+      existingRiskFlags.push({ severity: cf.severity, flag: cf.message });
+    }
+    report.submission_risk_flags = existingRiskFlags;
+
+    // ---- Server-side overall score recomputation ----
+    // Trust the model's per-category scores; recompute the weighted overall
+    // deterministically using audition-type weights, then apply caps.
+    const auditionType = (report.audition_type ?? "unknown") as AuditionType;
+    const weights = weightsForType(auditionType);
+    const modelScores = (report.scores ?? {}) as Record<string, number | null>;
+    const recomputed = recomputeOverall(modelScores, weights);
+    let overall = recomputed.overall || (report.overall_score as number) || 0;
+
+    const audioScore = modelScores.audio ?? 100;
     if (audioScore < 50 && overall > 65) overall = 65;
 
-    // Cap improvements at 3 (most-impactful first) defensively, in case the
-    // model returns more than the schema asked for.
+    // Cap improvements at 3 (most-impactful first) defensively.
     if (Array.isArray(report.improvements) && report.improvements.length > 3) {
       report.improvements = report.improvements.slice(0, 3);
     }
 
-    // Deterministic submission verdict — computed server-side so bands are
-    // guaranteed consistent and hard blockers always override the score.
+    // Deterministic, level-aware submission verdict.
     report.submission_verdict = computeSubmissionVerdict({
       overall,
-      audioScore: report.scores?.audio ?? null,
-      technicalScore: report.scores?.technical ?? null,
-      briefAdherence: report.scores?.brief_adherence ?? null,
+      audioScore: modelScores.audio ?? null,
+      technicalScore: modelScores.technical ?? null,
+      briefAdherence: modelScores.brief_adherence ?? null,
       mode: report.mode,
       atRisk: report.at_risk === true,
-      riskFlags: Array.isArray(report.submission_risk_flags)
-        ? report.submission_risk_flags
-        : [],
+      riskFlags: existingRiskFlags,
+      level: auditionLevel,
+      scores: modelScores,
     });
+
+    // Persist the recomputed overall back onto the report so UI is consistent.
+    report.overall_score = overall;
+
+    const scoreBreakdown = {
+      audition_type: auditionType,
+      level: auditionLevel,
+      weights: recomputed.usedWeights,
+      thresholds: bandsForLevel(auditionLevel),
+      model_overall: report.overall_score,
+      recomputed_overall: overall,
+      compliance_flags: complianceFlags,
+    };
 
     await supabaseAdmin
       .from("takes")
@@ -590,6 +674,8 @@ export async function runProcessTake(
         overall_score: overall,
         confidence: report.confidence,
         error_message: null,
+        compliance_flags: complianceFlags as never,
+        score_breakdown: scoreBreakdown as never,
       })
       .eq("id", takeId);
 
