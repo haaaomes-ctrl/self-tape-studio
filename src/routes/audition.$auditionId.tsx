@@ -255,16 +255,12 @@ function AuditionPage() {
   );
 }
 
-// Tier thresholds for the analysis-stage UX. Tied to the server-side
-// reconciler ceiling (MAX_TOTAL_AGE_SECONDS = 180s) so the UI never shows a
-// hard error before the backend has actually given up.
-//   0–45s: normal copy
-//   45–90s: gentle "still running" reassurance
-//   90–180s: surface continue / retry / cancel actions
-//   ≥180s: failure messaging (FailedTakeView takes over once status flips)
+// Stage thresholds for the analysis-stage UX. The system owns retries — the
+// user only ever sees a Cancel button while processing. Long-wait copy
+// escalates with elapsed time but never asks the user to act.
 const TIER_REASSURE_SECONDS = 45;
-const TIER_ACTIONS_SECONDS = 90;
-const TIER_GIVEUP_SECONDS = 180;
+const TIER_LONG_WAIT_SECONDS = 180; // 3 min
+const TIER_VERY_LONG_WAIT_SECONDS = 360; // 6 min
 
 function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -286,11 +282,12 @@ function useElapsedSeconds(startIso: string) {
   return elapsed;
 }
 
+// FailedTakeView only renders for takes that have actually failed
+// (status = "error"). Try again is the user's recovery surface here.
 function FailedTakeView({ take }: { take: Take }) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const stuck = take.status === "processing" || take.status === "pending";
 
   async function onReplace(f: File | null) {
     if (!f || !user) return;
@@ -303,7 +300,6 @@ function FailedTakeView({ take }: { take: Take }) {
         // best-effort
       }
 
-      // Pre-upload preflight.
       if (checklist) {
         const pf = preflightVideoBasics(
           f,
@@ -329,8 +325,6 @@ function FailedTakeView({ take }: { take: Take }) {
           }
         : null;
 
-      // Reset the take row, then ask Mux for a fresh direct-upload URL,
-      // then PUT the new file straight to Mux.
       await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
       const { uploadUrl } = await createMuxDirectUpload({ data: { takeId: take.id } });
       if (!uploadUrl) throw new Error("Could not get an upload URL");
@@ -347,14 +341,11 @@ function FailedTakeView({ take }: { take: Take }) {
     <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
       <div className="flex items-center gap-2 text-destructive">
         <ShieldAlert className="h-4 w-4" />
-        <p className="font-medium">
-          {stuck ? "This take has been analysing for a while" : "Couldn't analyse this take"}
-        </p>
+        <p className="font-medium">Couldn't complete this analysis</p>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        {stuck
-          ? "Processing appears stuck. You can cancel and replace the video, or try again."
-          : (take.error_message ?? "Something went wrong.")}
+        {take.error_message ??
+          "We couldn't complete this attempt. Try again without re-uploading if your video is already saved."}
       </p>
       <div className="mt-5 flex flex-wrap gap-2">
         <input
@@ -365,6 +356,23 @@ function FailedTakeView({ take }: { take: Take }) {
           onChange={(e) => onReplace(e.target.files?.[0] ?? null)}
         />
         <Button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await retryProcessTake({ data: { takeId: take.id } });
+              toast.success("Trying again");
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Try again failed");
+            } finally {
+              setBusy(false);
+            }
+          }}
+          title="We couldn't complete this attempt. Try again without re-uploading if your video is already saved."
+        >
+          Try again
+        </Button>
+        <Button
           variant="outline"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
@@ -372,52 +380,6 @@ function FailedTakeView({ take }: { take: Take }) {
           {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
           Replace video
         </Button>
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await retryProcessTake({ data: { takeId: take.id } });
-              toast.success("Retrying analysis");
-            } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Retry failed");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Retry analysis
-        </Button>
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await retryProcessTake({ data: { takeId: take.id, allowOriginal: true } });
-              toast.success("Retrying with highest quality");
-            } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Retry failed");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Retry with highest quality
-        </Button>
-        {stuck && (
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={async () => {
-              await resetTake({ data: { takeId: take.id } });
-              toast.success("Cancelled — you can replace the video now.");
-            }}
-          >
-            Cancel stuck analysis
-          </Button>
-        )}
       </div>
     </div>
   );
@@ -440,17 +402,7 @@ function PhaseStep({ label, active, done }: { label: string; active: boolean; do
 }
 
 // 6-stage state machine for the take pipeline. Mapped from the
-// `processing_phase` column the server writes at each transition:
-//
-//   uploading          → 1. Uploading your tape
-//   transcoding        → 2. Optimising your video
-//   analysis_pending   → 3. Preparing analysis
-//   analysing          → 4. Watching your tape
-//                          (≥45s into analysing → 5. Writing your report)
-//                          (≥90s into analysing → 6. Finalising results)
-//
-// We never show a percentage we can't honestly compute. Upload % is real
-// (XHR progress); everything else is step-based with elapsed-time copy.
+// `processing_phase` column the server writes at each transition.
 const STAGES = [
   { key: "uploading", label: "Uploading your tape" },
   { key: "transcoding", label: "Optimising video" },
@@ -466,8 +418,7 @@ function stageIndexFor(phase: string, analysisElapsed: number): number {
   if (phase === "uploading") return 0;
   if (phase === "transcoding") return 1;
   if (phase === "analysis_pending") return 2;
-  // analysing — split into watching → writing → finalising by elapsed time
-  if (analysisElapsed >= TIER_ACTIONS_SECONDS) return 5;
+  if (analysisElapsed >= 90) return 5;
   if (analysisElapsed >= TIER_REASSURE_SECONDS) return 4;
   return 3;
 }
@@ -488,20 +439,13 @@ function ProcessingTakeView({ take }: { take: Take }) {
   const elapsed = useElapsedSeconds(take.created_at);
   const phase = (take.processing_phase ?? "uploading") as StageKey | string;
   const [busy, setBusy] = useState(false);
-  // "Continue waiting" simply re-hides the action panel for ~20s so the user
-  // isn't repeatedly nagged. The underlying analysis keeps running.
-  const [waitDismissedAt, setWaitDismissedAt] = useState<number | null>(null);
 
-  // Elapsed time within the analysis window only (not the whole pipeline).
-  // Treat it as 0 until we're past upload/transcoding so the analysis copy
-  // doesn't fire too early on long uploads.
   const analysisElapsed =
     phase === "analysing" || phase === "analysis_pending" ? elapsed : 0;
   const activeIdx = stageIndexFor(phase, analysisElapsed);
 
-  // Copy per stage. Reassurance / action visibility are driven by the
-  // analysis-window elapsed clock, not the wall clock, so a slow upload
-  // doesn't trigger "this is taking longer than usual" prematurely.
+  // Per-stage copy. The system owns retries — copy is reassuring at every
+  // tier and never implies the user needs to act.
   let title: string;
   let sub: string;
   if (phase === "uploading") {
@@ -511,58 +455,35 @@ function ProcessingTakeView({ take }: { take: Take }) {
   } else if (phase === "transcoding") {
     title = "Optimising your video…";
     sub =
-      "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.";
+      "Standardising format for fast, accurate analysis. Your performance is not altered.";
   } else if (phase === "analysis_pending") {
-    title = "Preparing the version we'll analyse…";
+    title = "Preparing your video for analysis";
     sub =
-      "Your optimised video is still being prepared. This is normal and usually resolves within 60–90 seconds.";
+      "Your video is being optimised for review. We're checking every few seconds and will move on automatically.";
   } else if (analysisElapsed < TIER_REASSURE_SECONDS) {
-    title = "Watching your tape…";
+    title = "Watching your tape";
     sub =
-      "Reading the brief, checking technicals, writing notes. Usually under a minute.";
-  } else if (analysisElapsed < TIER_ACTIONS_SECONDS) {
-    title = "Writing your feedback…";
+      "We're reviewing the performance, brief, sound and technical setup.";
+  } else if (analysisElapsed < 90) {
+    title = "Writing your feedback";
     sub =
-      "This is taking a little longer than usual, but it's still running. Hang tight.";
-  } else if (analysisElapsed < TIER_GIVEUP_SECONDS) {
-    title = "Finalising your results…";
-    sub =
-      "This is taking longer than usual, but it hasn't failed. You can keep waiting, retry now, or cancel.";
+      "We're turning the analysis into clear notes and next steps.";
   } else {
-    title = "This is taking longer than expected";
-    sub = "Your tape is still being prepared. You can wait, retry now, or cancel.";
+    title = "Finalising your results";
+    sub = "Almost there — preparing your report.";
   }
 
-  // Stalled-state actions: surface as soon as the analysis window crosses
-  // 90s, regardless of whether we're still in analysis_pending (waiting on
-  // Mux rendition) or analysing (waiting on Gemini). This is the BUG-006
-  // surface — three labelled actions with explanations + a recommended
-  // option that escalates with elapsed time.
-  const inAnalysisWindow = phase === "analysing" || phase === "analysis_pending";
-  const showActions =
-    inAnalysisWindow &&
-    analysisElapsed >= TIER_ACTIONS_SECONDS &&
-    (waitDismissedAt === null || elapsed - waitDismissedAt >= 20);
-
-  let stalledTitle = "This is taking longer than expected";
-  let stalledContext =
-    "We're still preparing your video for analysis. This usually resolves shortly.";
-  let recommended: "wait" | "retry" | "retry-or-cancel" = "wait";
-  let recommendedNote = "Your video may still be finishing preparation.";
-  if (analysisElapsed >= 180) {
-    recommended = "retry-or-cancel";
-    recommendedNote = "This attempt may be stuck.";
-    stalledContext =
-      "We're still preparing your video for analysis. It's been a while — you may want to retry or cancel.";
-  } else if (analysisElapsed >= 120) {
-    recommended = "retry";
-    recommendedNote = "The preparation step is taking longer than usual.";
+  // Long-wait reassurance copy (never asks the user to act).
+  let longWaitNote: string | null = null;
+  if (elapsed >= TIER_VERY_LONG_WAIT_SECONDS) {
+    longWaitNote = "Still working. Longer videos can take up to 10 minutes.";
+  } else if (elapsed >= TIER_LONG_WAIT_SECONDS) {
+    longWaitNote =
+      "Still working — this is taking longer than usual, but it has not failed.";
+  } else if (elapsed >= 60) {
+    longWaitNote =
+      "Longer videos or larger files can take longer. In some cases, analysis can take up to 10 minutes.";
   }
-
-  const handleContinueWaiting = () => {
-    setWaitDismissedAt(elapsed);
-    toast.success("We'll keep this analysis running.");
-  };
 
   return (
     <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
@@ -573,90 +494,43 @@ function ProcessingTakeView({ take }: { take: Take }) {
         Elapsed: {formatElapsed(elapsed)}
       </p>
       <StageList activeIdx={activeIdx} />
-      {showActions && (
-        <div className="mx-auto mt-8 max-w-md rounded-xl border border-border bg-muted/40 p-5 text-left">
-          <p className="font-display text-base font-semibold">{stalledTitle}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{stalledContext}</p>
-          <div
-            className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground"
-            role="status"
-          >
-            <span className="font-medium">Recommended:</span>{" "}
-            {recommended === "wait" && "Continue waiting"}
-            {recommended === "retry" && "Retry from this step"}
-            {recommended === "retry-or-cancel" && "Retry from this step or cancel"}
-            <span className="text-muted-foreground"> — {recommendedNote}</span>
-          </div>
-          <div className="mt-4 space-y-3">
-            <div>
-              <Button
-                size="sm"
-                variant={recommended === "wait" ? "default" : "outline"}
-                disabled={busy}
-                onClick={handleContinueWaiting}
-                className="w-full justify-start"
-              >
-                Continue waiting
-              </Button>
-              <p className="mt-1 px-1 text-xs text-muted-foreground">
-                Keep this analysis running. Best choice if the video is still
-                being prepared.
-              </p>
-            </div>
-            <div>
-              <Button
-                size="sm"
-                variant={recommended === "wait" ? "outline" : "default"}
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await retryProcessTake({ data: { takeId: take.id } });
-                    setWaitDismissedAt(elapsed);
-                    toast.success("Retrying analysis from this step");
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Retry failed");
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                className="w-full justify-start"
-              >
-                Retry from this step
-              </Button>
-              <p className="mt-1 px-1 text-xs text-muted-foreground">
-                Retry analysis (your upload is safe). We'll re-check the video
-                and continue.
-              </p>
-            </div>
-            <div>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await resetTake({ data: { takeId: take.id } });
-                    toast.success("Cancelled — you can replace the video now.");
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : "Cancel failed");
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                className="w-full justify-start text-destructive hover:text-destructive"
-              >
-                Cancel analysis
-              </Button>
-              <p className="mt-1 px-1 text-xs text-muted-foreground">
-                Stop this attempt and return to your audition. You can upload
-                or retry later.
-              </p>
-            </div>
-          </div>
-        </div>
+
+      <p className="mx-auto mt-6 max-w-md text-xs text-muted-foreground">
+        We're still working. If anything fails, we'll retry automatically.
+      </p>
+      {longWaitNote && (
+        <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+          {longWaitNote}
+        </p>
       )}
+      {elapsed >= TIER_LONG_WAIT_SECONDS && (
+        <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
+          Feel free to grab a tea — we'll keep this running.
+        </p>
+      )}
+
+      <div className="mt-8 flex justify-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await resetTake({ data: { takeId: take.id } });
+              toast.success("Cancelled — you can return to your audition.");
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : "Cancel failed");
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="text-destructive hover:text-destructive"
+          title="Stop this attempt and return to your audition."
+        >
+          Cancel analysis
+        </Button>
+      </div>
     </div>
   );
 }
