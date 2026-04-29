@@ -10,7 +10,7 @@ export type ExtractionConfidence = "low" | "medium" | "high";
 export type TimeLimitSource = "explicit" | "none";
 
 export type ExtractedBriefWithMeta = {
-  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource };
+  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource; material_policy?: MaterialPolicy };
   extraction_confidence: ExtractionConfidence;
 };
 
