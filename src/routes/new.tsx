@@ -139,6 +139,7 @@ function NewAuditionPage() {
             brief,
             brief_source: briefSource,
             mode,
+            audition_level: auditionLevel,
           },
         ])
         .select("id")
