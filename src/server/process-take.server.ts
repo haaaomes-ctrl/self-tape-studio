@@ -374,9 +374,14 @@ export type RunProcessTakeResult =
   | { ok: false; error: string };
 
 export type SubmissionVerdict = {
-  // Plain-language label shown directly to the user.
-  label: "Strong submit" | "Ready to submit" | "Worth another take" | "Not ready yet";
-  // One short sentence explaining the verdict.
+  // Plain-language label shown directly to the user. Canonical set — keep in
+  // sync with VerdictLabel in src/lib/audition-rules.ts.
+  label:
+    | "Strong for this level"
+    | "Ready to submit"
+    | "Worth another take"
+    | "Not ready yet";
+  // One short sentence explaining the verdict. Never empty.
   reason: string;
   // True when a hard blocker forced the verdict below what the score alone would suggest.
   blocked: boolean;
