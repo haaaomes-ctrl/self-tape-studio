@@ -377,6 +377,9 @@ export type ExtractedBrief = {
   tone_or_world?: string | null;
   performance_style?: string | null;
   accent_or_dialect_required?: string | null;
+  // Proportionality controls for accent assessment.
+  accent_required?: "yes" | "no" | "unknown";
+  accent_importance?: "central" | "preferred" | "unspecified";
   vocal_style_required?: string | null;
   movement_or_dance_required?: string | null;
   reader_required?: "yes" | "no" | "unspecified";
