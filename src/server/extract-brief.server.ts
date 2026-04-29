@@ -40,6 +40,18 @@ const EXTRACT_TOOL = {
         tone_or_world: { type: ["string", "null"] },
         performance_style: { type: ["string", "null"] },
         accent_or_dialect_required: { type: ["string", "null"] },
+        accent_required: {
+          type: "string",
+          enum: ["yes", "no", "unknown"],
+          description:
+            "Whether the brief explicitly requires a specific accent or dialect. 'unknown' if the brief doesn't say.",
+        },
+        accent_importance: {
+          type: "string",
+          enum: ["central", "preferred", "unspecified"],
+          description:
+            "How important the accent requirement is. 'central' = essential to the role (e.g. 'must be authentic Glaswegian'); 'preferred' = nice to have ('ideally RP'); 'unspecified' = brief is silent.",
+        },
         vocal_style_required: { type: ["string", "null"] },
         movement_or_dance_required: { type: ["string", "null"] },
         reader_required: { type: "string", enum: ["yes", "no", "unspecified"] },
