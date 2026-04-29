@@ -400,7 +400,7 @@ async function pickAnalysisSource(
 }
 
 export type RunProcessTakeResult =
-  | { ok: true; tier?: Tier; alreadyDone?: boolean }
+  | { ok: true; tier?: Tier; alreadyDone?: boolean; alreadyRunning?: boolean }
   | { ok: false; error: string };
 
 export type SubmissionVerdict = {
