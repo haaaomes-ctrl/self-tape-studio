@@ -240,13 +240,24 @@ export function applyCapsAndLabel(input: {
   let capped = false;
   let reason: string | undefined;
 
-  // Audio < 50 caps overall at 65 (preserve existing behaviour, slightly softer
-  // than the hard 45 blocker).
+  // Tiered audio caps:
+  //   - <35  → hard blocker (handled in computeBlockers); cap at 60 here as belt-and-braces.
+  //   - 35–49 → cap at "Worth another take" (≤62 in level bands typically).
+  //   - 50–59 → soft cap at 75; surfaces a risk flag elsewhere but allows
+  //             "Ready to submit" if the rest of the tape is strong.
   const audio = input.scores.audio ?? null;
-  if (audio != null && audio < 50 && overall > 65) {
-    overall = 65;
+  if (audio != null && audio < 35 && overall > 60) {
+    overall = 60;
     capped = true;
-    reason = "audio clarity caps the overall";
+    reason = "audio is too unclear to fairly judge the performance";
+  } else if (audio != null && audio < 50 && overall > 62) {
+    overall = 62;
+    capped = true;
+    reason = "audio clarity needs lifting before this is sendable";
+  } else if (audio != null && audio < 60 && overall > 75) {
+    overall = 75;
+    capped = true;
+    reason = "audio is workable but a clearer take would land harder";
   }
 
   let label = labelForScore(overall, input.level);
