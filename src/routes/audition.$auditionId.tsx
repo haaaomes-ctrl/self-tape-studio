@@ -255,12 +255,23 @@ function AuditionPage() {
   );
 }
 
-// Tier thresholds for the "watching your tape" UX. Tied to the server-side
+// Tier thresholds for the analysis-stage UX. Tied to the server-side
 // reconciler ceiling (MAX_TOTAL_AGE_SECONDS = 180s) so the UI never shows a
 // hard error before the backend has actually given up.
-const TIER_FINALISING_SECONDS = 60;
-const TIER_LONG_SECONDS = 120;
+//   0–45s: normal copy
+//   45–90s: gentle "still running" reassurance
+//   90–180s: surface continue / retry / cancel actions
+//   ≥180s: failure messaging (FailedTakeView takes over once status flips)
+const TIER_REASSURE_SECONDS = 45;
+const TIER_ACTIONS_SECONDS = 90;
 const TIER_GIVEUP_SECONDS = 180;
+
+function formatElapsed(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
 
 function useElapsedSeconds(startIso: string) {
   const [elapsed, setElapsed] = useState(() =>
