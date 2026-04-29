@@ -21,13 +21,21 @@ import { scheduleBackground } from "@/worker-entry";
 // Idempotency is preserved by runProcessTake itself: it only flips a take
 // into "analysing"/"processing" once, and refuses to re-enter if the row
 // already shows active processing.
-const STALE_PENDING_MINUTES = 2;
-const STALE_ANALYSING_MINUTES = 8;
+// Tightened to match the ~1 min target. analysis_pending should retry
+// quickly (every cron tick) while the MP4 rendition is finalising.
+// analysing is already in-flight against Gemini, so wait longer before
+// declaring it stuck.
+const STALE_PENDING_SECONDS = 15;
+const STALE_ANALYSING_MINUTES = 4;
 const MAX_BATCH = 25;
 // Hard cap on how many times the reconciler will retry a single take.
 // Past this, the take is parked in `error` so a stuck row cannot rack up
 // unbounded Gemini calls (cost protection).
 const MAX_ATTEMPTS = 5;
+// Hard wall-clock ceiling. Past this, give up regardless of attempt count
+// so the user sees a clean "couldn't prepare your video in time" message
+// rather than an indefinite spinner.
+const MAX_TOTAL_AGE_SECONDS = 180;
 
 export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
   server: {
@@ -44,20 +52,21 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         }
 
         const now = Date.now();
-        const pendingCutoff = new Date(now - STALE_PENDING_MINUTES * 60_000).toISOString();
+        const pendingCutoff = new Date(now - STALE_PENDING_SECONDS * 1_000).toISOString();
         const analysingCutoff = new Date(now - STALE_ANALYSING_MINUTES * 60_000).toISOString();
 
-        // Pull stale candidates in both buckets.
+        // Pull stale candidates in both buckets. We also need created_at to
+        // enforce the overall wall-clock ceiling.
         const { data: stalePending, error: pErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, processing_phase, attempt_count")
+          .select("id, updated_at, created_at, processing_phase, attempt_count")
           .eq("processing_phase", "analysis_pending")
           .lt("updated_at", pendingCutoff)
           .limit(MAX_BATCH);
 
         const { data: staleAnalysing, error: aErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, processing_phase, attempt_count")
+          .select("id, updated_at, created_at, processing_phase, attempt_count")
           .eq("processing_phase", "analysing")
           .lt("updated_at", analysingCutoff)
           .limit(MAX_BATCH);
@@ -74,22 +83,30 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
         for (const take of candidates) {
           const attempts = take.attempt_count ?? 0;
+          const ageSeconds = (now - new Date(take.created_at).getTime()) / 1000;
+          const exceededAttempts = attempts >= MAX_ATTEMPTS;
+          const exceededClock = ageSeconds >= MAX_TOTAL_AGE_SECONDS;
 
-          // Cost guard: if we've already retried this take too many times,
-          // park it in `error` instead of rescheduling forever.
-          if (attempts >= MAX_ATTEMPTS) {
+          // Cost / wall-clock guard: park in `error` once either limit is hit.
+          if (exceededAttempts || exceededClock) {
             const { error: failErr } = await supabaseAdmin
               .from("takes")
               .update({
                 status: "error",
                 processing_phase: "error",
-                error_message: `Analysis abandoned after ${attempts} attempts. Please retry manually.`,
+                error_message:
+                  "We couldn't prepare your video in time. Please retry.",
               })
               .eq("id", take.id);
             if (failErr) {
               console.error("reconcile-stale-takes give-up update failed", { takeId: take.id, failErr });
             } else {
-              console.warn("reconcile-stale-takes giving up on take", { takeId: take.id, attempts });
+              console.warn("reconcile-stale-takes giving up on take", {
+                takeId: take.id,
+                attempts,
+                ageSeconds: Math.round(ageSeconds),
+                reason: exceededClock ? "wall-clock" : "attempts",
+              });
               giveUp.push(take.id);
             }
             continue;
