@@ -4,7 +4,7 @@
 //
 // Defensive: never throws on parse failure; returns a minimal fallback.
 
-import type { ExtractedBrief, AuditionType } from "@/lib/audition-rules";
+import type { ExtractedBrief, AuditionType, MaterialPolicy } from "@/lib/audition-rules";
 
 export type ExtractionConfidence = "low" | "medium" | "high";
 export type TimeLimitSource = "explicit" | "none";
