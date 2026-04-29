@@ -363,45 +363,10 @@ function PhaseStep({ label, active, done }: { label: string; active: boolean; do
 
 function TakeView({ take }: { take: Take }) {
   if (take.status === "pending" || take.status === "processing") {
-    const phase = take.processing_phase ?? "uploading";
-    const copy =
-      phase === "uploading"
-        ? {
-            title: "Uploading your tape…",
-            sub: "Sending to secure storage. This is the only network step that depends on your connection.",
-          }
-        : phase === "transcoding"
-          ? {
-              title: "Optimising your video…",
-              sub: "Standardising format for fast, accurate analysis. Your performance is not altered. Usually 1–3 minutes.",
-            }
-          : {
-              title: "Watching your tape…",
-              sub: "Reading the brief, checking technicals, writing notes. Usually under a minute.",
-            };
-    return (
-      <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
-        <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-        <p className="mt-4 font-display text-lg font-semibold">{copy.title}</p>
-        <p className="mt-1 text-sm text-muted-foreground">{copy.sub}</p>
-        <div className="mx-auto mt-6 max-w-xs space-y-1.5 text-left">
-          <PhaseStep label="Upload" active={phase === "uploading"} done={phase !== "uploading"} />
-          <PhaseStep
-            label="Optimise"
-            active={phase === "transcoding"}
-            done={phase === "analysing" || phase === "complete"}
-          />
-          <PhaseStep
-            label="Analyse"
-            active={phase === "analysing"}
-            done={phase === "complete"}
-          />
-        </div>
-      </div>
-    );
+    return <ProcessingTakeView take={take} />;
   }
 
-  if (take.status === "error" || (take.status === "processing" && isStuck(take))) {
+  if (take.status === "error") {
     return <FailedTakeView take={take} />;
   }
 
