@@ -281,9 +281,7 @@ export async function runProcessTake(
   if (take.status === "complete") {
     return { ok: true, alreadyDone: true };
   }
-  // Idempotency: if another worker is already actively analysing this take
-  // (and it hasn't gone stale), bail out. The stale-analysis reconciler will
-  // re-trigger us if needed.
+  // Idempotency: if another worker is already actively analysing this take, bail out.
   if (take.processing_phase === "analysing" && take.status === "processing") {
     console.log("runProcessTake: take already in active analysis, skipping", { takeId });
     return { ok: true, alreadyDone: true };
