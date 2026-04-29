@@ -24,6 +24,10 @@ import { scheduleBackground } from "@/worker-entry";
 const STALE_PENDING_MINUTES = 2;
 const STALE_ANALYSING_MINUTES = 8;
 const MAX_BATCH = 25;
+// Hard cap on how many times the reconciler will retry a single take.
+// Past this, the take is parked in `error` so a stuck row cannot rack up
+// unbounded Gemini calls (cost protection).
+const MAX_ATTEMPTS = 5;
 
 export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
   server: {
@@ -66,7 +70,31 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const candidates = [...(stalePending ?? []), ...(staleAnalysing ?? [])];
         const reconciled: string[] = [];
 
+        const giveUp: string[] = [];
+
         for (const take of candidates) {
+          const attempts = take.attempt_count ?? 0;
+
+          // Cost guard: if we've already retried this take too many times,
+          // park it in `error` instead of rescheduling forever.
+          if (attempts >= MAX_ATTEMPTS) {
+            const { error: failErr } = await supabaseAdmin
+              .from("takes")
+              .update({
+                status: "error",
+                processing_phase: "error",
+                error_message: `Analysis abandoned after ${attempts} attempts. Please retry manually.`,
+              })
+              .eq("id", take.id);
+            if (failErr) {
+              console.error("reconcile-stale-takes give-up update failed", { takeId: take.id, failErr });
+            } else {
+              console.warn("reconcile-stale-takes giving up on take", { takeId: take.id, attempts });
+              giveUp.push(take.id);
+            }
+            continue;
+          }
+
           // Reset back to analysis_pending so runProcessTake will pick it up
           // (its idempotency check skips takes that are actively analysing,
           // so we MUST clear the analysing flag before rescheduling).
@@ -108,6 +136,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           stalePending: stalePending?.length ?? 0,
           staleAnalysing: staleAnalysing?.length ?? 0,
           reconciled,
+          giveUp,
         });
       },
     },
