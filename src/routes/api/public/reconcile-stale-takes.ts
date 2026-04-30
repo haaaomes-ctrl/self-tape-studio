@@ -39,6 +39,11 @@ const MAX_TOTAL_AGE_SECONDS = 600;
 // `video.asset.ready` webhook delivery.
 const STALE_TRANSCODING_MINUTES = 5;
 const TRANSCODING_HARD_FAIL_MINUTES = 15;
+// Uploading-phase orphan threshold. Takes that sit in "uploading" longer than
+// this had their browser tab closed, lost their network, or their direct
+// upload aborted before any Mux webhook fired. The UI shows them as
+// "Uploading your tape…" indefinitely otherwise.
+const STALE_UPLOADING_MINUTES = 15;
 
 type MuxAssetLike = {
   id?: string;
@@ -228,8 +233,23 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           .lt("updated_at", transcodingCutoff)
           .limit(MAX_BATCH);
 
-        if (pErr || aErr || tErr) {
-          console.error("reconcile-stale-takes select failed", { pErr, aErr, tErr });
+        // Uploading-phase orphans: rows whose direct upload never fired any
+        // Mux webhook (tab closed, network died, createMuxDirectUpload failed
+        // before persisting mux_upload_id). Without this scan, the UI shows
+        // "Uploading your tape…" forever.
+        const uploadingCutoff = new Date(now - STALE_UPLOADING_MINUTES * 60_000).toISOString();
+        const { data: staleUploading, error: uErr } = await supabaseAdmin
+          .from("takes")
+          .select(
+            "id, updated_at, created_at, processing_phase, attempt_count, mux_status, mux_asset_id, mux_upload_id, status",
+          )
+          .eq("processing_phase", "uploading")
+          .in("status", ["pending", "processing"])
+          .lt("updated_at", uploadingCutoff)
+          .limit(MAX_BATCH);
+
+        if (pErr || aErr || tErr || uErr) {
+          console.error("reconcile-stale-takes select failed", { pErr, aErr, tErr, uErr });
           return new Response("db error", { status: 500 });
         }
 
@@ -238,6 +258,91 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const giveUp: string[] = [];
         const transcodingRecovered: string[] = [];
         const transcodingForcedError: string[] = [];
+        const uploadingRecovered: string[] = [];
+        const uploadingForcedError: string[] = [];
+
+        // Uploading-phase orphan recovery. Two cases:
+        //   (a) row has a mux_upload_id or mux_asset_id → defer to the same
+        //       Mux-aware recovery used for transcoding orphans (it can
+        //       backfill if the asset is actually ready).
+        //   (b) row has neither → upload was abandoned, mark terminal so the
+        //       UI stops spinning.
+        for (const take of staleUploading ?? []) {
+          const ageSeconds = (now - new Date(take.created_at).getTime()) / 1000;
+          const baseLog = {
+            take_id: take.id,
+            mux_status: take.mux_status,
+            processing_phase: take.processing_phase,
+            age_seconds: Math.round(ageSeconds),
+            has_mux_asset_id: Boolean(take.mux_asset_id),
+            has_upload_id: Boolean(take.mux_upload_id),
+          };
+          console.log("uploading_orphan_checked", baseLog);
+          metric("stuck_uploading", {
+            take_id: take.id,
+            processing_phase: "uploading",
+            duration_ms: Math.round(ageSeconds * 1000),
+          });
+
+          if (take.mux_asset_id || take.mux_upload_id) {
+            // Defer to the Mux-aware recovery path used for transcoding orphans.
+            const recovery = await attemptTranscodingRecovery({
+              id: take.id,
+              mux_asset_id: take.mux_asset_id ?? null,
+              mux_upload_id: take.mux_upload_id ?? null,
+              mux_status: take.mux_status ?? null,
+              processing_phase: take.processing_phase ?? null,
+              ageSeconds,
+            });
+            if (recovery.kind === "recovered") {
+              metric("mux_recovery_success", { take_id: take.id, source: "uploading_orphan" });
+              uploadingRecovered.push(take.id);
+              continue;
+            }
+            // Fall through to terminal failure if Mux says it's truly gone or
+            // the row is past the hard cap.
+            const hardCap = ageSeconds >= TRANSCODING_HARD_FAIL_MINUTES * 60;
+            if (!(recovery.kind === "terminal" || hardCap)) {
+              continue;
+            }
+          }
+
+          // Terminal: abandoned upload OR Mux says it's gone.
+          const { error: failErr } = await supabaseAdmin
+            .from("takes")
+            .update({
+              status: "error",
+              processing_phase: "error",
+              error_message:
+                "[failure_code:upload_abandoned] Your upload didn't finish. Please try again.",
+            })
+            .eq("id", take.id);
+          if (failErr) {
+            console.error("uploading_orphan_forced_error update failed", { ...baseLog, failErr });
+            metric("phase_transition_failure", {
+              take_id: take.id,
+              reason: "uploading_force_error_db_failed",
+            });
+            continue;
+          }
+          console.warn("uploading_orphan_forced_error", {
+            ...baseLog,
+            failure_code: "upload_abandoned",
+          });
+          metric("analysis_stale_timeout", {
+            take_id: take.id,
+            processing_phase: "uploading",
+            failure_code: "upload_abandoned",
+            age_seconds: Math.round(ageSeconds),
+          });
+          metric("reconciler_forced_error_count", {
+            take_id: take.id,
+            processing_phase: "uploading",
+            failure_code: "upload_abandoned",
+          });
+          uploadingForcedError.push(take.id);
+        }
+
 
         // Transcoding orphan recovery: separate loop because the recovery
         // path talks to Mux and may backfill rather than re-run analysis.
@@ -465,10 +570,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           stalePending: stalePending?.length ?? 0,
           staleAnalysing: staleAnalysing?.length ?? 0,
           staleTranscoding: staleTranscoding?.length ?? 0,
+          staleUploading: staleUploading?.length ?? 0,
           reconciled,
           giveUp,
           transcodingRecovered,
           transcodingForcedError,
+          uploadingRecovered,
+          uploadingForcedError,
         });
       },
     },
