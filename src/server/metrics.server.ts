@@ -45,6 +45,7 @@ export type MetricName =
   | "preparation_started"
   | "preparation_completed"
   | "preparation_timeout"
+  | "preparation_deferred"
   | "transcoding_to_analysis_pending"
   // Gemini / AI
   | "gemini_started"
