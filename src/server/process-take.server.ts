@@ -1386,7 +1386,8 @@ export async function runProcessTake(
       model: currentModel,
     });
 
-    let report: Record<string, unknown> & { [k: string]: unknown };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let report: any;
     try {
       const json = await aiResp.json();
       const choice = json.choices?.[0];
@@ -1398,7 +1399,7 @@ export async function runProcessTake(
         );
       }
       try {
-        report = JSON.parse(toolCall.function.arguments) as typeof report;
+        report = JSON.parse(toolCall.function.arguments);
       } catch (parseErr) {
         if (choice?.finish_reason === "length") {
           throw new AnalysisFailure(
