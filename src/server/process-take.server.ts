@@ -438,6 +438,46 @@ function ensureValidMuxMp4Url(params: {
   throw new Error("[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.");
 }
 
+type MuxProbeMethod = "head" | "range_get" | "browser_get";
+
+type MuxProbeHeaderSnapshot = {
+  contentType: string | null;
+  contentLength: string | null;
+  acceptRanges: string | null;
+  cacheControl: string | null;
+  via: string | null;
+};
+
+const MUX_NO_CACHE_HEADERS = {
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+};
+
+const MUX_BROWSER_LIKE_HEADERS = {
+  ...MUX_NO_CACHE_HEADERS,
+  Accept: "video/mp4,video/*,*/*",
+  "User-Agent": "Mozilla/5.0",
+};
+
+function snapshotMuxProbeHeaders(response: Response | null): MuxProbeHeaderSnapshot | null {
+  if (!response) return null;
+  return {
+    contentType: response.headers.get("content-type"),
+    contentLength: response.headers.get("content-length"),
+    acceptRanges: response.headers.get("accept-ranges"),
+    cacheControl: response.headers.get("cache-control"),
+    via: response.headers.get("via"),
+  };
+}
+
+async function disposeMuxProbeResponse(response: Response | null): Promise<void> {
+  try {
+    await response?.body?.cancel();
+  } catch {
+    // Ignore probe body disposal errors — probe success is determined from headers/status only.
+  }
+}
+
 async function pickAnalysisSource(
   take: {
     id: string;
