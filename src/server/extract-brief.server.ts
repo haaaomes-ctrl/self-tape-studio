@@ -185,6 +185,7 @@ function buildSafeFallbackBrief(briefText: string): ExtractedBriefWithMeta {
   const brief: ExtractedBrief & {
     time_limit_source?: TimeLimitSource;
     material_policy?: MaterialPolicy;
+    _source?: BriefExtractionSource;
   } = {
     audition_type: "unknown",
     role_name: null,
@@ -208,12 +209,14 @@ function buildSafeFallbackBrief(briefText: string): ExtractedBriefWithMeta {
     confidentiality_notes: null,
     time_limit_source: timeLimitSource,
     material_policy: materialPolicy,
+    _source: "fallback",
   } as ExtractedBrief & {
     time_limit_source?: TimeLimitSource;
     material_policy?: MaterialPolicy;
+    _source?: BriefExtractionSource;
   };
 
-  return { brief, extraction_confidence: "low" };
+  return { brief, extraction_confidence: "low", source: "fallback" };
 }
 
 export async function extractBriefFromText(
