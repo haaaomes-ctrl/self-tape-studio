@@ -7,7 +7,13 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { muxMp4Url, muxMp4LegacyUrl, normaliseMuxMp4Url } from "./mux.server";
+import {
+  buildMuxHighestMp4Url,
+  buildMuxLegacyHighMp4Url,
+  isValidMuxMp4Url,
+  muxMp4Url,
+  normaliseMuxMp4Url,
+} from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
@@ -377,6 +383,64 @@ Output via the submit_audition_report tool. The casting_headline is ONE plain se
 
 type Tier = "standard" | "high" | "original";
 
+function resolveCanonicalMuxProbeUrls(take: {
+  mux_playback_id: string | null;
+  mux_mp4_standard_url: string | null;
+  mux_mp4_high_url: string | null;
+}): {
+  primaryUrl: string | null;
+  legacyUrl: string | null;
+  usedStoredPrimaryUrl: boolean;
+  usedStoredLegacyUrl: boolean;
+} {
+  if (take.mux_playback_id) {
+    return {
+      primaryUrl: buildMuxHighestMp4Url(take.mux_playback_id),
+      legacyUrl: buildMuxLegacyHighMp4Url(take.mux_playback_id),
+      usedStoredPrimaryUrl: false,
+      usedStoredLegacyUrl: false,
+    };
+  }
+
+  const primaryUrl = take.mux_mp4_standard_url
+    ? normaliseMuxMp4Url(take.mux_mp4_standard_url)
+    : null;
+  const legacyUrl = take.mux_mp4_high_url ? normaliseMuxMp4Url(take.mux_mp4_high_url) : null;
+
+  return {
+    primaryUrl,
+    legacyUrl,
+    usedStoredPrimaryUrl: Boolean(primaryUrl),
+    usedStoredLegacyUrl: Boolean(legacyUrl),
+  };
+}
+
+function ensureValidMuxMp4Url(params: {
+  url: string | null;
+  playbackId: string | null;
+  kind: "primary" | "legacy" | "selected" | "gemini";
+}): string {
+  const normalisedUrl = params.url ? normaliseMuxMp4Url(params.url) : null;
+  if (normalisedUrl && isValidMuxMp4Url(normalisedUrl)) {
+    return normalisedUrl;
+  }
+
+  if (params.playbackId) {
+    const rebuilt =
+      params.kind === "legacy"
+        ? buildMuxLegacyHighMp4Url(params.playbackId)
+        : buildMuxHighestMp4Url(params.playbackId);
+    if (isValidMuxMp4Url(rebuilt)) {
+      return rebuilt;
+    }
+  }
+
+  throw new AnalysisFailure(
+    "mux_invalid_mp4_url",
+    "Invalid Mux MP4 URL generated. Please try again.",
+  );
+}
+
 async function pickAnalysisSource(
   take: {
     id: string;
@@ -394,14 +458,37 @@ async function pickAnalysisSource(
     throw new Error("Video is still being optimised — please try again in a moment.");
   }
 
-  if (attempt === 0 && take.mux_mp4_standard_url) {
-    return { url: normaliseMuxMp4Url(take.mux_mp4_standard_url), tier: "standard" };
+  const canonicalUrls = resolveCanonicalMuxProbeUrls(take);
+
+  if (attempt === 0 && canonicalUrls.primaryUrl) {
+    return {
+      url: ensureValidMuxMp4Url({
+        url: canonicalUrls.primaryUrl,
+        playbackId: take.mux_playback_id,
+        kind: "primary",
+      }),
+      tier: "standard",
+    };
   }
-  if (attempt === 1 && take.mux_mp4_high_url) {
-    return { url: normaliseMuxMp4Url(take.mux_mp4_high_url), tier: "high" };
+  if (attempt === 1 && canonicalUrls.legacyUrl) {
+    return {
+      url: ensureValidMuxMp4Url({
+        url: canonicalUrls.legacyUrl,
+        playbackId: take.mux_playback_id,
+        kind: "legacy",
+      }),
+      tier: "high",
+    };
   }
   if (allowOriginal && take.mux_playback_id) {
-    return { url: normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, "high")), tier: "original" };
+    return {
+      url: ensureValidMuxMp4Url({
+        url: buildMuxHighestMp4Url(take.mux_playback_id),
+        playbackId: take.mux_playback_id,
+        kind: "primary",
+      }),
+      tier: "original",
+    };
   }
 
   throw new Error(
