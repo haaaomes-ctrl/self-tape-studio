@@ -162,6 +162,53 @@ time_limit_seconds: ONLY populate when the brief explicitly states a numeric dur
 Accent fields: set accent_required="yes" only when the brief explicitly names a required accent or dialect, "no" if it explicitly says any accent is fine, otherwise "unknown". Set accent_importance="central" only when the brief makes accent essential (e.g. "must be authentic ___", "native speaker"); "preferred" when softly preferred ("ideally ___", "RP welcome"); "unspecified" otherwise. Do not infer importance from a casual mention.
 Set extraction_confidence honestly: 'high' only when the brief is explicit; 'low' when it is short, vague, or you had to guess multiple fields.`;
 
+const BRIEF_EXTRACTION_TIMEOUT_MS = Number(
+  process.env.BRIEF_EXTRACTION_TIMEOUT_MS ?? 30000,
+);
+
+// Build a safe low-confidence fallback when the AI extraction times out or
+// fails. Uses the deterministic helpers (explicit-duration parser +
+// material-policy classifier) so we still get useful structured signal
+// without blocking the main analysis.
+function buildSafeFallbackBrief(briefText: string): ExtractedBriefWithMeta {
+  const explicitDuration = parseExplicitDuration(briefText);
+  const timeLimitSource: TimeLimitSource = explicitDuration != null ? "explicit" : "none";
+  const materialPolicy = detectMaterialPolicy(briefText, null);
+
+  const brief: ExtractedBrief & {
+    time_limit_source?: TimeLimitSource;
+    material_policy?: MaterialPolicy;
+  } = {
+    audition_type: "unknown",
+    role_name: null,
+    show_or_project: null,
+    character_descriptors: [],
+    tone_or_world: null,
+    performance_style: null,
+    accent_or_dialect_required: null,
+    accent_required: "unknown",
+    accent_importance: "unspecified",
+    vocal_style_required: null,
+    movement_or_dance_required: null,
+    reader_required: "unspecified",
+    slate_required: "unspecified",
+    orientation_required: null,
+    framing_required: null,
+    time_limit_seconds: explicitDuration,
+    explicit_instructions: [],
+    material_requested: null,
+    recall_dates: null,
+    confidentiality_notes: null,
+    time_limit_source: timeLimitSource,
+    material_policy: materialPolicy,
+  } as ExtractedBrief & {
+    time_limit_source?: TimeLimitSource;
+    material_policy?: MaterialPolicy;
+  };
+
+  return { brief, extraction_confidence: "low" };
+}
+
 export async function extractBriefFromText(
   briefText: string,
 ): Promise<ExtractedBriefWithMeta | null> {
@@ -171,6 +218,10 @@ export async function extractBriefFromText(
     return null;
   }
   if (!briefText || briefText.trim().length < 5) return null;
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), BRIEF_EXTRACTION_TIMEOUT_MS);
+  let timedOut = false;
 
   try {
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -189,15 +240,19 @@ export async function extractBriefFromText(
         tool_choice: { type: "function", function: { name: "extract_brief" } },
         max_tokens: 2048,
       }),
+      signal: controller.signal,
     });
 
     if (!resp.ok) {
-      console.warn("extractBriefFromText: gateway error", resp.status);
-      return null;
+      console.warn("[take-pipeline] brief_extraction_failed", {
+        status: resp.status,
+        timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
+      });
+      return buildSafeFallbackBrief(briefText);
     }
     const json = await resp.json();
     const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (!args) return null;
+    if (!args) return buildSafeFallbackBrief(briefText);
     const parsed = JSON.parse(args) as ExtractedBrief & {
       extraction_confidence?: ExtractionConfidence;
     };
@@ -273,7 +328,22 @@ export async function extractBriefFromText(
 
     return { brief: briefOut, extraction_confidence: conf };
   } catch (err) {
-    console.warn("extractBriefFromText: failed", err);
-    return null;
+    timedOut =
+      (err instanceof Error && err.name === "AbortError") ||
+      controller.signal.aborted;
+    if (timedOut) {
+      console.warn("[take-pipeline] brief_extraction_timeout", {
+        timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
+      });
+    } else {
+      console.warn("[take-pipeline] brief_extraction_failed", {
+        reason: "network_or_parse_error",
+        error_name: err instanceof Error ? err.name : "unknown",
+        timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
+      });
+    }
+    return buildSafeFallbackBrief(briefText);
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 }
