@@ -1895,6 +1895,12 @@ export async function runProcessTake(
       duration_ms: e2eDurationMs,
       tier,
     });
+    metric("analysis_terminal", {
+      take_id: takeId,
+      reason: "complete",
+      duration_ms: e2eDurationMs,
+      tier,
+    });
 
     return { ok: true, tier };
   } catch (err) {
