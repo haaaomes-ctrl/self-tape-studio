@@ -1826,6 +1826,7 @@ export async function runProcessTake(
         processing_phase: preWrite?.processing_phase ?? null,
         reason: "state_changed_pre_write",
       });
+      terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
 
