@@ -794,7 +794,7 @@ export async function runProcessTake(
     //   6–10 min  → every 30s  ( 8 probes)
     //
     // HTTP status handling:
-    //   200       → ready, proceed to Gemini
+    //   200/206   → ready, proceed to Gemini
     //   404       → still preparing, normal — keep polling, do not count as failure
     //   403       → possibly transient signing/access — retry with backoff,
     //               fail if persistent (>=5 consecutive)
@@ -855,10 +855,13 @@ export async function runProcessTake(
       }
       probeAttempt += 1;
       let attemptStatus: number | null = null;
+      let headStatus: number | null = null;
+      let rangeStatus: number | null = null;
       const probeStartedAt = Date.now();
       try {
         const probe = await fetch(probeUrl, { method: "HEAD" });
-        attemptStatus = probe.status;
+        headStatus = probe.status;
+        attemptStatus = headStatus;
       } catch (probeErr) {
         // Network error — transient.
         console.warn("mux_prepare_probe_network_error", {
@@ -868,11 +871,44 @@ export async function runProcessTake(
           elapsed_ms: Date.now() - probeStartedWallclock,
         });
       }
+      if (
+        (attemptStatus === null || attemptStatus === 403 || attemptStatus === 404 || attemptStatus === 405) &&
+        probeUrl.includes("stream.mux.com/")
+      ) {
+        try {
+          const rangeProbe = await fetch(probeUrl, {
+            method: "GET",
+            headers: { Range: "bytes=0-0" },
+          });
+          rangeStatus = rangeProbe.status;
+          if (rangeStatus >= 200 && rangeStatus < 300) {
+            attemptStatus = rangeStatus;
+          }
+          console.log("mux_prepare_probe_range_fallback", {
+            ...baseLog,
+            probe_attempt: probeAttempt,
+            head_status: headStatus,
+            range_status: rangeStatus,
+            elapsed_ms: Date.now() - probeStartedWallclock,
+          });
+        } catch (rangeProbeErr) {
+          console.warn("mux_prepare_probe_range_network_error", {
+            ...baseLog,
+            probe_attempt: probeAttempt,
+            head_status: headStatus,
+            probe_error:
+              rangeProbeErr instanceof Error ? rangeProbeErr.message : String(rangeProbeErr),
+            elapsed_ms: Date.now() - probeStartedWallclock,
+          });
+        }
+      }
       probeStatus = attemptStatus;
       console.log("mux_prepare_probe", {
         ...baseLog,
         probe_attempt: probeAttempt,
         http_status: attemptStatus,
+        head_status: headStatus,
+        range_status: rangeStatus,
         probe_duration_ms: Date.now() - probeStartedAt,
         elapsed_ms: Date.now() - probeStartedWallclock,
       });
