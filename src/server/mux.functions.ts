@@ -38,6 +38,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { takeId } = data;
     const { userId } = context;
+    metric("upload_url_requested", { take_id: takeId });
 
     // 1. Quota gate
     try {
@@ -51,6 +52,13 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
           cap: err.cap,
           count: err.count,
         });
+        metric("quota_rejection", {
+          take_id: takeId,
+          reason: err.scope,
+          cap: err.cap,
+          count: err.count,
+        });
+        metric("upload_url_failure", { take_id: takeId, reason: "quota_exceeded" });
         throw new Error(`QUOTA_EXCEEDED: ${err.message}`);
       }
       throw err;
