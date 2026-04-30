@@ -1053,6 +1053,7 @@ export async function runProcessTake(
       unsupported_claims_removed: 0,
       unsupported_claims_rewritten: 0,
     };
+    let twoStepTimestampsDropped = 0;
     let evidencePassDurationMs = 0;
     let reportPolishDurationMs = 0;
     let twoStepFallbackUsed = false;
