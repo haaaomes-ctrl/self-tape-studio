@@ -961,23 +961,6 @@ export async function runProcessTake(
       });
       return { ok: false, error: userMessage };
     }
-      metric("analysis_failed", {
-        take_id: takeId,
-        processing_phase: "analysis_pending",
-        reason: "preparation_timeout",
-      });
-      const userMessage =
-        hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
-      await supabaseAdmin
-        .from("takes")
-        .update({
-          status: "error",
-          processing_phase: "error",
-          error_message: userMessage,
-        })
-        .eq("id", takeId);
-      return { ok: false, error: userMessage };
-    }
     if (retryCount > 0) {
       console.log("auto_retry_succeeded", {
         ...baseLog,
