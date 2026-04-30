@@ -233,8 +233,69 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
         const candidates = [...(stalePending ?? []), ...(staleAnalysing ?? [])];
         const reconciled: string[] = [];
-
         const giveUp: string[] = [];
+        const transcodingRecovered: string[] = [];
+        const transcodingForcedError: string[] = [];
+
+        // Transcoding orphan recovery: separate loop because the recovery
+        // path talks to Mux and may backfill rather than re-run analysis.
+        for (const take of staleTranscoding ?? []) {
+          const ageSeconds = (now - new Date(take.created_at).getTime()) / 1000;
+          const baseLog = {
+            take_id: take.id,
+            mux_status: take.mux_status,
+            processing_phase: take.processing_phase,
+            age_seconds: Math.round(ageSeconds),
+            has_mux_asset_id: Boolean(take.mux_asset_id),
+            has_upload_id: Boolean(take.mux_upload_id),
+          };
+          console.log("transcoding_orphan_checked", baseLog);
+
+          const recovery = await attemptTranscodingRecovery({
+            id: take.id,
+            mux_asset_id: take.mux_asset_id ?? null,
+            mux_upload_id: take.mux_upload_id ?? null,
+            mux_status: take.mux_status ?? null,
+            processing_phase: take.processing_phase ?? null,
+            ageSeconds,
+          });
+
+          if (recovery.kind === "recovered") {
+            transcodingRecovered.push(take.id);
+            continue;
+          }
+
+          const hardCap = ageSeconds >= TRANSCODING_HARD_FAIL_MINUTES * 60;
+          const shouldForceError =
+            recovery.kind === "terminal" ||
+            (hardCap && (recovery.kind === "unrecoverable" || recovery.kind === "not_ready"));
+
+          if (!shouldForceError) {
+            continue; // Leave it for another reconciler pass.
+          }
+
+          const { error: failErr } = await supabaseAdmin
+            .from("takes")
+            .update({
+              status: "error",
+              processing_phase: "error",
+              error_message:
+                "We couldn’t prepare your video in time. Please try again.",
+            })
+            .eq("id", take.id);
+          if (failErr) {
+            console.error("transcoding_orphan_forced_error update failed", { ...baseLog, failErr });
+            continue;
+          }
+          console.warn("transcoding_orphan_forced_error", {
+            ...baseLog,
+            reason: recovery.kind,
+            detail: "reason" in recovery ? recovery.reason : undefined,
+            mux_asset_status: "muxAssetStatus" in recovery ? recovery.muxAssetStatus : undefined,
+            mux_upload_status: "muxUploadStatus" in recovery ? recovery.muxUploadStatus : undefined,
+          });
+          transcodingForcedError.push(take.id);
+        }
 
         for (const take of candidates) {
           const attempts = take.attempt_count ?? 0;
