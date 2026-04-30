@@ -1579,15 +1579,6 @@ export async function runProcessTake(
     }
 
     // ---- Parse stage (timed, tagged) ----
-    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + persist combined; we apply
-    // it as a wall-clock deadline starting here. If we cross it, we tag
-    // analysis_parse_failed or analysis_persist_failed depending on where.
-    const POST_AI_FINALISE_TIMEOUT_MS = Number(
-      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 20_000,
-    );
-    const finaliseStartedAt = Date.now();
-    const finaliseExceeded = () =>
-      Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
 
     const parseStartedAt = Date.now();
     metric("analysis_parse_started", { take_id: takeId, model: currentModel });
