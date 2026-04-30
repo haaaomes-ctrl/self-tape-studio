@@ -742,13 +742,24 @@ export async function runProcessTake(
     //               fail if persistent (>=5 consecutive)
     //   5xx / net → transient — keep polling
     //   other 4xx → hard failure, stop immediately
-    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min
+    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap
+    // Static rendition cap: the asset is already `ready` by webhook contract,
+    // so the static MP4 (highest.mp4 / legacy high.mp4) should appear inside
+    // ~120s. Beyond that we terminate with mux_static_rendition_timeout.
+    const MUX_STATIC_RENDITION_TIMEOUT_MS = Number(
+      process.env.MUX_STATIC_RENDITION_TIMEOUT_MS ?? 120_000,
+    );
     const probeStartedWallclock = Date.now();
     const intervalMsFor = (elapsedMs: number): number => {
       if (elapsedMs < 2 * 60_000) return 10_000;
       if (elapsedMs < 6 * 60_000) return 20_000;
       return 30_000;
     };
+    metric("mux_static_rendition_waiting", {
+      take_id: takeId,
+      processing_phase: "analysis_pending",
+      tier,
+    });
     console.log("mux_prepare_probe_loop_start", {
       ...baseLog,
       tier,
