@@ -197,6 +197,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         }
 
         const now = Date.now();
+        metric("reconciler_run", { reason: "cron_tick" });
         const pendingCutoff = new Date(now - STALE_PENDING_SECONDS * 1_000).toISOString();
         const analysingCutoff = new Date(now - STALE_ANALYSING_MINUTES * 60_000).toISOString();
 
