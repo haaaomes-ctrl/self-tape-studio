@@ -1110,7 +1110,23 @@ export async function runProcessTake(
       }
     }
 
-    const resolvedProbeUrl = normaliseMuxMp4Url(selectedUrl);
+    let resolvedProbeUrl: string;
+    try {
+      resolvedProbeUrl = ensureValidMuxMp4Url({
+        url: selectedUrl,
+        playbackId: take.mux_playback_id,
+        kind: "selected",
+      });
+    } catch {
+      await markTerminalFailure(
+        "mux_invalid_mp4_url",
+        "Invalid Mux MP4 URL generated. Please try again.",
+      );
+      return {
+        ok: false,
+        error: "Invalid Mux MP4 URL generated. Please try again.",
+      };
+    }
 
     if (!probeOk) {
       const totalElapsed = Date.now() - probeStartedWallclock;
@@ -1344,7 +1360,11 @@ export async function runProcessTake(
       max_retries: ANALYSIS_MAX_RETRIES,
     });
 
-    let urlForCall = resolvedProbeUrl;
+    let urlForCall = ensureValidMuxMp4Url({
+      url: resolvedProbeUrl,
+      playbackId: take.mux_playback_id,
+      kind: "gemini",
+    });
     while (true) {
       // Total-budget guard BEFORE each attempt — prevents starting an attempt
       // we know we can't complete inside the wall-clock budget.
@@ -1419,8 +1439,11 @@ export async function runProcessTake(
           "AI gateway rejected URL; retrying once with fresh Mux URL",
           errText.slice(0, 200),
         );
-        const freshQuality = tier === "standard" ? "medium" : "high";
-        urlForCall = normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, freshQuality));
+        urlForCall = ensureValidMuxMp4Url({
+          url: buildMuxHighestMp4Url(take.mux_playback_id),
+          playbackId: take.mux_playback_id,
+          kind: "gemini",
+        });
         // Roll back the attempt counter so this doesn't consume a retry slot.
         geminiAttempt -= 1;
         continue;
