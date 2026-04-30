@@ -1,0 +1,1 @@
+UPDATE public.takes SET status='pending', processing_phase='analysis_pending', error_message=NULL, updated_at=now() - interval '5 minutes' WHERE id='a3af14a7-8fcf-46cb-9285-9038f88078a8';
