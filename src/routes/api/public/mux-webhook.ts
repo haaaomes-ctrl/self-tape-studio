@@ -283,9 +283,10 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
           errors?: { messages?: string[] };
         };
 
-        // takeId may live on the asset (passthrough) OR on the upload's
-        // new_asset_settings.passthrough (for video.upload.* events).
-        const takeId = data.passthrough ?? data.new_asset_settings?.passthrough;
+        // takeId may live on the asset (passthrough), the upload's
+        // new_asset_settings.passthrough (for video.upload.* events), or must
+        // be recovered via mux_asset_id for static-rendition events.
+        const takeId = await resolveTakeIdForMuxEvent(data);
         if (!takeId) return new Response("ok", { status: 200 });
 
         if (type === "video.upload.asset_created") {
@@ -445,6 +446,20 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             `runProcessTake:${takeId}`,
           );
           return new Response("ok", { status: 200 });
+        }
+
+        if (type === "video.asset.static_rendition.ready") {
+          const assetId = data.asset_id ?? null;
+          if (!assetId) {
+            console.warn("static_rendition.ready missing asset_id", { takeId });
+            return new Response("ok", { status: 200 });
+          }
+
+          return scheduleTakeFromStaticRenditionReady({
+            assetId,
+            receivedAt,
+            takeId,
+          });
         }
 
         if (type === "video.asset.errored" || type === "video.upload.errored") {
