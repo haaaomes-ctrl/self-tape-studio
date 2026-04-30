@@ -64,6 +64,12 @@ export const retryProcessTake = createServerFn({ method: "POST" })
         processing_phase: current.processing_phase,
         attempt_count: current.attempt_count ?? 0,
       });
+      metric("already_running_skip", {
+        take_id: data.takeId,
+        processing_phase: current.processing_phase,
+        attempt: current.attempt_count ?? 0,
+        reason: "user_retry",
+      });
       return { ok: true as const, alreadyRunning: true as const };
     }
     try {
