@@ -1163,6 +1163,8 @@ export async function runProcessTake(
         } else {
           reportPolishDurationMs = polishResult.durationMs;
           twoStepReport = polishResult.report;
+          // Force mode from server-known truth (not from the polish model).
+          twoStepReport.mode = audition.brief ? "brief" : "baseline";
           // Locked-field enforcement (PRIMARY safeguard).
           const locked = enforceLockedFields(twoStepReport, twoStepEvidence);
           twoStepEnforcement.locked_field_overwrites = locked.overwrites;
