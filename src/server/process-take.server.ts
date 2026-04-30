@@ -604,31 +604,89 @@ export async function runProcessTake(
 
   // Structured brief extraction (cached on the audition row). Skip in baseline
   // mode (no brief) or when we've already extracted previously.
-  const cachedBrief = ((audition as { extracted_brief?: ExtractedBrief | null }).extracted_brief ??
-    null);
-  let extractedBrief: ExtractedBrief | null = cachedBrief;
-  let extractionConfidence: "low" | "medium" | "high" | "unknown" = cachedBrief
-    ? ((cachedBrief as ExtractedBrief & { _extraction_confidence?: "low" | "medium" | "high" })
-        ._extraction_confidence ?? "unknown")
+  //
+  // Cache reuse rules:
+  //   - Reuse only when _source !== "fallback" (i.e. real AI-sourced brief).
+  //   - Treat as cache miss if _source === "fallback", OR if the cached brief
+  //     looks like a degraded fallback (low confidence + audition_type unknown).
+  //   - On re-extract: AI success overwrites the cached fallback. AI failure
+  //     uses fallback for THIS run only and does NOT overwrite an existing
+  //     AI-sourced cache. If there is no cache at all, fallback is persisted
+  //     with _source="fallback" so it is never treated as permanent.
+  type CachedBrief = ExtractedBrief & {
+    _extraction_confidence?: "low" | "medium" | "high";
+    _source?: "ai" | "fallback";
+  };
+  const rawCached = ((audition as { extracted_brief?: CachedBrief | null }).extracted_brief ??
+    null) as CachedBrief | null;
+  const cachedSource = rawCached?._source;
+  const cachedConfidence = rawCached?._extraction_confidence;
+  const looksLikeDegradedFallback =
+    rawCached != null &&
+    cachedConfidence === "low" &&
+    rawCached.audition_type === "unknown";
+  const cacheReusable =
+    rawCached != null && cachedSource !== "fallback" && !looksLikeDegradedFallback;
+
+  let extractedBrief: ExtractedBrief | null = cacheReusable ? rawCached : null;
+  let extractionConfidence: "low" | "medium" | "high" | "unknown" = cacheReusable
+    ? (cachedConfidence ?? "unknown")
     : "unknown";
+
+  if (cacheReusable) {
+    console.info("[take-pipeline] brief_extraction_cache_hit_ai", {
+      audition_id: audition.id,
+      extraction_confidence: cachedConfidence ?? "unknown",
+    });
+  } else if (rawCached != null) {
+    console.info("[take-pipeline] brief_extraction_cache_miss_fallback", {
+      audition_id: audition.id,
+      cached_source: cachedSource ?? "legacy",
+      cached_confidence: cachedConfidence ?? "unknown",
+    });
+  }
+
   if (!extractedBrief && audition.brief && audition.brief.trim().length > 5) {
     const result = await extractBriefFromText(audition.brief);
     if (result) {
       extractedBrief = result.brief;
       extractionConfidence = result.extraction_confidence;
-      // Persist the brief plus the confidence (as a leading underscore field
-      // so it round-trips without polluting the typed schema).
-      await supabaseAdmin
-        .from("auditions")
-        .update({
-          extracted_brief: {
-            ...result.brief,
-            _extraction_confidence: result.extraction_confidence,
-          } as never,
-        })
-        .eq("id", audition.id);
+
+      const hasExistingAiCache = rawCached != null && cachedSource === "ai";
+      const shouldPersist =
+        result.source === "ai"
+          ? true // AI success: always persist (overwrites any fallback cache)
+          : !hasExistingAiCache; // fallback: persist only if no AI cache exists
+
+      if (shouldPersist) {
+        await supabaseAdmin
+          .from("auditions")
+          .update({
+            extracted_brief: {
+              ...result.brief,
+              _extraction_confidence: result.extraction_confidence,
+              _source: result.source,
+            } as never,
+          })
+          .eq("id", audition.id);
+        if (result.source === "ai") {
+          console.info("[take-pipeline] brief_extraction_ai_cached", {
+            audition_id: audition.id,
+            extraction_confidence: result.extraction_confidence,
+          });
+        }
+      }
+
+      if (result.source === "fallback") {
+        console.info("[take-pipeline] brief_extraction_fallback_used", {
+          audition_id: audition.id,
+          persisted: shouldPersist,
+          had_existing_ai_cache: hasExistingAiCache,
+        });
+      }
     }
   }
+
 
   // Stay in analysis_pending while we poll for the static MP4 rendition.
   // We DON'T flip to "analysing" yet — that would mislead the UI into
