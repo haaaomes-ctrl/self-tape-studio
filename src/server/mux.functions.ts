@@ -157,6 +157,16 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         static_renditions_requested: true,
         passthrough_present: true,
       });
+      metric("mux_upload_error", {
+        take_id: takeId,
+        http_status: status,
+        reason: e?.type ?? "unknown",
+      });
+      metric("upload_url_failure", {
+        take_id: takeId,
+        reason: `mux_api_${status}`,
+        http_status: status,
+      });
       throw new Error(
         `MUX_API_${status}: ${e?.message ?? "Mux rejected the upload request."}`,
       );
@@ -167,6 +177,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         take_id: takeId,
         mux_upload_id: upload?.id,
       });
+      metric("upload_url_failure", { take_id: takeId, reason: "no_url_returned" });
       throw new Error("MUX_API_500: Mux did not return an upload URL.");
     }
 
@@ -187,6 +198,8 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
       static_renditions_accepted: true,
       passthrough_present: true,
     });
+    metric("mux_upload_created", { take_id: takeId });
+    metric("upload_url_success", { take_id: takeId, reused: false });
 
     return { uploadUrl: upload.url, uploadId: upload.id };
   });
