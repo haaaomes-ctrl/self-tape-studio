@@ -142,6 +142,14 @@ export const resetTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => {
     await assertTakeOwnership(data.takeId, context.userId, "resetTake");
+    // Snapshot the current phase so we can attribute the cancellation in
+    // the metrics stream (cancel-during-uploading vs cancel-during-prepare
+    // vs cancel-during-analysing).
+    const { data: pre } = await supabaseAdmin
+      .from("takes")
+      .select("processing_phase, created_at")
+      .eq("id", data.takeId)
+      .single();
     await supabaseAdmin
       .from("takes")
       .update({
@@ -150,5 +158,13 @@ export const resetTake = createServerFn({ method: "POST" })
         error_message: "Cancelled by user — upload a new take to retry.",
       })
       .eq("id", data.takeId);
+    metric("cancel", {
+      take_id: data.takeId,
+      processing_phase: pre?.processing_phase ?? null,
+      duration_ms: pre?.created_at
+        ? Date.now() - new Date(pre.created_at).getTime()
+        : undefined,
+      reason: "user_initiated",
+    });
     return { ok: true };
   });
