@@ -76,6 +76,7 @@ export type MetricName =
   // State health
   | "stuck_transcoding"
   | "stuck_analysis_pending"
+  | "stuck_uploading"
   | "phase_transition_failure"
   | "analysis_pending_to_analysing"
   // Reconciler
