@@ -78,7 +78,15 @@ export const retryProcessTake = createServerFn({ method: "POST" })
         "retryProcessTake",
       );
     } catch (err) {
-      if (err instanceof QuotaExceededError) throw quotaErrorToResponse(err);
+      if (err instanceof QuotaExceededError) {
+        metric("quota_rejection", {
+          take_id: data.takeId,
+          reason: err.scope,
+          cap: err.cap,
+          count: err.count,
+        });
+        throw quotaErrorToResponse(err);
+      }
       throw err;
     }
     return runProcessTake(data.takeId, data.allowOriginal);
