@@ -298,7 +298,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               status: "error",
               processing_phase: "error",
               error_message:
-                "We couldn’t prepare your video in time. Please try again.",
+                "[failure_code:stale_timeout] This analysis took too long and was stopped. Please try again.",
             })
             .eq("id", take.id);
           if (failErr) {
@@ -312,19 +312,33 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           console.warn("transcoding_orphan_forced_error", {
             ...baseLog,
             reason: recovery.kind,
+            failure_code: "stale_timeout",
             detail: "reason" in recovery ? recovery.reason : undefined,
             mux_asset_status: "muxAssetStatus" in recovery ? recovery.muxAssetStatus : undefined,
             mux_upload_status: "muxUploadStatus" in recovery ? recovery.muxUploadStatus : undefined,
+          });
+          metric("analysis_stale_timeout", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            failure_code: "stale_timeout",
+            age_seconds: Math.round(ageSeconds),
           });
           metric("reconciler_forced_error", {
             take_id: take.id,
             processing_phase: "transcoding",
             reason: recovery.kind,
+            failure_code: "stale_timeout",
+          });
+          metric("reconciler_forced_error_count", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            failure_code: "stale_timeout",
           });
           metric("analysis_failed", {
             take_id: take.id,
             processing_phase: "transcoding",
             reason: "transcoding_orphan_unrecoverable",
+            failure_code: "stale_timeout",
           });
           transcodingForcedError.push(take.id);
         }
@@ -353,7 +367,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
                 status: "error",
                 processing_phase: "error",
                 error_message:
-                  "We couldn't prepare your video in time. Please retry.",
+                  "[failure_code:stale_timeout] This analysis took too long and was stopped. Please try again.",
               })
               .eq("id", take.id);
             if (failErr) {
@@ -368,17 +382,32 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
                 attempts,
                 ageSeconds: Math.round(ageSeconds),
                 reason: exceededClock ? "wall-clock" : "attempts",
+                failure_code: "stale_timeout",
+              });
+              metric("analysis_stale_timeout", {
+                take_id: take.id,
+                processing_phase: take.processing_phase,
+                failure_code: "stale_timeout",
+                age_seconds: Math.round(ageSeconds),
+                reason: exceededClock ? "wall_clock" : "attempts",
               });
               metric("reconciler_forced_error", {
                 take_id: take.id,
                 processing_phase: take.processing_phase,
                 reason: exceededClock ? "wall_clock" : "attempts",
                 attempt: attempts,
+                failure_code: "stale_timeout",
+              });
+              metric("reconciler_forced_error_count", {
+                take_id: take.id,
+                processing_phase: take.processing_phase,
+                failure_code: "stale_timeout",
               });
               metric("analysis_failed", {
                 take_id: take.id,
                 processing_phase: take.processing_phase,
                 reason: "reconciler_give_up",
+                failure_code: "stale_timeout",
               });
               giveUp.push(take.id);
             }
