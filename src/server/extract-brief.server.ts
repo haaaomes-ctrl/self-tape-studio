@@ -180,7 +180,7 @@ export async function extractBriefFromText(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: SYSTEM },
           { role: "user", content: briefText.slice(0, 8000) },
