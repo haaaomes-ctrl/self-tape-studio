@@ -20,12 +20,26 @@ export function getMux(): Mux {
 // We provision uploads with `static_renditions: [{ resolution: "highest" }]`,
 // which produces a single MP4 published at `<playback_id>/highest.mp4`. The
 // legacy `low|medium|high.mp4` paths only exist when the deprecated
-// `mp4_support` field was used and Mux generated multiple renditions — we no
-// longer rely on those. The `quality` argument is kept for call-site
-// compatibility but is ignored; all tiers resolve to the same `highest.mp4`.
+// `mp4_support` field was used and Mux generated multiple renditions. Some
+// older takes may still have only `high.mp4` available — callers should
+// prefer `highest.mp4` and fall back to `high.mp4` deterministically when
+// the primary 404s.
+//
+// `_quality` is kept for call-site compatibility but ignored — all tiers
+// resolve to the same `highest.mp4`.
 export function muxMp4Url(
   playbackId: string,
   _quality: "low" | "medium" | "high" = "high",
 ): string {
   return `https://stream.mux.com/${playbackId}/highest.mp4`;
+}
+
+// Legacy path used by takes uploaded before the `static_renditions:
+// "highest"` configuration. We still honour it as a deterministic fallback
+// when probes for `highest.mp4` return 404.
+export function muxMp4LegacyUrl(
+  playbackId: string,
+  quality: "low" | "medium" | "high" = "high",
+): string {
+  return `https://stream.mux.com/${playbackId}/${quality}.mp4`;
 }

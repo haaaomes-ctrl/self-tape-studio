@@ -7,9 +7,18 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { muxMp4Url } from "./mux.server";
+import { muxMp4Url, muxMp4LegacyUrl } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
+import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
+
+// ---- Model routing (env-overridable) ----
+// Primary = Gemini 3 Flash Preview. Fallback = Gemini 2.5 Flash (more
+// stable today). Brief extraction stays on 2.5 Flash inside extract-brief.
+const ANALYSIS_MODEL_PRIMARY =
+  process.env.ANALYSIS_MODEL_PRIMARY ?? "google/gemini-3-flash-preview";
+const ANALYSIS_MODEL_FALLBACK =
+  process.env.ANALYSIS_MODEL_FALLBACK ?? "google/gemini-2.5-flash";
 import {
   applyCapsAndLabel,
   bandsForLevel,
@@ -652,8 +661,17 @@ export async function runProcessTake(
     | "gemini_timeout"
     | "gemini_429"
     | "gemini_5xx"
+    | "ai_network_error"
+    | "ai_credits_exhausted"
+    | "ai_non_retryable_4xx"
     | "analysis_total_timeout"
-    | "analysis_no_terminal_state";
+    | "analysis_parse_failed"
+    | "analysis_persist_failed"
+    | "analysis_no_terminal_state"
+    | "mux_static_rendition_timeout"
+    | "mux_static_rendition_errored"
+    | "mux_static_rendition_skipped"
+    | "stale_timeout";
 
   // Terminal-state tracking: any path that writes status=error/complete must
   // flip this to true so the finally-block fallback doesn't double-write.
@@ -724,13 +742,24 @@ export async function runProcessTake(
     //               fail if persistent (>=5 consecutive)
     //   5xx / net → transient — keep polling
     //   other 4xx → hard failure, stop immediately
-    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min
+    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap
+    // Static rendition cap: the asset is already `ready` by webhook contract,
+    // so the static MP4 (highest.mp4 / legacy high.mp4) should appear inside
+    // ~120s. Beyond that we terminate with mux_static_rendition_timeout.
+    const MUX_STATIC_RENDITION_TIMEOUT_MS = Number(
+      process.env.MUX_STATIC_RENDITION_TIMEOUT_MS ?? 120_000,
+    );
     const probeStartedWallclock = Date.now();
     const intervalMsFor = (elapsedMs: number): number => {
       if (elapsedMs < 2 * 60_000) return 10_000;
       if (elapsedMs < 6 * 60_000) return 20_000;
       return 30_000;
     };
+    metric("mux_static_rendition_waiting", {
+      take_id: takeId,
+      processing_phase: "analysis_pending",
+      tier,
+    });
     console.log("mux_prepare_probe_loop_start", {
       ...baseLog,
       tier,
@@ -747,15 +776,30 @@ export async function runProcessTake(
     let probeOk = false;
     let consecutive403 = 0;
     let hardFailReason: string | null = null;
+    let staticRenditionFailureCode:
+      | "mux_static_rendition_timeout"
+      | "mux_static_rendition_errored"
+      | "mux_static_rendition_skipped"
+      | null = null;
     let probeAttempt = 0;
     let retryCount = 0;
+    let probeUrl = initialUrl;
+    let legacyFallbackTried = false;
 
     while (Date.now() - probeStartedWallclock < PREPARE_HARD_TIMEOUT_MS) {
+      // Static rendition cap: deterministic timeout for the static MP4
+      // surfacing (the asset itself is already `ready` by webhook contract).
+      const elapsedProbeMs = Date.now() - probeStartedWallclock;
+      if (elapsedProbeMs >= MUX_STATIC_RENDITION_TIMEOUT_MS && !probeOk) {
+        staticRenditionFailureCode = "mux_static_rendition_timeout";
+        hardFailReason = "We couldn't prepare your video in time. Please try again.";
+        break;
+      }
       probeAttempt += 1;
       let attemptStatus: number | null = null;
       const probeStartedAt = Date.now();
       try {
-        const probe = await fetch(initialUrl, { method: "HEAD" });
+        const probe = await fetch(probeUrl, { method: "HEAD" });
         attemptStatus = probe.status;
       } catch (probeErr) {
         // Network error — transient.
@@ -795,6 +839,23 @@ export async function runProcessTake(
       if (attemptStatus === 404 || attemptStatus === null) {
         // Normal preparation OR transient network — do not count as failure.
         consecutive403 = 0;
+        // One-shot legacy rendition fallback: if highest.mp4 keeps 404ing,
+        // try high.mp4 once (older takes provisioned with mp4_support).
+        if (
+          !legacyFallbackTried &&
+          attemptStatus === 404 &&
+          take.mux_playback_id &&
+          probeUrl.endsWith("/highest.mp4") &&
+          probeAttempt >= 3
+        ) {
+          legacyFallbackTried = true;
+          probeUrl = muxMp4LegacyUrl(take.mux_playback_id, "high");
+          console.log("mux_static_rendition_legacy_fallback", {
+            ...baseLog,
+            from: "highest.mp4",
+            to: "high.mp4",
+          });
+        }
       } else if (attemptStatus === 403) {
         consecutive403 += 1;
         if (consecutive403 >= 5) {
@@ -866,6 +927,7 @@ export async function runProcessTake(
         last_http_status: probeStatus,
         hard_fail_reason: hardFailReason,
         elapsed_ms: totalElapsed,
+        static_rendition_failure_code: staticRenditionFailureCode,
       });
       metric("preparation_timeout", {
         take_id: takeId,
@@ -873,25 +935,30 @@ export async function runProcessTake(
         http_status: probeStatus,
         reason: hardFailReason ?? "timeout",
       });
-      metric("mux_static_rendition_failed", {
-        take_id: takeId,
-        reason: hardFailReason ?? "timeout",
-      });
+      if (staticRenditionFailureCode === "mux_static_rendition_timeout") {
+        metric("mux_static_rendition_timeout", {
+          take_id: takeId,
+          duration_ms: totalElapsed,
+        });
+      } else {
+        metric("mux_static_rendition_failed", {
+          take_id: takeId,
+          reason: hardFailReason ?? "timeout",
+        });
+      }
       metric("analysis_failed", {
         take_id: takeId,
         processing_phase: "analysis_pending",
-        reason: "preparation_timeout",
+        reason: staticRenditionFailureCode ?? "preparation_timeout",
       });
+      const code: FailureCode =
+        staticRenditionFailureCode ?? "mux_static_rendition_timeout";
       const userMessage =
         hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
-      await supabaseAdmin
-        .from("takes")
-        .update({
-          status: "error",
-          processing_phase: "error",
-          error_message: userMessage,
-        })
-        .eq("id", takeId);
+      await markTerminalFailure(code, userMessage, {
+        elapsed_ms: totalElapsed,
+        http_status: probeStatus,
+      });
       return { ok: false, error: userMessage };
     }
     if (retryCount > 0) {
@@ -983,7 +1050,7 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const callAI = (videoUrl: string, signal: AbortSignal) =>
+    const callAI = (videoUrl: string, signal: AbortSignal, model: string) =>
       fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -991,7 +1058,7 @@ export async function runProcessTake(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model,
           messages: [
             { role: "system", content: buildSystemPrompt() },
             {
@@ -1014,15 +1081,30 @@ export async function runProcessTake(
       });
 
     // ---- Strict Gemini retry policy ----
-    // Retry ONLY on: per-attempt timeout, 429, 500, 503, 504.
-    // Never retry on: parse errors, validation errors, 4xx other than 429,
-    // 402 (credits), or other 5xx not in the list above.
-    // Hard caps:
-    //   - Per-attempt timeout: ANALYSIS_GEMINI_TIMEOUT_MS
-    //   - Total wall-clock budget: ANALYSIS_TOTAL_TIMEOUT_MS (run-level)
-    //   - Max retries: ANALYSIS_MAX_RETRIES (so total attempts = 1 + retries)
+    // Attempt 1 = primary model. On retryable failure (timeout / 429 / 500 /
+    // 503 / 504 / network), retry ONCE with the fallback model. Total
+    // attempts = 1 + ANALYSIS_MAX_RETRIES (default 1 → 2 attempts max).
+    // Never retry on: parse errors, 4xx other than 429, 402 (credits).
+    // If the AI circuit breaker is OPEN, attempt 1 routes directly to the
+    // fallback model (no primary attempt).
     const RETRYABLE_HTTP = new Set([429, 500, 503, 504]);
     const GEMINI_BACKOFF_MS = [10_000, 30_000];
+
+    const circuitOpenAtStart = isCircuitOpen();
+    const initialModel = circuitOpenAtStart
+      ? ANALYSIS_MODEL_FALLBACK
+      : ANALYSIS_MODEL_PRIMARY;
+    if (circuitOpenAtStart) {
+      console.warn("[take-pipeline] ai_circuit_fallback_selected", {
+        take_id: takeId,
+        model: ANALYSIS_MODEL_FALLBACK,
+      });
+      metric("ai_circuit_fallback_selected", {
+        take_id: takeId,
+        model: ANALYSIS_MODEL_FALLBACK,
+      });
+    }
+    let currentModel = initialModel;
 
     const isCancelled = async (): Promise<boolean> => {
       const { data } = await supabaseAdmin
@@ -1043,14 +1125,17 @@ export async function runProcessTake(
     const geminiStartedAt = Date.now();
     console.info("[take-pipeline] ai_model_selected", {
       take_id: takeId,
-      model: "gemini-3-flash-preview",
+      model: currentModel,
+      primary: ANALYSIS_MODEL_PRIMARY,
+      fallback: ANALYSIS_MODEL_FALLBACK,
+      circuit_open: circuitOpenAtStart,
     });
     console.log("[take-pipeline] gemini request started", {
       ...baseLog,
       analysis_tier: tier,
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-      model: "google/gemini-3-flash-preview",
+      model: currentModel,
       gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
       total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
       max_retries: ANALYSIS_MAX_RETRIES,
@@ -1059,7 +1144,7 @@ export async function runProcessTake(
       take_id: takeId,
       processing_phase: "analysing",
       tier,
-      model: "google/gemini-3-flash-preview",
+      model: currentModel,
       gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
       total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
       max_retries: ANALYSIS_MAX_RETRIES,
@@ -1099,7 +1184,7 @@ export async function runProcessTake(
       let thrown: unknown = null;
       let timedOut = false;
       try {
-        aiResp = await callAI(urlForCall, ac.signal);
+        aiResp = await callAI(urlForCall, ac.signal, currentModel);
       } catch (callErr) {
         thrown = callErr;
         aiResp = null;
@@ -1121,6 +1206,7 @@ export async function runProcessTake(
         gemini_duration_ms: Date.now() - attemptStart,
         elapsed_ms_since_upload: elapsedSinceCreatedMs(),
         timed_out: timedOut,
+        model: currentModel,
       });
 
       // Success.
@@ -1154,14 +1240,20 @@ export async function runProcessTake(
           http_status: 402,
           duration_ms: Date.now() - geminiStartedAt,
           reason: "credits_exhausted",
+          model: currentModel,
+          failure_code: "ai_credits_exhausted",
         });
-        throw new Error("AI credits exhausted on this workspace. Add funds to continue.");
+        throw new AnalysisFailure(
+          "ai_credits_exhausted",
+          "AI credits exhausted on this workspace. Add funds to continue.",
+        );
       }
 
       // Determine retryability per strict policy.
       const httpRetryable =
         aiResp !== null && status !== null && RETRYABLE_HTTP.has(status);
-      const transient = timedOut || httpRetryable;
+      const networkThrow = aiResp === null && !timedOut && thrown !== null;
+      const transient = timedOut || httpRetryable || networkThrow;
 
       // Pick a failure_code for whatever we'd terminate with if no retry left.
       let failureCode: FailureCode;
@@ -1169,7 +1261,10 @@ export async function runProcessTake(
       else if (status === 429) failureCode = "gemini_429";
       else if (status !== null && status >= 500 && status < 600)
         failureCode = "gemini_5xx";
-      else failureCode = "gemini_5xx"; // network throw treated as transient/5xx-class
+      else if (networkThrow) failureCode = "ai_network_error";
+      else if (status !== null && status >= 400 && status < 500)
+        failureCode = "ai_non_retryable_4xx";
+      else failureCode = "ai_network_error";
 
       // Non-retryable (parse/validation/4xx other than 429): terminate now.
       if (!transient) {
@@ -1181,18 +1276,27 @@ export async function runProcessTake(
           http_status: status,
           duration_ms: Date.now() - geminiStartedAt,
           reason: "non_retryable",
+          model: currentModel,
+          failure_code: failureCode,
         });
-        // 4xx other than 429 → no failure_code in the spec list. Map to gemini_5xx
-        // ONLY if status >= 500, otherwise surface as a plain hard error so the
-        // outer catch records it without one of the listed codes (which are
-        // reserved for the listed retryable failure modes). To keep terminal
-        // tagging simple, emit a generic non-retryable terminal.
-        throw new Error(`AI gateway error (${status ?? "network"})`);
+        throw new AnalysisFailure(
+          failureCode,
+          `AI gateway error (${status ?? "network"}). Please try again.`,
+        );
       }
 
-      // Transient — retry if budget allows.
+      // Transient — retry if budget allows. We allow exactly ONE fallback
+      // retry per spec: attempt 1 = primary, attempt 2 = fallback.
       if (geminiRetryCount >= ANALYSIS_MAX_RETRIES) {
         // Out of retries: emit gemini_failed and surface a typed terminal error.
+        // Record this terminal transient failure into the circuit breaker.
+        if (
+          failureCode === "gemini_timeout" ||
+          failureCode === "gemini_5xx" ||
+          failureCode === "ai_network_error"
+        ) {
+          recordAiFailure(failureCode);
+        }
         console.warn("gemini_retry_exhausted", {
           ...baseLog,
           retry_count: geminiRetryCount,
@@ -1200,6 +1304,7 @@ export async function runProcessTake(
           timed_out: timedOut,
           elapsed_ms: Date.now() - geminiStartedAt,
           failure_code: failureCode,
+          model: currentModel,
         });
         metric("gemini_failed", {
           take_id: takeId,
@@ -1209,13 +1314,16 @@ export async function runProcessTake(
           reason: "retry_exhausted",
           failure_code: failureCode,
           timed_out: timedOut,
+          model: currentModel,
         });
         const msg =
           failureCode === "gemini_timeout"
             ? "The analysis took too long. Please try again."
             : failureCode === "gemini_429"
               ? "AI gateway is rate-limited. Please try again shortly."
-              : "AI gateway is temporarily unavailable. Please try again.";
+              : failureCode === "ai_network_error"
+                ? "AI gateway network error. Please try again."
+                : "AI gateway is temporarily unavailable. Please try again.";
         throw new AnalysisFailure(failureCode, msg);
       }
 
@@ -1233,6 +1341,26 @@ export async function runProcessTake(
       }
 
       geminiRetryCount += 1;
+      // Switch to fallback model for the retry (unless we already started on
+      // the fallback because the circuit was open).
+      const previousModel = currentModel;
+      if (currentModel === ANALYSIS_MODEL_PRIMARY) {
+        currentModel = ANALYSIS_MODEL_FALLBACK;
+        console.warn("[take-pipeline] ai_fallback_selected", {
+          take_id: takeId,
+          from_model: previousModel,
+          to_model: currentModel,
+          reason: failureCode,
+        });
+        metric("ai_fallback_selected", {
+          take_id: takeId,
+          from_model: previousModel,
+          model: currentModel,
+          reason: failureCode,
+          http_status: status,
+          timed_out: timedOut,
+        });
+      }
       console.log("gemini_retry_started", {
         ...baseLog,
         retry_count: geminiRetryCount,
@@ -1240,6 +1368,7 @@ export async function runProcessTake(
         attempt_count: geminiAttempt,
         elapsed_ms: Date.now() - geminiStartedAt,
         timed_out: timedOut,
+        model: currentModel,
       });
       metric("gemini_retry", {
         take_id: takeId,
@@ -1248,6 +1377,7 @@ export async function runProcessTake(
         attempt: geminiAttempt,
         timed_out: timedOut,
         failure_code: failureCode,
+        model: currentModel,
       });
       const backoff = GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000;
       await new Promise((r) => setTimeout(r, backoff));
@@ -1287,24 +1417,82 @@ export async function runProcessTake(
       });
     }
 
-    const json = await aiResp.json();
-    const choice = json.choices?.[0];
-    const toolCall = choice?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) {
-      throw new Error("AI did not return a structured report");
-    }
-    let report;
+    // ---- Parse stage (timed, tagged) ----
+    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + persist combined; we apply
+    // it as a wall-clock deadline starting here. If we cross it, we tag
+    // analysis_parse_failed or analysis_persist_failed depending on where.
+    const POST_AI_FINALISE_TIMEOUT_MS = Number(
+      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 20_000,
+    );
+    const finaliseStartedAt = Date.now();
+    const finaliseExceeded = () =>
+      Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+
+    const parseStartedAt = Date.now();
+    metric("analysis_parse_started", { take_id: takeId, model: currentModel });
+    console.log("[take-pipeline] analysis_parse_started", {
+      ...baseLog,
+      model: currentModel,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let report: any;
     try {
-      report = JSON.parse(toolCall.function.arguments);
-    } catch (parseErr) {
-      if (choice?.finish_reason === "length") {
-        throw new Error(
-          "The AI response was cut off before it finished writing the report. Please retry — if it keeps failing, try a shorter take.",
+      const json = await aiResp.json();
+      const choice = json.choices?.[0];
+      const toolCall = choice?.message?.tool_calls?.[0];
+      if (!toolCall?.function?.arguments) {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "AI did not return a structured report. Please try again.",
         );
       }
-      console.error("AI JSON parse failed", parseErr, toolCall.function.arguments?.slice(-300));
-      throw new Error("The AI returned an incomplete report. Please retry.");
+      try {
+        report = JSON.parse(toolCall.function.arguments);
+      } catch (parseErr) {
+        if (choice?.finish_reason === "length") {
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "The AI response was cut off before it finished writing the report. Please retry.",
+          );
+        }
+        console.error(
+          "AI JSON parse failed",
+          parseErr,
+          (toolCall.function.arguments as string | undefined)?.slice(-300),
+        );
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "The AI returned an incomplete report. Please retry.",
+        );
+      }
+      if (finaliseExceeded()) {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "Parsing the AI response took too long. Please try again.",
+        );
+      }
+    } catch (parseOuter) {
+      metric("analysis_parse_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - parseStartedAt,
+        reason:
+          parseOuter instanceof Error ? parseOuter.message.slice(0, 120) : "parse_error",
+      });
+      console.warn("[take-pipeline] analysis_parse_failed", {
+        ...baseLog,
+        duration_ms: Date.now() - parseStartedAt,
+      });
+      throw parseOuter;
     }
+    metric("analysis_parse_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - parseStartedAt,
+    });
+    console.log("[take-pipeline] analysis_parse_completed", {
+      ...baseLog,
+      duration_ms: Date.now() - parseStartedAt,
+    });
 
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
@@ -1804,6 +1992,23 @@ export async function runProcessTake(
       material_scrub_triggered: materialScrubTriggered,
     };
 
+    // ---- Persist stage (timed, tagged, conditional) ----
+    const persistStartedAt = Date.now();
+    metric("analysis_persist_started", { take_id: takeId });
+    console.log("[take-pipeline] analysis_persist_started", baseLog);
+
+    if (finaliseExceeded()) {
+      metric("analysis_persist_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - persistStartedAt,
+        reason: "post_ai_finalise_timeout",
+      });
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "Saving the report took too long. Please try again.",
+      );
+    }
+
     // Final cancellation guard: if the user cancelled while Gemini was
     // running, do NOT overwrite the cancelled state with a completed report.
     const { data: preWrite } = await supabaseAdmin
@@ -1831,26 +2036,55 @@ export async function runProcessTake(
     }
 
     // Conditional update: only persist if the row is still in the exact
-    // pre-write state. If status/phase changed (cancel, retry, reset, error)
-    // between the read above and this write, the update affects 0 rows and
-    // we discard silently.
-    const { data: updatedRows } = await supabaseAdmin
-      .from("takes")
-      .update({
-        status: "complete",
-        processing_phase: "complete",
-        report,
-        scores: report.scores,
-        overall_score: overall,
-        confidence: report.confidence,
-        error_message: null,
-        compliance_flags: complianceFlags as never,
-        score_breakdown: scoreBreakdown as never,
-      })
-      .eq("id", takeId)
-      .eq("status", "processing")
-      .eq("processing_phase", "analysing")
-      .select("id");
+    // pre-write state (status=processing AND processing_phase=analysing).
+    // If state changed (cancel, retry, reset, error) between the read above
+    // and this write, the update affects 0 rows and we discard silently.
+    let updatedRows: { id: string }[] | null = null;
+    try {
+      const updateRes = await supabaseAdmin
+        .from("takes")
+        .update({
+          status: "complete",
+          processing_phase: "complete",
+          report,
+          scores: report.scores,
+          overall_score: overall,
+          confidence: report.confidence,
+          error_message: null,
+          compliance_flags: complianceFlags as never,
+          score_breakdown: scoreBreakdown as never,
+        })
+        .eq("id", takeId)
+        .eq("status", "processing")
+        .eq("processing_phase", "analysing")
+        .select("id");
+      if (updateRes.error) throw updateRes.error;
+      updatedRows = updateRes.data ?? null;
+      if (finaliseExceeded()) {
+        metric("analysis_persist_failed", {
+          take_id: takeId,
+          duration_ms: Date.now() - persistStartedAt,
+          reason: "post_ai_finalise_timeout_after_write",
+        });
+        throw new AnalysisFailure(
+          "analysis_persist_failed",
+          "Saving the report took too long. Please try again.",
+        );
+      }
+    } catch (writeErr) {
+      if (writeErr instanceof AnalysisFailure) throw writeErr;
+      metric("analysis_persist_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - persistStartedAt,
+        reason:
+          writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
+      });
+      console.error("[take-pipeline] analysis_persist_failed", writeErr);
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "We couldn't save the report. Please try again.",
+      );
+    }
 
     if (!updatedRows || updatedRows.length === 0) {
       console.log("result_discarded_state_changed", {
@@ -1866,6 +2100,14 @@ export async function runProcessTake(
       terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
+    metric("analysis_persist_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - persistStartedAt,
+    });
+    console.log("[take-pipeline] analysis_persist_completed", {
+      ...baseLog,
+      duration_ms: Date.now() - persistStartedAt,
+    });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;
 
