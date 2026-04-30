@@ -9,6 +9,7 @@ import {
   QuotaExceededError,
   quotaErrorToResponse,
 } from "./quota.server";
+import { metric } from "./metrics.server";
 
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin
