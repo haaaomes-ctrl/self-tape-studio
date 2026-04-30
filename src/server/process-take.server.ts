@@ -1911,10 +1911,52 @@ export async function runProcessTake(
       reason: message.slice(0, 120),
       duration_ms: Date.now() - runStartedAt,
     });
-    await supabaseAdmin
-      .from("takes")
-      .update({ status: "error", processing_phase: "error", error_message: message })
-      .eq("id", takeId);
+
+    // Route through markTerminalFailure when we have a tagged failure_code.
+    // Otherwise write the legacy untagged error_message and tag the metric
+    // stream as analysis_no_terminal_state-equivalent generic failure.
+    if (err instanceof AnalysisFailure) {
+      await markTerminalFailure(err.failureCode, message);
+    } else if (!terminalWritten) {
+      terminalWritten = true;
+      try {
+        await supabaseAdmin
+          .from("takes")
+          .update({ status: "error", processing_phase: "error", error_message: message })
+          .eq("id", takeId);
+      } catch (writeErr) {
+        console.error("[take-pipeline] terminal write failed", writeErr);
+      }
+      metric("analysis_terminal", {
+        take_id: takeId,
+        reason: "uncoded_failure",
+        duration_ms: Date.now() - runStartedAt,
+      });
+      console.warn("[take-pipeline] analysis_terminal", {
+        take_id: takeId,
+        failure_code: "uncoded_failure",
+        message,
+      });
+    }
     return { ok: false, error: message };
+  } finally {
+    // Final safety net: if no terminal state was written by any path above
+    // (success persist, discard, markTerminalFailure, or catch fallback),
+    // force a terminal failure so the take never lingers indefinitely.
+    if (!terminalWritten) {
+      try {
+        await markTerminalFailure(
+          "analysis_no_terminal_state",
+          "Analysis ended without writing a terminal state. Please try again.",
+        );
+      } catch (finallyErr) {
+        console.error("[take-pipeline] finally finaliser failed", finallyErr);
+      }
+    }
+    // Always emit the run-level total duration so KPIs can include failures.
+    metric("analysis_total_duration", {
+      take_id: takeId,
+      duration_ms: Date.now() - runStartedAt,
+    });
   }
 }
