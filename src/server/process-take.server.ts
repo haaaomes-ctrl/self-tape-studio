@@ -9,6 +9,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { muxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
+import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import {
   applyCapsAndLabel,
   bandsForLevel,
