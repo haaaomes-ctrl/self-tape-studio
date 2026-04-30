@@ -318,11 +318,13 @@ export async function extractBriefFromText(
     const briefOut: ExtractedBrief & {
       time_limit_source?: TimeLimitSource;
       material_policy?: MaterialPolicy;
+      _source?: BriefExtractionSource;
     } = {
       ...(briefOnly as ExtractedBrief),
       time_limit_seconds: finalTimeLimit,
       time_limit_source: timeLimitSource,
       material_policy: materialPolicy,
+      _source: "ai",
     };
 
     // Non-PII debug log.
@@ -334,9 +336,10 @@ export async function extractBriefFromText(
       material_policy: briefOut.material_policy,
       duration_overridden: durationOverridden,
       extraction_confidence: conf,
+      source: "ai",
     });
 
-    return { brief: briefOut, extraction_confidence: conf };
+    return { brief: briefOut, extraction_confidence: conf, source: "ai" };
   } catch (err) {
     timedOut =
       (err instanceof Error && err.name === "AbortError") ||
