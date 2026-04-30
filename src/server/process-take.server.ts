@@ -9,9 +9,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildMuxHighestMp4Url,
-  buildMuxLegacyHighMp4Url,
   isValidMuxMp4Url,
-  muxMp4Url,
   normaliseMuxMp4Url,
 } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
