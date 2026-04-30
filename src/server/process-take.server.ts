@@ -1025,6 +1025,16 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
+    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + persist combined; we apply
+    // it as a wall-clock deadline starting here. If we cross it, we tag
+    // analysis_parse_failed or analysis_persist_failed depending on where.
+    const POST_AI_FINALISE_TIMEOUT_MS = Number(
+      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 20_000,
+    );
+    const finaliseStartedAt = Date.now();
+    const finaliseExceeded = () =>
+      Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+
     // ---- Two-step pipeline (feature-flagged) ----
     // When TWO_STEP_ANALYSIS_ENABLED === "true", run Step 1 (multimodal
     // evidence pass) then Step 2 (text-only polish using REPORT_TOOL). Step 1
