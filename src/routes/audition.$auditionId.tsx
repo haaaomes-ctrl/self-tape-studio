@@ -69,7 +69,10 @@ function AuditionPage() {
     if (!loading && !user) navigate({ to: "/login" });
   }, [loading, user, navigate]);
 
-  async function refresh() {
+  // refresh() is held in a ref so visibility/focus listeners always call the
+  // latest closure without re-binding listeners on every render.
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
+  async function refresh(reason: string = "poll") {
     const { data: aud } = await supabase
       .from("auditions")
       .select("id, title, brief, brief_source, mode, audition_level, extracted_brief")
@@ -82,24 +85,116 @@ function AuditionPage() {
       .eq("audition_id", auditionId)
       .order("take_number");
     if (ts) {
-      setTakes(ts as Take[]);
-      if (!activeTakeId && ts.length) setActiveTakeId(ts[ts.length - 1].id);
+      const next = ts as Take[];
+      setTakes(next);
+      if (!activeTakeId && next.length) setActiveTakeId(next[next.length - 1].id);
+      // Lightweight observability — confirms the UI received DB truth and
+      // detects stuck-tab scenarios. No PII, no payload contents.
+      const anyTerminal = next.some(
+        (t) => t.status === "error" || t.status === "complete",
+      );
+      console.log("ui_poll_refresh", {
+        reason,
+        takes: next.length,
+        statuses: next.map((t) => t.status),
+        any_terminal: anyTerminal,
+      });
     }
   }
+  refreshRef.current = () => refresh("ref");
 
   useEffect(() => {
     if (!user) return;
-    refresh();
+    refresh("mount");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, auditionId]);
 
-  // Poll while any take is processing
+  // Poll while any take is processing.
+  // Keyed on a stable signature (ids + statuses) rather than the full takes
+  // array so unrelated state changes don't re-create the interval, but a
+  // genuine status flip immediately tears it down.
+  const processingSignature = takes
+    .filter((t) => t.status === "processing" || t.status === "pending")
+    .map((t) => t.id)
+    .sort()
+    .join(",");
   useEffect(() => {
-    const anyProcessing = takes.some((t) => t.status === "processing" || t.status === "pending");
-    if (!anyProcessing) return;
-    const id = setInterval(refresh, 4000);
+    if (!user) return;
+    if (!processingSignature) return;
+    const id = setInterval(() => {
+      void refreshRef.current();
+    }, 4000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processingSignature, user]);
+
+  // Revalidate on tab focus / visibility change. Browsers throttle or freeze
+  // setInterval in backgrounded tabs, so a tab that was open while the
+  // server flipped the take to terminal can sit on stale "Preparing
+  // analysis" copy indefinitely. Re-fetching on focus collapses that gap.
+  useEffect(() => {
+    if (!user) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshRef.current();
+      }
+    };
+    const onFocus = () => {
+      void refreshRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [user]);
+
+  // Stale-tab watchdog: if any take has been locally "processing" for more
+  // than 12 minutes, force a server revalidation. The reconciler's hard
+  // ceiling is 10 minutes, so by 12 minutes the DB must show a terminal
+  // state; if the UI doesn't reflect that, our local view is stale.
+  useEffect(() => {
+    if (!user) return;
+    if (!processingSignature) return;
+    const STALE_THRESHOLD_MS = 12 * 60 * 1000;
+    const id = setInterval(() => {
+      const stale = takes.some((t) => {
+        if (t.status !== "pending" && t.status !== "processing") return false;
+        const age = Date.now() - new Date(t.created_at).getTime();
+        return age >= STALE_THRESHOLD_MS;
+      });
+      if (stale) {
+        console.warn("ui_stale_processing_revalidated", {
+          processing_count: takes.filter(
+            (t) => t.status === "pending" || t.status === "processing",
+          ).length,
+        });
+        void refreshRef.current();
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processingSignature, user]);
+
+  // One-shot terminal-state log. Fires when the UI first observes any take
+  // becoming terminal — useful for confirming the polling/revalidation path
+  // actually delivered the DB truth to the client.
+  const loggedTerminalRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const t of takes) {
+      if (
+        (t.status === "error" || t.status === "complete") &&
+        !loggedTerminalRef.current.has(t.id)
+      ) {
+        loggedTerminalRef.current.add(t.id);
+        console.log("ui_terminal_state_received", {
+          take_id: t.id,
+          status: t.status,
+          processing_phase: t.processing_phase ?? null,
+        });
+      }
+    }
   }, [takes]);
 
   if (!audition) {
