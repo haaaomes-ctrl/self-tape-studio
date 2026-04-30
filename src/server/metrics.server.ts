@@ -65,6 +65,7 @@ export type MetricName =
   // User behaviour
   | "cancel"
   | "analysis_abandoned"
+  | "analysis_terminal"
   // Quota
   | "quota_rejection"
   | "quota_check";
