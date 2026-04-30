@@ -164,7 +164,6 @@ async function attemptTranscodingRecovery(take: {
   }
 
   const mp4Standard = normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId));
-  const mp4High = normaliseMuxMp4Url(buildMuxLegacyHighMp4Url(playbackId));
 
   const { error: backfillErr } = await supabaseAdmin
     .from("takes")
@@ -172,7 +171,7 @@ async function attemptTranscodingRecovery(take: {
       mux_asset_id: assetId,
       mux_playback_id: playbackId,
       mux_mp4_standard_url: mp4Standard,
-      mux_mp4_high_url: mp4High,
+      mux_mp4_high_url: null,
       mux_duration_seconds: duration,
       mux_status: "ready",
       processing_phase: "analysis_pending",
