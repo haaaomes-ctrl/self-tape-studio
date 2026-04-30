@@ -923,7 +923,7 @@ export async function runProcessTake(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-pro",
+          model: "google/gemini-3-flash-preview",
           messages: [
             { role: "system", content: buildSystemPrompt() },
             {
@@ -968,16 +968,22 @@ export async function runProcessTake(
     let geminiAttempt = 0;
     let geminiRetryCount = 0;
     const geminiStartedAt = Date.now();
+    console.info("[take-pipeline] ai_model_selected", {
+      take_id: takeId,
+      model: "gemini-3-flash-preview",
+    });
     console.log("[take-pipeline] gemini request started", {
       ...baseLog,
       analysis_tier: tier,
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      model: "google/gemini-3-flash-preview",
     });
     metric("gemini_started", {
       take_id: takeId,
       processing_phase: "analysing",
       tier,
+      model: "google/gemini-3-flash-preview",
     });
 
     let urlForCall = initialUrl;
