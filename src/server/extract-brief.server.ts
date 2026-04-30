@@ -9,9 +9,16 @@ import type { ExtractedBrief, AuditionType, MaterialPolicy } from "@/lib/auditio
 export type ExtractionConfidence = "low" | "medium" | "high";
 export type TimeLimitSource = "explicit" | "none";
 
+export type BriefExtractionSource = "ai" | "fallback";
+
 export type ExtractedBriefWithMeta = {
-  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource; material_policy?: MaterialPolicy };
+  brief: ExtractedBrief & {
+    time_limit_source?: TimeLimitSource;
+    material_policy?: MaterialPolicy;
+    _source?: BriefExtractionSource;
+  };
   extraction_confidence: ExtractionConfidence;
+  source: BriefExtractionSource;
 };
 
 // Detects ONLY explicit numeric durations in the raw brief text.
@@ -178,6 +185,7 @@ function buildSafeFallbackBrief(briefText: string): ExtractedBriefWithMeta {
   const brief: ExtractedBrief & {
     time_limit_source?: TimeLimitSource;
     material_policy?: MaterialPolicy;
+    _source?: BriefExtractionSource;
   } = {
     audition_type: "unknown",
     role_name: null,
@@ -201,12 +209,14 @@ function buildSafeFallbackBrief(briefText: string): ExtractedBriefWithMeta {
     confidentiality_notes: null,
     time_limit_source: timeLimitSource,
     material_policy: materialPolicy,
+    _source: "fallback",
   } as ExtractedBrief & {
     time_limit_source?: TimeLimitSource;
     material_policy?: MaterialPolicy;
+    _source?: BriefExtractionSource;
   };
 
-  return { brief, extraction_confidence: "low" };
+  return { brief, extraction_confidence: "low", source: "fallback" };
 }
 
 export async function extractBriefFromText(
@@ -308,11 +318,13 @@ export async function extractBriefFromText(
     const briefOut: ExtractedBrief & {
       time_limit_source?: TimeLimitSource;
       material_policy?: MaterialPolicy;
+      _source?: BriefExtractionSource;
     } = {
       ...(briefOnly as ExtractedBrief),
       time_limit_seconds: finalTimeLimit,
       time_limit_source: timeLimitSource,
       material_policy: materialPolicy,
+      _source: "ai",
     };
 
     // Non-PII debug log.
@@ -324,9 +336,10 @@ export async function extractBriefFromText(
       material_policy: briefOut.material_policy,
       duration_overridden: durationOverridden,
       extraction_confidence: conf,
+      source: "ai",
     });
 
-    return { brief: briefOut, extraction_confidence: conf };
+    return { brief: briefOut, extraction_confidence: conf, source: "ai" };
   } catch (err) {
     timedOut =
       (err instanceof Error && err.name === "AbortError") ||
