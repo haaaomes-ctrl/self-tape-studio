@@ -1653,6 +1653,7 @@ export async function runProcessTake(
       ...baseLog,
       duration_ms: Date.now() - parseStartedAt,
     });
+    } // end of single-pass else branch
 
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
