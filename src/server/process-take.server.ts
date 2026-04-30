@@ -776,10 +776,25 @@ export async function runProcessTake(
     let probeOk = false;
     let consecutive403 = 0;
     let hardFailReason: string | null = null;
+    let staticRenditionFailureCode:
+      | "mux_static_rendition_timeout"
+      | "mux_static_rendition_errored"
+      | "mux_static_rendition_skipped"
+      | null = null;
     let probeAttempt = 0;
     let retryCount = 0;
+    let probeUrl = initialUrl;
+    let legacyFallbackTried = false;
 
     while (Date.now() - probeStartedWallclock < PREPARE_HARD_TIMEOUT_MS) {
+      // Static rendition cap: deterministic timeout for the static MP4
+      // surfacing (the asset itself is already `ready` by webhook contract).
+      const elapsedProbeMs = Date.now() - probeStartedWallclock;
+      if (elapsedProbeMs >= MUX_STATIC_RENDITION_TIMEOUT_MS && !probeOk) {
+        staticRenditionFailureCode = "mux_static_rendition_timeout";
+        hardFailReason = "We couldn't prepare your video in time. Please try again.";
+        break;
+      }
       probeAttempt += 1;
       let attemptStatus: number | null = null;
       const probeStartedAt = Date.now();
