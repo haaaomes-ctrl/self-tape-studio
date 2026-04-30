@@ -10,14 +10,195 @@ import {
 } from "@/server/quota.server";
 import { metric } from "@/server/metrics.server";
 
+const STATIC_RENDITION_HEARTBEAT_STALE_MS = 30_000;
+
+async function resolveTakeIdForMuxEvent(data: {
+  asset_id?: string;
+  passthrough?: string;
+  new_asset_settings?: { passthrough?: string };
+}): Promise<string | null> {
+  const directTakeId = data.passthrough ?? data.new_asset_settings?.passthrough;
+  if (directTakeId) return directTakeId;
+  if (!data.asset_id) return null;
+
+  const { data: take, error } = await supabaseAdmin
+    .from("takes")
+    .select("id")
+    .eq("mux_asset_id", data.asset_id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("MUX WEBHOOK failed to resolve take by mux_asset_id", {
+      mux_asset_id: data.asset_id,
+      error,
+    });
+    return null;
+  }
+
+  return take?.id ?? null;
+}
+
+async function scheduleTakeFromStaticRenditionReady(params: {
+  assetId: string;
+  receivedAt: string;
+  takeId: string;
+}): Promise<Response> {
+  const { assetId, receivedAt, takeId } = params;
+  const { data: existing } = await supabaseAdmin
+    .from("takes")
+    .select(
+      "status, processing_phase, created_at, updated_at, audition_id, mux_playback_id, mux_duration_seconds",
+    )
+    .eq("id", takeId)
+    .single();
+
+  if (!existing) {
+    console.warn("MUX WEBHOOK static_rendition.ready take missing", { takeId, assetId });
+    return new Response("ok", { status: 200 });
+  }
+
+  let playbackId = existing.mux_playback_id ?? null;
+  let duration = Number(existing.mux_duration_seconds ?? 0) || null;
+
+  if (!playbackId || !duration || duration <= 0) {
+    try {
+      const mux = getMux();
+      const asset = (await mux.video.assets.retrieve(assetId)) as {
+        duration?: number;
+        playback_ids?: Array<{ id: string; policy: string }>;
+      };
+      playbackId = asset.playback_ids?.find((p) => p.policy === "public")?.id ?? null;
+      duration = typeof asset.duration === "number" ? asset.duration : null;
+    } catch (err) {
+      console.error("MUX WEBHOOK static_rendition.ready asset lookup failed", {
+        takeId,
+        assetId,
+        err,
+      });
+      return new Response("ok", { status: 200 });
+    }
+  }
+
+  if (!playbackId || !duration || duration <= 0) {
+    console.warn("MUX WEBHOOK static_rendition.ready missing playback/duration", {
+      takeId,
+      assetId,
+      playbackId,
+      duration,
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  await supabaseAdmin
+    .from("takes")
+    .update({
+      mux_asset_id: assetId,
+      mux_playback_id: playbackId,
+      mux_mp4_standard_url: muxMp4Url(playbackId, "medium"),
+      mux_mp4_high_url: muxMp4Url(playbackId, "high"),
+      mux_duration_seconds: duration,
+      mux_status: "ready",
+    })
+    .eq("id", takeId);
+
+  const staleHeartbeatMs = existing.updated_at
+    ? Date.now() - new Date(existing.updated_at).getTime()
+    : Number.POSITIVE_INFINITY;
+
+  console.log("MUX WEBHOOK static_rendition.ready", {
+    take_id: takeId,
+    audition_id: existing.audition_id ?? null,
+    mux_asset_id: assetId,
+    mux_playback_id: playbackId,
+    video_duration_seconds: duration,
+    stale_heartbeat_ms: staleHeartbeatMs,
+    timestamp: receivedAt,
+  });
+
+  if (
+    existing.status === "complete" ||
+    existing.status === "error" ||
+    existing.processing_phase === "analysing"
+  ) {
+    console.log("MUX WEBHOOK static_rendition.ready skipping terminal/inflight take", {
+      takeId,
+      status: existing.status,
+      processing_phase: existing.processing_phase,
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (
+    existing.processing_phase === "analysis_pending" &&
+    staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS
+  ) {
+    console.log("MUX WEBHOOK static_rendition.ready observed active prepare loop", {
+      takeId,
+      stale_heartbeat_ms: staleHeartbeatMs,
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  const identity = await resolveTakeIdentity(takeId);
+  if (identity) {
+    try {
+      await assertWithinAnalysisQuota(identity, "mux-webhook:static-rendition.ready");
+    } catch (qerr) {
+      if (qerr instanceof QuotaExceededError) {
+        metric("quota_rejection", {
+          take_id: takeId,
+          reason: qerr.scope,
+          cap: qerr.cap,
+          count: qerr.count,
+        });
+        await supabaseAdmin
+          .from("takes")
+          .update({
+            status: "error",
+            processing_phase: "error",
+            error_message: qerr.message,
+          })
+          .eq("id", takeId);
+        return new Response("ok", { status: 200 });
+      }
+      throw qerr;
+    }
+  }
+
+  await supabaseAdmin
+    .from("takes")
+    .update({ status: "pending", processing_phase: "analysis_pending", error_message: null })
+    .eq("id", takeId);
+
+  console.log("MUX WEBHOOK scheduling runProcessTake from static_rendition.ready", {
+    takeId,
+    stale_heartbeat_ms: staleHeartbeatMs,
+    timestamp: new Date().toISOString(),
+  });
+  scheduleBackground(
+    (async () => {
+      const result = await runProcessTake(takeId);
+      console.log("MUX WEBHOOK static_rendition.ready runProcessTake completed", {
+        takeId,
+        result,
+      });
+      return result;
+    })(),
+    `runProcessTake:static_rendition_ready:${takeId}`,
+  );
+
+  return new Response("ok", { status: 200 });
+}
+
 // Mux webhook receiver. Configure in Mux dashboard:
 //   URL:     https://<project>.lovable.app/api/public/mux-webhook
 //   Secret:  store as MUX_WEBHOOK_SECRET in Lovable secrets
 //
 // We handle:
-//   - video.upload.asset_created → link the new asset to our take row
-//   - video.asset.ready          → renditions usable; gate on duration + URLs, then analyse
-//   - video.asset.errored        → mark the take errored
+//   - video.upload.asset_created         → link the new asset to our take row
+//   - video.asset.ready                  → renditions usable; gate on duration + URLs, then analyse
+//   - video.asset.static_rendition.ready → recover stalled prepare loops once highest.mp4 exists
+//   - video.asset.errored                → mark the take errored
 //
 // Idempotency: takes.mux_asset_id has a UNIQUE index. Duplicate webhook
 // deliveries set status to the same values they already have, and we skip
