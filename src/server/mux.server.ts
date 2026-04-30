@@ -1,6 +1,11 @@
 // Server-only Mux helpers. Never import from client code.
 import Mux from "@mux/mux-node";
 
+const MUX_STREAM_ORIGIN = "https://stream.mux.com";
+const TRAILING_MP4_GARBAGE_RE = /(\.mp4)[\\/\s\u0000-\u001F\u007F]+$/i;
+const INVALID_PLAYBACK_ID_RE = /[\\/\s?#\u0000-\u001F\u007F]/;
+const INVALID_URL_CHARS_RE = /[\s\u0000-\u001F\u007F]/;
+
 let _client: Mux | undefined;
 
 export function getMux(): Mux {
@@ -13,6 +18,24 @@ export function getMux(): Mux {
     _client = new Mux({ tokenId, tokenSecret });
   }
   return _client;
+}
+
+export function sanitiseMuxPlaybackId(playbackId: string): string {
+  const trimmed = playbackId.trim();
+  if (!trimmed || INVALID_PLAYBACK_ID_RE.test(trimmed)) {
+    throw new Error("Invalid Mux playback id");
+  }
+  return trimmed;
+}
+
+export function buildMuxHighestMp4Url(playbackId: string): string {
+  const safePlaybackId = sanitiseMuxPlaybackId(playbackId);
+  return `${MUX_STREAM_ORIGIN}/${safePlaybackId}/highest.mp4`;
+}
+
+export function buildMuxLegacyHighMp4Url(playbackId: string): string {
+  const safePlaybackId = sanitiseMuxPlaybackId(playbackId);
+  return `${MUX_STREAM_ORIGIN}/${safePlaybackId}/high.mp4`;
 }
 
 // Build the static MP4 URL for a Mux playback id.
@@ -31,7 +54,7 @@ export function muxMp4Url(
   playbackId: string,
   _quality: "low" | "medium" | "high" = "high",
 ): string {
-  return normaliseMuxMp4Url(`https://stream.mux.com/${playbackId}/highest.mp4`);
+  return buildMuxHighestMp4Url(playbackId);
 }
 
 // Legacy path used by takes uploaded before the `static_renditions:
@@ -41,12 +64,33 @@ export function muxMp4LegacyUrl(
   playbackId: string,
   quality: "low" | "medium" | "high" = "high",
 ): string {
-  return normaliseMuxMp4Url(`https://stream.mux.com/${playbackId}/${quality}.mp4`);
+  if (quality !== "high") {
+    throw new Error("Only legacy high.mp4 is supported");
+  }
+  return buildMuxLegacyHighMp4Url(playbackId);
 }
 
-// Safety guard: Mux MP4 URLs must never keep a trailing slash after `.mp4`.
-// This is safe for any URL string and preserves everything except the invalid
-// terminal slash.
+// Repair only the specific stored-url corruption we've observed: garbage
+// appended after the terminal `.mp4`.
 export function normaliseMuxMp4Url(url: string): string {
-  return url.replace(/\.mp4\/$/, ".mp4");
+  return url.trim().replace(TRAILING_MP4_GARBAGE_RE, "$1");
+}
+
+export function isValidMuxMp4Url(url: string): boolean {
+  if (
+    !url.startsWith(`${MUX_STREAM_ORIGIN}/`) ||
+    !url.endsWith(".mp4") ||
+    url.endsWith("/") ||
+    url.endsWith("\\") ||
+    INVALID_URL_CHARS_RE.test(url)
+  ) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.origin === MUX_STREAM_ORIGIN && !parsed.search && !parsed.hash;
+  } catch {
+    return false;
+  }
 }

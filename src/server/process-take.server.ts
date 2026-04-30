@@ -7,7 +7,13 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { muxMp4Url, muxMp4LegacyUrl, normaliseMuxMp4Url } from "./mux.server";
+import {
+  buildMuxHighestMp4Url,
+  buildMuxLegacyHighMp4Url,
+  isValidMuxMp4Url,
+  muxMp4Url,
+  normaliseMuxMp4Url,
+} from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
@@ -377,6 +383,61 @@ Output via the submit_audition_report tool. The casting_headline is ONE plain se
 
 type Tier = "standard" | "high" | "original";
 
+function resolveCanonicalMuxProbeUrls(take: {
+  mux_playback_id: string | null;
+  mux_mp4_standard_url: string | null;
+  mux_mp4_high_url: string | null;
+}): {
+  primaryUrl: string | null;
+  legacyUrl: string | null;
+  usedStoredPrimaryUrl: boolean;
+  usedStoredLegacyUrl: boolean;
+} {
+  if (take.mux_playback_id) {
+    return {
+      primaryUrl: buildMuxHighestMp4Url(take.mux_playback_id),
+      legacyUrl: buildMuxLegacyHighMp4Url(take.mux_playback_id),
+      usedStoredPrimaryUrl: false,
+      usedStoredLegacyUrl: false,
+    };
+  }
+
+  const primaryUrl = take.mux_mp4_standard_url
+    ? normaliseMuxMp4Url(take.mux_mp4_standard_url)
+    : null;
+  const legacyUrl = take.mux_mp4_high_url ? normaliseMuxMp4Url(take.mux_mp4_high_url) : null;
+
+  return {
+    primaryUrl,
+    legacyUrl,
+    usedStoredPrimaryUrl: Boolean(primaryUrl),
+    usedStoredLegacyUrl: Boolean(legacyUrl),
+  };
+}
+
+function ensureValidMuxMp4Url(params: {
+  url: string | null;
+  playbackId: string | null;
+  kind: "primary" | "legacy" | "selected" | "gemini";
+}): string {
+  const normalisedUrl = params.url ? normaliseMuxMp4Url(params.url) : null;
+  if (normalisedUrl && isValidMuxMp4Url(normalisedUrl)) {
+    return normalisedUrl;
+  }
+
+  if (params.playbackId) {
+    const rebuilt =
+      params.kind === "legacy"
+        ? buildMuxLegacyHighMp4Url(params.playbackId)
+        : buildMuxHighestMp4Url(params.playbackId);
+    if (isValidMuxMp4Url(rebuilt)) {
+      return rebuilt;
+    }
+  }
+
+  throw new Error("[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.");
+}
+
 async function pickAnalysisSource(
   take: {
     id: string;
@@ -394,14 +455,37 @@ async function pickAnalysisSource(
     throw new Error("Video is still being optimised — please try again in a moment.");
   }
 
-  if (attempt === 0 && take.mux_mp4_standard_url) {
-    return { url: normaliseMuxMp4Url(take.mux_mp4_standard_url), tier: "standard" };
+  const canonicalUrls = resolveCanonicalMuxProbeUrls(take);
+
+  if (attempt === 0 && canonicalUrls.primaryUrl) {
+    return {
+      url: ensureValidMuxMp4Url({
+        url: canonicalUrls.primaryUrl,
+        playbackId: take.mux_playback_id,
+        kind: "primary",
+      }),
+      tier: "standard",
+    };
   }
-  if (attempt === 1 && take.mux_mp4_high_url) {
-    return { url: normaliseMuxMp4Url(take.mux_mp4_high_url), tier: "high" };
+  if (attempt === 1 && canonicalUrls.legacyUrl) {
+    return {
+      url: ensureValidMuxMp4Url({
+        url: canonicalUrls.legacyUrl,
+        playbackId: take.mux_playback_id,
+        kind: "legacy",
+      }),
+      tier: "high",
+    };
   }
   if (allowOriginal && take.mux_playback_id) {
-    return { url: normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, "high")), tier: "original" };
+    return {
+      url: ensureValidMuxMp4Url({
+        url: buildMuxHighestMp4Url(take.mux_playback_id),
+        playbackId: take.mux_playback_id,
+        kind: "primary",
+      }),
+      tier: "original",
+    };
   }
 
   throw new Error(
@@ -726,6 +810,7 @@ export async function runProcessTake(
     | "analysis_parse_failed"
     | "analysis_persist_failed"
     | "analysis_no_terminal_state"
+    | "mux_invalid_mp4_url"
     | "mux_static_rendition_timeout"
     | "mux_static_rendition_errored"
     | "mux_static_rendition_skipped"
@@ -820,11 +905,19 @@ export async function runProcessTake(
     const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap, from created_at
     const probeStartedWallclock = Date.now();
     const ageSinceCreatedMs = elapsedSinceCreatedMs() ?? 0;
-    const primaryUrl = normaliseMuxMp4Url(initialUrl);
-    const legacyUrl =
-      take.mux_playback_id && primaryUrl.endsWith("/highest.mp4")
-        ? normaliseMuxMp4Url(muxMp4LegacyUrl(take.mux_playback_id, "high"))
-        : null;
+    const canonicalProbeUrls = resolveCanonicalMuxProbeUrls(take);
+    const primaryUrl = ensureValidMuxMp4Url({
+      url: canonicalProbeUrls.primaryUrl ?? initialUrl,
+      playbackId: take.mux_playback_id,
+      kind: "primary",
+    });
+    const legacyUrl = canonicalProbeUrls.legacyUrl
+      ? ensureValidMuxMp4Url({
+          url: canonicalProbeUrls.legacyUrl,
+          playbackId: take.mux_playback_id,
+          kind: "legacy",
+        })
+      : null;
     metric("mux_static_rendition_waiting", {
       take_id: takeId,
       processing_phase: "analysis_pending",
@@ -1018,7 +1111,23 @@ export async function runProcessTake(
       }
     }
 
-    const resolvedProbeUrl = normaliseMuxMp4Url(selectedUrl);
+    let resolvedProbeUrl: string;
+    try {
+      resolvedProbeUrl = ensureValidMuxMp4Url({
+        url: selectedUrl,
+        playbackId: take.mux_playback_id,
+        kind: "selected",
+      });
+    } catch {
+      await markTerminalFailure(
+        "mux_invalid_mp4_url",
+        "Invalid Mux MP4 URL generated. Please try again.",
+      );
+      return {
+        ok: false,
+        error: "Invalid Mux MP4 URL generated. Please try again.",
+      };
+    }
 
     if (!probeOk) {
       const totalElapsed = Date.now() - probeStartedWallclock;
@@ -1252,7 +1361,11 @@ export async function runProcessTake(
       max_retries: ANALYSIS_MAX_RETRIES,
     });
 
-    let urlForCall = resolvedProbeUrl;
+    let urlForCall = ensureValidMuxMp4Url({
+      url: resolvedProbeUrl,
+      playbackId: take.mux_playback_id,
+      kind: "gemini",
+    });
     while (true) {
       // Total-budget guard BEFORE each attempt — prevents starting an attempt
       // we know we can't complete inside the wall-clock budget.
@@ -1327,8 +1440,11 @@ export async function runProcessTake(
           "AI gateway rejected URL; retrying once with fresh Mux URL",
           errText.slice(0, 200),
         );
-        const freshQuality = tier === "standard" ? "medium" : "high";
-        urlForCall = normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, freshQuality));
+        urlForCall = ensureValidMuxMp4Url({
+          url: buildMuxHighestMp4Url(take.mux_playback_id),
+          playbackId: take.mux_playback_id,
+          kind: "gemini",
+        });
         // Roll back the attempt counter so this doesn't consume a retry slot.
         geminiAttempt -= 1;
         continue;

@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMux, muxMp4Url, normaliseMuxMp4Url } from "@/server/mux.server";
+import {
+  buildMuxHighestMp4Url,
+  buildMuxLegacyHighMp4Url,
+  getMux,
+  normaliseMuxMp4Url,
+} from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
 import { scheduleBackground } from "@/worker-entry";
 import {
@@ -94,9 +99,8 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     .update({
       mux_asset_id: assetId,
       mux_playback_id: playbackId,
-      mux_mp4_standard_url: normaliseMuxMp4Url(muxMp4Url(playbackId, "medium")),
-      // Field kept for compatibility; current static-rendition assets still store highest.mp4 here.
-      mux_mp4_high_url: normaliseMuxMp4Url(muxMp4Url(playbackId, "high")),
+      mux_mp4_standard_url: normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId)),
+      mux_mp4_high_url: normaliseMuxMp4Url(buildMuxLegacyHighMp4Url(playbackId)),
       mux_duration_seconds: duration,
       mux_status: "ready",
     })
@@ -323,8 +327,8 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             return new Response("ok", { status: 200 });
           }
 
-          const mp4Standard = normaliseMuxMp4Url(muxMp4Url(playbackId, "medium")); // current static_renditions assets resolve to highest.mp4
-          const mp4High = normaliseMuxMp4Url(muxMp4Url(playbackId, "high")); // compatibility field; may also contain highest.mp4
+          const mp4Standard = normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId));
+          const mp4High = normaliseMuxMp4Url(buildMuxLegacyHighMp4Url(playbackId));
 
           // Idempotency: only flip into the analysing phase if we haven't
           // already kicked off (or completed) analysis for this take.
