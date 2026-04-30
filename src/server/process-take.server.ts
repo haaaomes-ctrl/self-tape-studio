@@ -7,7 +7,7 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { muxMp4Url, muxMp4LegacyUrl } from "./mux.server";
+import { muxMp4Url, muxMp4LegacyUrl, normaliseMuxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
@@ -395,13 +395,13 @@ async function pickAnalysisSource(
   }
 
   if (attempt === 0 && take.mux_mp4_standard_url) {
-    return { url: take.mux_mp4_standard_url, tier: "standard" };
+    return { url: normaliseMuxMp4Url(take.mux_mp4_standard_url), tier: "standard" };
   }
   if (attempt === 1 && take.mux_mp4_high_url) {
-    return { url: take.mux_mp4_high_url, tier: "high" };
+    return { url: normaliseMuxMp4Url(take.mux_mp4_high_url), tier: "high" };
   }
   if (allowOriginal && take.mux_playback_id) {
-    return { url: muxMp4Url(take.mux_playback_id, "high"), tier: "original" };
+    return { url: normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, "high")), tier: "original" };
   }
 
   throw new Error(
@@ -820,6 +820,11 @@ export async function runProcessTake(
     const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap, from created_at
     const probeStartedWallclock = Date.now();
     const ageSinceCreatedMs = elapsedSinceCreatedMs() ?? 0;
+    const primaryUrl = normaliseMuxMp4Url(initialUrl);
+    const legacyUrl =
+      take.mux_playback_id && primaryUrl.endsWith("/highest.mp4")
+        ? normaliseMuxMp4Url(muxMp4LegacyUrl(take.mux_playback_id, "high"))
+        : null;
     metric("mux_static_rendition_waiting", {
       take_id: takeId,
       processing_phase: "analysis_pending",
@@ -846,16 +851,16 @@ export async function runProcessTake(
       | "mux_static_rendition_errored"
       | "mux_static_rendition_skipped"
       | null = null;
-    let probeUrl = initialUrl;
+    let probeUrl = primaryUrl;
+    let selectedUrl = primaryUrl;
+    let primaryHeadStatus: number | null = null;
+    let primaryRangeStatus: number | null = null;
+    let legacyHeadStatus: number | null = null;
+    let legacyRangeStatus: number | null = null;
 
-    // Try primary URL, then once with the legacy /high.mp4 path if applicable.
-    const probeUrlsToTry: string[] = [probeUrl];
-    if (
-      take.mux_playback_id &&
-      probeUrl.endsWith("/highest.mp4")
-    ) {
-      probeUrlsToTry.push(muxMp4LegacyUrl(take.mux_playback_id, "high"));
-    }
+    // Current static-rendition assets must prefer `highest.mp4`. Legacy
+    // `high.mp4` is a one-time fallback only when the primary is not yet ready.
+    const probeUrlsToTry: string[] = [primaryUrl, ...(legacyUrl ? [legacyUrl] : [])];
 
     for (let attemptIdx = 0; attemptIdx < probeUrlsToTry.length && !probeOk; attemptIdx++) {
       probeUrl = probeUrlsToTry[attemptIdx];
@@ -911,6 +916,13 @@ export async function runProcessTake(
           });
         }
       }
+      if (probeUrl === primaryUrl) {
+        primaryHeadStatus = headStatus;
+        primaryRangeStatus = rangeStatus;
+      } else if (probeUrl === legacyUrl) {
+        legacyHeadStatus = headStatus;
+        legacyRangeStatus = rangeStatus;
+      }
       probeStatus = attemptStatus;
       console.log("mux_prepare_probe", {
         ...baseLog,
@@ -924,10 +936,18 @@ export async function runProcessTake(
 
       if (attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
         probeOk = true;
+        selectedUrl = probeUrl;
         console.log("mux_prepare_ready", {
           ...baseLog,
           probe_attempt: probeAttempt,
           probe_url: probeUrl,
+          primary_url: primaryUrl,
+          primary_head_status: primaryHeadStatus,
+          primary_range_status: primaryRangeStatus,
+          legacy_url: legacyUrl,
+          legacy_head_status: legacyHeadStatus,
+          legacy_range_status: legacyRangeStatus,
+          selected_url: selectedUrl,
         });
         metric("static_mp4_ready", {
           take_id: takeId,
@@ -938,20 +958,24 @@ export async function runProcessTake(
         break;
       }
 
+      if (probeUrl === primaryUrl && legacyUrl && (attemptStatus === 404 || attemptStatus === 403 || attemptStatus === 405 || attemptStatus === null)) {
+        console.log("mux_static_rendition_legacy_fallback", {
+          ...baseLog,
+          from: primaryUrl,
+          to: legacyUrl,
+        });
+      }
+
+      if (probeUrl === primaryUrl && attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
+        break;
+      }
+
       // Other 4xx (excluding 403/404/405 — those have already been treated
       // as "still preparing") → fail fast.
       if (attemptStatus !== null && attemptStatus >= 400 && attemptStatus < 500 &&
           attemptStatus !== 403 && attemptStatus !== 404 && attemptStatus !== 405) {
         hardFailReason = `Optimised video request failed (HTTP ${attemptStatus}).`;
         break;
-      }
-
-      if (attemptIdx + 1 < probeUrlsToTry.length) {
-        console.log("mux_static_rendition_legacy_fallback", {
-          ...baseLog,
-          from: probeUrl,
-          to: probeUrlsToTry[attemptIdx + 1],
-        });
       }
     }
 
@@ -974,7 +998,14 @@ export async function runProcessTake(
           ...baseLog,
           last_http_status: probeStatus,
           age_ms_since_created: ageSinceCreatedMs,
-          probe_url: probeUrl,
+          primary_url: primaryUrl,
+          primary_head_status: primaryHeadStatus,
+          primary_range_status: primaryRangeStatus,
+          legacy_url: legacyUrl,
+          legacy_head_status: legacyHeadStatus,
+          legacy_range_status: legacyRangeStatus,
+          selected_url: null,
+          deferred_reason: "mp4_not_ready_within_cap",
         });
         metric("preparation_deferred", {
           take_id: takeId,
@@ -987,6 +1018,8 @@ export async function runProcessTake(
       }
     }
 
+    const resolvedProbeUrl = normaliseMuxMp4Url(selectedUrl);
+
     if (!probeOk) {
       const totalElapsed = Date.now() - probeStartedWallclock;
       console.warn("mux_prepare_timeout", {
@@ -995,6 +1028,13 @@ export async function runProcessTake(
         hard_fail_reason: hardFailReason,
         elapsed_ms: totalElapsed,
         static_rendition_failure_code: staticRenditionFailureCode,
+        primary_url: primaryUrl,
+        primary_head_status: primaryHeadStatus,
+        primary_range_status: primaryRangeStatus,
+        legacy_url: legacyUrl,
+        legacy_head_status: legacyHeadStatus,
+        legacy_range_status: legacyRangeStatus,
+        selected_url: null,
       });
       metric("preparation_timeout", {
         take_id: takeId,
@@ -1059,6 +1099,7 @@ export async function runProcessTake(
       http_status: probeStatus,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      selected_url: resolvedProbeUrl,
     });
     metric("preparation_completed", {
       take_id: takeId,
@@ -1211,7 +1252,7 @@ export async function runProcessTake(
       max_retries: ANALYSIS_MAX_RETRIES,
     });
 
-    let urlForCall = initialUrl;
+    let urlForCall = resolvedProbeUrl;
     while (true) {
       // Total-budget guard BEFORE each attempt — prevents starting an attempt
       // we know we can't complete inside the wall-clock budget.
@@ -1279,7 +1320,7 @@ export async function runProcessTake(
         aiResp &&
         aiResp.status === 400 &&
         take.mux_playback_id &&
-        urlForCall === initialUrl
+          urlForCall === resolvedProbeUrl
       ) {
         const errText = await aiResp.text();
         console.warn(
@@ -1287,7 +1328,7 @@ export async function runProcessTake(
           errText.slice(0, 200),
         );
         const freshQuality = tier === "standard" ? "medium" : "high";
-        urlForCall = muxMp4Url(take.mux_playback_id, freshQuality);
+        urlForCall = normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, freshQuality));
         // Roll back the attempt counter so this doesn't consume a retry slot.
         geminiAttempt -= 1;
         continue;

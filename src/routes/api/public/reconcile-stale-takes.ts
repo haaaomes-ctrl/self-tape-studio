@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { getMux, muxMp4Url } from "@/server/mux.server";
+import { getMux, muxMp4Url, normaliseMuxMp4Url } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
 import { scheduleBackground } from "@/worker-entry";
 import { metric } from "@/server/metrics.server";
@@ -159,8 +159,8 @@ async function attemptTranscodingRecovery(take: {
     // Still recoverable for streaming-based analysis; don't terminate.
   }
 
-  const mp4Standard = muxMp4Url(playbackId, "medium");
-  const mp4High = muxMp4Url(playbackId, "high");
+  const mp4Standard = normaliseMuxMp4Url(muxMp4Url(playbackId, "medium"));
+  const mp4High = normaliseMuxMp4Url(muxMp4Url(playbackId, "high"));
 
   const { error: backfillErr } = await supabaseAdmin
     .from("takes")

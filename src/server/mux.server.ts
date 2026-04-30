@@ -31,7 +31,7 @@ export function muxMp4Url(
   playbackId: string,
   _quality: "low" | "medium" | "high" = "high",
 ): string {
-  return `https://stream.mux.com/${playbackId}/highest.mp4`;
+  return normaliseMuxMp4Url(`https://stream.mux.com/${playbackId}/highest.mp4`);
 }
 
 // Legacy path used by takes uploaded before the `static_renditions:
@@ -41,5 +41,12 @@ export function muxMp4LegacyUrl(
   playbackId: string,
   quality: "low" | "medium" | "high" = "high",
 ): string {
-  return `https://stream.mux.com/${playbackId}/${quality}.mp4`;
+  return normaliseMuxMp4Url(`https://stream.mux.com/${playbackId}/${quality}.mp4`);
+}
+
+// Safety guard: Mux MP4 URLs must never keep a trailing slash after `.mp4`.
+// This is safe for any URL string and preserves everything except the invalid
+// terminal slash.
+export function normaliseMuxMp4Url(url: string): string {
+  return url.replace(/\.mp4\/$/, ".mp4");
 }
