@@ -1108,6 +1108,7 @@ export async function runProcessTake(
       } else {
         evidencePassDurationMs = evResult.durationMs;
         twoStepEvidence = evResult.evidence;
+        twoStepTimestampsDropped = evResult.timestamps_dropped;
         const evSummary = summariseEvidence(twoStepEvidence);
         console.log("[take-pipeline] evidence_pass_completed", {
           ...baseLog,
@@ -1120,6 +1121,12 @@ export async function runProcessTake(
           duration_ms: evResult.durationMs,
           timestamps_count: evSummary.timestamped_evidence_count,
         });
+        if (twoStepTimestampsDropped > 0) {
+          console.log("[take-pipeline] timestamp_evidence_dropped", {
+            take_id: takeId,
+            count: twoStepTimestampsDropped,
+          });
+        }
 
         // ---- Step 2: text-only polish ----
         console.log("[take-pipeline] report_polish_started", baseLog);
