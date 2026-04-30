@@ -8,6 +8,7 @@ import {
   QuotaExceededError,
   resolveTakeIdentity,
 } from "@/server/quota.server";
+import { metric } from "@/server/metrics.server";
 
 // Mux webhook receiver. Configure in Mux dashboard:
 //   URL:     https://<project>.lovable.app/api/public/mux-webhook
