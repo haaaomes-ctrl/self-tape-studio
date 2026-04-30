@@ -1038,6 +1038,13 @@ export async function runProcessTake(
       if (transient && geminiAttempt <= GEMINI_MAX_RETRIES) {
         if (await isCancelled()) {
           console.log("[take-pipeline] cancelled before gemini retry", baseLog);
+          metric("cancel", {
+            take_id: takeId,
+            processing_phase: "analysing",
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "before_gemini_retry",
+          });
+          metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysing" });
           return { ok: true, alreadyDone: true };
         }
         geminiRetryCount += 1;
@@ -1047,6 +1054,12 @@ export async function runProcessTake(
           http_status: status,
           attempt_count: geminiAttempt,
           elapsed_ms: Date.now() - geminiStartedAt,
+        });
+        metric("gemini_retry", {
+          take_id: takeId,
+          retry_count: geminiRetryCount,
+          http_status: status,
+          attempt: geminiAttempt,
         });
         await new Promise((r) =>
           setTimeout(r, GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000),
@@ -1061,6 +1074,13 @@ export async function runProcessTake(
         http_status: status,
         elapsed_ms: Date.now() - geminiStartedAt,
       });
+      metric("gemini_failed", {
+        take_id: takeId,
+        retry_count: geminiRetryCount,
+        http_status: status,
+        duration_ms: Date.now() - geminiStartedAt,
+        reason: "retry_exhausted",
+      });
       throw new Error(
         "We couldn't complete the analysis this time. Please try again.",
       );
@@ -1069,6 +1089,12 @@ export async function runProcessTake(
     if (!aiResp || !aiResp.ok) {
       throw new Error("We couldn't complete the analysis this time. Please try again.");
     }
+    metric("gemini_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - geminiStartedAt,
+      retry_count: geminiRetryCount,
+      tier,
+    });
     if (geminiRetryCount > 0) {
       console.log("gemini_retry_succeeded", {
         ...baseLog,
