@@ -2162,6 +2162,41 @@ export async function runProcessTake(
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
+    // ---- Score / verdict alignment (text-only) ----
+    // Only adjusts wording (headline/insight) when it conflicts with the
+    // locked verdict. Never changes scores or the verdict itself.
+    const alignment = enforceScoreAlignment(
+      report,
+      verdict.label as VerdictLabel,
+    );
+    if (alignment.adjusted) {
+      console.log("[take-pipeline] report_score_alignment_adjusted", {
+        take_id: takeId,
+        verdict_final: verdict.label,
+        final_score: overall,
+      });
+    }
+
+    // ---- Defensive final array caps (never exceed UI/report expectations) ----
+    if (Array.isArray(report.strengths) && report.strengths.length > 3) {
+      report.strengths = report.strengths.slice(0, 3);
+    }
+    if (Array.isArray(report.improvements) && report.improvements.length > 3) {
+      report.improvements = report.improvements.slice(0, 3);
+    }
+    if (
+      Array.isArray(report.presentation_notes) &&
+      report.presentation_notes.length > 3
+    ) {
+      report.presentation_notes = report.presentation_notes.slice(0, 3);
+    }
+    if (
+      Array.isArray(report.timestamped_notes) &&
+      report.timestamped_notes.length > 8
+    ) {
+      report.timestamped_notes = report.timestamped_notes.slice(0, 8);
+    }
+
     const scoreBreakdown = {
       audition_type: auditionType,
       level: auditionLevel,
