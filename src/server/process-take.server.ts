@@ -636,6 +636,74 @@ export async function runProcessTake(
     })
     .eq("id", takeId);
 
+  // ---- Hard timeout / retry-cap finaliser scaffolding ----
+  // Defaults are intentionally aggressive to prevent the 10-minute wall-clock
+  // bug where a stuck Gemini call burns the entire E2E budget. Override via
+  // env if a workspace needs different bounds.
+  const ANALYSIS_GEMINI_TIMEOUT_MS = Number(
+    process.env.ANALYSIS_GEMINI_TIMEOUT_MS ?? 90_000,
+  );
+  const ANALYSIS_TOTAL_TIMEOUT_MS = Number(
+    process.env.ANALYSIS_TOTAL_TIMEOUT_MS ?? 540_000,
+  );
+  const ANALYSIS_MAX_RETRIES = Number(process.env.ANALYSIS_MAX_RETRIES ?? 1);
+
+  type FailureCode =
+    | "gemini_timeout"
+    | "gemini_429"
+    | "gemini_5xx"
+    | "analysis_total_timeout"
+    | "analysis_no_terminal_state";
+
+  // Terminal-state tracking: any path that writes status=error/complete must
+  // flip this to true so the finally-block fallback doesn't double-write.
+  let terminalWritten = false;
+
+  const markTerminalFailure = async (
+    code: FailureCode,
+    message: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<void> => {
+    if (terminalWritten) return;
+    terminalWritten = true;
+    const errorMessage = `[failure_code:${code}] ${message}`;
+    try {
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          status: "error",
+          processing_phase: "error",
+          error_message: errorMessage,
+        })
+        .eq("id", takeId);
+    } catch (writeErr) {
+      console.error("[take-pipeline] markTerminalFailure write error", writeErr);
+    }
+    metric("analysis_terminal", {
+      take_id: takeId,
+      reason: code,
+      failure_code: code,
+      duration_ms: Date.now() - runStartedAt,
+      ...extra,
+    });
+    console.warn("[take-pipeline] analysis_terminal", {
+      take_id: takeId,
+      failure_code: code,
+      message,
+      ...extra,
+    });
+  };
+
+  // Carries a failure_code on errors thrown from the Gemini retry loop so the
+  // outer catch can route them through markTerminalFailure with the right tag.
+  class AnalysisFailure extends Error {
+    failureCode: FailureCode;
+    constructor(code: FailureCode, message: string) {
+      super(message);
+      this.failureCode = code;
+    }
+  }
+
   try {
     const { url: initialUrl, tier } = await pickAnalysisSource(take, allowOriginal);
 
