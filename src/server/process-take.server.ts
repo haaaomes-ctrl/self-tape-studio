@@ -800,19 +800,22 @@ export async function runProcessTake(
     //               fail if persistent (>=5 consecutive)
     //   5xx / net → transient — keep polling
     //   other 4xx → hard failure, stop immediately
-    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap
-    // Static rendition cap: the asset is already `ready` by webhook contract,
-    // so the static MP4 (highest.mp4 / legacy high.mp4) should appear inside
-    // ~120s. Beyond that we terminate with mux_static_rendition_timeout.
-    const MUX_STATIC_RENDITION_TIMEOUT_MS = Number(
-      process.env.MUX_STATIC_RENDITION_TIMEOUT_MS ?? 120_000,
-    );
+    // BOUNDED SINGLE-PASS PROBE.
+    //
+    // Cloudflare Workers cancel `waitUntil()` background tasks shortly after
+    // the response is sent, so we cannot rely on a 10-minute polling loop
+    // surviving inside one invocation. Instead, each invocation does ONE
+    // bounded probe (HEAD → ranged-GET fallback → one-shot legacy MP4
+    // fallback) and either:
+    //   - proceeds to Gemini if the MP4 is reachable now, or
+    //   - returns immediately leaving the row in `analysis_pending` so the
+    //     cron-driven reconciler retries it on the next minute.
+    //
+    // The wall-clock cap (PREPARE_HARD_TIMEOUT_MS, measured from
+    // take.created_at, NOT from this invocation) decides when to give up.
+    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap, from created_at
     const probeStartedWallclock = Date.now();
-    const intervalMsFor = (elapsedMs: number): number => {
-      if (elapsedMs < 2 * 60_000) return 10_000;
-      if (elapsedMs < 6 * 60_000) return 20_000;
-      return 30_000;
-    };
+    const ageSinceCreatedMs = elapsedSinceCreatedMs() ?? 0;
     metric("mux_static_rendition_waiting", {
       take_id: takeId,
       processing_phase: "analysis_pending",
@@ -822,7 +825,8 @@ export async function runProcessTake(
       ...baseLog,
       tier,
       processing_phase: "analysis_pending",
-      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      elapsed_ms_since_upload: ageSinceCreatedMs,
+      bounded_single_pass: true,
     });
     metric("preparation_started", {
       take_id: takeId,
@@ -832,28 +836,26 @@ export async function runProcessTake(
 
     let probeStatus: number | null = null;
     let probeOk = false;
-    let consecutive403 = 0;
     let hardFailReason: string | null = null;
     let staticRenditionFailureCode:
       | "mux_static_rendition_timeout"
       | "mux_static_rendition_errored"
       | "mux_static_rendition_skipped"
       | null = null;
-    let probeAttempt = 0;
-    let retryCount = 0;
     let probeUrl = initialUrl;
-    let legacyFallbackTried = false;
 
-    while (Date.now() - probeStartedWallclock < PREPARE_HARD_TIMEOUT_MS) {
-      // Static rendition cap: deterministic timeout for the static MP4
-      // surfacing (the asset itself is already `ready` by webhook contract).
-      const elapsedProbeMs = Date.now() - probeStartedWallclock;
-      if (elapsedProbeMs >= MUX_STATIC_RENDITION_TIMEOUT_MS && !probeOk) {
-        staticRenditionFailureCode = "mux_static_rendition_timeout";
-        hardFailReason = "We couldn't prepare your video in time. Please try again.";
-        break;
-      }
-      probeAttempt += 1;
+    // Try primary URL, then once with the legacy /high.mp4 path if applicable.
+    const probeUrlsToTry: string[] = [probeUrl];
+    if (
+      take.mux_playback_id &&
+      probeUrl.endsWith("/highest.mp4")
+    ) {
+      probeUrlsToTry.push(muxMp4LegacyUrl(take.mux_playback_id, "high"));
+    }
+
+    for (let attemptIdx = 0; attemptIdx < probeUrlsToTry.length && !probeOk; attemptIdx++) {
+      probeUrl = probeUrlsToTry[attemptIdx];
+      const probeAttempt = attemptIdx + 1;
       let attemptStatus: number | null = null;
       let headStatus: number | null = null;
       let rangeStatus: number | null = null;
@@ -863,16 +865,19 @@ export async function runProcessTake(
         headStatus = probe.status;
         attemptStatus = headStatus;
       } catch (probeErr) {
-        // Network error — transient.
         console.warn("mux_prepare_probe_network_error", {
           ...baseLog,
           probe_attempt: probeAttempt,
+          probe_url: probeUrl,
           probe_error: probeErr instanceof Error ? probeErr.message : String(probeErr),
-          elapsed_ms: Date.now() - probeStartedWallclock,
         });
       }
+      // HEAD fallback: ranged GET when CDN says null/403/404/405.
       if (
-        (attemptStatus === null || attemptStatus === 403 || attemptStatus === 404 || attemptStatus === 405) &&
+        (attemptStatus === null ||
+          attemptStatus === 403 ||
+          attemptStatus === 404 ||
+          attemptStatus === 405) &&
         probeUrl.includes("stream.mux.com/")
       ) {
         try {
@@ -887,18 +892,18 @@ export async function runProcessTake(
           console.log("mux_prepare_probe_range_fallback", {
             ...baseLog,
             probe_attempt: probeAttempt,
+            probe_url: probeUrl,
             head_status: headStatus,
             range_status: rangeStatus,
-            elapsed_ms: Date.now() - probeStartedWallclock,
           });
         } catch (rangeProbeErr) {
           console.warn("mux_prepare_probe_range_network_error", {
             ...baseLog,
             probe_attempt: probeAttempt,
+            probe_url: probeUrl,
             head_status: headStatus,
             probe_error:
               rangeProbeErr instanceof Error ? rangeProbeErr.message : String(rangeProbeErr),
-            elapsed_ms: Date.now() - probeStartedWallclock,
           });
         }
       }
@@ -906,11 +911,11 @@ export async function runProcessTake(
       console.log("mux_prepare_probe", {
         ...baseLog,
         probe_attempt: probeAttempt,
+        probe_url: probeUrl,
         http_status: attemptStatus,
         head_status: headStatus,
         range_status: rangeStatus,
         probe_duration_ms: Date.now() - probeStartedAt,
-        elapsed_ms: Date.now() - probeStartedWallclock,
       });
 
       if (attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
@@ -918,7 +923,7 @@ export async function runProcessTake(
         console.log("mux_prepare_ready", {
           ...baseLog,
           probe_attempt: probeAttempt,
-          elapsed_ms: Date.now() - probeStartedWallclock,
+          probe_url: probeUrl,
         });
         metric("static_mp4_ready", {
           take_id: takeId,
@@ -929,89 +934,52 @@ export async function runProcessTake(
         break;
       }
 
-      // Categorise.
-      if (attemptStatus === 404 || attemptStatus === null) {
-        // Normal preparation OR transient network — do not count as failure.
-        consecutive403 = 0;
-        // One-shot legacy rendition fallback: if highest.mp4 keeps 404ing,
-        // try high.mp4 once (older takes provisioned with mp4_support).
-        if (
-          !legacyFallbackTried &&
-          attemptStatus === 404 &&
-          take.mux_playback_id &&
-          probeUrl.endsWith("/highest.mp4") &&
-          probeAttempt >= 3
-        ) {
-          legacyFallbackTried = true;
-          probeUrl = muxMp4LegacyUrl(take.mux_playback_id, "high");
-          console.log("mux_static_rendition_legacy_fallback", {
-            ...baseLog,
-            from: "highest.mp4",
-            to: "high.mp4",
-          });
-        }
-      } else if (attemptStatus === 403) {
-        consecutive403 += 1;
-        if (consecutive403 >= 5) {
-          hardFailReason = "Optimised video URL is not accessible (403).";
-          break;
-        }
-        retryCount += 1;
-        console.log("auto_retry_started", {
-          ...baseLog,
-          retry_count: retryCount,
-          http_status: attemptStatus,
-          elapsed_ms: Date.now() - probeStartedWallclock,
-        });
-      } else if (attemptStatus >= 500 && attemptStatus < 600) {
-        consecutive403 = 0;
-        retryCount += 1;
-        console.log("auto_retry_started", {
-          ...baseLog,
-          retry_count: retryCount,
-          http_status: attemptStatus,
-          elapsed_ms: Date.now() - probeStartedWallclock,
-        });
-      } else if (attemptStatus >= 400 && attemptStatus < 500) {
-        // Other 4xx — fail fast.
+      // Other 4xx (excluding 403/404/405 — those have already been treated
+      // as "still preparing") → fail fast.
+      if (attemptStatus !== null && attemptStatus >= 400 && attemptStatus < 500 &&
+          attemptStatus !== 403 && attemptStatus !== 404 && attemptStatus !== 405) {
         hardFailReason = `Optimised video request failed (HTTP ${attemptStatus}).`;
         break;
       }
 
-      // Touch updated_at so the reconciler doesn't think we're stale mid-poll.
+      if (attemptIdx + 1 < probeUrlsToTry.length) {
+        console.log("mux_static_rendition_legacy_fallback", {
+          ...baseLog,
+          from: probeUrl,
+          to: probeUrlsToTry[attemptIdx + 1],
+        });
+      }
+    }
+
+    if (!probeOk) {
+      // Touch updated_at so the cron reconciler keeps this row visible.
       await supabaseAdmin
         .from("takes")
-        .update({ processing_phase: "analysis_pending" })
+        .update({ processing_phase: "analysis_pending", error_message: null })
         .eq("id", takeId);
 
-      // Re-check cancellation between polls.
-      const { data: midPoll } = await supabaseAdmin
-        .from("takes")
-        .select("status, error_message")
-        .eq("id", takeId)
-        .single();
-      if (
-        midPoll?.status === "error" &&
-        typeof midPoll.error_message === "string" &&
-        midPoll.error_message.toLowerCase().includes("cancelled")
-      ) {
-        console.log("[take-pipeline] cancelled during prepare polling", baseLog);
-        metric("cancel", {
+      // Wall-clock cap from created_at — terminal if we've waited too long.
+      if (ageSinceCreatedMs >= PREPARE_HARD_TIMEOUT_MS) {
+        staticRenditionFailureCode = "mux_static_rendition_timeout";
+        hardFailReason =
+          hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
+      } else if (hardFailReason === null) {
+        // Not ready yet, but still within the budget — leave row as
+        // analysis_pending and bail. Cron reconciler will retry within ~60s.
+        console.log("mux_prepare_not_ready_yet_deferring", {
+          ...baseLog,
+          last_http_status: probeStatus,
+          age_ms_since_created: ageSinceCreatedMs,
+          probe_url: probeUrl,
+        });
+        metric("preparation_deferred", {
           take_id: takeId,
           processing_phase: "analysis_pending",
-          duration_ms: Date.now() - probeStartedWallclock,
-          reason: "during_preparation",
+          age_ms: ageSinceCreatedMs,
+          http_status: probeStatus,
         });
-        metric("analysis_abandoned", {
-          take_id: takeId,
-          processing_phase: "analysis_pending",
-        });
-        return { ok: true, alreadyDone: true };
+        return { ok: true, alreadyDone: false };
       }
-
-      await new Promise((r) =>
-        setTimeout(r, intervalMsFor(Date.now() - probeStartedWallclock)),
-      );
     }
 
     if (!probeOk) {
