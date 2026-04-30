@@ -974,6 +974,11 @@ export async function runProcessTake(
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
     });
+    metric("gemini_started", {
+      take_id: takeId,
+      processing_phase: "analysing",
+      tier,
+    });
 
     let urlForCall = initialUrl;
     while (geminiAttempt <= GEMINI_MAX_RETRIES) {
