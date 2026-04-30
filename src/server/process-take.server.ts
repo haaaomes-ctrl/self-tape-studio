@@ -1943,6 +1943,23 @@ export async function runProcessTake(
       material_scrub_triggered: materialScrubTriggered,
     };
 
+    // ---- Persist stage (timed, tagged, conditional) ----
+    const persistStartedAt = Date.now();
+    metric("analysis_persist_started", { take_id: takeId });
+    console.log("[take-pipeline] analysis_persist_started", baseLog);
+
+    if (finaliseExceeded()) {
+      metric("analysis_persist_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - persistStartedAt,
+        reason: "post_ai_finalise_timeout",
+      });
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "Saving the report took too long. Please try again.",
+      );
+    }
+
     // Final cancellation guard: if the user cancelled while Gemini was
     // running, do NOT overwrite the cancelled state with a completed report.
     const { data: preWrite } = await supabaseAdmin
@@ -1970,26 +1987,55 @@ export async function runProcessTake(
     }
 
     // Conditional update: only persist if the row is still in the exact
-    // pre-write state. If status/phase changed (cancel, retry, reset, error)
-    // between the read above and this write, the update affects 0 rows and
-    // we discard silently.
-    const { data: updatedRows } = await supabaseAdmin
-      .from("takes")
-      .update({
-        status: "complete",
-        processing_phase: "complete",
-        report,
-        scores: report.scores,
-        overall_score: overall,
-        confidence: report.confidence,
-        error_message: null,
-        compliance_flags: complianceFlags as never,
-        score_breakdown: scoreBreakdown as never,
-      })
-      .eq("id", takeId)
-      .eq("status", "processing")
-      .eq("processing_phase", "analysing")
-      .select("id");
+    // pre-write state (status=processing AND processing_phase=analysing).
+    // If state changed (cancel, retry, reset, error) between the read above
+    // and this write, the update affects 0 rows and we discard silently.
+    let updatedRows: { id: string }[] | null = null;
+    try {
+      const updateRes = await supabaseAdmin
+        .from("takes")
+        .update({
+          status: "complete",
+          processing_phase: "complete",
+          report,
+          scores: report.scores,
+          overall_score: overall,
+          confidence: report.confidence,
+          error_message: null,
+          compliance_flags: complianceFlags as never,
+          score_breakdown: scoreBreakdown as never,
+        })
+        .eq("id", takeId)
+        .eq("status", "processing")
+        .eq("processing_phase", "analysing")
+        .select("id");
+      if (updateRes.error) throw updateRes.error;
+      updatedRows = updateRes.data ?? null;
+      if (finaliseExceeded()) {
+        metric("analysis_persist_failed", {
+          take_id: takeId,
+          duration_ms: Date.now() - persistStartedAt,
+          reason: "post_ai_finalise_timeout_after_write",
+        });
+        throw new AnalysisFailure(
+          "analysis_persist_failed",
+          "Saving the report took too long. Please try again.",
+        );
+      }
+    } catch (writeErr) {
+      if (writeErr instanceof AnalysisFailure) throw writeErr;
+      metric("analysis_persist_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - persistStartedAt,
+        reason:
+          writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
+      });
+      console.error("[take-pipeline] analysis_persist_failed", writeErr);
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "We couldn't save the report. Please try again.",
+      );
+    }
 
     if (!updatedRows || updatedRows.length === 0) {
       console.log("result_discarded_state_changed", {
@@ -2005,6 +2051,14 @@ export async function runProcessTake(
       terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
+    metric("analysis_persist_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - persistStartedAt,
+    });
+    console.log("[take-pipeline] analysis_persist_completed", {
+      ...baseLog,
+      duration_ms: Date.now() - persistStartedAt,
+    });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;
 
