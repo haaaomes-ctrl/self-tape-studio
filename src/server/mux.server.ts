@@ -77,19 +77,18 @@ export function normaliseMuxMp4Url(url: string): string {
 }
 
 export function isValidMuxMp4Url(url: string): boolean {
-  const normalised = normaliseMuxMp4Url(url);
   if (
-    !normalised.startsWith(`${MUX_STREAM_ORIGIN}/`) ||
-    !normalised.endsWith(".mp4") ||
-    normalised.endsWith("/") ||
-    normalised.endsWith("\\") ||
-    INVALID_URL_CHARS_RE.test(normalised)
+    !url.startsWith(`${MUX_STREAM_ORIGIN}/`) ||
+    !url.endsWith(".mp4") ||
+    url.endsWith("/") ||
+    url.endsWith("\\") ||
+    INVALID_URL_CHARS_RE.test(url)
   ) {
     return false;
   }
 
   try {
-    const parsed = new URL(normalised);
+    const parsed = new URL(url);
     return parsed.origin === MUX_STREAM_ORIGIN && !parsed.search && !parsed.hash;
   } catch {
     return false;
