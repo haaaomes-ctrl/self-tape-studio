@@ -151,16 +151,27 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             .eq("id", takeId)
             .single();
 
+          const elapsedSinceUpload = existing?.created_at
+            ? Date.now() - new Date(existing.created_at).getTime()
+            : null;
+
           console.log("[take-pipeline] mux video.asset.ready", {
             take_id: takeId,
             audition_id: existing?.audition_id ?? null,
             mux_asset_id: data.id ?? null,
             mux_playback_id: playbackId,
             video_duration_seconds: duration,
-            elapsed_ms_since_upload: existing?.created_at
-              ? Date.now() - new Date(existing.created_at).getTime()
-              : null,
+            elapsed_ms_since_upload: elapsedSinceUpload,
             timestamp: new Date().toISOString(),
+          });
+          metric("mux_asset_ready", {
+            take_id: takeId,
+            duration_ms: elapsedSinceUpload ?? undefined,
+            processing_phase: "transcoding",
+          });
+          metric("transcoding_to_analysis_pending", {
+            take_id: takeId,
+            duration_ms: elapsedSinceUpload ?? undefined,
           });
 
           await supabaseAdmin
