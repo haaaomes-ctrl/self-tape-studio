@@ -90,16 +90,11 @@ export interface MetricFields {
  *   [take-pipeline] metric {"metric":"gemini_completed","take_id":"abc","duration_ms":42100,"ts":"2026-04-30T..."}
  */
 export function metric(name: MetricName, fields: MetricFields = {}): void {
-  // Strip any accidental large/PII fields defensively.
-  const { brief, report, video_url, mp4_url, prompt, ...safe } = fields as Record<
-    string,
-    unknown
-  >;
-  void brief;
-  void report;
-  void video_url;
-  void mp4_url;
-  void prompt;
+  // Strip any accidental large/PII fields defensively before serialising.
+  const safe: Record<string, unknown> = { ...(fields as Record<string, unknown>) };
+  for (const banned of ["brief", "report", "video_url", "mp4_url", "prompt"]) {
+    delete safe[banned];
+  }
 
   const payload = {
     metric: name,
