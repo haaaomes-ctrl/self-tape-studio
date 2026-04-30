@@ -1890,11 +1890,8 @@ export async function runProcessTake(
       tier,
       within_10min: e2eDurationMs <= TEN_MINUTES_MS,
     });
-    metric("analysis_total_duration", {
-      take_id: takeId,
-      duration_ms: e2eDurationMs,
-      tier,
-    });
+    // analysis_total_duration is emitted unconditionally in finally.
+
     metric("analysis_terminal", {
       take_id: takeId,
       reason: "complete",
