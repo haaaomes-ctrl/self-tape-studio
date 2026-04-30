@@ -1368,24 +1368,81 @@ export async function runProcessTake(
       });
     }
 
-    const json = await aiResp.json();
-    const choice = json.choices?.[0];
-    const toolCall = choice?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) {
-      throw new Error("AI did not return a structured report");
-    }
-    let report;
+    // ---- Parse stage (timed, tagged) ----
+    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + persist combined; we apply
+    // it as a wall-clock deadline starting here. If we cross it, we tag
+    // analysis_parse_failed or analysis_persist_failed depending on where.
+    const POST_AI_FINALISE_TIMEOUT_MS = Number(
+      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 20_000,
+    );
+    const finaliseStartedAt = Date.now();
+    const finaliseExceeded = () =>
+      Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+
+    const parseStartedAt = Date.now();
+    metric("analysis_parse_started", { take_id: takeId, model: currentModel });
+    console.log("[take-pipeline] analysis_parse_started", {
+      ...baseLog,
+      model: currentModel,
+    });
+
+    let report: Record<string, unknown> & { [k: string]: unknown };
     try {
-      report = JSON.parse(toolCall.function.arguments);
-    } catch (parseErr) {
-      if (choice?.finish_reason === "length") {
-        throw new Error(
-          "The AI response was cut off before it finished writing the report. Please retry — if it keeps failing, try a shorter take.",
+      const json = await aiResp.json();
+      const choice = json.choices?.[0];
+      const toolCall = choice?.message?.tool_calls?.[0];
+      if (!toolCall?.function?.arguments) {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "AI did not return a structured report. Please try again.",
         );
       }
-      console.error("AI JSON parse failed", parseErr, toolCall.function.arguments?.slice(-300));
-      throw new Error("The AI returned an incomplete report. Please retry.");
+      try {
+        report = JSON.parse(toolCall.function.arguments) as typeof report;
+      } catch (parseErr) {
+        if (choice?.finish_reason === "length") {
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "The AI response was cut off before it finished writing the report. Please retry.",
+          );
+        }
+        console.error(
+          "AI JSON parse failed",
+          parseErr,
+          (toolCall.function.arguments as string | undefined)?.slice(-300),
+        );
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "The AI returned an incomplete report. Please retry.",
+        );
+      }
+      if (finaliseExceeded()) {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "Parsing the AI response took too long. Please try again.",
+        );
+      }
+    } catch (parseOuter) {
+      metric("analysis_parse_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - parseStartedAt,
+        reason:
+          parseOuter instanceof Error ? parseOuter.message.slice(0, 120) : "parse_error",
+      });
+      console.warn("[take-pipeline] analysis_parse_failed", {
+        ...baseLog,
+        duration_ms: Date.now() - parseStartedAt,
+      });
+      throw parseOuter;
     }
+    metric("analysis_parse_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - parseStartedAt,
+    });
+    console.log("[take-pipeline] analysis_parse_completed", {
+      ...baseLog,
+      duration_ms: Date.now() - parseStartedAt,
+    });
 
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
