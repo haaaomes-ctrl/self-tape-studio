@@ -24,7 +24,9 @@ import {
   runReportPolish,
   enforceLockedFields,
   enforceUnsupportedClaims,
+  enforceScoreAlignment,
   renderFallbackReport,
+  type VerdictLabel,
 } from "./report-polish.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
