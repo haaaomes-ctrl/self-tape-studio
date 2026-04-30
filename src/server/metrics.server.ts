@@ -92,7 +92,16 @@ export type MetricName =
   | "analysis_terminal"
   // Quota
   | "quota_rejection"
-  | "quota_check";
+  | "quota_check"
+  // Two-step pipeline
+  | "evidence_pass_started"
+  | "evidence_pass_completed"
+  | "evidence_pass_failed"
+  | "report_polish_started"
+  | "report_polish_completed"
+  | "report_polish_failed"
+  | "two_step_fallback_used"
+  | "two_step_total_ai_duration_ms";
 
 export interface MetricFields {
   take_id?: string | null;
