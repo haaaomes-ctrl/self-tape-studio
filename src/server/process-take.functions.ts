@@ -9,6 +9,7 @@ import {
   QuotaExceededError,
   quotaErrorToResponse,
 } from "./quota.server";
+import { metric } from "./metrics.server";
 
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin
@@ -63,6 +64,12 @@ export const retryProcessTake = createServerFn({ method: "POST" })
         processing_phase: current.processing_phase,
         attempt_count: current.attempt_count ?? 0,
       });
+      metric("already_running_skip", {
+        take_id: data.takeId,
+        processing_phase: current.processing_phase,
+        attempt: current.attempt_count ?? 0,
+        reason: "user_retry",
+      });
       return { ok: true as const, alreadyRunning: true as const };
     }
     try {
@@ -71,7 +78,15 @@ export const retryProcessTake = createServerFn({ method: "POST" })
         "retryProcessTake",
       );
     } catch (err) {
-      if (err instanceof QuotaExceededError) throw quotaErrorToResponse(err);
+      if (err instanceof QuotaExceededError) {
+        metric("quota_rejection", {
+          take_id: data.takeId,
+          reason: err.scope,
+          cap: err.cap,
+          count: err.count,
+        });
+        throw quotaErrorToResponse(err);
+      }
       throw err;
     }
     return runProcessTake(data.takeId, data.allowOriginal);
@@ -127,6 +142,14 @@ export const resetTake = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ takeId: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => {
     await assertTakeOwnership(data.takeId, context.userId, "resetTake");
+    // Snapshot the current phase so we can attribute the cancellation in
+    // the metrics stream (cancel-during-uploading vs cancel-during-prepare
+    // vs cancel-during-analysing).
+    const { data: pre } = await supabaseAdmin
+      .from("takes")
+      .select("processing_phase, created_at")
+      .eq("id", data.takeId)
+      .single();
     await supabaseAdmin
       .from("takes")
       .update({
@@ -135,5 +158,13 @@ export const resetTake = createServerFn({ method: "POST" })
         error_message: "Cancelled by user — upload a new take to retry.",
       })
       .eq("id", data.takeId);
+    metric("cancel", {
+      take_id: data.takeId,
+      processing_phase: pre?.processing_phase ?? null,
+      duration_ms: pre?.created_at
+        ? Date.now() - new Date(pre.created_at).getTime()
+        : undefined,
+      reason: "user_initiated",
+    });
     return { ok: true };
   });

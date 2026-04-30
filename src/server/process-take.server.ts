@@ -9,6 +9,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { muxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
+import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import {
   applyCapsAndLabel,
   bandsForLevel,
@@ -530,6 +531,11 @@ export async function runProcessTake(
     take.error_message.toLowerCase().includes("cancelled")
   ) {
     console.log("runProcessTake: take cancelled by user, skipping", { takeId });
+    metric("cancel", {
+      take_id: takeId,
+      processing_phase: take.processing_phase,
+      reason: "already_cancelled_at_entry",
+    });
     return { ok: true, alreadyDone: true };
   }
   // Idempotency: if a pipeline is already running for this take (either
@@ -547,6 +553,11 @@ export async function runProcessTake(
       processing_phase: take.processing_phase,
       attempt_count: take.attempt_count ?? 0,
     });
+    metric("already_running_skip", {
+      take_id: takeId,
+      processing_phase: take.processing_phase,
+      attempt: take.attempt_count ?? 0,
+    });
     return { ok: true, alreadyRunning: true };
   }
 
@@ -562,6 +573,11 @@ export async function runProcessTake(
     ...baseLog,
     processing_phase: take.processing_phase,
     elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+  });
+  metric("analysis_started", {
+    take_id: takeId,
+    processing_phase: take.processing_phase,
+    attempt: take.attempt_count ?? 0,
   });
 
   const { data: audition, error: audErr } = await supabaseAdmin
@@ -653,6 +669,11 @@ export async function runProcessTake(
       processing_phase: "analysis_pending",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
     });
+    metric("preparation_started", {
+      take_id: takeId,
+      processing_phase: "analysis_pending",
+      tier,
+    });
 
     let probeStatus: number | null = null;
     let probeOk = false;
@@ -692,6 +713,12 @@ export async function runProcessTake(
           ...baseLog,
           probe_attempt: probeAttempt,
           elapsed_ms: Date.now() - probeStartedWallclock,
+        });
+        metric("static_mp4_ready", {
+          take_id: takeId,
+          duration_ms: Date.now() - probeStartedWallclock,
+          attempt: probeAttempt,
+          tier,
         });
         break;
       }
@@ -746,6 +773,16 @@ export async function runProcessTake(
         midPoll.error_message.toLowerCase().includes("cancelled")
       ) {
         console.log("[take-pipeline] cancelled during prepare polling", baseLog);
+        metric("cancel", {
+          take_id: takeId,
+          processing_phase: "analysis_pending",
+          duration_ms: Date.now() - probeStartedWallclock,
+          reason: "during_preparation",
+        });
+        metric("analysis_abandoned", {
+          take_id: takeId,
+          processing_phase: "analysis_pending",
+        });
         return { ok: true, alreadyDone: true };
       }
 
@@ -761,6 +798,21 @@ export async function runProcessTake(
         last_http_status: probeStatus,
         hard_fail_reason: hardFailReason,
         elapsed_ms: totalElapsed,
+      });
+      metric("preparation_timeout", {
+        take_id: takeId,
+        duration_ms: totalElapsed,
+        http_status: probeStatus,
+        reason: hardFailReason ?? "timeout",
+      });
+      metric("mux_static_rendition_failed", {
+        take_id: takeId,
+        reason: hardFailReason ?? "timeout",
+      });
+      metric("analysis_failed", {
+        take_id: takeId,
+        processing_phase: "analysis_pending",
+        reason: "preparation_timeout",
       });
       const userMessage =
         hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
@@ -795,14 +847,31 @@ export async function runProcessTake(
       postPoll.error_message.toLowerCase().includes("cancelled")
     ) {
       console.log("[take-pipeline] cancelled during head-probe, aborting", baseLog);
+      metric("cancel", {
+        take_id: takeId,
+        processing_phase: "analysis_pending",
+        duration_ms: Date.now() - probeStartedWallclock,
+        reason: "after_preparation",
+      });
+      metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysis_pending" });
       return { ok: true, alreadyDone: true };
     }
 
+    const preparationDurationMs = Date.now() - probeStartedWallclock;
     console.log("[take-pipeline] head-probe ok, transitioning to analysing", {
       ...baseLog,
       http_status: probeStatus,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
+    metric("preparation_completed", {
+      take_id: takeId,
+      duration_ms: preparationDurationMs,
+      tier,
+    });
+    metric("analysis_pending_to_analysing", {
+      take_id: takeId,
+      duration_ms: preparationDurationMs,
     });
 
     // NOW flip into the active analysing phase — Gemini call is next.
@@ -905,6 +974,11 @@ export async function runProcessTake(
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
     });
+    metric("gemini_started", {
+      take_id: takeId,
+      processing_phase: "analysing",
+      tier,
+    });
 
     let urlForCall = initialUrl;
     while (geminiAttempt <= GEMINI_MAX_RETRIES) {
@@ -964,6 +1038,13 @@ export async function runProcessTake(
       if (transient && geminiAttempt <= GEMINI_MAX_RETRIES) {
         if (await isCancelled()) {
           console.log("[take-pipeline] cancelled before gemini retry", baseLog);
+          metric("cancel", {
+            take_id: takeId,
+            processing_phase: "analysing",
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "before_gemini_retry",
+          });
+          metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysing" });
           return { ok: true, alreadyDone: true };
         }
         geminiRetryCount += 1;
@@ -973,6 +1054,12 @@ export async function runProcessTake(
           http_status: status,
           attempt_count: geminiAttempt,
           elapsed_ms: Date.now() - geminiStartedAt,
+        });
+        metric("gemini_retry", {
+          take_id: takeId,
+          retry_count: geminiRetryCount,
+          http_status: status,
+          attempt: geminiAttempt,
         });
         await new Promise((r) =>
           setTimeout(r, GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000),
@@ -987,6 +1074,13 @@ export async function runProcessTake(
         http_status: status,
         elapsed_ms: Date.now() - geminiStartedAt,
       });
+      metric("gemini_failed", {
+        take_id: takeId,
+        retry_count: geminiRetryCount,
+        http_status: status,
+        duration_ms: Date.now() - geminiStartedAt,
+        reason: "retry_exhausted",
+      });
       throw new Error(
         "We couldn't complete the analysis this time. Please try again.",
       );
@@ -995,6 +1089,12 @@ export async function runProcessTake(
     if (!aiResp || !aiResp.ok) {
       throw new Error("We couldn't complete the analysis this time. Please try again.");
     }
+    metric("gemini_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - geminiStartedAt,
+      retry_count: geminiRetryCount,
+      tier,
+    });
     if (geminiRetryCount > 0) {
       console.log("gemini_retry_succeeded", {
         ...baseLog,
@@ -1537,6 +1637,11 @@ export async function runProcessTake(
         processing_phase: preWrite?.processing_phase ?? null,
         attempt_count: preWrite?.attempt_count ?? 0,
       });
+      metric("result_discarded_state_changed", {
+        take_id: takeId,
+        processing_phase: preWrite?.processing_phase ?? null,
+        reason: "state_changed_pre_write",
+      });
       return { ok: true, alreadyDone: true };
     }
 
@@ -1568,6 +1673,11 @@ export async function runProcessTake(
         processing_phase: preWrite.processing_phase,
         attempt_count: preWrite.attempt_count ?? 0,
       });
+      metric("result_discarded_state_changed", {
+        take_id: takeId,
+        processing_phase: preWrite.processing_phase,
+        reason: "conditional_update_zero_rows",
+      });
       return { ok: true, alreadyDone: true };
     }
 
@@ -1576,17 +1686,37 @@ export async function runProcessTake(
       .update({ mode: report.mode })
       .eq("id", audition.id);
 
+    const totalDurationMs = Date.now() - runStartedAt;
     console.log("[take-pipeline] report persisted", {
       ...baseLog,
       analysis_tier: tier,
-      total_duration_ms: Date.now() - runStartedAt,
+      total_duration_ms: totalDurationMs,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
+    const e2eDurationMs = elapsedSinceCreatedMs();
+    metric("analysis_completed", {
+      take_id: takeId,
+      processing_phase: "complete",
+      duration_ms: e2eDurationMs,
+      run_duration_ms: totalDurationMs,
+      tier,
+      within_10min: e2eDurationMs <= TEN_MINUTES_MS,
+    });
+    metric("analysis_total_duration", {
+      take_id: takeId,
+      duration_ms: e2eDurationMs,
+      tier,
     });
 
     return { ok: true, tier };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown processing error";
     console.error("runProcessTake failed", message);
+    metric("analysis_failed", {
+      take_id: takeId,
+      reason: message.slice(0, 120),
+      duration_ms: Date.now() - runStartedAt,
+    });
     await supabaseAdmin
       .from("takes")
       .update({ status: "error", processing_phase: "error", error_message: message })

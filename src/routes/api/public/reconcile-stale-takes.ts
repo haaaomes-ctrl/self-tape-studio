@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getMux, muxMp4Url } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
 import { scheduleBackground } from "@/worker-entry";
+import { metric } from "@/server/metrics.server";
 
 // Stale-analysis reconciler.
 //
@@ -196,6 +197,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         }
 
         const now = Date.now();
+        metric("reconciler_run", { reason: "cron_tick" });
         const pendingCutoff = new Date(now - STALE_PENDING_SECONDS * 1_000).toISOString();
         const analysingCutoff = new Date(now - STALE_ANALYSING_MINUTES * 60_000).toISOString();
 
@@ -250,6 +252,12 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             has_upload_id: Boolean(take.mux_upload_id),
           };
           console.log("transcoding_orphan_checked", baseLog);
+          metric("stuck_transcoding", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            duration_ms: Math.round(ageSeconds * 1000),
+          });
+          metric("mux_recovery_attempt", { take_id: take.id });
 
           const recovery = await attemptTranscodingRecovery({
             id: take.id,
@@ -261,9 +269,19 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           });
 
           if (recovery.kind === "recovered") {
+            metric("mux_recovery_success", { take_id: take.id });
+            metric("reconciler_recovered", {
+              take_id: take.id,
+              processing_phase: "transcoding",
+            });
             transcodingRecovered.push(take.id);
             continue;
           }
+
+          metric("mux_recovery_failure", {
+            take_id: take.id,
+            reason: recovery.kind,
+          });
 
           const hardCap = ageSeconds >= TRANSCODING_HARD_FAIL_MINUTES * 60;
           const shouldForceError =
@@ -285,6 +303,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             .eq("id", take.id);
           if (failErr) {
             console.error("transcoding_orphan_forced_error update failed", { ...baseLog, failErr });
+            metric("phase_transition_failure", {
+              take_id: take.id,
+              reason: "transcoding_force_error_db_failed",
+            });
             continue;
           }
           console.warn("transcoding_orphan_forced_error", {
@@ -294,6 +316,16 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             mux_asset_status: "muxAssetStatus" in recovery ? recovery.muxAssetStatus : undefined,
             mux_upload_status: "muxUploadStatus" in recovery ? recovery.muxUploadStatus : undefined,
           });
+          metric("reconciler_forced_error", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            reason: recovery.kind,
+          });
+          metric("analysis_failed", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            reason: "transcoding_orphan_unrecoverable",
+          });
           transcodingForcedError.push(take.id);
         }
 
@@ -302,6 +334,16 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           const ageSeconds = (now - new Date(take.created_at).getTime()) / 1000;
           const exceededAttempts = attempts >= MAX_ATTEMPTS;
           const exceededClock = ageSeconds >= MAX_TOTAL_AGE_SECONDS;
+
+          // Stuck-state metric: emit once per pass, attributed to the actual
+          // phase the take is wedged in.
+          if (take.processing_phase === "analysis_pending") {
+            metric("stuck_analysis_pending", {
+              take_id: take.id,
+              processing_phase: "analysis_pending",
+              duration_ms: Math.round(ageSeconds * 1000),
+            });
+          }
 
           // Cost / wall-clock guard: park in `error` once either limit is hit.
           if (exceededAttempts || exceededClock) {
@@ -316,12 +358,27 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               .eq("id", take.id);
             if (failErr) {
               console.error("reconcile-stale-takes give-up update failed", { takeId: take.id, failErr });
+              metric("phase_transition_failure", {
+                take_id: take.id,
+                reason: "give_up_update_failed",
+              });
             } else {
               console.warn("reconcile-stale-takes giving up on take", {
                 takeId: take.id,
                 attempts,
                 ageSeconds: Math.round(ageSeconds),
                 reason: exceededClock ? "wall-clock" : "attempts",
+              });
+              metric("reconciler_forced_error", {
+                take_id: take.id,
+                processing_phase: take.processing_phase,
+                reason: exceededClock ? "wall_clock" : "attempts",
+                attempt: attempts,
+              });
+              metric("analysis_failed", {
+                take_id: take.id,
+                processing_phase: take.processing_phase,
+                reason: "reconciler_give_up",
               });
               giveUp.push(take.id);
             }
@@ -342,6 +399,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
           if (updErr) {
             console.error("reconcile-stale-takes update failed", { takeId: take.id, updErr });
+            metric("phase_transition_failure", {
+              take_id: take.id,
+              reason: "reschedule_update_failed",
+            });
             continue;
           }
 
@@ -349,6 +410,12 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             takeId: take.id,
             wasPhase: take.processing_phase,
             staleSinceMs: now - new Date(take.updated_at).getTime(),
+          });
+          metric("reconciler_recovered", {
+            take_id: take.id,
+            processing_phase: take.processing_phase,
+            duration_ms: now - new Date(take.updated_at).getTime(),
+            reason: "rescheduled",
           });
           scheduleBackground(
             (async () => {

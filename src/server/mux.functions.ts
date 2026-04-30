@@ -8,6 +8,7 @@ import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
 } from "./quota.server";
+import { metric } from "./metrics.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
@@ -37,6 +38,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { takeId } = data;
     const { userId } = context;
+    metric("upload_url_requested", { take_id: takeId });
 
     // 1. Quota gate
     try {
@@ -50,6 +52,13 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
           cap: err.cap,
           count: err.count,
         });
+        metric("quota_rejection", {
+          take_id: takeId,
+          reason: err.scope,
+          cap: err.cap,
+          count: err.count,
+        });
+        metric("upload_url_failure", { take_id: takeId, reason: "quota_exceeded" });
         throw new Error(`QUOTA_EXCEEDED: ${err.message}`);
       }
       throw err;
@@ -63,6 +72,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     };
     if (!muxConfig.MUX_TOKEN_ID || !muxConfig.MUX_TOKEN_SECRET) {
       console.error("[mux-upload] mux_config_missing", { take_id: takeId, ...muxConfig });
+      metric("upload_url_failure", { take_id: takeId, reason: "mux_config_missing" });
       throw new Error(
         "MUX_CONFIG: Video service is not configured. Please contact support.",
       );
@@ -80,10 +90,12 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         user_id: userId,
         error: takeErr?.message,
       });
+      metric("upload_url_failure", { take_id: takeId, reason: "take_not_found" });
       throw new Error("TAKE_NOT_FOUND: We couldn't find this take. Please refresh and try again.");
     }
     if (take.user_id !== userId) {
       console.warn("[mux-upload] forbidden", { take_id: takeId, user_id: userId });
+      metric("upload_url_failure", { take_id: takeId, reason: "forbidden" });
       throw new Error("FORBIDDEN: You don't have access to this take.");
     }
 
@@ -97,6 +109,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
             take_id: takeId,
             mux_upload_id: existing.id,
           });
+          metric("upload_url_success", { take_id: takeId, reused: true });
           return { uploadUrl: existing.url, uploadId: existing.id };
         }
       } catch {
@@ -144,6 +157,16 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         static_renditions_requested: true,
         passthrough_present: true,
       });
+      metric("mux_upload_error", {
+        take_id: takeId,
+        http_status: status,
+        reason: e?.type ?? "unknown",
+      });
+      metric("upload_url_failure", {
+        take_id: takeId,
+        reason: `mux_api_${status}`,
+        http_status: status,
+      });
       throw new Error(
         `MUX_API_${status}: ${e?.message ?? "Mux rejected the upload request."}`,
       );
@@ -154,6 +177,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         take_id: takeId,
         mux_upload_id: upload?.id,
       });
+      metric("upload_url_failure", { take_id: takeId, reason: "no_url_returned" });
       throw new Error("MUX_API_500: Mux did not return an upload URL.");
     }
 
@@ -174,6 +198,8 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
       static_renditions_accepted: true,
       passthrough_present: true,
     });
+    metric("mux_upload_created", { take_id: takeId });
+    metric("upload_url_success", { take_id: takeId, reused: false });
 
     return { uploadUrl: upload.url, uploadId: upload.id };
   });

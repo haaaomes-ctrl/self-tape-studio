@@ -8,6 +8,7 @@ import {
   QuotaExceededError,
   resolveTakeIdentity,
 } from "@/server/quota.server";
+import { metric } from "@/server/metrics.server";
 
 // Mux webhook receiver. Configure in Mux dashboard:
 //   URL:     https://<project>.lovable.app/api/public/mux-webhook
@@ -122,6 +123,10 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               processing_phase: "transcoding",
             })
             .eq("id", takeId);
+          metric("mux_upload_created", {
+            take_id: takeId,
+            processing_phase: "transcoding",
+          });
           return new Response("ok", { status: 200 });
         }
 
@@ -146,16 +151,27 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             .eq("id", takeId)
             .single();
 
+          const elapsedSinceUpload = existing?.created_at
+            ? Date.now() - new Date(existing.created_at).getTime()
+            : null;
+
           console.log("[take-pipeline] mux video.asset.ready", {
             take_id: takeId,
             audition_id: existing?.audition_id ?? null,
             mux_asset_id: data.id ?? null,
             mux_playback_id: playbackId,
             video_duration_seconds: duration,
-            elapsed_ms_since_upload: existing?.created_at
-              ? Date.now() - new Date(existing.created_at).getTime()
-              : null,
+            elapsed_ms_since_upload: elapsedSinceUpload,
             timestamp: new Date().toISOString(),
+          });
+          metric("mux_asset_ready", {
+            take_id: takeId,
+            duration_ms: elapsedSinceUpload ?? undefined,
+            processing_phase: "transcoding",
+          });
+          metric("transcoding_to_analysis_pending", {
+            take_id: takeId,
+            duration_ms: elapsedSinceUpload ?? undefined,
           });
 
           await supabaseAdmin
@@ -184,6 +200,11 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               status: existing?.status,
               processing_phase: existing?.processing_phase,
             });
+            metric("already_running_skip", {
+              take_id: takeId,
+              processing_phase: existing?.processing_phase ?? null,
+              reason: "webhook_asset_ready",
+            });
             return new Response("ok", { status: 200 });
           }
 
@@ -197,6 +218,12 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               await assertWithinAnalysisQuota(identity, "mux-webhook:asset.ready");
             } catch (qerr) {
               if (qerr instanceof QuotaExceededError) {
+                metric("quota_rejection", {
+                  take_id: takeId,
+                  reason: qerr.scope,
+                  cap: qerr.cap,
+                  count: qerr.count,
+                });
                 await supabaseAdmin
                   .from("takes")
                   .update({
@@ -251,6 +278,16 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               error_message: `Transcoding failed: ${msg}`,
             })
             .eq("id", takeId);
+          if (type === "video.asset.errored") {
+            metric("mux_asset_error", { take_id: takeId, reason: "video.asset.errored" });
+          } else {
+            metric("mux_upload_error", { take_id: takeId, reason: "video.upload.errored" });
+          }
+          metric("analysis_failed", {
+            take_id: takeId,
+            reason: "mux_transcoding_error",
+            processing_phase: "transcoding",
+          });
           return new Response("ok", { status: 200 });
         }
 
