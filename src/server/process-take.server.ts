@@ -669,6 +669,11 @@ export async function runProcessTake(
       processing_phase: "analysis_pending",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
     });
+    metric("preparation_started", {
+      take_id: takeId,
+      processing_phase: "analysis_pending",
+      tier,
+    });
 
     let probeStatus: number | null = null;
     let probeOk = false;
