@@ -72,6 +72,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     };
     if (!muxConfig.MUX_TOKEN_ID || !muxConfig.MUX_TOKEN_SECRET) {
       console.error("[mux-upload] mux_config_missing", { take_id: takeId, ...muxConfig });
+      metric("upload_url_failure", { take_id: takeId, reason: "mux_config_missing" });
       throw new Error(
         "MUX_CONFIG: Video service is not configured. Please contact support.",
       );
@@ -89,10 +90,12 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         user_id: userId,
         error: takeErr?.message,
       });
+      metric("upload_url_failure", { take_id: takeId, reason: "take_not_found" });
       throw new Error("TAKE_NOT_FOUND: We couldn't find this take. Please refresh and try again.");
     }
     if (take.user_id !== userId) {
       console.warn("[mux-upload] forbidden", { take_id: takeId, user_id: userId });
+      metric("upload_url_failure", { take_id: takeId, reason: "forbidden" });
       throw new Error("FORBIDDEN: You don't have access to this take.");
     }
 
