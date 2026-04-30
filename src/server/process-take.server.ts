@@ -810,6 +810,7 @@ export async function runProcessTake(
     | "analysis_parse_failed"
     | "analysis_persist_failed"
     | "analysis_no_terminal_state"
+    | "mux_invalid_mp4_url"
     | "mux_static_rendition_timeout"
     | "mux_static_rendition_errored"
     | "mux_static_rendition_skipped"
