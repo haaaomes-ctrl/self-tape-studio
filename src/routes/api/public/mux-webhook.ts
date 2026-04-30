@@ -123,6 +123,10 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               processing_phase: "transcoding",
             })
             .eq("id", takeId);
+          metric("mux_upload_created", {
+            take_id: takeId,
+            processing_phase: "transcoding",
+          });
           return new Response("ok", { status: 200 });
         }
 
