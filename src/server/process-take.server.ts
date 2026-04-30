@@ -773,6 +773,16 @@ export async function runProcessTake(
         midPoll.error_message.toLowerCase().includes("cancelled")
       ) {
         console.log("[take-pipeline] cancelled during prepare polling", baseLog);
+        metric("cancel", {
+          take_id: takeId,
+          processing_phase: "analysis_pending",
+          duration_ms: Date.now() - probeStartedWallclock,
+          reason: "during_preparation",
+        });
+        metric("analysis_abandoned", {
+          take_id: takeId,
+          processing_phase: "analysis_pending",
+        });
         return { ok: true, alreadyDone: true };
       }
 
