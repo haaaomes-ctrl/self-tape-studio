@@ -438,6 +438,46 @@ function ensureValidMuxMp4Url(params: {
   throw new Error("[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.");
 }
 
+type MuxProbeMethod = "head" | "range_get" | "browser_get";
+
+type MuxProbeHeaderSnapshot = {
+  contentType: string | null;
+  contentLength: string | null;
+  acceptRanges: string | null;
+  cacheControl: string | null;
+  via: string | null;
+};
+
+const MUX_NO_CACHE_HEADERS = {
+  "Cache-Control": "no-cache",
+  Pragma: "no-cache",
+};
+
+const MUX_BROWSER_LIKE_HEADERS = {
+  ...MUX_NO_CACHE_HEADERS,
+  Accept: "video/mp4,video/*,*/*",
+  "User-Agent": "Mozilla/5.0",
+};
+
+function snapshotMuxProbeHeaders(response: Response | null): MuxProbeHeaderSnapshot | null {
+  if (!response) return null;
+  return {
+    contentType: response.headers.get("content-type"),
+    contentLength: response.headers.get("content-length"),
+    acceptRanges: response.headers.get("accept-ranges"),
+    cacheControl: response.headers.get("cache-control"),
+    via: response.headers.get("via"),
+  };
+}
+
+async function disposeMuxProbeResponse(response: Response | null): Promise<void> {
+  try {
+    await response?.body?.cancel();
+  } catch {
+    // Ignore probe body disposal errors — probe success is determined from headers/status only.
+  }
+}
+
 async function pickAnalysisSource(
   take: {
     id: string;
@@ -948,8 +988,13 @@ export async function runProcessTake(
     let selectedUrl = primaryUrl;
     let primaryHeadStatus: number | null = null;
     let primaryRangeStatus: number | null = null;
+    let primaryBrowserGetStatus: number | null = null;
     let legacyHeadStatus: number | null = null;
     let legacyRangeStatus: number | null = null;
+    let legacyBrowserGetStatus: number | null = null;
+    let probeMethod: MuxProbeMethod | null = null;
+    let primaryHeaderSnapshot: MuxProbeHeaderSnapshot | null = null;
+    let legacyHeaderSnapshot: MuxProbeHeaderSnapshot | null = null;
 
     // Current static-rendition assets must prefer `highest.mp4`. Legacy
     // `high.mp4` is a one-time fallback only when the primary is not yet ready.
@@ -961,11 +1006,21 @@ export async function runProcessTake(
       let attemptStatus: number | null = null;
       let headStatus: number | null = null;
       let rangeStatus: number | null = null;
+      let browserGetStatus: number | null = null;
+      let attemptMethod: MuxProbeMethod | null = null;
+      let attemptHeaderSnapshot: MuxProbeHeaderSnapshot | null = null;
       const probeStartedAt = Date.now();
+      let headResponse: Response | null = null;
       try {
-        const probe = await fetch(probeUrl, { method: "HEAD" });
-        headStatus = probe.status;
+        headResponse = await fetch(probeUrl, {
+          method: "HEAD",
+          headers: MUX_NO_CACHE_HEADERS,
+          cache: "no-store",
+        });
+        headStatus = headResponse.status;
         attemptStatus = headStatus;
+        attemptMethod = "head";
+        attemptHeaderSnapshot = snapshotMuxProbeHeaders(headResponse);
       } catch (probeErr) {
         console.warn("mux_prepare_probe_network_error", {
           ...baseLog,
@@ -973,6 +1028,8 @@ export async function runProcessTake(
           probe_url: probeUrl,
           probe_error: probeErr instanceof Error ? probeErr.message : String(probeErr),
         });
+      } finally {
+        await disposeMuxProbeResponse(headResponse);
       }
       // HEAD fallback: ranged GET when CDN says null/403/404/405.
       if (
@@ -982,14 +1039,21 @@ export async function runProcessTake(
           attemptStatus === 405) &&
         probeUrl.includes("stream.mux.com/")
       ) {
+        let rangeResponse: Response | null = null;
         try {
-          const rangeProbe = await fetch(probeUrl, {
+          rangeResponse = await fetch(probeUrl, {
             method: "GET",
-            headers: { Range: "bytes=0-0" },
+            headers: {
+              ...MUX_BROWSER_LIKE_HEADERS,
+              Range: "bytes=0-0",
+            },
+            cache: "no-store",
           });
-          rangeStatus = rangeProbe.status;
+          rangeStatus = rangeResponse.status;
           if (rangeStatus >= 200 && rangeStatus < 300) {
             attemptStatus = rangeStatus;
+            attemptMethod = "range_get";
+            attemptHeaderSnapshot = snapshotMuxProbeHeaders(rangeResponse);
           }
           console.log("mux_prepare_probe_range_fallback", {
             ...baseLog,
@@ -1007,16 +1071,66 @@ export async function runProcessTake(
             probe_error:
               rangeProbeErr instanceof Error ? rangeProbeErr.message : String(rangeProbeErr),
           });
+        } finally {
+          await disposeMuxProbeResponse(rangeResponse);
+        }
+      }
+      if (
+        (attemptStatus === null ||
+          attemptStatus === 403 ||
+          attemptStatus === 404 ||
+          attemptStatus === 405) &&
+        probeUrl.includes("stream.mux.com/")
+      ) {
+        let browserGetResponse: Response | null = null;
+        try {
+          browserGetResponse = await fetch(probeUrl, {
+            method: "GET",
+            headers: MUX_BROWSER_LIKE_HEADERS,
+            cache: "no-store",
+          });
+          browserGetStatus = browserGetResponse.status;
+          if (browserGetStatus >= 200 && browserGetStatus < 300) {
+            attemptStatus = browserGetStatus;
+            attemptMethod = "browser_get";
+            attemptHeaderSnapshot = snapshotMuxProbeHeaders(browserGetResponse);
+          }
+          console.log("mux_prepare_probe_browser_get_fallback", {
+            ...baseLog,
+            probe_attempt: probeAttempt,
+            probe_url: probeUrl,
+            head_status: headStatus,
+            range_status: rangeStatus,
+            browser_get_status: browserGetStatus,
+            response_headers: attemptHeaderSnapshot,
+          });
+        } catch (browserProbeErr) {
+          console.warn("mux_prepare_probe_browser_get_network_error", {
+            ...baseLog,
+            probe_attempt: probeAttempt,
+            probe_url: probeUrl,
+            head_status: headStatus,
+            range_status: rangeStatus,
+            probe_error:
+              browserProbeErr instanceof Error ? browserProbeErr.message : String(browserProbeErr),
+          });
+        } finally {
+          await disposeMuxProbeResponse(browserGetResponse);
         }
       }
       if (probeUrl === primaryUrl) {
         primaryHeadStatus = headStatus;
         primaryRangeStatus = rangeStatus;
+        primaryBrowserGetStatus = browserGetStatus;
+        primaryHeaderSnapshot = attemptHeaderSnapshot;
       } else if (probeUrl === legacyUrl) {
         legacyHeadStatus = headStatus;
         legacyRangeStatus = rangeStatus;
+        legacyBrowserGetStatus = browserGetStatus;
+        legacyHeaderSnapshot = attemptHeaderSnapshot;
       }
       probeStatus = attemptStatus;
+      probeMethod = attemptMethod;
       console.log("mux_prepare_probe", {
         ...baseLog,
         probe_attempt: probeAttempt,
@@ -1024,6 +1138,9 @@ export async function runProcessTake(
         http_status: attemptStatus,
         head_status: headStatus,
         range_status: rangeStatus,
+        browser_get_status: browserGetStatus,
+        selected_probe_method: attemptMethod,
+        response_headers: attemptHeaderSnapshot,
         probe_duration_ms: Date.now() - probeStartedAt,
       });
 
@@ -1037,9 +1154,14 @@ export async function runProcessTake(
           primary_url: primaryUrl,
           primary_head_status: primaryHeadStatus,
           primary_range_status: primaryRangeStatus,
+          primary_browser_get_status: primaryBrowserGetStatus,
+          primary_response_headers: primaryHeaderSnapshot,
           legacy_url: legacyUrl,
           legacy_head_status: legacyHeadStatus,
           legacy_range_status: legacyRangeStatus,
+          legacy_browser_get_status: legacyBrowserGetStatus,
+          legacy_response_headers: legacyHeaderSnapshot,
+          selected_probe_method: probeMethod,
           selected_url: selectedUrl,
         });
         metric("static_mp4_ready", {
@@ -1094,9 +1216,13 @@ export async function runProcessTake(
           primary_url: primaryUrl,
           primary_head_status: primaryHeadStatus,
           primary_range_status: primaryRangeStatus,
+          primary_browser_get_status: primaryBrowserGetStatus,
+          primary_response_headers: primaryHeaderSnapshot,
           legacy_url: legacyUrl,
           legacy_head_status: legacyHeadStatus,
           legacy_range_status: legacyRangeStatus,
+          legacy_browser_get_status: legacyBrowserGetStatus,
+          legacy_response_headers: legacyHeaderSnapshot,
           selected_url: null,
           deferred_reason: "mp4_not_ready_within_cap",
         });
@@ -1140,9 +1266,13 @@ export async function runProcessTake(
         primary_url: primaryUrl,
         primary_head_status: primaryHeadStatus,
         primary_range_status: primaryRangeStatus,
+        primary_browser_get_status: primaryBrowserGetStatus,
+        primary_response_headers: primaryHeaderSnapshot,
         legacy_url: legacyUrl,
         legacy_head_status: legacyHeadStatus,
         legacy_range_status: legacyRangeStatus,
+        legacy_browser_get_status: legacyBrowserGetStatus,
+        legacy_response_headers: legacyHeaderSnapshot,
         selected_url: null,
       });
       metric("preparation_timeout", {
@@ -1206,6 +1336,7 @@ export async function runProcessTake(
     console.log("[take-pipeline] head-probe ok, transitioning to analysing", {
       ...baseLog,
       http_status: probeStatus,
+      probe_method: probeMethod,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
       selected_url: resolvedProbeUrl,
