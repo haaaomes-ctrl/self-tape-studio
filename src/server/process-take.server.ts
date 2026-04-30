@@ -10,6 +10,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { muxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
+import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
+
+// ---- Model routing (env-overridable) ----
+// Primary = Gemini 3 Flash Preview. Fallback = Gemini 2.5 Flash (more
+// stable today). Brief extraction stays on 2.5 Flash inside extract-brief.
+const ANALYSIS_MODEL_PRIMARY =
+  process.env.ANALYSIS_MODEL_PRIMARY ?? "google/gemini-3-flash-preview";
+const ANALYSIS_MODEL_FALLBACK =
+  process.env.ANALYSIS_MODEL_FALLBACK ?? "google/gemini-2.5-flash";
 import {
   applyCapsAndLabel,
   bandsForLevel,
