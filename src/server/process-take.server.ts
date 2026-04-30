@@ -1863,8 +1863,11 @@ export async function runProcessTake(
         processing_phase: preWrite.processing_phase,
         reason: "conditional_update_zero_rows",
       });
+      terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
+    // Successful complete write — terminal state owned here.
+    terminalWritten = true;
 
     await supabaseAdmin
       .from("auditions")
