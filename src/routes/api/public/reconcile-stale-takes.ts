@@ -302,7 +302,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             // Fall through to terminal failure if Mux says it's truly gone or
             // the row is past the hard cap.
             const hardCap = ageSeconds >= TRANSCODING_HARD_FAIL_MINUTES * 60;
-            if (!(recovery.kind === "terminal" || (hardCap && recovery.kind !== "recovered"))) {
+            if (!(recovery.kind === "terminal" || hardCap)) {
               continue;
             }
           }
