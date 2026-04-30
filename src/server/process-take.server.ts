@@ -15,6 +15,22 @@ import {
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
+import {
+  runEvidencePass,
+  summariseEvidence,
+  type EvidencePass,
+} from "./evidence-pass.server";
+import {
+  runReportPolish,
+  enforceLockedFields,
+  enforceUnsupportedClaims,
+  renderFallbackReport,
+} from "./report-polish.server";
+
+// Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
+function isTwoStepEnabled(): boolean {
+  return process.env.TWO_STEP_ANALYSIS_ENABLED === "true";
+}
 
 // ---- Model routing (env-overridable) ----
 // Primary = Gemini 3 Flash Preview. Fallback = Gemini 2.5 Flash (more
