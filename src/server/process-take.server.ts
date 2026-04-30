@@ -1025,6 +1025,178 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
+    // ---- Two-step pipeline (feature-flagged) ----
+    // When TWO_STEP_ANALYSIS_ENABLED === "true", run Step 1 (multimodal
+    // evidence pass) then Step 2 (text-only polish using REPORT_TOOL). Step 1
+    // evidence stays in memory; only a compact non-sensitive summary is
+    // persisted into score_breakdown.two_step. If either step fails entirely,
+    // fall back to a deterministic renderer derived from Step 1 evidence.
+    // When the flag is unset/false, the existing single-pass code path runs
+    // unchanged.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let twoStepReport: any = null;
+    let twoStepEvidence: EvidencePass | null = null;
+    let twoStepEnforcement = {
+      locked_field_overwrites: 0,
+      unsupported_claims_removed: 0,
+      unsupported_claims_rewritten: 0,
+    };
+    let evidencePassDurationMs = 0;
+    let reportPolishDurationMs = 0;
+    let twoStepFallbackUsed = false;
+    let twoStepFallbackReason: string | null = null;
+
+    if (isTwoStepEnabled()) {
+      const twoStepStartedAt = Date.now();
+      const evidenceContext = [
+        `Audition title: ${audition.title}`,
+        levelBlock,
+        briefBlock,
+        extractedBlock,
+        signalsBlock,
+        `Analysis tier: ${tier} rendition.`,
+      ].join("\n\n");
+
+      console.log("[take-pipeline] evidence_pass_started", {
+        ...baseLog,
+        analysis_tier: tier,
+      });
+      metric("evidence_pass_started", { take_id: takeId, tier });
+
+      const evidenceUrl = ensureValidMuxMp4Url({
+        url: resolvedProbeUrl,
+        playbackId: take.mux_playback_id,
+        kind: "gemini",
+      });
+      const evAc = new AbortController();
+      const evTimer = setTimeout(() => evAc.abort(), ANALYSIS_GEMINI_TIMEOUT_MS);
+      const evResult = await runEvidencePass({
+        videoUrl: evidenceUrl,
+        apiKey,
+        signal: evAc.signal,
+        contextText: evidenceContext,
+        durationSeconds: take.mux_duration_seconds ?? null,
+      }).finally(() => clearTimeout(evTimer));
+
+      if (!evResult.ok) {
+        // Step 1 failure → fall back to single-pass for this run. Don't
+        // throw: we still want a usable report.
+        console.warn("[take-pipeline] evidence_pass_failed; falling back to single-pass", {
+          ...baseLog,
+          http_status: evResult.httpStatus,
+          error: evResult.error.slice(0, 200),
+          duration_ms: evResult.durationMs,
+        });
+        metric("evidence_pass_failed", {
+          take_id: takeId,
+          http_status: evResult.httpStatus,
+          duration_ms: evResult.durationMs,
+        });
+      } else {
+        evidencePassDurationMs = evResult.durationMs;
+        twoStepEvidence = evResult.evidence;
+        const evSummary = summariseEvidence(twoStepEvidence);
+        console.log("[take-pipeline] evidence_pass_completed", {
+          ...baseLog,
+          duration_ms: evResult.durationMs,
+          timestamps_count: evSummary.timestamped_evidence_count,
+          sufficiency: evSummary.evidence_sufficiency,
+        });
+        metric("evidence_pass_completed", {
+          take_id: takeId,
+          duration_ms: evResult.durationMs,
+          timestamps_count: evSummary.timestamped_evidence_count,
+        });
+
+        // ---- Step 2: text-only polish ----
+        console.log("[take-pipeline] report_polish_started", baseLog);
+        metric("report_polish_started", { take_id: takeId });
+        const polishAc = new AbortController();
+        const polishTimer = setTimeout(
+          () => polishAc.abort(),
+          ANALYSIS_GEMINI_TIMEOUT_MS,
+        );
+        const polishResult = await runReportPolish({
+          apiKey,
+          signal: polishAc.signal,
+          evidence: twoStepEvidence,
+          briefBlock,
+          extractedBlock,
+          signalsBlock,
+          levelBlock,
+          auditionTitle: audition.title,
+          reportTool: REPORT_TOOL,
+        }).finally(() => clearTimeout(polishTimer));
+
+        if (!polishResult.ok) {
+          // Step 2 failure → deterministic fallback renderer.
+          console.warn("[take-pipeline] report_polish_failed; using fallback renderer", {
+            ...baseLog,
+            http_status: polishResult.httpStatus,
+            error: polishResult.error.slice(0, 200),
+            duration_ms: polishResult.durationMs,
+          });
+          metric("report_polish_failed", {
+            take_id: takeId,
+            http_status: polishResult.httpStatus,
+            duration_ms: polishResult.durationMs,
+          });
+          twoStepFallbackUsed = true;
+          twoStepFallbackReason = polishResult.error.slice(0, 120);
+          reportPolishDurationMs = polishResult.durationMs;
+          const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
+          twoStepReport = renderFallbackReport(twoStepEvidence, mode);
+          metric("two_step_fallback_used", {
+            take_id: takeId,
+            reason: twoStepFallbackReason,
+          });
+        } else {
+          reportPolishDurationMs = polishResult.durationMs;
+          twoStepReport = polishResult.report;
+          // Locked-field enforcement (PRIMARY safeguard).
+          const locked = enforceLockedFields(twoStepReport, twoStepEvidence);
+          twoStepEnforcement.locked_field_overwrites = locked.overwrites;
+          if (locked.overwrites > 0) {
+            console.log("[take-pipeline] report_polish_locked_field_overwritten", {
+              ...baseLog,
+              count: locked.overwrites,
+            });
+          }
+          // Conservative unsupported-claim handling.
+          const claims = enforceUnsupportedClaims(twoStepReport, twoStepEvidence);
+          twoStepEnforcement.unsupported_claims_removed = claims.removed;
+          twoStepEnforcement.unsupported_claims_rewritten = claims.rewritten;
+          console.log("[take-pipeline] report_polish_completed", {
+            ...baseLog,
+            duration_ms: polishResult.durationMs,
+            locked_overwrites: locked.overwrites,
+            claims_removed: claims.removed,
+            claims_rewritten: claims.rewritten,
+          });
+          metric("report_polish_completed", {
+            take_id: takeId,
+            duration_ms: polishResult.durationMs,
+            locked_overwrites: locked.overwrites,
+            claims_removed: claims.removed,
+            claims_rewritten: claims.rewritten,
+          });
+        }
+      }
+
+      const totalAi = Date.now() - twoStepStartedAt;
+      console.log("[take-pipeline] two_step_total_ai_duration_ms", {
+        ...baseLog,
+        duration_ms: totalAi,
+        evidence_ms: evidencePassDurationMs,
+        polish_ms: reportPolishDurationMs,
+        fallback_used: twoStepFallbackUsed,
+      });
+      metric("two_step_total_ai_duration_ms", {
+        take_id: takeId,
+        duration_ms: totalAi,
+      });
+    }
+
     const callAI = (videoUrl: string, signal: AbortSignal, model: string) =>
       fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
