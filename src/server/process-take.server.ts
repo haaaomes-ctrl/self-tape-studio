@@ -636,6 +636,74 @@ export async function runProcessTake(
     })
     .eq("id", takeId);
 
+  // ---- Hard timeout / retry-cap finaliser scaffolding ----
+  // Defaults are intentionally aggressive to prevent the 10-minute wall-clock
+  // bug where a stuck Gemini call burns the entire E2E budget. Override via
+  // env if a workspace needs different bounds.
+  const ANALYSIS_GEMINI_TIMEOUT_MS = Number(
+    process.env.ANALYSIS_GEMINI_TIMEOUT_MS ?? 90_000,
+  );
+  const ANALYSIS_TOTAL_TIMEOUT_MS = Number(
+    process.env.ANALYSIS_TOTAL_TIMEOUT_MS ?? 540_000,
+  );
+  const ANALYSIS_MAX_RETRIES = Number(process.env.ANALYSIS_MAX_RETRIES ?? 1);
+
+  type FailureCode =
+    | "gemini_timeout"
+    | "gemini_429"
+    | "gemini_5xx"
+    | "analysis_total_timeout"
+    | "analysis_no_terminal_state";
+
+  // Terminal-state tracking: any path that writes status=error/complete must
+  // flip this to true so the finally-block fallback doesn't double-write.
+  let terminalWritten = false;
+
+  const markTerminalFailure = async (
+    code: FailureCode,
+    message: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<void> => {
+    if (terminalWritten) return;
+    terminalWritten = true;
+    const errorMessage = `[failure_code:${code}] ${message}`;
+    try {
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          status: "error",
+          processing_phase: "error",
+          error_message: errorMessage,
+        })
+        .eq("id", takeId);
+    } catch (writeErr) {
+      console.error("[take-pipeline] markTerminalFailure write error", writeErr);
+    }
+    metric("analysis_terminal", {
+      take_id: takeId,
+      reason: code,
+      failure_code: code,
+      duration_ms: Date.now() - runStartedAt,
+      ...extra,
+    });
+    console.warn("[take-pipeline] analysis_terminal", {
+      take_id: takeId,
+      failure_code: code,
+      message,
+      ...extra,
+    });
+  };
+
+  // Carries a failure_code on errors thrown from the Gemini retry loop so the
+  // outer catch can route them through markTerminalFailure with the right tag.
+  class AnalysisFailure extends Error {
+    failureCode: FailureCode;
+    constructor(code: FailureCode, message: string) {
+      super(message);
+      this.failureCode = code;
+    }
+  }
+
   try {
     const { url: initialUrl, tier } = await pickAnalysisSource(take, allowOriginal);
 
@@ -915,7 +983,7 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const callAI = (videoUrl: string) =>
+    const callAI = (videoUrl: string, signal: AbortSignal) =>
       fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -942,13 +1010,18 @@ export async function runProcessTake(
           tool_choice: { type: "function", function: { name: "submit_audition_report" } },
           max_tokens: 8192,
         }),
+        signal,
       });
 
-    // Gemini call with system-owned automatic retries.
-    //   - Retry on: network/throw, timeout, 429, 5xx (max 2 retries, backoff 10s/30s).
-    //   - Do NOT retry: 400 (validation/schema — except existing one-shot fresh-URL
-    //     fallback), 402 (quota/credits), other 4xx, cancellation.
-    const GEMINI_MAX_RETRIES = 2;
+    // ---- Strict Gemini retry policy ----
+    // Retry ONLY on: per-attempt timeout, 429, 500, 503, 504.
+    // Never retry on: parse errors, validation errors, 4xx other than 429,
+    // 402 (credits), or other 5xx not in the list above.
+    // Hard caps:
+    //   - Per-attempt timeout: ANALYSIS_GEMINI_TIMEOUT_MS
+    //   - Total wall-clock budget: ANALYSIS_TOTAL_TIMEOUT_MS (run-level)
+    //   - Max retries: ANALYSIS_MAX_RETRIES (so total attempts = 1 + retries)
+    const RETRYABLE_HTTP = new Set([429, 500, 503, 504]);
     const GEMINI_BACKOFF_MS = [10_000, 30_000];
 
     const isCancelled = async (): Promise<boolean> => {
@@ -978,25 +1051,67 @@ export async function runProcessTake(
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
       model: "google/gemini-3-flash-preview",
+      gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+      total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
+      max_retries: ANALYSIS_MAX_RETRIES,
     });
     metric("gemini_started", {
       take_id: takeId,
       processing_phase: "analysing",
       tier,
       model: "google/gemini-3-flash-preview",
+      gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+      total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
+      max_retries: ANALYSIS_MAX_RETRIES,
     });
 
     let urlForCall = initialUrl;
-    while (geminiAttempt <= GEMINI_MAX_RETRIES) {
+    while (true) {
+      // Total-budget guard BEFORE each attempt — prevents starting an attempt
+      // we know we can't complete inside the wall-clock budget.
+      const elapsedRunMs = Date.now() - runStartedAt;
+      if (elapsedRunMs >= ANALYSIS_TOTAL_TIMEOUT_MS) {
+        metric("gemini_failed", {
+          take_id: takeId,
+          retry_count: geminiRetryCount,
+          duration_ms: Date.now() - geminiStartedAt,
+          reason: "analysis_total_timeout",
+          failure_code: "analysis_total_timeout",
+        });
+        throw new AnalysisFailure(
+          "analysis_total_timeout",
+          "The analysis exceeded its total time budget. Please try again.",
+        );
+      }
+
       geminiAttempt += 1;
       const attemptStart = Date.now();
+      // Per-attempt deadline is the smaller of the per-attempt cap and the
+      // remaining total budget — never start a long attempt we can't finish.
+      const remainingBudgetMs = ANALYSIS_TOTAL_TIMEOUT_MS - elapsedRunMs;
+      const attemptTimeoutMs = Math.max(
+        1_000,
+        Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, remainingBudgetMs),
+      );
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), attemptTimeoutMs);
+
       let thrown: unknown = null;
+      let timedOut = false;
       try {
-        aiResp = await callAI(urlForCall);
+        aiResp = await callAI(urlForCall, ac.signal);
       } catch (callErr) {
         thrown = callErr;
         aiResp = null;
+        // AbortError shape varies between runtimes — detect by name.
+        const name = (callErr as { name?: string } | undefined)?.name;
+        if (ac.signal.aborted || name === "AbortError" || name === "TimeoutError") {
+          timedOut = true;
+        }
+      } finally {
+        clearTimeout(timer);
       }
+
       const status = aiResp?.status ?? null;
       console.log("[take-pipeline] gemini response received", {
         ...baseLog,
@@ -1005,12 +1120,14 @@ export async function runProcessTake(
         gemini_attempt: geminiAttempt,
         gemini_duration_ms: Date.now() - attemptStart,
         elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+        timed_out: timedOut,
       });
 
       // Success.
       if (aiResp && aiResp.ok) break;
 
       // One-shot stale-URL recovery for 400 — preserve existing fallback.
+      // Does NOT count against the retry budget (URL/schema recovery).
       if (
         aiResp &&
         aiResp.status === 400 &&
@@ -1024,76 +1141,137 @@ export async function runProcessTake(
         );
         const freshQuality = tier === "standard" ? "medium" : "high";
         urlForCall = muxMp4Url(take.mux_playback_id, freshQuality);
-        // Doesn't count as a transient retry — this is schema/URL recovery.
+        // Roll back the attempt counter so this doesn't consume a retry slot.
+        geminiAttempt -= 1;
         continue;
       }
 
-      // Hard, non-retryable failures.
+      // Hard, non-retryable: 402 (credits).
       if (aiResp && aiResp.status === 402) {
+        metric("gemini_failed", {
+          take_id: takeId,
+          retry_count: geminiRetryCount,
+          http_status: 402,
+          duration_ms: Date.now() - geminiStartedAt,
+          reason: "credits_exhausted",
+        });
         throw new Error("AI credits exhausted on this workspace. Add funds to continue.");
       }
-      if (aiResp && aiResp.status >= 400 && aiResp.status < 500 && aiResp.status !== 429) {
-        const t = await aiResp.text();
-        console.error("AI gateway hard error", aiResp.status, t.slice(0, 500));
-        throw new Error(`AI gateway error (${aiResp.status})`);
-      }
 
-      // Transient: network throw, 429, 5xx. Retry with backoff if budget left.
-      const transient = thrown !== null || aiResp?.status === 429 ||
-        (aiResp && aiResp.status >= 500 && aiResp.status < 600);
-      if (transient && geminiAttempt <= GEMINI_MAX_RETRIES) {
-        if (await isCancelled()) {
-          console.log("[take-pipeline] cancelled before gemini retry", baseLog);
-          metric("cancel", {
-            take_id: takeId,
-            processing_phase: "analysing",
-            duration_ms: Date.now() - geminiStartedAt,
-            reason: "before_gemini_retry",
-          });
-          metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysing" });
-          return { ok: true, alreadyDone: true };
-        }
-        geminiRetryCount += 1;
-        console.log("gemini_retry_started", {
-          ...baseLog,
-          retry_count: geminiRetryCount,
-          http_status: status,
-          attempt_count: geminiAttempt,
-          elapsed_ms: Date.now() - geminiStartedAt,
-        });
-        metric("gemini_retry", {
+      // Determine retryability per strict policy.
+      const httpRetryable =
+        aiResp !== null && status !== null && RETRYABLE_HTTP.has(status);
+      const transient = timedOut || httpRetryable;
+
+      // Pick a failure_code for whatever we'd terminate with if no retry left.
+      let failureCode: FailureCode;
+      if (timedOut) failureCode = "gemini_timeout";
+      else if (status === 429) failureCode = "gemini_429";
+      else if (status !== null && status >= 500 && status < 600)
+        failureCode = "gemini_5xx";
+      else failureCode = "gemini_5xx"; // network throw treated as transient/5xx-class
+
+      // Non-retryable (parse/validation/4xx other than 429): terminate now.
+      if (!transient) {
+        const t = aiResp ? await aiResp.text().catch(() => "") : "";
+        console.error("AI gateway hard error", status, t.slice(0, 500));
+        metric("gemini_failed", {
           take_id: takeId,
           retry_count: geminiRetryCount,
           http_status: status,
-          attempt: geminiAttempt,
+          duration_ms: Date.now() - geminiStartedAt,
+          reason: "non_retryable",
         });
-        await new Promise((r) =>
-          setTimeout(r, GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000),
-        );
-        continue;
+        // 4xx other than 429 → no failure_code in the spec list. Map to gemini_5xx
+        // ONLY if status >= 500, otherwise surface as a plain hard error so the
+        // outer catch records it without one of the listed codes (which are
+        // reserved for the listed retryable failure modes). To keep terminal
+        // tagging simple, emit a generic non-retryable terminal.
+        throw new Error(`AI gateway error (${status ?? "network"})`);
       }
 
-      // Out of retries.
-      console.warn("gemini_retry_exhausted", {
+      // Transient — retry if budget allows.
+      if (geminiRetryCount >= ANALYSIS_MAX_RETRIES) {
+        // Out of retries: emit gemini_failed and surface a typed terminal error.
+        console.warn("gemini_retry_exhausted", {
+          ...baseLog,
+          retry_count: geminiRetryCount,
+          http_status: status,
+          timed_out: timedOut,
+          elapsed_ms: Date.now() - geminiStartedAt,
+          failure_code: failureCode,
+        });
+        metric("gemini_failed", {
+          take_id: takeId,
+          retry_count: geminiRetryCount,
+          http_status: status,
+          duration_ms: Date.now() - geminiStartedAt,
+          reason: "retry_exhausted",
+          failure_code: failureCode,
+          timed_out: timedOut,
+        });
+        const msg =
+          failureCode === "gemini_timeout"
+            ? "The analysis took too long. Please try again."
+            : failureCode === "gemini_429"
+              ? "AI gateway is rate-limited. Please try again shortly."
+              : "AI gateway is temporarily unavailable. Please try again.";
+        throw new AnalysisFailure(failureCode, msg);
+      }
+
+      if (await isCancelled()) {
+        console.log("[take-pipeline] cancelled before gemini retry", baseLog);
+        metric("cancel", {
+          take_id: takeId,
+          processing_phase: "analysing",
+          duration_ms: Date.now() - geminiStartedAt,
+          reason: "before_gemini_retry",
+        });
+        metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysing" });
+        terminalWritten = true; // cancellation is its own terminal state
+        return { ok: true, alreadyDone: true };
+      }
+
+      geminiRetryCount += 1;
+      console.log("gemini_retry_started", {
         ...baseLog,
         retry_count: geminiRetryCount,
         http_status: status,
+        attempt_count: geminiAttempt,
         elapsed_ms: Date.now() - geminiStartedAt,
+        timed_out: timedOut,
       });
-      metric("gemini_failed", {
+      metric("gemini_retry", {
         take_id: takeId,
         retry_count: geminiRetryCount,
         http_status: status,
-        duration_ms: Date.now() - geminiStartedAt,
-        reason: "retry_exhausted",
+        attempt: geminiAttempt,
+        timed_out: timedOut,
+        failure_code: failureCode,
       });
-      throw new Error(
-        "We couldn't complete the analysis this time. Please try again.",
-      );
+      const backoff = GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000;
+      await new Promise((r) => setTimeout(r, backoff));
+      // Loop continues — total-budget guard at the top will catch overruns.
     }
 
     if (!aiResp || !aiResp.ok) {
-      throw new Error("We couldn't complete the analysis this time. Please try again.");
+      throw new AnalysisFailure(
+        "analysis_no_terminal_state",
+        "We couldn't complete the analysis this time. Please try again.",
+      );
+    }
+    metric("gemini_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - geminiStartedAt,
+      retry_count: geminiRetryCount,
+      tier,
+    });
+    if (geminiRetryCount > 0) {
+      console.log("gemini_retry_succeeded", {
+        ...baseLog,
+        retry_count: geminiRetryCount,
+        elapsed_ms: Date.now() - geminiStartedAt,
+      });
     }
     metric("gemini_completed", {
       take_id: takeId,
@@ -1648,6 +1826,7 @@ export async function runProcessTake(
         processing_phase: preWrite?.processing_phase ?? null,
         reason: "state_changed_pre_write",
       });
+      terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
 
@@ -1684,8 +1863,11 @@ export async function runProcessTake(
         processing_phase: preWrite.processing_phase,
         reason: "conditional_update_zero_rows",
       });
+      terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
+    // Successful complete write — terminal state owned here.
+    terminalWritten = true;
 
     await supabaseAdmin
       .from("auditions")
@@ -1708,8 +1890,11 @@ export async function runProcessTake(
       tier,
       within_10min: e2eDurationMs <= TEN_MINUTES_MS,
     });
-    metric("analysis_total_duration", {
+    // analysis_total_duration is emitted unconditionally in finally.
+
+    metric("analysis_terminal", {
       take_id: takeId,
+      reason: "complete",
       duration_ms: e2eDurationMs,
       tier,
     });
@@ -1723,10 +1908,52 @@ export async function runProcessTake(
       reason: message.slice(0, 120),
       duration_ms: Date.now() - runStartedAt,
     });
-    await supabaseAdmin
-      .from("takes")
-      .update({ status: "error", processing_phase: "error", error_message: message })
-      .eq("id", takeId);
+
+    // Route through markTerminalFailure when we have a tagged failure_code.
+    // Otherwise write the legacy untagged error_message and tag the metric
+    // stream as analysis_no_terminal_state-equivalent generic failure.
+    if (err instanceof AnalysisFailure) {
+      await markTerminalFailure(err.failureCode, message);
+    } else if (!terminalWritten) {
+      terminalWritten = true;
+      try {
+        await supabaseAdmin
+          .from("takes")
+          .update({ status: "error", processing_phase: "error", error_message: message })
+          .eq("id", takeId);
+      } catch (writeErr) {
+        console.error("[take-pipeline] terminal write failed", writeErr);
+      }
+      metric("analysis_terminal", {
+        take_id: takeId,
+        reason: "uncoded_failure",
+        duration_ms: Date.now() - runStartedAt,
+      });
+      console.warn("[take-pipeline] analysis_terminal", {
+        take_id: takeId,
+        failure_code: "uncoded_failure",
+        message,
+      });
+    }
     return { ok: false, error: message };
+  } finally {
+    // Final safety net: if no terminal state was written by any path above
+    // (success persist, discard, markTerminalFailure, or catch fallback),
+    // force a terminal failure so the take never lingers indefinitely.
+    if (!terminalWritten) {
+      try {
+        await markTerminalFailure(
+          "analysis_no_terminal_state",
+          "Analysis ended without writing a terminal state. Please try again.",
+        );
+      } catch (finallyErr) {
+        console.error("[take-pipeline] finally finaliser failed", finallyErr);
+      }
+    }
+    // Always emit the run-level total duration so KPIs can include failures.
+    metric("analysis_total_duration", {
+      take_id: takeId,
+      duration_ms: Date.now() - runStartedAt,
+    });
   }
 }
