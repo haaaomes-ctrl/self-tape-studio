@@ -2,9 +2,9 @@
 //
 // Text-only "polish" pass. Receives the locked Step 1 evidence (no video) and
 // uses the existing REPORT_TOOL schema to produce a final structured report.
-// Then runs locked-field enforcement (primary safeguard) and conservative
-// unsupported-claim handling. Includes a deterministic fallback renderer if
-// Step 2 fails entirely.
+// Then runs locked-field enforcement (primary safeguard), conservative
+// unsupported-claim handling, and a deterministic fallback renderer for
+// total Step 2 failure.
 
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
@@ -12,18 +12,21 @@ import { isValidTimestamp } from "./evidence-pass.server";
 const DEFAULT_MODEL =
   process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
 
-const POLISH_SYSTEM_PROMPT = `You are a UK casting director, agent and acting coach writing a self-tape audition report. You will NOT be given the video. You will be given a locked EVIDENCE block from a prior pass that did watch the tape.
+const POLISH_SYSTEM_PROMPT = `You are a UK casting director, agent and acting coach writing a self-tape audition report. You will NOT be given the video. You will be given a LOCKED EVIDENCE block from a prior pass that did watch the tape.
 
 Rules:
 - Use ONLY the supplied evidence as factual ground truth. Do NOT invent observations the evidence does not support.
-- Do NOT change any per-category numeric score. The orchestrator will overwrite scores from the evidence pass.
-- Do NOT add new timestamped_notes that are not in evidence.timestamps. You may rephrase the note text for an existing timestamp.
-- Do NOT add new submission_risk_flags or presentation_notes that the evidence does not support.
-- For role_fit_notes, only use the supplied role_fit_signals.
+- Improve WORDING only. Do NOT change scores, score meanings, verdicts, or score-derived conclusions. The orchestrator will overwrite scores from the evidence pass.
+- Do NOT add new timestamped_notes that are not in evidence.timestamped_evidence. Do NOT change their timestamps.
+- Do NOT add new submission_risk_flags that the evidence does not support.
+- Do NOT add new presentation_notes that the evidence does not support.
+- Do NOT add new role_fit claims beyond the supplied role_fit_evidence.
 - Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre, colour).
 - Be specific, prioritised, supportive — the same voice as the existing single-pass report.
 - Calibrate tone to the supplied performer level.
 - NEVER comment on appearance, body, age, race, class, disability, mobility aids, medical devices, or socioeconomic status.
+- Respect evidence_sufficiency. If audio_assessable=false, do not praise vocal detail. If video_assessable=false, do not praise micro-expression. If brief_assessable=false or role_fit_assessable=false, leave role_fit_notes empty.
+- Final array limits: strengths ≤3, improvements ≤3 (prioritised by impact), presentation_notes ≤3, timestamped_notes ≤8, coaching_drills as the existing schema allows.
 - Return ONLY via the submit_audition_report tool.`;
 
 export type RunReportPolishArgs = {
@@ -56,29 +59,39 @@ export type RunReportPolishResult =
       model: string;
     };
 
+/** Build the locked-evidence block sent to the polish model (text-only). */
+function buildEvidenceBlock(ev: EvidencePass): string {
+  return `LOCKED EVIDENCE (Step 1 — authoritative, do not contradict):\n${JSON.stringify(
+    {
+      evidence_version: ev.evidence_version,
+      audition_type: ev.audition_type,
+      detected_components: ev.detected_components,
+      raw_scores: ev.raw_scores,
+      core_strengths_evidence: ev.core_strengths_evidence,
+      core_improvements_evidence: ev.core_improvements_evidence,
+      fix_first_evidence: ev.fix_first_evidence,
+      brief_adherence_evidence: ev.brief_adherence_evidence,
+      category_notes_evidence: ev.category_notes_evidence,
+      role_fit_evidence: ev.role_fit_evidence,
+      role_fit_modifier_suggested: ev.role_fit_modifier_suggested,
+      role_fit_confidence: ev.role_fit_confidence,
+      presentation_evidence: ev.presentation_evidence,
+      risk_evidence: ev.risk_evidence,
+      timestamped_evidence: ev.timestamped_evidence,
+      evidence_sufficiency: ev.evidence_sufficiency,
+    },
+    null,
+    2,
+  )}`;
+}
+
 export async function runReportPolish(
   args: RunReportPolishArgs,
 ): Promise<RunReportPolishResult> {
   const model = args.model ?? DEFAULT_MODEL;
   const startedAt = Date.now();
 
-  // Serialise evidence compactly. No raw model output beyond what we already
-  // captured in Step 1 (which is itself bounded and non-PII).
-  const evidenceBlock = `LOCKED EVIDENCE (Step 1 — authoritative, do not contradict):\n${JSON.stringify(
-    {
-      audition_type: args.evidence.audition_type,
-      detected_components: args.evidence.detected_components,
-      raw_scores: args.evidence.raw_scores,
-      sufficiency: args.evidence.sufficiency,
-      observations: args.evidence.observations,
-      timestamps: args.evidence.timestamps,
-      risk_signals: args.evidence.risk_signals,
-      role_fit_signals: args.evidence.role_fit_signals,
-      presentation_signals: args.evidence.presentation_signals,
-    },
-    null,
-    2,
-  )}`;
+  const evidenceBlock = buildEvidenceBlock(args.evidence);
 
   const userText = [
     `Audition title: ${args.auditionTitle}`,
@@ -87,7 +100,7 @@ export async function runReportPolish(
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
-    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Do not invent new timestamps, risk flags, or presentation notes.",
+    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Improve wording only. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency.",
   ].join("\n\n");
 
   let resp: Response | null = null;
@@ -155,7 +168,13 @@ export async function runReportPolish(
       };
     }
     const report = JSON.parse(tc.function.arguments);
-    return { ok: true, report, durationMs: Date.now() - startedAt, model, httpStatus: resp.status };
+    return {
+      ok: true,
+      report,
+      durationMs: Date.now() - startedAt,
+      model,
+      httpStatus: resp.status,
+    };
   } catch (err) {
     return {
       ok: false,
@@ -169,16 +188,14 @@ export async function runReportPolish(
 
 // ---------- Locked-field enforcement (PRIMARY safeguard) ----------
 
-export type EnforceResult = {
-  locked_field_overwrites: number;
-  unsupported_claims_removed: number;
-  unsupported_claims_rewritten: number;
-};
-
 /**
  * Overwrite locked fields on the polished report from Step 1 evidence.
  * The orchestrator will still run its existing recompute / caps /
  * material-policy passes after this.
+ *
+ * Public timestamped_notes shape stays { timestamp, note }. We construct
+ * the public note as `observation + " — " + why_it_matters`, allowing the
+ * polish pass to slightly rephrase as long as it preserves the timestamp.
  */
 export function enforceLockedFields(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -195,15 +212,22 @@ export function enforceLockedFields(
 
   set("audition_type", evidence.audition_type);
   set("detected_components", evidence.detected_components);
-  // Scores: trust Step 1 evidence raw_scores. Existing recompute downstream
-  // takes these and applies weights/caps.
   set("scores", { ...evidence.raw_scores });
 
-  // Replace timestamped_notes with the validated Step 1 set (allow polish
-  // to rephrase the note text for an existing timestamp; never add new ones).
-  const allowedTimestamps = new Map<string, string>();
-  for (const t of evidence.timestamps) {
-    if (isValidTimestamp(t.timestamp)) allowedTimestamps.set(t.timestamp, t.note);
+  // Build public timestamped_notes from locked evidence, preserving any
+  // polish rephrasing on a per-timestamp basis.
+  const allowed = new Map<string, string>();
+  for (const t of evidence.timestamped_evidence) {
+    if (!isValidTimestamp(t.timestamp)) continue;
+    const obs = (t.observation ?? "").trim();
+    const why = (t.why_it_matters ?? "").trim();
+    if (!obs || !why) continue;
+    // Merge if observation and why are essentially the same idea.
+    const publicNote =
+      obs.toLowerCase() === why.toLowerCase() || why.toLowerCase().includes(obs.toLowerCase())
+        ? why
+        : `${obs} — ${why}`;
+    allowed.set(t.timestamp, publicNote);
   }
   const polishedNotes: Array<{ timestamp: string; note: string }> = Array.isArray(
     report.timestamped_notes,
@@ -211,7 +235,7 @@ export function enforceLockedFields(
     ? report.timestamped_notes
     : [];
   const finalNotes: Array<{ timestamp: string; note: string }> = [];
-  for (const [ts, evNote] of allowedTimestamps.entries()) {
+  for (const [ts, evNote] of allowed.entries()) {
     const polished = polishedNotes.find(
       (n) => typeof n?.timestamp === "string" && n.timestamp === ts,
     );
@@ -223,7 +247,7 @@ export function enforceLockedFields(
           : evNote,
     });
   }
-  set("timestamped_notes", finalNotes);
+  set("timestamped_notes", finalNotes.slice(0, 8));
 
   return { overwrites };
 }
@@ -261,54 +285,68 @@ function closestEvidence(claim: string, evidenceLines: string[]): string | null 
   return best && best.score > 0 ? best.line : null;
 }
 
+/** Return all observation-grounded text lines from evidence. */
+function evidenceCorpusLines(ev: EvidencePass): string[] {
+  return [
+    ...ev.core_strengths_evidence.map((s) => s.evidence ?? ""),
+    ...ev.core_improvements_evidence.map((s) => s.evidence ?? ""),
+    ev.fix_first_evidence ?? "",
+    ...Object.values(ev.category_notes_evidence ?? {}),
+    ...Object.values(ev.brief_adherence_evidence ?? {}).filter(
+      (v): v is string => typeof v === "string",
+    ),
+    ev.role_fit_evidence ?? "",
+    ...ev.presentation_evidence,
+    ...ev.risk_evidence.map((r) => `${r.flag}. ${r.why}`),
+    ...ev.timestamped_evidence.map((t) => `${t.observation} ${t.why_it_matters}`),
+    ...ev.detected_components.map((c) => c.note ?? ""),
+  ].filter((s) => typeof s === "string" && s.length > 0);
+}
+
 /**
  * Conservative unsupported-claim enforcement.
  *
  * Strict (drop new entries that don't appear in evidence):
- *   - timestamped_notes (already enforced via locked fields above)
  *   - submission_risk_flags
  *   - presentation_notes
- *   - role_fit_notes (replaced with evidence-grounded text if unsupported)
+ *   - role_fit_notes
+ *   - (timestamped_notes already enforced via locked fields above)
  *
- * Soft (rewrite, never delete):
+ * Soft (rewrite, never delete on overlap alone):
  *   - strengths
  *   - improvements
- *
- * Strengths/improvements are deleted ONLY if clearly contradicted by
- * sufficiency (e.g. claims strong audio when evidence.sufficiency.has_audio
- * is false).
+ *   Deleted ONLY if directly contradicted by evidence_sufficiency (e.g.
+ *   praises vocal detail when audio_assessable=false).
  */
 export function enforceUnsupportedClaims(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   report: any,
   evidence: EvidencePass,
-): { removed: number; rewritten: number } {
+): { removed: number; rewritten: number; per_field_removed: Record<string, number> } {
   let removed = 0;
   let rewritten = 0;
+  const per_field_removed: Record<string, number> = {};
+  const bumpRemoved = (field: string) => {
+    per_field_removed[field] = (per_field_removed[field] ?? 0) + 1;
+    removed += 1;
+  };
 
-  const evidenceCorpus: string[] = [
-    ...evidence.observations,
-    ...evidence.risk_signals,
-    ...evidence.role_fit_signals,
-    ...evidence.presentation_signals,
-    ...evidence.timestamps.map((t) => t.note),
-    ...evidence.detected_components.map((c) => c.note ?? ""),
-  ]
-    .filter((s) => typeof s === "string" && s.length > 0)
-    .map((s) => s.toLowerCase());
+  const corpusLower = evidenceCorpusLines(evidence).map((s) => s.toLowerCase());
 
   // ---- Strict: submission_risk_flags ----
   if (Array.isArray(report.submission_risk_flags)) {
     const riskCorpus = [
-      ...evidence.risk_signals.map((s) => s.toLowerCase()),
-      ...evidence.observations.map((s) => s.toLowerCase()),
+      ...evidence.risk_evidence.map((r) =>
+        `${r.flag} ${r.why}`.toLowerCase(),
+      ),
+      ...corpusLower,
     ];
     const filtered = report.submission_risk_flags.filter(
       (rf: { severity?: string; flag?: string }) => {
         if (!rf || typeof rf.flag !== "string") return false;
         const score = overlapScore(rf.flag, riskCorpus);
         const ok = score >= 0.4;
-        if (!ok) removed += 1;
+        if (!ok) bumpRemoved("submission_risk_flags");
         return ok;
       },
     );
@@ -318,78 +356,101 @@ export function enforceUnsupportedClaims(
   // ---- Strict: presentation_notes ----
   if (Array.isArray(report.presentation_notes)) {
     const presCorpus = [
-      ...evidence.presentation_signals.map((s) => s.toLowerCase()),
-      ...evidence.observations.map((s) => s.toLowerCase()),
+      ...evidence.presentation_evidence.map((s) => s.toLowerCase()),
+      ...corpusLower,
     ];
     const filtered = report.presentation_notes.filter((n: unknown) => {
       if (typeof n !== "string" || n.trim().length === 0) return false;
       const score = overlapScore(n, presCorpus);
       const ok = score >= 0.4;
-      if (!ok) removed += 1;
+      if (!ok) bumpRemoved("presentation_notes");
       return ok;
     });
-    report.presentation_notes = filtered;
+    report.presentation_notes = filtered.slice(0, 3);
   }
 
   // ---- Strict-ish: role_fit_notes ----
-  if (typeof report.role_fit_notes === "string" && report.role_fit_notes.trim().length > 0) {
-    const score = overlapScore(report.role_fit_notes, evidence.role_fit_signals.map((s) => s.toLowerCase()));
-    if (evidence.role_fit_signals.length === 0) {
-      // No role-fit signals captured — Step 1 didn't see enough. Blank it.
+  if (
+    typeof report.role_fit_notes === "string" &&
+    report.role_fit_notes.trim().length > 0
+  ) {
+    const roleAssessable =
+      !!evidence.evidence_sufficiency?.role_fit_assessable &&
+      !!evidence.evidence_sufficiency?.brief_assessable;
+    const roleEvidence = (evidence.role_fit_evidence ?? "").trim();
+    if (!roleAssessable || roleEvidence.length === 0) {
       if (report.role_fit_notes !== "") {
         report.role_fit_notes = "";
-        removed += 1;
+        bumpRemoved("role_fit_notes");
       }
-    } else if (score < 0.3) {
-      // Replace with evidence-grounded wording.
-      const replacement = `Role fit, based on observable evidence: ${evidence.role_fit_signals.slice(0, 2).join("; ")}.`;
-      if (report.role_fit_notes !== replacement) {
-        report.role_fit_notes = replacement;
-        rewritten += 1;
+    } else {
+      const score = overlapScore(report.role_fit_notes, [roleEvidence.toLowerCase()]);
+      if (score < 0.3) {
+        const replacement = `Role fit, based on observable evidence: ${roleEvidence}`;
+        if (report.role_fit_notes !== replacement) {
+          report.role_fit_notes = replacement;
+          rewritten += 1;
+        }
       }
     }
   }
 
   // ---- Soft: strengths / improvements ----
+  const suff = evidence.evidence_sufficiency;
   const sufficiencyContradicts = (claim: string): boolean => {
     const c = claim.toLowerCase();
-    if (!evidence.sufficiency.has_audio && /\b(audio|sound|clear voice|diction|projection)\b/.test(c) && /\b(strong|excellent|great|clear|good)\b/.test(c)) {
+    if (
+      !suff?.audio_assessable &&
+      /\b(audio|sound|clear voice|diction|projection|vocal detail|tone|pitch)\b/.test(c) &&
+      /\b(strong|excellent|great|clear|good|crisp|rich|warm)\b/.test(c)
+    ) {
       return true;
     }
-    if (!evidence.sufficiency.has_visible_face && /\b(eye(line|s)?|expression|face|micro[- ]expressions?)\b/.test(c) && /\b(strong|excellent|great|good|clear)\b/.test(c)) {
+    if (
+      !suff?.video_assessable &&
+      /\b(eye(line|s)?|expression|face|micro[- ]expressions?|stillness|presence)\b/.test(c) &&
+      /\b(strong|excellent|great|good|clear|specific)\b/.test(c)
+    ) {
+      return true;
+    }
+    if (
+      !suff?.movement_assessable &&
+      /\b(movement|physicality|gesture|choreo|dance|body)\b/.test(c) &&
+      /\b(strong|excellent|great|good|clear|specific)\b/.test(c)
+    ) {
+      return true;
+    }
+    if (
+      !suff?.vocal_assessable &&
+      /\b(vocal|sing(ing)?|tone|pitch|breath|support|riff)\b/.test(c) &&
+      /\b(strong|excellent|great|clear|good)\b/.test(c)
+    ) {
       return true;
     }
     return false;
   };
 
-  const evidenceLines: string[] = [
-    ...evidence.observations,
-    ...evidence.timestamps.map((t) => t.note),
-    ...evidence.detected_components.map((c) => c.note ?? ""),
-  ].filter((s) => typeof s === "string" && s.length > 0);
+  const corpusForOverlap = corpusLower;
+  const evidenceLines = evidenceCorpusLines(evidence);
 
-  const softProcess = (arr: unknown): string[] => {
+  const softProcess = (arr: unknown, fieldName: string): string[] => {
     if (!Array.isArray(arr)) return [];
     const out: string[] = [];
     for (const raw of arr) {
       if (typeof raw !== "string" || raw.trim().length === 0) continue;
       if (sufficiencyContradicts(raw)) {
-        removed += 1;
+        bumpRemoved(fieldName);
         continue;
       }
-      const score = overlapScore(raw, evidenceCorpus);
+      const score = overlapScore(raw, corpusForOverlap);
       if (score >= 0.3) {
         out.push(raw);
       } else {
-        // Rewrite to align with closest evidence line, preserving the original
-        // intent shape (strength vs improvement is a per-array concern, the
-        // caller knows which array this is).
         const closest = closestEvidence(raw, evidenceLines);
         if (closest) {
           out.push(closest);
           rewritten += 1;
         } else {
-          // No anchor available — keep original rather than delete.
           out.push(raw);
         }
       }
@@ -397,10 +458,84 @@ export function enforceUnsupportedClaims(
     return out;
   };
 
-  if (Array.isArray(report.strengths)) report.strengths = softProcess(report.strengths);
-  if (Array.isArray(report.improvements)) report.improvements = softProcess(report.improvements);
+  if (Array.isArray(report.strengths)) {
+    report.strengths = softProcess(report.strengths, "strengths").slice(0, 3);
+  }
+  if (Array.isArray(report.improvements)) {
+    report.improvements = softProcess(report.improvements, "improvements").slice(0, 3);
+  }
 
-  return { removed, rewritten };
+  return { removed, rewritten, per_field_removed };
+}
+
+// ---------- Score / verdict alignment ----------
+
+export type VerdictLabel =
+  | "Strong for this level"
+  | "Ready to submit"
+  | "Worth another take"
+  | "Not ready yet";
+
+/**
+ * Adjust wording (NOT scores, NOT verdicts) so the report's tone aligns with
+ * the locked final verdict.
+ *
+ * - Strong for this level: tone should be refinement-focused.
+ * - Ready to submit: positive, but still has clear improvements.
+ * - Worth another take: clearly explains why another take is useful.
+ * - Not ready yet: direct, practical, not falsely encouraging.
+ */
+export function enforceScoreAlignment(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report: any,
+  verdict: VerdictLabel,
+): { adjusted: boolean } {
+  let adjusted = false;
+  const ensureHeadline = (prefix: string) => {
+    const cur = typeof report.casting_headline === "string" ? report.casting_headline : "";
+    if (!cur.toLowerCase().startsWith(prefix.toLowerCase())) {
+      report.casting_headline = `${prefix} ${cur}`.trim();
+      adjusted = true;
+    }
+  };
+
+  if (verdict === "Strong for this level") {
+    // No false blockers in the headline.
+    if (
+      typeof report.casting_headline === "string" &&
+      /\b(not ready|blocked|reject|fails?|cannot)\b/i.test(report.casting_headline)
+    ) {
+      report.casting_headline = "This tape is strong for the performer's level.";
+      adjusted = true;
+    }
+  } else if (verdict === "Ready to submit") {
+    if (
+      typeof report.casting_headline === "string" &&
+      /\b(not ready|blocked|reject|fails?)\b/i.test(report.casting_headline)
+    ) {
+      report.casting_headline = "This tape is ready to submit, with room for refinement.";
+      adjusted = true;
+    }
+  } else if (verdict === "Worth another take") {
+    ensureHeadline("Worth another take —");
+  } else if (verdict === "Not ready yet") {
+    if (
+      typeof report.casting_headline === "string" &&
+      /\b(strong|excellent|ready to submit)\b/i.test(report.casting_headline)
+    ) {
+      report.casting_headline = "Not ready yet — see the priority fix below.";
+      adjusted = true;
+    }
+    if (
+      typeof report.casting_insight === "string" &&
+      /\b(highly castable|very castable|excellent)\b/i.test(report.casting_insight)
+    ) {
+      report.casting_insight = "Re-tape recommended before submitting.";
+      adjusted = true;
+    }
+  }
+
+  return { adjusted };
 }
 
 // ---------- Deterministic fallback renderer ----------
@@ -409,23 +544,72 @@ export function enforceUnsupportedClaims(
  * Build a minimal, valid report directly from Step 1 evidence when Step 2
  * fails. The orchestrator's existing post-process (recompute, caps, material
  * policy, verdict, block reasons) runs over this exactly as it would over a
- * polished report.
+ * polished report. Prefers the richer evidence fields over generic scraping.
  */
 export function renderFallbackReport(
   evidence: EvidencePass,
   mode: "brief" | "baseline",
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any {
-  const top = (arr: string[], n: number): string[] => arr.slice(0, n).filter((s) => s.length > 0);
-  const obs = evidence.observations;
-  const strengths = top(obs.filter((o) => /\b(strong|clear|good|consistent|grounded|connected|specific|truthful|present)\b/i.test(o)), 3);
-  const improvements = top(
-    [
-      ...evidence.risk_signals,
-      ...obs.filter((o) => /\b(unclear|weak|low|missing|inconsistent|drift|push|over)\b/i.test(o)),
-    ],
-    3,
-  );
+  const cn = evidence.category_notes_evidence ?? {
+    technical: "",
+    audio: "",
+    vocal: "",
+    acting: "",
+    brief_adherence: "",
+    professional_presentation: "",
+  };
+  const ba = evidence.brief_adherence_evidence;
+
+  const strengths = evidence.core_strengths_evidence
+    .map((s) =>
+      s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
+    )
+    .filter((x) => typeof x === "string" && x.length > 0)
+    .slice(0, 3);
+
+  const improvements = evidence.core_improvements_evidence
+    .map((s) =>
+      s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
+    )
+    .filter((x) => typeof x === "string" && x.length > 0)
+    .slice(0, 3);
+
+  const fixFirst =
+    (evidence.fix_first_evidence ?? "").trim() ||
+    improvements[0] ||
+    "";
+
+  const timestamped_notes = evidence.timestamped_evidence
+    .map((t) => {
+      const obs = (t.observation ?? "").trim();
+      const why = (t.why_it_matters ?? "").trim();
+      if (!obs || !why) return null;
+      const note =
+        obs.toLowerCase() === why.toLowerCase() || why.toLowerCase().includes(obs.toLowerCase())
+          ? why
+          : `${obs} — ${why}`;
+      return { timestamp: t.timestamp, note };
+    })
+    .filter((x): x is { timestamp: string; note: string } => x !== null)
+    .slice(0, 8);
+
+  const submission_risk_flags = evidence.risk_evidence.map((r) => ({
+    severity: r.severity,
+    flag: r.flag,
+  }));
+  const casting_risk_explanations = evidence.risk_evidence.map((r) => ({
+    flag: r.flag,
+    casting_impact: r.why,
+    recall_impact: r.recall_impact,
+  }));
+
+  const role_fit_notes =
+    mode === "brief" &&
+    !!evidence.evidence_sufficiency?.role_fit_assessable &&
+    (evidence.role_fit_evidence ?? "").trim().length > 0
+      ? `Role fit observations: ${evidence.role_fit_evidence}`
+      : "";
 
   return {
     mode,
@@ -433,7 +617,8 @@ export function renderFallbackReport(
     detected_components: evidence.detected_components,
     consistency_modifier: 0,
     confidence: 60,
-    confidence_reason: "Generated from evidence pass (polish step unavailable).",
+    confidence_reason:
+      "Generated from evidence pass (polish step unavailable).",
     overall_score:
       Math.round(
         ((evidence.raw_scores.technical ?? 0) +
@@ -444,37 +629,49 @@ export function renderFallbackReport(
           5,
       ) || 0,
     casting_headline: "Report generated from observation evidence.",
-    casting_insight: "Polish step unavailable — see strengths and improvements below.",
+    casting_insight:
+      "Polish step unavailable — see strengths and improvements below.",
     scores: { ...evidence.raw_scores },
     brief_adherence_breakdown: {
-      material_compliance: evidence.raw_scores.brief_adherence,
-      technical_compliance: evidence.raw_scores.brief_adherence,
-      instruction_precision: evidence.raw_scores.brief_adherence,
-      professionalism_signals: evidence.raw_scores.brief_adherence,
-      note: "Derived from evidence pass.",
+      material_compliance: ba?.score_material ?? evidence.raw_scores.brief_adherence,
+      technical_compliance: ba?.score_technical ?? evidence.raw_scores.brief_adherence,
+      instruction_precision: ba?.score_instruction ?? evidence.raw_scores.brief_adherence,
+      professionalism_signals:
+        ba?.score_professional ?? evidence.raw_scores.brief_adherence,
+      note:
+        [
+          ba?.material_compliance,
+          ba?.technical_compliance,
+          ba?.instruction_precision,
+          ba?.professionalism_signals,
+        ]
+          .filter((s): s is string => typeof s === "string" && s.length > 0)
+          .join(" ") || "Derived from evidence pass.",
     },
     category_notes: {
-      technical: obs.find((o) => /technical|frame|lighting|focus/i.test(o)) ?? "",
-      audio: obs.find((o) => /audio|sound|voice|hear/i.test(o)) ?? "",
-      vocal: obs.find((o) => /sing|vocal|pitch/i.test(o)) ?? "",
-      acting: obs.find((o) => /acting|intention|connection/i.test(o)) ?? "",
-      brief_adherence: obs.find((o) => /brief|instruction|requirement/i.test(o)) ?? "",
-      professional_presentation: obs.find((o) => /slate|present|pace/i.test(o)) ?? "",
+      technical: cn.technical ?? "",
+      audio: cn.audio ?? "",
+      vocal: cn.vocal ?? "",
+      acting: cn.acting ?? "",
+      brief_adherence: cn.brief_adherence ?? "",
+      professional_presentation: cn.professional_presentation ?? "",
     },
-    strengths: strengths.length > 0 ? strengths : ["Performance captured for review."],
-    improvements: improvements.length > 0 ? improvements : ["Continue refining the take."],
-    fix_first: improvements[0] ?? "",
-    timestamped_notes: evidence.timestamps.map((t) => ({ timestamp: t.timestamp, note: t.note })),
-    coaching_drills: ["Re-run the take with sharper choices on the strongest moment."],
-    submission_risk_flags: evidence.risk_signals.map((r) => ({ severity: "low", flag: r })),
-    casting_risk_explanations: [],
-    role_fit_notes:
-      mode === "brief" && evidence.role_fit_signals.length > 0
-        ? `Role fit observations: ${evidence.role_fit_signals.slice(0, 2).join("; ")}.`
-        : "",
+    strengths:
+      strengths.length > 0 ? strengths : ["Performance captured for review."],
+    improvements:
+      improvements.length > 0 ? improvements : ["Continue refining the take."],
+    fix_first: fixFirst,
+    timestamped_notes,
+    coaching_drills: [
+      "Re-run the take with sharper choices on the strongest moment.",
+    ],
+    submission_risk_flags,
+    casting_risk_explanations,
+    role_fit_notes,
     role_fit_modifier: 0,
-    role_fit_confidence: "low",
-    presentation_notes: evidence.presentation_signals.slice(0, 3),
-    at_risk: evidence.raw_scores.brief_adherence < 40 && mode === "brief",
+    role_fit_confidence: evidence.role_fit_confidence ?? "low",
+    presentation_notes: evidence.presentation_evidence.slice(0, 3),
+    at_risk:
+      evidence.raw_scores.brief_adherence < 40 && mode === "brief",
   };
 }
