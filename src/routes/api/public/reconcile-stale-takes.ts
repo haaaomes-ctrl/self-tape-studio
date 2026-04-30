@@ -252,6 +252,12 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             has_upload_id: Boolean(take.mux_upload_id),
           };
           console.log("transcoding_orphan_checked", baseLog);
+          metric("stuck_transcoding", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            duration_ms: Math.round(ageSeconds * 1000),
+          });
+          metric("mux_recovery_attempt", { take_id: take.id });
 
           const recovery = await attemptTranscodingRecovery({
             id: take.id,
@@ -263,9 +269,19 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           });
 
           if (recovery.kind === "recovered") {
+            metric("mux_recovery_success", { take_id: take.id });
+            metric("reconciler_recovered", {
+              take_id: take.id,
+              processing_phase: "transcoding",
+            });
             transcodingRecovered.push(take.id);
             continue;
           }
+
+          metric("mux_recovery_failure", {
+            take_id: take.id,
+            reason: recovery.kind,
+          });
 
           const hardCap = ageSeconds >= TRANSCODING_HARD_FAIL_MINUTES * 60;
           const shouldForceError =
@@ -287,6 +303,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             .eq("id", take.id);
           if (failErr) {
             console.error("transcoding_orphan_forced_error update failed", { ...baseLog, failErr });
+            metric("phase_transition_failure", {
+              take_id: take.id,
+              reason: "transcoding_force_error_db_failed",
+            });
             continue;
           }
           console.warn("transcoding_orphan_forced_error", {
@@ -295,6 +315,16 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             detail: "reason" in recovery ? recovery.reason : undefined,
             mux_asset_status: "muxAssetStatus" in recovery ? recovery.muxAssetStatus : undefined,
             mux_upload_status: "muxUploadStatus" in recovery ? recovery.muxUploadStatus : undefined,
+          });
+          metric("reconciler_forced_error", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            reason: recovery.kind,
+          });
+          metric("analysis_failed", {
+            take_id: take.id,
+            processing_phase: "transcoding",
+            reason: "transcoding_orphan_unrecoverable",
           });
           transcodingForcedError.push(take.id);
         }
