@@ -734,6 +734,10 @@ export async function runProcessTake(
   // Terminal-state tracking: any path that writes status=error/complete must
   // flip this to true so the finally-block fallback doesn't double-write.
   let terminalWritten = false;
+  // Intentional non-terminal exit (e.g. MP4 not yet ready, leaving the row
+  // in analysis_pending for the cron reconciler to retry). When true, the
+  // finally-block safety net MUST NOT mark the take as failed.
+  let deferredPending = false;
 
   const markTerminalFailure = async (
     code: FailureCode,
@@ -978,6 +982,7 @@ export async function runProcessTake(
           age_ms: ageSinceCreatedMs,
           http_status: probeStatus,
         });
+        deferredPending = true;
         return { ok: true, alreadyDone: false };
       }
     }
@@ -2238,7 +2243,7 @@ export async function runProcessTake(
     // Final safety net: if no terminal state was written by any path above
     // (success persist, discard, markTerminalFailure, or catch fallback),
     // force a terminal failure so the take never lingers indefinitely.
-    if (!terminalWritten) {
+    if (!terminalWritten && !deferredPending) {
       try {
         await markTerminalFailure(
           "analysis_no_terminal_state",
@@ -2247,6 +2252,10 @@ export async function runProcessTake(
       } catch (finallyErr) {
         console.error("[take-pipeline] finally finaliser failed", finallyErr);
       }
+    } else if (deferredPending) {
+      console.log("[take-pipeline] runProcessTake deferred (cron will retry)", {
+        take_id: takeId,
+      });
     }
     // Always emit the run-level total duration so KPIs can include failures.
     metric("analysis_total_duration", {
