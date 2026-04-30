@@ -531,6 +531,11 @@ export async function runProcessTake(
     take.error_message.toLowerCase().includes("cancelled")
   ) {
     console.log("runProcessTake: take cancelled by user, skipping", { takeId });
+    metric("cancel", {
+      take_id: takeId,
+      processing_phase: take.processing_phase,
+      reason: "already_cancelled_at_entry",
+    });
     return { ok: true, alreadyDone: true };
   }
   // Idempotency: if a pipeline is already running for this take (either
@@ -548,6 +553,11 @@ export async function runProcessTake(
       processing_phase: take.processing_phase,
       attempt_count: take.attempt_count ?? 0,
     });
+    metric("already_running_skip", {
+      take_id: takeId,
+      processing_phase: take.processing_phase,
+      attempt: take.attempt_count ?? 0,
+    });
     return { ok: true, alreadyRunning: true };
   }
 
@@ -563,6 +573,11 @@ export async function runProcessTake(
     ...baseLog,
     processing_phase: take.processing_phase,
     elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+  });
+  metric("analysis_started", {
+    take_id: takeId,
+    processing_phase: take.processing_phase,
+    attempt: take.attempt_count ?? 0,
   });
 
   const { data: audition, error: audErr } = await supabaseAdmin
