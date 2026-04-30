@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getMux, muxMp4Url } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
 import { scheduleBackground } from "@/worker-entry";
 
