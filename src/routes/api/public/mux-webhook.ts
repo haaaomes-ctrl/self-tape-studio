@@ -278,6 +278,16 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               error_message: `Transcoding failed: ${msg}`,
             })
             .eq("id", takeId);
+          if (type === "video.asset.errored") {
+            metric("mux_asset_error", { take_id: takeId, reason: "video.asset.errored" });
+          } else {
+            metric("mux_upload_error", { take_id: takeId, reason: "video.upload.errored" });
+          }
+          metric("analysis_failed", {
+            take_id: takeId,
+            reason: "mux_transcoding_error",
+            processing_phase: "transcoding",
+          });
           return new Response("ok", { status: 200 });
         }
 
