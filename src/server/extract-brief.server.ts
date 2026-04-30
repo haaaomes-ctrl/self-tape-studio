@@ -9,9 +9,16 @@ import type { ExtractedBrief, AuditionType, MaterialPolicy } from "@/lib/auditio
 export type ExtractionConfidence = "low" | "medium" | "high";
 export type TimeLimitSource = "explicit" | "none";
 
+export type BriefExtractionSource = "ai" | "fallback";
+
 export type ExtractedBriefWithMeta = {
-  brief: ExtractedBrief & { time_limit_source?: TimeLimitSource; material_policy?: MaterialPolicy };
+  brief: ExtractedBrief & {
+    time_limit_source?: TimeLimitSource;
+    material_policy?: MaterialPolicy;
+    _source?: BriefExtractionSource;
+  };
   extraction_confidence: ExtractionConfidence;
+  source: BriefExtractionSource;
 };
 
 // Detects ONLY explicit numeric durations in the raw brief text.
