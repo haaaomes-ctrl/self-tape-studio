@@ -1266,7 +1266,14 @@ export async function runProcessTake(
       );
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let report: any = null;
     let aiResp: Response | null = null;
+    if (twoStepReport) {
+      // Two-step pipeline produced (or fell back to) a report. Skip the
+      // single-pass Gemini call and parse stages entirely.
+      report = twoStepReport;
+    } else {
     let geminiAttempt = 0;
     let geminiRetryCount = 0;
     const geminiStartedAt = Date.now();
