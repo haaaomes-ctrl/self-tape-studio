@@ -8,6 +8,7 @@ import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
 } from "./quota.server";
+import { metric } from "./metrics.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
