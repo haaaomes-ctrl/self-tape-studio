@@ -435,10 +435,7 @@ function ensureValidMuxMp4Url(params: {
     }
   }
 
-  throw new AnalysisFailure(
-    "mux_invalid_mp4_url",
-    "Invalid Mux MP4 URL generated. Please try again.",
-  );
+  throw new Error("[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.");
 }
 
 async function pickAnalysisSource(
