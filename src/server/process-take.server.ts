@@ -661,8 +661,17 @@ export async function runProcessTake(
     | "gemini_timeout"
     | "gemini_429"
     | "gemini_5xx"
+    | "ai_network_error"
+    | "ai_credits_exhausted"
+    | "ai_non_retryable_4xx"
     | "analysis_total_timeout"
-    | "analysis_no_terminal_state";
+    | "analysis_parse_failed"
+    | "analysis_persist_failed"
+    | "analysis_no_terminal_state"
+    | "mux_static_rendition_timeout"
+    | "mux_static_rendition_errored"
+    | "mux_static_rendition_skipped"
+    | "stale_timeout";
 
   // Terminal-state tracking: any path that writes status=error/complete must
   // flip this to true so the finally-block fallback doesn't double-write.
