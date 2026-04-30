@@ -839,6 +839,23 @@ export async function runProcessTake(
       if (attemptStatus === 404 || attemptStatus === null) {
         // Normal preparation OR transient network — do not count as failure.
         consecutive403 = 0;
+        // One-shot legacy rendition fallback: if highest.mp4 keeps 404ing,
+        // try high.mp4 once (older takes provisioned with mp4_support).
+        if (
+          !legacyFallbackTried &&
+          attemptStatus === 404 &&
+          take.mux_playback_id &&
+          probeUrl.endsWith("/highest.mp4") &&
+          probeAttempt >= 3
+        ) {
+          legacyFallbackTried = true;
+          probeUrl = muxMp4LegacyUrl(take.mux_playback_id, "high");
+          console.log("mux_static_rendition_legacy_fallback", {
+            ...baseLog,
+            from: "highest.mp4",
+            to: "high.mp4",
+          });
+        }
       } else if (attemptStatus === 403) {
         consecutive403 += 1;
         if (consecutive403 >= 5) {
