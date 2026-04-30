@@ -200,6 +200,11 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               status: existing?.status,
               processing_phase: existing?.processing_phase,
             });
+            metric("already_running_skip", {
+              take_id: takeId,
+              processing_phase: existing?.processing_phase ?? null,
+              reason: "webhook_asset_ready",
+            });
             return new Response("ok", { status: 200 });
           }
 
@@ -213,6 +218,12 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               await assertWithinAnalysisQuota(identity, "mux-webhook:asset.ready");
             } catch (qerr) {
               if (qerr instanceof QuotaExceededError) {
+                metric("quota_rejection", {
+                  take_id: takeId,
+                  reason: qerr.scope,
+                  cap: qerr.cap,
+                  count: qerr.count,
+                });
                 await supabaseAdmin
                   .from("takes")
                   .update({
