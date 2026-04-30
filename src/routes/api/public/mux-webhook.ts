@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildMuxHighestMp4Url,
-  buildMuxLegacyHighMp4Url,
   getMux,
   normaliseMuxMp4Url,
 } from "@/server/mux.server";
@@ -100,7 +99,7 @@ async function scheduleTakeFromStaticRenditionReady(params: {
       mux_asset_id: assetId,
       mux_playback_id: playbackId,
       mux_mp4_standard_url: normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId)),
-      mux_mp4_high_url: normaliseMuxMp4Url(buildMuxLegacyHighMp4Url(playbackId)),
+      mux_mp4_high_url: null,
       mux_duration_seconds: duration,
       mux_status: "ready",
     })
@@ -328,7 +327,6 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
           }
 
           const mp4Standard = normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId));
-          const mp4High = normaliseMuxMp4Url(buildMuxLegacyHighMp4Url(playbackId));
 
           // Idempotency: only flip into the analysing phase if we haven't
           // already kicked off (or completed) analysis for this take.
@@ -367,7 +365,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               mux_asset_id: data.id ?? null,
               mux_playback_id: playbackId,
               mux_mp4_standard_url: mp4Standard,
-              mux_mp4_high_url: mp4High,
+              mux_mp4_high_url: null,
               mux_duration_seconds: duration,
               mux_status: "ready",
             })

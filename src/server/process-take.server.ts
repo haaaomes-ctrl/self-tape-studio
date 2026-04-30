@@ -9,9 +9,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildMuxHighestMp4Url,
-  buildMuxLegacyHighMp4Url,
   isValidMuxMp4Url,
-  muxMp4Url,
   normaliseMuxMp4Url,
 } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
@@ -383,42 +381,10 @@ Output via the submit_audition_report tool. The casting_headline is ONE plain se
 
 type Tier = "standard" | "high" | "original";
 
-function resolveCanonicalMuxProbeUrls(take: {
-  mux_playback_id: string | null;
-  mux_mp4_standard_url: string | null;
-  mux_mp4_high_url: string | null;
-}): {
-  primaryUrl: string | null;
-  legacyUrl: string | null;
-  usedStoredPrimaryUrl: boolean;
-  usedStoredLegacyUrl: boolean;
-} {
-  if (take.mux_playback_id) {
-    return {
-      primaryUrl: buildMuxHighestMp4Url(take.mux_playback_id),
-      legacyUrl: buildMuxLegacyHighMp4Url(take.mux_playback_id),
-      usedStoredPrimaryUrl: false,
-      usedStoredLegacyUrl: false,
-    };
-  }
-
-  const primaryUrl = take.mux_mp4_standard_url
-    ? normaliseMuxMp4Url(take.mux_mp4_standard_url)
-    : null;
-  const legacyUrl = take.mux_mp4_high_url ? normaliseMuxMp4Url(take.mux_mp4_high_url) : null;
-
-  return {
-    primaryUrl,
-    legacyUrl,
-    usedStoredPrimaryUrl: Boolean(primaryUrl),
-    usedStoredLegacyUrl: Boolean(legacyUrl),
-  };
-}
-
 function ensureValidMuxMp4Url(params: {
   url: string | null;
   playbackId: string | null;
-  kind: "primary" | "legacy" | "selected" | "gemini";
+  kind: "primary" | "selected" | "gemini";
 }): string {
   const normalisedUrl = params.url ? normaliseMuxMp4Url(params.url) : null;
   if (normalisedUrl && isValidMuxMp4Url(normalisedUrl)) {
@@ -426,10 +392,7 @@ function ensureValidMuxMp4Url(params: {
   }
 
   if (params.playbackId) {
-    const rebuilt =
-      params.kind === "legacy"
-        ? buildMuxLegacyHighMp4Url(params.playbackId)
-        : buildMuxHighestMp4Url(params.playbackId);
+    const rebuilt = buildMuxHighestMp4Url(params.playbackId);
     if (isValidMuxMp4Url(rebuilt)) {
       return rebuilt;
     }
@@ -438,45 +401,10 @@ function ensureValidMuxMp4Url(params: {
   throw new Error("[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.");
 }
 
-type MuxProbeMethod = "head" | "range_get" | "browser_get";
-
-type MuxProbeHeaderSnapshot = {
-  contentType: string | null;
-  contentLength: string | null;
-  acceptRanges: string | null;
-  cacheControl: string | null;
-  via: string | null;
-};
-
 const MUX_NO_CACHE_HEADERS = {
   "Cache-Control": "no-cache",
   Pragma: "no-cache",
 };
-
-const MUX_BROWSER_LIKE_HEADERS = {
-  ...MUX_NO_CACHE_HEADERS,
-  Accept: "video/mp4,video/*,*/*",
-  "User-Agent": "Mozilla/5.0",
-};
-
-function snapshotMuxProbeHeaders(response: Response | null): MuxProbeHeaderSnapshot | null {
-  if (!response) return null;
-  return {
-    contentType: response.headers.get("content-type"),
-    contentLength: response.headers.get("content-length"),
-    acceptRanges: response.headers.get("accept-ranges"),
-    cacheControl: response.headers.get("cache-control"),
-    via: response.headers.get("via"),
-  };
-}
-
-async function disposeMuxProbeResponse(response: Response | null): Promise<void> {
-  try {
-    await response?.body?.cancel();
-  } catch {
-    // Ignore probe body disposal errors — probe success is determined from headers/status only.
-  }
-}
 
 async function pickAnalysisSource(
   take: {
@@ -489,48 +417,24 @@ async function pickAnalysisSource(
   },
   allowOriginal: boolean,
 ): Promise<{ url: string; tier: Tier }> {
-  const attempt = take.attempt_count ?? 0;
-
   if (take.mux_status !== "ready") {
     throw new Error("Video is still being optimised — please try again in a moment.");
   }
-
-  const canonicalUrls = resolveCanonicalMuxProbeUrls(take);
-
-  if (attempt === 0 && canonicalUrls.primaryUrl) {
-    return {
-      url: ensureValidMuxMp4Url({
-        url: canonicalUrls.primaryUrl,
-        playbackId: take.mux_playback_id,
-        kind: "primary",
-      }),
-      tier: "standard",
-    };
-  }
-  if (attempt === 1 && canonicalUrls.legacyUrl) {
-    return {
-      url: ensureValidMuxMp4Url({
-        url: canonicalUrls.legacyUrl,
-        playbackId: take.mux_playback_id,
-        kind: "legacy",
-      }),
-      tier: "high",
-    };
-  }
-  if (allowOriginal && take.mux_playback_id) {
-    return {
-      url: ensureValidMuxMp4Url({
-        url: buildMuxHighestMp4Url(take.mux_playback_id),
-        playbackId: take.mux_playback_id,
-        kind: "primary",
-      }),
-      tier: "original",
-    };
+  if (!take.mux_playback_id) {
+    throw new Error("Missing Mux playback id — cannot build analysis URL.");
   }
 
-  throw new Error(
-    "Standard analysis attempts have been exhausted. Use 'Retry with highest quality' to try once more.",
-  );
+  // Single canonical source: highest.mp4 built from playback_id. No legacy
+  // high.mp4 fallback. The `allowOriginal` flag is preserved as a tier label
+  // for downstream metrics, but the URL itself is identical.
+  return {
+    url: ensureValidMuxMp4Url({
+      url: buildMuxHighestMp4Url(take.mux_playback_id),
+      playbackId: take.mux_playback_id,
+      kind: "primary",
+    }),
+    tier: allowOriginal ? "original" : "standard",
+  };
 }
 
 export type RunProcessTakeResult =
@@ -910,339 +814,68 @@ export async function runProcessTake(
   }
 
   try {
-    const { url: initialUrl, tier } = await pickAnalysisSource(take, allowOriginal);
+    const { tier } = await pickAnalysisSource(take, allowOriginal);
 
-    // Pre-Gemini URL validation. Mux's static MP4 rendition is generated
-    // AFTER `video.asset.ready` fires, so the URL may 404/403 for a short
-    // window. The system owns retries here — the user never sees a "retry"
-    // button during normal preparation.
+    // ---- Deterministic Mux readiness gate ----
     //
-    // Tiered polling cadence (total ceiling ~10 minutes):
-    //   0–2 min   → every 10s  (12 probes)
-    //   2–6 min   → every 20s  (12 probes)
-    //   6–10 min  → every 30s  ( 8 probes)
+    // Trust `video.asset.static_rendition.ready` (the webhook that brought us
+    // here, or the reconciler's Mux API check) as the authoritative readiness
+    // signal. We do NOT re-run a multi-method probe loop here — that path was
+    // unreliable against Mux's Varnish layer and caused indefinite
+    // "Preparing analysis" loops on transient 404s.
     //
-    // HTTP status handling:
-    //   200/206   → ready, proceed to Gemini
-    //   404       → still preparing, normal — keep polling, do not count as failure
-    //   403       → possibly transient signing/access — retry with backoff,
-    //               fail if persistent (>=5 consecutive)
-    //   5xx / net → transient — keep polling
-    //   other 4xx → hard failure, stop immediately
-    // BOUNDED SINGLE-PASS PROBE.
-    //
-    // Cloudflare Workers cancel `waitUntil()` background tasks shortly after
-    // the response is sent, so we cannot rely on a 10-minute polling loop
-    // surviving inside one invocation. Instead, each invocation does ONE
-    // bounded probe (HEAD → ranged-GET fallback → one-shot legacy MP4
-    // fallback) and either:
-    //   - proceeds to Gemini if the MP4 is reachable now, or
-    //   - returns immediately leaving the row in `analysis_pending` so the
-    //     cron-driven reconciler retries it on the next minute.
-    //
-    // The wall-clock cap (PREPARE_HARD_TIMEOUT_MS, measured from
-    // take.created_at, NOT from this invocation) decides when to give up.
-    const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap, from created_at
+    // Rules:
+    //   - mux_status MUST be "ready" and mux_playback_id MUST be present.
+    //   - The MP4 URL is built canonically from mux_playback_id.
+    //     Stored URL fields are ignored on the active path.
+    //   - One short HEAD courtesy check (3s timeout) is performed for
+    //     observability only — its result does NOT gate analysis. If Mux
+    //     said the rendition is ready, we proceed.
+    //   - No legacy high.mp4. No range/browser GET fallbacks. No deferral
+    //     loop. The reconciler's wall-clock cap remains the only safety net.
     const probeStartedWallclock = Date.now();
-    const ageSinceCreatedMs = elapsedSinceCreatedMs() ?? 0;
-    const canonicalProbeUrls = resolveCanonicalMuxProbeUrls(take);
-    const primaryUrl = ensureValidMuxMp4Url({
-      url: canonicalProbeUrls.primaryUrl ?? initialUrl,
-      playbackId: take.mux_playback_id,
-      kind: "primary",
-    });
-    const legacyUrl = canonicalProbeUrls.legacyUrl
-      ? ensureValidMuxMp4Url({
-          url: canonicalProbeUrls.legacyUrl,
-          playbackId: take.mux_playback_id,
-          kind: "legacy",
-        })
-      : null;
-    metric("mux_static_rendition_waiting", {
-      take_id: takeId,
-      processing_phase: "analysis_pending",
-      tier,
-    });
-    console.log("mux_prepare_probe_loop_start", {
-      ...baseLog,
-      tier,
-      processing_phase: "analysis_pending",
-      elapsed_ms_since_upload: ageSinceCreatedMs,
-      bounded_single_pass: true,
-    });
-    metric("preparation_started", {
-      take_id: takeId,
-      processing_phase: "analysis_pending",
-      tier,
-    });
 
-    let probeStatus: number | null = null;
-    let probeOk = false;
-    let hardFailReason: string | null = null;
-    let staticRenditionFailureCode:
-      | "mux_static_rendition_timeout"
-      | "mux_static_rendition_errored"
-      | "mux_static_rendition_skipped"
-      | null = null;
-    let probeUrl = primaryUrl;
-    let selectedUrl = primaryUrl;
-    let primaryHeadStatus: number | null = null;
-    let primaryRangeStatus: number | null = null;
-    let primaryBrowserGetStatus: number | null = null;
-    let legacyHeadStatus: number | null = null;
-    let legacyRangeStatus: number | null = null;
-    let legacyBrowserGetStatus: number | null = null;
-    let probeMethod: MuxProbeMethod | null = null;
-    let primaryHeaderSnapshot: MuxProbeHeaderSnapshot | null = null;
-    let legacyHeaderSnapshot: MuxProbeHeaderSnapshot | null = null;
-
-    // Current static-rendition assets must prefer `highest.mp4`. Legacy
-    // `high.mp4` is a one-time fallback only when the primary is not yet ready.
-    const probeUrlsToTry: string[] = [primaryUrl, ...(legacyUrl ? [legacyUrl] : [])];
-
-    for (let attemptIdx = 0; attemptIdx < probeUrlsToTry.length && !probeOk; attemptIdx++) {
-      probeUrl = probeUrlsToTry[attemptIdx];
-      const probeAttempt = attemptIdx + 1;
-      let attemptStatus: number | null = null;
-      let headStatus: number | null = null;
-      let rangeStatus: number | null = null;
-      let browserGetStatus: number | null = null;
-      let attemptMethod: MuxProbeMethod | null = null;
-      let attemptHeaderSnapshot: MuxProbeHeaderSnapshot | null = null;
-      const probeStartedAt = Date.now();
-      let headResponse: Response | null = null;
-      try {
-        headResponse = await fetch(probeUrl, {
-          method: "HEAD",
-          headers: MUX_NO_CACHE_HEADERS,
-          cache: "no-store",
-        });
-        headStatus = headResponse.status;
-        attemptStatus = headStatus;
-        attemptMethod = "head";
-        attemptHeaderSnapshot = snapshotMuxProbeHeaders(headResponse);
-      } catch (probeErr) {
-        console.warn("mux_prepare_probe_network_error", {
-          ...baseLog,
-          probe_attempt: probeAttempt,
-          probe_url: probeUrl,
-          probe_error: probeErr instanceof Error ? probeErr.message : String(probeErr),
-        });
-      } finally {
-        await disposeMuxProbeResponse(headResponse);
+    if (take.mux_status !== "ready" || !take.mux_playback_id) {
+      // Mux not ready yet. Leave the row in analysis_pending; the cron
+      // reconciler will retry within ~60s (and will recover via the Mux API
+      // if the webhook never arrived). Do NOT fail terminally here unless
+      // we've blown the wall-clock cap.
+      const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000;
+      const ageMs = elapsedSinceCreatedMs() ?? 0;
+      if (ageMs >= PREPARE_HARD_TIMEOUT_MS) {
+        await markTerminalFailure(
+          "mux_static_rendition_timeout",
+          "We couldn't prepare your video in time. Please try again.",
+          { age_ms: ageMs },
+        );
+        return {
+          ok: false,
+          error: "We couldn't prepare your video in time. Please try again.",
+        };
       }
-      // HEAD fallback: ranged GET when CDN says null/403/404/405.
-      if (
-        (attemptStatus === null ||
-          attemptStatus === 403 ||
-          attemptStatus === 404 ||
-          attemptStatus === 405) &&
-        probeUrl.includes("stream.mux.com/")
-      ) {
-        let rangeResponse: Response | null = null;
-        try {
-          rangeResponse = await fetch(probeUrl, {
-            method: "GET",
-            headers: {
-              ...MUX_BROWSER_LIKE_HEADERS,
-              Range: "bytes=0-0",
-            },
-            cache: "no-store",
-          });
-          rangeStatus = rangeResponse.status;
-          if (rangeStatus >= 200 && rangeStatus < 300) {
-            attemptStatus = rangeStatus;
-            attemptMethod = "range_get";
-            attemptHeaderSnapshot = snapshotMuxProbeHeaders(rangeResponse);
-          }
-          console.log("mux_prepare_probe_range_fallback", {
-            ...baseLog,
-            probe_attempt: probeAttempt,
-            probe_url: probeUrl,
-            head_status: headStatus,
-            range_status: rangeStatus,
-          });
-        } catch (rangeProbeErr) {
-          console.warn("mux_prepare_probe_range_network_error", {
-            ...baseLog,
-            probe_attempt: probeAttempt,
-            probe_url: probeUrl,
-            head_status: headStatus,
-            probe_error:
-              rangeProbeErr instanceof Error ? rangeProbeErr.message : String(rangeProbeErr),
-          });
-        } finally {
-          await disposeMuxProbeResponse(rangeResponse);
-        }
-      }
-      if (
-        (attemptStatus === null ||
-          attemptStatus === 403 ||
-          attemptStatus === 404 ||
-          attemptStatus === 405) &&
-        probeUrl.includes("stream.mux.com/")
-      ) {
-        let browserGetResponse: Response | null = null;
-        try {
-          browserGetResponse = await fetch(probeUrl, {
-            method: "GET",
-            headers: MUX_BROWSER_LIKE_HEADERS,
-            cache: "no-store",
-          });
-          browserGetStatus = browserGetResponse.status;
-          if (browserGetStatus >= 200 && browserGetStatus < 300) {
-            attemptStatus = browserGetStatus;
-            attemptMethod = "browser_get";
-            attemptHeaderSnapshot = snapshotMuxProbeHeaders(browserGetResponse);
-          }
-          console.log("mux_prepare_probe_browser_get_fallback", {
-            ...baseLog,
-            probe_attempt: probeAttempt,
-            probe_url: probeUrl,
-            head_status: headStatus,
-            range_status: rangeStatus,
-            browser_get_status: browserGetStatus,
-            response_headers: attemptHeaderSnapshot,
-          });
-        } catch (browserProbeErr) {
-          console.warn("mux_prepare_probe_browser_get_network_error", {
-            ...baseLog,
-            probe_attempt: probeAttempt,
-            probe_url: probeUrl,
-            head_status: headStatus,
-            range_status: rangeStatus,
-            probe_error:
-              browserProbeErr instanceof Error ? browserProbeErr.message : String(browserProbeErr),
-          });
-        } finally {
-          await disposeMuxProbeResponse(browserGetResponse);
-        }
-      }
-      if (probeUrl === primaryUrl) {
-        primaryHeadStatus = headStatus;
-        primaryRangeStatus = rangeStatus;
-        primaryBrowserGetStatus = browserGetStatus;
-        primaryHeaderSnapshot = attemptHeaderSnapshot;
-      } else if (probeUrl === legacyUrl) {
-        legacyHeadStatus = headStatus;
-        legacyRangeStatus = rangeStatus;
-        legacyBrowserGetStatus = browserGetStatus;
-        legacyHeaderSnapshot = attemptHeaderSnapshot;
-      }
-      probeStatus = attemptStatus;
-      probeMethod = attemptMethod;
-      console.log("mux_prepare_probe", {
+      console.log("mux_not_ready_yet_deferring", {
         ...baseLog,
-        probe_attempt: probeAttempt,
-        probe_url: probeUrl,
-        http_status: attemptStatus,
-        head_status: headStatus,
-        range_status: rangeStatus,
-        browser_get_status: browserGetStatus,
-        selected_probe_method: attemptMethod,
-        response_headers: attemptHeaderSnapshot,
-        probe_duration_ms: Date.now() - probeStartedAt,
+        mux_status: take.mux_status,
+        has_playback_id: Boolean(take.mux_playback_id),
+        age_ms: ageMs,
+        deferred_reason: "mux_not_ready",
       });
-
-      if (attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
-        probeOk = true;
-        selectedUrl = probeUrl;
-        console.log("mux_prepare_ready", {
-          ...baseLog,
-          probe_attempt: probeAttempt,
-          probe_url: probeUrl,
-          primary_url: primaryUrl,
-          primary_head_status: primaryHeadStatus,
-          primary_range_status: primaryRangeStatus,
-          primary_browser_get_status: primaryBrowserGetStatus,
-          primary_response_headers: primaryHeaderSnapshot,
-          legacy_url: legacyUrl,
-          legacy_head_status: legacyHeadStatus,
-          legacy_range_status: legacyRangeStatus,
-          legacy_browser_get_status: legacyBrowserGetStatus,
-          legacy_response_headers: legacyHeaderSnapshot,
-          selected_probe_method: probeMethod,
-          selected_url: selectedUrl,
-        });
-        metric("static_mp4_ready", {
-          take_id: takeId,
-          duration_ms: Date.now() - probeStartedWallclock,
-          attempt: probeAttempt,
-          tier,
-        });
-        break;
-      }
-
-      if (probeUrl === primaryUrl && legacyUrl && (attemptStatus === 404 || attemptStatus === 403 || attemptStatus === 405 || attemptStatus === null)) {
-        console.log("mux_static_rendition_legacy_fallback", {
-          ...baseLog,
-          from: primaryUrl,
-          to: legacyUrl,
-        });
-      }
-
-      if (probeUrl === primaryUrl && attemptStatus !== null && attemptStatus >= 200 && attemptStatus < 300) {
-        break;
-      }
-
-      // Other 4xx (excluding 403/404/405 — those have already been treated
-      // as "still preparing") → fail fast.
-      if (attemptStatus !== null && attemptStatus >= 400 && attemptStatus < 500 &&
-          attemptStatus !== 403 && attemptStatus !== 404 && attemptStatus !== 405) {
-        hardFailReason = `Optimised video request failed (HTTP ${attemptStatus}).`;
-        break;
-      }
-    }
-
-    if (!probeOk) {
-      // Touch updated_at so the cron reconciler keeps this row visible.
-      await supabaseAdmin
-        .from("takes")
-        .update({ processing_phase: "analysis_pending", error_message: null })
-        .eq("id", takeId);
-
-      // Wall-clock cap from created_at — terminal if we've waited too long.
-      if (ageSinceCreatedMs >= PREPARE_HARD_TIMEOUT_MS) {
-        staticRenditionFailureCode = "mux_static_rendition_timeout";
-        hardFailReason =
-          hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
-      } else if (hardFailReason === null) {
-        // Not ready yet, but still within the budget — leave row as
-        // analysis_pending and bail. Cron reconciler will retry within ~60s.
-        console.log("mux_prepare_not_ready_yet_deferring", {
-          ...baseLog,
-          last_http_status: probeStatus,
-          age_ms_since_created: ageSinceCreatedMs,
-          primary_url: primaryUrl,
-          primary_head_status: primaryHeadStatus,
-          primary_range_status: primaryRangeStatus,
-          primary_browser_get_status: primaryBrowserGetStatus,
-          primary_response_headers: primaryHeaderSnapshot,
-          legacy_url: legacyUrl,
-          legacy_head_status: legacyHeadStatus,
-          legacy_range_status: legacyRangeStatus,
-          legacy_browser_get_status: legacyBrowserGetStatus,
-          legacy_response_headers: legacyHeaderSnapshot,
-          selected_url: null,
-          deferred_reason: "mp4_not_ready_within_cap",
-        });
-        metric("preparation_deferred", {
-          take_id: takeId,
-          processing_phase: "analysis_pending",
-          age_ms: ageSinceCreatedMs,
-          http_status: probeStatus,
-        });
-        deferredPending = true;
-        return { ok: true, alreadyDone: false };
-      }
+      metric("preparation_deferred", {
+        take_id: takeId,
+        processing_phase: "analysis_pending",
+        age_ms: ageMs,
+        reason: "mux_not_ready",
+      });
+      deferredPending = true;
+      return { ok: true, alreadyDone: false };
     }
 
     let resolvedProbeUrl: string;
     try {
       resolvedProbeUrl = ensureValidMuxMp4Url({
-        url: selectedUrl,
+        url: buildMuxHighestMp4Url(take.mux_playback_id),
         playbackId: take.mux_playback_id,
-        kind: "selected",
+        kind: "primary",
       });
     } catch {
       await markTerminalFailure(
@@ -1255,62 +888,48 @@ export async function runProcessTake(
       };
     }
 
-    if (!probeOk) {
-      const totalElapsed = Date.now() - probeStartedWallclock;
-      console.warn("mux_prepare_timeout", {
-        ...baseLog,
-        last_http_status: probeStatus,
-        hard_fail_reason: hardFailReason,
-        elapsed_ms: totalElapsed,
-        static_rendition_failure_code: staticRenditionFailureCode,
-        primary_url: primaryUrl,
-        primary_head_status: primaryHeadStatus,
-        primary_range_status: primaryRangeStatus,
-        primary_browser_get_status: primaryBrowserGetStatus,
-        primary_response_headers: primaryHeaderSnapshot,
-        legacy_url: legacyUrl,
-        legacy_head_status: legacyHeadStatus,
-        legacy_range_status: legacyRangeStatus,
-        legacy_browser_get_status: legacyBrowserGetStatus,
-        legacy_response_headers: legacyHeaderSnapshot,
-        selected_url: null,
-      });
-      metric("preparation_timeout", {
-        take_id: takeId,
-        duration_ms: totalElapsed,
-        http_status: probeStatus,
-        reason: hardFailReason ?? "timeout",
-      });
-      if (staticRenditionFailureCode === "mux_static_rendition_timeout") {
-        metric("mux_static_rendition_timeout", {
-          take_id: takeId,
-          duration_ms: totalElapsed,
+    // Courtesy HEAD probe — observability only. Never blocks analysis.
+    let courtesyHeadStatus: number | null = null;
+    let courtesyHeadError: string | null = null;
+    {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3_000);
+      let r: Response | null = null;
+      try {
+        r = await fetch(resolvedProbeUrl, {
+          method: "HEAD",
+          headers: MUX_NO_CACHE_HEADERS,
+          cache: "no-store",
+          signal: ctrl.signal,
         });
-      } else {
-        metric("mux_static_rendition_failed", {
-          take_id: takeId,
-          reason: hardFailReason ?? "timeout",
-        });
+        courtesyHeadStatus = r.status;
+      } catch (err) {
+        courtesyHeadError = err instanceof Error ? err.message : String(err);
+      } finally {
+        clearTimeout(t);
+        try {
+          await r?.body?.cancel();
+        } catch {
+          /* ignore */
+        }
       }
-      metric("analysis_failed", {
-        take_id: takeId,
-        processing_phase: "analysis_pending",
-        reason: staticRenditionFailureCode ?? "preparation_timeout",
-      });
-      const code: FailureCode =
-        staticRenditionFailureCode ?? "mux_static_rendition_timeout";
-      const userMessage =
-        hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
-      await markTerminalFailure(code, userMessage, {
-        elapsed_ms: totalElapsed,
-        http_status: probeStatus,
-      });
-      return { ok: false, error: userMessage };
     }
-    // (auto_retry_succeeded log removed — bounded single-pass probe never retries within one invocation)
+    console.log("mux_prepare_ready", {
+      ...baseLog,
+      canonical_url: resolvedProbeUrl,
+      courtesy_head_status: courtesyHeadStatus,
+      courtesy_head_error: courtesyHeadError,
+      selected_url: resolvedProbeUrl,
+      selected_probe_method: "static_rendition_ready",
+    });
+    metric("static_mp4_ready", {
+      take_id: takeId,
+      duration_ms: Date.now() - probeStartedWallclock,
+      attempt: 1,
+      tier,
+    });
 
-    // Re-check cancellation after the (potentially long) polling window —
-    // user may have cancelled while we were waiting on the rendition.
+    // Re-check cancellation immediately before the analysing flip.
     const { data: postPoll } = await supabaseAdmin
       .from("takes")
       .select("status, error_message")
@@ -1321,7 +940,7 @@ export async function runProcessTake(
       typeof postPoll.error_message === "string" &&
       postPoll.error_message.toLowerCase().includes("cancelled")
     ) {
-      console.log("[take-pipeline] cancelled during head-probe, aborting", baseLog);
+      console.log("[take-pipeline] cancelled before analysing flip, aborting", baseLog);
       metric("cancel", {
         take_id: takeId,
         processing_phase: "analysis_pending",
@@ -1333,10 +952,8 @@ export async function runProcessTake(
     }
 
     const preparationDurationMs = Date.now() - probeStartedWallclock;
-    console.log("[take-pipeline] head-probe ok, transitioning to analysing", {
+    console.log("[take-pipeline] mux ready, transitioning to analysing", {
       ...baseLog,
-      http_status: probeStatus,
-      probe_method: probeMethod,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
       selected_url: resolvedProbeUrl,
