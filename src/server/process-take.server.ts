@@ -1596,8 +1596,7 @@ export async function runProcessTake(
       model: currentModel,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let report: any;
+    // (report variable is hoisted above; assigned here for the single-pass path)
     try {
       const json = await aiResp.json();
       const choice = json.choices?.[0];
