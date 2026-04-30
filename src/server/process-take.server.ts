@@ -1028,6 +1028,13 @@ export async function runProcessTake(
         hard_fail_reason: hardFailReason,
         elapsed_ms: totalElapsed,
         static_rendition_failure_code: staticRenditionFailureCode,
+        primary_url: primaryUrl,
+        primary_head_status: primaryHeadStatus,
+        primary_range_status: primaryRangeStatus,
+        legacy_url: legacyUrl,
+        legacy_head_status: legacyHeadStatus,
+        legacy_range_status: legacyRangeStatus,
+        selected_url: null,
       });
       metric("preparation_timeout", {
         take_id: takeId,
@@ -1092,6 +1099,7 @@ export async function runProcessTake(
       http_status: probeStatus,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+      selected_url: resolvedProbeUrl,
     });
     metric("preparation_completed", {
       take_id: takeId,
@@ -1244,7 +1252,7 @@ export async function runProcessTake(
       max_retries: ANALYSIS_MAX_RETRIES,
     });
 
-    let urlForCall = initialUrl;
+    let urlForCall = resolvedProbeUrl;
     while (true) {
       // Total-budget guard BEFORE each attempt — prevents starting an attempt
       // we know we can't complete inside the wall-clock budget.
@@ -1312,7 +1320,7 @@ export async function runProcessTake(
         aiResp &&
         aiResp.status === 400 &&
         take.mux_playback_id &&
-        urlForCall === initialUrl
+          urlForCall === resolvedProbeUrl
       ) {
         const errText = await aiResp.text();
         console.warn(
@@ -1320,7 +1328,7 @@ export async function runProcessTake(
           errText.slice(0, 200),
         );
         const freshQuality = tier === "standard" ? "medium" : "high";
-        urlForCall = muxMp4Url(take.mux_playback_id, freshQuality);
+        urlForCall = normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, freshQuality));
         // Roll back the attempt counter so this doesn't consume a retry slot.
         geminiAttempt -= 1;
         continue;
