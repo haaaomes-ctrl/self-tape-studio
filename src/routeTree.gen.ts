@@ -17,6 +17,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
+import { Route as ApiPublicDiagMuxProbeRouteImport } from './routes/api/public/diag-mux-probe'
 
 const NewRoute = NewRouteImport.update({
   id: '/new',
@@ -59,6 +60,11 @@ const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   path: '/api/public/mux-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicDiagMuxProbeRoute = ApiPublicDiagMuxProbeRouteImport.update({
+  id: '/api/public/diag-mux-probe',
+  path: '/api/public/diag-mux-probe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   fileRoutesByTo: FileRoutesByTo
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   id:
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   fileRoutesById: FileRoutesById
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
+  ApiPublicDiagMuxProbeRoute: typeof ApiPublicDiagMuxProbeRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/diag-mux-probe': {
+      id: '/api/public/diag-mux-probe'
+      path: '/api/public/diag-mux-probe'
+      fullPath: '/api/public/diag-mux-probe'
+      preLoaderRoute: typeof ApiPublicDiagMuxProbeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
+  ApiPublicDiagMuxProbeRoute: ApiPublicDiagMuxProbeRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
 }
