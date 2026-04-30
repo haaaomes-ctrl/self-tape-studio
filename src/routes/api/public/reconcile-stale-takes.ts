@@ -570,10 +570,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           stalePending: stalePending?.length ?? 0,
           staleAnalysing: staleAnalysing?.length ?? 0,
           staleTranscoding: staleTranscoding?.length ?? 0,
+          staleUploading: staleUploading?.length ?? 0,
           reconciled,
           giveUp,
           transcodingRecovered,
           transcodingForcedError,
+          uploadingRecovered,
+          uploadingForcedError,
         });
       },
     },
