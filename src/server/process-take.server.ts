@@ -7,7 +7,7 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { muxMp4Url, muxMp4LegacyUrl } from "./mux.server";
+import { muxMp4Url, muxMp4LegacyUrl, normaliseMuxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
@@ -395,13 +395,13 @@ async function pickAnalysisSource(
   }
 
   if (attempt === 0 && take.mux_mp4_standard_url) {
-    return { url: take.mux_mp4_standard_url, tier: "standard" };
+    return { url: normaliseMuxMp4Url(take.mux_mp4_standard_url), tier: "standard" };
   }
   if (attempt === 1 && take.mux_mp4_high_url) {
-    return { url: take.mux_mp4_high_url, tier: "high" };
+    return { url: normaliseMuxMp4Url(take.mux_mp4_high_url), tier: "high" };
   }
   if (allowOriginal && take.mux_playback_id) {
-    return { url: muxMp4Url(take.mux_playback_id, "high"), tier: "original" };
+    return { url: normaliseMuxMp4Url(muxMp4Url(take.mux_playback_id, "high")), tier: "original" };
   }
 
   throw new Error(
