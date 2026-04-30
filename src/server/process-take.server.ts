@@ -1023,13 +1023,7 @@ export async function runProcessTake(
       });
       return { ok: false, error: userMessage };
     }
-    if (retryCount > 0) {
-      console.log("auto_retry_succeeded", {
-        ...baseLog,
-        retry_count: retryCount,
-        elapsed_ms: Date.now() - probeStartedWallclock,
-      });
-    }
+    // (auto_retry_succeeded log removed — bounded single-pass probe never retries within one invocation)
 
     // Re-check cancellation after the (potentially long) polling window —
     // user may have cancelled while we were waiting on the rendition.
