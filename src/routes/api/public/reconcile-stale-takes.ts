@@ -335,6 +335,16 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           const exceededAttempts = attempts >= MAX_ATTEMPTS;
           const exceededClock = ageSeconds >= MAX_TOTAL_AGE_SECONDS;
 
+          // Stuck-state metric: emit once per pass, attributed to the actual
+          // phase the take is wedged in.
+          if (take.processing_phase === "analysis_pending") {
+            metric("stuck_analysis_pending", {
+              take_id: take.id,
+              processing_phase: "analysis_pending",
+              duration_ms: Math.round(ageSeconds * 1000),
+            });
+          }
+
           // Cost / wall-clock guard: park in `error` once either limit is hit.
           if (exceededAttempts || exceededClock) {
             const { error: failErr } = await supabaseAdmin
@@ -348,12 +358,27 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               .eq("id", take.id);
             if (failErr) {
               console.error("reconcile-stale-takes give-up update failed", { takeId: take.id, failErr });
+              metric("phase_transition_failure", {
+                take_id: take.id,
+                reason: "give_up_update_failed",
+              });
             } else {
               console.warn("reconcile-stale-takes giving up on take", {
                 takeId: take.id,
                 attempts,
                 ageSeconds: Math.round(ageSeconds),
                 reason: exceededClock ? "wall-clock" : "attempts",
+              });
+              metric("reconciler_forced_error", {
+                take_id: take.id,
+                processing_phase: take.processing_phase,
+                reason: exceededClock ? "wall_clock" : "attempts",
+                attempt: attempts,
+              });
+              metric("analysis_failed", {
+                take_id: take.id,
+                processing_phase: take.processing_phase,
+                reason: "reconciler_give_up",
               });
               giveUp.push(take.id);
             }
@@ -374,6 +399,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
           if (updErr) {
             console.error("reconcile-stale-takes update failed", { takeId: take.id, updErr });
+            metric("phase_transition_failure", {
+              take_id: take.id,
+              reason: "reschedule_update_failed",
+            });
             continue;
           }
 
@@ -381,6 +410,12 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             takeId: take.id,
             wasPhase: take.processing_phase,
             staleSinceMs: now - new Date(take.updated_at).getTime(),
+          });
+          metric("reconciler_recovered", {
+            take_id: take.id,
+            processing_phase: take.processing_phase,
+            duration_ms: now - new Date(take.updated_at).getTime(),
+            reason: "rescheduled",
           });
           scheduleBackground(
             (async () => {
