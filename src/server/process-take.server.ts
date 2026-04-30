@@ -1135,7 +1135,7 @@ export async function runProcessTake(
       let thrown: unknown = null;
       let timedOut = false;
       try {
-        aiResp = await callAI(urlForCall, ac.signal);
+        aiResp = await callAI(urlForCall, ac.signal, currentModel);
       } catch (callErr) {
         thrown = callErr;
         aiResp = null;
@@ -1157,6 +1157,7 @@ export async function runProcessTake(
         gemini_duration_ms: Date.now() - attemptStart,
         elapsed_ms_since_upload: elapsedSinceCreatedMs(),
         timed_out: timedOut,
+        model: currentModel,
       });
 
       // Success.
@@ -1190,14 +1191,20 @@ export async function runProcessTake(
           http_status: 402,
           duration_ms: Date.now() - geminiStartedAt,
           reason: "credits_exhausted",
+          model: currentModel,
+          failure_code: "ai_credits_exhausted",
         });
-        throw new Error("AI credits exhausted on this workspace. Add funds to continue.");
+        throw new AnalysisFailure(
+          "ai_credits_exhausted",
+          "AI credits exhausted on this workspace. Add funds to continue.",
+        );
       }
 
       // Determine retryability per strict policy.
       const httpRetryable =
         aiResp !== null && status !== null && RETRYABLE_HTTP.has(status);
-      const transient = timedOut || httpRetryable;
+      const networkThrow = aiResp === null && !timedOut && thrown !== null;
+      const transient = timedOut || httpRetryable || networkThrow;
 
       // Pick a failure_code for whatever we'd terminate with if no retry left.
       let failureCode: FailureCode;
@@ -1205,7 +1212,10 @@ export async function runProcessTake(
       else if (status === 429) failureCode = "gemini_429";
       else if (status !== null && status >= 500 && status < 600)
         failureCode = "gemini_5xx";
-      else failureCode = "gemini_5xx"; // network throw treated as transient/5xx-class
+      else if (networkThrow) failureCode = "ai_network_error";
+      else if (status !== null && status >= 400 && status < 500)
+        failureCode = "ai_non_retryable_4xx";
+      else failureCode = "ai_network_error";
 
       // Non-retryable (parse/validation/4xx other than 429): terminate now.
       if (!transient) {
@@ -1217,18 +1227,27 @@ export async function runProcessTake(
           http_status: status,
           duration_ms: Date.now() - geminiStartedAt,
           reason: "non_retryable",
+          model: currentModel,
+          failure_code: failureCode,
         });
-        // 4xx other than 429 → no failure_code in the spec list. Map to gemini_5xx
-        // ONLY if status >= 500, otherwise surface as a plain hard error so the
-        // outer catch records it without one of the listed codes (which are
-        // reserved for the listed retryable failure modes). To keep terminal
-        // tagging simple, emit a generic non-retryable terminal.
-        throw new Error(`AI gateway error (${status ?? "network"})`);
+        throw new AnalysisFailure(
+          failureCode,
+          `AI gateway error (${status ?? "network"}). Please try again.`,
+        );
       }
 
-      // Transient — retry if budget allows.
+      // Transient — retry if budget allows. We allow exactly ONE fallback
+      // retry per spec: attempt 1 = primary, attempt 2 = fallback.
       if (geminiRetryCount >= ANALYSIS_MAX_RETRIES) {
         // Out of retries: emit gemini_failed and surface a typed terminal error.
+        // Record this terminal transient failure into the circuit breaker.
+        if (
+          failureCode === "gemini_timeout" ||
+          failureCode === "gemini_5xx" ||
+          failureCode === "ai_network_error"
+        ) {
+          recordAiFailure(failureCode);
+        }
         console.warn("gemini_retry_exhausted", {
           ...baseLog,
           retry_count: geminiRetryCount,
@@ -1236,6 +1255,7 @@ export async function runProcessTake(
           timed_out: timedOut,
           elapsed_ms: Date.now() - geminiStartedAt,
           failure_code: failureCode,
+          model: currentModel,
         });
         metric("gemini_failed", {
           take_id: takeId,
@@ -1245,13 +1265,16 @@ export async function runProcessTake(
           reason: "retry_exhausted",
           failure_code: failureCode,
           timed_out: timedOut,
+          model: currentModel,
         });
         const msg =
           failureCode === "gemini_timeout"
             ? "The analysis took too long. Please try again."
             : failureCode === "gemini_429"
               ? "AI gateway is rate-limited. Please try again shortly."
-              : "AI gateway is temporarily unavailable. Please try again.";
+              : failureCode === "ai_network_error"
+                ? "AI gateway network error. Please try again."
+                : "AI gateway is temporarily unavailable. Please try again.";
         throw new AnalysisFailure(failureCode, msg);
       }
 
@@ -1269,6 +1292,26 @@ export async function runProcessTake(
       }
 
       geminiRetryCount += 1;
+      // Switch to fallback model for the retry (unless we already started on
+      // the fallback because the circuit was open).
+      const previousModel = currentModel;
+      if (currentModel === ANALYSIS_MODEL_PRIMARY) {
+        currentModel = ANALYSIS_MODEL_FALLBACK;
+        console.warn("[take-pipeline] ai_fallback_selected", {
+          take_id: takeId,
+          from_model: previousModel,
+          to_model: currentModel,
+          reason: failureCode,
+        });
+        metric("ai_fallback_selected", {
+          take_id: takeId,
+          from_model: previousModel,
+          model: currentModel,
+          reason: failureCode,
+          http_status: status,
+          timed_out: timedOut,
+        });
+      }
       console.log("gemini_retry_started", {
         ...baseLog,
         retry_count: geminiRetryCount,
@@ -1276,6 +1319,7 @@ export async function runProcessTake(
         attempt_count: geminiAttempt,
         elapsed_ms: Date.now() - geminiStartedAt,
         timed_out: timedOut,
+        model: currentModel,
       });
       metric("gemini_retry", {
         take_id: takeId,
@@ -1284,6 +1328,7 @@ export async function runProcessTake(
         attempt: geminiAttempt,
         timed_out: timedOut,
         failure_code: failureCode,
+        model: currentModel,
       });
       const backoff = GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000;
       await new Promise((r) => setTimeout(r, backoff));
