@@ -2152,6 +2152,37 @@ export async function runProcessTake(
       safety_rewrite_applied: safetyRewriteApplied,
       material_policy: materialPolicy,
       material_scrub_triggered: materialScrubTriggered,
+      // Compact, non-sensitive two-step pipeline summary. No raw evidence
+      // text or model output. Only present when the two-step pipeline ran.
+      two_step: isTwoStepEnabled()
+        ? {
+            enabled: true,
+            evidence_version: "v1",
+            timestamped_evidence_count:
+              twoStepEvidence?.timestamps.length ?? 0,
+            evidence_sufficiency: twoStepEvidence
+              ? {
+                  has_audio: !!twoStepEvidence.sufficiency.has_audio,
+                  has_visible_face:
+                    !!twoStepEvidence.sufficiency.has_visible_face,
+                  duration_ok: !!twoStepEvidence.sufficiency.duration_ok,
+                  script_signal: !!twoStepEvidence.sufficiency.script_signal,
+                }
+              : null,
+            evidence_pass_duration_ms: evidencePassDurationMs,
+            report_polish_duration_ms: reportPolishDurationMs,
+            two_step_total_ai_duration_ms:
+              evidencePassDurationMs + reportPolishDurationMs,
+            polish_fallback_used: twoStepFallbackUsed,
+            polish_fallback_reason: twoStepFallbackReason,
+            locked_field_overwrites:
+              twoStepEnforcement.locked_field_overwrites,
+            unsupported_claims_rewritten:
+              twoStepEnforcement.unsupported_claims_rewritten,
+            unsupported_claims_removed:
+              twoStepEnforcement.unsupported_claims_removed,
+          }
+        : { enabled: false },
     };
 
     // ---- Persist stage (timed, tagged, conditional) ----
