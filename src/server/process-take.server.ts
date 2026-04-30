@@ -454,48 +454,24 @@ async function pickAnalysisSource(
   },
   allowOriginal: boolean,
 ): Promise<{ url: string; tier: Tier }> {
-  const attempt = take.attempt_count ?? 0;
-
   if (take.mux_status !== "ready") {
     throw new Error("Video is still being optimised — please try again in a moment.");
   }
-
-  const canonicalUrls = resolveCanonicalMuxProbeUrls(take);
-
-  if (attempt === 0 && canonicalUrls.primaryUrl) {
-    return {
-      url: ensureValidMuxMp4Url({
-        url: canonicalUrls.primaryUrl,
-        playbackId: take.mux_playback_id,
-        kind: "primary",
-      }),
-      tier: "standard",
-    };
-  }
-  if (attempt === 1 && canonicalUrls.legacyUrl) {
-    return {
-      url: ensureValidMuxMp4Url({
-        url: canonicalUrls.legacyUrl,
-        playbackId: take.mux_playback_id,
-        kind: "legacy",
-      }),
-      tier: "high",
-    };
-  }
-  if (allowOriginal && take.mux_playback_id) {
-    return {
-      url: ensureValidMuxMp4Url({
-        url: buildMuxHighestMp4Url(take.mux_playback_id),
-        playbackId: take.mux_playback_id,
-        kind: "primary",
-      }),
-      tier: "original",
-    };
+  if (!take.mux_playback_id) {
+    throw new Error("Missing Mux playback id — cannot build analysis URL.");
   }
 
-  throw new Error(
-    "Standard analysis attempts have been exhausted. Use 'Retry with highest quality' to try once more.",
-  );
+  // Single canonical source: highest.mp4 built from playback_id. No legacy
+  // high.mp4 fallback. The `allowOriginal` flag is preserved as a tier label
+  // for downstream metrics, but the URL itself is identical.
+  return {
+    url: ensureValidMuxMp4Url({
+      url: buildMuxHighestMp4Url(take.mux_playback_id),
+      playbackId: take.mux_playback_id,
+      kind: "primary",
+    }),
+    tier: allowOriginal ? "original" : "standard",
+  };
 }
 
 export type RunProcessTakeResult =
