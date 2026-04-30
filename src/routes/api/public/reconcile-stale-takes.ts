@@ -39,6 +39,11 @@ const MAX_TOTAL_AGE_SECONDS = 600;
 // `video.asset.ready` webhook delivery.
 const STALE_TRANSCODING_MINUTES = 5;
 const TRANSCODING_HARD_FAIL_MINUTES = 15;
+// Uploading-phase orphan threshold. Takes that sit in "uploading" longer than
+// this had their browser tab closed, lost their network, or their direct
+// upload aborted before any Mux webhook fired. The UI shows them as
+// "Uploading your tape…" indefinitely otherwise.
+const STALE_UPLOADING_MINUTES = 15;
 
 type MuxAssetLike = {
   id?: string;
