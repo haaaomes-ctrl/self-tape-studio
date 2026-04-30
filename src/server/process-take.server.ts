@@ -1188,6 +1188,15 @@ export async function runProcessTake(
           const claims = enforceUnsupportedClaims(twoStepReport, twoStepEvidence);
           twoStepEnforcement.unsupported_claims_removed = claims.removed;
           twoStepEnforcement.unsupported_claims_rewritten = claims.rewritten;
+          for (const [field, count] of Object.entries(claims.per_field_removed)) {
+            if (count > 0) {
+              console.log("[take-pipeline] report_polish_unsupported_claim_removed", {
+                take_id: takeId,
+                field,
+                count,
+              });
+            }
+          }
           console.log("[take-pipeline] report_polish_completed", {
             ...baseLog,
             duration_ms: polishResult.durationMs,
@@ -1217,6 +1226,14 @@ export async function runProcessTake(
         take_id: takeId,
         duration_ms: totalAi,
       });
+      if (totalAi > 90_000) {
+        console.warn("[take-pipeline] two_step_latency_warning", {
+          take_id: takeId,
+          two_step_total_ai_duration_ms: totalAi,
+          evidence_pass_duration_ms: evidencePassDurationMs,
+          report_polish_duration_ms: reportPolishDurationMs,
+        });
+      }
     }
 
     const callAI = (videoUrl: string, signal: AbortSignal, model: string) =>
