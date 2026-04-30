@@ -927,6 +927,7 @@ export async function runProcessTake(
         last_http_status: probeStatus,
         hard_fail_reason: hardFailReason,
         elapsed_ms: totalElapsed,
+        static_rendition_failure_code: staticRenditionFailureCode,
       });
       metric("preparation_timeout", {
         take_id: takeId,
@@ -934,10 +935,32 @@ export async function runProcessTake(
         http_status: probeStatus,
         reason: hardFailReason ?? "timeout",
       });
-      metric("mux_static_rendition_failed", {
+      if (staticRenditionFailureCode === "mux_static_rendition_timeout") {
+        metric("mux_static_rendition_timeout", {
+          take_id: takeId,
+          duration_ms: totalElapsed,
+        });
+      } else {
+        metric("mux_static_rendition_failed", {
+          take_id: takeId,
+          reason: hardFailReason ?? "timeout",
+        });
+      }
+      metric("analysis_failed", {
         take_id: takeId,
-        reason: hardFailReason ?? "timeout",
+        processing_phase: "analysis_pending",
+        reason: staticRenditionFailureCode ?? "preparation_timeout",
       });
+      const code: FailureCode =
+        staticRenditionFailureCode ?? "mux_static_rendition_timeout";
+      const userMessage =
+        hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
+      await markTerminalFailure(code, userMessage, {
+        elapsed_ms: totalElapsed,
+        http_status: probeStatus,
+      });
+      return { ok: false, error: userMessage };
+    }
       metric("analysis_failed", {
         take_id: takeId,
         processing_phase: "analysis_pending",
