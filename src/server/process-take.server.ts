@@ -1637,6 +1637,11 @@ export async function runProcessTake(
         processing_phase: preWrite?.processing_phase ?? null,
         attempt_count: preWrite?.attempt_count ?? 0,
       });
+      metric("result_discarded_state_changed", {
+        take_id: takeId,
+        processing_phase: preWrite?.processing_phase ?? null,
+        reason: "state_changed_pre_write",
+      });
       return { ok: true, alreadyDone: true };
     }
 
@@ -1668,6 +1673,11 @@ export async function runProcessTake(
         processing_phase: preWrite.processing_phase,
         attempt_count: preWrite.attempt_count ?? 0,
       });
+      metric("result_discarded_state_changed", {
+        take_id: takeId,
+        processing_phase: preWrite.processing_phase,
+        reason: "conditional_update_zero_rows",
+      });
       return { ok: true, alreadyDone: true };
     }
 
@@ -1676,17 +1686,37 @@ export async function runProcessTake(
       .update({ mode: report.mode })
       .eq("id", audition.id);
 
+    const totalDurationMs = Date.now() - runStartedAt;
     console.log("[take-pipeline] report persisted", {
       ...baseLog,
       analysis_tier: tier,
-      total_duration_ms: Date.now() - runStartedAt,
+      total_duration_ms: totalDurationMs,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
+    const e2eDurationMs = elapsedSinceCreatedMs();
+    metric("analysis_completed", {
+      take_id: takeId,
+      processing_phase: "complete",
+      duration_ms: e2eDurationMs,
+      run_duration_ms: totalDurationMs,
+      tier,
+      within_10min: e2eDurationMs <= TEN_MINUTES_MS,
+    });
+    metric("analysis_total_duration", {
+      take_id: takeId,
+      duration_ms: e2eDurationMs,
+      tier,
     });
 
     return { ok: true, tier };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown processing error";
     console.error("runProcessTake failed", message);
+    metric("analysis_failed", {
+      take_id: takeId,
+      reason: message.slice(0, 120),
+      duration_ms: Date.now() - runStartedAt,
+    });
     await supabaseAdmin
       .from("takes")
       .update({ status: "error", processing_phase: "error", error_message: message })
