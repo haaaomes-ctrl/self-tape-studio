@@ -799,7 +799,7 @@ export async function runProcessTake(
       let attemptStatus: number | null = null;
       const probeStartedAt = Date.now();
       try {
-        const probe = await fetch(initialUrl, { method: "HEAD" });
+        const probe = await fetch(probeUrl, { method: "HEAD" });
         attemptStatus = probe.status;
       } catch (probeErr) {
         // Network error — transient.
