@@ -215,8 +215,19 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           .lt("updated_at", analysingCutoff)
           .limit(MAX_BATCH);
 
-        if (pErr || aErr) {
-          console.error("reconcile-stale-takes select failed", { pErr, aErr });
+        const transcodingCutoff = new Date(now - STALE_TRANSCODING_MINUTES * 60_000).toISOString();
+        const { data: staleTranscoding, error: tErr } = await supabaseAdmin
+          .from("takes")
+          .select(
+            "id, updated_at, created_at, processing_phase, attempt_count, mux_status, mux_asset_id, mux_upload_id, status",
+          )
+          .eq("processing_phase", "transcoding")
+          .in("status", ["pending", "processing"])
+          .lt("updated_at", transcodingCutoff)
+          .limit(MAX_BATCH);
+
+        if (pErr || aErr || tErr) {
+          console.error("reconcile-stale-takes select failed", { pErr, aErr, tErr });
           return new Response("db error", { status: 500 });
         }
 
