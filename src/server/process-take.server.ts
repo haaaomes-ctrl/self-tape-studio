@@ -383,42 +383,10 @@ Output via the submit_audition_report tool. The casting_headline is ONE plain se
 
 type Tier = "standard" | "high" | "original";
 
-function resolveCanonicalMuxProbeUrls(take: {
-  mux_playback_id: string | null;
-  mux_mp4_standard_url: string | null;
-  mux_mp4_high_url: string | null;
-}): {
-  primaryUrl: string | null;
-  legacyUrl: string | null;
-  usedStoredPrimaryUrl: boolean;
-  usedStoredLegacyUrl: boolean;
-} {
-  if (take.mux_playback_id) {
-    return {
-      primaryUrl: buildMuxHighestMp4Url(take.mux_playback_id),
-      legacyUrl: buildMuxLegacyHighMp4Url(take.mux_playback_id),
-      usedStoredPrimaryUrl: false,
-      usedStoredLegacyUrl: false,
-    };
-  }
-
-  const primaryUrl = take.mux_mp4_standard_url
-    ? normaliseMuxMp4Url(take.mux_mp4_standard_url)
-    : null;
-  const legacyUrl = take.mux_mp4_high_url ? normaliseMuxMp4Url(take.mux_mp4_high_url) : null;
-
-  return {
-    primaryUrl,
-    legacyUrl,
-    usedStoredPrimaryUrl: Boolean(primaryUrl),
-    usedStoredLegacyUrl: Boolean(legacyUrl),
-  };
-}
-
 function ensureValidMuxMp4Url(params: {
   url: string | null;
   playbackId: string | null;
-  kind: "primary" | "legacy" | "selected" | "gemini";
+  kind: "primary" | "selected" | "gemini";
 }): string {
   const normalisedUrl = params.url ? normaliseMuxMp4Url(params.url) : null;
   if (normalisedUrl && isValidMuxMp4Url(normalisedUrl)) {
@@ -426,10 +394,7 @@ function ensureValidMuxMp4Url(params: {
   }
 
   if (params.playbackId) {
-    const rebuilt =
-      params.kind === "legacy"
-        ? buildMuxLegacyHighMp4Url(params.playbackId)
-        : buildMuxHighestMp4Url(params.playbackId);
+    const rebuilt = buildMuxHighestMp4Url(params.playbackId);
     if (isValidMuxMp4Url(rebuilt)) {
       return rebuilt;
     }
