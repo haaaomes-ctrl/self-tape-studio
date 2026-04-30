@@ -2190,30 +2190,40 @@ export async function runProcessTake(
       two_step: isTwoStepEnabled()
         ? {
             enabled: true,
-            evidence_version: "v1",
-            timestamped_evidence_count:
-              twoStepEvidence?.timestamps.length ?? 0,
-            evidence_sufficiency: twoStepEvidence
-              ? {
-                  has_audio: !!twoStepEvidence.sufficiency.has_audio,
-                  has_visible_face:
-                    !!twoStepEvidence.sufficiency.has_visible_face,
-                  duration_ok: !!twoStepEvidence.sufficiency.duration_ok,
-                  script_signal: !!twoStepEvidence.sufficiency.script_signal,
-                }
-              : null,
+            evidence_version: "1",
             evidence_pass_duration_ms: evidencePassDurationMs,
             report_polish_duration_ms: reportPolishDurationMs,
             two_step_total_ai_duration_ms:
               evidencePassDurationMs + reportPolishDurationMs,
-            polish_fallback_used: twoStepFallbackUsed,
+            timestamped_evidence_count:
+              twoStepEvidence?.timestamped_evidence.length ?? 0,
+            timestamped_evidence_dropped_count: twoStepTimestampsDropped,
+            fallback_used: twoStepFallbackUsed,
             polish_fallback_reason: twoStepFallbackReason,
-            locked_field_overwrites:
+            locked_field_overwrite_count:
               twoStepEnforcement.locked_field_overwrites,
-            unsupported_claims_rewritten:
-              twoStepEnforcement.unsupported_claims_rewritten,
-            unsupported_claims_removed:
+            unsupported_claims_removed_count:
               twoStepEnforcement.unsupported_claims_removed,
+            unsupported_claims_rewritten_count:
+              twoStepEnforcement.unsupported_claims_rewritten,
+            evidence_sufficiency: twoStepEvidence
+              ? {
+                  audio_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.audio_assessable,
+                  video_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.video_assessable,
+                  acting_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.acting_assessable,
+                  vocal_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.vocal_assessable,
+                  movement_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.movement_assessable,
+                  brief_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.brief_assessable,
+                  role_fit_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.role_fit_assessable,
+                }
+              : null,
           }
         : { enabled: false },
     };
