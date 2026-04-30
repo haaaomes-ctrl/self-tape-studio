@@ -799,6 +799,21 @@ export async function runProcessTake(
         hard_fail_reason: hardFailReason,
         elapsed_ms: totalElapsed,
       });
+      metric("preparation_timeout", {
+        take_id: takeId,
+        duration_ms: totalElapsed,
+        http_status: probeStatus,
+        reason: hardFailReason ?? "timeout",
+      });
+      metric("mux_static_rendition_failed", {
+        take_id: takeId,
+        reason: hardFailReason ?? "timeout",
+      });
+      metric("analysis_failed", {
+        take_id: takeId,
+        processing_phase: "analysis_pending",
+        reason: "preparation_timeout",
+      });
       const userMessage =
         hardFailReason ?? "We couldn't prepare your video in time. Please try again.";
       await supabaseAdmin
@@ -832,14 +847,31 @@ export async function runProcessTake(
       postPoll.error_message.toLowerCase().includes("cancelled")
     ) {
       console.log("[take-pipeline] cancelled during head-probe, aborting", baseLog);
+      metric("cancel", {
+        take_id: takeId,
+        processing_phase: "analysis_pending",
+        duration_ms: Date.now() - probeStartedWallclock,
+        reason: "after_preparation",
+      });
+      metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysis_pending" });
       return { ok: true, alreadyDone: true };
     }
 
+    const preparationDurationMs = Date.now() - probeStartedWallclock;
     console.log("[take-pipeline] head-probe ok, transitioning to analysing", {
       ...baseLog,
       http_status: probeStatus,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+    });
+    metric("preparation_completed", {
+      take_id: takeId,
+      duration_ms: preparationDurationMs,
+      tier,
+    });
+    metric("analysis_pending_to_analysing", {
+      take_id: takeId,
+      duration_ms: preparationDurationMs,
     });
 
     // NOW flip into the active analysing phase — Gemini call is next.
