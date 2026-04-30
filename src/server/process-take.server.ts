@@ -714,6 +714,12 @@ export async function runProcessTake(
           probe_attempt: probeAttempt,
           elapsed_ms: Date.now() - probeStartedWallclock,
         });
+        metric("static_mp4_ready", {
+          take_id: takeId,
+          duration_ms: Date.now() - probeStartedWallclock,
+          attempt: probeAttempt,
+          tier,
+        });
         break;
       }
 
