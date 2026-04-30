@@ -1220,6 +1220,10 @@ export async function runProcessTake(
         },
         body: JSON.stringify({
           model,
+          // Deterministic generation settings for the legacy single-pass path.
+          // Rollback to single-pass must not regress to high-stochasticity output.
+          temperature: 0.2,
+          top_p: 1,
           messages: [
             { role: "system", content: buildSystemPrompt() },
             {
