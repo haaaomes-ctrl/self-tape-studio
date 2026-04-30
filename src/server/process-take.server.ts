@@ -1001,7 +1001,7 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const callAI = (videoUrl: string, signal: AbortSignal) =>
+    const callAI = (videoUrl: string, signal: AbortSignal, model: string) =>
       fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -1009,7 +1009,7 @@ export async function runProcessTake(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3-flash-preview",
+          model,
           messages: [
             { role: "system", content: buildSystemPrompt() },
             {
@@ -1032,15 +1032,30 @@ export async function runProcessTake(
       });
 
     // ---- Strict Gemini retry policy ----
-    // Retry ONLY on: per-attempt timeout, 429, 500, 503, 504.
-    // Never retry on: parse errors, validation errors, 4xx other than 429,
-    // 402 (credits), or other 5xx not in the list above.
-    // Hard caps:
-    //   - Per-attempt timeout: ANALYSIS_GEMINI_TIMEOUT_MS
-    //   - Total wall-clock budget: ANALYSIS_TOTAL_TIMEOUT_MS (run-level)
-    //   - Max retries: ANALYSIS_MAX_RETRIES (so total attempts = 1 + retries)
+    // Attempt 1 = primary model. On retryable failure (timeout / 429 / 500 /
+    // 503 / 504 / network), retry ONCE with the fallback model. Total
+    // attempts = 1 + ANALYSIS_MAX_RETRIES (default 1 → 2 attempts max).
+    // Never retry on: parse errors, 4xx other than 429, 402 (credits).
+    // If the AI circuit breaker is OPEN, attempt 1 routes directly to the
+    // fallback model (no primary attempt).
     const RETRYABLE_HTTP = new Set([429, 500, 503, 504]);
     const GEMINI_BACKOFF_MS = [10_000, 30_000];
+
+    const circuitOpenAtStart = isCircuitOpen();
+    const initialModel = circuitOpenAtStart
+      ? ANALYSIS_MODEL_FALLBACK
+      : ANALYSIS_MODEL_PRIMARY;
+    if (circuitOpenAtStart) {
+      console.warn("[take-pipeline] ai_circuit_fallback_selected", {
+        take_id: takeId,
+        model: ANALYSIS_MODEL_FALLBACK,
+      });
+      metric("ai_circuit_fallback_selected", {
+        take_id: takeId,
+        model: ANALYSIS_MODEL_FALLBACK,
+      });
+    }
+    let currentModel = initialModel;
 
     const isCancelled = async (): Promise<boolean> => {
       const { data } = await supabaseAdmin
@@ -1061,14 +1076,17 @@ export async function runProcessTake(
     const geminiStartedAt = Date.now();
     console.info("[take-pipeline] ai_model_selected", {
       take_id: takeId,
-      model: "gemini-3-flash-preview",
+      model: currentModel,
+      primary: ANALYSIS_MODEL_PRIMARY,
+      fallback: ANALYSIS_MODEL_FALLBACK,
+      circuit_open: circuitOpenAtStart,
     });
     console.log("[take-pipeline] gemini request started", {
       ...baseLog,
       analysis_tier: tier,
       processing_phase: "analysing",
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-      model: "google/gemini-3-flash-preview",
+      model: currentModel,
       gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
       total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
       max_retries: ANALYSIS_MAX_RETRIES,
@@ -1077,7 +1095,7 @@ export async function runProcessTake(
       take_id: takeId,
       processing_phase: "analysing",
       tier,
-      model: "google/gemini-3-flash-preview",
+      model: currentModel,
       gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
       total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
       max_retries: ANALYSIS_MAX_RETRIES,
