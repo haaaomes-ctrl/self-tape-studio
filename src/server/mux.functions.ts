@@ -109,6 +109,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
             take_id: takeId,
             mux_upload_id: existing.id,
           });
+          metric("upload_url_success", { take_id: takeId, reused: true });
           return { uploadUrl: existing.url, uploadId: existing.id };
         }
       } catch {
