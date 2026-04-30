@@ -904,11 +904,19 @@ export async function runProcessTake(
     const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000; // 10 min — outer cap, from created_at
     const probeStartedWallclock = Date.now();
     const ageSinceCreatedMs = elapsedSinceCreatedMs() ?? 0;
-    const primaryUrl = normaliseMuxMp4Url(initialUrl);
-    const legacyUrl =
-      take.mux_playback_id && primaryUrl.endsWith("/highest.mp4")
-        ? normaliseMuxMp4Url(muxMp4LegacyUrl(take.mux_playback_id, "high"))
-        : null;
+    const canonicalProbeUrls = resolveCanonicalMuxProbeUrls(take);
+    const primaryUrl = ensureValidMuxMp4Url({
+      url: canonicalProbeUrls.primaryUrl ?? initialUrl,
+      playbackId: take.mux_playback_id,
+      kind: "primary",
+    });
+    const legacyUrl = canonicalProbeUrls.legacyUrl
+      ? ensureValidMuxMp4Url({
+          url: canonicalProbeUrls.legacyUrl,
+          playbackId: take.mux_playback_id,
+          kind: "legacy",
+        })
+      : null;
     metric("mux_static_rendition_waiting", {
       take_id: takeId,
       processing_phase: "analysis_pending",
