@@ -563,7 +563,7 @@ export async function runProcessTake(
   const { data: take, error: takeErr } = await supabaseAdmin
     .from("takes")
     .select(
-      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_asset_id, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url, created_at, updated_at, error_message",
+      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_asset_id, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url, mux_duration_seconds, created_at, updated_at, error_message",
     )
     .eq("id", takeId)
     .single();
