@@ -24,9 +24,10 @@
   --font-sans: "Inter", "Manrope", ui-sans-serif, system-ui, sans-serif;
 
   /* Type scale (size / line-height / weight via utilities) */
-  --text-h1: 3rem;        /* 48px */
+  /* Fluid type scale — adapts mobile → desktop without breakpoints */
+  --text-h1: clamp(2rem, 4.6vw + 1rem, 3rem);          /* 32 → 48px */
   --text-h1--line-height: 1.1;
-  --text-h2: 2.25rem;     /* 36px */
+  --text-h2: clamp(1.625rem, 2.4vw + 1rem, 2.25rem);   /* 26 → 36px */
   --text-h2--line-height: 1.15;
   --text-h3: 1.5rem;      /* 24px */
   --text-h3--line-height: 1.25;
@@ -258,4 +259,40 @@
   a {
     color: var(--brand-royal);
   }
+
+  /* Accessible focus ring for any keyboard-focusable element */
+  :focus-visible {
+    outline: 2px solid var(--brand-royal);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Skip link — only visible on keyboard focus */
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--brand-royal);
+  color: var(--brand-off-white);
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 0.75rem;
+  outline: 2px solid var(--brand-off-white);
+  outline-offset: 2px;
 }
