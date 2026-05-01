@@ -28,6 +28,7 @@ import {
   renderFallbackReport,
   type VerdictLabel,
 } from "./report-polish.server";
+import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
 import {
   scrubReportQuality,
   normaliseTimestampedNotes,
