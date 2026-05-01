@@ -521,6 +521,7 @@ function stageIndexFor(phase: string, analysisElapsed: number): number {
   if (phase === "uploading") return 0;
   if (phase === "transcoding") return 1;
   if (phase === "analysis_pending") return 2;
+  if (phase === "finalising") return 5;
   if (analysisElapsed >= 90) return 5;
   if (analysisElapsed >= TIER_REASSURE_SECONDS) return 4;
   return 3;
