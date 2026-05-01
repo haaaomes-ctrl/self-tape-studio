@@ -418,10 +418,12 @@ export function normaliseTimestampedNotes(
 
 export type ReportQualityScrubResult = {
   visual_removed_per_field: Record<string, number>;
-  source_removed_per_field: Record<string, number>;
+  page_rewritten_per_field: Record<string, number>;
+  side_rewritten_per_field: Record<string, number>;
   framing_rewritten_per_field: Record<string, number>;
   visual_total: number;
-  source_total: number;
+  page_total: number;
+  side_total: number;
   framing_total: number;
 };
 
