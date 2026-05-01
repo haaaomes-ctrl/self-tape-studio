@@ -2653,7 +2653,7 @@ export async function runProcessTake(
         })
         .eq("id", takeId)
         .eq("status", "processing")
-        .eq("processing_phase", "analysing")
+        .in("processing_phase", ["finalising", "analysing"])
         .select("id");
       if (updateRes.error) throw updateRes.error;
       updatedRows = updateRes.data ?? null;
