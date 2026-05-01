@@ -275,6 +275,13 @@ Rules:
 - Use British English in any free text.
 - Timestamps must be MM:SS, within the tape's actual duration. Maximum 8.
 - Order timestamped_evidence in CHRONOLOGICAL order. Spread evidence across the full tape, not only the opening minute. For hybrid tapes, cover each main component where possible.
+- Timestamp count target by tape duration (do not invent or pad — if fewer genuine moments exist, return fewer):
+  * under 60 seconds: 3–4 useful moments
+  * 1–3 minutes: 5–7 useful moments
+  * 3–5 minutes: 7–8 useful moments (minimum 5 when the tape is assessable; cover beginning, middle and end where possible; spread across major components — scene, song, transition, slate, audio/technical moments)
+  * absolute maximum: 8
+- NEVER reference page numbers, line numbers, "page X", "line X", "script page", "book page", "the side", "the sides", "in the script", or "in the book". The system has no page/line/sides metadata. Use timestamps or neutral moment descriptions only ("during the longer speech", "around 02:14", "before the reader's line", "in the scene section").
+- Visual presentation evidence (presentation_evidence) may name a clothing colour ONLY when the colour is clearly visible and the colour itself is the observation that matters (e.g. low contrast against the background). When colour is not essential, use colour-neutral wording such as "the performer separates clearly from the background" or "the framing is clean and easy to read". Never guess at colour.
 - Order core_strengths_evidence with the strongest / most submission-relevant first.
 - Order core_improvements_evidence with the highest-impact fix first.
 - Order risk_evidence with highest severity first.
