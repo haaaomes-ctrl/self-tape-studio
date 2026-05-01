@@ -2713,6 +2713,23 @@ export async function runProcessTake(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown processing error";
     console.error("runProcessTake failed", message);
+    // If the failure happened after we entered the finalising stage,
+    // emit a dedicated marker so log-side dashboards can attribute hangs
+    // to the right substage. `finaliseStartedAt` is initialised before
+    // the AI call; any failure with a non-zero finalising elapsed time
+    // is meaningful.
+    try {
+      if (typeof finaliseElapsedMs === "function" && finaliseStartedAt > 0) {
+        console.warn("[take-pipeline] finalising_failed", {
+          take_id: takeId,
+          finalising_duration_ms: finaliseElapsedMs(),
+          reason: message.slice(0, 120),
+          two_step_enabled: isTwoStepEnabled(),
+        });
+      }
+    } catch {
+      /* never let logging mask the original failure */
+    }
     metric("analysis_failed", {
       take_id: takeId,
       reason: message.slice(0, 120),
