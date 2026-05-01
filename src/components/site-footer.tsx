@@ -115,8 +115,8 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-sidebar-foreground/10 pt-6 text-xs text-sidebar-foreground/60 sm:flex-row sm:items-center">
-          <p>© {new Date().getFullYear()} TapeCoach. All rights reserved.</p>
-          <p>Review your tape before it reaches the room.</p>
+          <p>{brand.legal.copyright()}</p>
+          <p>{brand.tagline}</p>
         </div>
       </div>
     </footer>
