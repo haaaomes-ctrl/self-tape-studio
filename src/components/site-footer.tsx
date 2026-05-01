@@ -52,7 +52,7 @@ const SOCIALS = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <footer role="contentinfo" className="border-t border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="mx-auto max-w-6xl px-6 py-14">
         <div className="grid gap-10 lg:grid-cols-[1.1fr_2fr]">
           {/* Mission + socials */}
@@ -64,7 +64,8 @@ export function SiteFooter() {
             >
               <img
                 src={logoUrl}
-                alt="TapeCoach logo"
+                alt=""
+                aria-hidden="true"
                 className="h-8 w-8 object-contain"
               />
               <span>
@@ -79,10 +80,10 @@ export function SiteFooter() {
                 <a
                   key={s.label}
                   href={s.href}
-                  aria-label={s.label}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-sidebar-foreground/15 bg-sidebar-foreground/[0.04] text-sidebar-foreground/80 transition-colors hover:border-primary hover:text-primary"
+                  aria-label={`TapeCoach on ${s.label}`}
+                  className="flex h-11 w-11 items-center justify-center rounded-md border border-sidebar-foreground/15 bg-sidebar-foreground/[0.04] text-sidebar-foreground/85 transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:text-primary"
                 >
-                  <s.icon className="h-4 w-4" />
+                  <s.icon className="h-4 w-4" aria-hidden="true" />
                 </a>
               ))}
             </div>
@@ -95,12 +96,12 @@ export function SiteFooter() {
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/60">
                   {group.heading}
                 </p>
-                <ul className="mt-4 space-y-2.5">
+                <ul className="mt-4 space-y-1">
                   {group.links.map((l) => (
                     <li key={l.label}>
                       <Link
                         to={l.to}
-                        className="text-sm text-sidebar-foreground/85 transition-colors hover:text-primary"
+                        className="-mx-2 inline-block rounded-md px-2 py-2 text-sm text-sidebar-foreground/90 transition-colors hover:text-primary focus-visible:text-primary"
                       >
                         {l.label}
                       </Link>
