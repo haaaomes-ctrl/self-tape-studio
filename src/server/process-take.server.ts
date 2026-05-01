@@ -1043,7 +1043,7 @@ export async function runProcessTake(
     const POST_AI_FINALISE_TIMEOUT_MS = Number(
       process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000,
     );
-    const finaliseStartedAt = Date.now();
+    finaliseStartedAt = Date.now();
     const finaliseExceeded = () =>
       Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
     const finaliseElapsedMs = () => Date.now() - finaliseStartedAt;
