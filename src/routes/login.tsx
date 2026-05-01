@@ -10,10 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { brand, brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
-    meta: [{ title: "Sign in — TapeCoach" }],
+    meta: [{ title: brandTitle("Sign in") }],
   }),
   component: LoginPage,
 });
@@ -79,7 +80,7 @@ function LoginPage() {
           <Film className="h-5 w-5" />
         </div>
         <h1 className="mt-6 text-center font-display text-3xl font-bold tracking-tight">
-          Welcome to TapeCoach
+          Welcome to {brand.name}
         </h1>
         <p className="mt-2 text-center text-sm text-muted-foreground">
           Sign in to upload tapes and review your reports.

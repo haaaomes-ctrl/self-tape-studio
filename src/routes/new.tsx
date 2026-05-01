@@ -25,9 +25,10 @@ import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/l
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server/process-take.functions";
+import { brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/new")({
-  head: () => ({ meta: [{ title: "New audition — TapeCoach" }] }),
+  head: () => ({ meta: [{ title: brandTitle("New audition") }] }),
   component: NewAuditionPage,
 });
 

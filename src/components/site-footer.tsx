@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Instagram, Linkedin, Music2, Youtube } from "lucide-react";
-import logoUrl from "@/assets/tapecoach-logo.png";
+import { brand } from "@/config/brand";
 
 const FOOTER_GROUPS: Array<{
   heading: string;
@@ -44,10 +44,10 @@ const FOOTER_GROUPS: Array<{
 ];
 
 const SOCIALS = [
-  { label: "Instagram", icon: Instagram, href: "#" },
-  { label: "TikTok", icon: Music2, href: "#" },
-  { label: "YouTube", icon: Youtube, href: "#" },
-  { label: "LinkedIn", icon: Linkedin, href: "#" },
+  { label: "Instagram", icon: Instagram, href: brand.socials.instagram },
+  { label: "TikTok", icon: Music2, href: brand.socials.tiktok },
+  { label: "YouTube", icon: Youtube, href: brand.socials.youtube },
+  { label: "LinkedIn", icon: Linkedin, href: brand.socials.linkedin },
 ];
 
 export function SiteFooter() {
@@ -60,27 +60,28 @@ export function SiteFooter() {
             <Link
               to="/"
               className="flex items-center gap-2 font-display text-lg font-bold tracking-tight"
-              aria-label="TapeCoach home"
+              aria-label={`${brand.name} home`}
             >
               <img
-                src={logoUrl}
+                src={brand.assets.logo}
                 alt=""
                 aria-hidden="true"
                 className="h-8 w-8 object-contain"
               />
               <span>
-                Tape<span className="text-primary">Coach</span>
+                {brand.wordmark.lead}
+                <span className="text-primary">{brand.wordmark.accent}</span>
               </span>
             </Link>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-sidebar-foreground/75">
-              Private self-tape feedback before you submit.
+              {brand.mission}
             </p>
             <div className="mt-6 flex items-center gap-2">
               {SOCIALS.map((s) => (
                 <a
                   key={s.label}
                   href={s.href}
-                  aria-label={`TapeCoach on ${s.label}`}
+                  aria-label={`${brand.name} on ${s.label}`}
                   className="flex h-11 w-11 items-center justify-center rounded-md border border-sidebar-foreground/15 bg-sidebar-foreground/[0.04] text-sidebar-foreground/85 transition-colors hover:border-primary hover:text-primary focus-visible:border-primary focus-visible:text-primary"
                 >
                   <s.icon className="h-4 w-4" aria-hidden="true" />
@@ -114,8 +115,8 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-sidebar-foreground/10 pt-6 text-xs text-sidebar-foreground/60 sm:flex-row sm:items-center">
-          <p>© {new Date().getFullYear()} TapeCoach. All rights reserved.</p>
-          <p>Review your tape before it reaches the room.</p>
+          <p>{brand.legal.copyright()}</p>
+          <p>{brand.tagline}</p>
         </div>
       </div>
     </footer>

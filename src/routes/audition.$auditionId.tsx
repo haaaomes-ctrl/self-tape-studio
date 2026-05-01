@@ -18,9 +18,10 @@ import { deleteTake, deleteAudition } from "@/server/delete.functions";
 import { createMuxDirectUpload } from "@/server/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { cn } from "@/lib/utils";
+import { brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/audition/$auditionId")({
-  head: () => ({ meta: [{ title: "Audition — TapeCoach" }] }),
+  head: () => ({ meta: [{ title: brandTitle("Audition") }] }),
   component: AuditionPage,
 });
 

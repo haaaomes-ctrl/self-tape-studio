@@ -20,16 +20,15 @@ import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 
 import heroStage from "@/assets/hero-stage.jpg";
+import { brand, brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "TapeCoach — Review your tape before it reaches the room" },
-      {
-        name: "description",
-        content:
-          "Private, structured feedback on your performance, voice, setup and brief fit — before your tape reaches casting, agents or teachers.",
-      },
+      { title: brandTitle() },
+      { name: "description", content: brand.description },
+      { property: "og:title", content: brandTitle() },
+      { property: "og:description", content: brand.shareDescription },
     ],
   }),
   component: Landing,
