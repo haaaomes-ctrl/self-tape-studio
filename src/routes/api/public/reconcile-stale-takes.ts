@@ -6,6 +6,7 @@ import {
   normaliseMuxMp4Url,
 } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
+import { cleanupMuxAssetForCompletedTake } from "@/server/mux-cleanup.server";
 import { scheduleBackground } from "@/worker-entry";
 import { metric } from "@/server/metrics.server";
 
@@ -653,6 +654,35 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           reconciled.push(take.id);
         }
 
+        // Post-report Mux asset cleanup backfill. Picks up takes that
+        // completed before this code shipped, or where the inline cleanup
+        // in process-take.server failed (network blip, transient Mux
+        // error). Bounded batch so a single tick never thrashes Mux.
+        const muxCleanupCleaned: string[] = [];
+        const muxCleanupFailed: string[] = [];
+        const { data: completedWithAsset, error: cleanupErr } =
+          await supabaseAdmin
+            .from("takes")
+            .select("id, mux_asset_id")
+            .eq("status", "complete")
+            .eq("processing_phase", "complete")
+            .not("mux_asset_id", "is", null)
+            .limit(MAX_BATCH);
+        if (cleanupErr) {
+          console.error("mux_cleanup_backfill select failed", { cleanupErr });
+        } else {
+          for (const take of completedWithAsset ?? []) {
+            if (!take.mux_asset_id) continue;
+            const result = await cleanupMuxAssetForCompletedTake({
+              takeId: take.id,
+              muxAssetId: take.mux_asset_id,
+              reason: "reconciler_backfill",
+            });
+            if (result.ok) muxCleanupCleaned.push(take.id);
+            else muxCleanupFailed.push(take.id);
+          }
+        }
+
         return Response.json({
           ok: true,
           stalePending: stalePending?.length ?? 0,
@@ -667,6 +697,8 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           transcodingForcedError,
           uploadingRecovered,
           uploadingForcedError,
+          muxCleanupCleaned,
+          muxCleanupFailed,
         });
       },
     },
