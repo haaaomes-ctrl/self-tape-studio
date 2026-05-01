@@ -20,7 +20,7 @@ import { describeUploadError } from "@/lib/upload-errors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/audition/$auditionId")({
-  head: () => ({ meta: [{ title: "Audition — SelfTape" }] }),
+  head: () => ({ meta: [{ title: "Audition — TapeCoach" }] }),
   component: AuditionPage,
 });
 

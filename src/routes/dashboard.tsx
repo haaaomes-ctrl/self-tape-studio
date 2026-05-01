@@ -12,7 +12,7 @@ import { deleteAudition } from "@/server/delete.functions";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
-    meta: [{ title: "Your auditions — SelfTape" }],
+    meta: [{ title: "Your auditions — TapeCoach" }],
   }),
   component: DashboardPage,
 });

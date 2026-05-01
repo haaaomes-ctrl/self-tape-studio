@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
-    meta: [{ title: "Sign in — SelfTape" }],
+    meta: [{ title: "Sign in — TapeCoach" }],
   }),
   component: LoginPage,
 });
@@ -79,7 +79,7 @@ function LoginPage() {
           <Film className="h-5 w-5" />
         </div>
         <h1 className="mt-6 text-center font-display text-3xl font-bold tracking-tight">
-          Welcome to SelfTape
+          Welcome to TapeCoach
         </h1>
         <p className="mt-2 text-center text-sm text-muted-foreground">
           Sign in to upload tapes and review your reports.
