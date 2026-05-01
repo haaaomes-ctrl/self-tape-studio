@@ -18,7 +18,7 @@ import {
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
-import tapecoachLogo from "@/assets/tapecoach-logo.png";
+
 import heroStage from "@/assets/hero-stage.jpg";
 
 export const Route = createFileRoute("/")({
