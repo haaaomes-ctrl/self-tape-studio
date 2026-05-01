@@ -1733,6 +1733,43 @@ export async function runProcessTake(
       fallback_used: twoStepFallbackUsed,
     });
 
+    // Transition to the dedicated `finalising` phase before any deterministic
+    // post-processing begins (validation, UK terminology pass, score
+    // recomputation, scrubs, verdict/cap logic, final persistence). This lets
+    // the reconciler distinguish a still-running AI call (`analysing`) from a
+    // dead worker mid-finalisation (`finalising`) and apply the right timeout
+    // policy. Conditional on the row still being status=processing AND
+    // phase=analysing so we don't clobber a cancellation/reset that landed
+    // while Gemini was running.
+    {
+      const { data: phaseRows, error: phaseErr } = await supabaseAdmin
+        .from("takes")
+        .update({ processing_phase: "finalising" })
+        .eq("id", takeId)
+        .eq("status", "processing")
+        .eq("processing_phase", "analysing")
+        .select("id");
+      if (phaseErr) {
+        console.warn("[take-pipeline] finalising_phase_set_failed", {
+          take_id: takeId,
+          error: String(phaseErr.message ?? phaseErr),
+        });
+        // Non-fatal: subsequent persistence guard will detect state drift.
+      } else if (!phaseRows || phaseRows.length === 0) {
+        console.log("[take-pipeline] finalising_phase_set_skipped", {
+          take_id: takeId,
+          reason: "state_changed_pre_finalising",
+        });
+        // Row no longer in (processing, analysing) — likely cancelled/reset.
+        // Let the existing pre-write guard discard the result cleanly.
+      } else {
+        console.log("[take-pipeline] finalising_phase_set", {
+          take_id: takeId,
+          processing_phase: "finalising",
+        });
+      }
+    }
+
     // ---- Validate two-step report shape before deterministic scrubs ----
     // A malformed Step-2 report (missing scores/category fields) can wedge
     // downstream regex walks. Detect early; fall back or fail cleanly.
