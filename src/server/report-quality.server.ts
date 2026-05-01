@@ -425,6 +425,53 @@ export function normaliseTimestampedNotes(
   };
 }
 
+// ---------- Presentation-note grounding ----------
+
+// Sentence-level claim detectors. These fire when a presentation_notes line
+// makes a visual/wardrobe/background claim that should only appear if Step 1
+// presentation_evidence locked it in.
+const PRESENTATION_VISUAL_CLAIM_RE =
+  /\b(top|tops|shirt|t[-\s]?shirt|blouse|jumper|sweater|hoodie|jacket|outfit|clothing|clothes|wardrobe|garment|attire|colour|color|contrast|contrasting|background|backdrop|wall|backdrop\s+colour|solid\s+colour)\b/i;
+
+// Neutral, always-safe presentation notes used when an unsupported claim is
+// neutralised rather than dropped.
+const PRESENTATION_NEUTRAL_NOTES = [
+  "The frame is clean and easy to read.",
+  "The background does not distract from the performance.",
+  "The performer remains visually clear throughout.",
+];
+
+/**
+ * Decide whether a presentation_notes sentence is supported by Step 1
+ * presentation_evidence. We require at least one significant token from the
+ * sentence to also appear in the evidence corpus.
+ */
+function presentationClaimSupported(
+  sentence: string,
+  evidence: EvidencePass | null,
+): boolean {
+  if (!evidence || !Array.isArray(evidence.presentation_evidence)) return false;
+  const corpus = evidence.presentation_evidence
+    .map((s) => (typeof s === "string" ? s.toLowerCase() : ""))
+    .filter(Boolean)
+    .join(" \n ");
+  if (!corpus) return false;
+  // Take the salient nouns/adjectives from the sentence and require overlap.
+  const tokens = sentence
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) =>
+      w.length > 3 &&
+      PRESENTATION_VISUAL_CLAIM_RE.test(w),
+    );
+  if (tokens.length === 0) return true; // no visual claim words detected
+  for (const t of tokens) {
+    if (corpus.includes(t)) return true;
+  }
+  return false;
+}
+
 // ---------- Top-level scrub entry point ----------
 
 export type ReportQualityScrubResult = {
