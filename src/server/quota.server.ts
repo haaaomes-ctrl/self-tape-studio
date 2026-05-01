@@ -11,9 +11,12 @@
 // race window between two near-simultaneous inserts.
 import { startOfDay } from "date-fns";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { getResolvedConfig, SAFE_DEFAULTS } from "./app-config.server";
 
-export const USER_DAILY_CAP = 5;
+// Anon lifetime cap is intentionally hard-coded (out of scope for app_config).
 export const ANON_LIFETIME_CAP = 2;
+// Re-exported for any legacy import sites; the runtime value comes from config.
+export const USER_DAILY_CAP_DEFAULT = SAFE_DEFAULTS.daily_submission_cap;
 
 /**
  * Thrown when a quota check fails. Server functions / route handlers
@@ -58,6 +61,15 @@ export async function assertWithinAnalysisQuota(
   op: string,
 ): Promise<void> {
   if (identity.kind === "user") {
+    // Resolve admin-managed config (with safe defaults). When quota is
+    // disabled, bypass the per-day check entirely — the anon path below
+    // is unaffected and remains hard-coded.
+    const cfg = await getResolvedConfig();
+    if (!cfg.quota_enabled) {
+      return;
+    }
+    const cap = cfg.daily_submission_cap;
+
     const since = startOfDay(new Date()).toISOString();
     const { count, error } = await supabaseAdmin
       .from("takes")
@@ -71,17 +83,17 @@ export async function assertWithinAnalysisQuota(
     }
 
     const used = count ?? 0;
-    if (used >= USER_DAILY_CAP) {
+    if (used >= cap) {
       console.warn(
-        `[quota] REJECTED ${op} — user=${identity.userId} used=${used} cap=${USER_DAILY_CAP} scope=user_daily`,
+        `[quota] REJECTED ${op} — used=${used} cap=${cap} scope=user_daily`,
       );
       throw new QuotaExceededError({
         scope: "user_daily",
-        cap: USER_DAILY_CAP,
+        cap,
         count: used,
         identityKind: "user",
         identityId: identity.userId,
-        message: `Daily analysis limit reached (${USER_DAILY_CAP}/day). Try again tomorrow.`,
+        message: `Daily submission limit reached (${cap}/day). Please try again tomorrow.`,
       });
     }
     return;
