@@ -258,21 +258,32 @@ const FRAME_BREAKING_PATTERNS: RegExp[] = [
   /\busing\s+props?\b/i,
   /\badd(?:ing)?\s+props?\b/i,
   /\bphysical\s+task\b/i,
-  /\brecord(?:ing)?\s+(?:while|whilst)\s+(?:moving|walking)\b/i,
+  /\brecord(?:ing)?\s+(?:while|whilst)\s+(?:moving|walking|standing|holding)\b/i,
   /\badd(?:ing)?\s+staging\b/i,
+  /\badd(?:ing)?\s+blocking\b/i,
+  /\badd(?:ing)?\s+business\b/i,
   /\bmove\s+out\s+of\s+frame\b/i,
   /\bstep\s+out\s+of\s+frame\b/i,
   /\bleave\s+frame\b/i,
   /\bfull[-\s]?body\s+movement\b/i,
+  // Holding instruments / props during the recorded take.
+  /\b(?:hold|holding|with)\s+(?:an?\s+)?(?:instrument|guitar|ukulele|microphone|mic|prop|book|script|page|pages|cup|mug|phone)\b/i,
+  /\bphysically\s+hold(?:ing)?\b/i,
+  // "Record [...] while standing" / "stand up to record" / "perform standing"
+  /\brecord(?:ing)?\s+(?:the\s+\w+\s+)?(?:while|whilst)\s+standing\b/i,
+  /\bstand\s+(?:up\s+)?(?:to\s+)?(?:record|perform|sing|deliver)\b/i,
+  /\bperform(?:ing)?\s+standing\b/i,
+  /\bsing(?:ing)?\s+standing\b/i,
 ];
 
 const REHEARSAL_LABEL_RE =
-  /\b(?:as\s+(?:an?\s+)?off[-\s]?camera\s+rehearsal|rehearsal\s+only|rehearsal[-\s]?only|in\s+rehearsal|off[-\s]?camera\s+drill)\b/i;
+  /\b(?:as\s+(?:an?\s+)?(?:off[-\s]?camera\s+)?rehearsal|rehearsal[-\s]?only|in\s+rehearsal|off[-\s]?camera\s+(?:drill|exercise|exploration)|rehearsal\s+(?:drill|exercise|exploration))\b/i;
 
 const FRAME_SAFE_REWRITES = [
-  "Use breath, stillness and eyeline changes inside the frame rather than adding movement.",
-  "Find the change of intention through the eyes and the upper body inside the required frame.",
-  "Sharpen the moment with a clear thought-shift, keeping the head-and-shoulders frame still.",
+  "For the recorded take, keep the head-and-shoulders frame and use breath, eyeline and thought changes to create variety.",
+  "Keep the frame still on the recorded take and let the character shift happen through the eyes and timing.",
+  "Use the transition into the next beat to carry the emotional state without adding extra movement, keeping the requested frame.",
+  "As a rehearsal-only drill, explore the moment with movement away from the camera, then record the final take in the required head-and-shoulders frame.",
 ];
 
 function rewriteFrameBreakingInString(
@@ -414,6 +425,53 @@ export function normaliseTimestampedNotes(
   };
 }
 
+// ---------- Presentation-note grounding ----------
+
+// Sentence-level claim detectors. These fire when a presentation_notes line
+// makes a visual/wardrobe/background claim that should only appear if Step 1
+// presentation_evidence locked it in.
+const PRESENTATION_VISUAL_CLAIM_RE =
+  /\b(top|tops|shirt|t[-\s]?shirt|blouse|jumper|sweater|hoodie|jacket|outfit|clothing|clothes|wardrobe|garment|attire|colour|color|contrast|contrasting|background|backdrop|wall|backdrop\s+colour|solid\s+colour)\b/i;
+
+// Neutral, always-safe presentation notes used when an unsupported claim is
+// neutralised rather than dropped.
+const PRESENTATION_NEUTRAL_NOTES = [
+  "The frame is clean and easy to read.",
+  "The background does not distract from the performance.",
+  "The performer remains visually clear throughout.",
+];
+
+/**
+ * Decide whether a presentation_notes sentence is supported by Step 1
+ * presentation_evidence. We require at least one significant token from the
+ * sentence to also appear in the evidence corpus.
+ */
+function presentationClaimSupported(
+  sentence: string,
+  evidence: EvidencePass | null,
+): boolean {
+  if (!evidence || !Array.isArray(evidence.presentation_evidence)) return false;
+  const corpus = evidence.presentation_evidence
+    .map((s) => (typeof s === "string" ? s.toLowerCase() : ""))
+    .filter(Boolean)
+    .join(" \n ");
+  if (!corpus) return false;
+  // Take the salient nouns/adjectives from the sentence and require overlap.
+  const tokens = sentence
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) =>
+      w.length > 3 &&
+      PRESENTATION_VISUAL_CLAIM_RE.test(w),
+    );
+  if (tokens.length === 0) return true; // no visual claim words detected
+  for (const t of tokens) {
+    if (corpus.includes(t)) return true;
+  }
+  return false;
+}
+
 // ---------- Top-level scrub entry point ----------
 
 export type ReportQualityScrubResult = {
@@ -488,6 +546,45 @@ export function scrubReportQuality(opts: {
     if (Array.isArray(report[field])) {
       report[field] = scrubArrayField(field, report[field], ctx);
     }
+  }
+
+  // Presentation-note grounding: visual/clothing/background claims must be
+  // backed by Step 1 presentation_evidence. Unsupported claims are dropped or
+  // (if the line is otherwise useful) replaced with a neutral camera-readability
+  // note. Counts are folded into visual_removed_per_field for logging.
+  if (Array.isArray(report.presentation_notes)) {
+    let neutralIdx = 0;
+    let unsupportedRemoved = 0;
+    const grounded: string[] = [];
+    for (const raw of report.presentation_notes as unknown[]) {
+      if (typeof raw !== "string") continue;
+      const s = raw.trim();
+      if (!s) continue;
+      const hasVisualClaim = PRESENTATION_VISUAL_CLAIM_RE.test(s);
+      if (!hasVisualClaim) {
+        grounded.push(s);
+        continue;
+      }
+      if (presentationClaimSupported(s, evidence)) {
+        grounded.push(s);
+        continue;
+      }
+      unsupportedRemoved += 1;
+      // Replace the first unsupported entry with a neutral camera-readability
+      // line; drop any further unsupported lines to avoid duplicate neutrals.
+      if (neutralIdx === 0) {
+        grounded.push(
+          PRESENTATION_NEUTRAL_NOTES[neutralIdx % PRESENTATION_NEUTRAL_NOTES.length],
+        );
+        neutralIdx += 1;
+      }
+    }
+    if (unsupportedRemoved > 0) {
+      counters.visual["presentation_notes_grounding"] =
+        (counters.visual["presentation_notes_grounding"] ?? 0) +
+        unsupportedRemoved;
+    }
+    report.presentation_notes = grounded.slice(0, 3);
   }
 
   // category_notes (object of strings)

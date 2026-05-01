@@ -194,7 +194,7 @@ const EVIDENCE_TOOL = {
         timestamped_evidence: {
           type: "array",
           description:
-            "Up to 8 noteworthy moments in CHRONOLOGICAL order. timestamp must be MM:SS within the tape duration. observation = what happened. why_it_matters = why this is useful for the performer. linked_category = one of: technical, audio, vocal, acting, brief_adherence, professional_presentation. Prefer evidence across the full tape, not only the opening minute. For hybrid tapes, include evidence from each main component where possible. Never invent timestamps. Never pad weak observations.",
+            "Noteworthy moments in CHRONOLOGICAL order, MM:SS within the tape duration. Target counts by duration when the tape is assessable: <60s -> 3-4; 1-3 min -> 5-7; 3-5 min -> 7-8 (minimum 5); never exceed 8. For 3-5 minute multi-component tapes (e.g. acting scene + song) you MUST cover BOTH components: aim for 2-3 from the acting scene, 2-3 from the song, 1 from the transition where one exists, and at least 1 improvement/fix-first moment. Returning only 2-3 items for a 4-minute multi-component tape is under-production and not acceptable unless evidence_sufficiency explicitly explains why. observation = what happened. why_it_matters = why this is useful for the performer. linked_category = one of: technical, audio, vocal, acting, brief_adherence, professional_presentation. Never invent timestamps. Never pad weak observations.",
           items: {
             type: "object",
             properties: {
@@ -279,8 +279,10 @@ Rules:
 - Timestamp count target by tape duration (do not invent or pad — if fewer genuine moments exist, return fewer):
   * under 60 seconds: 3–4 useful moments
   * 1–3 minutes: 5–7 useful moments
-  * 3–5 minutes: target 7–8 useful moments. Minimum 5 when the tape is assessable. You MUST cover beginning, middle and end, AND each major component (e.g. acting scene, song, transition, slate, notable audio/technical moments). Do not stop at 2–3 timestamps for a 4-minute multi-component tape — that is under-production.
+  * 3–5 minutes: TARGET 7–8 useful moments. Minimum 5 when the tape is assessable. You MUST cover beginning, middle and end, AND each major component (e.g. acting scene, song, transition, slate, notable audio/technical moments). Returning only 2–3 timestamps for a 4-minute multi-component tape is UNDER-PRODUCTION and not acceptable unless evidence_sufficiency.audio_assessable, video_assessable, or acting_assessable is false.
+  * For a 3–5 minute multi-component tape (e.g. acting scene + song), aim for: 2–3 moments inside the acting scene, 2–3 moments inside the song, 1 moment at the transition between them when one exists, and at least 1 improvement/fix-first moment where observable. Cap at 8.
   * absolute maximum: 8
+- Before returning, self-check: if the tape is 3–5 minutes, multi-component, and assessable, and you have fewer than 5 timestamped_evidence entries, you have under-produced — re-scan the tape and add the missing moments before returning.
 - NEVER reference page numbers, line numbers, "page X", "line X", "script page", "book page", "the side", "the sides", "in the script", or "in the book". The system has no page/line/sides metadata. Use timestamps or neutral moment descriptions only ("during the longer speech", "around 02:14", "before the reader's line", "in the scene section").
 - Visual presentation evidence (presentation_evidence) may name a clothing colour ONLY when the colour is clearly visible and the colour itself is the observation that matters (e.g. low contrast against the background). When colour is not essential, use colour-neutral wording such as "the performer separates clearly from the background" or "the framing is clean and easy to read". Never guess at colour.
 - Order core_strengths_evidence with the strongest / most submission-relevant first.
