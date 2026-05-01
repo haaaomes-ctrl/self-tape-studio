@@ -195,28 +195,39 @@ export function briefHasSourceMetadata(opts: {
 function rewriteSourceRefsInString(
   input: string,
   hasSourceMetadata: boolean,
-): { value: string; removed: boolean } {
+): { value: string; pageRewritten: boolean; sideRewritten: boolean } {
   if (typeof input !== "string" || input.length === 0) {
-    return { value: input, removed: false };
+    return { value: input, pageRewritten: false, sideRewritten: false };
   }
   let out = input;
-  let changed = false;
-  // Always rewrite "side" -> "scene" (rule 5), regardless of metadata.
-  for (const rw of SOURCE_REWRITES) {
-    if (
-      hasSourceMetadata &&
-      // page/line patterns only banned when no metadata
-      (rw.re.source.includes("page") || rw.re.source.includes("line"))
-    ) {
-      continue;
-    }
+  let pageRewritten = false;
+  let sideRewritten = false;
+
+  // Page/line/script/book references.
+  // - When the brief carries source metadata (e.g. explicit "Side 1, pages
+  //   85–87"), page references are technically allowed. We still prefer
+  //   moment descriptions in user-facing output, so rewrite and log.
+  // - When no source metadata exists, these are hallucinations and must be
+  //   removed.
+  for (const rw of PAGE_REWRITES) {
     if (rw.re.test(out)) {
-      changed = true;
+      pageRewritten = true;
       out = out.replace(rw.re, rw.replacement);
     }
   }
+
+  // Unclear "side" jargon — always rewritten to clearer wording.
+  for (const rw of SIDE_REWRITES) {
+    if (rw.re.test(out)) {
+      sideRewritten = true;
+      out = out.replace(rw.re, rw.replacement);
+    }
+  }
+
   out = out.replace(/\s{2,}/g, " ").trim();
-  return { value: out, removed: changed };
+  // Suppress unused parameter lint (kept for API parity / future use).
+  void hasSourceMetadata;
+  return { value: out, pageRewritten, sideRewritten };
 }
 
 // ---------- 3) Brief-incompatible coaching rewrite ----------
