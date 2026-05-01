@@ -2615,7 +2615,8 @@ export async function runProcessTake(
     if (
       !preWrite ||
       preWrite.status !== "processing" ||
-      preWrite.processing_phase !== "analysing"
+      (preWrite.processing_phase !== "finalising" &&
+        preWrite.processing_phase !== "analysing")
     ) {
       console.log("result_discarded_state_changed", {
         take_id: takeId,
