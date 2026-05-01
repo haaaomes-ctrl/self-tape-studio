@@ -1815,11 +1815,20 @@ export async function runProcessTake(
     // ---- Server-side overall score recomputation ----
     // Trust the model's per-category scores; recompute the weighted overall
     // deterministically using audition-type weights, then apply caps.
+    if (finaliseExceeded()) throwFinaliseTimeout("before_score_recompute");
+    const scoreRecomputeStartedAt = Date.now();
+    console.log("[take-pipeline] finalising_score_recompute_started", {
+      take_id: takeId,
+    });
     const auditionType = (report.audition_type ?? "unknown") as AuditionType;
     const weights = weightsForType(auditionType);
     const modelScores = (report.scores ?? {}) as Record<string, number | null>;
     const recomputed = recomputeOverall(modelScores, weights);
     let overall = recomputed.overall || (report.overall_score as number) || 0;
+    console.log("[take-pipeline] finalising_score_recompute_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - scoreRecomputeStartedAt,
+    });
 
     const audioScore = modelScores.audio ?? 100;
     // Tiered audio caps mirror applyCapsAndLabel:
