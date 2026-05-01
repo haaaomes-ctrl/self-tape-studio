@@ -1,17 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, CheckCircle2, Compass, Eye, Sparkles, Upload } from "lucide-react";
+import { ArrowRight, CheckCircle2, Compass, Eye, Lock, Sparkles, Upload } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import tapecoachLogo from "@/assets/tapecoach-logo.png";
+import heroStage from "@/assets/hero-stage.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SelfTape — Honest feedback on your audition tape" },
+      { title: "TapeCoach — Review your tape before it reaches the room" },
       {
         name: "description",
         content:
-          "Upload your self-tape, get coach-like feedback in minutes. Brief-aware scoring, timestamped notes, and a clear priority for your next take.",
+          "Private, structured feedback on your performance, voice, setup and brief fit — before your tape reaches casting, agents or teachers.",
       },
     ],
   }),
@@ -23,37 +24,84 @@ function Landing() {
     <div className="min-h-screen bg-background">
       <SiteHeader />
 
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pb-24 pt-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-            <Sparkles className="h-3 w-3 text-primary" /> A first-pass casting reader, in your pocket
-          </span>
-          <h1 className="mt-6 font-display text-5xl font-bold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
-            Honest, coach-like feedback on your{" "}
-            <span className="text-primary">self-tape</span>.
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-            Upload your audition. Optionally paste the brief. Get a casting headline, category
-            scores, timestamped notes, and the one thing to fix first — in minutes.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild size="lg" className="h-12 px-6 text-base">
-              <Link to="/login">
-                Try it free <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="ghost" className="h-12 px-6 text-base">
-              <Link to="/about">How it works</Link>
-            </Button>
-          </div>
-          <p className="mt-4 text-xs text-muted-foreground">
-            Free during preview · Your tapes stay private to your account
-          </p>
+      {/* Hero — theatre-inspired, dark backdrop */}
+      <section className="relative isolate overflow-hidden bg-sidebar text-sidebar-foreground">
+        {/* Background image + gradient overlay for readability */}
+        <div className="absolute inset-0 -z-10">
+          <img
+            src={heroStage}
+            alt=""
+            aria-hidden="true"
+            className="h-full w-full object-cover object-center opacity-60"
+            width={1920}
+            height={1080}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(110deg, oklch(0.18 0.05 260 / 0.95) 0%, oklch(0.20 0.06 260 / 0.78) 45%, oklch(0.22 0.07 260 / 0.55) 100%)",
+            }}
+          />
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-sidebar" />
         </div>
 
-        {/* Mock report card */}
-        <div className="mx-auto mt-20 max-w-4xl">
+        <div className="mx-auto grid max-w-6xl gap-10 px-6 pb-24 pt-24 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-16 lg:pb-28 lg:pt-28">
+          <div className="max-w-2xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-sidebar-foreground/15 bg-sidebar-foreground/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/80 backdrop-blur">
+              <Sparkles className="h-3 w-3 text-primary" /> Private self-tape feedback
+            </span>
+            <h1 className="mt-6 font-display text-4xl font-black leading-[1.05] tracking-tight text-sidebar-foreground sm:text-5xl lg:text-6xl">
+              Review your tape before it reaches{" "}
+              <span className="text-primary">the room.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-sidebar-foreground/80 sm:text-lg">
+              Private, structured feedback on your performance, voice, setup and brief fit —
+              before your tape reaches casting, agents or teachers.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center gap-3">
+              <Button asChild size="lg">
+                <Link to="/login">
+                  Review my tape <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="border-sidebar-foreground/25 bg-transparent text-sidebar-foreground hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground hover:border-sidebar-foreground/40"
+              >
+                <Link to="/about">See example feedback</Link>
+              </Button>
+            </div>
+            <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-sidebar-foreground/70">
+              <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-sidebar-foreground/60" />
+              <span>
+                Private by default. No public posting. No judgement. Just clear notes before you submit.
+              </span>
+            </p>
+          </div>
+
+          {/* Right-hand visual — silhouetted stage detail framed by gradient */}
+          <div className="relative hidden lg:block">
+            <div className="absolute -inset-6 rounded-3xl bg-gradient-to-br from-primary/30 via-accent/20 to-transparent blur-2xl" />
+            <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-sidebar-foreground/10 shadow-elevated">
+              <img
+                src={heroStage}
+                alt="Performer mid-audition under stage lights with a self-tape camera"
+                className="h-full w-full object-cover"
+                width={800}
+                height={1000}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-sidebar/70 via-transparent to-transparent" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Mock report card */}
+      <section className="mx-auto max-w-6xl px-6 pt-16">
+        <div className="mx-auto max-w-4xl">
           <div className="rounded-2xl border border-border bg-card p-2 shadow-elevated">
             <div className="rounded-xl bg-secondary/60 p-8">
               <div className="flex items-start justify-between">
