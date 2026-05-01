@@ -564,6 +564,9 @@ function ProcessingTakeView({ take }: { take: Take }) {
     title = "Preparing your video for analysis";
     sub =
       "Your video is being optimised for review. We're checking every few seconds and will move on automatically.";
+  } else if (phase === "finalising") {
+    title = "Finalising your results";
+    sub = "Almost there — preparing your report.";
   } else if (analysisElapsed < TIER_REASSURE_SECONDS) {
     title = "Watching your tape";
     sub =
