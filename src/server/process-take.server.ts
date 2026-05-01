@@ -1717,6 +1717,62 @@ export async function runProcessTake(
     });
     } // end of single-pass else branch
 
+    // ====================================================================
+    //  FINALISING STAGE — deterministic post-processing + persistence.
+    //  Bounded by POST_AI_FINALISE_TIMEOUT_MS. Each substage is logged so
+    //  hangs can be attributed in production logs.
+    // ====================================================================
+    const finalisingStartedAt = Date.now();
+    console.log("[take-pipeline] finalising_started", {
+      take_id: takeId,
+      processing_phase: "analysing",
+      two_step_enabled: isTwoStepEnabled(),
+      fallback_used: twoStepFallbackUsed,
+    });
+
+    // ---- Validate two-step report shape before deterministic scrubs ----
+    // A malformed Step-2 report (missing scores/category fields) can wedge
+    // downstream regex walks. Detect early; fall back or fail cleanly.
+    if (isTwoStepEnabled()) {
+      const requiredFields = [
+        "scores",
+        "audition_type",
+      ] as const;
+      const missing: string[] = [];
+      const malformed: string[] = [];
+      for (const f of requiredFields) {
+        const v = (report as Record<string, unknown>)[f];
+        if (v === undefined || v === null) missing.push(f);
+        else if (f === "scores" && (typeof v !== "object" || Array.isArray(v))) {
+          malformed.push(f);
+        }
+      }
+      if (missing.length > 0 || malformed.length > 0) {
+        console.warn("[take-pipeline] report_validation_failed", {
+          take_id: takeId,
+          missing_field_count: missing.length,
+          malformed_field_count: malformed.length,
+          fallback_used: twoStepFallbackUsed,
+        });
+        // If we already used the fallback renderer and the result is still
+        // malformed, fail cleanly rather than running scrubs on garbage.
+        if (twoStepFallbackUsed) {
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "We couldn’t finish your report this time. Please try again.",
+          );
+        }
+        // Otherwise, leave it — single-pass branch already produced
+        // structured output, and downstream code defensively coerces.
+      }
+    }
+
+    if (finaliseExceeded()) throwFinaliseTimeout("after_validation");
+
+    console.log("[take-pipeline] finalising_postprocess_started", {
+      take_id: takeId,
+    });
+
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
 
