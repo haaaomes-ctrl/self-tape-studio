@@ -562,10 +562,12 @@ export function scrubReportQuality(opts: {
 
   return {
     visual_removed_per_field: counters.visual,
-    source_removed_per_field: counters.source,
+    page_rewritten_per_field: counters.page,
+    side_rewritten_per_field: counters.side,
     framing_rewritten_per_field: counters.framing,
     visual_total: sumValues(counters.visual),
-    source_total: sumValues(counters.source),
+    page_total: sumValues(counters.page),
+    side_total: sumValues(counters.side),
     framing_total: sumValues(counters.framing),
   };
 }
