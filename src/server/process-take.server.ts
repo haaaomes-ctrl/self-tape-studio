@@ -24,7 +24,9 @@ import {
   runReportPolish,
   enforceLockedFields,
   enforceUnsupportedClaims,
+  enforceScoreAlignment,
   renderFallbackReport,
+  type VerdictLabel,
 } from "./report-polish.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
@@ -1051,6 +1053,7 @@ export async function runProcessTake(
       unsupported_claims_removed: 0,
       unsupported_claims_rewritten: 0,
     };
+    let twoStepTimestampsDropped = 0;
     let evidencePassDurationMs = 0;
     let reportPolishDurationMs = 0;
     let twoStepFallbackUsed = false;
@@ -1105,6 +1108,7 @@ export async function runProcessTake(
       } else {
         evidencePassDurationMs = evResult.durationMs;
         twoStepEvidence = evResult.evidence;
+        twoStepTimestampsDropped = evResult.timestamps_dropped;
         const evSummary = summariseEvidence(twoStepEvidence);
         console.log("[take-pipeline] evidence_pass_completed", {
           ...baseLog,
@@ -1117,6 +1121,12 @@ export async function runProcessTake(
           duration_ms: evResult.durationMs,
           timestamps_count: evSummary.timestamped_evidence_count,
         });
+        if (twoStepTimestampsDropped > 0) {
+          console.log("[take-pipeline] timestamp_evidence_dropped", {
+            take_id: takeId,
+            count: twoStepTimestampsDropped,
+          });
+        }
 
         // ---- Step 2: text-only polish ----
         console.log("[take-pipeline] report_polish_started", baseLog);
@@ -1178,6 +1188,15 @@ export async function runProcessTake(
           const claims = enforceUnsupportedClaims(twoStepReport, twoStepEvidence);
           twoStepEnforcement.unsupported_claims_removed = claims.removed;
           twoStepEnforcement.unsupported_claims_rewritten = claims.rewritten;
+          for (const [field, count] of Object.entries(claims.per_field_removed)) {
+            if (count > 0) {
+              console.log("[take-pipeline] report_polish_unsupported_claim_removed", {
+                take_id: takeId,
+                field,
+                count,
+              });
+            }
+          }
           console.log("[take-pipeline] report_polish_completed", {
             ...baseLog,
             duration_ms: polishResult.durationMs,
@@ -1207,6 +1226,14 @@ export async function runProcessTake(
         take_id: takeId,
         duration_ms: totalAi,
       });
+      if (totalAi > 90_000) {
+        console.warn("[take-pipeline] two_step_latency_warning", {
+          take_id: takeId,
+          two_step_total_ai_duration_ms: totalAi,
+          evidence_pass_duration_ms: evidencePassDurationMs,
+          report_polish_duration_ms: reportPolishDurationMs,
+        });
+      }
     }
 
     const callAI = (videoUrl: string, signal: AbortSignal, model: string) =>
@@ -1218,6 +1245,10 @@ export async function runProcessTake(
         },
         body: JSON.stringify({
           model,
+          // Deterministic generation settings for the legacy single-pass path.
+          // Rollback to single-pass must not regress to high-stochasticity output.
+          temperature: 0.2,
+          top_p: 1,
           messages: [
             { role: "system", content: buildSystemPrompt() },
             {
@@ -2131,6 +2162,41 @@ export async function runProcessTake(
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
+    // ---- Score / verdict alignment (text-only) ----
+    // Only adjusts wording (headline/insight) when it conflicts with the
+    // locked verdict. Never changes scores or the verdict itself.
+    const alignment = enforceScoreAlignment(
+      report,
+      verdict.label as VerdictLabel,
+    );
+    if (alignment.adjusted) {
+      console.log("[take-pipeline] report_score_alignment_adjusted", {
+        take_id: takeId,
+        verdict_final: verdict.label,
+        final_score: overall,
+      });
+    }
+
+    // ---- Defensive final array caps (never exceed UI/report expectations) ----
+    if (Array.isArray(report.strengths) && report.strengths.length > 3) {
+      report.strengths = report.strengths.slice(0, 3);
+    }
+    if (Array.isArray(report.improvements) && report.improvements.length > 3) {
+      report.improvements = report.improvements.slice(0, 3);
+    }
+    if (
+      Array.isArray(report.presentation_notes) &&
+      report.presentation_notes.length > 3
+    ) {
+      report.presentation_notes = report.presentation_notes.slice(0, 3);
+    }
+    if (
+      Array.isArray(report.timestamped_notes) &&
+      report.timestamped_notes.length > 8
+    ) {
+      report.timestamped_notes = report.timestamped_notes.slice(0, 8);
+    }
+
     const scoreBreakdown = {
       audition_type: auditionType,
       level: auditionLevel,
@@ -2159,30 +2225,40 @@ export async function runProcessTake(
       two_step: isTwoStepEnabled()
         ? {
             enabled: true,
-            evidence_version: "v1",
-            timestamped_evidence_count:
-              twoStepEvidence?.timestamps.length ?? 0,
-            evidence_sufficiency: twoStepEvidence
-              ? {
-                  has_audio: !!twoStepEvidence.sufficiency.has_audio,
-                  has_visible_face:
-                    !!twoStepEvidence.sufficiency.has_visible_face,
-                  duration_ok: !!twoStepEvidence.sufficiency.duration_ok,
-                  script_signal: !!twoStepEvidence.sufficiency.script_signal,
-                }
-              : null,
+            evidence_version: "1",
             evidence_pass_duration_ms: evidencePassDurationMs,
             report_polish_duration_ms: reportPolishDurationMs,
             two_step_total_ai_duration_ms:
               evidencePassDurationMs + reportPolishDurationMs,
-            polish_fallback_used: twoStepFallbackUsed,
+            timestamped_evidence_count:
+              twoStepEvidence?.timestamped_evidence.length ?? 0,
+            timestamped_evidence_dropped_count: twoStepTimestampsDropped,
+            fallback_used: twoStepFallbackUsed,
             polish_fallback_reason: twoStepFallbackReason,
-            locked_field_overwrites:
+            locked_field_overwrite_count:
               twoStepEnforcement.locked_field_overwrites,
-            unsupported_claims_rewritten:
-              twoStepEnforcement.unsupported_claims_rewritten,
-            unsupported_claims_removed:
+            unsupported_claims_removed_count:
               twoStepEnforcement.unsupported_claims_removed,
+            unsupported_claims_rewritten_count:
+              twoStepEnforcement.unsupported_claims_rewritten,
+            evidence_sufficiency: twoStepEvidence
+              ? {
+                  audio_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.audio_assessable,
+                  video_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.video_assessable,
+                  acting_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.acting_assessable,
+                  vocal_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.vocal_assessable,
+                  movement_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.movement_assessable,
+                  brief_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.brief_assessable,
+                  role_fit_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.role_fit_assessable,
+                }
+              : null,
           }
         : { enabled: false },
     };
