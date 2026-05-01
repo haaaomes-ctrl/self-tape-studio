@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_config: {
+        Row: {
+          daily_submission_cap: number
+          id: string
+          max_takes_per_audition: number
+          quota_enabled: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          daily_submission_cap?: number
+          id?: string
+          max_takes_per_audition?: number
+          quota_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          daily_submission_cap?: number
+          id?: string
+          max_takes_per_audition?: number
+          quota_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       auditions: {
         Row: {
           anon_id: string | null
@@ -162,7 +189,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_effective_quota_config: {
+        Args: never
+        Returns: {
+          daily_submission_cap: number
+          max_takes_per_audition: number
+          quota_enabled: boolean
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
