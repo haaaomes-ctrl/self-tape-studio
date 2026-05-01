@@ -2671,6 +2671,11 @@ export async function runProcessTake(
       ...baseLog,
       duration_ms: Date.now() - persistStartedAt,
     });
+    console.log("[take-pipeline] finalising_persist_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - persistStartedAt,
+      finalising_duration_ms: finaliseElapsedMs(),
+    });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;
 
