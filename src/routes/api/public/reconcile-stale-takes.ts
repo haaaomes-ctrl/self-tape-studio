@@ -6,6 +6,7 @@ import {
   normaliseMuxMp4Url,
 } from "@/server/mux.server";
 import { runProcessTake } from "@/server/process-take.server";
+import { cleanupMuxAssetForCompletedTake } from "@/server/mux-cleanup.server";
 import { scheduleBackground } from "@/worker-entry";
 import { metric } from "@/server/metrics.server";
 
