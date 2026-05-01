@@ -122,7 +122,8 @@ async function scheduleTakeFromStaticRenditionReady(params: {
   if (
     existing.status === "complete" ||
     existing.status === "error" ||
-    existing.processing_phase === "analysing"
+    existing.processing_phase === "analysing" ||
+    existing.processing_phase === "finalising"
   ) {
     console.log("MUX WEBHOOK static_rendition.ready skipping terminal/inflight take", {
       takeId,
@@ -378,7 +379,8 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
           if (
             existing?.status === "complete" ||
             existing?.processing_phase === "analysing" ||
-            existing?.processing_phase === "analysis_pending"
+            existing?.processing_phase === "analysis_pending" ||
+            existing?.processing_phase === "finalising"
           ) {
             console.log("MUX WEBHOOK skipping — analysis already underway", {
               takeId,

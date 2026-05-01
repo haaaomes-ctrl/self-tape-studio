@@ -57,7 +57,8 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       current &&
       current.status === "processing" &&
       (current.processing_phase === "analysing" ||
-        current.processing_phase === "analysis_pending")
+        current.processing_phase === "analysis_pending" ||
+        current.processing_phase === "finalising")
     ) {
       console.log("already_running_skip", {
         take_id: data.takeId,
