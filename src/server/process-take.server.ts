@@ -2535,10 +2535,23 @@ export async function runProcessTake(
         : { enabled: false },
     };
 
+    console.log("[take-pipeline] finalising_scrubs_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - scrubsStartedAt,
+    });
+    console.log("[take-pipeline] finalising_postprocess_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - finalisingStartedAt,
+    });
+
     // ---- Persist stage (timed, tagged, conditional) ----
+    if (finaliseExceeded()) throwFinaliseTimeout("before_persist");
     const persistStartedAt = Date.now();
     metric("analysis_persist_started", { take_id: takeId });
     console.log("[take-pipeline] analysis_persist_started", baseLog);
+    console.log("[take-pipeline] finalising_persist_started", {
+      take_id: takeId,
+    });
 
     if (finaliseExceeded()) {
       metric("analysis_persist_failed", {
