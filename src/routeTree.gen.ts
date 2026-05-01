@@ -18,6 +18,7 @@ import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$audit
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 import { Route as ApiPublicDiagMuxProbeRouteImport } from './routes/api/public/diag-mux-probe'
+import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 
 const NewRoute = NewRouteImport.update({
   id: '/new',
@@ -65,6 +66,11 @@ const ApiPublicDiagMuxProbeRoute = ApiPublicDiagMuxProbeRouteImport.update({
   path: '/api/public/diag-mux-probe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAdminConfigRoute = ApiPublicAdminConfigRouteImport.update({
+  id: '/api/public/admin-config',
+  path: '/api/public/admin-config',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/admin-config'
     | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
@@ -120,6 +130,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/admin-config'
     | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/new'
     | '/audition/$auditionId'
+    | '/api/public/admin-config'
     | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
@@ -143,6 +155,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
+  ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicDiagMuxProbeRoute: typeof ApiPublicDiagMuxProbeRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
@@ -213,6 +226,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicDiagMuxProbeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/admin-config': {
+      id: '/api/public/admin-config'
+      path: '/api/public/admin-config'
+      fullPath: '/api/public/admin-config'
+      preLoaderRoute: typeof ApiPublicAdminConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -223,6 +243,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
+  ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicDiagMuxProbeRoute: ApiPublicDiagMuxProbeRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,

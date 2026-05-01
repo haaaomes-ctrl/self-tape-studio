@@ -8,6 +8,7 @@ import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
 } from "./quota.server";
+import { getResolvedConfig } from "./app-config.server";
 import { metric } from "./metrics.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
@@ -81,7 +82,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     // 3. Take lookup + ownership
     const { data: take, error: takeErr } = await supabaseAdmin
       .from("takes")
-      .select("id, user_id, mux_upload_id, mux_status")
+      .select("id, user_id, audition_id, mux_upload_id, mux_status")
       .eq("id", takeId)
       .single();
     if (takeErr || !take) {
@@ -97,6 +98,41 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
       console.warn("[mux-upload] forbidden", { take_id: takeId, user_id: userId });
       metric("upload_url_failure", { take_id: takeId, reason: "forbidden" });
       throw new Error("FORBIDDEN: You don't have access to this take.");
+    }
+
+    // 3.5 Per-audition cap (admin-managed). Counts the just-created take row
+    // (which the client inserted before calling this function), so we reject
+    // when the row count exceeds the configured cap.
+    {
+      const cfg = await getResolvedConfig();
+      const { count: takesInAudition, error: cntErr } = await supabaseAdmin
+        .from("takes")
+        .select("id", { count: "exact", head: true })
+        .eq("audition_id", take.audition_id);
+      if (cntErr) {
+        console.error("[mux-upload] per_audition_count_failed", {
+          take_id: takeId,
+          error: cntErr.message,
+        });
+      } else if ((takesInAudition ?? 0) > cfg.max_takes_per_audition) {
+        // Roll back the just-inserted take row so the count is consistent.
+        await supabaseAdmin.from("takes").delete().eq("id", takeId);
+        console.warn("[mux-upload] per_audition_cap_reached", {
+          take_id: takeId,
+          count: takesInAudition,
+          cap: cfg.max_takes_per_audition,
+        });
+        metric("quota_rejection", {
+          take_id: takeId,
+          reason: "per_audition_cap",
+          cap: cfg.max_takes_per_audition,
+          count: takesInAudition ?? 0,
+        });
+        metric("upload_url_failure", { take_id: takeId, reason: "per_audition_cap" });
+        throw new Error(
+          `QUOTA_EXCEEDED: This audition already has the maximum of ${cfg.max_takes_per_audition} takes. Delete an existing take to add a new one.`,
+        );
+      }
     }
 
     // 4. Idempotency: reuse an in-flight upload for this take if Mux still has it.
