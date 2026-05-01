@@ -471,26 +471,7 @@ function Landing() {
         </div>
       </section>
 
-      <footer className="border-t border-sidebar-border bg-sidebar py-10 text-sidebar-foreground">
-        <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-6 text-sm sm:flex-row sm:items-center">
-          <div className="flex items-center gap-2">
-            <img
-              src={tapecoachLogo}
-              alt="TapeCoach logo"
-              className="h-7 w-7 object-contain"
-            />
-            <span className="font-display text-base font-bold tracking-tight">
-              Tape<span className="text-primary">Coach</span>
-            </span>
-            <span className="ml-3 text-sidebar-foreground/70">
-              Review your tape before it reaches the room.
-            </span>
-          </div>
-          <Link to="/about" className="text-sidebar-foreground/80 hover:text-sidebar-foreground">
-            How we score
-          </Link>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
