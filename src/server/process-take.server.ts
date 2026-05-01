@@ -2636,6 +2636,13 @@ export async function runProcessTake(
           writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
       });
       console.error("[take-pipeline] analysis_persist_failed", writeErr);
+      console.error("[take-pipeline] finalising_persist_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - persistStartedAt,
+        finalising_duration_ms: finaliseElapsedMs(),
+        reason:
+          writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
+      });
       throw new AnalysisFailure(
         "analysis_persist_failed",
         "We couldn't save the report. Please try again.",
