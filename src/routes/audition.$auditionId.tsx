@@ -734,7 +734,28 @@ function buildTrustIndicator(
     | "Feedback reliability: Medium"
     | "Feedback reliability: Low";
   let tone: string;
-  if (confidence >= 85 && concerns.length === 0) {
+
+  // Server-side override (preferred). The server has authoritative duration,
+  // evidence_sufficiency and confidence and can correct mismatches that the
+  // client-side computation would otherwise produce (e.g. a spurious
+  // "performance is short or partial" downgrade for a complete tape).
+  const override =
+    typeof report?.feedback_reliability_override === "string"
+      ? report.feedback_reliability_override
+      : null;
+  if (override === "high") {
+    label = "Feedback reliability: High";
+    tone = "text-success";
+    // Drop the spurious concern so the "Why" line is grounded.
+    const idx = concerns.indexOf("the performance is short or partial");
+    if (idx >= 0) concerns.splice(idx, 1);
+  } else if (override === "medium") {
+    label = "Feedback reliability: Medium";
+    tone = "text-foreground";
+  } else if (override === "low") {
+    label = "Feedback reliability: Low";
+    tone = "text-warning";
+  } else if (confidence >= 85 && concerns.length === 0) {
     label = "Feedback reliability: High";
     tone = "text-success";
   } else if (confidence >= 65 && concerns.length <= 1) {
