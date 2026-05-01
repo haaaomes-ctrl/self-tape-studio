@@ -1033,15 +1033,37 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + persist combined; we apply
-    // it as a wall-clock deadline starting here. If we cross it, we tag
-    // analysis_parse_failed or analysis_persist_failed depending on where.
+    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + scrubs + score recompute +
+    // persist combined as a wall-clock deadline from the start of finalising.
+    // Default is 90s — long enough for normal post-processing + persistence,
+    // short enough that we never leave a take stuck on "Finalising results".
     const POST_AI_FINALISE_TIMEOUT_MS = Number(
-      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 20_000,
+      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000,
     );
     const finaliseStartedAt = Date.now();
     const finaliseExceeded = () =>
       Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+    const finaliseElapsedMs = () => Date.now() - finaliseStartedAt;
+    // Emit a finalising_timeout marker + throw a tagged failure so the
+    // outer catch parks the take in `error` with a recoverable message.
+    const throwFinaliseTimeout = (substage: string): never => {
+      const elapsed = finaliseElapsedMs();
+      console.warn("[take-pipeline] finalising_timeout", {
+        take_id: takeId,
+        substage,
+        finalising_duration_ms: elapsed,
+        two_step_enabled: isTwoStepEnabled(),
+      });
+      metric("analysis_persist_failed", {
+        take_id: takeId,
+        reason: `finalising_timeout:${substage}`,
+        duration_ms: elapsed,
+      });
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "We couldn’t finish your report this time. Please try again.",
+      );
+    };
 
     // ---- Two-step pipeline (feature-flagged) ----
     // When TWO_STEP_ANALYSIS_ENABLED === "true", run Step 1 (multimodal
