@@ -2751,6 +2751,32 @@ export async function runProcessTake(
       tier,
     });
 
+    // Best-effort post-report Mux asset cleanup. Never fails the report:
+    // any error path here is swallowed and surfaced via metric/log only.
+    // The reconciler picks up any take where this didn't succeed.
+    if (take.mux_asset_id) {
+      try {
+        const { cleanupMuxAssetForCompletedTake } = await import(
+          "./mux-cleanup.server"
+        );
+        await cleanupMuxAssetForCompletedTake({
+          takeId,
+          muxAssetId: take.mux_asset_id,
+          reason: "report_complete",
+        });
+      } catch (cleanupErr) {
+        // Hard guard: cleanup must never bubble up past report success.
+        console.warn("[take-pipeline] mux_asset_delete_failed", {
+          take_id: takeId,
+          mux_asset_id: take.mux_asset_id,
+          cleanup_reason: "report_complete",
+          error_type:
+            cleanupErr instanceof Error ? cleanupErr.name : typeof cleanupErr,
+          status: null,
+        });
+      }
+    }
+
     return { ok: true, tier };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown processing error";
