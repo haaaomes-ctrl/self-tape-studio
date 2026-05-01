@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, Compass, Eye, Sparkles, Upload } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
+import tapecoachLogo from "@/assets/tapecoach-logo.png";
 
 export const Route = createFileRoute("/")({
   head: () => ({
