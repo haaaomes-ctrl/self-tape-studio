@@ -38,10 +38,17 @@ export const Route = createFileRoute("/")({
 function Landing() {
   return (
     <div className="min-h-screen bg-background">
+      <a href="#main" className="skip-link">
+        Skip to main content
+      </a>
       <SiteHeader />
 
+      <main id="main" tabIndex={-1}>
       {/* Hero — theatre-inspired, dark backdrop */}
-      <section className="relative isolate overflow-hidden bg-sidebar text-sidebar-foreground">
+      <section
+        aria-labelledby="hero-heading"
+        className="relative isolate overflow-hidden bg-sidebar text-sidebar-foreground"
+      >
         {/* Background image + gradient overlay for readability */}
         <div className="absolute inset-0 -z-10">
           <img
