@@ -2319,10 +2319,21 @@ export async function runProcessTake(
       }
     }
     for (const [field, count] of Object.entries(
-      qualityScrubResult.source_removed_per_field,
+      qualityScrubResult.page_rewritten_per_field,
     )) {
-      if (count > 0) {
-        console.log("[take-pipeline] unsupported_source_reference_removed", {
+      if ((count as number) > 0) {
+        console.log("[take-pipeline] source_reference_rewritten_to_timestamp", {
+          take_id: takeId,
+          field,
+          count,
+        });
+      }
+    }
+    for (const [field, count] of Object.entries(
+      qualityScrubResult.side_rewritten_per_field,
+    )) {
+      if ((count as number) > 0) {
+        console.log("[take-pipeline] unclear_industry_language_rewritten", {
           take_id: takeId,
           field,
           count,
