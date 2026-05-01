@@ -2722,10 +2722,10 @@ export async function runProcessTake(
     // the AI call; any failure with a non-zero finalising elapsed time
     // is meaningful.
     try {
-      if (typeof finaliseElapsedMs === "function" && finaliseStartedAt > 0) {
+      if (finaliseStartedAt > 0) {
         console.warn("[take-pipeline] finalising_failed", {
           take_id: takeId,
-          finalising_duration_ms: finaliseElapsedMs(),
+          finalising_duration_ms: Date.now() - finaliseStartedAt,
           reason: message.slice(0, 120),
           two_step_enabled: isTwoStepEnabled(),
         });
