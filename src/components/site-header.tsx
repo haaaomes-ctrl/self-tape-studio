@@ -28,23 +28,25 @@ export function SiteHeader() {
 
   return (
     <header
+      role="banner"
       className={[
         "sticky top-0 z-30 w-full border-b transition-all duration-200",
         scrolled
-          ? "h-14 border-border/70 bg-background/90 shadow-soft backdrop-blur"
-          : "h-16 border-transparent bg-background/70 backdrop-blur",
+          ? "h-14 border-border/70 bg-background/95 shadow-soft backdrop-blur"
+          : "h-16 border-transparent bg-background/80 backdrop-blur",
       ].join(" ")}
     >
-      <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-4 px-6">
+      <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         {/* Logo + wordmark */}
         <Link
           to="/"
-          className="flex items-center gap-2 font-display font-bold tracking-tight"
+          className="flex min-h-11 items-center gap-2 font-display font-bold tracking-tight"
           aria-label="TapeCoach home"
         >
           <img
             src={logoUrl}
-            alt="TapeCoach logo"
+            alt=""
+            aria-hidden="true"
             className={[
               "object-contain transition-all duration-200",
               scrolled ? "h-7 w-7" : "h-8 w-8 sm:h-9 sm:w-9",
@@ -55,13 +57,16 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        {/* Primary nav */}
-        <nav className="hidden items-center gap-1 lg:flex" aria-label="Primary">
+        {/* Primary nav — visible from md up; condensed on md, full on lg */}
+        <nav
+          className="hidden items-center gap-0.5 md:flex"
+          aria-label="Primary"
+        >
           {NAV_LINKS.map((item) => (
             <Link
               key={item.label}
               to={item.to}
-              className="rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary"
+              className="rounded-md px-2.5 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary lg:px-3"
               activeProps={{ className: "text-primary" }}
             >
               {item.label}
@@ -70,41 +75,44 @@ export function SiteHeader() {
         </nav>
 
         {/* Right-side actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {user ? (
             <>
               <Link
                 to="/dashboard"
-                className="hidden rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-block"
+                className="hidden min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-flex"
                 activeProps={{ className: "text-primary" }}
               >
                 Dashboard
               </Link>
-              <Button asChild size="sm">
+              <Button asChild size="sm" className="min-h-11">
                 <Link to="/new">Review my tape</Link>
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Sign out"
+                className="h-11 w-11"
                 onClick={async () => {
                   await signOut();
                   navigate({ to: "/" });
                 }}
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4" aria-hidden="true" />
               </Button>
             </>
           ) : (
             <>
               <Link
                 to="/login"
-                className="hidden rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-block"
+                className="hidden min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-flex"
               >
                 Log in
               </Link>
-              <Button asChild size="sm">
-                <Link to="/login">Review my tape</Link>
+              <Button asChild size="sm" className="min-h-11">
+                <Link to="/login" aria-label="Review my tape — start a new review">
+                  Review my tape
+                </Link>
               </Button>
             </>
           )}
