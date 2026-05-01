@@ -296,7 +296,8 @@ function rewriteFrameBreakingInString(
 
 type ScrubCounters = {
   visual: Record<string, number>;
-  source: Record<string, number>;
+  page: Record<string, number>;
+  side: Record<string, number>;
   framing: Record<string, number>;
 };
 
@@ -323,10 +324,15 @@ function scrubString(
       else out = "";
     }
   }
-  // 2) source / "side"
+  // 2) page references and "side" jargon (split counters)
   const sr = rewriteSourceRefsInString(out, ctx.hasSourceMetadata);
-  if (sr.removed) {
-    ctx.counters.source[field] = (ctx.counters.source[field] ?? 0) + 1;
+  if (sr.pageRewritten) {
+    ctx.counters.page[field] = (ctx.counters.page[field] ?? 0) + 1;
+  }
+  if (sr.sideRewritten) {
+    ctx.counters.side[field] = (ctx.counters.side[field] ?? 0) + 1;
+  }
+  if (sr.pageRewritten || sr.sideRewritten) {
     out = sr.value;
   }
   // 3) frame-breaking coaching (only if brief requires static)
