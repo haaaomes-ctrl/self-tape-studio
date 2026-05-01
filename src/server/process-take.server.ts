@@ -2431,6 +2431,88 @@ export async function runProcessTake(
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
+    // ---- Feedback reliability correction (user-facing) ----
+    // The UI computes a friendly Feedback reliability label from confidence +
+    // a few signals. Previously it could downgrade to "Medium" with the reason
+    // "the performance is short or partial" even when the tape contained the
+    // required components and the internal confidence was high (the UI was
+    // using a missing client-side signals.duration). Compute a server-side
+    // override so the UI never shows that mismatch.
+    {
+      const dur =
+        typeof take.mux_duration_seconds === "number" &&
+        Number.isFinite(take.mux_duration_seconds)
+          ? take.mux_duration_seconds
+          : null;
+      const conf = typeof report.confidence === "number" ? report.confidence : 0;
+      const audioScore =
+        typeof report.scores?.audio === "number" ? report.scores.audio : null;
+      const techScore =
+        typeof report.scores?.technical === "number"
+          ? report.scores.technical
+          : null;
+      const components = Array.isArray(report.detected_components)
+        ? report.detected_components
+        : [];
+      const hasBrief = report.mode === "brief";
+      const suff = twoStepEvidence?.evidence_sufficiency;
+      const suffOk =
+        !!suff &&
+        suff.audio_assessable &&
+        suff.video_assessable &&
+        suff.acting_assessable;
+      const hasFullPerformance = (dur ?? 0) >= 60 && components.length > 0;
+
+      // Reasons that legitimately downgrade reliability:
+      const groundedConcerns: string[] = [];
+      if (!hasBrief) groundedConcerns.push("no_brief");
+      if (audioScore != null && audioScore < 50) groundedConcerns.push("poor_audio");
+      else if (audioScore != null && audioScore < 75)
+        groundedConcerns.push("muddy_audio");
+      if (techScore != null && techScore < 50)
+        groundedConcerns.push("poor_video");
+      if (!hasFullPerformance) groundedConcerns.push("short_or_partial");
+      if (suff && !suff.audio_assessable) groundedConcerns.push("audio_not_assessable");
+      if (suff && !suff.video_assessable) groundedConcerns.push("video_not_assessable");
+      if (suff && hasBrief && !suff.brief_assessable)
+        groundedConcerns.push("brief_extraction_failed");
+
+      let target: "high" | "medium" | "low";
+      if (conf >= 85 && groundedConcerns.length === 0) target = "high";
+      else if (conf >= 65 && groundedConcerns.length <= 1) target = "medium";
+      else target = "low";
+
+      // Detect mismatch: high confidence + good sufficiency + valid duration
+      // but the UI would currently show Medium/Low only because the spurious
+      // "short or partial" concern fires for a long, complete tape.
+      const wouldShowSpuriousShortPartial =
+        conf >= 85 && (dur ?? 0) >= 60 && components.length > 0 && suffOk;
+
+      if (wouldShowSpuriousShortPartial && target !== "high") {
+        const previous = target;
+        target = "high";
+        // Persist hint for the UI.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_override = "high";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_reason_code = "confidence_high_full_tape";
+        console.log("[take-pipeline] feedback_reliability_corrected", {
+          take_id: takeId,
+          previous_label: `Feedback reliability: ${previous === "high" ? "High" : previous === "medium" ? "Medium" : "Low"}`,
+          corrected_label: "Feedback reliability: High",
+          reason_code: "confidence_high_full_tape",
+        });
+      } else {
+        // Persist the grounded label hint so the UI can prefer it over the
+        // legacy client-side computation.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_override = target;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_reason_code =
+          groundedConcerns[0] ?? "ok";
+      }
+    }
+
     // ---- Same-video score-stability monitoring (observability only) ----
     // Compare against the most recent completed prior take of the same
     // audition that uses the same Mux asset (same video). Logs a warning
