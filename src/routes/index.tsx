@@ -1,5 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, CheckCircle2, Compass, Eye, Lock, Sparkles, Upload } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ClipboardList,
+  Eye,
+  FileQuestion,
+  HelpCircle,
+  Lightbulb,
+  Lock,
+  Mic,
+  ScanLine,
+  ShieldCheck,
+  Sparkles,
+  Theater,
+  Users,
+} from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import tapecoachLogo from "@/assets/tapecoach-logo.png";
