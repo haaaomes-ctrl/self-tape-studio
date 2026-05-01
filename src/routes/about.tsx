@@ -3,17 +3,17 @@ import { ArrowRight, Layers, ShieldCheck, Sparkles } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
+import { brand, brandTitle } from "@/config/brand";
+
+const ABOUT_TITLE = `How ${brand.name} reviews your self-tape`;
+const ABOUT_DESC = `${brand.name} gives you a private second look at your self-tape — structured feedback on performance, voice, setup and brief fit, so you can submit with more confidence.`;
 
 export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
-      { title: "How TapeCoach reviews your self-tape" },
-      {
-        name: "description",
-        content:
-          "TapeCoach gives you a private second look at your self-tape — structured feedback on performance, voice, setup and brief fit, so you can submit with more confidence.",
-      },
-      { property: "og:title", content: "How TapeCoach reviews your self-tape" },
+      { title: brandTitle(ABOUT_TITLE) },
+      { name: "description", content: ABOUT_DESC },
+      { property: "og:title", content: brandTitle(ABOUT_TITLE) },
       {
         property: "og:description",
         content:
