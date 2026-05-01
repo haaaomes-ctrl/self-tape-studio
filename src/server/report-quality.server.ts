@@ -548,6 +548,45 @@ export function scrubReportQuality(opts: {
     }
   }
 
+  // Presentation-note grounding: visual/clothing/background claims must be
+  // backed by Step 1 presentation_evidence. Unsupported claims are dropped or
+  // (if the line is otherwise useful) replaced with a neutral camera-readability
+  // note. Counts are folded into visual_removed_per_field for logging.
+  if (Array.isArray(report.presentation_notes)) {
+    let neutralIdx = 0;
+    let unsupportedRemoved = 0;
+    const grounded: string[] = [];
+    for (const raw of report.presentation_notes as unknown[]) {
+      if (typeof raw !== "string") continue;
+      const s = raw.trim();
+      if (!s) continue;
+      const hasVisualClaim = PRESENTATION_VISUAL_CLAIM_RE.test(s);
+      if (!hasVisualClaim) {
+        grounded.push(s);
+        continue;
+      }
+      if (presentationClaimSupported(s, evidence)) {
+        grounded.push(s);
+        continue;
+      }
+      unsupportedRemoved += 1;
+      // Replace the first unsupported entry with a neutral camera-readability
+      // line; drop any further unsupported lines to avoid duplicate neutrals.
+      if (neutralIdx === 0) {
+        grounded.push(
+          PRESENTATION_NEUTRAL_NOTES[neutralIdx % PRESENTATION_NEUTRAL_NOTES.length],
+        );
+        neutralIdx += 1;
+      }
+    }
+    if (unsupportedRemoved > 0) {
+      counters.visual["presentation_notes_grounding"] =
+        (counters.visual["presentation_notes_grounding"] ?? 0) +
+        unsupportedRemoved;
+    }
+    report.presentation_notes = grounded.slice(0, 3);
+  }
+
   // category_notes (object of strings)
   if (report.category_notes && typeof report.category_notes === "object") {
     const cn = report.category_notes as Record<string, unknown>;
