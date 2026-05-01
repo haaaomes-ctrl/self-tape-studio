@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth, signOut } from "@/lib/auth";
-import logoUrl from "@/assets/tapecoach-logo.png";
+import { brand } from "@/config/brand";
 
 const NAV_LINKS = [
   { label: "Features", to: "/about" as const },
@@ -41,10 +41,10 @@ export function SiteHeader() {
         <Link
           to="/"
           className="flex min-h-11 items-center gap-2 font-display font-bold tracking-tight"
-          aria-label="TapeCoach home"
+          aria-label={`${brand.name} home`}
         >
           <img
-            src={logoUrl}
+            src={brand.assets.logo}
             alt=""
             aria-hidden="true"
             className={[
@@ -53,7 +53,8 @@ export function SiteHeader() {
             ].join(" ")}
           />
           <span className="text-base sm:text-lg text-foreground">
-            Tape<span className="text-primary">Coach</span>
+            {brand.wordmark.lead}
+            <span className="text-primary">{brand.wordmark.accent}</span>
           </span>
         </Link>
 
