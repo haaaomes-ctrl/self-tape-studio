@@ -82,10 +82,17 @@ function colourWordsLockedInEvidence(ev: EvidencePass | null): Set<string> {
 }
 
 const COLOUR_NEUTRAL_REWRITES = [
-  "The framing is clean and easy to read.",
   "The performer separates clearly from the background.",
-  "The background keeps focus on the performance.",
+  "The framing is clean and easy to read.",
 ];
+
+// Clothing / wardrobe nouns that, once stripped of an unsupported colour,
+// leave a half-edited clothing-specific sentence (e.g. "The top reads well
+// on camera."). When any of these survive the colour strip we discard the
+// remainder and let the caller substitute a fully neutral camera-readability
+// line instead.
+const CLOTHING_NOUN_RE =
+  /\b(top|tops|shirt|shirts|t[-\s]?shirt|tee|blouse|jumper|sweater|hoodie|jacket|coat|dress|skirt|trousers|pants|jeans|shorts|shoes|trainers|sneakers|boots|hat|cap|scarf|tie|outfit|clothing|clothes|wardrobe|garment|attire)\b/i;
 
 function rewriteColourInString(
   input: string,
@@ -108,6 +115,10 @@ function rewriteColourInString(
     );
   }
   out = out.replace(/\s{2,}/g, " ").replace(/\s+([,.;:!?])/g, "$1").trim();
+  // If a clothing-specific noun survives, the sentence is still wardrobe
+  // wording without grounding — drop it entirely so the caller can drop in
+  // a fully neutral camera-readability line.
+  if (CLOTHING_NOUN_RE.test(out)) return { value: "", removed: true };
   // If the sentence collapsed to almost nothing useful, drop it.
   if (out.length < 12) return { value: "", removed: true };
   return { value: out, removed: true };
