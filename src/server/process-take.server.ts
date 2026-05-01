@@ -1949,6 +1949,12 @@ export async function runProcessTake(
     report.presentation_notes_disclaimer =
       "These do not affect your score unless they make the tape difficult to see or break a specific brief instruction.";
 
+    if (finaliseExceeded()) throwFinaliseTimeout("before_scrubs");
+    const scrubsStartedAt = Date.now();
+    console.log("[take-pipeline] finalising_scrubs_started", {
+      take_id: takeId,
+    });
+
     // ---- Strengths / improvements / fix_first / drills — safety scrub ----
     const scrubArray = (arr: unknown): string[] => {
       if (!Array.isArray(arr)) return [];
