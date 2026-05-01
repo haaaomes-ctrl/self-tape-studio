@@ -688,7 +688,6 @@ function buildTrustIndicator(
 } {
   const audio = report?.scores?.audio ?? null;
   const technical = report?.scores?.technical ?? null;
-  const briefAdherence = report?.scores?.brief_adherence ?? null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const signals = (take as any).signals as
     | { duration?: number; audio_peak?: number }
@@ -696,10 +695,20 @@ function buildTrustIndicator(
     | undefined;
   const hasBrief = report?.mode === "brief";
   const components = Array.isArray(report?.detected_components) ? report.detected_components : [];
-  const hasFullPerformance =
-    components.length > 0 && (signals?.duration ?? 0) >= 15 && briefAdherence === null
-      ? true
-      : (signals?.duration ?? 0) >= 15;
+  // Authoritative duration is the server-side Mux duration. Client-supplied
+  // signals.duration is a fallback only — it is often missing for completed
+  // takes uploaded by older clients, which previously caused a false
+  // "performance is short or partial" reliability concern.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const muxDuration = (take as any).mux_duration_seconds as number | null | undefined;
+  const effectiveDuration =
+    typeof muxDuration === "number" && Number.isFinite(muxDuration) && muxDuration > 0
+      ? muxDuration
+      : (signals?.duration ?? 0);
+  // Treat as a full performance when the tape is at least 60s long AND at
+  // least one component was detected. Below 60s a tape may legitimately be
+  // a slate-only or partial submission.
+  const hasFullPerformance = effectiveDuration >= 60 && components.length > 0;
 
   const positives: string[] = [];
   const concerns: string[] = [];
