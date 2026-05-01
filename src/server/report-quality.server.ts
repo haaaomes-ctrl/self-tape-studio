@@ -258,21 +258,32 @@ const FRAME_BREAKING_PATTERNS: RegExp[] = [
   /\busing\s+props?\b/i,
   /\badd(?:ing)?\s+props?\b/i,
   /\bphysical\s+task\b/i,
-  /\brecord(?:ing)?\s+(?:while|whilst)\s+(?:moving|walking)\b/i,
+  /\brecord(?:ing)?\s+(?:while|whilst)\s+(?:moving|walking|standing|holding)\b/i,
   /\badd(?:ing)?\s+staging\b/i,
+  /\badd(?:ing)?\s+blocking\b/i,
+  /\badd(?:ing)?\s+business\b/i,
   /\bmove\s+out\s+of\s+frame\b/i,
   /\bstep\s+out\s+of\s+frame\b/i,
   /\bleave\s+frame\b/i,
   /\bfull[-\s]?body\s+movement\b/i,
+  // Holding instruments / props during the recorded take.
+  /\b(?:hold|holding|with)\s+(?:an?\s+)?(?:instrument|guitar|ukulele|microphone|mic|prop|book|script|page|pages|cup|mug|phone)\b/i,
+  /\bphysically\s+hold(?:ing)?\b/i,
+  // "Record [...] while standing" / "stand up to record" / "perform standing"
+  /\brecord(?:ing)?\s+(?:the\s+\w+\s+)?(?:while|whilst)\s+standing\b/i,
+  /\bstand\s+(?:up\s+)?(?:to\s+)?(?:record|perform|sing|deliver)\b/i,
+  /\bperform(?:ing)?\s+standing\b/i,
+  /\bsing(?:ing)?\s+standing\b/i,
 ];
 
 const REHEARSAL_LABEL_RE =
-  /\b(?:as\s+(?:an?\s+)?off[-\s]?camera\s+rehearsal|rehearsal\s+only|rehearsal[-\s]?only|in\s+rehearsal|off[-\s]?camera\s+drill)\b/i;
+  /\b(?:as\s+(?:an?\s+)?(?:off[-\s]?camera\s+)?rehearsal|rehearsal[-\s]?only|in\s+rehearsal|off[-\s]?camera\s+(?:drill|exercise|exploration)|rehearsal\s+(?:drill|exercise|exploration))\b/i;
 
 const FRAME_SAFE_REWRITES = [
-  "Use breath, stillness and eyeline changes inside the frame rather than adding movement.",
-  "Find the change of intention through the eyes and the upper body inside the required frame.",
-  "Sharpen the moment with a clear thought-shift, keeping the head-and-shoulders frame still.",
+  "For the recorded take, keep the head-and-shoulders frame and use breath, eyeline and thought changes to create variety.",
+  "Keep the frame still on the recorded take and let the character shift happen through the eyes and timing.",
+  "Use the transition into the next beat to carry the emotional state without adding extra movement, keeping the requested frame.",
+  "As a rehearsal-only drill, explore the moment with movement away from the camera, then record the final take in the required head-and-shoulders frame.",
 ];
 
 function rewriteFrameBreakingInString(
