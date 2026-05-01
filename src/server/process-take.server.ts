@@ -791,6 +791,9 @@ export async function runProcessTake(
   // in analysis_pending for the cron reconciler to retry). When true, the
   // finally-block safety net MUST NOT mark the take as failed.
   let deferredPending = false;
+  // Hoisted so the outer catch can attribute failures to the finalising
+  // substage. 0 = AI hasn't returned yet; >0 = post-AI work in progress.
+  let finaliseStartedAt = 0;
 
   const markTerminalFailure = async (
     code: FailureCode,
@@ -1033,15 +1036,37 @@ export async function runProcessTake(
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + persist combined; we apply
-    // it as a wall-clock deadline starting here. If we cross it, we tag
-    // analysis_parse_failed or analysis_persist_failed depending on where.
+    // POST_AI_FINALISE_TIMEOUT_MS bounds parse + scrubs + score recompute +
+    // persist combined as a wall-clock deadline from the start of finalising.
+    // Default is 90s — long enough for normal post-processing + persistence,
+    // short enough that we never leave a take stuck on "Finalising results".
     const POST_AI_FINALISE_TIMEOUT_MS = Number(
-      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 20_000,
+      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000,
     );
-    const finaliseStartedAt = Date.now();
+    finaliseStartedAt = Date.now();
     const finaliseExceeded = () =>
       Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+    const finaliseElapsedMs = () => Date.now() - finaliseStartedAt;
+    // Emit a finalising_timeout marker + throw a tagged failure so the
+    // outer catch parks the take in `error` with a recoverable message.
+    const throwFinaliseTimeout = (substage: string): never => {
+      const elapsed = finaliseElapsedMs();
+      console.warn("[take-pipeline] finalising_timeout", {
+        take_id: takeId,
+        substage,
+        finalising_duration_ms: elapsed,
+        two_step_enabled: isTwoStepEnabled(),
+      });
+      metric("analysis_persist_failed", {
+        take_id: takeId,
+        reason: `finalising_timeout:${substage}`,
+        duration_ms: elapsed,
+      });
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "We couldn’t finish your report this time. Please try again.",
+      );
+    };
 
     // ---- Two-step pipeline (feature-flagged) ----
     // When TWO_STEP_ANALYSIS_ENABLED === "true", run Step 1 (multimodal
@@ -1695,6 +1720,62 @@ export async function runProcessTake(
     });
     } // end of single-pass else branch
 
+    // ====================================================================
+    //  FINALISING STAGE — deterministic post-processing + persistence.
+    //  Bounded by POST_AI_FINALISE_TIMEOUT_MS. Each substage is logged so
+    //  hangs can be attributed in production logs.
+    // ====================================================================
+    const finalisingStartedAt = Date.now();
+    console.log("[take-pipeline] finalising_started", {
+      take_id: takeId,
+      processing_phase: "analysing",
+      two_step_enabled: isTwoStepEnabled(),
+      fallback_used: twoStepFallbackUsed,
+    });
+
+    // ---- Validate two-step report shape before deterministic scrubs ----
+    // A malformed Step-2 report (missing scores/category fields) can wedge
+    // downstream regex walks. Detect early; fall back or fail cleanly.
+    if (isTwoStepEnabled()) {
+      const requiredFields = [
+        "scores",
+        "audition_type",
+      ] as const;
+      const missing: string[] = [];
+      const malformed: string[] = [];
+      for (const f of requiredFields) {
+        const v = (report as Record<string, unknown>)[f];
+        if (v === undefined || v === null) missing.push(f);
+        else if (f === "scores" && (typeof v !== "object" || Array.isArray(v))) {
+          malformed.push(f);
+        }
+      }
+      if (missing.length > 0 || malformed.length > 0) {
+        console.warn("[take-pipeline] report_validation_failed", {
+          take_id: takeId,
+          missing_field_count: missing.length,
+          malformed_field_count: malformed.length,
+          fallback_used: twoStepFallbackUsed,
+        });
+        // If we already used the fallback renderer and the result is still
+        // malformed, fail cleanly rather than running scrubs on garbage.
+        if (twoStepFallbackUsed) {
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "We couldn’t finish your report this time. Please try again.",
+          );
+        }
+        // Otherwise, leave it — single-pass branch already produced
+        // structured output, and downstream code defensively coerces.
+      }
+    }
+
+    if (finaliseExceeded()) throwFinaliseTimeout("after_validation");
+
+    console.log("[take-pipeline] finalising_postprocess_started", {
+      take_id: takeId,
+    });
+
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
 
@@ -1737,11 +1818,20 @@ export async function runProcessTake(
     // ---- Server-side overall score recomputation ----
     // Trust the model's per-category scores; recompute the weighted overall
     // deterministically using audition-type weights, then apply caps.
+    if (finaliseExceeded()) throwFinaliseTimeout("before_score_recompute");
+    const scoreRecomputeStartedAt = Date.now();
+    console.log("[take-pipeline] finalising_score_recompute_started", {
+      take_id: takeId,
+    });
     const auditionType = (report.audition_type ?? "unknown") as AuditionType;
     const weights = weightsForType(auditionType);
     const modelScores = (report.scores ?? {}) as Record<string, number | null>;
     const recomputed = recomputeOverall(modelScores, weights);
     let overall = recomputed.overall || (report.overall_score as number) || 0;
+    console.log("[take-pipeline] finalising_score_recompute_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - scoreRecomputeStartedAt,
+    });
 
     const audioScore = modelScores.audio ?? 100;
     // Tiered audio caps mirror applyCapsAndLabel:
@@ -1861,6 +1951,12 @@ export async function runProcessTake(
     // Standard disclaimer surfaced alongside notes in the UI layer.
     report.presentation_notes_disclaimer =
       "These do not affect your score unless they make the tape difficult to see or break a specific brief instruction.";
+
+    if (finaliseExceeded()) throwFinaliseTimeout("before_scrubs");
+    const scrubsStartedAt = Date.now();
+    console.log("[take-pipeline] finalising_scrubs_started", {
+      take_id: takeId,
+    });
 
     // ---- Strengths / improvements / fix_first / drills — safety scrub ----
     const scrubArray = (arr: unknown): string[] => {
@@ -2442,10 +2538,23 @@ export async function runProcessTake(
         : { enabled: false },
     };
 
+    console.log("[take-pipeline] finalising_scrubs_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - scrubsStartedAt,
+    });
+    console.log("[take-pipeline] finalising_postprocess_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - finalisingStartedAt,
+    });
+
     // ---- Persist stage (timed, tagged, conditional) ----
+    if (finaliseExceeded()) throwFinaliseTimeout("before_persist");
     const persistStartedAt = Date.now();
     metric("analysis_persist_started", { take_id: takeId });
     console.log("[take-pipeline] analysis_persist_started", baseLog);
+    console.log("[take-pipeline] finalising_persist_started", {
+      take_id: takeId,
+    });
 
     if (finaliseExceeded()) {
       metric("analysis_persist_failed", {
@@ -2530,6 +2639,13 @@ export async function runProcessTake(
           writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
       });
       console.error("[take-pipeline] analysis_persist_failed", writeErr);
+      console.error("[take-pipeline] finalising_persist_failed", {
+        take_id: takeId,
+        duration_ms: Date.now() - persistStartedAt,
+        finalising_duration_ms: finaliseElapsedMs(),
+        reason:
+          writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
+      });
       throw new AnalysisFailure(
         "analysis_persist_failed",
         "We couldn't save the report. Please try again.",
@@ -2557,6 +2673,11 @@ export async function runProcessTake(
     console.log("[take-pipeline] analysis_persist_completed", {
       ...baseLog,
       duration_ms: Date.now() - persistStartedAt,
+    });
+    console.log("[take-pipeline] finalising_persist_completed", {
+      take_id: takeId,
+      duration_ms: Date.now() - persistStartedAt,
+      finalising_duration_ms: finaliseElapsedMs(),
     });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;
@@ -2595,6 +2716,23 @@ export async function runProcessTake(
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown processing error";
     console.error("runProcessTake failed", message);
+    // If the failure happened after we entered the finalising stage,
+    // emit a dedicated marker so log-side dashboards can attribute hangs
+    // to the right substage. `finaliseStartedAt` is initialised before
+    // the AI call; any failure with a non-zero finalising elapsed time
+    // is meaningful.
+    try {
+      if (finaliseStartedAt > 0) {
+        console.warn("[take-pipeline] finalising_failed", {
+          take_id: takeId,
+          finalising_duration_ms: Date.now() - finaliseStartedAt,
+          reason: message.slice(0, 120),
+          two_step_enabled: isTwoStepEnabled(),
+        });
+      }
+    } catch {
+      /* never let logging mask the original failure */
+    }
     metric("analysis_failed", {
       take_id: takeId,
       reason: message.slice(0, 120),

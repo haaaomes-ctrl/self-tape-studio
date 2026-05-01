@@ -48,6 +48,11 @@ const TRANSCODING_HARD_FAIL_MINUTES = 15;
 // upload aborted before any Mux webhook fired. The UI shows them as
 // "Uploading your tape…" indefinitely otherwise.
 const STALE_UPLOADING_MINUTES = 15;
+// Finalising-orphan window: an `analysing` take that has not been touched
+// for this many minutes is assumed to have died during post-AI processing
+// or final persistence. We force it to error rather than reschedule, so
+// the UI never sits on "Finalising results" indefinitely.
+const FINALISING_ORPHAN_MINUTES = 5;
 
 type MuxAssetLike = {
   id?: string;
@@ -520,6 +525,65 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               giveUp.push(take.id);
             }
             continue;
+          }
+
+          // Finalising-orphan guard: a take stuck in `analysing` whose
+          // updated_at hasn't moved for FINALISING_ORPHAN_MINUTES is almost
+          // certainly a worker that died after the AI returned (during
+          // post-processing or final persistence). Force-error it so the
+          // UI never spins on "Finalising results" indefinitely.
+          if (take.processing_phase === "analysing") {
+            const idleSeconds =
+              (now - new Date(take.updated_at).getTime()) / 1000;
+            if (idleSeconds >= FINALISING_ORPHAN_MINUTES * 60) {
+              const { error: failErr } = await supabaseAdmin
+                .from("takes")
+                .update({
+                  status: "error",
+                  processing_phase: "error",
+                  error_message:
+                    "We couldn’t finish your report this time. Please try again.",
+                })
+                .eq("id", take.id)
+                .eq("processing_phase", "analysing")
+                .eq("status", "processing");
+              if (failErr) {
+                console.error("finalising_orphan_force_error_failed", {
+                  takeId: take.id,
+                  failErr,
+                });
+                metric("phase_transition_failure", {
+                  take_id: take.id,
+                  reason: "finalising_orphan_force_error_failed",
+                });
+                continue;
+              }
+              console.warn("[take-pipeline] finalising_orphan_forced_error", {
+                take_id: take.id,
+                age_seconds: Math.round(ageSeconds),
+                idle_seconds: Math.round(idleSeconds),
+                processing_phase: "analysing",
+              });
+              metric("reconciler_forced_error", {
+                take_id: take.id,
+                processing_phase: "analysing",
+                reason: "finalising_orphan",
+                failure_code: "finalising_orphan",
+              });
+              metric("reconciler_forced_error_count", {
+                take_id: take.id,
+                processing_phase: "analysing",
+                failure_code: "finalising_orphan",
+              });
+              metric("analysis_failed", {
+                take_id: take.id,
+                processing_phase: "analysing",
+                reason: "finalising_orphan",
+                failure_code: "finalising_orphan",
+              });
+              giveUp.push(take.id);
+              continue;
+            }
           }
 
           // Reset back to analysis_pending so runProcessTake will pick it up
