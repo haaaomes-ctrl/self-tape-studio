@@ -127,7 +127,7 @@ function Landing() {
 
       {/* Why self-tapes are hard */}
       <section className="bg-background py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:items-start lg:gap-16">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -182,7 +182,7 @@ function Landing() {
 
       {/* What we check */}
       <section className="border-y border-border bg-secondary/40 py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             What we check
           </p>
@@ -259,7 +259,7 @@ function Landing() {
 
       {/* Example feedback report */}
       <section className="bg-background py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:items-start lg:gap-14">
             <div className="lg:pt-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
@@ -383,7 +383,7 @@ function Landing() {
 
       {/* Trust, privacy & testimonials */}
       <section className="bg-sidebar py-20 text-sidebar-foreground sm:py-24">
-        <div className="mx-auto max-w-6xl px-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="grid gap-12 lg:grid-cols-[1fr_1.2fr] lg:items-start lg:gap-16">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
