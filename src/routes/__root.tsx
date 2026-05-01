@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { brand, brandHeadDefaults } from "@/config/brand";
 
 import appCss from "../styles.css?url";
 
@@ -30,32 +31,22 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "TapeCoach — Review your tape before it reaches the room" },
-      {
-        name: "description",
-        content:
-          "Private self-tape review. Structured feedback on performance, voice, setup and brief fit — give yourself the best chance of sending a stronger take.",
-      },
-      { name: "author", content: "TapeCoach" },
-      { property: "og:title", content: "TapeCoach — Review your tape before it reaches the room" },
-      {
-        property: "og:description",
-        content:
-          "A private second look at your self-tape — structured feedback so you can submit with more confidence.",
-      },
+      { title: brandHeadDefaults.title },
+      { name: "description", content: brandHeadDefaults.description },
+      { name: "author", content: brand.name },
+      { property: "og:title", content: brandHeadDefaults.ogTitle },
+      { property: "og:description", content: brandHeadDefaults.ogDescription },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: brand.name },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "TapeCoach — Review your tape before it reaches the room" },
-      {
-        name: "twitter:description",
-        content:
-          "Private self-tape review for performers, agents and teachers. Reduce avoidable mistakes before submission.",
-      },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9798fe19-4dbb-45b5-9487-32c83e228598/id-preview-b7d444ff--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app-1777409239157.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9798fe19-4dbb-45b5-9487-32c83e228598/id-preview-b7d444ff--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app-1777409239157.png" },
+      { name: "twitter:title", content: brandHeadDefaults.twitterTitle },
+      { name: "twitter:description", content: brandHeadDefaults.twitterDescription },
+      { property: "og:image", content: brandHeadDefaults.ogImage },
+      { name: "twitter:image", content: brandHeadDefaults.ogImage },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: brand.assets.favicon },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
