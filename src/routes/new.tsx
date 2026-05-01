@@ -27,7 +27,7 @@ import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server/process-take.functions";
 
 export const Route = createFileRoute("/new")({
-  head: () => ({ meta: [{ title: "New audition — SelfTape" }] }),
+  head: () => ({ meta: [{ title: "New audition — TapeCoach" }] }),
   component: NewAuditionPage,
 });
 
