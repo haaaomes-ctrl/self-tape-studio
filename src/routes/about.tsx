@@ -36,7 +36,7 @@ function AboutPage() {
           A private second look — before your tape reaches the room.
         </h1>
         <p className="mt-5 text-lg text-muted-foreground">
-          TapeCoach gives you structured, performer-friendly feedback on your self-tape. It is built
+          {brand.name} gives you structured, performer-friendly feedback on your self-tape. It is built
           to feel like a trusted reader on call — quiet, supportive, and focused on helping you send
           your strongest take.
         </p>

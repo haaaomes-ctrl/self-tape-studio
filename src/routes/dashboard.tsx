@@ -9,10 +9,11 @@ import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { deleteAudition } from "@/server/delete.functions";
+import { brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
-    meta: [{ title: "Your auditions — TapeCoach" }],
+    meta: [{ title: brandTitle("Your auditions") }],
   }),
   component: DashboardPage,
 });
