@@ -48,10 +48,13 @@ const TRANSCODING_HARD_FAIL_MINUTES = 15;
 // upload aborted before any Mux webhook fired. The UI shows them as
 // "Uploading your tape…" indefinitely otherwise.
 const STALE_UPLOADING_MINUTES = 15;
-// Finalising-orphan window: an `analysing` take that has not been touched
-// for this many minutes is assumed to have died during post-AI processing
-// or final persistence. We force it to error rather than reschedule, so
-// the UI never sits on "Finalising results" indefinitely.
+// Finalising-orphan window: a take in processing_phase="finalising" whose
+// updated_at hasn't moved for this many minutes is assumed to have died
+// during deterministic post-AI processing or final persistence. We force it
+// to error rather than reschedule, so the UI never sits on "Finalising
+// results" indefinitely. Note: long-running AI calls remain in the
+// "analysing" phase and are NOT force-errored at this threshold — they fall
+// under the longer STALE_ANALYSING_MINUTES reschedule policy instead.
 const FINALISING_ORPHAN_MINUTES = 5;
 
 type MuxAssetLike = {
