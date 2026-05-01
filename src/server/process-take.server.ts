@@ -28,6 +28,12 @@ import {
   renderFallbackReport,
   type VerdictLabel,
 } from "./report-polish.server";
+import {
+  scrubReportQuality,
+  normaliseTimestampedNotes,
+  computeConsistencyWarning,
+  timestampTargetMin,
+} from "./report-quality.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
