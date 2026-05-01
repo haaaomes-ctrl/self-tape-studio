@@ -2374,19 +2374,46 @@ export async function runProcessTake(
       if (dur != null && dur >= 180 && dur <= 300) {
         const targetMin = timestampTargetMin(dur);
         if (tsNorm.finalCount < targetMin) {
+          const ev = twoStepEvidence;
+          const evCount = ev?.timestamped_evidence?.length ?? 0;
+          const suff = ev?.evidence_sufficiency;
+          const notAssessable =
+            !!suff &&
+            (!suff.audio_assessable ||
+              !suff.video_assessable ||
+              !suff.acting_assessable);
+          let stage_where_count_was_lost:
+            | "step1_underproduced"
+            | "step2_dropped"
+            | "validation_removed"
+            | "not_assessable"
+            | "unknown" = "unknown";
+          if (notAssessable) {
+            stage_where_count_was_lost = "not_assessable";
+          } else if (evCount < targetMin) {
+            stage_where_count_was_lost = "step1_underproduced";
+          } else if (tsNorm.finalCount < evCount) {
+            stage_where_count_was_lost = "validation_removed";
+          } else {
+            // Step1 had enough but final has fewer and validation didn't drop
+            // them — implies the polish/locked-field path lost them.
+            stage_where_count_was_lost = "step2_dropped";
+          }
           console.log("[take-pipeline] timestamp_evidence_below_target", {
             take_id: takeId,
             video_duration_seconds: dur,
             timestamped_evidence_count: tsNorm.finalCount,
             target_min: targetMin,
-            evidence_sufficiency: twoStepEvidence
+            stage_where_count_was_lost,
+            evidence_sufficiency: ev
               ? {
-                  audio_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.audio_assessable,
-                  video_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.video_assessable,
-                  acting_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.acting_assessable,
+                  audio_assessable: !!ev.evidence_sufficiency.audio_assessable,
+                  video_assessable: !!ev.evidence_sufficiency.video_assessable,
+                  acting_assessable: !!ev.evidence_sufficiency.acting_assessable,
+                  vocal_assessable: !!ev.evidence_sufficiency.vocal_assessable,
+                  movement_assessable: !!ev.evidence_sufficiency.movement_assessable,
+                  brief_assessable: !!ev.evidence_sufficiency.brief_assessable,
+                  role_fit_assessable: !!ev.evidence_sufficiency.role_fit_assessable,
                 }
               : null,
           });
