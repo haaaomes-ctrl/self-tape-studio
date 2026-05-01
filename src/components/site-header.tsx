@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Film, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth, signOut } from "@/lib/auth";
+import logoUrl from "@/assets/tapecoach-logo.png";
 
 export function SiteHeader() {
   const { user } = useAuth();
@@ -10,11 +11,15 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2 font-display text-lg font-semibold tracking-tight">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Film className="h-4 w-4" />
+        <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold tracking-tight">
+          <img
+            src={logoUrl}
+            alt="TapeCoach logo"
+            className="h-8 w-8 sm:h-9 sm:w-9 object-contain"
+          />
+          <span className="text-foreground">
+            Tape<span className="text-primary">Coach</span>
           </span>
-          SelfTape
         </Link>
         <nav className="flex items-center gap-2">
           <Link
