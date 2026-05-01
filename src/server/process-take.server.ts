@@ -607,7 +607,8 @@ export async function runProcessTake(
   if (
     take.status === "processing" &&
     (take.processing_phase === "analysing" ||
-      take.processing_phase === "analysis_pending")
+      take.processing_phase === "analysis_pending" ||
+      take.processing_phase === "finalising")
   ) {
     console.log("already_running_skip", {
       take_id: takeId,
