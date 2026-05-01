@@ -2482,6 +2482,8 @@ export async function runProcessTake(
       else if (conf >= 65 && groundedConcerns.length <= 1) target = "medium";
       else target = "low";
 
+      const initialTarget: "high" | "medium" | "low" = target;
+
       // Detect mismatch: high confidence + good sufficiency + valid duration
       // but the UI would currently show Medium/Low only because the spurious
       // "short or partial" concern fires for a long, complete tape.
