@@ -1,45 +1,87 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth, signOut } from "@/lib/auth";
 import logoUrl from "@/assets/tapecoach-logo.png";
 
+const NAV_LINKS = [
+  { label: "Features", to: "/about" as const },
+  { label: "Pricing", to: "/about" as const },
+  { label: "Agents", to: "/about" as const },
+  { label: "Schools", to: "/about" as const },
+  { label: "Blog", to: "/about" as const },
+  { label: "Support", to: "/about" as const },
+];
+
 export function SiteHeader() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <header className="sticky top-0 z-30 border-b border-border/70 bg-background/80 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2 font-display text-lg font-bold tracking-tight">
+    <header
+      className={[
+        "sticky top-0 z-30 w-full border-b transition-all duration-200",
+        scrolled
+          ? "h-14 border-border/70 bg-background/90 shadow-soft backdrop-blur"
+          : "h-16 border-transparent bg-background/70 backdrop-blur",
+      ].join(" ")}
+    >
+      <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-4 px-6">
+        {/* Logo + wordmark */}
+        <Link
+          to="/"
+          className="flex items-center gap-2 font-display font-bold tracking-tight"
+          aria-label="TapeCoach home"
+        >
           <img
             src={logoUrl}
             alt="TapeCoach logo"
-            className="h-8 w-8 sm:h-9 sm:w-9 object-contain"
+            className={[
+              "object-contain transition-all duration-200",
+              scrolled ? "h-7 w-7" : "h-8 w-8 sm:h-9 sm:w-9",
+            ].join(" ")}
           />
-          <span className="text-foreground">
+          <span className="text-base sm:text-lg text-foreground">
             Tape<span className="text-primary">Coach</span>
           </span>
         </Link>
-        <nav className="flex items-center gap-2">
-          <Link
-            to="/about"
-            className="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            activeProps={{ className: "text-foreground" }}
-          >
-            About
-          </Link>
+
+        {/* Primary nav */}
+        <nav className="hidden items-center gap-1 lg:flex" aria-label="Primary">
+          {NAV_LINKS.map((item) => (
+            <Link
+              key={item.label}
+              to={item.to}
+              className="rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary"
+              activeProps={{ className: "text-primary" }}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Right-side actions */}
+        <div className="flex items-center gap-2">
           {user ? (
             <>
               <Link
                 to="/dashboard"
-                className="rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                activeProps={{ className: "text-foreground" }}
+                className="hidden rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-block"
+                activeProps={{ className: "text-primary" }}
               >
                 Dashboard
               </Link>
               <Button asChild size="sm">
-                <Link to="/new">New audition</Link>
+                <Link to="/new">Review my tape</Link>
               </Button>
               <Button
                 variant="ghost"
@@ -54,11 +96,19 @@ export function SiteHeader() {
               </Button>
             </>
           ) : (
-            <Button asChild size="sm">
-              <Link to="/login">Sign in</Link>
-            </Button>
+            <>
+              <Link
+                to="/login"
+                className="hidden rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-block"
+              >
+                Log in
+              </Link>
+              <Button asChild size="sm">
+                <Link to="/login">Review my tape</Link>
+              </Button>
+            </>
           )}
-        </nav>
+        </div>
       </div>
     </header>
   );
