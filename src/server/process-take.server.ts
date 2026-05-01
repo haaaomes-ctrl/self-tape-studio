@@ -2491,7 +2491,7 @@ export async function runProcessTake(
         conf >= 85 && (dur ?? 0) >= 60 && components.length > 0 && suffOk;
 
       if (wouldShowSpuriousShortPartial && target !== "high") {
-        const previous = target;
+        const previous: "low" | "medium" = target;
         target = "high";
         // Persist hint for the UI.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2500,7 +2500,7 @@ export async function runProcessTake(
         (report as any).feedback_reliability_reason_code = "confidence_high_full_tape";
         console.log("[take-pipeline] feedback_reliability_corrected", {
           take_id: takeId,
-          previous_label: `Feedback reliability: ${previous === "high" ? "High" : previous === "medium" ? "Medium" : "Low"}`,
+          previous_label: `Feedback reliability: ${previous === "medium" ? "Medium" : "Low"}`,
           corrected_label: "Feedback reliability: High",
           reason_code: "confidence_high_full_tape",
         });
