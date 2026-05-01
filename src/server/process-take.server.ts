@@ -791,6 +791,9 @@ export async function runProcessTake(
   // in analysis_pending for the cron reconciler to retry). When true, the
   // finally-block safety net MUST NOT mark the take as failed.
   let deferredPending = false;
+  // Hoisted so the outer catch can attribute failures to the finalising
+  // substage. 0 = AI hasn't returned yet; >0 = post-AI work in progress.
+  let finaliseStartedAt = 0;
 
   const markTerminalFailure = async (
     code: FailureCode,
