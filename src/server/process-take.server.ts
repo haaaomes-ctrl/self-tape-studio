@@ -2757,9 +2757,6 @@ export async function runProcessTake(
     // The reconciler picks up any take where this didn't succeed.
     if (take.mux_asset_id) {
       try {
-        const { cleanupMuxAssetForCompletedTake } = await import(
-          "./mux-cleanup.server"
-        );
         await cleanupMuxAssetForCompletedTake({
           takeId,
           muxAssetId: take.mux_asset_id,
