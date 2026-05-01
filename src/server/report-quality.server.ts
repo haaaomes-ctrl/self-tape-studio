@@ -126,12 +126,17 @@ function rewriteColourInString(
 
 // ---------- 2) Unsupported source-reference scrub (+ "side" -> "scene") ----------
 
-// Hard-banned patterns (page/line/script/book/side references invented by the
-// model when no source metadata exists). Each pattern is paired with a
-// rewrite. Order matters: more specific patterns first.
+// Two distinct rewrite categories:
+//   - PAGE_REWRITES: page/line/script/book references. Banned when the brief
+//     does NOT carry source metadata. When the brief DOES carry source
+//     metadata (e.g. "Side 1, pages 85–87"), they may pass through but we
+//     still prefer rewriting them to a moment description / timestamp where
+//     possible. Rewrites here are logged as `source_reference_rewritten_to_timestamp`.
+//   - SIDE_REWRITES: unclear "side" jargon. Always rewritten to clearer
+//     wording for the end-user. Logged as `unclear_industry_language_rewritten`.
 type Rewrite = { re: RegExp; replacement: string };
 
-const SOURCE_REWRITES: Rewrite[] = [
+const PAGE_REWRITES: Rewrite[] = [
   // page X, on page X, at page X
   { re: /\b(?:on\s+|at\s+)?page\s+\d+\b/gi, replacement: "in the scene" },
   // line X / lines X-Y
@@ -145,11 +150,23 @@ const SOURCE_REWRITES: Rewrite[] = [
   { re: /\bon\s+the\s+page\b/gi, replacement: "in the scene" },
   { re: /\bscript\s+page\b/gi, replacement: "scene section" },
   { re: /\bbook\s+page\b/gi, replacement: "scene section" },
-  // "the side" / "the sides" / "in the side(s)" / "record the side"
-  { re: /\bin\s+the\s+sides?\b/gi, replacement: "in the scene" },
-  { re: /\brecord\s+the\s+sides?\b/gi, replacement: "record the scene section" },
-  { re: /\bthe\s+sides\b/gi, replacement: "the scene material" },
-  { re: /\bthe\s+side\b/gi, replacement: "the scene" },
+];
+
+const SIDE_REWRITES: Rewrite[] = [
+  // "the requested side(s)" -> clearer wording
+  {
+    re: /\bthe\s+requested\s+sides?\b/gi,
+    replacement: "the requested acting scene",
+  },
+  // "in the side(s)" / "record the side(s)"
+  { re: /\bin\s+the\s+sides?\b/gi, replacement: "in the acting section" },
+  {
+    re: /\brecord\s+the\s+sides?\b/gi,
+    replacement: "record the acting scene",
+  },
+  // "the side and the song" / "the sides"
+  { re: /\bthe\s+sides\b/gi, replacement: "the acting scenes" },
+  { re: /\bthe\s+side\b/gi, replacement: "the acting scene" },
 ];
 
 /** Did the brief or extracted brief actually carry source metadata? */
@@ -178,28 +195,39 @@ export function briefHasSourceMetadata(opts: {
 function rewriteSourceRefsInString(
   input: string,
   hasSourceMetadata: boolean,
-): { value: string; removed: boolean } {
+): { value: string; pageRewritten: boolean; sideRewritten: boolean } {
   if (typeof input !== "string" || input.length === 0) {
-    return { value: input, removed: false };
+    return { value: input, pageRewritten: false, sideRewritten: false };
   }
   let out = input;
-  let changed = false;
-  // Always rewrite "side" -> "scene" (rule 5), regardless of metadata.
-  for (const rw of SOURCE_REWRITES) {
-    if (
-      hasSourceMetadata &&
-      // page/line patterns only banned when no metadata
-      (rw.re.source.includes("page") || rw.re.source.includes("line"))
-    ) {
-      continue;
-    }
+  let pageRewritten = false;
+  let sideRewritten = false;
+
+  // Page/line/script/book references.
+  // - When the brief carries source metadata (e.g. explicit "Side 1, pages
+  //   85–87"), page references are technically allowed. We still prefer
+  //   moment descriptions in user-facing output, so rewrite and log.
+  // - When no source metadata exists, these are hallucinations and must be
+  //   removed.
+  for (const rw of PAGE_REWRITES) {
     if (rw.re.test(out)) {
-      changed = true;
+      pageRewritten = true;
       out = out.replace(rw.re, rw.replacement);
     }
   }
+
+  // Unclear "side" jargon — always rewritten to clearer wording.
+  for (const rw of SIDE_REWRITES) {
+    if (rw.re.test(out)) {
+      sideRewritten = true;
+      out = out.replace(rw.re, rw.replacement);
+    }
+  }
+
   out = out.replace(/\s{2,}/g, " ").trim();
-  return { value: out, removed: changed };
+  // Suppress unused parameter lint (kept for API parity / future use).
+  void hasSourceMetadata;
+  return { value: out, pageRewritten, sideRewritten };
 }
 
 // ---------- 3) Brief-incompatible coaching rewrite ----------
@@ -268,7 +296,8 @@ function rewriteFrameBreakingInString(
 
 type ScrubCounters = {
   visual: Record<string, number>;
-  source: Record<string, number>;
+  page: Record<string, number>;
+  side: Record<string, number>;
   framing: Record<string, number>;
 };
 
@@ -295,10 +324,15 @@ function scrubString(
       else out = "";
     }
   }
-  // 2) source / "side"
+  // 2) page references and "side" jargon (split counters)
   const sr = rewriteSourceRefsInString(out, ctx.hasSourceMetadata);
-  if (sr.removed) {
-    ctx.counters.source[field] = (ctx.counters.source[field] ?? 0) + 1;
+  if (sr.pageRewritten) {
+    ctx.counters.page[field] = (ctx.counters.page[field] ?? 0) + 1;
+  }
+  if (sr.sideRewritten) {
+    ctx.counters.side[field] = (ctx.counters.side[field] ?? 0) + 1;
+  }
+  if (sr.pageRewritten || sr.sideRewritten) {
     out = sr.value;
   }
   // 3) frame-breaking coaching (only if brief requires static)
@@ -384,10 +418,12 @@ export function normaliseTimestampedNotes(
 
 export type ReportQualityScrubResult = {
   visual_removed_per_field: Record<string, number>;
-  source_removed_per_field: Record<string, number>;
+  page_rewritten_per_field: Record<string, number>;
+  side_rewritten_per_field: Record<string, number>;
   framing_rewritten_per_field: Record<string, number>;
   visual_total: number;
-  source_total: number;
+  page_total: number;
+  side_total: number;
   framing_total: number;
 };
 
@@ -419,7 +455,7 @@ export function scrubReportQuality(opts: {
     extractedBrief: opts.extractedBrief,
   });
 
-  const counters: ScrubCounters = { visual: {}, source: {}, framing: {} };
+  const counters: ScrubCounters = { visual: {}, page: {}, side: {}, framing: {} };
   const framingIdx = { n: 0 };
   const ctx = {
     lockedColours,
@@ -526,10 +562,12 @@ export function scrubReportQuality(opts: {
 
   return {
     visual_removed_per_field: counters.visual,
-    source_removed_per_field: counters.source,
+    page_rewritten_per_field: counters.page,
+    side_rewritten_per_field: counters.side,
     framing_rewritten_per_field: counters.framing,
     visual_total: sumValues(counters.visual),
-    source_total: sumValues(counters.source),
+    page_total: sumValues(counters.page),
+    side_total: sumValues(counters.side),
     framing_total: sumValues(counters.framing),
   };
 }

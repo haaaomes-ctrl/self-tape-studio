@@ -688,7 +688,6 @@ function buildTrustIndicator(
 } {
   const audio = report?.scores?.audio ?? null;
   const technical = report?.scores?.technical ?? null;
-  const briefAdherence = report?.scores?.brief_adherence ?? null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const signals = (take as any).signals as
     | { duration?: number; audio_peak?: number }
@@ -696,10 +695,20 @@ function buildTrustIndicator(
     | undefined;
   const hasBrief = report?.mode === "brief";
   const components = Array.isArray(report?.detected_components) ? report.detected_components : [];
-  const hasFullPerformance =
-    components.length > 0 && (signals?.duration ?? 0) >= 15 && briefAdherence === null
-      ? true
-      : (signals?.duration ?? 0) >= 15;
+  // Authoritative duration is the server-side Mux duration. Client-supplied
+  // signals.duration is a fallback only — it is often missing for completed
+  // takes uploaded by older clients, which previously caused a false
+  // "performance is short or partial" reliability concern.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const muxDuration = (take as any).mux_duration_seconds as number | null | undefined;
+  const effectiveDuration =
+    typeof muxDuration === "number" && Number.isFinite(muxDuration) && muxDuration > 0
+      ? muxDuration
+      : (signals?.duration ?? 0);
+  // Treat as a full performance when the tape is at least 60s long AND at
+  // least one component was detected. Below 60s a tape may legitimately be
+  // a slate-only or partial submission.
+  const hasFullPerformance = effectiveDuration >= 60 && components.length > 0;
 
   const positives: string[] = [];
   const concerns: string[] = [];
@@ -725,7 +734,28 @@ function buildTrustIndicator(
     | "Feedback reliability: Medium"
     | "Feedback reliability: Low";
   let tone: string;
-  if (confidence >= 85 && concerns.length === 0) {
+
+  // Server-side override (preferred). The server has authoritative duration,
+  // evidence_sufficiency and confidence and can correct mismatches that the
+  // client-side computation would otherwise produce (e.g. a spurious
+  // "performance is short or partial" downgrade for a complete tape).
+  const override =
+    typeof report?.feedback_reliability_override === "string"
+      ? report.feedback_reliability_override
+      : null;
+  if (override === "high") {
+    label = "Feedback reliability: High";
+    tone = "text-success";
+    // Drop the spurious concern so the "Why" line is grounded.
+    const idx = concerns.indexOf("the performance is short or partial");
+    if (idx >= 0) concerns.splice(idx, 1);
+  } else if (override === "medium") {
+    label = "Feedback reliability: Medium";
+    tone = "text-foreground";
+  } else if (override === "low") {
+    label = "Feedback reliability: Low";
+    tone = "text-warning";
+  } else if (confidence >= 85 && concerns.length === 0) {
     label = "Feedback reliability: High";
     tone = "text-success";
   } else if (confidence >= 65 && concerns.length <= 1) {

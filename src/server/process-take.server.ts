@@ -2319,10 +2319,21 @@ export async function runProcessTake(
       }
     }
     for (const [field, count] of Object.entries(
-      qualityScrubResult.source_removed_per_field,
+      qualityScrubResult.page_rewritten_per_field,
     )) {
-      if (count > 0) {
-        console.log("[take-pipeline] unsupported_source_reference_removed", {
+      if ((count as number) > 0) {
+        console.log("[take-pipeline] source_reference_rewritten_to_timestamp", {
+          take_id: takeId,
+          field,
+          count,
+        });
+      }
+    }
+    for (const [field, count] of Object.entries(
+      qualityScrubResult.side_rewritten_per_field,
+    )) {
+      if ((count as number) > 0) {
+        console.log("[take-pipeline] unclear_industry_language_rewritten", {
           take_id: takeId,
           field,
           count,
@@ -2363,19 +2374,46 @@ export async function runProcessTake(
       if (dur != null && dur >= 180 && dur <= 300) {
         const targetMin = timestampTargetMin(dur);
         if (tsNorm.finalCount < targetMin) {
+          const ev = twoStepEvidence;
+          const evCount = ev?.timestamped_evidence?.length ?? 0;
+          const suff = ev?.evidence_sufficiency;
+          const notAssessable =
+            !!suff &&
+            (!suff.audio_assessable ||
+              !suff.video_assessable ||
+              !suff.acting_assessable);
+          let stage_where_count_was_lost:
+            | "step1_underproduced"
+            | "step2_dropped"
+            | "validation_removed"
+            | "not_assessable"
+            | "unknown" = "unknown";
+          if (notAssessable) {
+            stage_where_count_was_lost = "not_assessable";
+          } else if (evCount < targetMin) {
+            stage_where_count_was_lost = "step1_underproduced";
+          } else if (tsNorm.finalCount < evCount) {
+            stage_where_count_was_lost = "validation_removed";
+          } else {
+            // Step1 had enough but final has fewer and validation didn't drop
+            // them — implies the polish/locked-field path lost them.
+            stage_where_count_was_lost = "step2_dropped";
+          }
           console.log("[take-pipeline] timestamp_evidence_below_target", {
             take_id: takeId,
             video_duration_seconds: dur,
             timestamped_evidence_count: tsNorm.finalCount,
             target_min: targetMin,
-            evidence_sufficiency: twoStepEvidence
+            stage_where_count_was_lost,
+            evidence_sufficiency: ev
               ? {
-                  audio_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.audio_assessable,
-                  video_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.video_assessable,
-                  acting_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.acting_assessable,
+                  audio_assessable: !!ev.evidence_sufficiency.audio_assessable,
+                  video_assessable: !!ev.evidence_sufficiency.video_assessable,
+                  acting_assessable: !!ev.evidence_sufficiency.acting_assessable,
+                  vocal_assessable: !!ev.evidence_sufficiency.vocal_assessable,
+                  movement_assessable: !!ev.evidence_sufficiency.movement_assessable,
+                  brief_assessable: !!ev.evidence_sufficiency.brief_assessable,
+                  role_fit_assessable: !!ev.evidence_sufficiency.role_fit_assessable,
                 }
               : null,
           });
@@ -2392,6 +2430,90 @@ export async function runProcessTake(
     report.safety_rewrite_applied = safetyRewriteApplied;
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
+
+    // ---- Feedback reliability correction (user-facing) ----
+    // The UI computes a friendly Feedback reliability label from confidence +
+    // a few signals. Previously it could downgrade to "Medium" with the reason
+    // "the performance is short or partial" even when the tape contained the
+    // required components and the internal confidence was high (the UI was
+    // using a missing client-side signals.duration). Compute a server-side
+    // override so the UI never shows that mismatch.
+    {
+      const dur =
+        typeof take.mux_duration_seconds === "number" &&
+        Number.isFinite(take.mux_duration_seconds)
+          ? take.mux_duration_seconds
+          : null;
+      const conf = typeof report.confidence === "number" ? report.confidence : 0;
+      const audioScore =
+        typeof report.scores?.audio === "number" ? report.scores.audio : null;
+      const techScore =
+        typeof report.scores?.technical === "number"
+          ? report.scores.technical
+          : null;
+      const components = Array.isArray(report.detected_components)
+        ? report.detected_components
+        : [];
+      const hasBrief = report.mode === "brief";
+      const suff = twoStepEvidence?.evidence_sufficiency;
+      const suffOk =
+        !!suff &&
+        suff.audio_assessable &&
+        suff.video_assessable &&
+        suff.acting_assessable;
+      const hasFullPerformance = (dur ?? 0) >= 60 && components.length > 0;
+
+      // Reasons that legitimately downgrade reliability:
+      const groundedConcerns: string[] = [];
+      if (!hasBrief) groundedConcerns.push("no_brief");
+      if (audioScore != null && audioScore < 50) groundedConcerns.push("poor_audio");
+      else if (audioScore != null && audioScore < 75)
+        groundedConcerns.push("muddy_audio");
+      if (techScore != null && techScore < 50)
+        groundedConcerns.push("poor_video");
+      if (!hasFullPerformance) groundedConcerns.push("short_or_partial");
+      if (suff && !suff.audio_assessable) groundedConcerns.push("audio_not_assessable");
+      if (suff && !suff.video_assessable) groundedConcerns.push("video_not_assessable");
+      if (suff && hasBrief && !suff.brief_assessable)
+        groundedConcerns.push("brief_extraction_failed");
+
+      let target: "high" | "medium" | "low";
+      if (conf >= 85 && groundedConcerns.length === 0) target = "high";
+      else if (conf >= 65 && groundedConcerns.length <= 1) target = "medium";
+      else target = "low";
+
+      
+
+      // Detect mismatch: high confidence + good sufficiency + valid duration
+      // but the UI would currently show Medium/Low only because the spurious
+      // "short or partial" concern fires for a long, complete tape.
+      const wouldShowSpuriousShortPartial =
+        conf >= 85 && (dur ?? 0) >= 60 && components.length > 0 && suffOk;
+
+      if (wouldShowSpuriousShortPartial && target !== "high") {
+        const previous: "low" | "medium" = target;
+        target = "high";
+        // Persist hint for the UI.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_override = "high";
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_reason_code = "confidence_high_full_tape";
+        console.log("[take-pipeline] feedback_reliability_corrected", {
+          take_id: takeId,
+          previous_label: `Feedback reliability: ${previous === "medium" ? "Medium" : "Low"}`,
+          corrected_label: "Feedback reliability: High",
+          reason_code: "confidence_high_full_tape",
+        });
+      } else {
+        // Persist the grounded label hint so the UI can prefer it over the
+        // legacy client-side computation.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_override = target;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (report as any).feedback_reliability_reason_code =
+          groundedConcerns[0] ?? "ok";
+      }
+    }
 
     // ---- Same-video score-stability monitoring (observability only) ----
     // Compare against the most recent completed prior take of the same
