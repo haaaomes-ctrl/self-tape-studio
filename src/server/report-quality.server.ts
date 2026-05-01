@@ -455,7 +455,7 @@ export function scrubReportQuality(opts: {
     extractedBrief: opts.extractedBrief,
   });
 
-  const counters: ScrubCounters = { visual: {}, source: {}, framing: {} };
+  const counters: ScrubCounters = { visual: {}, page: {}, side: {}, framing: {} };
   const framingIdx = { n: 0 };
   const ctx = {
     lockedColours,
