@@ -75,7 +75,7 @@ export const Route = createFileRoute("/api/public/admin-config")({
           );
         }
 
-        const update: Record<string, unknown> = { ...parsed.data };
+        const update = parsed.data;
         const { error: upErr } = await supabaseAdmin
           .from("app_config")
           .update(update)
