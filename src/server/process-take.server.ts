@@ -2158,7 +2158,97 @@ export async function runProcessTake(
       report.fix_first = blockReasons[0];
     }
 
-    // ---- Persist canonical fields on the report (single source of truth) ----
+    // ---- Deterministic post-Step-2 quality scrubs ----
+    // Runs for BOTH two-step and single-pass paths (single sync point).
+    // Does NOT alter scores, verdict, caps, weights, thresholds, or
+    // material-policy logic. Only rewrites/removes user-facing text that:
+    //   - introduces clothing colour not locked in Step 1 evidence
+    //   - invents page/line/script/"side" references the system never had
+    //   - recommends frame-breaking on-camera movement against a static brief
+    // Also rewrites "the side" -> "the scene" for user clarity.
+    const qualityScrubResult = scrubReportQuality({
+      report,
+      evidence: twoStepEvidence,
+      briefText: audition.brief ?? null,
+      extractedBrief: extractedBrief ?? null,
+    });
+    for (const [field, count] of Object.entries(
+      qualityScrubResult.visual_removed_per_field,
+    )) {
+      if (count > 0) {
+        console.log("[take-pipeline] unsupported_visual_detail_removed", {
+          take_id: takeId,
+          field,
+          count,
+        });
+      }
+    }
+    for (const [field, count] of Object.entries(
+      qualityScrubResult.source_removed_per_field,
+    )) {
+      if (count > 0) {
+        console.log("[take-pipeline] unsupported_source_reference_removed", {
+          take_id: takeId,
+          field,
+          count,
+        });
+      }
+    }
+    for (const [field, count] of Object.entries(
+      qualityScrubResult.framing_rewritten_per_field,
+    )) {
+      if (count > 0) {
+        console.log("[take-pipeline] brief_incompatible_coaching_rewritten", {
+          take_id: takeId,
+          field,
+          count,
+        });
+      }
+    }
+
+    // ---- Timestamp normalisation: validate, dedupe, sort, cap ----
+    const tsNorm = normaliseTimestampedNotes(
+      report,
+      typeof take.mux_duration_seconds === "number"
+        ? take.mux_duration_seconds
+        : null,
+    );
+    if (tsNorm.reordered) {
+      console.log("[take-pipeline] timestamp_order_normalised", {
+        take_id: takeId,
+        timestamped_evidence_count: tsNorm.finalCount,
+      });
+    }
+    // Below-target observability for 3–5 minute tapes.
+    {
+      const dur =
+        typeof take.mux_duration_seconds === "number"
+          ? take.mux_duration_seconds
+          : null;
+      if (dur != null && dur >= 180 && dur <= 300) {
+        const targetMin = timestampTargetMin(dur);
+        if (tsNorm.finalCount < targetMin) {
+          console.log("[take-pipeline] timestamp_evidence_below_target", {
+            take_id: takeId,
+            video_duration_seconds: dur,
+            timestamped_evidence_count: tsNorm.finalCount,
+            target_min: targetMin,
+            evidence_sufficiency: twoStepEvidence
+              ? {
+                  audio_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.audio_assessable,
+                  video_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.video_assessable,
+                  acting_assessable:
+                    !!twoStepEvidence.evidence_sufficiency.acting_assessable,
+                }
+              : null,
+          });
+        }
+      }
+    }
+
+
     report.overall_score_model = overallScoreModel;
     report.overall_score_final = overall;
     report.verdict_final = verdict.label;
