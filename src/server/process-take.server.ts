@@ -2258,6 +2258,89 @@ export async function runProcessTake(
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
+    // ---- Same-video score-stability monitoring (observability only) ----
+    // Compare against the most recent completed prior take of the same
+    // audition that uses the same Mux asset (same video). Logs a warning
+    // when the final score moves >3 or the verdict flips. Never auto-corrects.
+    try {
+      const { data: priorTakes } = await supabaseAdmin
+        .from("takes")
+        .select(
+          "id, overall_score, scores, report, score_breakdown, mux_asset_id, mux_playback_id",
+        )
+        .eq("audition_id", take.audition_id)
+        .eq("status", "complete")
+        .neq("id", takeId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const prior = (priorTakes ?? []).find((p) => {
+        if (!p) return false;
+        if (
+          take.mux_asset_id &&
+          p.mux_asset_id &&
+          p.mux_asset_id === take.mux_asset_id
+        )
+          return true;
+        if (
+          take.mux_playback_id &&
+          p.mux_playback_id &&
+          p.mux_playback_id === take.mux_playback_id
+        )
+          return true;
+        return false;
+      });
+      if (prior) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pr = (prior.report ?? {}) as any;
+        const prevVerdict =
+          (pr.verdict_final as string | undefined) ??
+          (pr.submission_verdict?.label as string | undefined) ??
+          "";
+        const warn = computeConsistencyWarning({
+          currentTakeId: takeId,
+          currentOverall: overall,
+          currentVerdict: verdict.label,
+          currentScores: modelScores,
+          currentRoleFitModifier: roleFitModifier,
+          currentTimestampCount: Array.isArray(report.timestamped_notes)
+            ? report.timestamped_notes.length
+            : 0,
+          previous: {
+            take_id: prior.id,
+            overall: Number(prior.overall_score ?? 0),
+            verdict: prevVerdict,
+            scores: (prior.scores ?? {}) as Record<string, number | null>,
+            role_fit_modifier:
+              typeof pr.role_fit_modifier === "number"
+                ? pr.role_fit_modifier
+                : 0,
+            timestamp_count: Array.isArray(pr.timestamped_notes)
+              ? pr.timestamped_notes.length
+              : 0,
+          },
+        });
+        if (warn.emit || warn.role_fit_modifier_delta > 2) {
+          console.warn("[take-pipeline] analysis_consistency_warning", {
+            take_id: takeId,
+            previous_take_id: prior.id,
+            final_score_delta: warn.final_score_delta,
+            verdict_changed: warn.verdict_changed,
+            category_delta_summary: warn.category_delta_summary,
+            timestamp_count_delta: warn.timestamp_count_delta,
+            role_fit_modifier_delta: warn.role_fit_modifier_delta,
+          });
+        }
+      }
+    } catch (cmpErr) {
+      // Never fail the pipeline on a comparison miss.
+      console.info("[take-pipeline] consistency_compare_skipped", {
+        take_id: takeId,
+        reason:
+          cmpErr instanceof Error ? cmpErr.message.slice(0, 120) : "unknown",
+      });
+    }
+
+
     // ---- Score / verdict alignment (text-only) ----
     // Only adjusts wording (headline/insight) when it conflicts with the
     // locked verdict. Never changes scores or the verdict itself.
