@@ -126,12 +126,17 @@ function rewriteColourInString(
 
 // ---------- 2) Unsupported source-reference scrub (+ "side" -> "scene") ----------
 
-// Hard-banned patterns (page/line/script/book/side references invented by the
-// model when no source metadata exists). Each pattern is paired with a
-// rewrite. Order matters: more specific patterns first.
+// Two distinct rewrite categories:
+//   - PAGE_REWRITES: page/line/script/book references. Banned when the brief
+//     does NOT carry source metadata. When the brief DOES carry source
+//     metadata (e.g. "Side 1, pages 85–87"), they may pass through but we
+//     still prefer rewriting them to a moment description / timestamp where
+//     possible. Rewrites here are logged as `source_reference_rewritten_to_timestamp`.
+//   - SIDE_REWRITES: unclear "side" jargon. Always rewritten to clearer
+//     wording for the end-user. Logged as `unclear_industry_language_rewritten`.
 type Rewrite = { re: RegExp; replacement: string };
 
-const SOURCE_REWRITES: Rewrite[] = [
+const PAGE_REWRITES: Rewrite[] = [
   // page X, on page X, at page X
   { re: /\b(?:on\s+|at\s+)?page\s+\d+\b/gi, replacement: "in the scene" },
   // line X / lines X-Y
@@ -145,11 +150,23 @@ const SOURCE_REWRITES: Rewrite[] = [
   { re: /\bon\s+the\s+page\b/gi, replacement: "in the scene" },
   { re: /\bscript\s+page\b/gi, replacement: "scene section" },
   { re: /\bbook\s+page\b/gi, replacement: "scene section" },
-  // "the side" / "the sides" / "in the side(s)" / "record the side"
-  { re: /\bin\s+the\s+sides?\b/gi, replacement: "in the scene" },
-  { re: /\brecord\s+the\s+sides?\b/gi, replacement: "record the scene section" },
-  { re: /\bthe\s+sides\b/gi, replacement: "the scene material" },
-  { re: /\bthe\s+side\b/gi, replacement: "the scene" },
+];
+
+const SIDE_REWRITES: Rewrite[] = [
+  // "the requested side(s)" -> clearer wording
+  {
+    re: /\bthe\s+requested\s+sides?\b/gi,
+    replacement: "the requested acting scene",
+  },
+  // "in the side(s)" / "record the side(s)"
+  { re: /\bin\s+the\s+sides?\b/gi, replacement: "in the acting section" },
+  {
+    re: /\brecord\s+the\s+sides?\b/gi,
+    replacement: "record the acting scene",
+  },
+  // "the side and the song" / "the sides"
+  { re: /\bthe\s+sides\b/gi, replacement: "the acting scenes" },
+  { re: /\bthe\s+side\b/gi, replacement: "the acting scene" },
 ];
 
 /** Did the brief or extracted brief actually carry source metadata? */
