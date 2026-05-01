@@ -1,17 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, CheckCircle2, Compass, Eye, Sparkles, Upload } from "lucide-react";
+import { ArrowRight, CheckCircle2, Compass, Eye, Lock, Sparkles, Upload } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import tapecoachLogo from "@/assets/tapecoach-logo.png";
+import heroStage from "@/assets/hero-stage.jpg";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SelfTape — Honest feedback on your audition tape" },
+      { title: "TapeCoach — Review your tape before it reaches the room" },
       {
         name: "description",
         content:
-          "Upload your self-tape, get coach-like feedback in minutes. Brief-aware scoring, timestamped notes, and a clear priority for your next take.",
+          "Private, structured feedback on your performance, voice, setup and brief fit — before your tape reaches casting, agents or teachers.",
       },
     ],
   }),
