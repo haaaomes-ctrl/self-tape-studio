@@ -1242,6 +1242,184 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
   );
 }
 
+function getVerdictLabel(take: Take): string {
+  const r = take.report;
+  return (
+    r?.verdict_final ??
+    r?.submission_verdict?.label ??
+    deriveVerdictLabel(take.overall_score)
+  );
+}
+
+function isReadyVerdict(label: string): boolean {
+  return label === "Ready to submit" || label === "Strong for this level" || label === "Strong submit";
+}
+
+function SoleTakeDecisionPanel({ take }: { take: Take }) {
+  const r = take.report;
+  if (!r) return null;
+  const verdict = getVerdictLabel(take);
+  const ready = isReadyVerdict(verdict);
+  const blockers: string[] = Array.isArray(r.block_reasons) ? r.block_reasons : [];
+  const fixFirst: string | undefined = r.fix_first;
+  const drills: string[] = Array.isArray(r.coaching_drills) ? r.coaching_drills : [];
+
+  const recommendation = ready
+    ? "Submit this take."
+    : blockers.length > 0
+      ? "Re-record before submitting."
+      : "Worth another take if time allows.";
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-6 shadow-soft",
+        ready
+          ? "border-success/40 bg-success/5"
+          : blockers.length > 0
+            ? "border-destructive/40 bg-destructive/5"
+            : "border-warning/40 bg-warning/5",
+      )}
+    >
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Should I submit this?
+      </p>
+      <p className={cn("mt-2 font-display text-2xl font-semibold", verdictTone(verdict))}>
+        {recommendation}
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">Verdict: {verdict}</p>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            What to fix first
+          </p>
+          <p className="mt-2 text-sm font-medium text-foreground">
+            {fixFirst ?? (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            If you re-record
+          </p>
+          {drills.length > 0 ? (
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {drills.slice(0, 3).map((d, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-muted-foreground">•</span>
+                  <span>{d}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Use the timestamped notes below as your re-record checklist.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecommendationView({
+  takes,
+  onOpenTake,
+}: {
+  takes: Take[];
+  onOpenTake: (id: string) => void;
+}) {
+  const ranked = [...takes].sort(
+    (a, b) => (b.overall_score ?? 0) - (a.overall_score ?? 0),
+  );
+  const best = ranked[0];
+  const bestVerdict = getVerdictLabel(best);
+  const bestReady = isReadyVerdict(bestVerdict);
+  const bestBlockers: string[] = Array.isArray(best.report?.block_reasons)
+    ? best.report.block_reasons
+    : [];
+
+  const recommendation = bestReady
+    ? `Submit Take ${best.take_number}.`
+    : bestBlockers.length > 0
+      ? `Re-record — none of your takes are submission-ready yet.`
+      : `Take ${best.take_number} is your strongest, but worth another take if you can.`;
+
+  return (
+    <div className="space-y-6">
+      {/* Top recommendation */}
+      <div
+        className={cn(
+          "rounded-2xl border p-6 shadow-soft",
+          bestReady
+            ? "border-success/40 bg-success/5"
+            : bestBlockers.length > 0
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-warning/40 bg-warning/5",
+        )}
+      >
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Which take should I choose?
+        </p>
+        <p className={cn("mt-2 font-display text-2xl font-semibold", verdictTone(bestVerdict))}>
+          {recommendation}
+        </p>
+        {best.report?.casting_headline && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            "{best.report.casting_headline}"
+          </p>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => onOpenTake(best.id)}>
+            Open Take {best.take_number} notes
+          </Button>
+        </div>
+      </div>
+
+      {/* Ranked list */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+        <h2 className="font-display text-lg font-semibold">Ranked takes</h2>
+        <ul className="mt-4 space-y-3">
+          {ranked.map((t, i) => {
+            const v = getVerdictLabel(t);
+            return (
+              <li
+                key={t.id}
+                className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary/30 p-4"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-sm font-semibold">
+                      #{i + 1} · Take {t.take_number}
+                    </span>
+                    <span className={cn("text-xs font-medium", verdictTone(v))}>{v}</span>
+                  </div>
+                  {t.report?.casting_headline && (
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {t.report.casting_headline}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-display text-2xl font-semibold tabular-nums text-primary">
+                    {t.overall_score ?? "—"}
+                  </span>
+                  <Button size="sm" variant="ghost" onClick={() => onOpenTake(t.id)}>
+                    Notes
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* Side-by-side comparison */}
+      <CompareView takes={takes} />
+    </div>
+  );
+}
+
 function CompareView({ takes }: { takes: Take[] }) {
   const cats: { key: string; label: string }[] = [
     { key: "overall", label: "Overall" },
