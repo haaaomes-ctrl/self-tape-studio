@@ -125,7 +125,7 @@ function Landing() {
       </section>
 
       {/* Why self-tapes are hard */}
-      <section className="bg-background py-20 sm:py-24">
+      <section className="bg-background py-14 sm:py-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:items-start lg:gap-16">
             <div>
@@ -180,7 +180,7 @@ function Landing() {
       </section>
 
       {/* What we check */}
-      <section className="border-y border-border bg-secondary/40 py-20 sm:py-24">
+      <section className="border-y border-border bg-secondary/40 py-14 sm:py-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             What we check
@@ -188,7 +188,7 @@ function Landing() {
           <h2 className="mt-3 max-w-2xl font-display text-3xl font-bold tracking-tight sm:text-4xl">
             Six dimensions, every tape.
           </h2>
-          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[
               {
                 icon: Theater,
@@ -235,17 +235,17 @@ function Landing() {
             ].map((item) => (
               <article
                 key={item.title}
-                className="group relative overflow-hidden rounded-md border border-border bg-card p-6 shadow-soft transition-shadow hover:shadow-elevated"
+                className="group relative overflow-hidden rounded-md border border-border bg-card p-5 shadow-soft transition-shadow hover:shadow-elevated"
               >
                 <div
                   className={`flex h-11 w-11 items-center justify-center rounded-md ${item.accent}`}
                 >
                   <item.icon className="h-5 w-5" />
                 </div>
-                <h3 className="mt-5 font-display text-lg font-bold text-secondary-foreground">
+                <h3 className="mt-4 font-display text-lg font-bold text-secondary-foreground">
                   {item.title}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
                 <span
                   className={`absolute inset-x-0 bottom-0 h-1 ${item.bar} opacity-80`}
                   aria-hidden="true"
@@ -257,7 +257,7 @@ function Landing() {
       </section>
 
       {/* Example feedback report */}
-      <section className="bg-background py-20 sm:py-24">
+      <section className="bg-background py-14 sm:py-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_1.6fr] lg:items-start lg:gap-14">
             <div className="lg:pt-4">
@@ -381,9 +381,9 @@ function Landing() {
       </section>
 
       {/* Trust, privacy & testimonials */}
-      <section className="bg-sidebar py-20 text-sidebar-foreground sm:py-24">
+      <section className="bg-sidebar py-14 text-sidebar-foreground sm:py-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="grid gap-12 lg:grid-cols-[1fr_1.2fr] lg:items-start lg:gap-16">
+          <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] lg:items-start lg:gap-14">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
                 Private feedback you can trust
@@ -391,7 +391,7 @@ function Landing() {
               <h2 className="mt-3 font-display text-3xl font-bold tracking-tight text-sidebar-foreground sm:text-4xl">
                 Private feedback before the people who matter see it.
               </h2>
-              <div className="mt-8 grid gap-5 sm:grid-cols-2">
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
                 {[
                   {
                     icon: Lock,
@@ -422,7 +422,7 @@ function Landing() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {[
                 {
                   quote:
@@ -458,8 +458,8 @@ function Landing() {
       </section>
 
       {/* Final CTA */}
-      <section className="bg-background py-16">
-        <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-6 rounded-md border border-border bg-card px-6 py-8 shadow-soft sm:flex-row sm:items-center sm:px-10">
+      <section className="bg-background pb-0 pt-12">
+        <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-5 rounded-t-md border border-b-0 border-border bg-card px-6 py-7 shadow-soft sm:flex-row sm:items-center sm:px-10">
           <div>
             <p className="font-display text-2xl font-bold tracking-tight text-secondary-foreground sm:text-3xl">
               Before you send it, <span className="text-primary">check it.</span>
