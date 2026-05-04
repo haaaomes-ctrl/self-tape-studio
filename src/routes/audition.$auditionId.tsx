@@ -808,7 +808,7 @@ function buildTrustIndicator(
   return { label, reason, tone };
 }
 
-function TakeView({ take, audition }: { take: Take; audition: Audition }) {
+function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Audition; isSoleTake?: boolean }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
   }
