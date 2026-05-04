@@ -283,64 +283,85 @@ function AuditionPage() {
 
         {takes.length > 0 && (
           <div className="mt-8">
-            <Tabs value={activeTakeId ?? takes[0].id} onValueChange={setActiveTakeId}>
-              <TabsList>
-                {takes.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id}>
-                    Take {t.take_number}
-                    {t.overall_score != null && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        · {t.overall_score}
-                      </span>
+            {(() => {
+              const hasRecommendation = completed.length >= 2;
+              const defaultTab = hasRecommendation
+                ? "recommend"
+                : (activeTakeId ?? takes[0].id);
+              const tabValue =
+                activeTakeId === "recommend" || takes.some((t) => t.id === activeTakeId)
+                  ? activeTakeId!
+                  : defaultTab;
+              return (
+                <Tabs value={tabValue} onValueChange={setActiveTakeId}>
+                  <TabsList>
+                    {hasRecommendation && (
+                      <TabsTrigger value="recommend">
+                        Recommendation
+                      </TabsTrigger>
                     )}
-                  </TabsTrigger>
-                ))}
-                {completed.length >= 2 && (
-                  <TabsTrigger value="compare">Compare</TabsTrigger>
-                )}
-              </TabsList>
+                    {takes.map((t) => (
+                      <TabsTrigger key={t.id} value={t.id}>
+                        Take {t.take_number}
+                        {t.overall_score != null && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            · {t.overall_score}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
 
-              {takes.map((t) => (
-                <TabsContent key={t.id} value={t.id} className="mt-6">
-                  <div className="mb-3 flex justify-end">
-                    <ConfirmDestructive
-                      title="Delete take?"
-                      description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
-                      confirmLabel="Delete take"
-                      trigger={(open) => (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={open}
-                        >
-                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete take
-                        </Button>
-                      )}
-                      onConfirm={async () => {
-                        try {
-                          await deleteTake({ data: { takeId: t.id } });
-                          toast.success(`Take ${t.take_number} deleted`);
-                          setTakes((prev) => prev.filter((x) => x.id !== t.id));
-                          if (activeTakeId === t.id) setActiveTakeId(null);
-                        } catch (err) {
-                          toast.error(
-                            err instanceof Error ? err.message : "Could not delete take",
-                          );
-                        }
-                      }}
-                    />
-                  </div>
-                  <TakeView take={t} audition={audition} />
-                </TabsContent>
-              ))}
+                  {hasRecommendation && (
+                    <TabsContent value="recommend" className="mt-6">
+                      <RecommendationView
+                        takes={completed}
+                        onOpenTake={(id) => setActiveTakeId(id)}
+                      />
+                    </TabsContent>
+                  )}
 
-              {completed.length >= 2 && (
-                <TabsContent value="compare" className="mt-6">
-                  <CompareView takes={completed} />
-                </TabsContent>
-              )}
-            </Tabs>
+                  {takes.map((t) => (
+                    <TabsContent key={t.id} value={t.id} className="mt-6">
+                      <div className="mb-3 flex justify-end">
+                        <ConfirmDestructive
+                          title="Delete take?"
+                          description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
+                          confirmLabel="Delete take"
+                          trigger={(open) => (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={open}
+                            >
+                              <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete take
+                            </Button>
+                          )}
+                          onConfirm={async () => {
+                            try {
+                              await deleteTake({ data: { takeId: t.id } });
+                              toast.success(`Take ${t.take_number} deleted`);
+                              setTakes((prev) => prev.filter((x) => x.id !== t.id));
+                              if (activeTakeId === t.id) setActiveTakeId(null);
+                            } catch (err) {
+                              toast.error(
+                                err instanceof Error ? err.message : "Could not delete take",
+                              );
+                            }
+                          }}
+                        />
+                      </div>
+                      <TakeView
+                        take={t}
+                        audition={audition}
+                        isSoleTake={completed.length <= 1}
+                      />
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              );
+            })()}
           </div>
         )}
 
