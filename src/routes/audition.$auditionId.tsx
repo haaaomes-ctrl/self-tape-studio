@@ -936,7 +936,11 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
         )}
       </div>
 
-      {/* Submission risk flags */}
+      {/* Sole-take decision panel */}
+      {isSoleTake && (
+        <SoleTakeDecisionPanel take={take} />
+      )}
+
       {riskFlags.length > 0 && (
         <div className="rounded-2xl border border-warning/40 bg-warning/5 p-6">
           <div className="flex items-center gap-2">
