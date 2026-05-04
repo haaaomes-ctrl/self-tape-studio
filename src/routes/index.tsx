@@ -68,7 +68,7 @@ function Landing() {
           <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-sidebar" />
         </div>
 
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 pb-16 pt-14 sm:px-6 sm:pb-20 sm:pt-20 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-16 lg:pb-28 lg:pt-28">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 pb-12 pt-12 sm:px-6 sm:pb-16 sm:pt-16 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-14 lg:pb-20 lg:pt-20">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-sidebar-foreground/15 bg-sidebar-foreground/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/80 backdrop-blur">
               <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Private self-tape feedback
