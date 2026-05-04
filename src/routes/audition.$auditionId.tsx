@@ -283,64 +283,85 @@ function AuditionPage() {
 
         {takes.length > 0 && (
           <div className="mt-8">
-            <Tabs value={activeTakeId ?? takes[0].id} onValueChange={setActiveTakeId}>
-              <TabsList>
-                {takes.map((t) => (
-                  <TabsTrigger key={t.id} value={t.id}>
-                    Take {t.take_number}
-                    {t.overall_score != null && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        · {t.overall_score}
-                      </span>
+            {(() => {
+              const hasRecommendation = completed.length >= 2;
+              const defaultTab = hasRecommendation
+                ? "recommend"
+                : (activeTakeId ?? takes[0].id);
+              const tabValue =
+                activeTakeId === "recommend" || takes.some((t) => t.id === activeTakeId)
+                  ? activeTakeId!
+                  : defaultTab;
+              return (
+                <Tabs value={tabValue} onValueChange={setActiveTakeId}>
+                  <TabsList>
+                    {hasRecommendation && (
+                      <TabsTrigger value="recommend">
+                        Recommendation
+                      </TabsTrigger>
                     )}
-                  </TabsTrigger>
-                ))}
-                {completed.length >= 2 && (
-                  <TabsTrigger value="compare">Compare</TabsTrigger>
-                )}
-              </TabsList>
+                    {takes.map((t) => (
+                      <TabsTrigger key={t.id} value={t.id}>
+                        Take {t.take_number}
+                        {t.overall_score != null && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            · {t.overall_score}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
 
-              {takes.map((t) => (
-                <TabsContent key={t.id} value={t.id} className="mt-6">
-                  <div className="mb-3 flex justify-end">
-                    <ConfirmDestructive
-                      title="Delete take?"
-                      description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
-                      confirmLabel="Delete take"
-                      trigger={(open) => (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={open}
-                        >
-                          <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete take
-                        </Button>
-                      )}
-                      onConfirm={async () => {
-                        try {
-                          await deleteTake({ data: { takeId: t.id } });
-                          toast.success(`Take ${t.take_number} deleted`);
-                          setTakes((prev) => prev.filter((x) => x.id !== t.id));
-                          if (activeTakeId === t.id) setActiveTakeId(null);
-                        } catch (err) {
-                          toast.error(
-                            err instanceof Error ? err.message : "Could not delete take",
-                          );
-                        }
-                      }}
-                    />
-                  </div>
-                  <TakeView take={t} audition={audition} />
-                </TabsContent>
-              ))}
+                  {hasRecommendation && (
+                    <TabsContent value="recommend" className="mt-6">
+                      <RecommendationView
+                        takes={completed}
+                        onOpenTake={(id) => setActiveTakeId(id)}
+                      />
+                    </TabsContent>
+                  )}
 
-              {completed.length >= 2 && (
-                <TabsContent value="compare" className="mt-6">
-                  <CompareView takes={completed} />
-                </TabsContent>
-              )}
-            </Tabs>
+                  {takes.map((t) => (
+                    <TabsContent key={t.id} value={t.id} className="mt-6">
+                      <div className="mb-3 flex justify-end">
+                        <ConfirmDestructive
+                          title="Delete take?"
+                          description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
+                          confirmLabel="Delete take"
+                          trigger={(open) => (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-destructive"
+                              onClick={open}
+                            >
+                              <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete take
+                            </Button>
+                          )}
+                          onConfirm={async () => {
+                            try {
+                              await deleteTake({ data: { takeId: t.id } });
+                              toast.success(`Take ${t.take_number} deleted`);
+                              setTakes((prev) => prev.filter((x) => x.id !== t.id));
+                              if (activeTakeId === t.id) setActiveTakeId(null);
+                            } catch (err) {
+                              toast.error(
+                                err instanceof Error ? err.message : "Could not delete take",
+                              );
+                            }
+                          }}
+                        />
+                      </div>
+                      <TakeView
+                        take={t}
+                        audition={audition}
+                        isSoleTake={completed.length <= 1}
+                      />
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              );
+            })()}
           </div>
         )}
 
@@ -787,7 +808,7 @@ function buildTrustIndicator(
   return { label, reason, tone };
 }
 
-function TakeView({ take, audition }: { take: Take; audition: Audition }) {
+function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Audition; isSoleTake?: boolean }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
   }
@@ -915,7 +936,11 @@ function TakeView({ take, audition }: { take: Take; audition: Audition }) {
         )}
       </div>
 
-      {/* Submission risk flags */}
+      {/* Sole-take decision panel */}
+      {isSoleTake && (
+        <SoleTakeDecisionPanel take={take} />
+      )}
+
       {riskFlags.length > 0 && (
         <div className="rounded-2xl border border-warning/40 bg-warning/5 p-6">
           <div className="flex items-center gap-2">
@@ -1213,6 +1238,184 @@ function TakeView({ take, audition }: { take: Take; audition: Audition }) {
           </div>
         </details>
       )}
+    </div>
+  );
+}
+
+function getVerdictLabel(take: Take): string {
+  const r = take.report;
+  return (
+    r?.verdict_final ??
+    r?.submission_verdict?.label ??
+    deriveVerdictLabel(take.overall_score)
+  );
+}
+
+function isReadyVerdict(label: string): boolean {
+  return label === "Ready to submit" || label === "Strong for this level" || label === "Strong submit";
+}
+
+function SoleTakeDecisionPanel({ take }: { take: Take }) {
+  const r = take.report;
+  if (!r) return null;
+  const verdict = getVerdictLabel(take);
+  const ready = isReadyVerdict(verdict);
+  const blockers: string[] = Array.isArray(r.block_reasons) ? r.block_reasons : [];
+  const fixFirst: string | undefined = r.fix_first;
+  const drills: string[] = Array.isArray(r.coaching_drills) ? r.coaching_drills : [];
+
+  const recommendation = ready
+    ? "Submit this take."
+    : blockers.length > 0
+      ? "Re-record before submitting."
+      : "Worth another take if time allows.";
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-6 shadow-soft",
+        ready
+          ? "border-success/40 bg-success/5"
+          : blockers.length > 0
+            ? "border-destructive/40 bg-destructive/5"
+            : "border-warning/40 bg-warning/5",
+      )}
+    >
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Should I submit this?
+      </p>
+      <p className={cn("mt-2 font-display text-2xl font-semibold", verdictTone(verdict))}>
+        {recommendation}
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">Verdict: {verdict}</p>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            What to fix first
+          </p>
+          <p className="mt-2 text-sm font-medium text-foreground">
+            {fixFirst ?? (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            If you re-record
+          </p>
+          {drills.length > 0 ? (
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {drills.slice(0, 3).map((d, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-muted-foreground">•</span>
+                  <span>{d}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Use the timestamped notes below as your re-record checklist.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecommendationView({
+  takes,
+  onOpenTake,
+}: {
+  takes: Take[];
+  onOpenTake: (id: string) => void;
+}) {
+  const ranked = [...takes].sort(
+    (a, b) => (b.overall_score ?? 0) - (a.overall_score ?? 0),
+  );
+  const best = ranked[0];
+  const bestVerdict = getVerdictLabel(best);
+  const bestReady = isReadyVerdict(bestVerdict);
+  const bestBlockers: string[] = Array.isArray(best.report?.block_reasons)
+    ? best.report.block_reasons
+    : [];
+
+  const recommendation = bestReady
+    ? `Submit Take ${best.take_number}.`
+    : bestBlockers.length > 0
+      ? `Re-record — none of your takes are submission-ready yet.`
+      : `Take ${best.take_number} is your strongest, but worth another take if you can.`;
+
+  return (
+    <div className="space-y-6">
+      {/* Top recommendation */}
+      <div
+        className={cn(
+          "rounded-2xl border p-6 shadow-soft",
+          bestReady
+            ? "border-success/40 bg-success/5"
+            : bestBlockers.length > 0
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-warning/40 bg-warning/5",
+        )}
+      >
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Which take should I choose?
+        </p>
+        <p className={cn("mt-2 font-display text-2xl font-semibold", verdictTone(bestVerdict))}>
+          {recommendation}
+        </p>
+        {best.report?.casting_headline && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            "{best.report.casting_headline}"
+          </p>
+        )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => onOpenTake(best.id)}>
+            Open Take {best.take_number} notes
+          </Button>
+        </div>
+      </div>
+
+      {/* Ranked list */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+        <h2 className="font-display text-lg font-semibold">Ranked takes</h2>
+        <ul className="mt-4 space-y-3">
+          {ranked.map((t, i) => {
+            const v = getVerdictLabel(t);
+            return (
+              <li
+                key={t.id}
+                className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary/30 p-4"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-sm font-semibold">
+                      #{i + 1} · Take {t.take_number}
+                    </span>
+                    <span className={cn("text-xs font-medium", verdictTone(v))}>{v}</span>
+                  </div>
+                  {t.report?.casting_headline && (
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {t.report.casting_headline}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-display text-2xl font-semibold tabular-nums text-primary">
+                    {t.overall_score ?? "—"}
+                  </span>
+                  <Button size="sm" variant="ghost" onClick={() => onOpenTake(t.id)}>
+                    Notes
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      {/* Side-by-side comparison */}
+      <CompareView takes={takes} />
     </div>
   );
 }
