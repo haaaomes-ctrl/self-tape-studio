@@ -1208,15 +1208,25 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
       {/* Categories */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
         <h2 className="font-display text-lg font-semibold">Category breakdown</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Supporting evidence behind the overall score and submission guidance — not separate
+          verdicts.
+        </p>
         <div className="mt-5 space-y-4">
           {categories.map((c) => {
             const score = r.scores?.[c.key];
             if (score == null) return null;
+            const band = c.key === "brief_adherence" && r.mode === "brief"
+              ? briefFitBand(score)
+              : scoreBand(score);
             return (
               <div key={c.key}>
-                <div className="flex items-baseline justify-between">
+                <div className="flex items-baseline justify-between gap-3">
                   <span className="text-sm font-medium">{c.label}</span>
-                  <span className="font-display text-lg font-semibold tabular-nums">{score}</span>
+                  <span className="flex items-baseline gap-2">
+                    <span className="font-display text-lg font-semibold tabular-nums">{score}</span>
+                    <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
+                  </span>
                 </div>
                 <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
                   <div
@@ -1224,9 +1234,9 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                     style={{ width: `${score}%` }}
                   />
                 </div>
-                {r.category_notes?.[c.key] && (
-                  <p className="mt-1.5 text-xs text-muted-foreground">{r.category_notes[c.key]}</p>
-                )}
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {r.category_notes?.[c.key] ?? band.blurb}
+                </p>
               </div>
             );
           })}
