@@ -1169,26 +1169,32 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
             This tape contains multiple performance components. Each is scored separately.
           </p>
           <div className="mt-5 space-y-4">
-            {components.map((c, i) => (
-              <div key={i}>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-medium capitalize">
-                    {c.type.replace(/_/g, " ")}
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      weight {Math.round(c.weight * 100)}%
+            {components.map((c, i) => {
+              const band = scoreBand(c.score);
+              return (
+                <div key={i}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-medium capitalize">
+                      {c.type.replace(/_/g, " ")}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        weight {Math.round(c.weight * 100)}%
+                      </span>
                     </span>
-                  </span>
-                  <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                    <span className="flex items-baseline gap-2">
+                      <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                      <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${c.score}%` }}
+                    />
+                  </div>
+                  {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
                 </div>
-                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${c.score}%` }}
-                  />
-                </div>
-                {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
-              </div>
-            ))}
+              );
+            })}
           </div>
           {typeof r.consistency_modifier === "number" && r.consistency_modifier !== 0 && (
             <p className="mt-5 text-xs text-muted-foreground">
