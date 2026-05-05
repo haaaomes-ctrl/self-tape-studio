@@ -852,50 +852,95 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
     ? r.submission_risk_flags
     : [];
 
+  const readiness = getVerdictLabel(take);
+  const ready = isReadyVerdict(readiness);
+  const blockers: string[] = Array.isArray(r.block_reasons) ? r.block_reasons : [];
+  const recommendation = ready
+    ? "Submit this take"
+    : blockers.length > 0
+      ? "Re-record before submitting"
+      : "Refine and consider another take";
+  const guidanceReason: string =
+    r.submission_verdict?.reason ??
+    (ready
+      ? "Scores and signals meet the bar for this level — you're good to send."
+      : blockers.length > 0
+        ? blockers[0]
+        : r.fix_first
+          ? `Tighten this first: ${r.fix_first}`
+          : "A few things to sharpen before this is submission-ready.");
+
   return (
     <div className="space-y-6">
-      {/* Headline */}
-      <div className="rounded-2xl border border-border bg-card p-8 shadow-soft">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Casting headline
-        </p>
-        <p className="mt-2 font-display text-2xl font-semibold leading-snug tracking-tight">
-          {r.casting_headline}
-        </p>
-        {r.casting_insight && (
-          <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
+      {/* Action-first summary — practical decision before the detailed analysis */}
+      <div
+        className={cn(
+          "rounded-2xl border p-7 shadow-soft",
+          ready
+            ? "border-success/40 bg-success/5"
+            : blockers.length > 0
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-warning/40 bg-warning/5",
         )}
-        <div className="mt-6 flex items-end justify-between gap-6">
-          <div>
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Verdict</p>
-            <p
-              className={cn(
-                "mt-1 font-display text-xl font-semibold",
-                verdictTone(r.verdict_final ?? r.submission_verdict?.label),
-              )}
-            >
-              {r.verdict_final ?? r.submission_verdict?.label ?? deriveVerdictLabel(take.overall_score)}
-            </p>
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Badge variant="outline" className="font-medium">
+              Take {take.take_number}
+            </Badge>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Submission guidance
+              </p>
+              <p className={cn("mt-1 font-display text-2xl font-semibold leading-tight", verdictTone(readiness))}>
+                {recommendation}
+              </p>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Overall</p>
             <p className="font-display text-5xl font-bold leading-none text-primary">
-              {r.overall_score_final ?? take.overall_score}
+              {r.overall_score_final ?? take.overall_score ?? "—"}
             </p>
           </div>
         </div>
-        {r.submission_verdict?.reason && (
-          <p className="mt-2 text-sm text-muted-foreground">{r.submission_verdict.reason}</p>
-        )}
+
+        <p className="mt-3 text-sm text-muted-foreground">{guidanceReason}</p>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-md border border-border bg-card/60 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Readiness
+            </p>
+            <p className={cn("mt-1 text-sm font-semibold", verdictTone(readiness))}>{readiness}</p>
+          </div>
+          <div className="rounded-md border border-border bg-card/60 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Feedback confidence
+            </p>
+            <p className={cn("mt-1 text-sm font-semibold", trust.tone)}>
+              {trust.label.replace("Feedback reliability: ", "")}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{trust.reason}</p>
+          </div>
+          <div className="rounded-md border border-border bg-card/60 p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Fix this first
+            </p>
+            <p className="mt-1 text-sm font-medium text-foreground">
+              {r.fix_first ?? (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
+            </p>
+          </div>
+        </div>
 
         {/* Block reasons — explicit, user-facing */}
-        {Array.isArray(r.block_reasons) && r.block_reasons.length > 0 && (
-          <div className="mt-4 rounded-md border border-warning/40 bg-warning/10 p-4">
+        {blockers.length > 0 && (
+          <div className="mt-5 rounded-md border border-warning/40 bg-warning/10 p-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-warning">
               Why this isn't ready
             </p>
             <ul className="mt-2 space-y-1.5 text-sm">
-              {r.block_reasons.map((reason: string, i: number) => (
+              {blockers.map((reason: string, i: number) => (
                 <li key={i} className="flex gap-2">
                   <span className="text-warning">•</span>
                   <span>{reason}</span>
@@ -905,41 +950,37 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
           </div>
         )}
 
+        {r.at_risk && blockers.length === 0 && (
+          <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
+            <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
+            <p>This tape is flagged <strong>at risk</strong> — a brief requirement appears to be missing.</p>
+          </div>
+        )}
         {r.extraction_confidence === "low" && (
           <p className="mt-3 text-xs text-muted-foreground">
             We may have misread parts of the brief — please review key details before relying on
             brief-fit feedback.
           </p>
         )}
-
-        <div className="mt-5 rounded-md border border-border bg-secondary/30 p-4">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-block h-2 w-2 rounded-full",
-                trust.tone === "text-success"
-                  ? "bg-success"
-                  : trust.tone === "text-warning"
-                    ? "bg-warning"
-                    : "bg-primary",
-              )}
-            />
-            <p className={cn("text-sm font-semibold", trust.tone)}>{trust.label}</p>
-          </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">{trust.reason}</p>
-        </div>
-        {r.at_risk && (!Array.isArray(r.block_reasons) || r.block_reasons.length === 0) && (
-          <div className="mt-5 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
-            <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
-            <p>This tape is flagged <strong>at risk</strong> — a brief requirement appears to be missing.</p>
-          </div>
-        )}
       </div>
 
-      {/* Sole-take decision panel */}
+      {/* Sole-take re-record drills (kept; complements the action summary) */}
       {isSoleTake && (
         <SoleTakeDecisionPanel take={take} />
       )}
+
+      {/* Casting headline — interpretive context for the score */}
+      <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Casting headline
+        </p>
+        <p className="mt-2 font-display text-xl font-semibold leading-snug tracking-tight">
+          {r.casting_headline}
+        </p>
+        {r.casting_insight && (
+          <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
+        )}
+      </div>
 
       {riskFlags.length > 0 && (
         <div className="rounded-2xl border border-warning/40 bg-warning/5 p-6">
