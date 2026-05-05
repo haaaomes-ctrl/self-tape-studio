@@ -692,6 +692,31 @@ function verdictTone(label: string | undefined): string {
   }
 }
 
+// Plain-English banding for any 0–100 score. Display-only — does not change
+// any threshold used by the scoring engine.
+function scoreBand(score: number | null | undefined): {
+  label: string;
+  blurb: string;
+  tone: string;
+} {
+  if (score == null) {
+    return { label: "Not scored", blurb: "Not enough signal to score this area.", tone: "text-muted-foreground" };
+  }
+  if (score >= 90) return { label: "Submission-ready", blurb: "Meets a professional bar — send as-is.", tone: "text-success" };
+  if (score >= 80) return { label: "Strong, refine if time", blurb: "Solid work; small polish would lift it further.", tone: "text-success" };
+  if (score >= 70) return { label: "Usable, but needs work", blurb: "Reads on tape, but has noticeable rough edges.", tone: "text-warning" };
+  return { label: "Re-record recommended", blurb: "Below the bar for a confident submission.", tone: "text-destructive" };
+}
+
+// Brief-fit specific phrasing — same numeric bands, casting-language labels.
+function briefFitBand(score: number | null | undefined): { label: string; blurb: string; tone: string } {
+  if (score == null) return { label: "Not assessed", blurb: "No brief to align against.", tone: "text-muted-foreground" };
+  if (score >= 90) return { label: "Fully aligned", blurb: "Hits the brief's key requirements clearly.", tone: "text-success" };
+  if (score >= 80) return { label: "Mostly aligned", blurb: "On-brief with minor gaps.", tone: "text-success" };
+  if (score >= 70) return { label: "Partially aligned", blurb: "Some brief points missed — check before sending.", tone: "text-warning" };
+  return { label: "Off-brief", blurb: "Important brief requirements not met.", tone: "text-destructive" };
+}
+
 
 // Translates the underlying confidence + signal data into a friendly,
 // non-technical reliability indicator. Never surfaces the numeric score or
