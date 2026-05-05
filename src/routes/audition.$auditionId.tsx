@@ -1560,6 +1560,9 @@ function CompareView({ takes }: { takes: Take[] }) {
       <p className="mt-1 text-sm text-muted-foreground">
         Best take: <strong>Take {best.take_number}</strong> — {best.report?.casting_headline}
       </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Category scores are supporting evidence — the recommendation above is the verdict.
+      </p>
       <div className="mt-6 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -1574,16 +1577,32 @@ function CompareView({ takes }: { takes: Take[] }) {
           </thead>
           <tbody>
             {cats.map((c) => (
-              <tr key={c.key} className="border-b border-border last:border-0">
+              <tr key={c.key} className="border-b border-border last:border-0 align-top">
                 <td className="py-3 font-medium">{c.label}</td>
                 {takes.map((t) => {
                   let val: number | null = null;
                   if (c.key === "overall") val = t.overall_score;
                   else if (c.key === "confidence") val = t.confidence;
                   else val = t.scores?.[c.key] ?? null;
+                  if (c.key === "confidence") {
+                    return (
+                      <td key={t.id} className="py-3 text-right tabular-nums">
+                        {val ?? "—"}
+                      </td>
+                    );
+                  }
+                  const band =
+                    c.key === "brief_adherence" && t.report?.mode === "brief"
+                      ? briefFitBand(val)
+                      : scoreBand(val);
                   return (
-                    <td key={t.id} className="py-3 text-right tabular-nums">
-                      {val ?? "—"}
+                    <td key={t.id} className="py-3 text-right">
+                      <div className="tabular-nums">{val ?? "—"}</div>
+                      {val != null && (
+                        <div className={cn("text-[11px] font-medium", band.tone)}>
+                          {band.label}
+                        </div>
+                      )}
                     </td>
                   );
                 })}
