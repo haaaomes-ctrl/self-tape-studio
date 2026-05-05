@@ -1499,13 +1499,14 @@ function RecommendationView({
         <ul className="mt-4 space-y-3">
           {ranked.map((t, i) => {
             const v = getVerdictLabel(t);
+            const band = scoreBand(t.overall_score);
             return (
               <li
                 key={t.id}
                 className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary/30 p-4"
               >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-display text-sm font-semibold">
                       #{i + 1} · Take {t.take_number}
                     </span>
@@ -1518,9 +1519,12 @@ function RecommendationView({
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-display text-2xl font-semibold tabular-nums text-primary">
-                    {t.overall_score ?? "—"}
-                  </span>
+                  <div className="text-right">
+                    <span className="font-display text-2xl font-semibold tabular-nums text-primary">
+                      {t.overall_score ?? "—"}
+                    </span>
+                    <p className={cn("text-[11px] font-medium", band.tone)}>{band.label}</p>
+                  </div>
                   <Button size="sm" variant="ghost" onClick={() => onOpenTake(t.id)}>
                     Notes
                   </Button>
