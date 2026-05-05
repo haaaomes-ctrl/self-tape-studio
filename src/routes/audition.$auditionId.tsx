@@ -1202,13 +1202,8 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
         </div>
       )}
 
-      {/* Fix first */}
-      {r.fix_first && (
-        <div className="rounded-2xl border border-primary/30 bg-primary/5 p-6">
-          <p className="text-xs font-medium uppercase tracking-wider text-primary">Fix this first</p>
-          <p className="mt-2 text-base font-medium text-foreground">{r.fix_first}</p>
-        </div>
-      )}
+      {/* Fix first — moved up as a prominent coaching card (see above) */}
+
 
       {/* Strengths + improvements */}
       <div className="grid gap-4 md:grid-cols-2">
