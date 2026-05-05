@@ -1258,6 +1258,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
             ].map((sub) => {
               const v = brk[sub.key as keyof typeof brk] as number | undefined;
               if (typeof v !== "number") return null;
+              const band = scoreBand(v);
               return (
                 <div key={sub.key} className="rounded-md border border-border bg-secondary/30 p-3">
                   <div className="flex items-baseline justify-between">
@@ -1266,6 +1267,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                   </div>
                   <div className="mt-1 flex items-baseline gap-2">
                     <span className="font-display text-xl font-semibold tabular-nums">{v}</span>
+                    <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
                   </div>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
                     <div
