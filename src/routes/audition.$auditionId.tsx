@@ -692,6 +692,31 @@ function verdictTone(label: string | undefined): string {
   }
 }
 
+// Plain-English banding for any 0–100 score. Display-only — does not change
+// any threshold used by the scoring engine.
+function scoreBand(score: number | null | undefined): {
+  label: string;
+  blurb: string;
+  tone: string;
+} {
+  if (score == null) {
+    return { label: "Not scored", blurb: "Not enough signal to score this area.", tone: "text-muted-foreground" };
+  }
+  if (score >= 90) return { label: "Submission-ready", blurb: "Meets a professional bar — send as-is.", tone: "text-success" };
+  if (score >= 80) return { label: "Strong, refine if time", blurb: "Solid work; small polish would lift it further.", tone: "text-success" };
+  if (score >= 70) return { label: "Usable, but needs work", blurb: "Reads on tape, but has noticeable rough edges.", tone: "text-warning" };
+  return { label: "Re-record recommended", blurb: "Below the bar for a confident submission.", tone: "text-destructive" };
+}
+
+// Brief-fit specific phrasing — same numeric bands, casting-language labels.
+function briefFitBand(score: number | null | undefined): { label: string; blurb: string; tone: string } {
+  if (score == null) return { label: "Not assessed", blurb: "No brief to align against.", tone: "text-muted-foreground" };
+  if (score >= 90) return { label: "Fully aligned", blurb: "Hits the brief's key requirements clearly.", tone: "text-success" };
+  if (score >= 80) return { label: "Mostly aligned", blurb: "On-brief with minor gaps.", tone: "text-success" };
+  if (score >= 70) return { label: "Partially aligned", blurb: "Some brief points missed — check before sending.", tone: "text-warning" };
+  return { label: "Off-brief", blurb: "Important brief requirements not met.", tone: "text-destructive" };
+}
+
 
 // Translates the underlying confidence + signal data into a friendly,
 // non-technical reliability indicator. Never surfaces the numeric score or
@@ -1144,26 +1169,32 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
             This tape contains multiple performance components. Each is scored separately.
           </p>
           <div className="mt-5 space-y-4">
-            {components.map((c, i) => (
-              <div key={i}>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm font-medium capitalize">
-                    {c.type.replace(/_/g, " ")}
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      weight {Math.round(c.weight * 100)}%
+            {components.map((c, i) => {
+              const band = scoreBand(c.score);
+              return (
+                <div key={i}>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-sm font-medium capitalize">
+                      {c.type.replace(/_/g, " ")}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        weight {Math.round(c.weight * 100)}%
+                      </span>
                     </span>
-                  </span>
-                  <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                    <span className="flex items-baseline gap-2">
+                      <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                      <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${c.score}%` }}
+                    />
+                  </div>
+                  {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
                 </div>
-                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{ width: `${c.score}%` }}
-                  />
-                </div>
-                {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
-              </div>
-            ))}
+              );
+            })}
           </div>
           {typeof r.consistency_modifier === "number" && r.consistency_modifier !== 0 && (
             <p className="mt-5 text-xs text-muted-foreground">
@@ -1177,15 +1208,25 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
       {/* Categories */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
         <h2 className="font-display text-lg font-semibold">Category breakdown</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Supporting evidence behind the overall score and submission guidance — not separate
+          verdicts.
+        </p>
         <div className="mt-5 space-y-4">
           {categories.map((c) => {
             const score = r.scores?.[c.key];
             if (score == null) return null;
+            const band = c.key === "brief_adherence" && r.mode === "brief"
+              ? briefFitBand(score)
+              : scoreBand(score);
             return (
               <div key={c.key}>
-                <div className="flex items-baseline justify-between">
+                <div className="flex items-baseline justify-between gap-3">
                   <span className="text-sm font-medium">{c.label}</span>
-                  <span className="font-display text-lg font-semibold tabular-nums">{score}</span>
+                  <span className="flex items-baseline gap-2">
+                    <span className="font-display text-lg font-semibold tabular-nums">{score}</span>
+                    <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
+                  </span>
                 </div>
                 <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
                   <div
@@ -1193,9 +1234,9 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                     style={{ width: `${score}%` }}
                   />
                 </div>
-                {r.category_notes?.[c.key] && (
-                  <p className="mt-1.5 text-xs text-muted-foreground">{r.category_notes[c.key]}</p>
-                )}
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {r.category_notes?.[c.key] ?? band.blurb}
+                </p>
               </div>
             );
           })}
@@ -1217,6 +1258,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
             ].map((sub) => {
               const v = brk[sub.key as keyof typeof brk] as number | undefined;
               if (typeof v !== "number") return null;
+              const band = scoreBand(v);
               return (
                 <div key={sub.key} className="rounded-md border border-border bg-secondary/30 p-3">
                   <div className="flex items-baseline justify-between">
@@ -1225,6 +1267,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                   </div>
                   <div className="mt-1 flex items-baseline gap-2">
                     <span className="font-display text-xl font-semibold tabular-nums">{v}</span>
+                    <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
                   </div>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
                     <div
@@ -1456,13 +1499,14 @@ function RecommendationView({
         <ul className="mt-4 space-y-3">
           {ranked.map((t, i) => {
             const v = getVerdictLabel(t);
+            const band = scoreBand(t.overall_score);
             return (
               <li
                 key={t.id}
                 className="flex items-center justify-between gap-4 rounded-md border border-border bg-secondary/30 p-4"
               >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="font-display text-sm font-semibold">
                       #{i + 1} · Take {t.take_number}
                     </span>
@@ -1475,9 +1519,12 @@ function RecommendationView({
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-display text-2xl font-semibold tabular-nums text-primary">
-                    {t.overall_score ?? "—"}
-                  </span>
+                  <div className="text-right">
+                    <span className="font-display text-2xl font-semibold tabular-nums text-primary">
+                      {t.overall_score ?? "—"}
+                    </span>
+                    <p className={cn("text-[11px] font-medium", band.tone)}>{band.label}</p>
+                  </div>
                   <Button size="sm" variant="ghost" onClick={() => onOpenTake(t.id)}>
                     Notes
                   </Button>
@@ -1513,6 +1560,9 @@ function CompareView({ takes }: { takes: Take[] }) {
       <p className="mt-1 text-sm text-muted-foreground">
         Best take: <strong>Take {best.take_number}</strong> — {best.report?.casting_headline}
       </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Category scores are supporting evidence — the recommendation above is the verdict.
+      </p>
       <div className="mt-6 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -1527,16 +1577,32 @@ function CompareView({ takes }: { takes: Take[] }) {
           </thead>
           <tbody>
             {cats.map((c) => (
-              <tr key={c.key} className="border-b border-border last:border-0">
+              <tr key={c.key} className="border-b border-border last:border-0 align-top">
                 <td className="py-3 font-medium">{c.label}</td>
                 {takes.map((t) => {
                   let val: number | null = null;
                   if (c.key === "overall") val = t.overall_score;
                   else if (c.key === "confidence") val = t.confidence;
                   else val = t.scores?.[c.key] ?? null;
+                  if (c.key === "confidence") {
+                    return (
+                      <td key={t.id} className="py-3 text-right tabular-nums">
+                        {val ?? "—"}
+                      </td>
+                    );
+                  }
+                  const band =
+                    c.key === "brief_adherence" && t.report?.mode === "brief"
+                      ? briefFitBand(val)
+                      : scoreBand(val);
                   return (
-                    <td key={t.id} className="py-3 text-right tabular-nums">
-                      {val ?? "—"}
+                    <td key={t.id} className="py-3 text-right">
+                      <div className="tabular-nums">{val ?? "—"}</div>
+                      {val != null && (
+                        <div className={cn("text-[11px] font-medium", band.tone)}>
+                          {band.label}
+                        </div>
+                      )}
                     </td>
                   );
                 })}
