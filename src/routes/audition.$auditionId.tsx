@@ -1588,38 +1588,76 @@ function CompareView({ takes }: { takes: Take[] }) {
             </tr>
           </thead>
           <tbody>
-            {cats.map((c) => (
-              <tr key={c.key} className="border-b border-border last:border-0 align-top">
-                <td className="py-3 font-medium">{c.label}</td>
-                {takes.map((t) => {
-                  let val: number | null = null;
-                  if (c.key === "overall") val = t.overall_score;
-                  else if (c.key === "confidence") val = t.confidence;
-                  else val = t.scores?.[c.key] ?? null;
-                  if (c.key === "confidence") {
+            {cats.map((c) => {
+              const isOverall = c.key === "overall";
+              return (
+                <tr
+                  key={c.key}
+                  className={cn(
+                    "border-b border-border last:border-0 align-top",
+                    isOverall && "bg-primary/5",
+                  )}
+                >
+                  <td
+                    className={cn(
+                      "py-3 pl-2",
+                      isOverall
+                        ? "font-display text-sm font-semibold text-foreground"
+                        : "text-xs font-medium text-muted-foreground",
+                    )}
+                  >
+                    {isOverall ? "Overall score" : c.label}
+                    {isOverall && (
+                      <span className="ml-2 text-[10px] font-medium uppercase tracking-wider text-primary">
+                        primary
+                      </span>
+                    )}
+                  </td>
+                  {takes.map((t) => {
+                    let val: number | null = null;
+                    if (c.key === "overall") val = t.overall_score;
+                    else if (c.key === "confidence") val = t.confidence;
+                    else val = t.scores?.[c.key] ?? null;
+                    if (c.key === "confidence") {
+                      return (
+                        <td key={t.id} className="py-3 pr-2 text-right text-xs tabular-nums text-muted-foreground">
+                          {val ?? "—"}
+                        </td>
+                      );
+                    }
+                    const band =
+                      c.key === "brief_adherence" && t.report?.mode === "brief"
+                        ? briefFitBand(val)
+                        : scoreBand(val);
                     return (
-                      <td key={t.id} className="py-3 text-right tabular-nums">
-                        {val ?? "—"}
+                      <td key={t.id} className="py-3 pr-2 text-right">
+                        <div
+                          className={cn(
+                            "tabular-nums",
+                            isOverall
+                              ? "font-display text-2xl font-bold text-primary"
+                              : "text-sm text-foreground",
+                          )}
+                        >
+                          {val ?? "—"}
+                        </div>
+                        {val != null && (
+                          <div
+                            className={cn(
+                              "font-medium",
+                              isOverall ? "text-xs" : "text-[10px]",
+                              band.tone,
+                            )}
+                          >
+                            {band.label}
+                          </div>
+                        )}
                       </td>
                     );
-                  }
-                  const band =
-                    c.key === "brief_adherence" && t.report?.mode === "brief"
-                      ? briefFitBand(val)
-                      : scoreBand(val);
-                  return (
-                    <td key={t.id} className="py-3 text-right">
-                      <div className="tabular-nums">{val ?? "—"}</div>
-                      {val != null && (
-                        <div className={cn("text-[11px] font-medium", band.tone)}>
-                          {band.label}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
