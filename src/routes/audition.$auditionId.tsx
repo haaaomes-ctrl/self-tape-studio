@@ -1556,12 +1556,12 @@ function RecommendationView({
 function CompareView({ takes }: { takes: Take[] }) {
   const cats: { key: string; label: string }[] = [
     { key: "overall", label: "Overall" },
-    { key: "confidence", label: "Confidence" },
     { key: "vocal", label: "Vocal" },
     { key: "acting", label: "Acting" },
     { key: "audio", label: "Audio" },
     { key: "technical", label: "Technical" },
     { key: "brief_adherence", label: "Brief / standards" },
+    { key: "confidence", label: "Confidence" },
   ];
 
   const best = [...takes].sort((a, b) => (b.overall_score ?? 0) - (a.overall_score ?? 0))[0];
@@ -1573,15 +1573,15 @@ function CompareView({ takes }: { takes: Take[] }) {
         Best take: <strong>Take {best.take_number}</strong> — {best.report?.casting_headline}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Category scores are supporting evidence — the recommendation above is the verdict.
+        Overall score is the primary comparison metric. The rows below explain why.
       </p>
       <div className="mt-6 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="py-2 font-medium">Metric</th>
+              <th className="py-2 pl-2 font-medium">Metric</th>
               {takes.map((t) => (
-                <th key={t.id} className="py-2 text-right font-medium">
+                <th key={t.id} className="py-2 pr-2 text-right font-medium">
                   Take {t.take_number}
                 </th>
               ))}
