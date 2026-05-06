@@ -908,29 +908,35 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
               : "border-warning/40 bg-warning/5",
         )}
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="font-medium">
-              Take {take.take_number}
-            </Badge>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Submission guidance
-              </p>
-              <p className={cn("mt-1 font-display text-2xl font-semibold leading-tight", verdictTone(readiness))}>
-                {recommendation}
-              </p>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground">Overall</p>
-            <p className="font-display text-5xl font-bold leading-none text-primary">
+        <div className="flex flex-wrap items-center gap-6 sm:flex-nowrap">
+          {/* Dominant overall score — primary signal */}
+          <div className="flex shrink-0 flex-col items-center rounded-xl border border-border bg-card/70 px-6 py-4 text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+              Overall score
+            </p>
+            <p className="mt-1 font-display text-7xl font-bold leading-none text-primary tabular-nums">
               {r.overall_score_final ?? take.overall_score ?? "—"}
             </p>
+            <p className={cn("mt-2 text-xs font-semibold", scoreBand(r.overall_score_final ?? take.overall_score).tone)}>
+              {scoreBand(r.overall_score_final ?? take.overall_score).label}
+            </p>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="font-medium">
+                Take {take.take_number}
+              </Badge>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Submission guidance
+              </p>
+            </div>
+            <p className={cn("mt-2 font-display text-xl font-semibold leading-snug", verdictTone(readiness))}>
+              {recommendation}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{guidanceReason}</p>
           </div>
         </div>
-
-        <p className="mt-3 text-sm text-muted-foreground">{guidanceReason}</p>
 
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
           <div className="rounded-md border border-border bg-card/60 p-3">
