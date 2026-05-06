@@ -1211,14 +1211,18 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
         </div>
       )}
 
-      {/* Categories */}
-      <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-        <h2 className="font-display text-lg font-semibold">Category breakdown</h2>
+      {/* Categories — supporting evidence, visually subordinate */}
+      <div className="rounded-xl border border-border bg-secondary/20 p-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Supporting category scores
+          </h2>
+          <span className="text-[11px] text-muted-foreground">explains the overall</span>
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          Supporting evidence behind the overall score and submission guidance — not separate
-          verdicts.
+          These scores explain why the overall lands where it does — they are not separate verdicts.
         </p>
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-3">
           {categories.map((c) => {
             const score = r.scores?.[c.key];
             if (score == null) return null;
@@ -1228,21 +1232,23 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
             return (
               <div key={c.key}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-medium">{c.label}</span>
+                  <span className="text-xs font-medium text-muted-foreground">{c.label}</span>
                   <span className="flex items-baseline gap-2">
-                    <span className="font-display text-lg font-semibold tabular-nums">{score}</span>
-                    <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
+                    <span className="text-sm font-semibold tabular-nums text-foreground">{score}</span>
+                    <span className={cn("text-[11px] font-medium", band.tone)}>· {band.label}</span>
                   </span>
                 </div>
-                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-border">
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-border">
                   <div
-                    className="h-full rounded-full bg-primary transition-all"
+                    className="h-full rounded-full bg-muted-foreground/60 transition-all"
                     style={{ width: `${score}%` }}
                   />
                 </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  {r.category_notes?.[c.key] ?? band.blurb}
-                </p>
+                {r.category_notes?.[c.key] && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {r.category_notes[c.key]}
+                  </p>
+                )}
               </div>
             );
           })}
