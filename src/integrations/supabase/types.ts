@@ -17,6 +17,9 @@ export type Database = {
       app_config: {
         Row: {
           daily_submission_cap: number
+          future_evidence_enabled: boolean
+          future_qa_trace_enabled: boolean
+          future_report_enabled: boolean
           id: string
           max_takes_per_audition: number
           quota_enabled: boolean
@@ -25,6 +28,9 @@ export type Database = {
         }
         Insert: {
           daily_submission_cap?: number
+          future_evidence_enabled?: boolean
+          future_qa_trace_enabled?: boolean
+          future_report_enabled?: boolean
           id?: string
           max_takes_per_audition?: number
           quota_enabled?: boolean
@@ -33,6 +39,9 @@ export type Database = {
         }
         Update: {
           daily_submission_cap?: number
+          future_evidence_enabled?: boolean
+          future_qa_trace_enabled?: boolean
+          future_report_enabled?: boolean
           id?: string
           max_takes_per_audition?: number
           quota_enabled?: boolean
