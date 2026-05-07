@@ -343,7 +343,7 @@ const REPORT_TOOL = {
           description:
             "OPTIONAL practical, non-personal observations about visible presentation that materially affect the tape (e.g. 'Top blends into the background — a contrasting colour would read better on camera', 'Hair drifts across one eye on close-ups'). NEVER comment on body, attractiveness, weight, race, gender presentation, class markers, disability, mobility aids, medical devices, or personal style. Empty array if there is nothing material to say. These notes do NOT affect the score unless they relate to a brief requirement or a visibility issue already reflected in technical/brief categories.",
           items: { type: "string" },
-          maxItems: 3,
+          maxItems: 6,
         },
         at_risk: { type: "boolean" },
       },
