@@ -87,7 +87,7 @@ describe("v2-report-builder (Phase 3A)", () => {
   it("components[] surfaces only structural fields (no anchors/dimensions)", () => {
     const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
     expect(v2.components).toHaveLength(1);
-    const c = v2.components[0] as Record<string, unknown>;
+    const c = v2.components[0] as unknown as Record<string, unknown>;
     expect(Object.keys(c).sort()).toEqual([
       "assessability",
       "end",
