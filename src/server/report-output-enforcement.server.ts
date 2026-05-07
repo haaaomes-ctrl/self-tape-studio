@@ -320,12 +320,19 @@ export function enforcePublicReportOutputQuality(
 } {
   const counters: EnforcementCounters = {
     castability_removed: 0,
+    castability_rewritten: 0,
     generic_unanchored_removed: 0,
     brief_overconfidence_rewritten: 0,
     presentation_polish_removed: 0,
     framing_rehearsal_rewritten: 0,
     dance_visibility_unanchored_removed: 0,
     submission_risk_demoted: 0,
+    category_rationale_scrubbed: 0,
+    category_rationale_dropped: 0,
+    category_rationale_missing_delta: 0,
+    next_take_plan_scrubbed: 0,
+    priority_fixes_scrubbed: 0,
+    component_fields_scrubbed: 0,
   };
   if (!input || typeof input !== "object") {
     return { report: (input ?? {}) as Record<string, unknown>, counters };
@@ -335,6 +342,7 @@ export function enforcePublicReportOutputQuality(
 
   const tally = (res: FieldResult, raw: string) => {
     counters.castability_removed += res.castabilityRemoved;
+    counters.castability_rewritten += res.castabilityRewritten;
     counters.generic_unanchored_removed += res.genericRemoved;
     counters.presentation_polish_removed += res.polishRemoved;
     counters.brief_overconfidence_rewritten += countBriefRewrites(raw);
