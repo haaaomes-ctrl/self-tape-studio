@@ -214,13 +214,17 @@ function rewriteFrameBreak(text: string): { text: string; rewrites: number } {
   const sentences = splitSentences(text);
   let rewrites = 0;
   const out: string[] = [];
-  for (const s of sentences) {
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i];
+    // Idempotence: if this sentence already starts with "Rehearsal-only:",
+    // it has been processed in a prior pass — leave the rewrite intact.
+    if (/^Rehearsal-only:/i.test(s)) {
+      out.push(s);
+      continue;
+    }
     if (isFrameBreakSentence(s)) {
       rewrites++;
-      const stripped = s.replace(/^Rehearsal-only:\s*/i, "");
-      const withSuffix = REHEARSAL_SUFFIX.trim();
-      const already = stripped.includes(withSuffix);
-      out.push(`Rehearsal-only: ${stripped}${already ? "" : REHEARSAL_SUFFIX}`);
+      out.push(`Rehearsal-only: ${s}${REHEARSAL_SUFFIX}`);
     } else {
       out.push(s);
     }
