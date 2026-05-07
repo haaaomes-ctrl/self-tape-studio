@@ -289,9 +289,13 @@ function AuditionPage() {
             audition={audition}
             nextNumber={takes.length + 1}
             onCancel={() => setShowAdd(false)}
-            onUploaded={() => {
+            onUploaded={(newTakeId) => {
               setShowAdd(false);
-              refresh();
+              // Force the newly-uploaded take to be the active tab so the
+              // user sees its pending/processing state, not the previous
+              // completed take or the Comparison tab.
+              if (newTakeId) setActiveTakeId(newTakeId);
+              refresh("after_upload");
             }}
           />
         )}
