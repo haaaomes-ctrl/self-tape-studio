@@ -50,6 +50,8 @@ export interface V2Report {
   strengths: unknown[];
   improvements: unknown[];
   fix_first: unknown;
+  priority_fixes: unknown[];
+  category_rationale: Record<string, unknown> | null;
   timestamped_notes: unknown[];
   next_take_plan: unknown;
   risk_flags: unknown[];
