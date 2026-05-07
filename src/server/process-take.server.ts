@@ -2358,7 +2358,7 @@ export async function runProcessTake(
       (!Array.isArray(report.improvements) || report.improvements.length === 0) &&
       blockReasons.length > 0
     ) {
-      report.improvements = blockReasons.slice(0, 3);
+      report.improvements = blockReasons.slice(0, 6);
     }
     if (
       (verdict.label === "Not ready yet" || verdict.blocked) &&
