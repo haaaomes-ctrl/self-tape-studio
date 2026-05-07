@@ -22,6 +22,19 @@ import { brandTitle } from "@/config/brand";
 import { readReportSchemaVersion } from "@/lib/report-schema";
 import { V2ReportView } from "@/components/report/V2ReportView";
 
+// Public-safe headline picker for v1 + v2 reports. Mirrors the server-side
+// helper in `report-output-enforcement.server.ts` (kept local to avoid
+// importing a `.server` module into the client bundle).
+function pickHeadline(report: unknown): string | null {
+  if (!report || typeof report !== "object") return null;
+  const r = report as Record<string, unknown>;
+  for (const k of ["casting_headline", "headline", "casting_insight", "insight"]) {
+    const v = r[k];
+    if (typeof v === "string" && v.trim().length > 0) return v.trim();
+  }
+  return null;
+}
+
 export const Route = createFileRoute("/audition/$auditionId")({
   head: () => ({ meta: [{ title: brandTitle("Audition") }] }),
   component: AuditionPage,
