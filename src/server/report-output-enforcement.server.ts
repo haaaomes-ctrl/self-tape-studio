@@ -137,6 +137,18 @@ const FRAME_BREAK_TRIGGERS = [
 const REHEARSAL_SUFFIX =
   " For the recorded take, keep the head-and-shoulders frame and use breath, stillness, eyeline and thought shifts to carry the same intention.";
 
+// Visibility / cropping claims (Dance + general). When these appear without a
+// timestamp anchor in the same sentence, the claim is removed — it is too
+// often hallucinated from generic self-tape framing heuristics.
+const VISIBILITY_CLAIM_RE =
+  /\b(?:feet\s+(?:are|appear)\s+(?:cut\s+off|cropped)|footwork\s+(?:is\s+)?(?:obscured|cropped|cut\s+off|not\s+visible)|full[-\s]body\s+(?:not|is\s+not)\s+visible|out\s+of\s+frame|cropped\s+at\s+(?:the\s+)?(?:waist|knee|ankle|feet)|frame\s+cuts\s+(?:off\s+)?(?:the\s+)?(?:feet|legs|footwork))\b/i;
+
+// Risk flag labels that must NOT survive as submission risks unless the report
+// also carries a timestamped, anchored visibility/lighting observation. These
+// are craft notes, not casting-compliance failures.
+const SOFT_RISK_LABEL_RE =
+  /\b(?:obscured\s+footwork|footwork\s+visibility|low\s+lighting|underexposure|dim\s+lighting|frame\s+(?:too\s+)?(?:tight|wide))\b/i;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
