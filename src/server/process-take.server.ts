@@ -1309,37 +1309,6 @@ export async function runProcessTake(
           });
         }
 
-        // Phase 3A — v2 component-report dark launch (BUILDER ONLY).
-        // Gated by `future_report_enabled` (default false). The constructed
-        // v2 object is NEVER persisted to `takes.report` or `score_breakdown`
-        // and never returned to the client. Only a structural log line is
-        // emitted. Wrapped in try/catch so failure cannot disrupt the
-        // user-facing pipeline.
-        try {
-          const { getResolvedConfig: getCfg3a } = await import("./app-config.server");
-          const cfg3a = await getCfg3a();
-          if (cfg3a.future_report_enabled && twoStepReport && evResult.futureDimensions) {
-            const { buildV2Report } = await import("./v2-report-builder.server");
-            const v2 = buildV2Report({
-              legacyReport: twoStepReport as Record<string, unknown>,
-              futureDimensions: evResult.futureDimensions,
-              auditionType: twoStepEvidence.audition_type,
-              mode: audition.brief ? "brief" : "baseline",
-            });
-            console.log("[take-pipeline] v2_report_constructed", {
-              take_id: takeId,
-              schema_version: v2.schema_version,
-              components: v2.components.length,
-              scores_source: "production_legacy",
-              has_role_fit: v2.role_fit !== undefined,
-            });
-          }
-        } catch (err) {
-          console.warn("[take-pipeline] v2_report_build_failed", {
-            take_id: takeId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
       }
 
       const totalAi = Date.now() - twoStepStartedAt;
