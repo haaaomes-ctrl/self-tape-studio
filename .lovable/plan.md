@@ -1,179 +1,77 @@
-## Report artefacts — verbatim dump (read-only)
+# Verbatim source + artefact dump (read-only)
 
-This is a **read-only audit deliverable**, not an implementation plan. No files will be edited if you approve. Approving simply confirms you've reviewed the dump.
+This is a read-only deliverable — no app code will change. The output is one downloadable bundle plus an in-chat index that points at each file/section.
 
-### What exists in production right now
+## Why a bundle, not an in-chat dump
 
-| Source | Count | Notes |
-|---|---|---|
-| Complete takes with `report` JSON | 11 | All `analysis_tier = standard`, all ~246s duration, scored 88–96 |
-| Auditions covering those takes | 5 | 1 baseline (no brief), 4 with brief |
-| Rendered report screenshots (PNG) | **0 available** | Report pages are RLS-protected per owner; the sandbox browser is anonymous and cannot render them |
-| PDFs / exports | **0 available** | The app does not currently generate PDF or any export artefact — no export path exists in code |
-| Comparison-page screenshots | **0 available** | Same RLS restriction as above |
-| MT (Step-1 evidence) raw outputs | **0 persisted** | `evidence-pass.server.ts` explicitly does **not** persist verbatim Step-1 output. Only a redacted `score_breakdown.two_step` summary is kept (and it's `{enabled:false}` for every existing take, meaning two-step wasn't run on any current report) |
+Verbatim in chat would be ~7,700 lines of source plus the previous JSON exports. The chat UI truncates and reflows long blocks, which defeats the point of "verbatim". The bundle preserves byte-exact source; the chat response gives you the index, line counts, and the small items that fit cleanly inline.
 
-### Bundle (downloadable)
+## What goes in the bundle
 
-Full verbatim JSON for every available report is bundled below. Contains: `auditions.json`, `takes_full.json`, `per-take/<id>.json` (11 files), `per-audition/<id>.json` (5 files, useful as comparison-set inputs).
+`/mnt/documents/tapecoach-source-and-artefacts.zip`
 
-<lov-artifact path="report-artefacts.zip" mime_type="application/zip"></lov-artifact>
+Source (verbatim, unmodified):
 
-### Inventory
-
-```
-audition_id                              takes  brief?  scores
-8b8e0b4f-e6e6-4cd3-8e56-01894140039d     1      no      88
-60145e75-964c-40bb-8f58-0c552c6d8fad     1      yes     93
-27a49d98-1f35-43ee-ace9-d5b0ec33e425     3      yes     93, 95, 96   ← repeated-take set
-5d3c9734-7638-4f8c-bc26-cfcc04671d3c     3      yes     93, 93, 93   ← repeated-take set
-18072552-4fe0-4338-8662-44ad5ead13df     3      yes     93, 91, 93   ← repeated-take set
+```text
+source/
+  server/
+    evidence-pass.server.ts          (Step 1 evidence prompt + schema)        630 lines
+    report-polish.server.ts          (Step 2 polish/report prompt)            683 lines
+    report-quality.server.ts         (quality logging + validation removal)   758 lines
+    extract-brief.server.ts          (brief extraction + material policy)     362 lines
+    process-take.server.ts           (orchestration: tool schema, weights,
+                                      reliability, role-fit, scrub, blockers) 2978 lines
+  lib/
+    audition-rules.ts                (weightsForType, bands, caps, UK scrub)  449 lines
+  routes/
+    audition.$auditionId.tsx         (category labels, breakdown,
+                                      comparison page, timestamp render)      1836 lines
 ```
 
-### Sample 1 — baseline single take (verbatim `report` JSON)
+Previously-exported artefacts (re-included for completeness):
 
-Take `fd235112-21cb-4bb0-a25b-9d947a6b5976`, audition "Test", baseline (no brief), `acting_scene`, overall 88.
-
-```json
-{
-  "mode": "baseline",
-  "scores": { "audio": 88, "acting": 86, "technical": 90, "brief_adherence": 95, "professional_presentation": 85 },
-  "at_risk": false,
-  "fix_first": "Sharpen the very beginning of the tape by ensuring you are fully 'in' the moment the second the camera rolls.",
-  "strengths": [
-    "Excellent use of silence and 'listening' between lines.",
-    "Naturalistic vocal delivery that avoids theatrical projection.",
-    "Consistent and effective eye-line that maintains the fourth wall."
-  ],
-  "confidence": 85,
-  "improvements": [
-    "Try to find one moment of lightness or a brief smile to contrast the heavier tone of the scene.",
-    "Ensure the transition between the slate and the start of the scene is clean and immediate."
-  ],
-  "audition_type": "acting_scene",
-  "block_reasons": [],
-  "overall_score": 88,
-  "verdict_final": "Ready to submit",
-  "category_notes": {
-    "audio": "The dialogue is crisp and clear throughout. There is no distracting background noise, and the levels are consistent even during quieter moments.",
-    "acting": "The performance is impressively understated. You allow the thoughts to land before speaking, which creates a very believable rhythm. The connection to the off-camera reader feels genuine and consistent.",
-    "technical": "The landscape orientation and lighting are professional. The focus remains sharp on the face, which is essential for capturing the subtle shifts in expression.",
-    "brief_adherence": "In the absence of a specific brief, this meets all professional industry standards for a dramatic self-tape.",
-    "professional_presentation": "The framing is appropriate for a screen audition, and the eye-line is well-placed just off-lens, allowing us to see into the eyes clearly."
-  },
-  "role_fit_notes": "",
-  "casting_insight": "Highly castable for contemporary screen drama; the performance is nuanced and avoids overplaying for the camera.",
-  "coaching_drills": [
-    "Run the scene again but find one specific moment to 'interrupt' the other person's line to vary the pace.",
-    "Practice the scene while doing a simple physical task (like folding laundry) to see where natural pauses emerge.",
-    "Record a version where you consciously lower your vocal volume by 20% to test the intimacy of the microphone."
-  ],
-  "casting_headline": "This is a grounded, technically clean performance with a strong sense of internal life.",
-  "confidence_reason": "Professional level tape with clear audio and video; no brief provided so evaluated against baseline industry standards.",
-  "role_fit_modifier": 0,
-  "timestamped_notes": [
-    { "note": "Strong internal reaction here; the shift in thought is visible in the eyes before the line is delivered.", "timestamp": "00:45" },
-    { "note": "The pace slows slightly here; keep the energy of the thought moving forward even in the pauses.", "timestamp": "02:15" }
-  ],
-  "presentation_notes": ["The frame is clean and easy to read."],
-  "submission_verdict": { "label": "Ready to submit", "reason": "Solid, castable tape — safe to send as-is.", "blocked": false },
-  "detected_components": [{ "note": "A sustained dramatic scene with a clear emotional arc.", "type": "acting_scene", "score": 84, "weight": 1 }],
-  "overall_score_final": 88,
-  "overall_score_model": 84,
-  "role_fit_confidence": "low",
-  "consistency_modifier": 0,
-  "extraction_confidence": "unknown",
-  "submission_risk_flags": [],
-  "safety_rewrite_applied": false,
-  "brief_adherence_breakdown": {
-    "note": "The tape follows standard professional self-tape conventions for a scene submission.",
-    "material_compliance": 100, "technical_compliance": 100, "instruction_precision": 100, "professionalism_signals": 90
-  },
-  "casting_risk_explanations": [],
-  "feedback_reliability_override": "medium",
-  "presentation_notes_disclaimer": "These do not affect your score unless they make the tape difficult to see or break a specific brief instruction.",
-  "feedback_reliability_reason_code": "no_brief"
-}
+```text
+artefacts/
+  auditions.json                     (5 audition rows)
+  takes_full.json                    (11 take rows incl. report/scores/signals)
+  per-take/<take_id>.json            (11 files)
+  per-audition/<audition_id>.json    (5 files)
+  repeated-runs/
+    27a49d98-...-MT.json             (3 takes: 93/95/96)
+    5d3c9734-...-acting.json         (3 takes: 93/93/93)
+    18072552-...-acting.json         (3 takes: 93/91/93)
 ```
 
-Companion `score_breakdown` for the same take:
+## In-chat index (what I will paste alongside the bundle)
 
-```json
-{
-  "level": "professional",
-  "weights": { "audio": 0.125, "acting": 0.5625, "technical": 0.125, "brief_adherence": 0.1875 },
-  "two_step": { "enabled": false },
-  "thresholds": { "ready": 80, "worth": 68, "strong": 89 },
-  "audition_type": "acting_scene",
-  "verdict_final": "Ready to submit",
-  "material_policy": "none",
-  "role_fit_modifier": 0,
-  "overall_score_final": 88,
-  "overall_score_model": 84,
-  "role_fit_confidence": "low",
-  "extraction_confidence": "unknown",
-  "safety_rewrite_applied": false,
-  "overall_before_role_fit": 88,
-  "presentation_notes_count": 1,
-  "role_fit_modifier_explanation": "No role-fit adjustment applied."
-}
-```
+For each requested item, the chat reply will contain:
 
-### Sample 2 — repeated-take set (musical theatre, 3 takes)
+1. File path + line range that contains it.
+2. The exact symbol name (e.g. `EVIDENCE_SYSTEM_PROMPT`, `REPORT_TOOL_SCHEMA`, `weightsForType`, `renderCategoryLabel`, `ComparisonPanel`, `scrubPresentation`, `computeRoleFit`, `materialPolicyFor`, `feedbackReliability`, `logQuality`).
+3. A short verbatim excerpt (≤40 lines) of the prompt/schema head so you can verify identity at a glance. Full body lives in the bundle.
 
-Audition `27a49d98-...`, brief mode, `musical_theatre`. Same performer, three sequential takes ~10 minutes apart. Useful as a **repeated-output / comparison-page input example**.
+This keeps the chat readable while still giving you byte-exact source on disk.
 
-| Take | Overall | Acting | Vocal | Audio | Tech | Brief | Verdict |
-|---|---|---|---|---|---|---|---|
-| 1 | 93 | 88 | 92 | 95 | 95 | 100 | Strong for this level |
-| 2 | 95 | 90 | 93 | 95 | 95 | 100 | Strong for this level |
-| 3 | 96 | 92 | 95 | 95 | 95 | 100 | Strong for this level |
+## Items that cannot be produced (and why)
 
-Verbatim Take 1 `report` (selected fields — full JSON in bundle at `per-audition/27a49d98-...json`):
+These were already flagged in the previous audit; restating so the plan is honest:
 
-```
-fix_first       : "Ensure the very end of the scene remains active and 'in character' until the camera cuts."
-casting_headline: "A highly professional tape with a particularly strong vocal performance."
-strengths       : Excellent vocal technique and tone…  /  Grounded and believable acting…  /  Flawless adherence…
-improvements    : Sharpen the transitions between 'wit' and 'warmth'…  /  Maintain emotional connection in money notes…
-detected_components: [{acting_scene, w=0.5, score=88}, {song, w=0.5, score=92}]
-weights         : audio 0.10, vocal 0.30, acting 0.30, technical 0.15, brief 0.15
-overall_model 90 → +consistency_modifier 5 → overall_final 93
-safety_rewrite_applied: true   (Step-3 polish triggered)
-```
+- **Rendered MT report screenshots paired with raw JSON** — `/audition/$auditionId` is RLS-protected. An anonymous Playwright session stops at "Loading…" and there is no service-role bypass route. Raw JSON for the 3 MT takes is in `repeated-runs/27a49d98-...-MT.json`; rendered screenshots require a logged-in session from the take owner.
+- **Rendered comparison-page screenshots** — same RLS gate. Same JSON is available.
+- **Dance / Voice-only / Commercial test outputs** — production DB contains only `acting_scene`, `monologue`, and `musical_theatre` rows. No `dance`, `song`, or `commercial` takes exist. I will not synthesise fake outputs; if you want them, they need to be generated by running the pipeline against new uploads of those types (out of scope for a read-only audit).
+- **Repeated-run score-stability artefacts** — already in the bundle (3 sets, 9 takes). Stability summary will be repeated in the chat reply: MT 93/95/96 (σ≈1.25), acting-A 93/93/93 (σ=0), acting-B 93/91/93 (σ≈0.94).
 
-Use `per-audition/27a49d98-...json` from the bundle for byte-exact diff input across all three takes (this is what a comparison view consumes).
+## Process
 
-### MT (multi-take / two-step) raw outputs
+1. Copy the 7 source files verbatim into `source/` (no edits, no truncation).
+2. Re-zip with the previous `report-artefacts.zip` contents under `artefacts/`.
+3. Write `/mnt/documents/tapecoach-source-and-artefacts.zip`.
+4. Reply with the index, the small inline excerpts, and a `<lov-artifact>` link to the zip.
 
-> **Not available.** Two design facts to be aware of:
->
-> 1. **Two-step (Step-1 evidence pass) is currently disabled** for every persisted report — `score_breakdown.two_step.enabled === false` on all 11 takes. Step-1 is implemented in `src/server/evidence-pass.server.ts` but the orchestrator is not invoking it for production traffic.
-> 2. **Even when enabled**, Step-1 raw evidence is held in memory only for the duration of one process; only the redacted summary from `summariseEvidence()` (timestamp count + sufficiency booleans) is persisted to `score_breakdown.two_step`. There is no historical store of "Step-1 JSON ↔ Step-2 JSON" pairs to dump.
->
-> If you want raw MT pairs going forward, the smallest non-invasive change is to log Step-1 output to a debug column or external sink behind a feature flag — happy to plan that as a separate task.
+## Confirmation needed
 
-### Rendered screenshots / PDFs
+One choice before I run this — pick one:
 
-> **Not produced.** Reasons:
->
-> - The audition route at `/audition/$auditionId` is owned-data only (RLS `auth.uid() = user_id`). The plan-mode browser session is anonymous and stops at "Loading…" before the report data resolves, so I can't capture authenticated screenshots without impersonating the user.
-> - **No PDF / export pipeline exists in code.** There is no route, server function, or library import (puppeteer/playwright/pdf-lib/react-pdf) producing a downloadable artefact. Nothing to dump.
->
-> If you'd like rendered screenshots, options are: (a) you upload screenshots from your own session, or (b) approve a one-off plan to add a temporary signed preview URL for read-only QA snapshots.
-
-### What the bundle gives you for each download
-
-```
-report-artefacts/
-  auditions.json              ← all 5 audition rows incl. brief + extracted_brief
-  takes_full.json             ← all 11 take rows incl. report, scores, score_breakdown,
-                                signals, checklist, compliance_flags
-  per-take/<take_id>.json     ← single take + its parent audition (useful for individual
-                                report inspection)
-  per-audition/<audition_id>.json
-                              ← audition + ordered list of takes (comparison-view input,
-                                including the three repeated-take sets above)
-```
-
-All JSON is verbatim from Postgres, pretty-printed, no field omitted.
+- **A. Bundle + index (recommended).** Byte-exact source on disk; chat stays scannable.
+- **B. Paste everything verbatim in chat.** ~7,700 lines of source across ~10 messages. Will be truncated by the UI in places and is hard to diff.
+- **C. Bundle only, no inline excerpts.** Smallest chat reply; you open the zip for everything.
