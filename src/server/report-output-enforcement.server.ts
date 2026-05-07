@@ -261,6 +261,8 @@ export function enforcePublicReportOutputQuality(
     brief_overconfidence_rewritten: 0,
     presentation_polish_removed: 0,
     framing_rehearsal_rewritten: 0,
+    dance_visibility_unanchored_removed: 0,
+    submission_risk_demoted: 0,
   };
   if (!input || typeof input !== "object") {
     return { report: (input ?? {}) as Record<string, unknown>, counters };
