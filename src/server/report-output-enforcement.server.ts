@@ -529,17 +529,182 @@ export function enforcePublicReportOutputQuality(
     }
   }
 
-  // detected_components[].note
-  if (Array.isArray(r.detected_components)) {
-    r.detected_components = (r.detected_components as unknown[]).map((c) => {
-      if (!c || typeof c !== "object") return c;
-      const obj = { ...(c as Record<string, unknown>) };
-      if (typeof obj.note === "string") {
-        const cleaned = cleanString(obj.note);
-        obj.note = cleaned ?? "";
+  // detected_components[].note + new public-safe component fields
+  const COMPONENT_PUBLIC_FIELDS = [
+    "note",
+    "label",
+    "what_it_shows",
+    "what_is_assessable",
+    "key_evidence",
+    "score_driver",
+    "close_gap",
+  ];
+  const FORBIDDEN_COMPONENT_KEYS = [
+    "evidence_anchors",
+    "supports",
+    "anchor_id",
+    "anchor_ids",
+    "dimensions",
+    "dimension_confidence",
+    "raw_evidence",
+    "hidden_reasoning",
+    "shadow_score",
+    "shadow_scores",
+  ];
+  const cleanComponent = (c: unknown): unknown => {
+    if (!c || typeof c !== "object") return c;
+    const obj = { ...(c as Record<string, unknown>) };
+    for (const k of FORBIDDEN_COMPONENT_KEYS) {
+      if (k in obj) {
+        delete obj[k];
+        counters.component_fields_scrubbed++;
       }
-      return obj;
-    });
+    }
+    for (const k of COMPONENT_PUBLIC_FIELDS) {
+      if (typeof obj[k] === "string") {
+        const cleaned = cleanString(obj[k]);
+        obj[k] = cleaned ?? "";
+      }
+    }
+    return obj;
+  };
+  if (Array.isArray(r.detected_components)) {
+    r.detected_components = (r.detected_components as unknown[]).map(cleanComponent);
+  }
+  if (Array.isArray(r.components)) {
+    r.components = (r.components as unknown[]).map(cleanComponent);
+  }
+
+  // priority_fixes[]
+  if (Array.isArray(r.priority_fixes)) {
+    const before = (r.priority_fixes as unknown[]).length;
+    r.priority_fixes = (r.priority_fixes as unknown[])
+      .map((it) => {
+        if (!it || typeof it !== "object") return null;
+        const obj = { ...(it as Record<string, unknown>) };
+        for (const k of ["headline", "rationale"]) {
+          if (typeof obj[k] === "string") {
+            const cleaned = cleanString(obj[k]);
+            let text = cleaned ?? "";
+            if (ctx.framingFixed && text) {
+              const fr = rewriteFrameBreak(text);
+              counters.framing_rehearsal_rewritten += fr.rewrites;
+              text = fr.text;
+            }
+            obj[k] = text;
+          }
+        }
+        const headline = typeof obj.headline === "string" ? obj.headline.trim() : "";
+        if (!headline) return null;
+        return obj;
+      })
+      .filter((x): x is Record<string, unknown> => x !== null);
+    counters.priority_fixes_scrubbed += before - (r.priority_fixes as unknown[]).length;
+  }
+
+  // next_take_plan.groups[].items[]
+  if (r.next_take_plan && typeof r.next_take_plan === "object" && !Array.isArray(r.next_take_plan)) {
+    const ntp = { ...(r.next_take_plan as Record<string, unknown>) };
+    if (Array.isArray(ntp.groups)) {
+      const beforeGroups = (ntp.groups as unknown[]).length;
+      ntp.groups = (ntp.groups as unknown[])
+        .map((g) => {
+          if (!g || typeof g !== "object") return null;
+          const obj = { ...(g as Record<string, unknown>) };
+          if (Array.isArray(obj.items)) {
+            obj.items = cleanSteps(obj.items);
+          }
+          if (!Array.isArray(obj.items) || (obj.items as unknown[]).length === 0) return null;
+          return obj;
+        })
+        .filter((x): x is Record<string, unknown> => x !== null);
+      counters.next_take_plan_scrubbed += beforeGroups - (ntp.groups as unknown[]).length;
+    }
+    r.next_take_plan = ntp;
+  }
+
+  // category_rationale walker
+  if (r.category_rationale && typeof r.category_rationale === "object" && !Array.isArray(r.category_rationale)) {
+    const cr = { ...(r.category_rationale as Record<string, unknown>) };
+    const scoresObj =
+      r.scores && typeof r.scores === "object" && !Array.isArray(r.scores)
+        ? (r.scores as Record<string, unknown>)
+        : {};
+    const PUBLIC_KEYS = [
+      "technical",
+      "audio",
+      "vocal",
+      "acting",
+      "brief_adherence",
+      "professional_presentation",
+    ];
+    const RAT_FORBIDDEN = [
+      "supports",
+      "anchor_id",
+      "anchor_ids",
+      "evidence_anchors",
+      "dimension_confidence",
+      "shadow_score",
+      "shadow_scores",
+      "qa_counters",
+      "raw_evidence",
+      "hidden_reasoning",
+    ];
+    for (const ck of Object.keys(cr)) {
+      if (!PUBLIC_KEYS.includes(ck)) {
+        delete cr[ck];
+        counters.category_rationale_scrubbed++;
+        continue;
+      }
+      const v = cr[ck];
+      if (!v || typeof v !== "object" || Array.isArray(v)) {
+        delete cr[ck];
+        counters.category_rationale_dropped++;
+        continue;
+      }
+      const obj = { ...(v as Record<string, unknown>) };
+      for (const fk of RAT_FORBIDDEN) {
+        if (fk in obj) {
+          delete obj[fk];
+          counters.category_rationale_scrubbed++;
+        }
+      }
+      for (const fk of ["what_works", "why_not_full_score", "close_gap", "standout_delta"]) {
+        if (typeof obj[fk] === "string") {
+          const cleaned = cleanString(obj[fk]);
+          obj[fk] = cleaned ?? "";
+        }
+      }
+      // Standout delta must not claim perfection.
+      if (typeof obj.standout_delta === "string" && STANDOUT_OVERCLAIM_RE.test(obj.standout_delta)) {
+        obj.standout_delta = "";
+        counters.category_rationale_scrubbed++;
+      }
+      const score = typeof scoresObj[ck] === "number" ? (scoresObj[ck] as number) : null;
+      const why = typeof obj.why_not_full_score === "string" ? obj.why_not_full_score.trim() : "";
+      const gap = typeof obj.close_gap === "string" ? obj.close_gap.trim() : "";
+      const delta = typeof obj.standout_delta === "string" ? obj.standout_delta.trim() : "";
+      const works = typeof obj.what_works === "string" ? obj.what_works.trim() : "";
+      if (score != null && score < 100 && !why && !gap) {
+        delete cr[ck];
+        counters.category_rationale_dropped++;
+        continue;
+      }
+      if (score != null && score >= 90 && !delta) {
+        counters.category_rationale_missing_delta++;
+      }
+      if (!why && !gap && !delta && !works) {
+        delete cr[ck];
+        counters.category_rationale_dropped++;
+        continue;
+      }
+      cr[ck] = obj;
+    }
+    if (Object.keys(cr).length === 0) {
+      delete r.category_rationale;
+    } else {
+      r.category_rationale = cr;
+    }
   }
 
   // submission_verdict.reason
