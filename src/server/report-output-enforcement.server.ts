@@ -18,6 +18,8 @@ export interface EnforcementCounters {
   brief_overconfidence_rewritten: number;
   presentation_polish_removed: number;
   framing_rehearsal_rewritten: number;
+  dance_visibility_unanchored_removed: number;
+  submission_risk_demoted: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +136,18 @@ const FRAME_BREAK_TRIGGERS = [
 
 const REHEARSAL_SUFFIX =
   " For the recorded take, keep the head-and-shoulders frame and use breath, stillness, eyeline and thought shifts to carry the same intention.";
+
+// Visibility / cropping claims (Dance + general). When these appear without a
+// timestamp anchor in the same sentence, the claim is removed — it is too
+// often hallucinated from generic self-tape framing heuristics.
+const VISIBILITY_CLAIM_RE =
+  /\b(?:feet\s+(?:are|appear)\s+(?:cut\s+off|cropped)|footwork\s+(?:is\s+)?(?:obscured|cropped|cut\s+off|not\s+visible)|full[-\s]body\s+(?:not|is\s+not)\s+visible|out\s+of\s+frame|cropped\s+at\s+(?:the\s+)?(?:waist|knee|ankle|feet)|frame\s+cuts\s+(?:off\s+)?(?:the\s+)?(?:feet|legs|footwork))\b/i;
+
+// Risk flag labels that must NOT survive as submission risks unless the report
+// also carries a timestamped, anchored visibility/lighting observation. These
+// are craft notes, not casting-compliance failures.
+const SOFT_RISK_LABEL_RE =
+  /\b(?:obscured\s+footwork|footwork\s+visibility|low\s+lighting|underexposure|dim\s+lighting|frame\s+(?:too\s+)?(?:tight|wide))\b/i;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -259,6 +273,8 @@ export function enforcePublicReportOutputQuality(
     brief_overconfidence_rewritten: 0,
     presentation_polish_removed: 0,
     framing_rehearsal_rewritten: 0,
+    dance_visibility_unanchored_removed: 0,
+    submission_risk_demoted: 0,
   };
   if (!input || typeof input !== "object") {
     return { report: (input ?? {}) as Record<string, unknown>, counters };
@@ -491,6 +507,119 @@ export function enforcePublicReportOutputQuality(
     ) {
       cn.brief_adherence = BRIEF_REPLACEMENT;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Visibility / cropping claim guard.
+  //
+  // A claim like "feet are cut off" or "footwork is obscured" is only kept
+  // when it is anchored to a real timestamped observation. If the report has
+  // NO timestamped note that describes visibility/cropping/lighting, then
+  // any unanchored cropping/visibility claim elsewhere in the report is
+  // removed, and matching submission_risk_flags are demoted.
+  // -------------------------------------------------------------------------
+  const tsNotes = Array.isArray(r.timestamped_notes)
+    ? (r.timestamped_notes as unknown[])
+    : [];
+  const anchoredVisibility = tsNotes.some((n) => {
+    if (!n || typeof n !== "object") return false;
+    const note = (n as Record<string, unknown>).note;
+    return typeof note === "string" && VISIBILITY_CLAIM_RE.test(note);
+  });
+
+  if (!anchoredVisibility) {
+    const stripVisibility = (text: unknown): { text: string; removed: number } => {
+      if (typeof text !== "string" || !text) return { text: "", removed: 0 };
+      const sentences = splitSentences(text);
+      let removed = 0;
+      const kept: string[] = [];
+      for (const s of sentences) {
+        if (VISIBILITY_CLAIM_RE.test(s)) {
+          removed++;
+          continue;
+        }
+        kept.push(s);
+      }
+      return {
+        text: kept.join(" ").replace(/\s{2,}/g, " ").trim(),
+        removed,
+      };
+    };
+    const stripArr = (arr: unknown): unknown => {
+      if (!Array.isArray(arr)) return arr;
+      const out: unknown[] = [];
+      for (const item of arr) {
+        if (typeof item === "string") {
+          const { text, removed } = stripVisibility(item);
+          counters.dance_visibility_unanchored_removed += removed;
+          if (text.trim().length > 0) out.push(text);
+        } else if (item && typeof item === "object") {
+          const obj = { ...(item as Record<string, unknown>) };
+          for (const k of ["point", "note", "evidence"]) {
+            if (typeof obj[k] === "string") {
+              const { text, removed } = stripVisibility(obj[k]);
+              counters.dance_visibility_unanchored_removed += removed;
+              obj[k] = text;
+            }
+          }
+          const point = typeof obj.point === "string" ? obj.point.trim() : "";
+          const note = typeof obj.note === "string" ? obj.note.trim() : "";
+          if (point.length > 0 || note.length > 0) out.push(obj);
+        } else if (item != null) {
+          out.push(item);
+        }
+      }
+      return out;
+    };
+    r.strengths = stripArr(r.strengths);
+    r.improvements = stripArr(r.improvements);
+    r.presentation_notes = stripArr(r.presentation_notes);
+    if (r.category_notes && typeof r.category_notes === "object") {
+      const cn = { ...(r.category_notes as Record<string, unknown>) };
+      for (const [k, v] of Object.entries(cn)) {
+        if (typeof v === "string") {
+          const { text, removed } = stripVisibility(v);
+          counters.dance_visibility_unanchored_removed += removed;
+          cn[k] = text;
+        }
+      }
+      r.category_notes = cn;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Submission-risk scope: craft-level visibility/lighting items must not be
+  // surfaced as casting-compliance risks unless they have anchored evidence.
+  // We demote them out of submission_risk_flags / casting_risk_explanations
+  // and let category notes/presentation notes carry the craft message.
+  // -------------------------------------------------------------------------
+  const isSoftRisk = (item: unknown): boolean => {
+    if (!item || typeof item !== "object") return false;
+    const obj = item as Record<string, unknown>;
+    const flag = typeof obj.flag === "string" ? obj.flag : "";
+    const sev = typeof obj.severity === "string" ? obj.severity.toLowerCase() : "";
+    if (!SOFT_RISK_LABEL_RE.test(flag)) return false;
+    // Keep only when severity is high AND we have anchored visibility.
+    if (sev === "high" && anchoredVisibility) return false;
+    return true;
+  };
+  if (Array.isArray(r.submission_risk_flags)) {
+    const before = (r.submission_risk_flags as unknown[]).length;
+    r.submission_risk_flags = (r.submission_risk_flags as unknown[]).filter(
+      (f) => !isSoftRisk(f),
+    );
+    counters.submission_risk_demoted += before - (r.submission_risk_flags as unknown[]).length;
+  }
+  if (Array.isArray(r.casting_risk_explanations)) {
+    r.casting_risk_explanations = (r.casting_risk_explanations as unknown[]).filter(
+      (f) => {
+        if (!f || typeof f !== "object") return true;
+        const flag = (f as Record<string, unknown>).flag;
+        if (typeof flag !== "string") return true;
+        if (!SOFT_RISK_LABEL_RE.test(flag)) return true;
+        return anchoredVisibility;
+      },
+    );
   }
 
   return { report: r, counters };

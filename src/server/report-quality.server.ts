@@ -416,7 +416,10 @@ export function normaliseTimestampedNotes(
   const reordered =
     wasOrder.length === afterOrder.length &&
     wasOrder.some((v, i) => v !== afterOrder[i]);
-  const capped = cleaned.slice(0, 8);
+  // Safety maximum only; product-level density is duration-scaled in the
+  // Step 2 prompt and Step 1 evidence pass. v2 reports must not be silently
+  // truncated to 8.
+  const capped = cleaned.slice(0, 36);
   report.timestamped_notes = capped;
   return {
     reordered,

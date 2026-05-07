@@ -289,9 +289,13 @@ function AuditionPage() {
             audition={audition}
             nextNumber={takes.length + 1}
             onCancel={() => setShowAdd(false)}
-            onUploaded={() => {
+            onUploaded={(newTakeId) => {
               setShowAdd(false);
-              refresh();
+              // Force the newly-uploaded take to be the active tab so the
+              // user sees its pending/processing state, not the previous
+              // completed take or the Comparison tab.
+              if (newTakeId) setActiveTakeId(newTakeId);
+              refresh("after_upload");
             }}
           />
         )}
@@ -312,7 +316,7 @@ function AuditionPage() {
                   <TabsList>
                     {hasRecommendation && (
                       <TabsTrigger value="recommend">
-                        Recommendation
+                        Comparison
                       </TabsTrigger>
                     )}
                     {takes.map((t) => (
@@ -1708,7 +1712,7 @@ function AddTakeBlock({
   audition: Audition;
   nextNumber: number;
   onCancel: () => void;
-  onUploaded: () => void;
+  onUploaded: (newTakeId?: string) => void;
 }) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1794,7 +1798,7 @@ function AddTakeBlock({
       await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
 
       toast.success(`Take ${nextNumber} uploaded — optimising and analysing now`);
-      onUploaded();
+      onUploaded(takeIdRef.current ?? undefined);
     } catch (err) {
       if (err instanceof UploadCancelledError) {
         toast.message("Upload cancelled");
