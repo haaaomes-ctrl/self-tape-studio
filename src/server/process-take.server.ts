@@ -2779,7 +2779,54 @@ export async function runProcessTake(
       (report as Record<string, unknown>).schema_version = "v1-legacy";
     }
 
-    console.log("[take-pipeline] finalising_scrubs_completed", {
+    // ---- Phase 3B — single-path v2 persistence selection ----
+    // Server flag is the only switch. Production scoring is untouched: we
+    // only swap the SHAPE of the persisted `report` JSON. `scores`,
+    // `overall_score`, and `score_breakdown` continue to come from the
+    // legacy production path. v1 fallback covers builder errors and
+    // public-boundary validation failures.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let reportToPersist: any = report;
+    try {
+      const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
+      const cfg3b = await getCfg3b();
+      if (cfg3b.future_report_enabled) {
+        const { buildV2Report, validateV2PublicBoundary } = await import(
+          "./v2-report-builder.server"
+        );
+        const v2Candidate = buildV2Report({
+          legacyReport: report as Record<string, unknown>,
+          futureDimensions: capturedFutureDimensions ?? null,
+          auditionType: (report.audition_type as string | null) ?? null,
+          mode: audition.brief ? "brief" : "baseline",
+        });
+        const check = validateV2PublicBoundary(
+          v2Candidate,
+          report as Record<string, unknown>,
+        );
+        if (check.ok) {
+          reportToPersist = v2Candidate;
+          console.log("[take-pipeline] v2_report_persisted", {
+            take_id: takeId,
+            schema_version: v2Candidate.schema_version,
+            components: v2Candidate.components.length,
+            from_future_dimensions: !!capturedFutureDimensions,
+          });
+        } else {
+          console.warn("[take-pipeline] v2_report_fallback_to_v1", {
+            take_id: takeId,
+            reason: check.reason,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[take-pipeline] v2_report_fallback_to_v1", {
+        take_id: takeId,
+        reason: "build_threw",
+        error: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+      });
+      reportToPersist = report;
+    }
       take_id: takeId,
       duration_ms: Date.now() - scrubsStartedAt,
     });
