@@ -19,6 +19,8 @@ import type { FutureDimensionsResult, FutureComponent } from "./dimensions";
 /** Public structural component item. No anchors, no per-dimension claims. */
 export interface V2Component {
   type: string;
+  component_type: string | null;
+  label: string | null;
   subtype: string | null;
   style: string | null;
   form: string | null;
@@ -27,6 +29,12 @@ export interface V2Component {
   weight: number | null;
   score: number | null;
   note: string | null;
+  what_it_shows: string | null;
+  what_is_assessable: string | null;
+  key_evidence: string | null;
+  score_driver: string | null;
+  close_gap: string | null;
+  style_or_task_confidence: "low" | "medium" | "high" | null;
   assessability: FutureComponent["assessability"] | null;
 }
 
