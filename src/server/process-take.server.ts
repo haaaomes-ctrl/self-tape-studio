@@ -2708,6 +2708,39 @@ export async function runProcessTake(
       report.timestamped_notes = report.timestamped_notes.slice(0, 8);
     }
 
+    // ---- Phase 3C P0 — deterministic public output enforcement ----
+    // Cleans user-facing prose only. Never touches scores, overall, verdict,
+    // role-fit modifier, score_breakdown or schema_version. Both v1 and v2
+    // persistence paths consume the cleaned `report` below.
+    try {
+      const framingFixed = detectFramingFixed(
+        (extractedBrief as { framing_required?: string | null } | null)
+          ?.framing_required ?? null,
+      );
+      const enforcement = enforcePublicReportOutputQuality(
+        report as unknown as Record<string, unknown>,
+        {
+          mode: audition.brief ? "brief" : "baseline",
+          auditionType,
+          framingFixed,
+          materialPolicy,
+        },
+      );
+      // Re-assign cleaned fields back onto the report (keeps reference stable).
+      Object.assign(report, enforcement.report);
+      console.log("[take-pipeline] output_enforcement_applied", {
+        take_id: takeId,
+        framing_fixed: framingFixed,
+        ...enforcement.counters,
+      });
+    } catch (enfErr) {
+      console.warn("[take-pipeline] output_enforcement_skipped", {
+        take_id: takeId,
+        reason:
+          enfErr instanceof Error ? enfErr.message.slice(0, 200) : "unknown",
+      });
+    }
+
     const scoreBreakdown = {
       audition_type: auditionType,
       level: auditionLevel,
