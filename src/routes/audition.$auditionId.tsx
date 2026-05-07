@@ -1072,7 +1072,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
           Casting headline
         </p>
         <p className="mt-2 font-display text-xl font-semibold leading-snug tracking-tight">
-          {r.casting_headline}
+          {pickHeadline(r) ?? ""}
         </p>
         {r.casting_insight && (
           <p className="mt-3 text-sm text-muted-foreground">{r.casting_insight}</p>
@@ -1521,11 +1521,12 @@ function RecommendationView({
         <p className={cn("mt-2 font-display text-2xl font-semibold", verdictTone(bestVerdict))}>
           {recommendation}
         </p>
-        {best.report?.casting_headline && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            "{best.report.casting_headline}"
-          </p>
-        )}
+        {(() => {
+          const h = pickHeadline(best.report);
+          return h ? (
+            <p className="mt-2 text-sm text-muted-foreground">"{h}"</p>
+          ) : null;
+        })()}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => onOpenTake(best.id)}>
             Open Take {best.take_number} notes
@@ -1552,11 +1553,12 @@ function RecommendationView({
                     </span>
                     <span className={cn("text-xs font-medium", verdictTone(v))}>{v}</span>
                   </div>
-                  {t.report?.casting_headline && (
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {t.report.casting_headline}
-                    </p>
-                  )}
+                  {(() => {
+                    const h = pickHeadline(t.report);
+                    return h ? (
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{h}</p>
+                    ) : null;
+                  })()}
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="text-right">
@@ -1598,7 +1600,11 @@ function CompareView({ takes }: { takes: Take[] }) {
     <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
       <h2 className="font-display text-lg font-semibold">Compare takes</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Best take: <strong>Take {best.take_number}</strong> — {best.report?.casting_headline}
+        Best take: <strong>Take {best.take_number}</strong>
+        {(() => {
+          const h = pickHeadline(best.report);
+          return h ? <> — {h}</> : null;
+        })()}
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
         Overall score is the primary comparison metric. The rows below explain why.
