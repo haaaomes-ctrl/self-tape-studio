@@ -1081,6 +1081,12 @@ export async function runProcessTake(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let twoStepReport: any = null;
     let twoStepEvidence: EvidencePass | null = null;
+    // Phase 3B — captured future dimensions (Phase 1 internal output) so the
+    // v2 report builder can use them at the persist site. Stays null when
+    // future_evidence_enabled is off; the v2 builder then falls back to
+    // legacy `detected_components`.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedFutureDimensions: any = null;
     let twoStepEnforcement = {
       locked_field_overwrites: 0,
       unsupported_claims_removed: 0,
