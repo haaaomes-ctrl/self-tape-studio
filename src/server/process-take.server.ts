@@ -1175,6 +1175,7 @@ export async function runProcessTake(
         // Phase 1 — log internal dimension counts only. The dimension data
         // itself is NOT persisted, NOT passed to Step 2, NOT rendered.
         if (evResult.futureDimensions) {
+          capturedFutureDimensions = evResult.futureDimensions;
           console.log("[take-pipeline] future_dimensions_captured", {
             take_id: takeId,
             components: evResult.futureDimensions.components.length,
