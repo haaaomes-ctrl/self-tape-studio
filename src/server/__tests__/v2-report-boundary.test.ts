@@ -86,7 +86,7 @@ describe("v2-report-boundary (Phase 3A)", () => {
     const row = { id: "t1", report: v2 };
     expect(findForbidden(row)).toEqual([]);
     // Synthetic injection — proves the scanner detects leaks.
-    (row.report as Record<string, unknown>).future_shadow = { shadow_scores: { acting: 80 } };
+    (row.report as unknown as Record<string, unknown>).future_shadow = { shadow_scores: { acting: 80 } };
     const hits = findForbidden(row);
     expect(hits.some((h) => h.endsWith(".future_shadow"))).toBe(true);
   });
