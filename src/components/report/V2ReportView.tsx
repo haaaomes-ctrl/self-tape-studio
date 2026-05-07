@@ -205,13 +205,57 @@ export function V2ReportView({
         )}
       </div>
 
-      {fixFirst && (
-        <Section title="Fix this first">
-          <p className="font-display text-lg font-semibold leading-snug">
-            {fixFirst}
-          </p>
-        </Section>
-      )}
+      {(() => {
+        const priorityFixes = safeArr<{ headline?: string; rationale?: string; kind?: string }>(report.priority_fixes);
+        if (priorityFixes.length > 0) {
+          return (
+            <Section title="Prioritised fixes">
+              <ul className="space-y-3 text-sm">
+                {priorityFixes.map((p, i) => (
+                  <li key={i}>
+                    <p className="font-display text-base font-semibold leading-snug">{safeStr(p?.headline) ?? ""}</p>
+                    {safeStr(p?.rationale) && (
+                      <p className="mt-1 text-xs text-muted-foreground">{p.rationale}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          );
+        }
+        if (fixFirst) {
+          return (
+            <Section title="Fix this first">
+              <p className="font-display text-lg font-semibold leading-snug">{fixFirst}</p>
+            </Section>
+          );
+        }
+        return null;
+      })()}
+
+      {(() => {
+        const cr = report.category_rationale && typeof report.category_rationale === "object"
+          ? (report.category_rationale as Record<string, { what_works?: string; why_not_full_score?: string; close_gap?: string; standout_delta?: string }>)
+          : null;
+        if (!cr) return null;
+        const entries = CATEGORY_KEYS.map((k) => [k, cr[k]] as const).filter(([, v]) => v && (v.why_not_full_score || v.close_gap || v.standout_delta || v.what_works));
+        if (entries.length === 0) return null;
+        return (
+          <Section title="Why this score" hint="What works, why it isn't 100, and what would close the gap.">
+            <div className="space-y-4 text-sm">
+              {entries.map(([key, v]) => (
+                <div key={key}>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{getCategoryLabel(t, key)}</p>
+                  {v?.what_works && <p className="mt-1"><span className="font-medium">Works:</span> {v.what_works}</p>}
+                  {v?.why_not_full_score && <p className="mt-1"><span className="font-medium">Why not full score:</span> {v.why_not_full_score}</p>}
+                  {v?.close_gap && <p className="mt-1"><span className="font-medium">Close the gap:</span> {v.close_gap}</p>}
+                  {v?.standout_delta && <p className="mt-1"><span className="font-medium">Standout delta:</span> {v.standout_delta}</p>}
+                </div>
+              ))}
+            </div>
+          </Section>
+        );
+      })()}
 
       {/* Categories */}
       {scores && (
