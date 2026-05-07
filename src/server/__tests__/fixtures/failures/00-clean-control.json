@@ -1,0 +1,32 @@
+{
+  "id": "00-clean-control",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "clean_control",
+  "brief": {
+    "role": "Sophie",
+    "show": "Mamma Mia",
+    "framing": "head-and-shoulders",
+    "length_seconds": 240
+  },
+  "evidence_pass": {
+    "components": [
+      { "type": "song", "start": 0, "end": 180, "confidence": 0.9 },
+      { "type": "acting_through_song", "start": 0, "end": 180, "confidence": 0.85 }
+    ],
+    "anchors_count": 9
+  },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "headline": "Confident, well-shaped take with clear emotional arc.",
+    "timestamped_notes_count": 7
+  },
+  "phase2_expectations": {
+    "scrub_counters": {
+      "generic_praise": 0,
+      "role_fit_overclaim": 0,
+      "frame_break": 0,
+      "timestamp_underproduction": 0
+    }
+  }
+}

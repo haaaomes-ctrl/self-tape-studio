@@ -1,0 +1,24 @@
+{
+  "id": "07-frame-break-coaching",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "frame_break_coaching",
+  "brief": {
+    "role": "Fantine",
+    "show": "Les Miserables",
+    "framing": "head-and-shoulders",
+    "framing_constraint": "static, head-and-shoulders only"
+  },
+  "evidence_pass": { "components": [{ "type": "song" }, { "type": "acting_through_song" }] },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "next_take_plan": [
+      "Try walking around the room to find more emotional weight.",
+      "Use a prop — perhaps a chair — to anchor the moment.",
+      "Hold the script and work it physically."
+    ]
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "frame_break": 3 }
+  }
+}

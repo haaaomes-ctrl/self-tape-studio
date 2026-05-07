@@ -1,0 +1,16 @@
+{
+  "id": "05-role-fit-overclaim",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "role_fit_overclaim",
+  "brief": { "role": "Glinda", "show": "Wicked", "framing": "head-and-shoulders" },
+  "evidence_pass": { "components": [{ "type": "song" }] },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "role_fit": "Highly castable for this role — would get a recall. A strong contender, exactly what they're looking for. Very marketable, callback-ready, perfect fit.",
+    "presentation_notes": "Great commercial look."
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "role_fit_overclaim": 8 }
+  }
+}

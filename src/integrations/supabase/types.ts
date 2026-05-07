@@ -92,6 +92,53 @@ export type Database = {
         }
         Relationships: []
       }
+      take_qa_traces: {
+        Row: {
+          branch: string | null
+          components_summary: Json | null
+          created_at: string
+          dimensions_summary: Json | null
+          schema_version: string | null
+          scrub_counters: Json | null
+          shadow_divergence: Json | null
+          sufficiency: Json | null
+          take_id: string
+          updated_at: string
+        }
+        Insert: {
+          branch?: string | null
+          components_summary?: Json | null
+          created_at?: string
+          dimensions_summary?: Json | null
+          schema_version?: string | null
+          scrub_counters?: Json | null
+          shadow_divergence?: Json | null
+          sufficiency?: Json | null
+          take_id: string
+          updated_at?: string
+        }
+        Update: {
+          branch?: string | null
+          components_summary?: Json | null
+          created_at?: string
+          dimensions_summary?: Json | null
+          schema_version?: string | null
+          scrub_counters?: Json | null
+          shadow_divergence?: Json | null
+          sufficiency?: Json | null
+          take_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "take_qa_traces_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: true
+            referencedRelation: "takes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       takes: {
         Row: {
           analysis_tier: string | null

@@ -1,0 +1,15 @@
+{
+  "id": "06-presentation-polish-drift",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "presentation_polish_drift",
+  "brief": { "role": "Maria", "show": "West Side Story", "framing": "head-and-shoulders" },
+  "evidence_pass": { "components": [{ "type": "song" }] },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "presentation_notes": "Consider a more commercial look — softer makeup, brighter top. This will read more marketable on tape."
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "appearance_marketability": 2 }
+  }
+}
