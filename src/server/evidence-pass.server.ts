@@ -408,6 +408,14 @@ export type RunEvidencePassArgs = {
   signal: AbortSignal;
   contextText: string;
   durationSeconds?: number | null;
+  /**
+   * Phase 1 (internal). When true, Step 1 additionally requests
+   * observation-only discipline dimensions and validates them. This data is
+   * NEVER returned in `evidence` and NEVER written to public report JSON;
+   * it surfaces only via the `futureDimensions` sibling on the result for
+   * internal logging. Default: false.
+   */
+  withFutureDimensions?: boolean;
 };
 
 export type RunEvidencePassResult =
@@ -418,6 +426,7 @@ export type RunEvidencePassResult =
       durationMs: number;
       model: string;
       httpStatus: number;
+      futureDimensions?: import("./dimensions").FutureDimensionsResult;
     }
   | {
       ok: false;
