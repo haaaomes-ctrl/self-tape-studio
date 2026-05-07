@@ -2896,7 +2896,7 @@ export async function runProcessTake(
         .update({
           status: "complete",
           processing_phase: "complete",
-          report,
+          report: reportToPersist,
           scores: report.scores,
           overall_score: overall,
           confidence: report.confidence,
