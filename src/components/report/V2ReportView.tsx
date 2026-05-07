@@ -319,7 +319,7 @@ export function V2ReportView({
       {improvements.length > 0 && (
         <Section title="Improvements">
           <ul className="space-y-2 text-sm">
-            {improvements.slice(0, 3).map((s, i) => (
+            {improvements.map((s, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-warning">→</span>
                 <span>
@@ -336,7 +336,7 @@ export function V2ReportView({
       {tsNotes.length > 0 && (
         <Section title="Timestamped notes">
           <ul className="space-y-2 text-sm">
-            {tsNotes.slice(0, 8).map((n, i) => (
+            {tsNotes.slice(0, 36).map((n, i) => (
               <li key={i} className="flex gap-3">
                 <span className="w-12 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
                   {safeStr(n?.timestamp) ?? "--:--"}
@@ -349,9 +349,9 @@ export function V2ReportView({
       )}
 
       {nextPlan.length > 0 && (
-        <Section title="Next take plan">
+        <Section title="Next steps">
           <ol className="list-decimal space-y-1.5 pl-5 text-sm">
-            {nextPlan.slice(0, 5).map((s, i) => (
+            {nextPlan.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ol>
@@ -416,7 +416,7 @@ export function V2ReportView({
           hint="Practical camera-readability tips. These do not affect your score."
         >
           <ul className="space-y-2 text-sm">
-            {presentation.slice(0, 3).map((n, i) => (
+            {presentation.map((n, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-muted-foreground">•</span>
                 <span>{n}</span>
