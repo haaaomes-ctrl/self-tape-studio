@@ -1175,6 +1175,47 @@ export async function runProcessTake(
             dropped: evResult.futureDimensions.dropped,
             malformed: evResult.futureDimensions.malformed,
           });
+          // Phase 2 — internal shadow scoring + QA counters. Wrapped to never
+          // disrupt the user-facing pipeline. Output is PRIVATE: never written
+          // to `report` or `score_breakdown`. Persisted to `take_qa_traces`
+          // (RLS deny-all) only when `future_qa_trace_enabled` is true.
+          try {
+            const { computeFutureShadow } = await import("./shadow-scoring.server");
+            const shadow = computeFutureShadow({
+              futureDimensions: evResult.futureDimensions,
+              evidence: twoStepEvidence,
+              auditionType: twoStepEvidence.audition_type,
+              durationSeconds: take.mux_duration_seconds ?? null,
+              mode: audition?.mode === "brief" ? "brief" : "baseline",
+            });
+            console.log("[take-pipeline] shadow_scoring_completed", {
+              take_id: takeId,
+              branch: shadow.branch,
+              components: shadow.components_summary.length,
+              shadow_fields: Object.keys(shadow.shadow_scores).length,
+              critical_counters:
+                shadow.qa_counters.role_fit_overclaim +
+                shadow.qa_counters.marketability_or_look_hit +
+                shadow.qa_counters.frame_break_coaching,
+            });
+            const { getResolvedConfig } = await import("./app-config.server");
+            const cfg2 = await getResolvedConfig();
+            if (cfg2.future_qa_trace_enabled) {
+              const { writeQaTrace } = await import("./qa-trace.server");
+              const w = await writeQaTrace({ takeId, shadow });
+              if (!w.ok) {
+                console.warn("[take-pipeline] qa_trace_write_failed", {
+                  take_id: takeId,
+                  error: w.error.slice(0, 200),
+                });
+              }
+            }
+          } catch (err) {
+            console.warn("[take-pipeline] shadow_scoring_failed", {
+              take_id: takeId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
         if (twoStepTimestampsDropped > 0) {
           console.log("[take-pipeline] timestamp_evidence_dropped", {
