@@ -2300,9 +2300,9 @@ export async function runProcessTake(
       }
     }
 
-    // Cap improvements at 3 (most-impactful first) defensively.
-    if (Array.isArray(report.improvements) && report.improvements.length > 3) {
-      report.improvements = report.improvements.slice(0, 3);
+    // Safety maximum only — do not truncate paid-service feedback at 3.
+    if (Array.isArray(report.improvements) && report.improvements.length > 15) {
+      report.improvements = report.improvements.slice(0, 15);
     }
 
     // Deterministic, level-aware submission verdict (the canonical verdict).
