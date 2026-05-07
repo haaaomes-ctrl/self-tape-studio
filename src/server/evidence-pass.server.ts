@@ -4,7 +4,7 @@
 // observation-only evidence object: per-category raw scores, core
 // strengths/improvements anchored in evidence, brief-adherence sub-evidence,
 // risk evidence, presentation evidence, role-fit evidence, sufficiency, and
-// up to 8 validated MM:SS timestamped moments.
+// duration-scaled validated MM:SS timestamped moments (technical max 36).
 //
 // Deterministic settings (temperature 0, top_p 1).
 //
