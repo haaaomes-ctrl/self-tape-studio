@@ -19,6 +19,8 @@ import type { FutureDimensionsResult, FutureComponent } from "./dimensions";
 /** Public structural component item. No anchors, no per-dimension claims. */
 export interface V2Component {
   type: string;
+  component_type: string | null;
+  label: string | null;
   subtype: string | null;
   style: string | null;
   form: string | null;
@@ -27,6 +29,12 @@ export interface V2Component {
   weight: number | null;
   score: number | null;
   note: string | null;
+  what_it_shows: string | null;
+  what_is_assessable: string | null;
+  key_evidence: string | null;
+  score_driver: string | null;
+  close_gap: string | null;
+  style_or_task_confidence: "low" | "medium" | "high" | null;
   assessability: FutureComponent["assessability"] | null;
 }
 
@@ -121,17 +129,33 @@ function asCategoryNotes(v: unknown): Record<string, string> | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
+function asConfidence(v: unknown): "low" | "medium" | "high" | null {
+  return v === "low" || v === "medium" || v === "high" ? v : null;
+}
+
 function projectFutureComponent(c: FutureComponent): V2Component {
+  // FutureComponent may carry optional public-safe extras at runtime; never
+  // touch private/anchor fields.
+  const ex = c as unknown as Record<string, unknown>;
   return {
     type: c.type,
+    component_type: c.type,
+    label: asStr(ex.label),
     subtype: c.subtype ?? null,
     style: c.style ?? null,
     form: c.form ?? null,
     start: c.start,
     end: c.end,
-    weight: null,
-    score: null,
-    note: null,
+    weight: asNum(ex.weight),
+    score: asNum(ex.score),
+    note: asStr(ex.note),
+    what_it_shows: asStr(ex.what_it_shows),
+    what_is_assessable: asStr(ex.what_is_assessable),
+    key_evidence: asStr(ex.key_evidence),
+    score_driver: asStr(ex.score_driver),
+    close_gap: asStr(ex.close_gap),
+    style_or_task_confidence:
+      asConfidence(ex.style_or_task_confidence) ?? asConfidence(ex.style_confidence),
     assessability: c.assessability ?? null,
   };
 }
@@ -144,15 +168,24 @@ function projectLegacyComponent(raw: unknown): V2Component | null {
   const note = asStr(o.note);
   return {
     type,
-    subtype: null,
-    style: null,
-    form: null,
-    start: null,
-    end: null,
+    component_type: type,
+    label: asStr(o.label),
+    subtype: asStr(o.subtype),
+    style: asStr(o.style),
+    form: asStr(o.form),
+    start: asStr(o.start),
+    end: asStr(o.end),
     weight: asNum(o.weight),
     score: asNum(o.score),
     // Public legacy notes are user-facing and safe. Cap defensively.
     note: note ? note.slice(0, 1000) : null,
+    what_it_shows: asStr(o.what_it_shows),
+    what_is_assessable: asStr(o.what_is_assessable),
+    key_evidence: asStr(o.key_evidence),
+    score_driver: asStr(o.score_driver),
+    close_gap: asStr(o.close_gap),
+    style_or_task_confidence:
+      asConfidence(o.style_or_task_confidence) ?? asConfidence(o.style_confidence),
     assessability: null,
   };
 }

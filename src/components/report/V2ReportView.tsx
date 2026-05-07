@@ -104,6 +104,8 @@ export function V2ReportView({
   );
   const components = safeArr<{
     type?: string;
+    component_type?: string | null;
+    label?: string | null;
     weight?: number | null;
     score?: number | null;
     note?: string | null;
@@ -112,6 +114,12 @@ export function V2ReportView({
     form?: string | null;
     start?: string | null;
     end?: string | null;
+    what_it_shows?: string | null;
+    what_is_assessable?: string | null;
+    key_evidence?: string | null;
+    score_driver?: string | null;
+    close_gap?: string | null;
+    style_or_task_confidence?: string | null;
   }>(report.components);
   const scores =
     report.scores && typeof report.scores === "object"
@@ -336,6 +344,30 @@ export function V2ReportView({
                       {c.note}
                     </p>
                   )}
+                  {(() => {
+                    const detailRows: Array<[string, string]> = [];
+                    if (safeStr(c.what_it_shows)) detailRows.push(["What it shows", c.what_it_shows!]);
+                    if (safeStr(c.what_is_assessable)) detailRows.push(["What's assessable", c.what_is_assessable!]);
+                    if (safeStr(c.key_evidence)) detailRows.push(["Key evidence", c.key_evidence!]);
+                    if (safeStr(c.score_driver)) detailRows.push(["Score driver", c.score_driver!]);
+                    if (safeStr(c.close_gap)) detailRows.push(["Close the gap", c.close_gap!]);
+                    if (detailRows.length === 0 && !c.style_or_task_confidence) return null;
+                    return (
+                      <div className="mt-2 space-y-1.5 text-xs">
+                        {detailRows.map(([label, value]) => (
+                          <p key={label}>
+                            <span className="font-medium text-foreground">{label}:</span>{" "}
+                            <span className="text-muted-foreground">{value}</span>
+                          </p>
+                        ))}
+                        {c.style_or_task_confidence && (
+                          <p className="text-[11px] text-muted-foreground">
+                            style/task confidence: {c.style_or_task_confidence}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

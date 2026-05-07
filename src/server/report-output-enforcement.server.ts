@@ -14,19 +14,44 @@ export interface EnforcementContext {
 
 export interface EnforcementCounters {
   castability_removed: number;
+  castability_rewritten: number;
   generic_unanchored_removed: number;
   brief_overconfidence_rewritten: number;
   presentation_polish_removed: number;
   framing_rehearsal_rewritten: number;
   dance_visibility_unanchored_removed: number;
   submission_risk_demoted: number;
+  category_rationale_scrubbed: number;
+  category_rationale_dropped: number;
+  category_rationale_missing_delta: number;
+  next_take_plan_scrubbed: number;
+  priority_fixes_scrubbed: number;
+  component_fields_scrubbed: number;
 }
 
 // ---------------------------------------------------------------------------
 // Phrase banks
 // ---------------------------------------------------------------------------
 
-// Castability / callback / recall / workshop overclaim
+// Phase 3C P2: phrase-level rewrite map applied BEFORE sentence-level
+// castability filtering. Rewrites soft overclaims to neutral wording so
+// information survives. Hard overclaims still drop via CASTABILITY_TRIGGERS.
+const CALIBRATION_REWRITES: Array<[RegExp, string]> = [
+  [/\bhighly\s+castable\b/gi, "well aligned with the supplied brief"],
+  [/\bstrong\s+contender\b/gi, "a strong tape for the stated task"],
+  [/\bcallback[-\s]?ready\b/gi, "ready to submit"],
+  [/\brecall[-\s]?worthy\b/gi, "ready to submit"],
+  [/\bworkshop[-\s]?ready\b/gi, "ready to submit"],
+  [/\bperfectly\s+captures\b/gi, "clearly supports"],
+  [
+    /\bexactly\s+what\s+(?:they(?:'|’)?re|the\s+team\s+is|they\s+are)\s+looking\s+for\b/gi,
+    "matches the stated style/task requirements",
+  ],
+  [/\bperfect\s+fit\b/gi, "a strong fit for the stated task"],
+];
+
+// Castability / callback / recall / workshop overclaim — sentences matching
+// these (after rewrite) are dropped entirely.
 const CASTABILITY_TRIGGERS = [
   /highly\s+castable/i,
   /\bcastable\s+for\b/i,
@@ -48,6 +73,10 @@ const CASTABILITY_TRIGGERS = [
   /\bwould\s+be\s+called\s+back\b/i,
   /\b(?:buyer|brand|market)\s+fit\b/i,
 ];
+
+// Standout-delta wording that must never claim perfection.
+const STANDOUT_OVERCLAIM_RE =
+  /\b(?:perfect(?:ly)?|flawless(?:\s+adherence)?|all\s+requirements\s+met)\b/i;
 
 // Generic / unanchored phrases (sentence kept ONLY if anchored).
 const GENERIC_TRIGGERS = [
@@ -121,15 +150,19 @@ const PRESENTATION_POLISH_TRIGGERS = [
 // Frame-breaking recorded-take advice (only triggered when framingFixed)
 const FRAME_BREAK_TRIGGERS = [
   /\bwalking\b/i,
-  /\bstand(?:ing)?\s+to\s+record\b/i,
+  /\bstand(?:ing)?\s+to\s+(?:record|sing)\b/i,
+  /\bsing\s+standing\b/i,
   /\b(?:moving|move|moves|walk|walks)\s+(?:around|across)\s+(?:the\s+)?room\b/i,
-  /\bhold(?:ing)?\s+(?:a|an|the)\s+(?:instrument|prop|guitar|chair|script)\b/i,
+  /\bhold(?:ing)?\s+(?:a|an|the)?\s*(?:instrument|prop|guitar|chair|script)\b/i,
+  /\bwith\s+an?\s+instrument\b/i,
   /\b(?:use|uses|using|work\s+with)\s+(?:a\s+)?props?\b/i,
-  /\bphysical\s+business\b/i,
+  /\bphysical\s+(?:business|task)\b/i,
+  /\bstage\s+business\b/i,
+  /\b(?:add|adding|use|using)\s+(?:staging|blocking)\b/i,
   /\b(?:cross|crosses|crossing)\s+the\s+room\b/i,
   /\bstep(?:ping)?\s+out\s+of\s+frame\b/i,
-  /\badd(?:ing)?\s+(?:staging|blocking)\b/i,
   /\brecord(?:ing)?\s+while\s+moving\b/i,
+  /\b(?:record|recording)\s+(?:the\s+)?(?:song|scene|take)\s+while\s+(?:standing|walking|moving)\b/i,
   /\bsit(?:ting)?\s+on\s+(?:your|my|their)\s+hands\b/i,
   /\bwork\s+it\s+physically\b/i,
 ];
@@ -182,8 +215,22 @@ function hasAnchor(s: string): boolean {
 interface FieldResult {
   text: string;
   castabilityRemoved: number;
+  castabilityRewritten: number;
   genericRemoved: number;
   polishRemoved: number;
+}
+
+function applyCalibrationRewrites(text: string): { text: string; rewrites: number } {
+  let out = text;
+  let rewrites = 0;
+  for (const [re, rep] of CALIBRATION_REWRITES) {
+    const m = out.match(re);
+    if (m) {
+      rewrites += m.length;
+      out = out.replace(re, rep);
+    }
+  }
+  return { text: out, rewrites };
 }
 
 function cleanProse(
@@ -191,12 +238,16 @@ function cleanProse(
   opts: { allowGeneric?: boolean; presentationField?: boolean } = {},
 ): FieldResult {
   if (!text || typeof text !== "string") {
-    return { text: "", castabilityRemoved: 0, genericRemoved: 0, polishRemoved: 0 };
+    return { text: "", castabilityRemoved: 0, castabilityRewritten: 0, genericRemoved: 0, polishRemoved: 0 };
   }
   let castabilityRemoved = 0;
+  let castabilityRewritten = 0;
   let genericRemoved = 0;
   let polishRemoved = 0;
-  const sentences = splitSentences(text);
+  // Phase 3C P2: rewrite soft overclaims first so information survives.
+  const rewriteRes = applyCalibrationRewrites(text);
+  castabilityRewritten += rewriteRes.rewrites;
+  const sentences = splitSentences(rewriteRes.text);
   const kept: string[] = [];
   for (const sRaw of sentences) {
     const s = sRaw;
@@ -220,7 +271,7 @@ function cleanProse(
     out = out.replace(re, "");
   }
   out = out.replace(/\s{2,}/g, " ").trim();
-  return { text: out, castabilityRemoved, genericRemoved, polishRemoved };
+  return { text: out, castabilityRemoved, castabilityRewritten, genericRemoved, polishRemoved };
 }
 
 function rewriteFrameBreak(text: string): { text: string; rewrites: number } {
@@ -269,12 +320,19 @@ export function enforcePublicReportOutputQuality(
 } {
   const counters: EnforcementCounters = {
     castability_removed: 0,
+    castability_rewritten: 0,
     generic_unanchored_removed: 0,
     brief_overconfidence_rewritten: 0,
     presentation_polish_removed: 0,
     framing_rehearsal_rewritten: 0,
     dance_visibility_unanchored_removed: 0,
     submission_risk_demoted: 0,
+    category_rationale_scrubbed: 0,
+    category_rationale_dropped: 0,
+    category_rationale_missing_delta: 0,
+    next_take_plan_scrubbed: 0,
+    priority_fixes_scrubbed: 0,
+    component_fields_scrubbed: 0,
   };
   if (!input || typeof input !== "object") {
     return { report: (input ?? {}) as Record<string, unknown>, counters };
@@ -284,6 +342,7 @@ export function enforcePublicReportOutputQuality(
 
   const tally = (res: FieldResult, raw: string) => {
     counters.castability_removed += res.castabilityRemoved;
+    counters.castability_rewritten += res.castabilityRewritten;
     counters.generic_unanchored_removed += res.genericRemoved;
     counters.presentation_polish_removed += res.polishRemoved;
     counters.brief_overconfidence_rewritten += countBriefRewrites(raw);
@@ -470,17 +529,182 @@ export function enforcePublicReportOutputQuality(
     }
   }
 
-  // detected_components[].note
-  if (Array.isArray(r.detected_components)) {
-    r.detected_components = (r.detected_components as unknown[]).map((c) => {
-      if (!c || typeof c !== "object") return c;
-      const obj = { ...(c as Record<string, unknown>) };
-      if (typeof obj.note === "string") {
-        const cleaned = cleanString(obj.note);
-        obj.note = cleaned ?? "";
+  // detected_components[].note + new public-safe component fields
+  const COMPONENT_PUBLIC_FIELDS = [
+    "note",
+    "label",
+    "what_it_shows",
+    "what_is_assessable",
+    "key_evidence",
+    "score_driver",
+    "close_gap",
+  ];
+  const FORBIDDEN_COMPONENT_KEYS = [
+    "evidence_anchors",
+    "supports",
+    "anchor_id",
+    "anchor_ids",
+    "dimensions",
+    "dimension_confidence",
+    "raw_evidence",
+    "hidden_reasoning",
+    "shadow_score",
+    "shadow_scores",
+  ];
+  const cleanComponent = (c: unknown): unknown => {
+    if (!c || typeof c !== "object") return c;
+    const obj = { ...(c as Record<string, unknown>) };
+    for (const k of FORBIDDEN_COMPONENT_KEYS) {
+      if (k in obj) {
+        delete obj[k];
+        counters.component_fields_scrubbed++;
       }
-      return obj;
-    });
+    }
+    for (const k of COMPONENT_PUBLIC_FIELDS) {
+      if (typeof obj[k] === "string") {
+        const cleaned = cleanString(obj[k]);
+        obj[k] = cleaned ?? "";
+      }
+    }
+    return obj;
+  };
+  if (Array.isArray(r.detected_components)) {
+    r.detected_components = (r.detected_components as unknown[]).map(cleanComponent);
+  }
+  if (Array.isArray(r.components)) {
+    r.components = (r.components as unknown[]).map(cleanComponent);
+  }
+
+  // priority_fixes[]
+  if (Array.isArray(r.priority_fixes)) {
+    const before = (r.priority_fixes as unknown[]).length;
+    r.priority_fixes = (r.priority_fixes as unknown[])
+      .map((it) => {
+        if (!it || typeof it !== "object") return null;
+        const obj = { ...(it as Record<string, unknown>) };
+        for (const k of ["headline", "rationale"]) {
+          if (typeof obj[k] === "string") {
+            const cleaned = cleanString(obj[k]);
+            let text = cleaned ?? "";
+            if (ctx.framingFixed && text) {
+              const fr = rewriteFrameBreak(text);
+              counters.framing_rehearsal_rewritten += fr.rewrites;
+              text = fr.text;
+            }
+            obj[k] = text;
+          }
+        }
+        const headline = typeof obj.headline === "string" ? obj.headline.trim() : "";
+        if (!headline) return null;
+        return obj;
+      })
+      .filter((x): x is Record<string, unknown> => x !== null);
+    counters.priority_fixes_scrubbed += before - (r.priority_fixes as unknown[]).length;
+  }
+
+  // next_take_plan.groups[].items[]
+  if (r.next_take_plan && typeof r.next_take_plan === "object" && !Array.isArray(r.next_take_plan)) {
+    const ntp = { ...(r.next_take_plan as Record<string, unknown>) };
+    if (Array.isArray(ntp.groups)) {
+      const beforeGroups = (ntp.groups as unknown[]).length;
+      ntp.groups = (ntp.groups as unknown[])
+        .map((g) => {
+          if (!g || typeof g !== "object") return null;
+          const obj = { ...(g as Record<string, unknown>) };
+          if (Array.isArray(obj.items)) {
+            obj.items = cleanSteps(obj.items);
+          }
+          if (!Array.isArray(obj.items) || (obj.items as unknown[]).length === 0) return null;
+          return obj;
+        })
+        .filter((x): x is Record<string, unknown> => x !== null);
+      counters.next_take_plan_scrubbed += beforeGroups - (ntp.groups as unknown[]).length;
+    }
+    r.next_take_plan = ntp;
+  }
+
+  // category_rationale walker
+  if (r.category_rationale && typeof r.category_rationale === "object" && !Array.isArray(r.category_rationale)) {
+    const cr = { ...(r.category_rationale as Record<string, unknown>) };
+    const scoresObj =
+      r.scores && typeof r.scores === "object" && !Array.isArray(r.scores)
+        ? (r.scores as Record<string, unknown>)
+        : {};
+    const PUBLIC_KEYS = [
+      "technical",
+      "audio",
+      "vocal",
+      "acting",
+      "brief_adherence",
+      "professional_presentation",
+    ];
+    const RAT_FORBIDDEN = [
+      "supports",
+      "anchor_id",
+      "anchor_ids",
+      "evidence_anchors",
+      "dimension_confidence",
+      "shadow_score",
+      "shadow_scores",
+      "qa_counters",
+      "raw_evidence",
+      "hidden_reasoning",
+    ];
+    for (const ck of Object.keys(cr)) {
+      if (!PUBLIC_KEYS.includes(ck)) {
+        delete cr[ck];
+        counters.category_rationale_scrubbed++;
+        continue;
+      }
+      const v = cr[ck];
+      if (!v || typeof v !== "object" || Array.isArray(v)) {
+        delete cr[ck];
+        counters.category_rationale_dropped++;
+        continue;
+      }
+      const obj = { ...(v as Record<string, unknown>) };
+      for (const fk of RAT_FORBIDDEN) {
+        if (fk in obj) {
+          delete obj[fk];
+          counters.category_rationale_scrubbed++;
+        }
+      }
+      for (const fk of ["what_works", "why_not_full_score", "close_gap", "standout_delta"]) {
+        if (typeof obj[fk] === "string") {
+          const cleaned = cleanString(obj[fk]);
+          obj[fk] = cleaned ?? "";
+        }
+      }
+      // Standout delta must not claim perfection.
+      if (typeof obj.standout_delta === "string" && STANDOUT_OVERCLAIM_RE.test(obj.standout_delta)) {
+        obj.standout_delta = "";
+        counters.category_rationale_scrubbed++;
+      }
+      const score = typeof scoresObj[ck] === "number" ? (scoresObj[ck] as number) : null;
+      const why = typeof obj.why_not_full_score === "string" ? obj.why_not_full_score.trim() : "";
+      const gap = typeof obj.close_gap === "string" ? obj.close_gap.trim() : "";
+      const delta = typeof obj.standout_delta === "string" ? obj.standout_delta.trim() : "";
+      const works = typeof obj.what_works === "string" ? obj.what_works.trim() : "";
+      if (score != null && score < 100 && !why && !gap) {
+        delete cr[ck];
+        counters.category_rationale_dropped++;
+        continue;
+      }
+      if (score != null && score >= 90 && !delta) {
+        counters.category_rationale_missing_delta++;
+      }
+      if (!why && !gap && !delta && !works) {
+        delete cr[ck];
+        counters.category_rationale_dropped++;
+        continue;
+      }
+      cr[ck] = obj;
+    }
+    if (Object.keys(cr).length === 0) {
+      delete r.category_rationale;
+    } else {
+      r.category_rationale = cr;
+    }
   }
 
   // submission_verdict.reason
