@@ -1116,12 +1116,24 @@ export async function runProcessTake(
       });
       const evAc = new AbortController();
       const evTimer = setTimeout(() => evAc.abort(), ANALYSIS_GEMINI_TIMEOUT_MS);
+      // Phase 1 — flag-gated internal dimension capture. Off by default.
+      // Resolved per-take so admins can toggle without redeploy. Failure to
+      // read config falls through to legacy behaviour.
+      let withFutureDimensions = false;
+      try {
+        const { getResolvedConfig } = await import("./app-config.server");
+        const cfg = await getResolvedConfig();
+        withFutureDimensions = !!cfg.future_evidence_enabled;
+      } catch {
+        withFutureDimensions = false;
+      }
       const evResult = await runEvidencePass({
         videoUrl: evidenceUrl,
         apiKey,
         signal: evAc.signal,
         contextText: evidenceContext,
         durationSeconds: take.mux_duration_seconds ?? null,
+        withFutureDimensions,
       }).finally(() => clearTimeout(evTimer));
 
       if (!evResult.ok) {
@@ -1154,6 +1166,16 @@ export async function runProcessTake(
           duration_ms: evResult.durationMs,
           timestamps_count: evSummary.timestamped_evidence_count,
         });
+        // Phase 1 — log internal dimension counts only. The dimension data
+        // itself is NOT persisted, NOT passed to Step 2, NOT rendered.
+        if (evResult.futureDimensions) {
+          console.log("[take-pipeline] future_dimensions_captured", {
+            take_id: takeId,
+            components: evResult.futureDimensions.components.length,
+            dropped: evResult.futureDimensions.dropped,
+            malformed: evResult.futureDimensions.malformed,
+          });
+        }
         if (twoStepTimestampsDropped > 0) {
           console.log("[take-pipeline] timestamp_evidence_dropped", {
             take_id: takeId,
