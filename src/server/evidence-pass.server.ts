@@ -194,7 +194,7 @@ const EVIDENCE_TOOL = {
         timestamped_evidence: {
           type: "array",
           description:
-            "Noteworthy moments in CHRONOLOGICAL order, MM:SS within the tape duration. Target counts by duration when the tape is assessable: <60s -> 3-4; 1-3 min -> 5-7; 3-5 min -> 7-8 (minimum 5); never exceed 8. For 3-5 minute multi-component tapes (e.g. acting scene + song) you MUST cover BOTH components: aim for 2-3 from the acting scene, 2-3 from the song, 1 from the transition where one exists, and at least 1 improvement/fix-first moment. Returning only 2-3 items for a 4-minute multi-component tape is under-production and not acceptable unless evidence_sufficiency explicitly explains why. observation = what happened. why_it_matters = why this is useful for the performer. linked_category = one of: technical, audio, vocal, acting, brief_adherence, professional_presentation. Never invent timestamps. Never pad weak observations.",
+            "Noteworthy moments in CHRONOLOGICAL order, MM:SS within the tape duration. Duration-scaled targets when the tape is assessable: <60s -> 3-5; 1-3 min -> 6-10; 3-5 min -> 8-14; 5-10 min -> 12-24; 10+ min -> 18-36. Absolute technical maximum 36. For multi-component tapes (e.g. acting scene + song) you MUST cover EACH main component plus the transition where one exists, plus at least 1 improvement/fix moment. For Dance: cover rhythm/timing, control/coordination, transitions/pathway, dynamics, performance presence, and at least 1 improvement moment. For MT: cover acting scene, song, scene-to-song transition, acting-through-song, vocal technique in service of story/style, and at least 1 improvement/fix moment. Returning only 2-3 items for a 4-minute multi-component tape is under-production. observation = what happened. why_it_matters = why this is useful for the performer. linked_category = one of: technical, audio, vocal, acting, brief_adherence, professional_presentation. Never invent timestamps. Never pad weak observations.",
           items: {
             type: "object",
             properties: {
@@ -220,7 +220,7 @@ const EVIDENCE_TOOL = {
               "linked_category",
             ],
           },
-          maxItems: 8,
+          maxItems: 36,
         },
         evidence_sufficiency: {
           type: "object",
