@@ -13,6 +13,7 @@ import { describe, it, expect } from "vitest";
  */
 
 const FORBIDDEN_KEYS = [
+  // Phase 0 forbidden keys.
   "shadow_scores",
   "shadow_score",
   "shadow_divergence",
@@ -29,6 +30,13 @@ const FORBIDDEN_KEYS = [
   "future_evidence",
   "future_dimensions",
   "qa_trace",
+  // Phase 1 closure follow-up: internal-only dimension capture tokens.
+  "future_components",
+  "evidence_anchors",
+  "component_dimensions",
+  "dimension_confidence",
+  "future_dimension_validation",
+  "dimensions",
 ] as const;
 
 function findForbidden(value: unknown, path = "$"): string[] {
