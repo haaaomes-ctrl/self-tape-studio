@@ -166,7 +166,7 @@ const EVIDENCE_TOOL = {
           description:
             "Camera-readability observations only (framing, contrast, focus). Most technically useful first. NEVER personal.",
           items: { type: "string", maxLength: 200 },
-          maxItems: 6,
+          maxItems: 8,
         },
         risk_evidence: {
           type: "array",
