@@ -14,12 +14,19 @@ export interface EnforcementContext {
 
 export interface EnforcementCounters {
   castability_removed: number;
+  castability_rewritten: number;
   generic_unanchored_removed: number;
   brief_overconfidence_rewritten: number;
   presentation_polish_removed: number;
   framing_rehearsal_rewritten: number;
   dance_visibility_unanchored_removed: number;
   submission_risk_demoted: number;
+  category_rationale_scrubbed: number;
+  category_rationale_dropped: number;
+  category_rationale_missing_delta: number;
+  next_take_plan_scrubbed: number;
+  priority_fixes_scrubbed: number;
+  component_fields_scrubbed: number;
 }
 
 // ---------------------------------------------------------------------------
