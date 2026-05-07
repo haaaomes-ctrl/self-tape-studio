@@ -2688,24 +2688,26 @@ export async function runProcessTake(
       });
     }
 
-    // ---- Defensive final array caps (never exceed UI/report expectations) ----
-    if (Array.isArray(report.strengths) && report.strengths.length > 3) {
-      report.strengths = report.strengths.slice(0, 3);
+    // ---- Defensive final array safety maxima (technical only; not product caps) ----
+    // v2 reports must not be artificially thinned to 3/3/8. These are runaway
+    // safeguards, not product caps. Soft targets are guided by Step 2 prompt.
+    if (Array.isArray(report.strengths) && report.strengths.length > 12) {
+      report.strengths = report.strengths.slice(0, 12);
     }
-    if (Array.isArray(report.improvements) && report.improvements.length > 3) {
-      report.improvements = report.improvements.slice(0, 3);
+    if (Array.isArray(report.improvements) && report.improvements.length > 15) {
+      report.improvements = report.improvements.slice(0, 15);
     }
     if (
       Array.isArray(report.presentation_notes) &&
-      report.presentation_notes.length > 3
+      report.presentation_notes.length > 6
     ) {
-      report.presentation_notes = report.presentation_notes.slice(0, 3);
+      report.presentation_notes = report.presentation_notes.slice(0, 6);
     }
     if (
       Array.isArray(report.timestamped_notes) &&
-      report.timestamped_notes.length > 8
+      report.timestamped_notes.length > 36
     ) {
-      report.timestamped_notes = report.timestamped_notes.slice(0, 8);
+      report.timestamped_notes = report.timestamped_notes.slice(0, 36);
     }
 
     // ---- Phase 3C P0 — deterministic public output enforcement ----
