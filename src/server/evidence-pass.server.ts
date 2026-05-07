@@ -559,7 +559,7 @@ export async function runEvidencePass(
     )
     .filter((t) => isValidTimestamp(t.timestamp, args.durationSeconds))
     .sort((a, b) => tsToSeconds(a.timestamp) - tsToSeconds(b.timestamp))
-    .slice(0, 8);
+    .slice(0, 36);
   const timestamps_dropped = Math.max(
     0,
     beforeTsCount - ev.timestamped_evidence.length,

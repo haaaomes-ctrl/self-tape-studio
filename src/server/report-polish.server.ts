@@ -253,7 +253,7 @@ export function enforceLockedFields(
           : evNote,
     });
   }
-  set("timestamped_notes", finalNotes.slice(0, 8));
+  set("timestamped_notes", finalNotes.slice(0, 36));
 
   return { overwrites };
 }
@@ -372,7 +372,7 @@ export function enforceUnsupportedClaims(
       if (!ok) bumpRemoved("presentation_notes");
       return ok;
     });
-    report.presentation_notes = filtered.slice(0, 3);
+    report.presentation_notes = filtered.slice(0, 6);
   }
 
   // ---- Strict-ish: role_fit_notes ----
@@ -465,10 +465,10 @@ export function enforceUnsupportedClaims(
   };
 
   if (Array.isArray(report.strengths)) {
-    report.strengths = softProcess(report.strengths, "strengths").slice(0, 3);
+    report.strengths = softProcess(report.strengths, "strengths").slice(0, 12);
   }
   if (Array.isArray(report.improvements)) {
-    report.improvements = softProcess(report.improvements, "improvements").slice(0, 3);
+    report.improvements = softProcess(report.improvements, "improvements").slice(0, 15);
   }
 
   return { removed, rewritten, per_field_removed };
@@ -572,14 +572,14 @@ export function renderFallbackReport(
       s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
     )
     .filter((x) => typeof x === "string" && x.length > 0)
-    .slice(0, 3);
+    .slice(0, 12);
 
   const improvements = evidence.core_improvements_evidence
     .map((s) =>
       s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
     )
     .filter((x) => typeof x === "string" && x.length > 0)
-    .slice(0, 3);
+    .slice(0, 15);
 
   const fixFirst =
     (evidence.fix_first_evidence ?? "").trim() ||
@@ -598,7 +598,7 @@ export function renderFallbackReport(
       return { timestamp: t.timestamp, note };
     })
     .filter((x): x is { timestamp: string; note: string } => x !== null)
-    .slice(0, 8);
+    .slice(0, 36);
 
   const submission_risk_flags = evidence.risk_evidence.map((r) => ({
     severity: r.severity,
@@ -676,7 +676,7 @@ export function renderFallbackReport(
     role_fit_notes,
     role_fit_modifier: 0,
     role_fit_confidence: evidence.role_fit_confidence ?? "low",
-    presentation_notes: evidence.presentation_evidence.slice(0, 3),
+    presentation_notes: evidence.presentation_evidence.slice(0, 6),
     at_risk:
       evidence.raw_scores.brief_adherence < 40 && mode === "brief",
   };
