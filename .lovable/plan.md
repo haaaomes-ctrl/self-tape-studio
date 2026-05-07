@@ -1,77 +1,43 @@
-# Verbatim source + artefact dump (read-only)
+## What happened
 
-This is a read-only deliverable — no app code will change. The output is one downloadable bundle plus an in-chat index that points at each file/section.
+Take `5e6bc13e-060c-4b86-8bcb-116aafc2d716` was created at **2026-05-06 11:18:47** with a Mux direct-upload URL. Its row hasn't been touched since `11:18:48` — `mux_status='uploading'`, `mux_asset_id=NULL`, `mux_playback_id=NULL`.
 
-## Why a bundle, not an in-chat dump
+Mux's own event log shows the upload completed successfully ~an hour later (`video.upload.asset_created` 12:19:16, `video.asset.ready` 12:19:22, `video.asset.static_rendition.ready` 12:22:42) for playback id `YcDzNSgaLgKCaHWVzCqv2GAbAf02SYEFhWBydfWvFt01Y`.
 
-Verbatim in chat would be ~7,700 lines of source plus the previous JSON exports. The chat UI truncates and reflows long blocks, which defeats the point of "verbatim". The bundle preserves byte-exact source; the chat response gives you the index, line counts, and the small items that fit cleanly inline.
+The take row was never updated by any of those webhooks. Two failure modes are possible — both need checking:
 
-## What goes in the bundle
+1. **Mux webhook never delivered to us** (wrong URL configured in Mux, signature verification rejecting them, or Worker erroring before the handler logs). The MUX_WEBHOOK_SECRET / endpoint URL `https://tapecoach.co.uk/api/public/mux-webhook` (or the `.lovable.app` equivalent) needs verifying in the Mux dashboard's webhook settings.
+2. **Reconciler isn't running.** `STALE_UPLOADING_MINUTES = 15` in `reconcile-stale-takes.ts` — this row should have been force-errored or recovered ~22 hours ago. Either pg_cron isn't calling the endpoint, or `RECONCILER_SECRET` is misconfigured. (The Lovable user can't query `cron.job` directly — needs a migration to inspect.)
 
-`/mnt/documents/tapecoach-source-and-artefacts.zip`
+## Plan
 
-Source (verbatim, unmodified):
+### Step 1 — Recover this take immediately
 
-```text
-source/
-  server/
-    evidence-pass.server.ts          (Step 1 evidence prompt + schema)        630 lines
-    report-polish.server.ts          (Step 2 polish/report prompt)            683 lines
-    report-quality.server.ts         (quality logging + validation removal)   758 lines
-    extract-brief.server.ts          (brief extraction + material policy)     362 lines
-    process-take.server.ts           (orchestration: tool schema, weights,
-                                      reliability, role-fit, scrub, blockers) 2978 lines
-  lib/
-    audition-rules.ts                (weightsForType, bands, caps, UK scrub)  449 lines
-  routes/
-    audition.$auditionId.tsx         (category labels, breakdown,
-                                      comparison page, timestamp render)      1836 lines
-```
+Since Mux still has the asset ready, the simplest fix is to backfill the take row using the known playback id, then schedule analysis. Two options:
 
-Previously-exported artefacts (re-included for completeness):
+- **A. SQL backfill** (no code, fastest): run a migration that updates the row with `mux_playback_id`, `mux_mp4_standard_url`, `mux_status='ready'`, `processing_phase='analysis_pending'`, then trigger `/api/public/reconcile-stale-takes` so it picks up the now-pending row and runs analysis. The duration must be fetched from Mux (a one-shot script via `mux.video.assets.retrieve(asset_id)`).
+- **B. Curl the reconciler** with `STALE_UPLOADING_MINUTES` already long-since exceeded — `attemptTranscodingRecovery` will see `mux_upload_id` is present, fetch the upload → asset → playback id from Mux, backfill, and schedule. **No code change needed.** This is the cleaner option.
 
-```text
-artefacts/
-  auditions.json                     (5 audition rows)
-  takes_full.json                    (11 take rows incl. report/scores/signals)
-  per-take/<take_id>.json            (11 files)
-  per-audition/<audition_id>.json    (5 files)
-  repeated-runs/
-    27a49d98-...-MT.json             (3 takes: 93/95/96)
-    5d3c9734-...-acting.json         (3 takes: 93/93/93)
-    18072552-...-acting.json         (3 takes: 93/91/93)
-```
+Recommended: **B**. We just need `RECONCILER_SECRET`'s value to call it.
 
-## In-chat index (what I will paste alongside the bundle)
+### Step 2 — Find out why automatic recovery didn't happen
 
-For each requested item, the chat reply will contain:
+In parallel:
 
-1. File path + line range that contains it.
-2. The exact symbol name (e.g. `EVIDENCE_SYSTEM_PROMPT`, `REPORT_TOOL_SCHEMA`, `weightsForType`, `renderCategoryLabel`, `ComparisonPanel`, `scrubPresentation`, `computeRoleFit`, `materialPolicyFor`, `feedbackReliability`, `logQuality`).
-3. A short verbatim excerpt (≤40 lines) of the prompt/schema head so you can verify identity at a glance. Full body lives in the bundle.
+1. **Check Mux webhook delivery log** for this asset (in the Mux dashboard → Settings → Webhooks → recent deliveries). If they show 4xx/5xx responses to our endpoint, we have the smoking gun.
+2. **Inspect pg_cron** via a one-off migration: `SELECT jobname, schedule, active, command FROM cron.job;` to confirm the reconciler is scheduled and points at the right URL.
+3. Verify `MUX_WEBHOOK_SECRET` and `RECONCILER_SECRET` are both present (via secrets list) and the Mux webhook URL is `https://tapecoach.co.uk/api/public/mux-webhook` (or stable preview equivalent).
 
-This keeps the chat readable while still giving you byte-exact source on disk.
+### Step 3 — Hardening (only if a defect is found)
 
-## Items that cannot be produced (and why)
+No source-code change is proposed yet — the existing reconciler logic in `attemptTranscodingRecovery` already covers this exact case. Defects identified in Step 2 will determine the fix:
 
-These were already flagged in the previous audit; restating so the plan is honest:
+- Misconfigured webhook URL → update in Mux dashboard.
+- Cron job missing/disabled → re-create via migration.
+- Cron job calling wrong host (e.g. old preview URL that no longer routes) → migration to update the command.
 
-- **Rendered MT report screenshots paired with raw JSON** — `/audition/$auditionId` is RLS-protected. An anonymous Playwright session stops at "Loading…" and there is no service-role bypass route. Raw JSON for the 3 MT takes is in `repeated-runs/27a49d98-...-MT.json`; rendered screenshots require a logged-in session from the take owner.
-- **Rendered comparison-page screenshots** — same RLS gate. Same JSON is available.
-- **Dance / Voice-only / Commercial test outputs** — production DB contains only `acting_scene`, `monologue`, and `musical_theatre` rows. No `dance`, `song`, or `commercial` takes exist. I will not synthesise fake outputs; if you want them, they need to be generated by running the pipeline against new uploads of those types (out of scope for a read-only audit).
-- **Repeated-run score-stability artefacts** — already in the bundle (3 sets, 9 takes). Stability summary will be repeated in the chat reply: MT 93/95/96 (σ≈1.25), acting-A 93/93/93 (σ=0), acting-B 93/91/93 (σ≈0.94).
+## Questions before I proceed
 
-## Process
-
-1. Copy the 7 source files verbatim into `source/` (no edits, no truncation).
-2. Re-zip with the previous `report-artefacts.zip` contents under `artefacts/`.
-3. Write `/mnt/documents/tapecoach-source-and-artefacts.zip`.
-4. Reply with the index, the small inline excerpts, and a `<lov-artifact>` link to the zip.
-
-## Confirmation needed
-
-One choice before I run this — pick one:
-
-- **A. Bundle + index (recommended).** Byte-exact source on disk; chat stays scannable.
-- **B. Paste everything verbatim in chat.** ~7,700 lines of source across ~10 messages. Will be truncated by the UI in places and is hard to diff.
-- **C. Bundle only, no inline excerpts.** Smallest chat reply; you open the zip for everything.
+1. Do you want me to **(B) curl the reconciler** to recover this take (requires `RECONCILER_SECRET` — I can read it via `secrets--fetch_secrets`), or would you prefer a **direct SQL backfill** so you can watch the recovery path explicitly?
+2. Should I also create a one-shot migration to dump `cron.job` so we can confirm the reconciler is actually scheduled?
+3. Can you check the Mux dashboard's **webhook delivery history** for asset `YcDzNSgaLgKCaHWVzCqv2GAbAf02SYEFhWBydfWvFt01Y` and tell me whether the deliveries show 200s, 4xx, 5xx, or no attempt at all? That single data point decides whether the bug is in Mux config or in our cron pipeline.
