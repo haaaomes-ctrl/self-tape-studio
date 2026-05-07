@@ -18,6 +18,8 @@ export interface EnforcementCounters {
   brief_overconfidence_rewritten: number;
   presentation_polish_removed: number;
   framing_rehearsal_rewritten: number;
+  dance_visibility_unanchored_removed: number;
+  submission_risk_demoted: number;
 }
 
 // ---------------------------------------------------------------------------
