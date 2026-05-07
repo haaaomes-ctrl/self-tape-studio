@@ -2699,6 +2699,15 @@ export async function runProcessTake(
         : { enabled: false },
     };
 
+    // ---- Report schema version stamp (Phase 0 foundation) ----
+    // Every persisted report carries a schema_version. Renderers read this
+    // to choose layout. Legacy stays "v1-legacy"; future component-first
+    // reports will write "v2-component" once the future_report_enabled flag
+    // is flipped on. Never change the value of an already-persisted report.
+    if (typeof (report as Record<string, unknown>).schema_version !== "string") {
+      (report as Record<string, unknown>).schema_version = "v1-legacy";
+    }
+
     console.log("[take-pipeline] finalising_scrubs_completed", {
       take_id: takeId,
       duration_ms: Date.now() - scrubsStartedAt,
