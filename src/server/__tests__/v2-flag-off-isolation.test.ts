@@ -23,12 +23,11 @@ describe("v2 flag-off isolation (Phase 3A)", () => {
       resolve(__dirname, "../process-take.server.ts"),
       "utf8",
     );
-    expect(src).toContain("cfg3a.future_report_enabled");
+    // Phase 3B: persistence is now flag-gated, but the gate itself must exist.
+    expect(src).toContain("future_report_enabled");
     expect(src).toContain("buildV2Report");
-    expect(src).toContain("v2_report_constructed");
-    // The builder result must not be persisted: the only `report` written to
-    // `takes` must remain the v1 `twoStepReport`/legacy object.
-    expect(src).not.toMatch(/update\(\{[^}]*report:\s*v2/);
+    expect(src).toContain("validateV2PublicBoundary");
+    // score_breakdown must never be the v2 object — that surface stays v1.
     expect(src).not.toMatch(/score_breakdown:\s*v2/);
   });
 
