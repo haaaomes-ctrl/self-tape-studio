@@ -1712,7 +1712,7 @@ function AddTakeBlock({
   audition: Audition;
   nextNumber: number;
   onCancel: () => void;
-  onUploaded: () => void;
+  onUploaded: (newTakeId?: string) => void;
 }) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
