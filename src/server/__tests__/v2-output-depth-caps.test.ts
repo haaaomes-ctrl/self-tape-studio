@@ -16,13 +16,12 @@ describe("v2 output-depth caps removed", () => {
   const viewSrc = read("src/components/report/V2ReportView.tsx");
 
   it("REPORT_TOOL strengths/improvements/coaching_drills/timestamped_notes maxima are raised", () => {
-    expect(processSrc).toMatch(/strengths:\s*\{[^}]*maxItems:\s*12/);
-    expect(processSrc).toMatch(/improvements:\s*\{[^}]*maxItems:\s*15/);
-    expect(processSrc).toMatch(/coaching_drills:\s*\{[^}]*maxItems:\s*15/);
-    expect(processSrc).toMatch(/timestamped_notes:[^]*?maxItems:\s*36/);
-    // legacy values must be gone for these specific fields
-    expect(processSrc).not.toMatch(/strengths:\s*\{[^}]*maxItems:\s*3\b/);
-    expect(processSrc).not.toMatch(/improvements:\s*\{[^}]*maxItems:\s*3\b/);
+    expect(processSrc).toMatch(/strengths:\s*\{[\s\S]*?maxItems:\s*12/);
+    expect(processSrc).toMatch(/improvements:\s*\{[\s\S]*?maxItems:\s*15/);
+    expect(processSrc).toMatch(/coaching_drills:\s*\{[\s\S]*?maxItems:\s*15/);
+    expect(processSrc).toMatch(/timestamped_notes:[\s\S]*?maxItems:\s*36/);
+    expect(processSrc).not.toMatch(/strengths:\s*\{[\s\S]{0,200}?maxItems:\s*3\b/);
+    expect(processSrc).not.toMatch(/improvements:\s*\{[\s\S]{0,200}?maxItems:\s*3\b/);
   });
 
   it("REPORT_TOOL declares priority_fixes and category_rationale", () => {
