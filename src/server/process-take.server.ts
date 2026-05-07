@@ -171,9 +171,70 @@ const REPORT_TOOL = {
           },
           required: ["technical", "audio", "acting", "brief_adherence", "professional_presentation"],
         },
-        strengths: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
-        improvements: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+        strengths: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 12 },
+        improvements: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 15 },
         fix_first: { type: "string" },
+        priority_fixes: {
+          type: "array",
+          description:
+            "Prioritised fixes for the next take. 2–5 items typical. Each item is the most useful thing to address now, anchored in evidence. Do not duplicate `improvements` verbatim unless that is the clearest formulation. kind: urgent | quick_win | critical_gap | assessability_blocker | low_effort_high_impact.",
+          items: {
+            type: "object",
+            properties: {
+              headline: { type: "string", maxLength: 200 },
+              rationale: { type: "string", maxLength: 320 },
+              kind: {
+                type: "string",
+                enum: [
+                  "urgent",
+                  "quick_win",
+                  "critical_gap",
+                  "assessability_blocker",
+                  "low_effort_high_impact",
+                ],
+              },
+              category: {
+                type: "string",
+                enum: [
+                  "technical",
+                  "audio",
+                  "vocal",
+                  "acting",
+                  "brief_adherence",
+                  "professional_presentation",
+                ],
+              },
+            },
+            required: ["headline"],
+          },
+          maxItems: 8,
+        },
+        category_rationale: {
+          type: "object",
+          description:
+            "For every public category whose score is < 100, explain what works, why it is not 100, and what would close the gap. For scores >= 90, also include `standout_delta` — the marginal improvement that separates strong from standout. Discipline-specific language; never generic praise.",
+          properties: Object.fromEntries(
+            [
+              "technical",
+              "audio",
+              "vocal",
+              "acting",
+              "brief_adherence",
+              "professional_presentation",
+            ].map((k) => [
+              k,
+              {
+                type: "object",
+                properties: {
+                  what_works: { type: "string", maxLength: 320 },
+                  why_not_full_score: { type: "string", maxLength: 320 },
+                  close_gap: { type: "string", maxLength: 320 },
+                  standout_delta: { type: "string", maxLength: 320 },
+                },
+              },
+            ]),
+          ),
+        },
         timestamped_notes: {
           type: "array",
           items: {
@@ -184,8 +245,46 @@ const REPORT_TOOL = {
             },
             required: ["timestamp", "note"],
           },
+          maxItems: 36,
         },
-        coaching_drills: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 5 },
+        coaching_drills: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 15 },
+        next_take_plan: {
+          type: "object",
+          description:
+            "Exhaustive next-steps / action plan. Include all identified actionable improvements. Use `groups` when the items naturally split (retake-critical, quick wins, craft refinements, rehearsal drills, recording setup); otherwise use a flat `steps` list. Avoid generic advice, expensive-equipment / paid-coaching advice, and unsupported foot-cropping advice. For fixed-frame briefs, recorded-take items must preserve the required frame. Rehearsal-only items must be labelled and paired with a recorded-take-safe alternative.",
+          properties: {
+            steps: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 15,
+            },
+            groups: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  label: {
+                    type: "string",
+                    enum: [
+                      "retake_critical",
+                      "quick_wins",
+                      "craft_refinements",
+                      "rehearsal_drills",
+                      "recording_setup",
+                    ],
+                  },
+                  items: {
+                    type: "array",
+                    items: { type: "string" },
+                    maxItems: 10,
+                  },
+                },
+                required: ["label", "items"],
+              },
+              maxItems: 6,
+            },
+          },
+        },
         submission_risk_flags: {
           type: "array",
           description:

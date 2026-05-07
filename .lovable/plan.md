@@ -1,67 +1,81 @@
-## Phase 3C P0 — Output-Enforcement Cleanup
+## XIMPL-PHASE-3C-P1-COMPLETE-V2-OUTPUT-DEPTH-PROMPT-SCHEMA — Plan
 
-A narrow, deterministic, server-only text-enforcement layer that runs after `scrubReportQuality` / `enforceScoreAlignment` and before v1 persistence and v2 builder. Scores, weights, caps, blockers, verdicts, role-fit bounds, schema versions, and Mux flow are not touched.
+Completes the deferred Phase 3C P0 work: removes upstream prompt/schema caps, adds v2 `priority_fixes`, category rationales, richer component breakdowns, exhaustive action plan, duration-scaled timestamps, discipline-specialist depth, and professional calibration. Preserves all P0 changes (Dance cleanup, soft-risk demotion, Comparison rename, new-take navigation), all scoring, weights, blockers, role-fit bounds, Mux flow, public/private boundary and v1 historical rendering.
 
-### Files to add
+### 1. Cap removal (upstream + downstream, v2-safe)
 
-1. **`src/server/report-output-enforcement.server.ts`** — new pure module.
-   - Exports `enforcePublicReportOutputQuality(report, ctx)` returning `{ report, counters }`.
-   - `ctx`: `{ mode: "brief"|"baseline", auditionType, extractedBrief, evidenceSufficiency, framingFixed, materialPolicy }`.
-   - Operates on user-facing string fields only:
-     - `casting_headline`, `headline`, `casting_insight`, `insight`
-     - `role_fit_notes`, `role_fit`, `category_notes.*`
-     - `strengths[]`, `improvements[]`, `presentation_notes[]`, `casting_risk_explanations[]`
-     - `fix_first` (object: `headline`, `why_now`)
-     - `timestamped_notes[].note`
-     - `next_take_plan.steps[]`, `coaching_drills[]`
-     - `detected_components[].note`, `submission_verdict.reason`
-   - Six rule groups, each with explicit regex banks + counters:
-     1. **Castability/callback/recall/workshop overclaim**: regex bank covers `highly castable`, `castable for`, `bookable`, `marketable`, `commercial look`, `strong contender`, `perfect fit`, `exactly what they(’|')re looking for`, `callback-ready`, `recall-worthy`, `would (get|be) a? recall`, `strong callback potential`, `workshop-ready`, `development(-| )workshop ready`, `highly castable for (musical theatre|contemporary|development workshops)`, `likely to (progress|be recalled)`, `would be called back`, `buyer/brand/market fit`. Sentence-level removal; if a sentence contains the literal brief project type ("development workshop") in a neutral noun phrase (no `castable|ready|contender|fit|strong|highly` nearby), keep it. Empty fields get a neutral, evidence-bound replacement only when the field is required (e.g. `casting_headline`); otherwise drop sentence.
-     2. **Generic phrase anchoring**: phrase bank (`strong vocal performance`, `grounded acting`, `natural`, `believable`, `character warmth`, `polished`, `professional tape`, `screen-ready`, `development-ready`, etc.). A sentence containing one of these is kept ONLY if it also contains an anchor token: a timestamp `\b\d{1,2}:\d{2}\b`, the literal words `lyric|line|phrase|beat|verse|bridge|chorus|reader|reaction|breath|diction|register|transition`, or a component label. Otherwise the sentence is removed.
-     3. **Brief-adherence overconfidence**: replace `perfect adherence`, `perfectly aligned`, `all (specific )?brief requirements were met (precisely|fully)`, `every instruction was met`, `flawless (adherence|compliance)`, `strict adherence to all`, `full marks for adherence`, `spot on`, `exactly what was requested` → "The submitted material appears consistent with the supplied brief." `brief_adherence` score is never touched.
-     4. **`professional_presentation` anti-polish**: in `category_notes.professional_presentation`, `presentation_notes`, and any sentence about presentation: strip `highly professional tape`, `polished tape`, `technically polished`, `professional standard`, `high production value`, `studio-quality`, `expensive equipment`, `paid (reader|accompanist|coaching|editing)`, `well-lit`, `neutral background`, `no (visual )?distractions`, `solid colour (of your )?top`, `clean package`, `professional look`, `screen-ready as marketability`. Allowed terms: `readable frame`, `stable framing`, `head-and-shoulders framing maintained`, assessability/orientation/slate/single-edit references; suffix `This affects readability, not talent.` if the field becomes empty.
-     5. **Fixed-frame / rehearsal-only**: when `framingFixed` (derived from extracted brief tokens `head-and-shoulders|close-up|fixed|static|self-tape camera-led`), in `next_take_plan.steps`, `coaching_drills`, `improvements`, `fix_first.headline`/`why_now`, and `timestamped_notes[].note`: detect `walking|standing to record|moving (around|across) the room|holding (a|an|the) (instrument|prop)|using props|physical business|crossing the room|stepping out of frame|adding (staging|blocking)|recording while moving|sit on (your|my) hands`. Rewrite each match by prefixing `Rehearsal-only: ` and appending ` For the recorded take, keep the head-and-shoulders frame and use breath, stillness, eyeline and thought shifts to carry the same intention.` (single canonical suffix to avoid combinatorial drift). Existing `scrubReportQuality` framing scrub continues to run; this layer is the safety net.
-   - Counters returned (logged, not persisted to public report or `score_breakdown`):
-     `{ castability_removed, generic_unanchored_removed, brief_overconfidence_rewritten, presentation_polish_removed, framing_rehearsal_rewritten, comparison_fallback_used: 0 }`.
-   - Pure: clones inputs via `structuredClone`. No private fields ever added. Never mutates `scores`, `overall_score`, `verdict`, `role_fit_modifier`, `score_breakdown`, `schema_version`.
+**`src/server/process-take.server.ts` — REPORT_TOOL schema (lines ~160–278)**
+- `strengths.maxItems`: 3 → 12 (`minItems: 1`).
+- `improvements.maxItems`: 3 → 15.
+- `coaching_drills.maxItems`: 5 → 15.
+- `presentation_notes.maxItems`: 3 → 6.
+- `timestamped_notes`: add `maxItems: 36`.
+- Add OPTIONAL public-safe fields:
+  - `priority_fixes: { type: array, items: { type: object, properties: { headline, rationale, kind ∈ ["urgent","quick_win","critical_gap","assessability_blocker","low_effort_high_impact"] }, required: ["headline"] }, maxItems: 8 }`.
+  - `category_rationale: { type: object, properties: { technical, audio, vocal, acting, brief_adherence, professional_presentation : { type: object, properties: { what_works, why_not_full_score, close_gap, standout_delta }, required: ["why_not_full_score","close_gap"] } } }`.
+  - `next_take_plan: { type: object, properties: { steps: { type: array, items: string, maxItems: 15 }, groups: { type: array, items: { type: object, properties: { label ∈ ["retake_critical","quick_wins","craft_refinements","rehearsal_drills","recording_setup"], items: { array of string, maxItems: 10 } } }, maxItems: 6 } } }`.
+- None of the new fields are added to `required`. v1 fallback unchanged.
 
-2. **`src/server/__tests__/report-output-enforcement.test.ts`** — new file, ≥ 25 cases:
-   - Castability bank (10 fixtures including the four phrases observed in production).
-   - Neutral "development workshop" project title preserved.
-   - Generic phrase anchoring (anchored kept, unanchored stripped) — both vocal + acting.
-   - Brief-adherence overconfidence rewriting and score immutability assertion.
-   - Presentation polish/wardrobe/lighting/equipment removal and assessability preservation.
-   - Fixed-frame: rehearsal-only rewrite for walking/prop/instrument/stand/sit-on-hands; recorded-take alternative appended; brief without fixed framing leaves text unchanged.
-   - Idempotence: running enforcement twice equals once.
-   - Privacy: forbidden-key scan over output; original `scores`, `overall_score`, `role_fit_modifier`, `verdict_final` deep-equal pre/post.
-   - Caps preserved: ≤ 3 strengths, ≤ 3 improvements, ≤ 8 timestamped notes (does not add items).
+**`buildSystemPrompt()` (lines ~280–408)** — replace WRITING RULES block:
+- `strengths`: 3–8 specific items (technical max 12). No padding.
+- `improvements`: 3–10 ordered most-impactful first (technical max 15).
+- `coaching_drills` / next-step items: 4–10 (max 15).
+- `priority_fixes`: 2–5 prioritised fixes per the kind enum; do not duplicate improvements verbatim unless that is the clearest formulation.
+- `category_rationale`: REQUIRED for every category whose score < 100. Must explain `what_works`, `why_not_full_score`, `close_gap`. For scores ≥ 90 also write `standout_delta`. Discipline-specific language; never generic praise.
+- `timestamped_notes`: duration-scaled (<60s → 3–5; 1–3m → 6–10; 3–5m → 8–14; 5–10m → 12–24; 10m+ → 18–36). Never invent. Chronological.
+- Professional calibration block: 90–100 must be differentiated; 95 must produce as much feedback as 75; reserve 98–100 for near-flawless tape-level evidence; high-score categories must always include marginal `standout_delta`.
+- Discipline depth fragments (concise, in main system prompt):
+  - Dance: cite movement evidence (rhythm/timing, control, spatial pathway, dynamics, intention); never invent style/subtype confidence; never claim foot/leg cropping without timestamped observation; never use unanchored "high-energy", "clean lines"; no MT-role/employer language.
+  - MT: preserve Acting Scene + Song; cite acting-through-song with lyric/phrase/beat; vocal feedback distinguishes technique from story/style; no castability/recall/workshop/live-room overclaim; for fixed-frame briefs, recorded-take advice must preserve the frame (rehearsal-only items prefixed and paired with frame-safe alternative).
 
-3. **`src/lib/__tests__/comparison-headline-fallback.test.ts`** — new file (or co-locate near comparison util) testing the headline picker in 6 cases (v1 only, v2 only, v2 with insight only, both, neither, malformed).
+**`src/server/report-polish.server.ts`** — `POLISH_SYSTEM_PROMPT` (line 35):
+- Replace "strengths ≤3, improvements ≤3, presentation_notes ≤3, timestamped_notes ≤8" with the v2 soft targets / technical maxima above. Add lines mirroring the discipline + calibration + rationale guidance so Step 2 can produce the new fields from locked Step 1 evidence. Keep "use only locked evidence" discipline.
 
-### Files to modify
+**`src/server/evidence-pass.server.ts`** — EVIDENCE_TOOL (lines 99, 113, 169, 192, 223) + EVIDENCE_SYSTEM_PROMPT (lines 276–285):
+- `core_strengths_evidence.maxItems`: 5 → 12.
+- `core_improvements_evidence.maxItems`: 5 → 15.
+- `presentation_evidence.maxItems`: 6 → 8.
+- `risk_evidence.maxItems`: 8 → 10.
+- `timestamped_evidence.maxItems`: 8 → 36, description rewritten with the duration-scaled bands (matches new prompt) and explicit Dance/MT coverage targets (rhythm/timing, control, spatial, dynamics, performance, ≥1 improvement; acting scene, song, transition, acting-through-song, ≥1 improvement).
+- Prompt re-written to match (remove "Maximum 8" and "absolute maximum: 8").
+- Validation: existing `.slice(0, 36)` already caps; remove the implicit assumption of 8.
 
-4. **`src/server/process-take.server.ts`**
-   - Import `enforcePublicReportOutputQuality`.
-   - Insert call immediately after the existing locked-fields/score-alignment block at ~line 2675 and before the schema-version stamp at ~line 2778.
-   - Pass framing flag derived from `extractedBrief.framing` (presence of `head-and-shoulders|fixed|static|close-up|self-tape camera-led`) and `materialPolicy`.
-   - Log counters under `[take-pipeline] output_enforcement_applied` (no PII, no raw text). Counters do NOT enter `report` or `score_breakdown`.
-   - The same `report` object is then handed to `buildV2Report` (already happens at ~2797) so v2 inherits the cleaned text automatically.
+**`src/components/report/V2ReportView.tsx`** — remove `slice(0, 3/8/5/3)` on lines 305, 322, 339, 354, 419. Keep technical safety: `slice(0, 36)` for timestamped_notes only (defensive).
 
-5. **`src/routes/audition.$auditionId.tsx`**
-   - Introduce a small local helper `pickComparisonHeadline(report)` returning the first non-empty of `casting_headline`, `headline`, `casting_insight`, `insight`, else `null`.
-   - Replace the four call sites using `report?.casting_headline` (lines ~1062, 1511, 1542, 1588) with this helper.
-   - At line ~1588, render the `—` and headline only when the picked headline is non-empty; otherwise show just `Best take: Take N`. Apply same pattern at line ~1511.
-   - No layout/redesign changes; quoting and styling preserved. Pure presentation.
+**`src/server/report-output-enforcement.server.ts`** — no behavioural change to existing rules; add a small `priority_fixes` and `category_rationale` walker that runs the existing castability / generic-anchoring / brief-overconfidence / polish / framing scrubs over the new fields' string properties. Counters extended.
 
-### Out of scope (explicit non-changes)
+**`src/server/v2-report-builder.server.ts`** — extend `V2Report` and `buildV2Report`:
+- Surface new public fields: `priority_fixes`, `category_rationale`, `next_take_plan` (now object with `steps[]` and optional `groups[]`).
+- Project legacy report's new fields verbatim (already-public). When `priority_fixes` absent, derive a minimum of `[{ headline: legacy fix_first }]` so the section always renders something. When `category_rationale` absent, leave undefined (renderer hides the section, no fabricated content).
+- No new forbidden tokens; FORBIDDEN_KEYS unchanged. `validateV2PublicBoundary` re-runs as-is.
 
-- `src/lib/audition-rules.ts`, `src/lib/report-schema.ts`, `src/server/shadow-scoring.server.ts`, `src/server/evidence-pass.server.ts`, weights, caps, verdict labels, blockers, role-fit bounds, Mux upload/webhook, schema versions, RLS policies, dimension scoring, `score_breakdown` shape (counters are logged only).
-- `v2-report-builder.server.ts`: no functional change required because the legacy `report` object it receives is now already cleaned. The forbidden-key validator stays as-is.
+**`src/components/report/V2ReportView.tsx`** — add sections, all read-only:
+- "Prioritised fixes" (renders `priority_fixes`, falls back to `fix_first` single-card when absent).
+- "Why this score" (renders `category_rationale[key]` per category — `what_works`, `why_not_full_score`, `close_gap`, optional `standout_delta`).
+- Component breakdown: render any of `subtype`, `style`, `form`, `assessability`, plus existing `note`. (Server prompt already requested the additional detail; renderer just exposes it.)
+- Rename "Next take plan" → "Next steps" and render `next_take_plan.groups[]` when present, else flat `next_take_plan.steps[]` (no slice).
 
-### Tests / verification
+**`src/server/process-take.server.ts` finalisation block (~line 2050–2200)** — change `presentation_notes.slice(0, 6)` to `slice(0, 6)` (already), but add equivalent scrub passes for `priority_fixes` headline/rationale strings and for `category_rationale.{key}.*` strings via the same `containsForbidden` / `stripAlt` helpers. No new caps below the schema maxima.
 
-- `bunx vitest run --dir src` once at the end. Update only the new tests + any drifted assertion that previously expected pre-enforcement language; existing posture / no-private-key / boundary tests must still pass unchanged.
+### 2. Tests
 
-### Hidden-production QA runbook (delivered after merge)
+Add new tests, no schema migrations:
+- `src/server/__tests__/v2-output-depth-caps.test.ts` — REPORT_TOOL schema maxima, evidence-pass schema maxima, polish prompt no longer references legacy "≤3 / ≤8" caps, V2ReportView source contains no `slice(0, 3)` / `slice(0, 8)` / `slice(0, 5)` for v2 lists.
+- `src/server/__tests__/priority-fixes.test.ts` — builder maps `priority_fixes`, falls back to `fix_first`, scrubs banned phrases.
+- `src/server/__tests__/category-rationale.test.ts` — builder surfaces rationales; output enforcement scrubs castability/polish from `why_not_full_score` and `close_gap`.
+- `src/server/__tests__/timestamp-density-scaling.test.ts` — fixtures at 45s, 2m, 4m, 6m, 12m durations: validation accepts >8 entries when timestamps are valid; chronological sort preserved; invalid dropped.
+- `src/server/__tests__/professional-calibration-prompt.test.ts` — system prompt source includes 90–100 differentiation, standout_delta, no "less feedback at higher scores".
+- `src/server/__tests__/dance-mt-depth-prompt.test.ts` — prompt source includes Dance specialist tokens (rhythm/timing, control, dynamics, spatial, performance), MT acting-through-song / lyric / phrase / beat, and MT no-castability/recall/workshop/live-room language.
+- `src/server/__tests__/v2-report-boundary.test.ts` — extend FORBIDDEN scan to assert new public fields contain no forbidden keys when populated.
+- `src/server/__tests__/report-output-enforcement.test.ts` — add cases for `priority_fixes` and `category_rationale` cleanup; assert idempotence.
+- Regression: existing `dance-visibility-guard.test.ts`, `report-output-enforcement.test.ts`, `v2-report-builder.test.ts`, `v2-report-boundary.test.ts`, `phase0-posture.test.ts` must remain green.
 
-Re-submit the same MT brief × 3 takes with `future_report_enabled=true`, `future_evidence_enabled=true`, `TWO_STEP_ANALYSIS_ENABLED=true`, then verify `schema_version="v2-component"`, no forbidden keys, none of the banned phrases (case-insensitive grep over all string fields), 5–8 timestamps each, comparison headline non-blank, `scores`/`overall_score`/`verdict_final` unchanged versus current production for the same input.
+Run: `bunx vitest run --dir src`.
+
+### 3. Out of scope (preserved)
+
+- `audition-rules.ts`, weights, scoring caps, blockers, verdict thresholds, role-fit bounds, Mux/upload/webhook flow, dimension-derived public scores, `score_breakdown` shape, schema_version values, v1 historical rendering, Comparison rename, new-take navigation fix, Dance soft-risk demotion, false-cropping guard.
+
+### 4. Hidden-production retest runbook (delivered in final response)
+
+Flags: `future_report_enabled=true`, `future_evidence_enabled=true`, `TWO_STEP_ANALYSIS_ENABLED=true`. Submissions: same MT video brief / no-brief, Dance with prompt brief, Dance no-brief, one 5–10m professional tape, one multi-take comparison, Take 2/3 add-take navigation. Pass checks per spec. Rollback: `future_report_enabled=false`.
