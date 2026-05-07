@@ -1081,6 +1081,12 @@ export async function runProcessTake(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let twoStepReport: any = null;
     let twoStepEvidence: EvidencePass | null = null;
+    // Phase 3B — captured future dimensions (Phase 1 internal output) so the
+    // v2 report builder can use them at the persist site. Stays null when
+    // future_evidence_enabled is off; the v2 builder then falls back to
+    // legacy `detected_components`.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let capturedFutureDimensions: any = null;
     let twoStepEnforcement = {
       locked_field_overwrites: 0,
       unsupported_claims_removed: 0,
@@ -1169,6 +1175,7 @@ export async function runProcessTake(
         // Phase 1 — log internal dimension counts only. The dimension data
         // itself is NOT persisted, NOT passed to Step 2, NOT rendered.
         if (evResult.futureDimensions) {
+          capturedFutureDimensions = evResult.futureDimensions;
           console.log("[take-pipeline] future_dimensions_captured", {
             take_id: takeId,
             components: evResult.futureDimensions.components.length,
@@ -1309,37 +1316,6 @@ export async function runProcessTake(
           });
         }
 
-        // Phase 3A — v2 component-report dark launch (BUILDER ONLY).
-        // Gated by `future_report_enabled` (default false). The constructed
-        // v2 object is NEVER persisted to `takes.report` or `score_breakdown`
-        // and never returned to the client. Only a structural log line is
-        // emitted. Wrapped in try/catch so failure cannot disrupt the
-        // user-facing pipeline.
-        try {
-          const { getResolvedConfig: getCfg3a } = await import("./app-config.server");
-          const cfg3a = await getCfg3a();
-          if (cfg3a.future_report_enabled && twoStepReport && evResult.futureDimensions) {
-            const { buildV2Report } = await import("./v2-report-builder.server");
-            const v2 = buildV2Report({
-              legacyReport: twoStepReport as Record<string, unknown>,
-              futureDimensions: evResult.futureDimensions,
-              auditionType: twoStepEvidence.audition_type,
-              mode: audition.brief ? "brief" : "baseline",
-            });
-            console.log("[take-pipeline] v2_report_constructed", {
-              take_id: takeId,
-              schema_version: v2.schema_version,
-              components: v2.components.length,
-              scores_source: "production_legacy",
-              has_role_fit: v2.role_fit !== undefined,
-            });
-          }
-        } catch (err) {
-          console.warn("[take-pipeline] v2_report_build_failed", {
-            take_id: takeId,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
       }
 
       const totalAi = Date.now() - twoStepStartedAt;
@@ -2803,6 +2779,55 @@ export async function runProcessTake(
       (report as Record<string, unknown>).schema_version = "v1-legacy";
     }
 
+    // ---- Phase 3B — single-path v2 persistence selection ----
+    // Server flag is the only switch. Production scoring is untouched: we
+    // only swap the SHAPE of the persisted `report` JSON. `scores`,
+    // `overall_score`, and `score_breakdown` continue to come from the
+    // legacy production path. v1 fallback covers builder errors and
+    // public-boundary validation failures.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let reportToPersist: any = report;
+    try {
+      const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
+      const cfg3b = await getCfg3b();
+      if (cfg3b.future_report_enabled) {
+        const { buildV2Report, validateV2PublicBoundary } = await import(
+          "./v2-report-builder.server"
+        );
+        const v2Candidate = buildV2Report({
+          legacyReport: report as Record<string, unknown>,
+          futureDimensions: capturedFutureDimensions ?? null,
+          auditionType: (report.audition_type as string | null) ?? null,
+          mode: audition.brief ? "brief" : "baseline",
+        });
+        const check = validateV2PublicBoundary(
+          v2Candidate,
+          report as Record<string, unknown>,
+        );
+        if (check.ok) {
+          reportToPersist = v2Candidate;
+          console.log("[take-pipeline] v2_report_persisted", {
+            take_id: takeId,
+            schema_version: v2Candidate.schema_version,
+            components: v2Candidate.components.length,
+            from_future_dimensions: !!capturedFutureDimensions,
+          });
+        } else {
+          console.warn("[take-pipeline] v2_report_fallback_to_v1", {
+            take_id: takeId,
+            reason: check.reason,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[take-pipeline] v2_report_fallback_to_v1", {
+        take_id: takeId,
+        reason: "build_threw",
+        error: err instanceof Error ? err.message.slice(0, 200) : "unknown",
+      });
+      reportToPersist = report;
+    }
+
     console.log("[take-pipeline] finalising_scrubs_completed", {
       take_id: takeId,
       duration_ms: Date.now() - scrubsStartedAt,
@@ -2871,7 +2896,7 @@ export async function runProcessTake(
         .update({
           status: "complete",
           processing_phase: "complete",
-          report,
+          report: reportToPersist,
           scores: report.scores,
           overall_score: overall,
           confidence: report.confidence,

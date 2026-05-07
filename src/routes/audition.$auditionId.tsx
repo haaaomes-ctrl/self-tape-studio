@@ -845,6 +845,19 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
   const r = take.report;
   if (!r) return null;
 
+  // Phase 3B — schema-version branch. Only "v2-component" routes to the v2
+  // renderer; missing/unknown/v1-legacy continues through the existing v1
+  // path. Reads via readReportSchemaVersion so renderer source stays clean.
+  if (readReportSchemaVersion(r) === "v2-component") {
+    return (
+      <V2ReportView
+        report={r}
+        takeNumber={take.take_number}
+        auditionType={r.audition_type ?? null}
+      />
+    );
+  }
+
   const confidence = take.confidence ?? r.confidence ?? 0;
   const trust = buildTrustIndicator(confidence, r, take);
 
