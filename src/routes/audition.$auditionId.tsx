@@ -312,7 +312,7 @@ function AuditionPage() {
                   <TabsList>
                     {hasRecommendation && (
                       <TabsTrigger value="recommend">
-                        Recommendation
+                        Comparison
                       </TabsTrigger>
                     )}
                     {takes.map((t) => (
