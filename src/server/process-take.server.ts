@@ -2827,6 +2827,8 @@ export async function runProcessTake(
       });
       reportToPersist = report;
     }
+
+    console.log("[take-pipeline] finalising_scrubs_completed", {
       take_id: takeId,
       duration_ms: Date.now() - scrubsStartedAt,
     });
