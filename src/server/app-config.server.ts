@@ -12,6 +12,13 @@ export interface ResolvedConfig {
   quota_enabled: boolean;
   daily_submission_cap: number;
   max_takes_per_audition: number;
+  // Future-state rollout flags (Phase 0 foundation). All default off.
+  // - future_evidence_enabled: Step 1 emits component dimension evidence (Phase 1).
+  // - future_report_enabled:   v2 component-first report schema + UI (Phase 3).
+  // - future_qa_trace_enabled: persists QA-safe traces for admin review (Phase 4).
+  future_evidence_enabled: boolean;
+  future_report_enabled: boolean;
+  future_qa_trace_enabled: boolean;
   source: "config" | "default";
 }
 
@@ -19,6 +26,9 @@ export const SAFE_DEFAULTS: Omit<ResolvedConfig, "source"> = {
   quota_enabled: true,
   daily_submission_cap: 5,
   max_takes_per_audition: 3,
+  future_evidence_enabled: false,
+  future_report_enabled: false,
+  future_qa_trace_enabled: false,
 };
 
 function sanitiseInt(v: unknown, fallback: number): number {
