@@ -189,7 +189,7 @@ const EVIDENCE_TOOL = {
             },
             required: ["severity", "flag", "why", "recall_impact"],
           },
-          maxItems: 8,
+          maxItems: 10,
         },
         timestamped_evidence: {
           type: "array",
