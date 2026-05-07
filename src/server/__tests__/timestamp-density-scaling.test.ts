@@ -58,6 +58,6 @@ describe("MT prompt depth", () => {
     expect(polSrc).toContain("acting-through-song");
   });
   it("forbids castability/recall/workshop/live-room overclaim", () => {
-    expect(procSrc).toMatch(/castability.\s.recall.\s.workshop.\s.live-room/);
+    expect(procSrc).toMatch(/castability\s*\/\s*recall\s*\/\s*workshop\s*\/\s*live-room/);
   });
 });
