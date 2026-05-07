@@ -441,6 +441,23 @@ export async function runEvidencePass(
 ): Promise<RunEvidencePassResult> {
   const model = args.model ?? DEFAULT_MODEL;
   const startedAt = Date.now();
+  const withDims = !!args.withFutureDimensions;
+
+  // Phase 1 — flag-gated additive prompt + schema. Lazy-imported to keep the
+  // legacy code path byte-identical when the flag is off.
+  let systemPrompt = EVIDENCE_SYSTEM_PROMPT;
+  let toolForCall: typeof EVIDENCE_TOOL = EVIDENCE_TOOL;
+  if (withDims) {
+    const dims = await import("./dimensions");
+    systemPrompt = `${EVIDENCE_SYSTEM_PROMPT}\n\n${dims.buildDimensionsPromptFragment()}`;
+    // Clone the tool and add an OPTIONAL future_components array. Existing
+    // required fields are not touched.
+    const cloned = JSON.parse(JSON.stringify(EVIDENCE_TOOL)) as typeof EVIDENCE_TOOL;
+    (cloned.function.parameters.properties as Record<string, unknown>)[
+      "future_components"
+    ] = dims.FUTURE_COMPONENTS_SCHEMA;
+    toolForCall = cloned;
+  }
 
   let resp: Response | null = null;
   try {
@@ -456,7 +473,7 @@ export async function runEvidencePass(
         top_p: 1,
         max_tokens: 6144,
         messages: [
-          { role: "system", content: EVIDENCE_SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: [
@@ -465,7 +482,7 @@ export async function runEvidencePass(
             ],
           },
         ],
-        tools: [EVIDENCE_TOOL],
+        tools: [toolForCall],
         tool_choice: {
           type: "function",
           function: { name: "collect_audition_evidence" },
