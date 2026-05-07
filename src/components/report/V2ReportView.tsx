@@ -104,6 +104,8 @@ export function V2ReportView({
   );
   const components = safeArr<{
     type?: string;
+    component_type?: string | null;
+    label?: string | null;
     weight?: number | null;
     score?: number | null;
     note?: string | null;
@@ -112,6 +114,12 @@ export function V2ReportView({
     form?: string | null;
     start?: string | null;
     end?: string | null;
+    what_it_shows?: string | null;
+    what_is_assessable?: string | null;
+    key_evidence?: string | null;
+    score_driver?: string | null;
+    close_gap?: string | null;
+    style_or_task_confidence?: string | null;
   }>(report.components);
   const scores =
     report.scores && typeof report.scores === "object"
