@@ -96,7 +96,7 @@ const EVIDENCE_TOOL = {
             },
             required: ["area", "evidence"],
           },
-          maxItems: 5,
+          maxItems: 12,
         },
         core_improvements_evidence: {
           type: "array",
