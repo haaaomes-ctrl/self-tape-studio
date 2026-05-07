@@ -35,6 +35,10 @@ import {
   computeConsistencyWarning,
   timestampTargetMin,
 } from "./report-quality.server";
+import {
+  enforcePublicReportOutputQuality,
+  detectFramingFixed,
+} from "./report-output-enforcement.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
