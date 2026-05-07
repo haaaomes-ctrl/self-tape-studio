@@ -1,0 +1,23 @@
+{
+  "id": "02-acting-through-song-weak",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "acting_through_song_weak",
+  "brief": { "role": "Eponine", "show": "Les Miserables", "framing": "head-and-shoulders" },
+  "evidence_pass": {
+    "components": [
+      { "type": "song", "start": 0, "end": 200 },
+      { "type": "acting_through_song", "start": 0, "end": 200, "dimensions": { "lyric_intention": [] } }
+    ],
+    "anchors_count": 0
+  },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "improvements": [
+      "Connect more deeply with the lyric."
+    ]
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "lyric_intention_missing": 1 }
+  }
+}

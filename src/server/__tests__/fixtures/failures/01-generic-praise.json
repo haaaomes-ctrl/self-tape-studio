@@ -1,0 +1,19 @@
+{
+  "id": "01-generic-praise",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "generic_praise",
+  "brief": { "role": "Belle", "show": "Beauty and the Beast", "framing": "head-and-shoulders" },
+  "evidence_pass": { "components": [{ "type": "song" }], "anchors_count": 1 },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "strengths": [
+      "Strong vocals throughout.",
+      "Lovely energy in the room.",
+      "Great presence."
+    ]
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "generic_praise": 3 }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "04-timestamp-underproduction",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "timestamp_underproduction",
+  "brief": { "role": "Elphaba", "show": "Wicked", "framing": "head-and-shoulders", "length_seconds": 240 },
+  "evidence_pass": { "components": [{ "type": "song", "start": 0, "end": 240 }] },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "timestamped_notes_count": 2,
+    "duration_seconds": 240
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "timestamp_underproduction": 1 }
+  }
+}

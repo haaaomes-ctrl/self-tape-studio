@@ -1,0 +1,22 @@
+{
+  "id": "03-broad-vocal-praise",
+  "branch": "mt",
+  "source": "synthetic",
+  "failure_mode": "broad_vocal_praise",
+  "brief": { "role": "Christine", "show": "Phantom of the Opera", "framing": "head-and-shoulders" },
+  "evidence_pass": {
+    "components": [{ "type": "song", "dimensions": { "vocal_technique_anchors": [] } }],
+    "anchors_count": 0
+  },
+  "current_report": {
+    "schema_version": "v1-legacy",
+    "strengths": [
+      "Beautiful tone and great range.",
+      "Vocally secure throughout."
+    ],
+    "timestamped_notes_count": 1
+  },
+  "phase2_expectations": {
+    "scrub_counters": { "vocal_praise_unanchored": 2 }
+  }
+}
