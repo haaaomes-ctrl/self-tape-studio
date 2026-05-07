@@ -302,7 +302,7 @@ export function V2ReportView({
       {strengths.length > 0 && (
         <Section title="Strengths">
           <ul className="space-y-2 text-sm">
-            {strengths.slice(0, 3).map((s, i) => (
+            {strengths.map((s, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-success">✓</span>
                 <span>
