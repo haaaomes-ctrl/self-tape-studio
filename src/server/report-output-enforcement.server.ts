@@ -150,15 +150,19 @@ const PRESENTATION_POLISH_TRIGGERS = [
 // Frame-breaking recorded-take advice (only triggered when framingFixed)
 const FRAME_BREAK_TRIGGERS = [
   /\bwalking\b/i,
-  /\bstand(?:ing)?\s+to\s+record\b/i,
+  /\bstand(?:ing)?\s+to\s+(?:record|sing)\b/i,
+  /\bsing\s+standing\b/i,
   /\b(?:moving|move|moves|walk|walks)\s+(?:around|across)\s+(?:the\s+)?room\b/i,
-  /\bhold(?:ing)?\s+(?:a|an|the)\s+(?:instrument|prop|guitar|chair|script)\b/i,
+  /\bhold(?:ing)?\s+(?:a|an|the)?\s*(?:instrument|prop|guitar|chair|script)\b/i,
+  /\bwith\s+an?\s+instrument\b/i,
   /\b(?:use|uses|using|work\s+with)\s+(?:a\s+)?props?\b/i,
-  /\bphysical\s+business\b/i,
+  /\bphysical\s+(?:business|task)\b/i,
+  /\bstage\s+business\b/i,
+  /\b(?:add|adding|use|using)\s+(?:staging|blocking)\b/i,
   /\b(?:cross|crosses|crossing)\s+the\s+room\b/i,
   /\bstep(?:ping)?\s+out\s+of\s+frame\b/i,
-  /\badd(?:ing)?\s+(?:staging|blocking)\b/i,
   /\brecord(?:ing)?\s+while\s+moving\b/i,
+  /\b(?:record|recording)\s+(?:the\s+)?(?:song|scene|take)\s+while\s+(?:standing|walking|moving)\b/i,
   /\bsit(?:ting)?\s+on\s+(?:your|my|their)\s+hands\b/i,
   /\bwork\s+it\s+physically\b/i,
 ];
