@@ -625,6 +625,30 @@ export async function runEvidencePass(
     };
   }
 
+  // Phase 1 — extract & validate optional internal future_components, then
+  // delete from `ev` so they NEVER enter the locked Step-1 evidence object
+  // consumed by Step 2 / report rendering.
+  let futureDimensions: import("./dimensions").FutureDimensionsResult | undefined;
+  if (withDims) {
+    const rawFuture = (ev as unknown as Record<string, unknown>).future_components;
+    delete (ev as unknown as Record<string, unknown>).future_components;
+    try {
+      const dims = await import("./dimensions");
+      futureDimensions = dims.validateFutureComponents(
+        rawFuture,
+        args.durationSeconds,
+      );
+    } catch (err) {
+      console.warn("[evidence] future_dimensions_dropped", {
+        reason: err instanceof Error ? err.message : "validate_error",
+      });
+      futureDimensions = { components: [], dropped: 0, malformed: true };
+    }
+  } else {
+    // Belt-and-braces: if the model emits the field unsolicited, strip it.
+    delete (ev as unknown as Record<string, unknown>).future_components;
+  }
+
   return {
     ok: true,
     evidence: ev,
@@ -632,6 +656,7 @@ export async function runEvidencePass(
     durationMs: Date.now() - startedAt,
     model,
     httpStatus: resp.status,
+    ...(futureDimensions ? { futureDimensions } : {}),
   };
 }
 
