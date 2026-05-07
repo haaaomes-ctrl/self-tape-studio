@@ -1,55 +1,63 @@
-# Phase 0 — Closure Plan
+# Phase 0 — Task 5 Closure Plan
 
-Most of Phase 0 from the approved revised plan is already in place from prior turns. This plan covers the small remaining gaps and a verification pass. No user-facing behaviour changes.
+## 1. Phase 0 Closure Readiness Check
 
-## What's already in place (verified)
+Verified in the codebase:
 
-- **Schema-version stamping** — `src/server/process-take.server.ts` lines ~2703–2708 stamp `report.schema_version = "v1-legacy"` on every write unless already set.
-- **Server-only feature flags** — `app_config` has `future_evidence_enabled`, `future_report_enabled`, `future_qa_trace_enabled` (all default false). Read via `src/server/app-config.server.ts`. No client exposure.
-- **`take_qa_traces` table** — created with RLS deny-all (migration `20260507083726_…`), `ON DELETE CASCADE` from `takes`, indices on `(branch, created_at DESC)` and `schema_version`. Only service-role server code can read/write.
-- **Failure fixture suite** — `src/server/__tests__/fixtures/failures/` contains all 8 fixtures (clean control + 7 known MT failure modes: generic praise, weak acting-through-song, broad vocal praise, timestamp underproduction, role-fit overclaim, presentation/polish drift, frame-break coaching).
-- **Legacy fixture scaffolding** — `src/server/__tests__/fixtures/legacy/{mt,acting,dance,voice,commercial}/` directories + loader (`fixtures/index.ts`) + README. Real artefacts added incrementally.
-- **Harness test** — `src/server/__tests__/future-state-fixtures.test.ts` asserts every required failure mode is present and well-formed.
-- **Vitest** installed as dev dependency.
-- **Renderers untouched** — `audition.$auditionId.tsx` and `checklist-view.tsx` do not branch on `schema_version`, so v1 reports (with or without the field) continue to render exactly as today. This satisfies "treat missing as v1-legacy at read time" by construction.
+- `report.schema_version = "v1-legacy"` stamping is present in `src/server/process-take.server.ts` (~line 2703–2708).
+- `app_config` carries `future_evidence_enabled`, `future_report_enabled`, `future_qa_trace_enabled`, all defaulting `false`; resolved via `src/server/app-config.server.ts`.
+- `take_qa_traces` exists with RLS deny-all (migration `20260507083726_…`).
+- Failure fixture suite (`src/server/__tests__/fixtures/failures/`) ships all 8 required categories: `00-clean-control`, `01-generic-praise`, `02-acting-through-song-weak`, `03-broad-vocal-praise`, `04-timestamp-underproduction`, `05-role-fit-overclaim`, `06-presentation-polish-drift`, `07-frame-break-coaching`.
+- Legacy fixture scaffolding present for `mt`, `acting`, `dance`, `voice`, `commercial` (each with `.gitkeep`); loader at `src/server/__tests__/fixtures/index.ts` already tolerates missing/empty directories via `fs.existsSync` + filtered readdir.
+- `src/lib/report-schema.ts` (Task 1) and its unit tests (8 cases covering missing/empty/`v1-legacy`/`v2-component`/unknown/null/numeric) are in place — green.
+- `src/server/__tests__/report-public-boundary.test.ts` (Task 2) is in place — green.
+- Vitest 4.1.5 installed; renderers untouched.
 
-## Remaining Phase 0 work
+Closure tasks may proceed.
 
-### 1. Defensive read helper for `schema_version`
+## 2. Remaining work in this run
 
-Add a tiny pure helper `readReportSchemaVersion(report)` in a new
-`src/lib/report-schema.ts` that returns `"v1-legacy" | "v2-component"`,
-defaulting to `"v1-legacy"` for missing/unknown values. **Not wired into
-renderers** in Phase 0 (no UI change), but available for Phase 3 to
-import. Keeps the rule "missing means v1-legacy" in one auditable place.
+Only three small additions remain. None change user-facing behaviour.
 
-### 2. R1 boundary enforcement test
+### A. Extend the boundary test's forbidden-key list
 
-Add `src/server/__tests__/report-public-boundary.test.ts` — a unit test
-that takes a representative current `report` JSON (synthesised in-test from
-the existing schema) and asserts none of the forbidden keys appear at any
-depth: `shadow_scores`, `shadow_divergence`, `future_shadow`,
-`qa_counters`, `scrub_counters`, `dimensions_summary`. This locks in
-amendment R1 ("public/private boundary") so future phases can't regress.
+`src/server/__tests__/report-public-boundary.test.ts` currently checks 8 forbidden keys. Task 2 specifies 15. Extend `FORBIDDEN_KEYS` to add: `shadow_score`, `dimension_traces`, `evidence_dimensions`, `internal_dimensions`, `internal_qa`, `take_qa_traces`, `future_evidence`, `future_dimensions`. Re-assert representative report and nested-leak regression cases.
 
-### 3. Verification pass
+### B. Add legacy fixture loader test (Task 4)
 
-Run `bunx vitest run src/server/__tests__/` and confirm green. Report
-results.
+New file `src/server/__tests__/legacy-fixture-loader.test.ts`:
 
-## Explicitly NOT in this run
+- `loadLegacyFixtures()` returns an array (currently empty — that is the truthful state for Phase 0).
+- Calling per-branch (`loadLegacyFixtures("dance")`, `"voice"`, `"commercial"`) returns `[]` without throwing — proves empty-directory tolerance.
+- For every fixture loaded (currently zero, but the assertion stays), the `expected_report` JSON contains none of the boundary-forbidden keys — guards future additions.
 
-- No Phase 1 dimensions, no Phase 2 shadow scoring, no Phase 3 v2 schema, no Phase 4 admin page.
-- No `user_roles` / `has_role` table — the admin read path lands with the QA admin page in Phase 4. Until then, `take_qa_traces` is reachable only via the service-role server client, which is the correct deny-all posture for Phase 0.
-- No renderer changes. v1 reports continue to render via the existing path.
-- No changes to scoring fields, weights, caps, blockers, verdicts, role-fit bounds, audition types, Mux/upload, polish, quality scrubs, or visible report text.
-- No backfill of `schema_version` on historical rows. Read-time defaulting handles them.
+### C. Add Phase 0 no-behaviour-change posture test (Task 5)
 
-## Exit criteria
+New file `src/server/__tests__/phase0-posture.test.ts`:
 
-- All three new flags resolved through `app-config.server.ts` and default false.
-- `take_qa_traces` exists with deny-all RLS; no writes occur in Phase 0 (writes start in Phase 2 under `future_qa_trace_enabled`).
-- Failure fixture suite covers all 8 required modes; legacy fixture loader returns an array.
-- New schema-version helper exists and is unit-tested for the missing/`v1-legacy`/`v2-component`/garbage cases.
-- R1 boundary test green.
-- No user-visible behaviour change.
+- Reads `src/server/app-config.server.ts` source and asserts the three `future_*` flags default to `false` in the resolver fallback path.
+- Imports `readReportSchemaVersion` and re-asserts that a stamped `{ schema_version: "v1-legacy" }` report resolves to `"v1-legacy"` (i.e. stamping never escalates to v2).
+- Greps `src/routes/audition.$auditionId.tsx` and `src/components/checklist-view.tsx` source for `schema_version` and `v2-component` and asserts neither token appears — proves renderers are not branching on version yet.
+- Asserts the canonical public score-field set (`technical`, `audio`, `vocal`, `acting`, `brief_adherence`, `professional_presentation`) is referenced by `src/lib/audition-rules.ts` (or wherever it is the source of truth) — a structural smoke test that no field was removed in Phase 0.
+
+### D. Verification
+
+Run `bunx vitest run --dir src` and report counts.
+
+## 3. Explicitly NOT in this run
+
+- No Phase 1 evidence dimensions, no Phase 2 shadow scoring or QA trace writes, no Phase 3 v2 schema/UI, no Phase 4 admin dashboard.
+- No renderer changes. `audition.$auditionId.tsx` and `checklist-view.tsx` remain untouched.
+- No scoring, weights, caps, blockers, verdict thresholds, role-fit bounds, audition types, Mux/upload, polish, or quality-scrub changes.
+- No fabricated Dance / Voice / Commercial live artefacts. Their legacy directories remain empty by design; the loader test proves emptiness is safe.
+- No backfill of historical reports. Read-time defaulting via `readReportSchemaVersion` is the contract.
+- No client exposure of feature flags.
+
+## 4. Exit criteria
+
+- Boundary test enforces all 15 forbidden keys, green.
+- Legacy loader test proves empty-branch tolerance and per-fixture boundary safety, green.
+- Phase 0 posture test proves flags default false, schema-version helper defaults to `v1-legacy`, renderers do not branch on version, and the public score-field set is intact, green.
+- `bunx vitest run --dir src` reports all suites green with no skipped tests.
+
+End state: **Phase 0 complete. Ready for review before Phase 1.**
