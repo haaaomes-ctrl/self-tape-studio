@@ -119,16 +119,17 @@ const PRESENTATION_POLISH_TRIGGERS = [
 // Frame-breaking recorded-take advice (only triggered when framingFixed)
 const FRAME_BREAK_TRIGGERS = [
   /\bwalking\b/i,
-  /\bstanding\s+to\s+record\b/i,
-  /\bmoving\s+(?:around|across)\s+(?:the\s+)?room\b/i,
-  /\bholding\s+(?:a|an|the)\s+(?:instrument|prop|guitar|chair|script)\b/i,
-  /\busing\s+props\b/i,
+  /\bstand(?:ing)?\s+to\s+record\b/i,
+  /\b(?:moving|move|moves|walk|walks)\s+(?:around|across)\s+(?:the\s+)?room\b/i,
+  /\bhold(?:ing)?\s+(?:a|an|the)\s+(?:instrument|prop|guitar|chair|script)\b/i,
+  /\b(?:use|uses|using|work\s+with)\s+(?:a\s+)?props?\b/i,
   /\bphysical\s+business\b/i,
-  /\bcrossing\s+the\s+room\b/i,
-  /\bstepping\s+out\s+of\s+frame\b/i,
-  /\badding\s+(?:staging|blocking)\b/i,
-  /\brecording\s+while\s+moving\b/i,
-  /\bsit\s+on\s+(?:your|my)\s+hands\b/i,
+  /\b(?:cross|crosses|crossing)\s+the\s+room\b/i,
+  /\bstep(?:ping)?\s+out\s+of\s+frame\b/i,
+  /\badd(?:ing)?\s+(?:staging|blocking)\b/i,
+  /\brecord(?:ing)?\s+while\s+moving\b/i,
+  /\bsit(?:ting)?\s+on\s+(?:your|my|their)\s+hands\b/i,
+  /\bwork\s+it\s+physically\b/i,
 ];
 
 const REHEARSAL_SUFFIX =
