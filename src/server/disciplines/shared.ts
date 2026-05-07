@@ -172,6 +172,7 @@ const LIVE_ROOM_TERMS = [
 ];
 const FRAME_BREAK_TERMS = [
   "walk around the room",
+  "walking around the room",
   "use a prop",
   "hold the script",
   "step out of frame",

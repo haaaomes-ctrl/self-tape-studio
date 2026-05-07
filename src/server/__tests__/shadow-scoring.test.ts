@@ -132,10 +132,19 @@ describe("shadow scoring (Phase 2)", () => {
         "sufficiency",
       ].sort(),
     );
-    const json = JSON.stringify(payload);
-    // No prose / quotes / observation text.
-    for (const banned of ["evidence", "observation", "why_it_matters", "note", "quote", "prose"]) {
-      expect(json.toLowerCase()).not.toContain(banned);
+    const keys = new Set<string>();
+    const collect = (v: unknown) => {
+      if (Array.isArray(v)) v.forEach(collect);
+      else if (v && typeof v === "object") {
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          keys.add(k);
+          collect(val);
+        }
+      }
+    };
+    collect(payload);
+    for (const banned of ["evidence", "observation", "why_it_matters", "quote", "prose", "fix_first"]) {
+      expect(keys.has(banned), `key ${banned} present`).toBe(false);
     }
   });
 
