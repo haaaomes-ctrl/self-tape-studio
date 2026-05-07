@@ -1798,7 +1798,7 @@ function AddTakeBlock({
       await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);
 
       toast.success(`Take ${nextNumber} uploaded — optimising and analysing now`);
-      onUploaded();
+      onUploaded(takeIdRef.current ?? undefined);
     } catch (err) {
       if (err instanceof UploadCancelledError) {
         toast.message("Upload cancelled");
