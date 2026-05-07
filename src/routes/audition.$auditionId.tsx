@@ -19,6 +19,8 @@ import { createMuxDirectUpload } from "@/server/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { cn } from "@/lib/utils";
 import { brandTitle } from "@/config/brand";
+import { readReportSchemaVersion } from "@/lib/report-schema";
+import { V2ReportView } from "@/components/report/V2ReportView";
 
 export const Route = createFileRoute("/audition/$auditionId")({
   head: () => ({ meta: [{ title: brandTitle("Audition") }] }),
