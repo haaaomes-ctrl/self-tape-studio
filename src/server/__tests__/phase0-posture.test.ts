@@ -20,20 +20,12 @@ describe("Phase 0 posture — no behaviour change", () => {
     expect(readReportSchemaVersion(null)).toBe("v1-legacy");
   });
 
-  it("renderers do not branch on schema_version or v2-component yet", () => {
-    const renderers = [
-      "src/routes/audition.$auditionId.tsx",
-      "src/components/checklist-view.tsx",
-    ];
-    for (const f of renderers) {
-      const src = read(f);
-      expect(src, `${f} must not reference schema_version in Phase 0`).not.toMatch(
-        /schema_version/,
-      );
-      expect(src, `${f} must not reference v2-component in Phase 0`).not.toMatch(
-        /v2-component/,
-      );
-    }
+  it("checklist (Step 1 surface) does not branch on schema_version", () => {
+    // Phase 3B: only the audition report route may branch on schema_version.
+    // The checklist remains schema-agnostic.
+    const src = read("src/components/checklist-view.tsx");
+    expect(src).not.toMatch(/schema_version/);
+    expect(src).not.toMatch(/v2-component/);
   });
 
   it("public score-field set is preserved in audition-rules", () => {

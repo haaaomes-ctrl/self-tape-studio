@@ -25,7 +25,9 @@ const legacyReport = {
   next_take_plan: { steps: ["Slower intake.", "Lift the eyeline."] },
   risk_flags: ["audio_balance_low"],
   presentation_notes: { framing: "mid", lighting: "even" },
-  role_fit: { score: 62, range: [55, 70] },
+  role_fit_notes: "Strong textual match to brief.",
+  role_fit_modifier: 2,
+  role_fit_confidence: "medium",
 };
 
 const futureDimensions: FutureDimensionsResult = {
@@ -88,24 +90,32 @@ describe("v2-report-builder (Phase 3A)", () => {
     const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
     expect(v2.components).toHaveLength(1);
     const c = v2.components[0] as unknown as Record<string, unknown>;
-    expect(Object.keys(c).sort()).toEqual([
-      "assessability",
-      "end",
-      "form",
-      "start",
-      "style",
-      "subtype",
-      "type",
-    ]);
-    expect("evidence_anchors" in c).toBe(false);
-    expect("dimensions" in c).toBe(false);
-    expect("dimension_confidence" in c).toBe(false);
+    // Forbidden internal keys must never appear, regardless of which other
+    // public structural fields are present.
+    for (const forbidden of [
+      "evidence_anchors",
+      "dimensions",
+      "dimension_confidence",
+      "supports",
+      "anchor_id",
+      "anchor_ids",
+    ]) {
+      expect(forbidden in c).toBe(false);
+    }
+    // Required public structural fields must be present.
+    for (const required of ["type", "start", "end", "subtype", "style", "form", "assessability"]) {
+      expect(required in c).toBe(true);
+    }
   });
 
   it("role_fit only present in brief mode", () => {
     const brief = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "brief" });
     const baseline = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect(brief.role_fit).toEqual(legacyReport.role_fit);
+    expect(brief.role_fit).toEqual({
+      notes: "Strong textual match to brief.",
+      modifier: 2,
+      confidence: "medium",
+    });
     expect("role_fit" in baseline).toBe(false);
   });
 
