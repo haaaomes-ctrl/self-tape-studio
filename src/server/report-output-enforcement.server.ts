@@ -33,7 +33,25 @@ export interface EnforcementCounters {
 // Phrase banks
 // ---------------------------------------------------------------------------
 
-// Castability / callback / recall / workshop overclaim
+// Phase 3C P2: phrase-level rewrite map applied BEFORE sentence-level
+// castability filtering. Rewrites soft overclaims to neutral wording so
+// information survives. Hard overclaims still drop via CASTABILITY_TRIGGERS.
+const CALIBRATION_REWRITES: Array<[RegExp, string]> = [
+  [/\bhighly\s+castable\b/gi, "well aligned with the supplied brief"],
+  [/\bstrong\s+contender\b/gi, "a strong tape for the stated task"],
+  [/\bcallback[-\s]?ready\b/gi, "ready to submit"],
+  [/\brecall[-\s]?worthy\b/gi, "ready to submit"],
+  [/\bworkshop[-\s]?ready\b/gi, "ready to submit"],
+  [/\bperfectly\s+captures\b/gi, "clearly supports"],
+  [
+    /\bexactly\s+what\s+(?:they(?:'|’)?re|the\s+team\s+is|they\s+are)\s+looking\s+for\b/gi,
+    "matches the stated style/task requirements",
+  ],
+  [/\bperfect\s+fit\b/gi, "a strong fit for the stated task"],
+];
+
+// Castability / callback / recall / workshop overclaim — sentences matching
+// these (after rewrite) are dropped entirely.
 const CASTABILITY_TRIGGERS = [
   /highly\s+castable/i,
   /\bcastable\s+for\b/i,
@@ -55,6 +73,10 @@ const CASTABILITY_TRIGGERS = [
   /\bwould\s+be\s+called\s+back\b/i,
   /\b(?:buyer|brand|market)\s+fit\b/i,
 ];
+
+// Standout-delta wording that must never claim perfection.
+const STANDOUT_OVERCLAIM_RE =
+  /\b(?:perfect(?:ly)?|flawless(?:\s+adherence)?|all\s+requirements\s+met)\b/i;
 
 // Generic / unanchored phrases (sentence kept ONLY if anchored).
 const GENERIC_TRIGGERS = [
