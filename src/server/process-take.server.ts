@@ -2053,7 +2053,7 @@ export async function runProcessTake(
       ? report.presentation_notes.filter(
           (n: unknown): n is string =>
             typeof n === "string" && n.trim().length > 0 && !containsForbidden(n),
-        ).slice(0, 3)
+        ).slice(0, 6)
       : [];
     if (
       Array.isArray(report.presentation_notes) &&
