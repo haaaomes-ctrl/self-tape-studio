@@ -35,7 +35,7 @@ const futureDimensions: FutureDimensionsResult = {
       start: "00:00",
       end: "02:14",
       confidence: "high",
-      assessability: "fully_assessable",
+      assessability: { component_assessable: true, visibility: "high", audio_balance: "medium", evidence_density: "high" },
       subtype: "ballad",
       style: "golden_age",
       form: "32_bar",
