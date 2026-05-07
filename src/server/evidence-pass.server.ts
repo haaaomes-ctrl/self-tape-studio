@@ -110,7 +110,7 @@ const EVIDENCE_TOOL = {
             },
             required: ["area", "evidence"],
           },
-          maxItems: 5,
+          maxItems: 15,
         },
         fix_first_evidence: { type: "string", maxLength: 240 },
         brief_adherence_evidence: {
