@@ -14,12 +14,20 @@ import { describe, it, expect } from "vitest";
 
 const FORBIDDEN_KEYS = [
   "shadow_scores",
+  "shadow_score",
   "shadow_divergence",
   "future_shadow",
   "qa_counters",
   "scrub_counters",
   "dimensions_summary",
   "components_summary",
+  "dimension_traces",
+  "evidence_dimensions",
+  "internal_dimensions",
+  "internal_qa",
+  "take_qa_traces",
+  "future_evidence",
+  "future_dimensions",
   "qa_trace",
 ] as const;
 
