@@ -1,43 +1,36 @@
-## What happened
+## Findings
 
-Take `5e6bc13e-060c-4b86-8bcb-116aafc2d716` was created at **2026-05-06 11:18:47** with a Mux direct-upload URL. Its row hasn't been touched since `11:18:48` — `mux_status='uploading'`, `mux_asset_id=NULL`, `mux_playback_id=NULL`.
+A repo-wide search for `selftape` / `self.tape` / `self_tape` (case-insensitive) turned up **one** literal reference to the old brand/URL:
 
-Mux's own event log shows the upload completed successfully ~an hour later (`video.upload.asset_created` 12:19:16, `video.asset.ready` 12:19:22, `video.asset.static_rendition.ready` 12:22:42) for playback id `YcDzNSgaLgKCaHWVzCqv2GAbAf02SYEFhWBydfWvFt01Y`.
+- `supabase/migrations/20260428214150_3b8da3cb-1f00-4762-9f67-4d160fbbf858.sql:42` — historical migration that scheduled the pg_cron reconciler against `https://selftape.lovable.app/api/public/reconcile-stale-takes`.
 
-The take row was never updated by any of those webhooks. Two failure modes are possible — both need checking:
+Everything else is the **industry term "self-tape"** (the act of recording an audition), which is generic copy in the brand voice — e.g. "Private self-tape feedback", "Self-tape tips", AI prompts using the term as casting-industry vocabulary. These are intentional and correct for TapeCoach's positioning. They are not references to the old "Selftape" brand.
 
-1. **Mux webhook never delivered to us** (wrong URL configured in Mux, signature verification rejecting them, or Worker erroring before the handler logs). The MUX_WEBHOOK_SECRET / endpoint URL `https://tapecoach.co.uk/api/public/mux-webhook` (or the `.lovable.app` equivalent) needs verifying in the Mux dashboard's webhook settings.
-2. **Reconciler isn't running.** `STALE_UPLOADING_MINUTES = 15` in `reconcile-stale-takes.ts` — this row should have been force-errored or recovered ~22 hours ago. Either pg_cron isn't calling the endpoint, or `RECONCILER_SECRET` is misconfigured. (The Lovable user can't query `cron.job` directly — needs a migration to inspect.)
+The live database cron job has already been repointed to the stable `project--<id>.lovable.app` URL (done in the previous turn), and the Mux webhook is now `https://tapecoach.co.uk/api/public/mux-webhook`.
 
 ## Plan
 
-### Step 1 — Recover this take immediately
+### 1. Update the historical migration file
 
-Since Mux still has the asset ready, the simplest fix is to backfill the take row using the known playback id, then schedule analysis. Two options:
+Edit `supabase/migrations/20260428214150_…sql` line 42 to use the stable project URL (`https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/...`) so any future re-run, fork, or remix of the project re-creates the cron at the correct host. No DB change is needed — the live job is already correct — but the migration must match reality.
 
-- **A. SQL backfill** (no code, fastest): run a migration that updates the row with `mux_playback_id`, `mux_mp4_standard_url`, `mux_status='ready'`, `processing_phase='analysis_pending'`, then trigger `/api/public/reconcile-stale-takes` so it picks up the now-pending row and runs analysis. The duration must be fetched from Mux (a one-shot script via `mux.video.assets.retrieve(asset_id)`).
-- **B. Curl the reconciler** with `STALE_UPLOADING_MINUTES` already long-since exceeded — `attemptTranscodingRecovery` will see `mux_upload_id` is present, fetch the upload → asset → playback id from Mux, backfill, and schedule. **No code change needed.** This is the cleaner option.
+Note: editing a past migration file is acceptable here because it's documentation-of-record for fresh installs; we're not re-running it on production.
 
-Recommended: **B**. We just need `RECONCILER_SECRET`'s value to call it.
+### 2. Leave the "self-tape" industry term in copy and prompts
 
-### Step 2 — Find out why automatic recovery didn't happen
+These are not brand references and changing them would break casting-industry positioning:
 
-In parallel:
+- `src/config/brand.ts` — mission/description copy
+- `src/routes/index.tsx`, `src/routes/about.tsx`, `src/routes/dashboard.tsx` — landing/marketing/onboarding copy
+- `src/components/site-footer.tsx` — "Self-tape tips" link label
+- `src/server/*.server.ts`, `src/lib/audition-rules.ts` — AI prompts that explicitly tell models to use British casting vocabulary including "self-tape"
 
-1. **Check Mux webhook delivery log** for this asset (in the Mux dashboard → Settings → Webhooks → recent deliveries). If they show 4xx/5xx responses to our endpoint, we have the smoking gun.
-2. **Inspect pg_cron** via a one-off migration: `SELECT jobname, schedule, active, command FROM cron.job;` to confirm the reconciler is scheduled and points at the right URL.
-3. Verify `MUX_WEBHOOK_SECRET` and `RECONCILER_SECRET` are both present (via secrets list) and the Mux webhook URL is `https://tapecoach.co.uk/api/public/mux-webhook` (or stable preview equivalent).
+If you actually want these reworded too (e.g. replace every "self-tape" with "tape" or "audition tape"), tell me and I'll do a separate pass — but that's a copywriting decision, not a brand-leak fix.
 
-### Step 3 — Hardening (only if a defect is found)
+### 3. Verify
 
-No source-code change is proposed yet — the existing reconciler logic in `attemptTranscodingRecovery` already covers this exact case. Defects identified in Step 2 will determine the fix:
+After the migration edit, re-run the same `rg -i "selftape"` search to confirm zero hits.
 
-- Misconfigured webhook URL → update in Mux dashboard.
-- Cron job missing/disabled → re-create via migration.
-- Cron job calling wrong host (e.g. old preview URL that no longer routes) → migration to update the command.
+## Summary
 
-## Questions before I proceed
-
-1. Do you want me to **(B) curl the reconciler** to recover this take (requires `RECONCILER_SECRET` — I can read it via `secrets--fetch_secrets`), or would you prefer a **direct SQL backfill** so you can watch the recovery path explicitly?
-2. Should I also create a one-shot migration to dump `cron.job` so we can confirm the reconciler is actually scheduled?
-3. Can you check the Mux dashboard's **webhook delivery history** for asset `YcDzNSgaLgKCaHWVzCqv2GAbAf02SYEFhWBydfWvFt01Y` and tell me whether the deliveries show 200s, 4xx, 5xx, or no attempt at all? That single data point decides whether the bug is in Mux config or in our cron pipeline.
+One file to change (`supabase/migrations/20260428214150_…sql`). Everything else is already on TapeCoach + tapecoach.co.uk.
