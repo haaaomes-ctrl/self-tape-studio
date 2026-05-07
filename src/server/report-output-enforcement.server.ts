@@ -215,8 +215,22 @@ function hasAnchor(s: string): boolean {
 interface FieldResult {
   text: string;
   castabilityRemoved: number;
+  castabilityRewritten: number;
   genericRemoved: number;
   polishRemoved: number;
+}
+
+function applyCalibrationRewrites(text: string): { text: string; rewrites: number } {
+  let out = text;
+  let rewrites = 0;
+  for (const [re, rep] of CALIBRATION_REWRITES) {
+    const m = out.match(re);
+    if (m) {
+      rewrites += m.length;
+      out = out.replace(re, rep);
+    }
+  }
+  return { text: out, rewrites };
 }
 
 function cleanProse(
@@ -224,12 +238,16 @@ function cleanProse(
   opts: { allowGeneric?: boolean; presentationField?: boolean } = {},
 ): FieldResult {
   if (!text || typeof text !== "string") {
-    return { text: "", castabilityRemoved: 0, genericRemoved: 0, polishRemoved: 0 };
+    return { text: "", castabilityRemoved: 0, castabilityRewritten: 0, genericRemoved: 0, polishRemoved: 0 };
   }
   let castabilityRemoved = 0;
+  let castabilityRewritten = 0;
   let genericRemoved = 0;
   let polishRemoved = 0;
-  const sentences = splitSentences(text);
+  // Phase 3C P2: rewrite soft overclaims first so information survives.
+  const rewriteRes = applyCalibrationRewrites(text);
+  castabilityRewritten += rewriteRes.rewrites;
+  const sentences = splitSentences(rewriteRes.text);
   const kept: string[] = [];
   for (const sRaw of sentences) {
     const s = sRaw;
@@ -253,7 +271,7 @@ function cleanProse(
     out = out.replace(re, "");
   }
   out = out.replace(/\s{2,}/g, " ").trim();
-  return { text: out, castabilityRemoved, genericRemoved, polishRemoved };
+  return { text: out, castabilityRemoved, castabilityRewritten, genericRemoved, polishRemoved };
 }
 
 function rewriteFrameBreak(text: string): { text: string; rewrites: number } {
