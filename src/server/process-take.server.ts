@@ -171,9 +171,70 @@ const REPORT_TOOL = {
           },
           required: ["technical", "audio", "acting", "brief_adherence", "professional_presentation"],
         },
-        strengths: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
-        improvements: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 },
+        strengths: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 12 },
+        improvements: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 15 },
         fix_first: { type: "string" },
+        priority_fixes: {
+          type: "array",
+          description:
+            "Prioritised fixes for the next take. 2–5 items typical. Each item is the most useful thing to address now, anchored in evidence. Do not duplicate `improvements` verbatim unless that is the clearest formulation. kind: urgent | quick_win | critical_gap | assessability_blocker | low_effort_high_impact.",
+          items: {
+            type: "object",
+            properties: {
+              headline: { type: "string", maxLength: 200 },
+              rationale: { type: "string", maxLength: 320 },
+              kind: {
+                type: "string",
+                enum: [
+                  "urgent",
+                  "quick_win",
+                  "critical_gap",
+                  "assessability_blocker",
+                  "low_effort_high_impact",
+                ],
+              },
+              category: {
+                type: "string",
+                enum: [
+                  "technical",
+                  "audio",
+                  "vocal",
+                  "acting",
+                  "brief_adherence",
+                  "professional_presentation",
+                ],
+              },
+            },
+            required: ["headline"],
+          },
+          maxItems: 8,
+        },
+        category_rationale: {
+          type: "object",
+          description:
+            "For every public category whose score is < 100, explain what works, why it is not 100, and what would close the gap. For scores >= 90, also include `standout_delta` — the marginal improvement that separates strong from standout. Discipline-specific language; never generic praise.",
+          properties: Object.fromEntries(
+            [
+              "technical",
+              "audio",
+              "vocal",
+              "acting",
+              "brief_adherence",
+              "professional_presentation",
+            ].map((k) => [
+              k,
+              {
+                type: "object",
+                properties: {
+                  what_works: { type: "string", maxLength: 320 },
+                  why_not_full_score: { type: "string", maxLength: 320 },
+                  close_gap: { type: "string", maxLength: 320 },
+                  standout_delta: { type: "string", maxLength: 320 },
+                },
+              },
+            ]),
+          ),
+        },
         timestamped_notes: {
           type: "array",
           items: {
@@ -184,8 +245,46 @@ const REPORT_TOOL = {
             },
             required: ["timestamp", "note"],
           },
+          maxItems: 36,
         },
-        coaching_drills: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 5 },
+        coaching_drills: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 15 },
+        next_take_plan: {
+          type: "object",
+          description:
+            "Exhaustive next-steps / action plan. Include all identified actionable improvements. Use `groups` when the items naturally split (retake-critical, quick wins, craft refinements, rehearsal drills, recording setup); otherwise use a flat `steps` list. Avoid generic advice, expensive-equipment / paid-coaching advice, and unsupported foot-cropping advice. For fixed-frame briefs, recorded-take items must preserve the required frame. Rehearsal-only items must be labelled and paired with a recorded-take-safe alternative.",
+          properties: {
+            steps: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 15,
+            },
+            groups: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  label: {
+                    type: "string",
+                    enum: [
+                      "retake_critical",
+                      "quick_wins",
+                      "craft_refinements",
+                      "rehearsal_drills",
+                      "recording_setup",
+                    ],
+                  },
+                  items: {
+                    type: "array",
+                    items: { type: "string" },
+                    maxItems: 10,
+                  },
+                },
+                required: ["label", "items"],
+              },
+              maxItems: 6,
+            },
+          },
+        },
         submission_risk_flags: {
           type: "array",
           description:
@@ -244,7 +343,7 @@ const REPORT_TOOL = {
           description:
             "OPTIONAL practical, non-personal observations about visible presentation that materially affect the tape (e.g. 'Top blends into the background — a contrasting colour would read better on camera', 'Hair drifts across one eye on close-ups'). NEVER comment on body, attractiveness, weight, race, gender presentation, class markers, disability, mobility aids, medical devices, or personal style. Empty array if there is nothing material to say. These notes do NOT affect the score unless they relate to a brief requirement or a visibility issue already reflected in technical/brief categories.",
           items: { type: "string" },
-          maxItems: 3,
+          maxItems: 6,
         },
         at_risk: { type: "boolean" },
       },
@@ -393,17 +492,38 @@ Confidence (0–100) — internal signal only, never shown to the user verbatim.
 - 60–74 baseline with no brief.
 - <60 if data is poor.
 
-WRITING RULES (apply to every text field — strengths, improvements, fix_first, coaching_drills, casting_headline, casting_insight, category_notes, brief_adherence_breakdown.note):
+WRITING RULES (apply to every text field — strengths, improvements, fix_first, priority_fixes, category_rationale, coaching_drills, next_take_plan, casting_headline, casting_insight, category_notes, brief_adherence_breakdown.note):
 - Plain English. No technical jargon, no rubric terminology, no acronyms unless universally known. Never use "AI", "model", "confidence score", "rubric", "signal", "metric".
 - Specific, not generic. Never say "good job", "nice work", "be more confident", "work on your acting". Always reference what you actually saw or heard ("Your second chorus opened up — chest voice felt grounded from 'I won't go back'", "Around 0:42 the eyeline drifted off-camera as you turned").
-- Actionable. Every improvement and drill must tell the user what to DO differently next time, in one short sentence.
+- Actionable. Every improvement, fix and drill must tell the user what to DO differently next time, in one short sentence.
 - Tone: encouraging, professional, direct. Like a trusted coach in the room. Never harsh, never patronising, never padded.
 - Concise. Aim for one or two short sentences per item. Cut anything that doesn't help the next take.
-- strengths: EXACTLY 3 items. The three biggest things working in this tape.
-- improvements: AT MOST 3 items, ordered most-impactful first. If only one or two genuinely matter, return one or two.
-- fix_first: ONE sentence. The single highest-impact change for the next take.
-- coaching_drills: 2–4 short, practical exercises the user can do before their next take. Each starts with a verb.
-- timestamped_notes: only when there is something specific to point to. Skip if you'd be padding.
+
+VOLUME (soft targets — do NOT pad, but do NOT artificially shorten useful feedback either; the schema permits richer output):
+- strengths: 3–8 specific items, ordered by impact. Technical max 12.
+- improvements: 3–10 ordered most-impactful first. Technical max 15.
+- fix_first: ONE sentence. The single highest-impact change for the next take. (Kept for backward compatibility — priority_fixes[0] should usually align.)
+- priority_fixes: 2–5 prioritised fixes. Each item: short headline + one-sentence rationale + a kind tag (urgent | quick_win | critical_gap | assessability_blocker | low_effort_high_impact). Do not duplicate improvements verbatim unless that is the clearest formulation.
+- coaching_drills / next_take_plan items: 4–10 actionable items. Technical max 15. Group via next_take_plan.groups (retake_critical, quick_wins, craft_refinements, rehearsal_drills, recording_setup) when items naturally split; otherwise use the flat steps list. Avoid generic advice. Avoid expensive-equipment / paid-coaching / paid-editor advice. For fixed-frame briefs, recorded-take items must preserve the required frame; rehearsal-only exercises must be labelled "Rehearsal-only:" and paired with a frame-safe recorded-take alternative.
+- timestamped_notes: duration-scaled. Validated MM:SS only. Chronological. Never invent. Never pad.
+  * under 60 seconds: 3–5 useful notes if assessable
+  * 1–3 minutes: 6–10 useful notes if assessable
+  * 3–5 minutes: 8–14 useful notes if assessable
+  * 5–10 minutes: 12–24 useful notes if assessable
+  * 10+ minutes: 18–36 useful notes if assessable
+  * absolute technical maximum: 36
+  * Tie each note to a category, component, strength, improvement, priority fix or action-plan item.
+
+CATEGORY RATIONALE (REQUIRED for every public category whose score is < 100):
+- Populate category_rationale[<key>] with: what_works, why_not_full_score, close_gap. For scores >= 90 also write standout_delta. Use discipline-specific language (movement, rhythm/timing, lyric/phrase/beat, acting-through-song, etc.) — never generic praise.
+- 90–94: strong but specify the standout delta. 85–89: strong/near-submit but with clear limitations. 70–84: distinguish essential corrections from refinements. <70: identify the blocker or assessability limitation and the retake path.
+- Reserve 98–100 for near-flawless evidence with no meaningful tape-level corrections. A 95-score category MUST still produce a meaningful marginal improvement pathway. High scores must NOT reduce feedback volume.
+- Do NOT write "perfect", "all requirements met", "flawless adherence", "callback-ready", "recall-worthy", "workshop-ready" or any castability / buyer / marketability overclaim.
+
+DISCIPLINE DEPTH (apply when relevant):
+- DANCE: cite movement evidence — rhythm/timing, control/coordination, alignment/placement/posture (where visible), spatial/pathway use, dynamics/attack/release, performance intention. Distinguish high energy from controlled dynamic range, musical timing from rhythmic nuance, visible execution from technical precision. Do NOT confidently assign style/subtype (e.g. contemporary, jazz) unless supplied in the brief or clearly observable from movement vocabulary; otherwise say "style not supplied; assessed from observable movement only". Do NOT claim foot/leg/full-body cropping unless directly observed and timestamped. Do NOT use unanchored phrases ("high-energy movement", "clean lines", "rhythmic precision", "contemporary/jazz influences"). Do NOT invent large-scale MT-role or employer fit. Underexposure is technical/reliability unless severe enough to block assessment.
+- MUSICAL THEATRE: preserve Acting Scene + Song components and surface acting-through-song with specific lyric/phrase/beat/transition evidence. Vocal feedback distinguishes technique from story/style. In BASELINE mode (no brief) leave role_fit_notes empty and DO NOT invent role/brief/production world. Never use castability / recall / workshop / live-room / buyer overclaim.
+- For fixed-frame briefs (head-and-shoulders, MCU, etc.) recorded-take advice must preserve the frame — no walking, standing, props, instruments, blocking, or staging. Use breath, eyeline, thought-shifts.
 
 Output via the submit_audition_report tool. The casting_headline is ONE plain sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read.`;
 }

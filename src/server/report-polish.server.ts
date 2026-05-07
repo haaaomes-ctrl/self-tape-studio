@@ -32,7 +32,10 @@ Rules:
 - Respect evidence_sufficiency. If audio_assessable=false, do not praise vocal detail. If video_assessable=false, do not praise micro-expression. If brief_assessable=false or role_fit_assessable=false, leave role_fit_notes empty.
 - presentation_notes are OPTIONAL. Leave the array empty when there is nothing materially useful to say. Do not pad with generic praise such as "looks professional".
 - "Fix this first" must be the SINGLE highest-impact actionable note from the evidence. "Top improvements" must be specific and grounded in evidence_lines.
-- Final array limits: strengths ≤3, improvements ≤3 (prioritised by impact), presentation_notes ≤3, timestamped_notes ≤8, coaching_drills as the existing schema allows.
+- Volume targets (do NOT pad, do NOT artificially shorten when the evidence supports more): strengths 3–8 (max 12), improvements 3–10 (max 15), priority_fixes 2–5 (max 8), next_take_plan items 4–10 (max 15), presentation_notes max 6, timestamped_notes duration-scaled (<60s 3–5; 1–3m 6–10; 3–5m 8–14; 5–10m 12–24; 10m+ 18–36; absolute max 36). Coaching_drills as the schema allows.
+- Populate priority_fixes (2–5 prioritised fixes with kind tag) and next_take_plan (steps[] and optionally groups[]) when the evidence supports them. Do not duplicate improvements verbatim unless that is the clearest formulation.
+- Populate category_rationale[<key>] for every category whose score is < 100: what_works, why_not_full_score, close_gap. For scores >= 90 also write standout_delta. Discipline-specific language; never generic praise; reserve 98–100 for near-flawless evidence; high scores must NOT reduce feedback volume; a 95 still gets a marginal improvement pathway.
+- Discipline depth: DANCE — cite movement evidence (rhythm/timing, control, spatial pathway, dynamics, performance intention); never invent style/subtype; never claim foot/leg cropping without timestamped evidence; no MT-role/employer language. MT — preserve Acting Scene + Song; cite acting-through-song with lyric/phrase/beat/transition; vocal distinguishes technique from story/style. Never use castability/recall/workshop/live-room/buyer overclaim.
 - Return ONLY via the submit_audition_report tool.`;
 
 export type RunReportPolishArgs = {

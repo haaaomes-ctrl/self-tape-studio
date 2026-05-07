@@ -50,6 +50,8 @@ export interface V2Report {
   strengths: unknown[];
   improvements: unknown[];
   fix_first: unknown;
+  priority_fixes: unknown[];
+  category_rationale: Record<string, unknown> | null;
   timestamped_notes: unknown[];
   next_take_plan: unknown;
   risk_flags: unknown[];
@@ -220,6 +222,13 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     strengths: asArray(r.strengths),
     improvements: asArray(r.improvements),
     fix_first: r.fix_first ?? null,
+    priority_fixes: (() => {
+      const pf = asArray(r.priority_fixes);
+      if (pf.length > 0) return pf;
+      const ff = asStr(r.fix_first);
+      return ff ? [{ headline: ff }] : [];
+    })(),
+    category_rationale: asObj(r.category_rationale),
     timestamped_notes: asArray(r.timestamped_notes),
     next_take_plan: nextTakePlan,
     risk_flags: asArray(r.submission_risk_flags ?? r.risk_flags),
