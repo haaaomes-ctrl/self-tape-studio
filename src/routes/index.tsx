@@ -43,49 +43,42 @@ function Landing() {
       <SiteHeader />
 
       <main id="main" tabIndex={-1}>
-      {/* Hero — theatre-inspired, dark backdrop */}
+      {/* Hero — cinematic full-bleed stage visual */}
       <section
         aria-labelledby="hero-heading"
         className="relative isolate overflow-hidden bg-sidebar text-sidebar-foreground"
       >
-        {/* Background image + gradient overlay for readability */}
         <div className="absolute inset-0 -z-10">
           <img
             src={heroStage}
             alt=""
             aria-hidden="true"
-            className="h-full w-full object-cover object-center opacity-60"
-            width={1920}
-            height={1080}
+            className="h-full w-full object-cover object-[72%_center]"
+            width={2048}
+            height={1152}
           />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(110deg, oklch(0.18 0.05 260 / 0.95) 0%, oklch(0.20 0.06 260 / 0.78) 45%, oklch(0.22 0.07 260 / 0.55) 100%)",
-            }}
-          />
-          <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-sidebar" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.18_0.05_260_/_0.95)_0%,oklch(0.18_0.05_260_/_0.88)_36%,oklch(0.18_0.05_260_/_0.52)_62%,oklch(0.18_0.05_260_/_0.74)_100%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_30%,oklch(0.62_0.18_257_/_0.18),transparent_42%)]" />
         </div>
 
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 pb-12 pt-12 sm:px-6 sm:pb-16 sm:pt-16 lg:grid-cols-[1.05fr_1fr] lg:items-center lg:gap-14 lg:pb-20 lg:pt-20">
+        <div className="mx-auto flex min-h-[74vh] w-full max-w-7xl items-center px-4 py-14 sm:px-6 sm:py-20 lg:min-h-[80vh] lg:py-24">
           <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-sidebar-foreground/15 bg-sidebar-foreground/5 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/80 backdrop-blur">
-              <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Private self-tape feedback
+            <span className="inline-flex items-center gap-2 rounded-full border border-sidebar-foreground/20 bg-sidebar-foreground/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/85 backdrop-blur-sm">
+              <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Private self-tape feedback
             </span>
             <h1
               id="hero-heading"
-              className="mt-5 font-display text-[2rem] font-black leading-[1.1] tracking-tight text-sidebar-foreground sm:mt-6 sm:text-5xl lg:text-6xl"
+              className="mt-5 font-display text-4xl font-black leading-[1.02] tracking-tight text-sidebar-foreground sm:text-5xl lg:text-7xl"
             >
-              Review your tape before it reaches{" "}
-              <span className="text-primary">the room.</span>
+              Review your tape before it reaches
+              <span className="block text-primary">the room.</span>
             </h1>
-            <p className="mt-6 max-w-xl text-base leading-relaxed text-sidebar-foreground/80 sm:text-lg">
-              Private, structured feedback on your performance, voice, setup and brief fit —
-              before your tape reaches casting, agents or teachers.
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-sidebar-foreground/85 sm:text-2xl/relaxed">
+              Private, structured feedback on your performance, voice, setup and brief fit — before your tape reaches casting, agents or teachers.
             </p>
+
             <div className="mt-9 flex flex-wrap items-center gap-3">
-              <Button asChild size="lg">
+              <Button asChild size="lg" className="px-7">
                 <Link to="/login">
                   Review my tape <ArrowRight className="ml-1 h-4 w-4" />
                 </Link>
@@ -94,32 +87,16 @@ function Landing() {
                 asChild
                 size="lg"
                 variant="outline"
-                className="border-sidebar-foreground/25 bg-transparent text-sidebar-foreground hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground hover:border-sidebar-foreground/40"
+                className="border-sidebar-foreground/35 bg-sidebar/20 text-sidebar-foreground backdrop-blur hover:border-sidebar-foreground/60 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
               >
                 <Link to="/about">See example feedback</Link>
               </Button>
             </div>
-            <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-sidebar-foreground/70">
-              <Lock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-sidebar-foreground/60" />
-              <span>
-                Private by default. No public posting. No judgement. Just clear notes before you submit.
-              </span>
-            </p>
-          </div>
 
-          {/* Right-hand visual — silhouetted stage detail framed by gradient */}
-          <div className="relative hidden lg:block">
-            <div className="absolute -inset-6 rounded-3xl bg-gradient-to-br from-primary/30 via-accent/20 to-transparent blur-2xl" />
-            <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-sidebar-foreground/10 shadow-elevated">
-              <img
-                src={heroStage}
-                alt="Performer mid-audition under stage lights with a self-tape camera"
-                className="h-full w-full object-cover"
-                width={800}
-                height={1000}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-sidebar/70 via-transparent to-transparent" />
-            </div>
+            <p className="mt-6 flex max-w-lg items-start gap-2 text-sm leading-relaxed text-sidebar-foreground/75">
+              <Lock className="mt-0.5 h-4 w-4 flex-shrink-0 text-sidebar-foreground/65" />
+              <span>Private by default. No public posting. No judgement. Just clear notes before you submit.</span>
+            </p>
           </div>
         </div>
       </section>
