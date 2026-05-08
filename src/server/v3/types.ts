@@ -1,0 +1,43 @@
+import type { V3ReleaseState } from './release-state';
+
+export const PERFORMER_LEVELS = ['learning_school', 'amateur_community', 'emerging_training', 'professional'] as const;
+export const PERFORMER_LEVEL_LABELS: Record<(typeof PERFORMER_LEVELS)[number], string> = {
+  learning_school: 'Learning / School', amateur_community: 'Amateur / Community', emerging_training: 'Emerging / Training', professional: 'Professional',
+};
+export const BRIEF_MODES = ['no_brief_baseline', 'guided_prompt_brief', 'full_casting_brief', 'uploaded_material_packet'] as const;
+export const AUDITION_CONTEXTS = ['acting_scene','monologue','song_voice','musical_theatre','dance','commercial','hybrid_multi_discipline','unknown_let_tapecoach_infer','other_not_sure'] as const;
+export const TRUTH_STATES = ['user_supplied','brief_supplied','uploaded_material_extracted','material_recognised','observed_in_tape','professional_standard','user_concern','model_inferred_low_confidence','not_available','contradicted_or_unreliable'] as const;
+export const COMPONENT_TYPES = ['acting_scene','monologue','song','dance_routine','commercial_copy','no_dialogue_commercial','voiceover_style','slate_ident','transition','hybrid_link','skill_component','unknown_observed_component'] as const;
+export const COMPONENT_CRITICALITIES = ['essential','supporting','optional','administrative','unknown'] as const;
+export const ASSESSABILITY_STATUSES = ['sufficient','partial','not_assessable','not_present','not_relevant','unsupported_inference_blocked'] as const;
+export const EVIDENCE_MODALITIES = ['video','audio','transcript','brief','uploaded_material','metadata','professional_standard'] as const;
+export const VALIDATOR_ACTIONS = ['pass','warn','rewrite_required','suppress_claim','block_report','suppress_comparison','block_export','require_reanalysis'] as const;
+export const SEVERITIES = ['P0','P1','P2'] as const;
+export const EVIDENCE_SUFFICIENCIES = ['sufficient','partial','insufficient','not_present','not_relevant','unsupported_inference_blocked'] as const;
+export const COMPONENT_SOURCES = ['user_declared','brief_required','uploaded_material_extracted','observed_in_tape','model_inferred_low_confidence','default','uncertain'] as const;
+export const DECLARED_OR_DETECTED_STATUSES = ['declared','detected','declared_and_detected','brief_required','not_present','uncertain'] as const;
+export const CRITICALITY_SOURCES = ['brief_supplied','user_declared','task_inferred','duration_derived','default','uncertain'] as const;
+export const PUBLIC_CLAIM_TYPES = ['audition_summary','evidence_observation','component_summary','brief_or_task_fit','assessability_limitation','strength','improvement','priority_fix','timestamped_note','next_take_action','safety_note','comparison_summary','limitation','internal_only'] as const;
+export type PerformerLevel = (typeof PERFORMER_LEVELS)[number]; export type BriefMode = (typeof BRIEF_MODES)[number]; export type AuditionContext = (typeof AUDITION_CONTEXTS)[number]; export type TruthState = (typeof TRUTH_STATES)[number]; export type ComponentType = (typeof COMPONENT_TYPES)[number]; export type ComponentCriticalityLevel = (typeof COMPONENT_CRITICALITIES)[number]; export type AssessabilityStatus = (typeof ASSESSABILITY_STATUSES)[number]; export type EvidenceModality = (typeof EVIDENCE_MODALITIES)[number]; export type ValidatorAction = (typeof VALIDATOR_ACTIONS)[number]; export type Severity = (typeof SEVERITIES)[number];
+export type MaterialPolicy = 'fixed'|'choice'|'unknown';
+export type EvidenceSufficiency = (typeof EVIDENCE_SUFFICIENCIES)[number];
+export type ComponentSource = (typeof COMPONENT_SOURCES)[number];
+export type DeclaredOrDetectedStatus = (typeof DECLARED_OR_DETECTED_STATUSES)[number];
+export type CriticalitySource = (typeof CRITICALITY_SOURCES)[number];
+export type PublicClaimType = (typeof PUBLIC_CLAIM_TYPES)[number];
+
+export interface Submission { submission_id:string; user_id:string; selected_level:PerformerLevel; analysis_mode:string; audition_context_declared:AuditionContext; release_state:V3ReleaseState; created_at:string; title?:string; archive_status?:string; }
+export interface Take { take_id:string; submission_id:string; user_id:string; take_name?:string; media_asset_id?:string; duration_seconds?:number; media_readiness_status:string; analysis_status:string; previous_take_relationship?:string; }
+export interface UserInputContext { context_id:string; take_id:string; performer_level:PerformerLevel; brief_mode:BriefMode; audition_context_selected?:AuditionContext; audition_context_confirmed?:AuditionContext; expected_components?:ComponentType[]; analysis_goal?:string; focus_areas?:string[]; access_setup_context?:string; privacy_preferences?:string; export_preferences?:string; }
+export interface BriefContext { brief_context_id:string; context_id:string; brief_mode:BriefMode; full_brief_text?:string; guided_brief_fields?:Record<string,unknown>; uploaded_material_ref?:string; explicit_requirements?:string[]; brief_confidential?:boolean; unknown_fields:Record<string,unknown>; }
+export interface MaterialContext { material_context_id:string; production_or_project_title?:string; role_or_character?:string; song_title?:string; scene_or_side_reference?:string; commercial_product_or_brand?:string; commercial_copy_context?:string; dance_task_or_style?:string; material_policy?:MaterialPolicy; }
+export interface ComparisonIntent { comparison_intent_id:string; submission_id:string; compare_with_prior_takes?:boolean; same_brief_applies?:boolean; recommendation_preference?:'recommend_only_if_clear'|'show_differences_only'|'no_recommendation_if_close'; duplicate_declared?:boolean; comparison_scope?:string; }
+export interface TruthStateMap { truth_state_map_id:string; take_id:string; entries:Array<{key:string; truth_state:TruthState; source_ref?:string; confidence?:number}>; contradictions?:string[]; }
+export interface ResolverResult { resolver_id:string; take_id:string; input_context_id:string; resolved_audition_context?:AuditionContext; component_requirements?:string[]; task_requirements?:string[]; technical_requirements?:string[]; material_policy?:MaterialPolicy; unknowns:string[]; conflicts?:string[]; brief_supremacy_result?:string; public_safe_summary?:string; resolver_confidence?:number; }
+export interface Component { component_id:string; take_id:string; component_type:ComponentType; source:ComponentSource; start_time?:number; end_time?:number; confidence:number; assessability_status:AssessabilityStatus; evidence_sufficiency:EvidenceSufficiency; declared_or_detected_status:DeclaredOrDetectedStatus; source_truth_state:TruthState; component_label_public_safe?:string; notes_private?:string; }
+export interface ComponentCriticality { component_id:string; criticality:ComponentCriticalityLevel; criticality_source:CriticalitySource; rationale?:string; confidence:number; gate_applicable?:boolean; }
+export interface EvidenceAnchor { anchor_id:string; take_id:string; component_id?:string; timestamp?:number; time_range?:{start:number;end:number}; modality:EvidenceModality; truth_state:TruthState; observation:string; confidence:number; assessability_status:AssessabilityStatus; evidence_sufficiency:EvidenceSufficiency; discipline_tags?:string[]; source_ref?:string; ontology_item_link?:string; public_safe_flag:boolean; blocked_reason?:string; linked_public_claim_ids?:string[]; }
+export interface PublicClaimTrace { claim_id:string; take_id:string; report_id?:string; report_section?:string; claim_type:PublicClaimType; public_text?:string; evidence_anchor_ids:string[]; truth_state:TruthState; component_id?:string; dimension_id?:string; technique_id?:string; validator_status:ValidatorAction; final_public_text?:string; blocked_reason?:string; trace_confidence?:number; }
+export interface QAValidationResult { validation_id:string; take_id?:string; submission_id?:string; validator_name:string; validator_version?:string; action:ValidatorAction; severity:Severity; affected_claim_ids?:string[]; message?:string; passed:boolean; }
+export interface ModelRunTrace { model_run_id:string; take_id?:string; model_route_used?:string; stage_model_map?:Record<string,string>; prompt_version?:string; schema_version:string; ontology_version?:string; level_standard_version?:string; validator_version?:string; retry_count?:number; processing_status:string; latency_band?:string; }
+export interface ArchiveResetRecord { archive_reset_id:string; action:string; affected_entity_type:string; affected_entity_ids?:string[]; reason:string; fixture_retained:boolean; rollback_available:boolean; performed_by?:string; timestamp:string; }
