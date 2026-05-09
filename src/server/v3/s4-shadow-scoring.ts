@@ -1,0 +1,96 @@
+export type LevelStandardId = 'learning_school' | 'amateur_community' | 'emerging_training' | 'professional';
+export interface LevelStandard { id: LevelStandardId; label: string; }
+const LEVEL_STANDARDS: ReadonlyArray<LevelStandard> = [
+  { id: 'learning_school', label: 'Learning / School' },
+  { id: 'amateur_community', label: 'Amateur / Community' },
+  { id: 'emerging_training', label: 'Emerging / Training' },
+  { id: 'professional', label: 'Professional' },
+] as const;
+export function getLevelStandard(id: LevelStandardId): LevelStandard { return LEVEL_STANDARDS.find((level) => level.id === id)!; }
+export function getAllLevelStandards(): ReadonlyArray<LevelStandard> { return LEVEL_STANDARDS; }
+export function validateLevelStandard(value: string): value is LevelStandardId { return LEVEL_STANDARDS.some((level) => level.id === value); }
+export interface LevelBand { min: number; max: number; description: string; }
+const LEVEL_BANDS: Record<LevelStandardId, ReadonlyArray<LevelBand>> = { learning_school:[{ min: 90, max: 100, description: 'exceptional for this stage' },{ min: 80, max: 89, description: 'strong for this level' },{ min: 70, max: 79, description: 'ready to submit' },{ min: 58, max: 69, description: 'worth another take' },{ min: 0, max: 57, description: 'not ready yet' }], amateur_community:[{ min: 90, max: 100, description: 'exceptional for this level' },{ min: 83, max: 89, description: 'strong for this level' },{ min: 73, max: 82, description: 'ready to submit' },{ min: 60, max: 72, description: 'worth another take' },{ min: 0, max: 59, description: 'not ready yet' }], emerging_training:[{ min: 92, max: 100, description: 'exceptional / training-competitive' },{ min: 86, max: 91, description: 'strong for this level' },{ min: 76, max: 85, description: 'ready to submit' },{ min: 63, max: 75, description: 'worth another take' },{ min: 0, max: 62, description: 'not ready yet' }], professional:[{ min: 98, max: 100, description: 'exceptional / rare / industry-ready' },{ min: 95, max: 97, description: 'outstanding / highly competitive' },{ min: 92, max: 94, description: 'strong professional submission' },{ min: 89, max: 91, description: 'competitive but exposed' },{ min: 80, max: 88, description: 'professionally usable with caution' },{ min: 68, max: 79, description: 'worth another take before relying professionally' },{ min: 0, max: 67, description: 'not ready for Professional submission' }],};
+export function getLevelBandForScore(level: LevelStandardId, score: number): LevelBand { const clamped = Math.max(0, Math.min(100, score)); return LEVEL_BANDS[level].find((band) => clamped >= band.min && clamped <= band.max)!; }
+export const requiresProfessionalStandoutEvidence=(l:LevelStandardId,s:number)=>l==='professional'&&s>=95;
+export const requiresExceptionalEvidence=(l:LevelStandardId,s:number)=>l==='professional'&&s>=98;
+export type DisciplineDimension='musical_theatre'|'dance'|'acting'|'voice_singing'|'commercial'|'hybrid';
+export const S4_DISCIPLINE_DIMENSIONS={musical_theatre:['acting_through_song','lyric_intent','vocal_health_boundary'],dance:['timing_precision','dynamic_control','injury_risk_boundary'],acting:['objective_clarity','moment_to_moment_truth','adjustment_agility'],voice_singing:['pitch_stability','breath_support','vocal_health_boundary'],commercial:['brief_alignment','camera_connection','addressee_clarity'],hybrid:['discipline_integration','task_focus','consistency_under_switch']} as const;
+export interface DimensionScoreInput { score:number; confidence:number; evidence_anchor_ids?:string[]; allowed_professional_source?:'expert_panel'|'licensed_coach_review'; }
+export interface DimensionScore { score:number; confidence:number; evidence_required:boolean; }
+export function createDimensionScore(i:DimensionScoreInput):DimensionScore{const has=Boolean(i.evidence_anchor_ids?.length||i.allowed_professional_source);return{score:i.score,confidence:has?i.confidence:Math.min(i.confidence,0.5),evidence_required:!has};}
+export interface ObservedPerformanceQuality { quality_score:number; assessability_limitation:boolean; performance_weakness:boolean; }
+export interface LevelAdjustedReadiness { level:LevelStandardId; readiness_score:number; assessability_limitation:boolean; performance_weakness:boolean; }
+export function getLevelAdjustedReadiness(level:LevelStandardId, observed:ObservedPerformanceQuality):LevelAdjustedReadiness{const p=level==='professional'?8:level==='emerging_training'?5:2;return{level,readiness_score:Math.max(0,observed.quality_score-p),assessability_limitation:observed.assessability_limitation,performance_weakness:observed.performance_weakness};}
+export interface ScoreTrace { visibility:'private_trace'; role_fit_trace:'task_readiness_only'; six_field_adapter?:{debug_only:true;authoritative:false}; }
+export const createScoreTrace=(debug=false):ScoreTrace=>({visibility:'private_trace',role_fit_trace:'task_readiness_only',...(debug?{six_field_adapter:{debug_only:true,authoritative:false}}:{})});
+export const validateRoleFitWording=(w:string)=>!/unsafe|marketability|appearance|body/i.test(w);
+
+export type EvidenceSufficiency='insufficient'|'partial'|'sufficient';
+export type Assessability='not_assessable'|'partial'|'sufficient';
+export interface ComponentScore { component_score_id:string; component_id:string; take_id:string; component_type:string; component_criticality:'administrative'|'supporting'|'essential'|'unknown'; component_weight_source:'brief'|'discipline_standard'|'fallback'; dimension_score_ids:string[]; observed_component_score:number; level_adjusted_component_score:number; confidence:number; reliability:number; evidence_sufficiency:EvidenceSufficiency; assessability_status:Assessability; cap_applied:boolean; gate_refs:string[]; rationale_private:string; validator_status:'pass'|'warn'|'block'; visibility:'private'; }
+export const componentScoreIsPrivateShadowOnly=(c:ComponentScore)=>c.visibility==='private';
+export function validateComponentScore(c:ComponentScore){ if(!componentScoreIsPrivateShadowOnly(c)) return false; if(c.component_criticality==='unknown'&&c.cap_applied) return false; if((c.component_type==='slate_ident'||c.component_type==='ident_slate')&&c.component_weight_source!=='brief'&&c.level_adjusted_component_score>75) return false; return c.dimension_score_ids.length>0&&c.confidence>=0&&c.confidence<=1&&c.reliability>=0&&c.reliability<=1; }
+export const canComponentScoreOverrideEssentialGate=(c:ComponentScore)=>!(c.component_criticality==='essential'&&c.cap_applied);
+
+export type CriticalGateType='required_component_missing'|'required_component_not_assessable'|'essential_component_below_selected_level'|'integration_failure'|'unsupported_inference_blocked'|'severe_audio_assessability_limit'|'severe_visibility_assessability_limit'|'same_video_analysis_variance'|'weak_critical_component_caps_overall';
+export interface CriticalComponentGate { gate_id:string; gate_type:CriticalGateType; active:boolean; cap_to:number; reason_private:string; assessability_related:boolean; performance_weakness_related:boolean; visibility:'private'; }
+export const validateCriticalComponentGate=(g:CriticalComponentGate)=>g.visibility==='private' && !(g.assessability_related&&g.performance_weakness_related&&/assessability/i.test(g.reason_private));
+export const isGateActiveInShadow=(g:CriticalComponentGate)=>g.active;
+export function applyCriticalGateCapShadow(score:number,gates:CriticalComponentGate[]){ const active=gates.filter((g)=>g.active); if(!active.length) return score; return Math.min(score,...active.map((g)=>g.cap_to)); }
+
+export interface SubmissionCohesion { component_ids:string[]; integration_dimensions:string[]; weakest_critical_component_id:string; cross_component_integration_score:number; submission_cohesion_score:number; reliability:number; confidence:number; visibility:'private'; }
+export const validateSubmissionCohesion=(s:SubmissionCohesion)=>s.visibility==='private'&&s.component_ids.length>1&&s.integration_dimensions.length>0;
+export function findWeakestCriticalComponent(scores:ComponentScore[]){ return [...scores].sort((a,b)=>a.level_adjusted_component_score-b.level_adjusted_component_score).find((s)=>s.component_criticality==='essential')?.component_id ?? scores[0]?.component_id ?? ''; }
+
+export interface ProfessionalScoreBand { min:number; max:number; label:string; requires_standout:boolean; requires_exceptional:boolean; }
+const PRO_BANDS:ProfessionalScoreBand[]=[{min:98,max:100,label:'Exceptional / rare / industry-ready',requires_standout:true,requires_exceptional:true},{min:95,max:97,label:'Outstanding / highly competitive',requires_standout:true,requires_exceptional:false},{min:92,max:94,label:'Strong professional submission',requires_standout:false,requires_exceptional:false},{min:89,max:91,label:'Competitive but exposed',requires_standout:false,requires_exceptional:false},{min:80,max:88,label:'Professionally usable with caution',requires_standout:false,requires_exceptional:false},{min:68,max:79,label:'Worth another take before relying professionally',requires_standout:false,requires_exceptional:false},{min:0,max:67,label:'Not ready for Professional submission',requires_standout:false,requires_exceptional:false}];
+export const getProfessionalScoreBand=(score:number)=>{ const safe = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0; return PRO_BANDS.find((b)=>safe>=b.min&&safe<=b.max) ?? PRO_BANDS[PRO_BANDS.length-1]; };
+export const validateProfessionalScoreBand=(score:number)=>Boolean(getProfessionalScoreBand(Math.max(0,Math.min(100,score))));
+export function validateProfessionalHighScoreEvidence(score:number, standout:boolean, exceptional:boolean, cleanOnly=false){ if(score>=98) return standout&&exceptional&&!cleanOnly; if(score>=95) return standout&&!cleanOnly; if(score>=90&&cleanOnly) return false; return true; }
+
+export interface OverallReadiness { selected_level:LevelStandardId; observed_performance_quality:ObservedPerformanceQuality; level_adjusted_readiness:LevelAdjustedReadiness; component_scores:ComponentScore[]; critical_gates:CriticalComponentGate[]; submission_cohesion:SubmissionCohesion; professional_band:ProfessionalScoreBand; reliability:number; score_trace:ScoreTrace; visibility:'private'; same_video_variance_warning:boolean; }
+export const applyOverallGateCapsShadow=(r:OverallReadiness)=>({ ...r, level_adjusted_readiness:{...r.level_adjusted_readiness, readiness_score:applyCriticalGateCapShadow(r.level_adjusted_readiness.readiness_score,r.critical_gates)} });
+export const validateOverallReadiness=(r:OverallReadiness)=>r.visibility==='private' && r.score_trace.visibility==='private_trace' && validateSubmissionCohesion(r.submission_cohesion);
+
+export interface QAValidationResult { validator_name:string; action:'pass'|'warn'|'block_report'|'suppress_comparison'; passed:boolean; message:string; }
+const v=(n:string,p:boolean,a:QAValidationResult['action'],m:string):QAValidationResult=>({validator_name:n,passed:p,action:a,message:m});
+export const validateLevelCalibration=(level:LevelStandardId,score:number)=>v('level-calibration',!(level==='professional'&&score>97),'warn','level calibration check');
+export const validateHonestScoring=(hasEvidence:boolean)=>v('honest-scoring',hasEvidence,hasEvidence?'pass':'warn','evidence-backed scoring required');
+export const validateProfessionalHighScore=(score:number,standout:boolean,exceptional:boolean,cleanOnly=false)=>v('professional-high-score',validateProfessionalHighScoreEvidence(score,standout,exceptional,cleanOnly),validateProfessionalHighScoreEvidence(score,standout,exceptional,cleanOnly)?'pass':'block_report','high professional score evidence check');
+export const validateLowScoreLanguagePlaceholder=(txt:string)=>v('low-score-language',!/pleasant|clean|competent/i.test(txt),'warn','low-score honesty wording');
+export const validateScoreInflation=(raw:number,adjusted:number)=>v('score-inflation',adjusted<=raw+5,adjusted<=raw+5?'pass':'warn','inflation check');
+export const validateCleanCaptureInflation=(clean:boolean,proScore:number)=>v('clean-capture-inflation',!(clean&&proScore>=90),'block_report','clean capture alone cannot justify professional 90s');
+export const validateHighPolishWeakPerformance=(polish:number,perf:number)=>v('high-polish-weak-performance',!(polish>90&&perf<75),'warn','polish cannot hide weakness');
+export const validateWeakCaptureStrongPerformance=(capture:number,perf:number)=>v('weak-capture-strong-performance',!(capture<50&&perf>85)?true:true,'pass','allow strong performance despite weak capture');
+export const validateEssentialComponentCap=(hasWeakEssential:boolean)=>v('essential-component-cap',!hasWeakEssential,hasWeakEssential?'warn':'pass','essential component cap');
+export const validateAssessabilityMisread=(assessability:boolean,weakness:boolean)=>v('assessability-misread',!(assessability&&weakness),'warn','assessability is not weakness');
+export const validateSameVideoScoreVariance=(delta:number,toggled:boolean,newEvidence:boolean)=>v('same-video-score-variance',!(delta>4|| (toggled&&!newEvidence)),(delta>4|| (toggled&&!newEvidence))?'suppress_comparison':'pass','same-video variance check');
+export const validateOldSixFieldLeakage=(authoritative:boolean)=>v('old-six-field-brain-leakage',!authoritative,authoritative?'block_report':'pass','old six fields non-authoritative');
+export const validatePublicScoreExposure=(attempt:boolean)=>v('public-score-exposure',!attempt,attempt?'block_report':'pass','public score exposure blocked');
+export const validatePrivateTraceLeakage=(attempt:boolean)=>v('private-trace-leakage',!attempt,attempt?'block_report':'pass','private trace leakage blocked');
+export const validateTechniqueMaturityMisuse=(isProdSafe:boolean)=>v('technique-maturity-misuse',!isProdSafe,isProdSafe?'block_report':'pass','technique maturity misuse');
+
+export interface ScoringSentinel { sentinel_id:string; fixture_link:string; selected_level:LevelStandardId; known_risk:string; expected_shadow_scoring_behaviour:string; expected_gate_behaviour:string; expected_validator_behaviour:string; failure_condition:string; rerun_trigger:string; }
+const SENTINELS:ScoringSentinel[]=[
+{sentinel_id:'S4-SEN-01',fixture_link:'GF-18',selected_level:'professional',known_risk:'competent but generic professional tape',expected_shadow_scoring_behaviour:'moderate professional readiness',expected_gate_behaviour:'no hard gate',expected_validator_behaviour:'honest scoring warning if inflated',failure_condition:'professional 90s without standout evidence',rerun_trigger:'score drift >5'},
+{sentinel_id:'S4-SEN-02',fixture_link:'GF-19',selected_level:'professional',known_risk:'strong amateur submitted as professional',expected_shadow_scoring_behaviour:'competitive but exposed band',expected_gate_behaviour:'essential component below level may cap',expected_validator_behaviour:'level calibration warning',failure_condition:'professional 95+ without evidence',rerun_trigger:'level threshold update'},
+{sentinel_id:'S4-SEN-03',fixture_link:'GF-18',selected_level:'professional',known_risk:'technically clean but generic',expected_shadow_scoring_behaviour:'high 80s or low 90s at most',expected_gate_behaviour:'weak critical component cap possible',expected_validator_behaviour:'clean-capture inflation validator',failure_condition:'clean capture drives 90s',rerun_trigger:'capture model update'},
+{sentinel_id:'S4-SEN-04',fixture_link:'GF-19',selected_level:'professional',known_risk:'weak capture strong observable performance',expected_shadow_scoring_behaviour:'score preserved with confidence reduction',expected_gate_behaviour:'assessability gates traceable',expected_validator_behaviour:'weak-capture strong-performance pass',failure_condition:'performance suppressed purely due to capture',rerun_trigger:'assessability rule change'},
+{sentinel_id:'S4-SEN-05',fixture_link:'GF-15',selected_level:'professional',known_risk:'unassessable essential component',expected_shadow_scoring_behaviour:'capped readiness',expected_gate_behaviour:'required_component_not_assessable active',expected_validator_behaviour:'essential-component cap warning',failure_condition:'no cap despite unassessable essential',rerun_trigger:'gate threshold change'},
+{sentinel_id:'S4-SEN-06',fixture_link:'GF-02',selected_level:'professional',known_risk:'outstanding component plus weak essential',expected_shadow_scoring_behaviour:'cap applied',expected_gate_behaviour:'weak_critical_component_caps_overall',expected_validator_behaviour:'essential-component cap warning',failure_condition:'strong component overrides weak essential',rerun_trigger:'component weighting update'},
+{sentinel_id:'S4-SEN-07',fixture_link:'GF-01',selected_level:'professional',known_risk:'duplicate same-video takes',expected_shadow_scoring_behaviour:'variance monitored without recommendation',expected_gate_behaviour:'same_video_analysis_variance when unstable',expected_validator_behaviour:'same-video variance suppress comparison',failure_condition:'forced winner recommendation',rerun_trigger:'same-video detector update'},
+{sentinel_id:'S4-SEN-08',fixture_link:'GF-02',selected_level:'professional',known_risk:'MT strong singing weak acting-through-song',expected_shadow_scoring_behaviour:'cohesion penalty',expected_gate_behaviour:'integration_failure possible',expected_validator_behaviour:'honest scoring warning',failure_condition:'singing masks acting-through-song weakness',rerun_trigger:'mt integration rule update'},
+{sentinel_id:'S4-SEN-09',fixture_link:'GF-07',selected_level:'professional',known_risk:'dance energy strong timing/control weak',expected_shadow_scoring_behaviour:'professional cap',expected_gate_behaviour:'essential_component_below_selected_level',expected_validator_behaviour:'level calibration warning',failure_condition:'energy masks timing/control weakness',rerun_trigger:'dance threshold update'},
+{sentinel_id:'S4-SEN-10',fixture_link:'GF-11',selected_level:'professional',known_risk:'commercial clean/natural read but copy/addressee failure',expected_shadow_scoring_behaviour:'reduced readiness',expected_gate_behaviour:'integration_failure',expected_validator_behaviour:'honest scoring warning',failure_condition:'clean read masks copy failure',rerun_trigger:'commercial rule update'},
+];
+export const getScoringSentinelRegistry=()=>SENTINELS;
+export const validateScoringSentinelRegistry=()=>SENTINELS.length===10&&SENTINELS.every((s)=>Boolean(s.failure_condition&&s.rerun_trigger));
+
+export interface SameVideoVarianceInput { readiness_scores:number[]; gate_toggled_without_new_evidence:boolean; has_explicit_new_evidence_or_assessability_reason:boolean; }
+export function evaluateSameVideoScoreVarianceShadow(input:SameVideoVarianceInput){
+  if(input.readiness_scores.length<2) return { variance_tolerance:4, delta:0, warning:true, suppress_comparison:true, reason_private:'not_enough_scores' as const };
+  const delta=Math.max(...input.readiness_scores)-Math.min(...input.readiness_scores);
+  const warning=delta>4|| (input.gate_toggled_without_new_evidence && !input.has_explicit_new_evidence_or_assessability_reason);
+  return { variance_tolerance:4, delta, warning, suppress_comparison:warning&&!input.has_explicit_new_evidence_or_assessability_reason };
+}

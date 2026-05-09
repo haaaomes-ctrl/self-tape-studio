@@ -6,3 +6,5 @@ export * from './uk-english-gate';
 export * from './fixtures';
 export * from './evaluation-harness';
 export * from './flags';
+
+export * from './s4-shadow-scoring';

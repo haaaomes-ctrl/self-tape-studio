@@ -9,7 +9,7 @@ export const S2_METRICS = [
 export interface HarnessResult { id:string; passed:boolean; checks:Array<{metric:string;passed:boolean}>; validations:QAValidationResult[]; }
 export function runS1Harness(id:string, checks:Partial<Record<(typeof S1_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S1_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
 export function runS2Harness(id:string, checks:Partial<Record<(typeof S2_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S2_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
-export function getMetricRegistry(){ return [...S1_METRICS, ...S2_METRICS, ...S3_METRICS]; }
+export function getMetricRegistry(){ return [...S1_METRICS, ...S2_METRICS, ...S3_METRICS, ...S4_METRICS]; }
 export function getS2MetricRegistry(){ return S2_METRICS; }
 export function getFixtureRegistry(){ return GOLDEN_FIXTURES; }
 export function getRedTeamRegistry(){ return RED_TEAM_FIXTURES; }
@@ -19,3 +19,10 @@ export const S3_METRICS = [
 ] as const;
 export function runS3Harness(id:string, checks:Partial<Record<(typeof S3_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S3_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
 export function getS3MetricRegistry(){ return S3_METRICS; }
+
+
+export const S4_METRICS = [
+'ComponentScore created','CriticalComponentGate created','active gate caps shadow readiness','SubmissionCohesion created','OverallReadiness shadow trace created','ProfessionalScoreBand resolved','honest scoring validator triggered','essential-component cap validator triggered','same-video variance tracked','GF-01 / RT-15 remains P0 and no recommendation',
+] as const;
+export function runS4Harness(id:string, checks:Partial<Record<(typeof S4_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S4_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
+export function getS4MetricRegistry(){ return S4_METRICS; }

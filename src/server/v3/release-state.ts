@@ -25,3 +25,15 @@ export function assertS1ReleaseStateAllowed(state: V3ReleaseState): void {
 export function isLaunchReadinessState(state: V3ReleaseState): boolean {
   return state === 'launch';
 }
+
+const S4_ALLOWED = new Set<V3ReleaseState>(['design_only', 'dark_mode_internal']);
+
+export function isS4AllowedReleaseState(state: V3ReleaseState): boolean {
+  return S4_ALLOWED.has(state);
+}
+
+export function assertS4ReleaseStateAllowed(state: V3ReleaseState): void {
+  if (!isS4AllowedReleaseState(state)) {
+    throw new Error(`S4 release state not allowed: ${state}`);
+  }
+}

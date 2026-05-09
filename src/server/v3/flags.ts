@@ -8,6 +8,10 @@ export interface V3Flags {
   v3_uk_english_gate_enabled: boolean;
   v3_archive_reset_enabled: boolean;
   v3_ontology_shadow_enabled: boolean;
+  v3_level_calibration_shadow_enabled: boolean;
+  v3_scoring_shadow_enabled: boolean;
+  v3_critical_gates_shadow_enabled: boolean;
+  v3_score_trace_enabled: boolean;
 }
 
 export const V3_FLAG_DEFAULTS: V3Flags = {
@@ -20,6 +24,10 @@ export const V3_FLAG_DEFAULTS: V3Flags = {
   v3_uk_english_gate_enabled: false,
   v3_archive_reset_enabled: false,
   v3_ontology_shadow_enabled: false,
+  v3_level_calibration_shadow_enabled: false,
+  v3_scoring_shadow_enabled: false,
+  v3_critical_gates_shadow_enabled: false,
+  v3_score_trace_enabled: false,
 };
 
 export function resolveV3Flags(): V3Flags {
