@@ -125,6 +125,15 @@ describe('v3 s4 core shadow scoring contracts', () => {
     expect(validateProfessionalHighScoreEvidence(98, true, false)).toBe(false);
   });
 
+
+  it('ProfessionalScoreBand is safe for out-of-range and non-finite scores', () => {
+    expect(getProfessionalScoreBand(-10).label).toContain('Not ready for Professional submission');
+    expect(getProfessionalScoreBand(101).label).toContain('Exceptional / rare / industry-ready');
+    expect(getProfessionalScoreBand(Number.NaN).label).toContain('Not ready for Professional submission');
+    expect(getProfessionalScoreBand(Number.POSITIVE_INFINITY).label).toContain('Not ready for Professional submission');
+    expect(getProfessionalScoreBand(68).label).toContain('Worth another take before relying professionally');
+  });
+
   it('clean capture alone cannot justify Professional 90s', () => {
     expect(validateCleanCaptureInflation(true, 92).passed).toBe(false);
   });
@@ -141,6 +150,19 @@ describe('v3 s4 core shadow scoring contracts', () => {
     const v = evaluateSameVideoScoreVarianceShadow({ readiness_scores:[98,93,94], gate_toggled_without_new_evidence:true, has_explicit_new_evidence_or_assessability_reason:false });
     expect(v.variance_tolerance).toBe(4);
     expect(v.warning).toBe(true);
+  });
+
+
+  it('same-video variance is safe for empty and single-score lists', () => {
+    const empty = evaluateSameVideoScoreVarianceShadow({ readiness_scores:[], gate_toggled_without_new_evidence:false, has_explicit_new_evidence_or_assessability_reason:false });
+    expect(empty.delta).toBe(0);
+    expect(empty.warning).toBe(true);
+    expect(empty.suppress_comparison).toBe(true);
+
+    const single = evaluateSameVideoScoreVarianceShadow({ readiness_scores:[94], gate_toggled_without_new_evidence:false, has_explicit_new_evidence_or_assessability_reason:false });
+    expect(single.delta).toBe(0);
+    expect(single.warning).toBe(true);
+    expect(single.suppress_comparison).toBe(true);
   });
 
   it('RT-15 creates no recommendation and sentinel registry validates', () => {

@@ -45,7 +45,7 @@ export function findWeakestCriticalComponent(scores:ComponentScore[]){ return [.
 
 export interface ProfessionalScoreBand { min:number; max:number; label:string; requires_standout:boolean; requires_exceptional:boolean; }
 const PRO_BANDS:ProfessionalScoreBand[]=[{min:98,max:100,label:'Exceptional / rare / industry-ready',requires_standout:true,requires_exceptional:true},{min:95,max:97,label:'Outstanding / highly competitive',requires_standout:true,requires_exceptional:false},{min:92,max:94,label:'Strong professional submission',requires_standout:false,requires_exceptional:false},{min:89,max:91,label:'Competitive but exposed',requires_standout:false,requires_exceptional:false},{min:80,max:88,label:'Professionally usable with caution',requires_standout:false,requires_exceptional:false},{min:68,max:79,label:'Worth another take before relying professionally',requires_standout:false,requires_exceptional:false},{min:0,max:67,label:'Not ready for Professional submission',requires_standout:false,requires_exceptional:false}];
-export const getProfessionalScoreBand=(score:number)=>PRO_BANDS.find((b)=>score>=b.min&&score<=b.max)!;
+export const getProfessionalScoreBand=(score:number)=>{ const safe = Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : 0; return PRO_BANDS.find((b)=>safe>=b.min&&safe<=b.max) ?? PRO_BANDS[PRO_BANDS.length-1]; };
 export const validateProfessionalScoreBand=(score:number)=>Boolean(getProfessionalScoreBand(Math.max(0,Math.min(100,score))));
 export function validateProfessionalHighScoreEvidence(score:number, standout:boolean, exceptional:boolean, cleanOnly=false){ if(score>=98) return standout&&exceptional&&!cleanOnly; if(score>=95) return standout&&!cleanOnly; if(score>=90&&cleanOnly) return false; return true; }
 
@@ -88,4 +88,9 @@ export const getScoringSentinelRegistry=()=>SENTINELS;
 export const validateScoringSentinelRegistry=()=>SENTINELS.length===10&&SENTINELS.every((s)=>Boolean(s.failure_condition&&s.rerun_trigger));
 
 export interface SameVideoVarianceInput { readiness_scores:number[]; gate_toggled_without_new_evidence:boolean; has_explicit_new_evidence_or_assessability_reason:boolean; }
-export function evaluateSameVideoScoreVarianceShadow(input:SameVideoVarianceInput){ const delta=Math.max(...input.readiness_scores)-Math.min(...input.readiness_scores); const warning=delta>4|| (input.gate_toggled_without_new_evidence && !input.has_explicit_new_evidence_or_assessability_reason); return { variance_tolerance:4, delta, warning, suppress_comparison:warning&&!input.has_explicit_new_evidence_or_assessability_reason }; }
+export function evaluateSameVideoScoreVarianceShadow(input:SameVideoVarianceInput){
+  if(input.readiness_scores.length<2) return { variance_tolerance:4, delta:0, warning:true, suppress_comparison:true, reason_private:'not_enough_scores' as const };
+  const delta=Math.max(...input.readiness_scores)-Math.min(...input.readiness_scores);
+  const warning=delta>4|| (input.gate_toggled_without_new_evidence && !input.has_explicit_new_evidence_or_assessability_reason);
+  return { variance_tolerance:4, delta, warning, suppress_comparison:warning&&!input.has_explicit_new_evidence_or_assessability_reason };
+}
