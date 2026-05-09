@@ -216,7 +216,41 @@ export const validateGateToggleWithoutEvidence = (hasGateToggle:boolean, hasEvid
 export const validateTechniqueMaturityMisuseInComparison = (usesTechniqueAuthority:boolean): QAValidationResult => usesTechniqueAuthority ? q('comparison-technique-maturity','block_report','P0','Technique maturity misuse in comparison authority',false) : q('comparison-technique-maturity','pass','P2','Technique maturity usage valid',true);
 export const validatePublicRecommendationExposure = (r: ComparisonRecommendation): QAValidationResult => r.public_recommendation_allowed ? q('comparison-public-recommendation','block_report','P0','Public recommendation exposure is forbidden in S6',false) : q('comparison-public-recommendation','pass','P2','Public recommendation remains disabled',true);
 export const validateComparisonPrivateTraceLeakage = (text:string): QAValidationResult => /score_trace_ref|model_run_id|hidden_reasoning/i.test(text) ? q('comparison-private-trace-leakage','block_report','P0','Private trace leakage detected in comparison output',false) : q('comparison-private-trace-leakage','pass','P2','No private trace leakage detected',true);
-export const validateComparisonHiddenReasoningLeakage = (text:string): QAValidationResult => /chain-of-thought|hidden reasoning/i.test(text) ? q('comparison-hidden-reasoning','block_report','P0','Hidden reasoning leakage detected',false) : q('comparison-hidden-reasoning','pass','P2','No hidden reasoning leakage',true);
+export const validateComparisonHiddenReasoningLeakage = (text:string): QAValidationResult => /chain[\s_-]*of[\s_-]*thought|hidden[\s_-]*reasoning/i.test(text) ? q('comparison-hidden-reasoning','block_report','P0','Hidden reasoning leakage detected',false) : q('comparison-hidden-reasoning','pass','P2','No hidden reasoning leakage',true);
 export const validateNoBriefComparisonOverclaim = (briefMode:'full_casting_brief'|'no_brief_baseline', claim:string, isPublic=false): QAValidationResult => validateNoBriefInvention(briefMode, claim, isPublic);
 export const validateComparisonUKEnglish = (text:string): QAValidationResult => validateUKEnglish(text,true);
-export const validateGF01FalseWinnerBlock = (r: ComparisonResult): QAValidationResult => r.comparison_id.includes('GF-01') && /submit take 1/i.test(r.internal_qa_summary) ? q('comparison-gf01-false-winner','block_report','P0','GF-01 must not produce forced winner wording',false) : q('comparison-gf01-false-winner','pass','P2','GF-01 false-winner block holds',true);
+
+
+export function containsForcedWinnerLanguage(text: string): boolean {
+  const value = (text || '').toLowerCase();
+  const suppressionSafe = [
+    /no\s+winner\s+is\s+produced/,
+    /no\s+clear\s+winner\s+is\s+produced/,
+    /recommendation\s+suppressed/,
+    /no\s+take\s+recommendation\s+is\s+produced/,
+    /no\s+public\s+recommendation/,
+    /comparison\s+is\s+suppressed/,
+  ];
+  if (suppressionSafe.some((r)=>r.test(value))) return false;
+  const forced = [
+    /\bwinner\s+is\s+take\s*\d+/,
+    /\bbest\s+take\b/,
+    /\bclear\s+winner\b/,
+    /\brecommended\s+take\b/,
+    /\brecommend\s+take\s*\d+/,
+    /\bchoose\s+take\s*\d+/,
+    /\btake\s*\d+\s+is\s+the\s+winner\b/,
+    /\btake\s*\d+\s+is\s+the\s+best\b/,
+    /\bsubmit\s+take\s*\d+/,
+    /\bsubmit\s+the\s+first\s+take\b/,
+    /\bsubmit\s+the\s+second\s+take\b/,
+    /\bsubmit\s+the\s+third\s+take\b/,
+  ];
+  return forced.some((r)=>r.test(value));
+}
+
+export const validateGF01FalseWinnerBlock = (r: ComparisonResult): QAValidationResult => {
+  if (!r.comparison_id.includes('GF-01')) return q('comparison-gf01-false-winner','pass','P2','GF-01 false-winner block not applicable',true);
+  const checks = [r.internal_qa_summary, r.recommendation?.recommendation_label ?? '', r.recommendation?.recommendation_reason_private ?? ''];
+  return checks.some((t)=>containsForcedWinnerLanguage(t)) ? q('comparison-gf01-false-winner','block_report','P0','GF-01 must not produce forced winner wording',false) : q('comparison-gf01-false-winner','pass','P2','GF-01 false-winner block holds',true);
+};

@@ -61,6 +61,32 @@ describe('v3-s6 variance-aware comparison', () => {
     expect(validateComparisonUKEnglish('callback calibration').passed).toBe(false);
   });
 
+
+
+  it('GF-01 forced-winner wording variants are blocked and suppression wording passes', () => {
+    const baseResult: ComparisonResult = {
+      comparison_id:'GF-01-check', submission_id:'sub-1', take_ids:['take-1','take-2'], selected_level:'professional', audition_context:'musical_theatre', comparison_state:'suppressed_recommendation',
+      duplicate_detection:{ duplicate_detection_status:'confirmed_duplicate', asset_similarity_score:0.95, duplicate_confidence:0.95, reason_private:'same-video', validator_status:'suppress_claim' },
+      asset_similarity:{ score:0.95, confidence:0.95, reason_private:'same-video' }, score_band_deltas:[], overall_readiness_deltas:[], observed_quality_deltas:[], level_adjusted_readiness_deltas:[], component_deltas:[], dimension_deltas:[], technique_deltas:[], critical_gate_deltas:[], evidence_sufficiency_deltas:[], assessability_deltas:[], submission_cohesion_deltas:[], reliability_deltas:[],
+      confidence_deltas:confidence, recommendation:{ recommendation_state:'suppressed', recommendation_label:'internal only', recommendation_reason_private:'internal', public_recommendation_allowed:false, suppressed_reason:'analysis_variance', suppression_validator_ids:[] }, suppressed_reason:'analysis_variance', variance_warnings:['variance'], comparison_confidence:0.5, public_summary_placeholder:'placeholder_only_no_recommendation', internal_qa_summary:'Recommendation suppressed', validator_status:[], created_at:new Date().toISOString(),
+    };
+    const blocked=[
+      'Submit Take 1','winner is Take 2','best take','recommended take is Take 3','choose Take 1','Take 1 is the winner','Take 2 is the best','submit Take 2','submit the first take','submit the second take','submit the third take'
+    ];
+    blocked.forEach((txt)=>{ expect(validateGF01FalseWinnerBlock({ ...baseResult, internal_qa_summary:txt }).action).toBe('block_report'); });
+    expect(validateGF01FalseWinnerBlock({ ...baseResult, internal_qa_summary:'recommendation suppressed' }).passed).toBe(true);
+    expect(validateGF01FalseWinnerBlock({ ...baseResult, internal_qa_summary:'no winner is produced' }).passed).toBe(true);
+    expect(validateGF01FalseWinnerBlock({ ...baseResult, internal_qa_summary:'no take recommendation is produced' }).passed).toBe(true);
+    expect(validateGF01FalseWinnerBlock({ ...baseResult, comparison_id:'GF-02-check', internal_qa_summary:'winner is Take 2' }).passed).toBe(true);
+  });
+
+  it('hidden reasoning separator variants are blocked and safe text passes', () => {
+    ['chain-of-thought','chain of thought','chain_of_thought','chainofthought','hidden reasoning','hidden_reasoning','hidden-reasoning'].forEach((txt)=>{
+      expect(validateComparisonHiddenReasoningLeakage(txt).action).toBe('block_report');
+    });
+    expect(validateComparisonHiddenReasoningLeakage('safe comparison wording').passed).toBe(true);
+  });
+
   it('minimal valid ComparisonResult shape supports suppression and GF-01 false winner block', () => {
     const dup=evaluateDuplicateDetectionShadow({ same_media_asset_id:true, same_duration:true, same_brief_marker:true, gf01_fixture_marker:true });
     const rec=evaluateRecommendationSuppressionShadow({ comparison_state:'duplicate_or_near_duplicate_detected', duplicate:dup, evidence_decisive:false, confidence, same_video_variance_warning:true, component_split_instability:true, critical_gate_uncertain:true, recommended_take_id:'take-1' });
