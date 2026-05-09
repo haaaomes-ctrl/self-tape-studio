@@ -9,7 +9,7 @@ export const S2_METRICS = [
 export interface HarnessResult { id:string; passed:boolean; checks:Array<{metric:string;passed:boolean}>; validations:QAValidationResult[]; }
 export function runS1Harness(id:string, checks:Partial<Record<(typeof S1_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S1_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
 export function runS2Harness(id:string, checks:Partial<Record<(typeof S2_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S2_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
-export function getMetricRegistry(){ return [...S1_METRICS, ...S2_METRICS, ...S3_METRICS, ...S4_METRICS]; }
+export function getMetricRegistry(){ return [...S1_METRICS, ...S2_METRICS, ...S3_METRICS, ...S4_METRICS, ...S5_METRICS, ...S5_RENDERER_METRICS, ...S6_METRICS, ...S6_RENDERER_METRICS]; }
 export function getS2MetricRegistry(){ return S2_METRICS; }
 export function getFixtureRegistry(){ return GOLDEN_FIXTURES; }
 export function getRedTeamRegistry(){ return RED_TEAM_FIXTURES; }
@@ -42,3 +42,17 @@ export const S5_RENDERER_METRICS = [
 ] as const;
 export function runS5RendererHarness(id:string, checks:Partial<Record<(typeof S5_RENDERER_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S5_RENDERER_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
 export function getS5RendererMetricRegistry(){ return S5_RENDERER_METRICS; }
+
+
+export const S6_METRICS = [
+  'ComparisonResult schema available','duplicate detection available','tie suppression available','near-tie suppression available','same-band suppression available','evidence-delta requirement available','recommendation suppression available','comparison confidence trace available','GF-01 false winner blocked','RT-15 remains P0 and no recommendation',
+] as const;
+export function runS6Harness(id:string, checks:Partial<Record<(typeof S6_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S6_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
+export function getS6MetricRegistry(){ return S6_METRICS; }
+
+
+export const S6_RENDERER_METRICS = [
+  'internal comparison renderer available','rendered comparison snapshot available','duplicate status renders','suppression reason renders','variance warning renders','confidence rows render','delta rows redacted','GF-01 false winner blocked in render','no public comparison route','no export implementation','no live pipeline wiring',
+] as const;
+export function runS6RendererHarness(id:string, checks:Partial<Record<(typeof S6_RENDERER_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S6_RENDERER_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
+export function getS6RendererMetricRegistry(){ return S6_RENDERER_METRICS; }
