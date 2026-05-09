@@ -6,6 +6,8 @@ export function runUKEnglishGate(text:string, opts?:{context?:UKEnglishContext; 
   const context = opts?.context ?? 'normal_public_copy';
   if (context==='quoted_or_supplied_material' || context==='blocked_wording_list' || context==='red_team_case' || context==='internal_trace') return { passed:true, flags:[], recognised_terms:[] };
   const lower = text.toLowerCase(); const flags:string[]=[];
-  for (const t of usTerms) if (lower.includes(t) && !opts?.blockedWording?.includes(t)) flags.push(t);
-  return { passed: flags.length===0, flags, recognised_terms: ukTerms.filter((t)=>lower.includes(t)) };
+  const escape=(v:string)=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const hasTerm=(term:string)=>new RegExp(`(^|[^a-z])${escape(term)}([^a-z]|$)`, 'i').test(lower);
+  for (const t of usTerms) if (hasTerm(t) && !opts?.blockedWording?.includes(t)) flags.push(t);
+  return { passed: flags.length===0, flags, recognised_terms: ukTerms.filter((t)=>hasTerm(t)) };
 }
