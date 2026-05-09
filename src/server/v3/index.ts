@@ -11,3 +11,6 @@ export * from './s4-shadow-scoring';
 
 export * from './s5-public-report';
 export * from './s5-internal-renderer';
+
+export * from './s6-variance-comparison';
+export * from './s6-internal-comparison-renderer';
