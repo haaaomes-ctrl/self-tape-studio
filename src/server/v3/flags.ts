@@ -12,6 +12,7 @@ export interface V3Flags {
   v3_scoring_shadow_enabled: boolean;
   v3_critical_gates_shadow_enabled: boolean;
   v3_score_trace_enabled: boolean;
+  v3_report_internal_enabled: boolean;
 }
 
 export const V3_FLAG_DEFAULTS: V3Flags = {
@@ -28,6 +29,7 @@ export const V3_FLAG_DEFAULTS: V3Flags = {
   v3_scoring_shadow_enabled: false,
   v3_critical_gates_shadow_enabled: false,
   v3_score_trace_enabled: false,
+  v3_report_internal_enabled: false,
 };
 
 export function resolveV3Flags(): V3Flags {

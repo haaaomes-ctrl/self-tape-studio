@@ -8,3 +8,6 @@ export * from './evaluation-harness';
 export * from './flags';
 
 export * from './s4-shadow-scoring';
+
+export * from './s5-public-report';
+export * from './s5-internal-renderer';

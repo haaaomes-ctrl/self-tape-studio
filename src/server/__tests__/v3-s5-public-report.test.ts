@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest';
+import { V3_FLAG_DEFAULTS } from '@/server/v3/flags';
+import { assertS5ReleaseStateAllowed, isS5AllowedReleaseState } from '@/server/v3/release-state';
+import { isObjectPublicByDefault } from '@/server/v3/privacy-boundary';
+import { getS5MetricRegistry } from '@/server/v3/evaluation-harness';
+import { GOLDEN_FIXTURES, RED_TEAM_FIXTURES, S5_RED_TEAM_MAPPING } from '@/server/v3/fixtures';
+import { PublicReportV3, runS5ReportValidators, validateComparisonSummaryPlaceholderOnly, validateReportNoPrivateTraceLeakage } from '@/server/v3/s5-public-report';
+
+const baseReport: PublicReportV3 = {
+  schema_version: 'tapecoach_v3', report_id: 'r1', take_id: 't1', submission_id: 's1', selected_level: 'professional',
+  audition_summary: 'Clear, evidence-based summary.', analysis_mode: 'internal_qa', overall_readiness: '92', professional_band: '92',
+  level_adjusted_readiness: '88', observed_quality_summary: 'Observed quality summary.', gap_to_selected_level: 'Gap is mainly precision.',
+  component_breakdown: ['Acting scene stable'], technique_observations: [{ technique_or_safe_descriptor: 'timing clarity', confidence: 0.8, observed_evidence: 'Timing tracked in tape', why_it_matters: 'Supports pacing', readiness_impact: 'Medium', next_action: 'Rehearse timing transitions' }],
+  discipline_summaries: ['MT summary'], why_this_score: 'Score reflects observed strengths and gaps.', standout_delta: 'Marginal gains in transitions.',
+  priority_fixes: ['Tighten transitions'], strengths: ['Clear objective'], improvements: ['Sharper transitions'], timestamped_evidence: ['00:12 timing shift'],
+  next_take_plan: [{ group: 'quick_wins', actions: [{ action_text: 'Tighten opening beat', linked_evidence_anchor_ids: ['a1'], linked_component_ids: ['c1'], linked_dimension_or_technique_ids: ['d1'], why_it_matters: 'Opening confidence', level_relevance: 'Professional', rehearsal_only_or_recorded_take_ready: 'recorded_take_ready', expected_band_impact: 'May raise consistency' }] }],
+  assessability_notes: ['Audio is partial in the final 5 seconds.'], limitations: ['End segment has partial audibility.'],
+  brief_or_task_fit: 'Aligned with the supplied task.', role_or_material_context: 'Scene context retained.', critical_component_gates: ['No hard gate active; one caution noted.'],
+  submission_cohesion: 'Cohesion is generally stable.', comparison_summary: { status: 'placeholder_only_no_recommendation', note: 'comparison not available in S5' }, safety_public_notes: ['Public-safe wording only.'],
+  export_metadata: { placeholder_only: true }, optional_summary_categories: ['consistency'],
+  claim_traces: [{ report_claim_id: 'rc1', report_section: 'overall_readiness', claim_type: 'score_rationale', public_safe_text: 'Readiness reflects observed evidence.', linked_evidence_anchor_ids: ['a1'], linked_public_claim_trace_ids: ['pc1'], truth_state_key: 'observed_in_tape', validator_status: 'pass' }, { report_claim_id: 'rc2', report_section: 'why_this_score', claim_type: 'narrative', public_safe_text: 'Score narrative is evidence-backed.', linked_evidence_anchor_ids: ['a2'], linked_public_claim_trace_ids: ['pc2'], truth_state_key: 'observed_in_tape', validator_status: 'pass' }, { report_claim_id: 'rc3', report_section: 'gap_to_selected_level', claim_type: 'gap', public_safe_text: 'Gap is traceable.', linked_evidence_anchor_ids: ['a3'], linked_public_claim_trace_ids: ['pc3'], truth_state_key: 'observed_in_tape', validator_status: 'pass' }, { report_claim_id: 'rc4', report_section: 'critical_component_gates', claim_type: 'gate', public_safe_text: 'Gate explanation is present.', linked_evidence_anchor_ids: ['a4'], linked_public_claim_trace_ids: ['pc4'], truth_state_key: 'professional_standard', validator_status: 'pass' }],
+};
+
+describe('v3 S5 public report schema and validators', () => {
+  it('S5 flag default false', () => { expect(V3_FLAG_DEFAULTS.v3_report_internal_enabled).toBe(false); });
+  it('S5 release states allowed', () => { expect(isS5AllowedReleaseState('design_only')).toBe(true); expect(isS5AllowedReleaseState('dark_mode_internal')).toBe(true); expect(isS5AllowedReleaseState('internal_rendered_QA')).toBe(true); expect(() => assertS5ReleaseStateAllowed('internal_rendered_QA')).not.toThrow(); });
+  it('S5 release states rejected', () => { (['hidden_production_beta','branch_limited_readiness','external_release_candidate','launch'] as const).forEach((v)=>{ expect(isS5AllowedReleaseState(v)).toBe(false); expect(()=>assertS5ReleaseStateAllowed(v)).toThrow(); }); });
+  it('minimal valid report validates', () => { expect(runS5ReportValidators(baseReport).every((v) => v.passed)).toBe(true); });
+  it('every major claim requires trace', () => { const r={...baseReport, claim_traces:[{...baseReport.claim_traces[0], linked_evidence_anchor_ids:[]}]} as PublicReportV3; expect(runS5ReportValidators(r).some((v)=>v.validator_name==='report-major-claim-evidence' && v.action==='block_report')).toBe(true); });
+  it('private traces not rendered', () => { expect(validateReportNoPrivateTraceLeakage(baseReport).passed).toBe(true); const r={...baseReport, claim_traces:[{...baseReport.claim_traces[0], score_trace_ref:'secret'}]}; expect(validateReportNoPrivateTraceLeakage(r as PublicReportV3).action).toBe('block_report'); });
+  it('hidden reasoning blocked', () => { const r={...baseReport, why_this_score:'chain of thought'}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-hidden-reasoning' && v.action==='block_report')).toBe(true); });
+  it('no-brief invention blocked', () => { const r={...baseReport, brief_or_task_fit:'Without brief this brand and audience are clear'}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-no-brief-invention' && v.action==='block_report')).toBe(true); });
+  it('role-fit castability marketability blocked', () => { const r={...baseReport, role_or_material_context:'High castability and marketability'}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-role-fit-overclaim' && v.action==='block_report')).toBe(true); });
+  it('vocal-health diagnosis blocked', () => { const r={...baseReport, improvements:['Contains vocal health diagnosis']}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-vocal-health' && v.action==='block_report')).toBe(true); });
+  it('UK English gate applies', () => { const r={...baseReport, audition_summary:'Callback calibration'}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='uk-english' && !v.passed)).toBe(true); });
+  it('high score requires standout delta', () => { const r={...baseReport, professional_band:'95', standout_delta:undefined}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-high-score-standout' && v.action==='block_report')).toBe(true); });
+  it('low score wording remains honest', () => { const r={...baseReport, professional_band:'not ready', why_this_score:'excellent and perfect'}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-low-score-honesty' && !v.passed)).toBe(true); });
+  it('critical gates explained', () => { const r={...baseReport, critical_component_gates:[]}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-critical-gates' && !v.passed)).toBe(true); });
+  it('assessability notes separate from weakness', () => { const r={...baseReport, assessability_notes:[]}; expect(runS5ReportValidators(r as PublicReportV3).some((v)=>v.validator_name==='report-assessability-separation' && !v.passed)).toBe(true); });
+  it('next-take actions link to evidence', () => { expect(baseReport.next_take_plan[0].actions[0].linked_evidence_anchor_ids.length).toBeGreaterThan(0); });
+  it('comparison summary cannot recommend take', () => { const r={...baseReport, comparison_summary:{ status:'placeholder_only_no_recommendation', note:'Submit Take 1' }}; expect(validateComparisonSummaryPlaceholderOnly(r as PublicReportV3).action).toBe('block_report'); });
+  it('S5 metrics exist', () => { expect(getS5MetricRegistry().length).toBeGreaterThan(10); });
+  it('GF-01 S5 artefacts exist', () => { const gf1=GOLDEN_FIXTURES.find((f)=>f.id==='GF-01')!; expect(gf1.later_artefacts).toContain('PublicReportV3 JSON'); expect(gf1.later_artefacts).toContain('validator trace'); });
+  it('RT-15 remains no forced comparison winner', () => { const rt15=RED_TEAM_FIXTURES.find((r)=>r.id==='RT-15')!; expect(rt15.expected_action).toBe('suppress_comparison'); expect(S5_RED_TEAM_MAPPING['RT-15'].expected_action).toBe('block_report'); });
+  it('no public route or export wiring', () => { expect(isObjectPublicByDefault('PublicReportV3')).toBe(false); expect(baseReport.export_metadata?.placeholder_only).toBe(true); });
+});

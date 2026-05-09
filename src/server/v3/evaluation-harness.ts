@@ -26,3 +26,19 @@ export const S4_METRICS = [
 ] as const;
 export function runS4Harness(id:string, checks:Partial<Record<(typeof S4_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S4_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
 export function getS4MetricRegistry(){ return S4_METRICS; }
+
+
+export const S5_METRICS = [
+  'PublicReportV3 schema available','report claim trace model available','every major claim traceable','private traces not rendered','UK English report gate available','no hidden reasoning','no no-brief invention','no castability or marketability wording','high score requires standout_delta','low score wording remains honest','critical gates explained','assessability separated from weakness','next-take plan actions evidence-linked','comparison summary placeholder only','no export implementation','no live pipeline wiring',
+] as const;
+
+export function runS5Harness(id:string, checks:Partial<Record<(typeof S5_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S5_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
+
+export function getS5MetricRegistry(){ return S5_METRICS; }
+
+
+export const S5_RENDERER_METRICS = [
+  'internal QA renderer available','static fixture renderer available','renderer input contract validates','private traces redacted before render','trace rows are redacted','validator rows are safe summaries','comparison placeholder cannot recommend','GF-01 renders variance warning internally','GF-01 does not frame same-video score spread as performance difference','no public route / export / live pipeline wiring',
+] as const;
+export function runS5RendererHarness(id:string, checks:Partial<Record<(typeof S5_RENDERER_METRICS)[number], boolean>>={}, validations:QAValidationResult[]=[]): HarnessResult { const rows=S5_RENDERER_METRICS.map((m)=>({metric:m,passed:checks[m] ?? true})); return { id, passed: rows.every((r)=>r.passed), checks:rows, validations }; }
+export function getS5RendererMetricRegistry(){ return S5_RENDERER_METRICS; }
