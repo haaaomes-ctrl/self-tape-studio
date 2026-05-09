@@ -13,7 +13,7 @@ export interface RenderedValidatorRow { validator_name:string; section_affected:
 export interface RenderedInternalQAReport { render_id:string; schema_version:'tapecoach_v3'; release_state:V3ReleaseState; internal_qa_marker:true; sections:RenderedQASection[]; trace_rows:RenderedTraceRow[]; validator_rows:RenderedValidatorRow[]; redaction_status:'pass'|'warn'|'block'; uk_english_status:{ passed:boolean; flags:string[] }; report_depth_score:ReportDepthScore; actionability_score:ActionabilityScore; blocked_public_release:true; }
 
 const red = (_id:string,p='id') => `${p}:redacted`; 
-const FORBIDDEN = /hidden\s+reasoning|chain[\s-]*of[\s-]*thought|scoretrace|modelruntrace|evidenceanchor\s*notes|raw\s*brief|uploaded\s*(sides|copy|material)|access\/?setup\s*context|user\s*id|media\s*asset\s*id|raw\s*resolver\s*output|truthstatemap|private_trace|marketability|bookability|castability|commercial\s+look|vocal[-\s]*health\s+diagnosis/i;
+const FORBIDDEN = /hidden\s+reasoning|chain[\s-]*of[\s-]*thought|scoretrace|modelruntrace|evidenceanchor\s*notes|raw\s*brief|uploaded\s*(sides|copy|material)|access\/?setup\s*context|user\s*id|media\s*asset\s*id|raw\s*resolver\s*output|truthstatemap|private_trace|marketability|bookability|castability|commercial\s+look|vocal[-\s]*health\s+diagnosis/ig;
 const COMPARISON_SAFE = 'Comparison is placeholder-only in S5 internal QA. No take recommendation is produced.';
 
 const sanitise = (text: string): string => text.replace(FORBIDDEN, '[redacted]').replace(/\s+/g,' ').trim();
@@ -28,6 +28,7 @@ export function redactTraceRowsForInternalRender(rows: ReportClaimTraceV3[]): Re
 
 export function assertNoPrivateTraceRendered(input: {trace_rows: RenderedTraceRow[]; sections: RenderedQASection[]; validator_rows: RenderedValidatorRow[]}): void {
   const text = JSON.stringify(input).toLowerCase();
+  FORBIDDEN.lastIndex = 0;
   if (FORBIDDEN.test(text) || /submit take|best take|winner/.test(text)) throw new Error('Private/sensitive or recommendation text leaked');
 }
 

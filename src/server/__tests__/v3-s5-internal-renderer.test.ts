@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderInternalQAReport, redactPublicReportForInternalRender, type InternalQARenderInput } from '@/server/v3/s5-internal-renderer';
+import { assertNoPrivateTraceRendered, renderInternalQAReport, redactPublicReportForInternalRender, type InternalQARenderInput } from '@/server/v3/s5-internal-renderer';
 import type { PublicReportV3 } from '@/server/v3/s5-public-report';
 import { getS5RendererMetricRegistry } from '@/server/v3/evaluation-harness';
 import { GOLDEN_FIXTURES } from '@/server/v3/fixtures';
@@ -19,4 +19,9 @@ describe('s5 internal renderer',()=>{
  it('missing data produces safe empty state',()=>{ const out=renderInternalQAReport({...input, public_report_v3:{...report,critical_component_gates:[],standout_delta:undefined}}); const sec=out.sections.find((s)=>s.section_id==='standout_delta'); expect(sec?.status).toBe('empty'); expect(sec?.safe_text[0]).toMatch(/No validated content/i); });
  it('GF-01 artefacts include rendered snapshot expectations',()=>{ const gf1=GOLDEN_FIXTURES.find((f)=>f.id==='GF-01')!; expect(gf1.later_artefacts).toContain('rendered QA snapshot'); });
  it('renderer metrics exist',()=>{ expect(getS5RendererMetricRegistry().length).toBeGreaterThan(5); });
+
+ it('sanitise redacts hidden reasoning and chain of thought together',()=>{ const out=renderInternalQAReport({...input, validator_trace_summary:[{validation_id:'v3',validator_name:'uk-english',action:'warn',severity:'P1',passed:false,message:'hidden reasoning and chain of thought detected'}]}); expect(out.validator_rows[0].safe_summary).not.toMatch(/hidden reasoning|chain of thought/i); });
+ it('sanitise redacts chain-of-thought and private_trace together',()=>{ const out=renderInternalQAReport({...input, validator_trace_summary:[{validation_id:'v4',validator_name:'uk-english',action:'warn',severity:'P1',passed:false,message:'chain-of-thought plus private_trace leaked'}]}); expect(out.validator_rows[0].safe_summary).not.toMatch(/chain-of-thought|private_trace/i); });
+ it('safe text remains unchanged',()=>{ const out=renderInternalQAReport({...input, validator_trace_summary:[{validation_id:'v5',validator_name:'uk-english',action:'pass',severity:'P2',passed:true,message:'Clean safe summary'}]}); expect(out.validator_rows[0].safe_summary).toBe('Clean safe summary'); });
+ it('assertNoPrivateTraceRendered fails if forbidden text is manually present',()=>{ expect(()=>assertNoPrivateTraceRendered({ trace_rows:[], sections:[{ section_id:'x', title:'x', status:'ok', safe_text:['hidden reasoning'], linked_claim_ids:[], validator_statuses:[] }], validator_rows:[] })).toThrow(); });
 });

@@ -119,9 +119,18 @@ export function validateReportHasClaimTraces(r: PublicReportV3): QAValidationRes
 }
 
 export function validateReportHasEvidenceForMajorClaims(r: PublicReportV3): QAValidationResult {
-  const major = r.claim_traces.filter((c) => ['why_this_score','overall_readiness','gap_to_selected_level','critical_component_gates'].includes(c.report_section));
-  const bad = major.some((c) => c.linked_evidence_anchor_ids.length === 0 || !c.truth_state_key);
-  return bad ? q('report-major-claim-evidence','block_report','P0','Major claim missing evidence or truth-state support',false) : q('report-major-claim-evidence','pass','P2','Major claims evidence-linked',true);
+  const required = ['why_this_score','overall_readiness','gap_to_selected_level','critical_component_gates'] as const;
+  for (const section of required) {
+    const rows = r.claim_traces.filter((c) => c.report_section === section);
+    if (rows.length === 0) {
+      return q('report-major-claim-evidence','block_report','P0',`Missing trace row for required major section: ${section}`,false);
+    }
+    const invalid = rows.some((c) => c.linked_evidence_anchor_ids.length === 0 || !c.truth_state_key);
+    if (invalid) {
+      return q('report-major-claim-evidence','block_report','P0',`Invalid major section trace support: ${section}`,false);
+    }
+  }
+  return q('report-major-claim-evidence','pass','P2','Major claims evidence-linked',true);
 }
 
 export function validateReportNoPrivateTraceLeakage(r: PublicReportV3): QAValidationResult {
