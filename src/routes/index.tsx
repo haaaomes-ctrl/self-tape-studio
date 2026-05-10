@@ -19,7 +19,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { Button } from "@/components/ui/button";
 
-import heroStage from "@/assets/hero-stage.jpg";
+import heroStage from "@/assets/hero-ginger.jpg";
 import { brand, brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/")({
@@ -46,19 +46,22 @@ function Landing() {
       {/* Hero — cinematic full-bleed stage visual */}
       <section
         aria-labelledby="hero-heading"
-        className="relative isolate overflow-hidden bg-sidebar text-sidebar-foreground"
+        className="relative isolate overflow-hidden bg-[oklch(0.16_0.04_260)] text-sidebar-foreground"
       >
         <div className="absolute inset-0 -z-10">
           <img
             src={heroStage}
             alt=""
             aria-hidden="true"
-            className="h-full w-full object-cover object-[72%_center]"
-            width={2048}
-            height={1152}
+            className="h-full w-full object-cover object-[78%_center]"
+            width={1920}
+            height={820}
           />
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.18_0.05_260_/_0.95)_0%,oklch(0.18_0.05_260_/_0.88)_36%,oklch(0.18_0.05_260_/_0.52)_62%,oklch(0.18_0.05_260_/_0.74)_100%)]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_30%,oklch(0.62_0.18_257_/_0.18),transparent_42%)]" />
+          {/* Left-weighted scrim: solid dark behind copy, fades to clear over performer */}
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.14_0.04_260_/_0.97)_0%,oklch(0.14_0.04_260_/_0.92)_30%,oklch(0.14_0.04_260_/_0.55)_55%,oklch(0.14_0.04_260_/_0)_82%)]" />
+          {/* Subtle vignette to deepen edges */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_40%,oklch(0.38_0.18_270_/_0.18),transparent_55%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-[linear-gradient(180deg,transparent,oklch(0.14_0.04_260_/_0.6))]" />
         </div>
 
         <div className="mx-auto flex min-h-[74vh] w-full max-w-7xl items-center px-4 py-14 sm:px-6 sm:py-20 lg:min-h-[80vh] lg:py-24">
@@ -68,12 +71,14 @@ function Landing() {
             </span>
             <h1
               id="hero-heading"
-              className="mt-5 font-display text-4xl font-black leading-[1.02] tracking-tight text-sidebar-foreground sm:text-5xl lg:text-7xl"
+              className="mt-5 font-display text-4xl font-black leading-[1.02] tracking-tight text-white sm:text-5xl lg:text-[5.25rem]"
             >
               Review your tape before it reaches
-              <span className="block text-primary">the room.</span>
+              <span className="block bg-gradient-to-r from-[oklch(0.72_0.16_255)] to-[oklch(0.82_0.13_235)] bg-clip-text text-transparent">
+                the room.
+              </span>
             </h1>
-            <p className="mt-6 max-w-xl text-base leading-relaxed text-sidebar-foreground/85 sm:text-2xl/relaxed">
+            <p className="mt-6 max-w-xl text-base leading-relaxed text-white/90 sm:text-xl/relaxed">
               Private, structured feedback on your performance, voice, setup and brief fit — before your tape reaches casting, agents or teachers.
             </p>
 
