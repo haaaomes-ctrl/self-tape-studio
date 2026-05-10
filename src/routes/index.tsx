@@ -11,7 +11,6 @@ import {
   Mic,
   ScanLine,
   ShieldCheck,
-  Sparkles,
   Theater,
   Users,
 } from "lucide-react";
