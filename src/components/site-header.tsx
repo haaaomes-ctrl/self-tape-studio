@@ -4,6 +4,7 @@ import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth, signOut } from "@/lib/auth";
 import { brand } from "@/config/brand";
+import { BrandMark } from "@/components/brand-mark";
 
 const NAV_LINKS = [
   { label: "Features", to: "/about" as const },
@@ -43,15 +44,7 @@ export function SiteHeader() {
           className="flex min-h-11 items-center gap-2 font-display font-bold tracking-tight"
           aria-label={`${brand.name} home`}
         >
-          <img
-            src={brand.assets.logo}
-            alt=""
-            aria-hidden="true"
-            className={[
-              "object-contain transition-all duration-200",
-              scrolled ? "h-7 w-7" : "h-8 w-8 sm:h-9 sm:w-9",
-            ].join(" ")}
-          />
+          <BrandMark size={scrolled ? 28 : 34} className="transition-all duration-200" />
           <span className="text-base sm:text-lg text-foreground">
             {brand.wordmark.lead}
             <span className="text-primary">{brand.wordmark.accent}</span>

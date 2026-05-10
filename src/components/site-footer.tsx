@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Instagram, Linkedin, Music2, Youtube } from "lucide-react";
 import { brand } from "@/config/brand";
+import { BrandMark } from "@/components/brand-mark";
 
 const FOOTER_GROUPS: Array<{
   heading: string;
@@ -62,14 +63,7 @@ export function SiteFooter() {
               className="flex items-center gap-2 font-display text-lg font-bold tracking-tight"
               aria-label={`${brand.name} home`}
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sidebar-foreground p-1.5">
-                <img
-                  src={brand.assets.logo}
-                  alt=""
-                  aria-hidden="true"
-                  className="h-full w-full object-contain"
-                />
-              </span>
+              <BrandMark size={36} />
               <span>
                 {brand.wordmark.lead}
                 <span className="text-primary">{brand.wordmark.accent}</span>
