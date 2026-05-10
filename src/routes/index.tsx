@@ -39,7 +39,7 @@ function Landing() {
       <a href="#main" className="skip-link">
         Skip to main content
       </a>
-      <SiteHeader />
+      <SiteHeader variant="transparent" />
 
       <main id="main" tabIndex={-1}>
       {/* Hero — cinematic full-bleed stage visual */}
@@ -56,21 +56,16 @@ function Landing() {
             width={1920}
             height={820}
           />
-          {/* Left-weighted scrim: solid dark behind copy, fades to clear over performer */}
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.14_0.04_260_/_0.97)_0%,oklch(0.14_0.04_260_/_0.92)_30%,oklch(0.14_0.04_260_/_0.55)_55%,oklch(0.14_0.04_260_/_0)_82%)]" />
-          {/* Subtle vignette to deepen edges */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_20%_40%,oklch(0.38_0.18_270_/_0.18),transparent_55%)]" />
-          <div className="absolute inset-x-0 bottom-0 h-24 bg-[linear-gradient(180deg,transparent,oklch(0.14_0.04_260_/_0.6))]" />
+          {/* Soft left scrim — keeps copy legible without flattening the photo */}
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.14_0.04_260_/_0.78)_0%,oklch(0.14_0.04_260_/_0.55)_28%,oklch(0.14_0.04_260_/_0.18)_50%,transparent_70%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-[linear-gradient(180deg,transparent,oklch(0.14_0.04_260_/_0.35))]" />
         </div>
 
         <div className="mx-auto flex min-h-[74vh] w-full max-w-7xl items-center px-4 py-14 sm:px-6 sm:py-20 lg:min-h-[80vh] lg:py-24">
           <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-sidebar-foreground/20 bg-sidebar-foreground/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/85 backdrop-blur-sm">
-              <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Private self-tape feedback
-            </span>
             <h1
               id="hero-heading"
-              className="mt-5 font-display text-4xl font-black leading-[1.02] tracking-tight text-white sm:text-5xl lg:text-[5.25rem]"
+              className="font-display text-4xl font-black leading-[1.02] tracking-tight text-white sm:text-5xl lg:text-[5.25rem]"
             >
               Review your tape before it reaches
               <span className="block bg-gradient-to-r from-[oklch(0.72_0.16_255)] to-[oklch(0.82_0.13_235)] bg-clip-text text-transparent">
