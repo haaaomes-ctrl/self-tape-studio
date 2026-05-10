@@ -64,9 +64,11 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
           aria-label={`${brand.name} home`}
         >
           <BrandMark size={scrolled ? 28 : 34} className="transition-all duration-200" />
-          <span className="text-base sm:text-lg text-foreground">
+          <span className={`text-base sm:text-lg ${wordmarkLead}`}>
             {brand.wordmark.lead}
-            <span className="text-primary">{brand.wordmark.accent}</span>
+            <span className={onDark ? "text-[oklch(0.78_0.14_255)]" : "text-primary"}>
+              {brand.wordmark.accent}
+            </span>
           </span>
         </Link>
 
@@ -79,8 +81,8 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
             <Link
               key={item.label}
               to={item.to}
-              className="rounded-md px-2.5 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary lg:px-3"
-              activeProps={{ className: "text-primary" }}
+              className={navLink}
+              activeProps={{ className: onDark ? "text-white" : "text-primary" }}
             >
               {item.label}
             </Link>
@@ -93,8 +95,8 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
             <>
               <Link
                 to="/dashboard"
-                className="hidden min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-flex"
-                activeProps={{ className: "text-primary" }}
+                className={sideLink}
+                activeProps={{ className: onDark ? "text-white" : "text-primary" }}
               >
                 Dashboard
               </Link>
@@ -116,10 +118,7 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
             </>
           ) : (
             <>
-              <Link
-                to="/login"
-                className="hidden min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:text-primary sm:inline-flex"
-              >
+              <Link to="/login" className={sideLink}>
                 Log in
               </Link>
               <Button asChild size="sm" className="min-h-11">
