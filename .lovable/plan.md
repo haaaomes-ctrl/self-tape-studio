@@ -1,38 +1,45 @@
-## Goal
 
-Refresh the homepage to match the attached reference: new hero photo, deeper contrast, and a refined gradient "play" brand mark.
+## Hero & brand polish — round 2
 
-## 1. Hero photo
+Frontend-only. No business logic, no backend.
 
-- Copy `user-uploads://Ginger_Hero_Hair_Down.png` to `src/assets/hero-ginger.jpg` and swap the import in `src/routes/index.tsx` (replace `hero-stage.jpg`).
-- Re-position the image (`object-[78%_center]`) so the performer sits to the right and the dark studio area falls behind the headline.
-- Tighten the left-side gradient overlay so the navy fades to fully transparent on the right (rather than the current 4-stop wash). This gives the photo more presence and increases headline contrast.
+### 1. Restore + evolve the original brand mark
 
-## 2. Colour & contrast pass
+The current `BrandMark` (a generic play triangle on a flat tile) is a regression. The original `Brand_Icon.png` is a chunky **triangular "play" silhouette with a navy → purple → pink gradient and a white lightning/zig-zag line cutting through it** — that's the mark to evolve, and it's also (in a smaller, cleaner form) what the reference screenshot uses.
 
-- Deepen hero background to near-black-navy (matches the reference's richer dark) and brighten the "room." accent toward the example's lighter royal/cyan blue.
-- Increase headline weight/size on desktop slightly and ensure body copy uses `text-sidebar-foreground` at 90% for stronger contrast.
-- Keep all changes via existing semantic tokens (`--sidebar`, `--primary`); no hardcoded hexes in components. If the hero needs a darker shade, add a `--hero-bg` token in `src/styles.css` rather than inlining colour.
-- Section headings and the "Coach" wordmark accent shift to the brighter royal blue used in the reference (adjust `--primary` luminance one notch if needed, verified against AA contrast on light cards).
+Approach:
+- Rewrite `src/components/brand-mark.tsx` as an inline SVG that recreates this shape:
+  - Rounded triangular "play" pointing right (not a square tile), matching the original silhouette.
+  - Diagonal gradient `oklch` stops: deep navy `#0F1547` → violet `#6B3FD4` → soft pink `#E89BB0` (matched to the PNG).
+  - White zig-zag stroke running diagonally across the play form (slightly offset highlight underneath for the soft glow seen in the original).
+  - Drop the "tile background"; the gradient lives inside the play shape itself.
+- Keep the same `size` / `className` props so `site-header.tsx` and `site-footer.tsx` need no changes.
+- Keep `src/assets/tapecoach-logo.png` as the OG fallback; nothing else uses the PNG directly.
 
-## 3. Brand mark refinement
+### 2. Remove the "Private self-tape feedback" eyebrow
 
-The reference logo is a rounded-square tile with a violet→royal→cyan diagonal gradient and a white play-triangle inset (with a subtle inner highlight). Our current logo is a flat PNG.
+In `src/routes/index.tsx`, delete the `<span>` chip with the `Sparkles` icon above the H1 (and drop the now-unused `Sparkles` import). The H1 becomes the first element in the hero copy block.
 
-- Create `src/components/brand-mark.tsx` — an inline SVG component rendering:
-  - 28–36px rounded square (radius ~22% of size)
-  - Linear gradient from brand violet (top-left) through royal blue to a lighter cyan-blue (bottom-right) using existing brand tokens
-  - White play triangle, slightly inset, with a soft inner highlight stroke
-  - Accepts `size` and `className` props
-- Replace the `<img src={brand.assets.logo} />` usage in `src/components/site-header.tsx` and `src/components/site-footer.tsx` with `<BrandMark />`.
-- Update `src/config/brand.ts` to keep the PNG only for OG/social fallbacks; UI logos use the SVG component.
-- Update the small play-icon used in the pre-footer CTA strip (if present) to the same component for consistency.
+### 3. Lighten the hero scrim
 
-## Out of scope
+The current left scrim is `0.97 → 0.92 → 0.55 → 0` — too heavy, washes the photo. Reference has almost no overlay; just enough to keep text legible.
 
-- No copy changes, no new sections, no auth/business-logic changes.
-- No edits to v2/v3 report code.
+Change to a softer left-only gradient:
+- `linear-gradient(90deg, oklch(0.14 0.04 260 / 0.78) 0%, oklch(0.14 0.04 260 / 0.55) 28%, oklch(0.14 0.04 260 / 0.18) 50%, transparent 70%)`
+- Drop the violet radial vignette entirely (the photo already has its own warm rim light).
+- Keep the tiny bottom fade but reduce to `h-16` and `0.35` opacity so the section edge stays clean without darkening the performer.
 
-## Verification
+### 4. Header background — match the hero on the landing page
 
-- Visual check via browser screenshot at the current viewport (946px) and a desktop width to confirm hero composition, contrast and the new brand mark.
+Yes — on `/` the header should sit on the dark hero seamlessly (as in the reference), then switch to the light app chrome on every other route.
+
+Implementation:
+- Add a `variant?: "transparent" | "solid"` prop to `SiteHeader` (default `"solid"` so dashboard/login/etc. stay unchanged).
+- In `src/routes/index.tsx`, render `<SiteHeader variant="transparent" />`.
+- When `variant === "transparent"` AND `!scrolled`: header is fully transparent, no border, nav links + wordmark use `text-white/85` with `hover:text-white`, "Log in" white, primary CTA keeps its royal-blue fill.
+- When `variant === "transparent"` AND `scrolled`: fade to `bg-[oklch(0.14_0.04_260)]/85 backdrop-blur` with a subtle white/10 bottom border so it stays dark-on-dark, matching the hero.
+- Other routes are unaffected because they don't pass the prop.
+
+### Out of scope
+
+Other sections (why-self-tapes, six-dimensions, example report, testimonials, footer, CTA strip), copy, routing, auth, v2/v3 reports.
