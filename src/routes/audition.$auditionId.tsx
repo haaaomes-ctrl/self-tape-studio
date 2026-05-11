@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Plus, ShieldAlert, Trash2, Upload, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { Button } from "@/components/ui/button";
@@ -215,9 +217,10 @@ function AuditionPage() {
 
   if (!audition) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
-        <main className="mx-auto max-w-4xl px-6 py-16 text-sm text-muted-foreground">Loading…</main>
+        <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16 text-sm text-muted-foreground">Loading…</main>
+        <SiteFooter />
       </div>
     );
   }
@@ -226,31 +229,21 @@ function AuditionPage() {
   const completed = takes.filter((t) => t.status === "complete");
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto max-w-4xl px-6 pb-24 pt-10">
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> All auditions
-        </Link>
-
-        <div className="mt-4 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight">{audition.title}</h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <Badge variant="secondary" className="font-normal">
-                {audition.mode === "brief" ? "Brief-driven" : "Baseline"} mode
-              </Badge>
-              <span className="text-muted-foreground">
-                {takes.length} take{takes.length === 1 ? "" : "s"} · max 3
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
+      <PageHeader
+        eyebrow={`${audition.mode === "brief" ? "Brief-driven" : "Baseline"} mode · ${takes.length} take${takes.length === 1 ? "" : "s"} · max 3`}
+        title={audition.title}
+        variant="app"
+        actions={
+          <>
+            <Button asChild variant="secondary" className="bg-white/10 text-white hover:bg-white/15">
+              <Link to="/dashboard">
+                <ArrowLeft className="mr-2 h-4 w-4" /> All auditions
+              </Link>
+            </Button>
             {takes.length < 3 && (
-              <Button variant="outline" onClick={() => setShowAdd(true)}>
+              <Button variant="secondary" className="bg-white text-foreground hover:bg-white/90" onClick={() => setShowAdd(true)}>
                 <Plus className="mr-2 h-4 w-4" /> Add take
               </Button>
             )}
@@ -263,7 +256,7 @@ function AuditionPage() {
                   variant="ghost"
                   size="icon"
                   aria-label="Delete audition"
-                  className="text-muted-foreground hover:text-destructive"
+                  className="text-white/80 hover:bg-white/10 hover:text-destructive"
                   onClick={open}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -281,8 +274,10 @@ function AuditionPage() {
                 }
               }}
             />
-          </div>
-        </div>
+          </>
+        }
+      />
+      <main className="mx-auto w-full max-w-4xl flex-1 px-6 pb-24 pt-10">
 
         {showAdd && takes.length < 3 && (
           <AddTakeBlock
@@ -388,6 +383,7 @@ function AuditionPage() {
           <p className="mt-10 text-sm text-muted-foreground">No takes yet.</p>
         )}
       </main>
+      <SiteFooter />
     </div>
   );
 }

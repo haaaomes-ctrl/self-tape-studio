@@ -57,7 +57,7 @@ function Landing() {
             height={820}
           />
           {/* Soft left scrim — keeps copy legible without flattening the photo */}
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.14_0.04_260_/_0.78)_0%,oklch(0.14_0.04_260_/_0.55)_28%,oklch(0.14_0.04_260_/_0.18)_50%,transparent_70%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,oklch(0.14_0.04_260_/_0.62)_0%,oklch(0.14_0.04_260_/_0.32)_35%,transparent_65%)]" />
           <div className="absolute inset-x-0 bottom-0 h-16 bg-[linear-gradient(180deg,transparent,oklch(0.14_0.04_260_/_0.35))]" />
         </div>
 

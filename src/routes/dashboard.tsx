@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Clock, Film, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
@@ -63,22 +65,22 @@ function DashboardPage() {
   }, [user]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto max-w-5xl px-6 pb-20 pt-12">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h1 className="font-display text-3xl font-bold tracking-tight">Your auditions</h1>
-            <p className="mt-1 text-muted-foreground">
-              Each audition holds up to 3 takes you can compare side by side.
-            </p>
-          </div>
-          <Button asChild size="lg">
+      <PageHeader
+        eyebrow="Your work"
+        title="Your auditions"
+        subtitle="Each audition holds up to 3 takes you can compare side by side."
+        variant="app"
+        actions={
+          <Button asChild size="lg" variant="secondary" className="bg-white text-foreground hover:bg-white/90">
             <Link to="/new">
               <Plus className="mr-2 h-4 w-4" /> New audition
             </Link>
           </Button>
-        </div>
+        }
+      />
+      <main className="mx-auto w-full max-w-5xl flex-1 px-6 pb-20 pt-12">
 
         <div className="mt-10">
           {items === null ? (
@@ -180,6 +182,7 @@ function DashboardPage() {
           )}
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }

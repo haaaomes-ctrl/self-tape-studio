@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, Layers, ShieldCheck, Sparkles } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { brand, brandTitle } from "@/config/brand";
 
@@ -28,20 +29,19 @@ function AboutPage() {
   return (
     <div className="min-h-screen bg-background">
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-6 pb-24 pt-16">
-        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-wider text-secondary-foreground">
-          <Sparkles className="h-3 w-3 text-primary" /> How it works
-        </span>
-        <h1 className="mt-6 font-display text-4xl font-bold leading-tight tracking-tight">
-          A private second look — before your tape reaches the room.
-        </h1>
-        <p className="mt-5 text-lg text-muted-foreground">
-          {brand.name} gives you structured, performer-friendly feedback on your self-tape. It is built
-          to feel like a trusted reader on call — quiet, supportive, and focused on helping you send
-          your strongest take.
-        </p>
-
-        <section className="mt-14 space-y-10">
+      <PageHeader
+        eyebrow="How it works"
+        title="A private second look — before your tape reaches the room."
+        subtitle={
+          <>
+            {brand.name} gives you structured, performer-friendly feedback on your
+            self-tape. It is built to feel like a trusted reader on call — quiet,
+            supportive, and focused on helping you send your strongest take.
+          </>
+        }
+      />
+      <main className="mx-auto max-w-3xl px-6 pb-24 pt-14">
+        <section className="space-y-10">
           <Block
             icon={Layers}
             title="Two ways to review"
@@ -95,7 +95,7 @@ function AboutPage() {
           />
         </section>
 
-        <div className="mt-16 rounded-md border border-border bg-secondary/60 p-8 shadow-soft">
+        <div className="mt-16 rounded-md border border-border bg-card p-8 shadow-soft">
           <h2 className="font-display text-xl font-bold tracking-tight text-secondary-foreground">
             Ready for a second look?
           </h2>
