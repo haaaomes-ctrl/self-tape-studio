@@ -63,7 +63,9 @@ export function SiteFooter() {
               className="flex items-center gap-2 font-display text-lg font-bold tracking-tight"
               aria-label={`${brand.name} home`}
             >
-              <BrandMark size={36} />
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-soft">
+                <BrandMark size={28} />
+              </span>
               <span>
                 {brand.wordmark.lead}
                 <span className="text-primary">{brand.wordmark.accent}</span>

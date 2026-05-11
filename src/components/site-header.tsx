@@ -35,10 +35,11 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
   const isTransparent = variant === "transparent";
   const onDark = isTransparent; // text colour family
 
+  // "transparent" variant is now always-dark on the landing page so the
+  // header never disappears into bright areas of the hero photo and never
+  // flickers between transparent → blurred states as the user scrolls.
   const shellClass = isTransparent
-    ? scrolled
-      ? "h-14 border-white/10 bg-[oklch(0.14_0.04_260)]/85 shadow-soft backdrop-blur"
-      : "h-16 border-transparent bg-transparent"
+    ? `${scrolled ? "h-14 shadow-soft" : "h-16"} border-white/10 bg-[oklch(0.14_0.04_260)]`
     : scrolled
       ? "h-14 border-border/70 bg-background/95 shadow-soft backdrop-blur"
       : "h-16 border-transparent bg-background/80 backdrop-blur";
