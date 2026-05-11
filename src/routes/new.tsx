@@ -4,6 +4,8 @@ import { Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -217,15 +219,16 @@ function NewAuditionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <main className="mx-auto max-w-3xl px-6 pb-24 pt-12">
-        <h1 className="font-display text-3xl font-bold tracking-tight">New audition</h1>
-        <p className="mt-1 text-muted-foreground">
-          Add the brief if you have it — it makes the feedback much more accurate.
-        </p>
-
-        <div className="mt-10 space-y-8">
+      <PageHeader
+        eyebrow="New audition"
+        title="Set up a new audition"
+        subtitle="Add the brief if you have it — it makes the feedback much more accurate."
+        variant="app"
+      />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 pb-24 pt-12">
+        <div className="space-y-8">
           <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
             <Label htmlFor="title" className="text-sm font-medium">
               Audition title
