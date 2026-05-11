@@ -95,7 +95,7 @@ function AboutPage() {
           />
         </section>
 
-        <div className="mt-16 rounded-md border border-border bg-secondary/60 p-8 shadow-soft">
+        <div className="mt-16 rounded-md border border-border bg-card p-8 shadow-soft">
           <h2 className="font-display text-xl font-bold tracking-tight text-secondary-foreground">
             Ready for a second look?
           </h2>
