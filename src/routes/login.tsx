@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Film } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,18 +74,16 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
-      <div className="mx-auto flex max-w-md flex-col items-center px-6 pt-20">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-soft">
-          <Film className="h-5 w-5" />
-        </div>
-        <h1 className="mt-6 text-center font-display text-3xl font-bold tracking-tight">
-          Welcome to {brand.name}
-        </h1>
-        <p className="mt-2 text-center text-sm text-muted-foreground">
-          Sign in to upload tapes and review your reports.
-        </p>
+      <PageHeader
+        eyebrow="Account"
+        title={`Welcome to ${brand.name}`}
+        subtitle="Sign in to upload tapes and review your reports."
+        variant="app"
+      />
+      <main className="flex-1">
+      <div className="mx-auto flex max-w-md flex-col items-center px-6 pb-20 pt-12">
 
         <div className="mt-10 w-full rounded-2xl border border-border bg-card p-6 shadow-soft">
           <Tabs value={mode} onValueChange={(v) => setMode(v as "signin" | "signup")}>
