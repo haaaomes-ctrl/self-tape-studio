@@ -383,6 +383,7 @@ function AuditionPage() {
           <p className="mt-10 text-sm text-muted-foreground">No takes yet.</p>
         )}
       </main>
+      <SiteFooter />
     </div>
   );
 }
