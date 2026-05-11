@@ -134,6 +134,8 @@ function LoginPage() {
           </form>
         </div>
       </div>
+      </main>
+      <SiteFooter />
     </div>
   );
 }
