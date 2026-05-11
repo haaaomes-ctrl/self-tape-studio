@@ -471,6 +471,7 @@ function NewAuditionPage() {
           </div>
         </div>
       </main>
+      <SiteFooter />
     </div>
   );
 }
