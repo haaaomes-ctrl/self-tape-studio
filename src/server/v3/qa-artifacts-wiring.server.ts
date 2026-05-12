@@ -72,30 +72,32 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs: R
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const root = input.root_dir ?? DEFAULT_ROOT;
   const ids: string[] = [];
+  let hadFailure = false;
   const entries: Array<[string, string]> = [['no_export_source_proof', 'export_or_no_export/no_export_source_proof.json'], ['no_export_config_proof', 'export_or_no_export/no_export_config_proof.json'], ['no_export_ui_proof', 'export_or_no_export/no_export_ui_proof.json'], ['no_export_log_proof', 'export_or_no_export/no_export_log_proof.json']];
-  for (const [id, rel] of entries) { if (input.proofs[id]) { const w = await writeInternalJson(root, input.run_id, rel, input.proofs[id], id); if (w.written) ids.push(id); } }
-  if (ids.length === 4) { const b = await writeInternalJson(root, input.run_id, 'export_or_no_export/no_export_proof.json', { bundle: true }, 'no_export_proof'); if (b.written) ids.push('no_export_proof'); }
-  return { written: true as const, emitted_artefact_ids: ids };
+  for (const [id, rel] of entries) { if (input.proofs[id]) { const w = await writeInternalJson(root, input.run_id, rel, input.proofs[id], id); if (w.written) ids.push(id); else hadFailure = true; } }
+  if (ids.length === 4) { const b = await writeInternalJson(root, input.run_id, 'export_or_no_export/no_export_proof.json', { bundle: true }, 'no_export_proof'); if (b.written) ids.push('no_export_proof'); else hadFailure = true; }
+  return { written: !hadFailure as const, emitted_artefact_ids: ids };
 }
 export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput) {
   const emitted_artefact_ids: string[] = [];
+  let hadFailure = false;
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids };
   const root = input.root_dir ?? DEFAULT_ROOT;
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, 'comparison/comparison.raw.json', input.comparison_raw_data, 'comparison_raw');
-    if (w.written) emitted_artefact_ids.push('comparison_raw');
+    if (w.written) emitted_artefact_ids.push('comparison_raw'); else hadFailure = true;
   }
   if (input.route_variance_trace) {
     const w = await writeInternalJson(root, input.run_id, 'comparison_traces/route_variance_trace.json', input.route_variance_trace, 'route_variance_trace');
-    if (w.written) emitted_artefact_ids.push('route_variance_trace');
+    if (w.written) emitted_artefact_ids.push('route_variance_trace'); else hadFailure = true;
   }
   if (input.suppression_trace) {
     const w = await writeInternalJson(root, input.run_id, 'comparison_traces/comparison_suppression_trace.json', input.suppression_trace, 'comparison_suppression_trace');
-    if (w.written) emitted_artefact_ids.push('comparison_suppression_trace');
+    if (w.written) emitted_artefact_ids.push('comparison_suppression_trace'); else hadFailure = true;
   }
   if (input.same_video_repeatability_trace) {
     const w = await writeInternalJson(root, input.run_id, 'comparison_traces/same_video_repeatability_trace.json', input.same_video_repeatability_trace, 'same_video_repeatability_trace');
-    if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace');
+    if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
-  return { written: true as const, emitted_artefact_ids };
+  return { written: !hadFailure as const, emitted_artefact_ids };
 }

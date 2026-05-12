@@ -25,4 +25,13 @@ describe('v3 s8 comparison runtime traces', () => {
     expect(cmp.emitted_artefact_ids).toContain('comparison_suppression_trace');
     expect(cmp.emitted_artefact_ids).toContain('same_video_repeatability_trace');
   });
+
+
+  it('returns written false when comparison runtime sink writes fail', async () => {
+    process.env.QA_ARTIFACT_SINK = 'file';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const cmp = await emitComparisonRuntimeArtifacts({ run_id: 'run-3', root_dir: '/dev/null', internal_qa_emit: true, suppression_trace: { reason: 'x' }, same_video_repeatability_trace: { runs: 2 } });
+    expect(cmp.written).toBe(false);
+    expect(cmp.emitted_artefact_ids).toEqual([]);
+  });
 });
