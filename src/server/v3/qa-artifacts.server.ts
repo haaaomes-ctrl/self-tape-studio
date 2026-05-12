@@ -1,5 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { writeQAArtifact } from './qa-artifact-sink.server';
 
 export type ArtefactStatus = 'emitted' | 'missing' | 'deferred' | 'not_applicable';
 
@@ -112,7 +112,6 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     fixture_observations: options.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511' ? { take_scores: [91, 94, 91], comparison_recommendation: 'Take 2', same_video_operator_confirmation: true } : undefined,
     level2_qa_acceptance: 'not_accepted',
   };
-  await mkdir(runDir, { recursive: true });
-  await writeFile(path.join(runDir, 'manifest.json'), stableStringify(manifest) + '\n', 'utf8');
-  return { written: true, manifest_path: path.join(runDir, 'manifest.json'), manifest };
+  const sink = await writeQAArtifact({ run_id: options.run_id, root_dir: root, relative_path: 'manifest.json', payload: manifest, artefact_id: 'manifest', fixture_id: options.fixture_id });
+  return { written: sink.written, manifest_path: sink.path ?? sink.storage_path, sink_mode: sink.sink_mode, sink_write_status: sink.sink_write_status, storage_bucket: sink.storage_bucket, storage_path: sink.storage_path, sink_warning: sink.warning ?? null, log_fallback_emitted: sink.log_fallback_emitted, manifest };
 }

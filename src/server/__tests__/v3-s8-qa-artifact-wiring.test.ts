@@ -41,6 +41,14 @@ describe('v3 s8 qa artifact wiring', () => {
     expect(out.warning).toContain('internal_qa_manifest_emit_failed');
   });
 
+
+
+  it('propagates sink warning when manifest write fails without throw', async () => {
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'run-warn', root_dir: '/dev/null', internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    expect(out.warning).toBeTruthy();
+  });
+
   it('env-based enabling remains explicit and off by default', () => {
     expect(resolveInternalQAEmitEnabled({ env: {} as NodeJS.ProcessEnv })).toBe(false);
     expect(resolveInternalQAEmitEnabled({ env: { V3_QA_ARTIFACTS_ENABLED: 'true' } as NodeJS.ProcessEnv })).toBe(true);

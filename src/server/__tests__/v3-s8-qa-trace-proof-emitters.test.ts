@@ -20,4 +20,13 @@ describe('v3 s8 trace + no-export proof emitters', () => {
     const partial = await emitNoExportProofBundle({ run_id: 'run-p1', root_dir: root, internal_qa_emit: true, proofs: { no_export_source_proof: { ok: true } } });
     expect(partial.emitted_artefact_ids).not.toContain('no_export_proof');
   });
+
+
+  it('no_export proof bundle returns written false when sink writes fail', async () => {
+    process.env.QA_ARTIFACT_SINK = 'file';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const out = await emitNoExportProofBundle({ run_id: 'run-p2', root_dir: '/dev/null', internal_qa_emit: true, proofs: { no_export_source_proof: { ok: true }, no_export_config_proof: { ok: true }, no_export_ui_proof: { ok: true }, no_export_log_proof: { ok: true } } });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
+  });
 });
