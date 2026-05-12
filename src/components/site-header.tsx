@@ -6,14 +6,10 @@ import { useAuth, signOut } from "@/lib/auth";
 import { brand } from "@/config/brand";
 import { BrandMark } from "@/components/brand-mark";
 
-const NAV_LINKS = [
-  { label: "Features", to: "/about" as const },
-  { label: "Pricing", to: "/about" as const },
-  { label: "Agents", to: "/about" as const },
-  { label: "Schools", to: "/about" as const },
-  { label: "Blog", to: "/about" as const },
-  { label: "Support", to: "/about" as const },
-];
+// Nav links are intentionally empty until those pages have real content.
+// Re-add entries here (e.g. { label: "Features", to: "/features" }) once the
+// corresponding routes exist under src/routes/.
+const NAV_LINKS: Array<{ label: string; to: "/" | "/about" | "/login" | "/dashboard" | "/new" }> = [];
 
 type SiteHeaderProps = {
   /** "transparent" lets the header sit on top of a dark hero (used on `/`). */
