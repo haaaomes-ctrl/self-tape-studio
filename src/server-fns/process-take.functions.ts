@@ -3,13 +3,13 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import { runProcessTake } from "./process-take.server";
+import { runProcessTake } from "@/server/process-take.server";
 import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
   quotaErrorToResponse,
-} from "./quota.server";
-import { metric } from "./metrics.server";
+} from "@/server/quota.server";
+import { metric } from "@/server/metrics.server";
 
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin

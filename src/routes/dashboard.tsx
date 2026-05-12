@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { deleteAudition } from "@/server/delete.functions";
+import { deleteAudition } from "@/server-fns/delete.functions";
 import { brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/dashboard")({

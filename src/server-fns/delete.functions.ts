@@ -9,7 +9,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import { getMux } from "./mux.server";
+import { getMux } from "@/server/mux.server";
 
 async function deleteMuxAssetSafe(assetId: string | null | undefined, label: string) {
   if (!assetId) return;
