@@ -2,7 +2,7 @@ import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun } from '@/server/v3/qa-artifacts-wiring';
+import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun } from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s8 comparison runtime traces', () => {
   it('does not emit synthetic suppression/repeatability traces when missing runtime data', async () => {

@@ -51,5 +51,5 @@ export {
 } from './s6-variance-comparison';
 export * from './s6-internal-comparison-renderer';
 
-export * from './qa-artifacts';
-export * from './qa-artifacts-wiring';
+export * from './qa-artifacts.server';
+export * from './qa-artifacts-wiring.server';

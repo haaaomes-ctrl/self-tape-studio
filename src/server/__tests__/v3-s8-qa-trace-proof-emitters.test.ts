@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitNoExportProofBundle, emitQAManifestForAnalysisRun, emitTraceArtefact } from '@/server/v3/qa-artifacts-wiring';
+import { emitNoExportProofBundle, emitQAManifestForAnalysisRun, emitTraceArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s8 trace + no-export proof emitters', () => {
   it('gate_trace has distinct blocker from validator_trace', async () => {

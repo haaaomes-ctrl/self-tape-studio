@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring';
+import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
