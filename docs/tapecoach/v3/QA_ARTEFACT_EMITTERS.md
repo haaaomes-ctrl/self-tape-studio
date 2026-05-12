@@ -56,3 +56,14 @@ This note implements the first internal-only QA artefact emitter foundation for 
   - mergeable as dark-mode QA-emitter foundation if targeted tests pass, no public-output change, and full-suite failures are classified.
 - Level 2 QA:
   - still not accepted because traces/parity/redaction/leakage/no-export proof lanes are incomplete.
+
+## Runtime sink policy
+
+- GitHub is **not** a runtime artefact sink.
+- Filesystem sink (`qa-artifacts/<run_id>/...`) is local/dev only unless the runtime keeps files retrievable.
+- Locked-down Lovable production should use `QA_ARTIFACT_SINK=storage` with private bucket `qa-artifacts`.
+- Object key pattern is `v3/<run_id>/<relative_path>` (for example `v3/<run_id>/manifest.json`).
+- Optional fallback logging: `QA_ARTIFACT_LOG_FALLBACK=true` emits one JSONL-style line per write attempt, prefixed with `TAPECOACH_QA_ARTIFACT_JSON:`.
+- Storage/log sinks are internal-only and non-public.
+- Database-backed QA artefact indexing is deferred to a later QA dashboard/search phase.
+- Level 2 remains not accepted until artefacts are emitted, retrieved, and inspected.
