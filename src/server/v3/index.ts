@@ -38,5 +38,17 @@ export {
   validateAnalysisVarianceWarning,
   validateSameVideoScoreVarianceComparison,
   validateComponentSplitInstability,
+  validateComparisonUKEnglish,
+  validateGF01FalseWinnerBlock,
+  validateNoBriefComparisonOverclaim,
+  validateComparisonHiddenReasoningLeakage,
+  validateComparisonPrivateTraceLeakage,
+  validatePublicRecommendationExposure,
+  evaluateTieSuppressionShadow,
+  evaluateRecommendationSuppressionShadow,
+  evaluateDuplicateDetectionShadow,
 } from './s6-variance-comparison';
 export * from './s6-internal-comparison-renderer';
+
+export * from './qa-artifacts';
+export * from './qa-artifacts-wiring';
