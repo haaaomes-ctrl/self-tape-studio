@@ -76,7 +76,7 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs: R
   const entries: Array<[string, string]> = [['no_export_source_proof', 'export_or_no_export/no_export_source_proof.json'], ['no_export_config_proof', 'export_or_no_export/no_export_config_proof.json'], ['no_export_ui_proof', 'export_or_no_export/no_export_ui_proof.json'], ['no_export_log_proof', 'export_or_no_export/no_export_log_proof.json']];
   for (const [id, rel] of entries) { if (input.proofs[id]) { const w = await writeInternalJson(root, input.run_id, rel, input.proofs[id], id); if (w.written) ids.push(id); else hadFailure = true; } }
   if (ids.length === 4) { const b = await writeInternalJson(root, input.run_id, 'export_or_no_export/no_export_proof.json', { bundle: true }, 'no_export_proof'); if (b.written) ids.push('no_export_proof'); else hadFailure = true; }
-  return { written: !hadFailure as const, emitted_artefact_ids: ids };
+  return { written: !hadFailure, emitted_artefact_ids: ids };
 }
 export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput) {
   const emitted_artefact_ids: string[] = [];
@@ -99,5 +99,5 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     const w = await writeInternalJson(root, input.run_id, 'comparison_traces/same_video_repeatability_trace.json', input.same_video_repeatability_trace, 'same_video_repeatability_trace');
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
-  return { written: !hadFailure as const, emitted_artefact_ids };
+  return { written: !hadFailure, emitted_artefact_ids };
 }
