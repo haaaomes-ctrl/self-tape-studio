@@ -1,202 +1,86 @@
-# TapeCoach v3 \'97 Scope, QA Approach and Definition of Done\
-\
-## 1. Product scope\
-\
-TapeCoach evaluates whether a self-tape is ready to submit for the performer\'92s selected level, audition type and optional casting brief.\
-\
-The report must answer:\
-1. Is this tape good enough to submit?\
-2. If not, what should the performer fix first?\
-\
-The product judgement should combine UK casting-director, agent and acting / vocal / movement-coach perspectives.\
-\
-Customer value is the filter for every decision.\
-\
-## 2. Architecture scope\
-\
-TapeCoach v3 is a gold-standard system architecture redesign.\
-\
-The rebuild covers:\
-1. System architecture redesign.\
-2. Technique library.\
-3. User input review.\
-4. Analysis pipeline review.\
-5. Output and comparison improvements.\
-\
-The old six fields \'97 technical, audio, vocal, acting, brief_adherence and professional_presentation \'97 are legacy/debug/comparator context only. They are not the v3 scoring brain.\
-\
-## 3. Environment rule\
-\
-All testing is production testing.\
-\
-There is no separate staging, pre-prod or beta environment in scope.\
-\
-Testing occurs on the live TapeCoach website, with access controlled by product/engineering policy.\
-\
-The distinction is not environment. The distinction is exposure state:\
-- internal QA / dev-team access\
-- tester access\
-- customer-facing release\
-\
-## 4. Evidence levels\
-\
-Level 0 \'97 Planning/documentation:\
-Architecture documents, manifests, source maps, defect lists.\
-\
-Level 1 \'97 Source-only:\
-Inspected source files, type contracts, validators, tests.\
-\
-Level 2 \'97 Specific-run artefact QA:\
-Raw report JSON, rendered report, comparison JSON, EvidenceAnchors, PublicClaimTrace, ScoreTrace, ModelRunTrace, validator trace, redaction trace and parity artefacts for a specific run.\
-\
-Level 3 \'97 Repeatability:\
-Repeated-run or model-route variance evidence.\
-\
-Level 4 \'97 Controlled live-output evidence:\
-Live production-domain QA with complete artefact bundles and P0 gates passing.\
-\
-Source-only evidence cannot prove run output correctness.\
-Manual page prints cannot prove raw JSON, traceability, export parity or no-export proof.\
-\
-## 5. Required QA artefact bundle\
-\
-Every analysis run intended for QA should produce:\
-\
-- manifest.json\
-- input_record.json\
-- resolver_output.json\
-- TruthStateMap.json\
-- raw_report.json\
-- render_payload.json\
-- rendered_report artefact\
-- EvidenceAnchors.json\
-- PublicClaimTrace.json\
-- TechniqueObservationTrace.json where relevant\
-- ScoreTrace.json\
-- ModelRunTrace.json\
-- validator_trace.json\
-- redaction_trace.json\
-- UKEnglishGateResult.json\
-- public_private_leakage_result.json\
-\
-Every comparison run should also produce:\
-\
-- comparison.raw.json\
-- comparison.render_payload.json\
-- rendered comparison artefact\
-- duplicate_detection_trace.json\
-- no_material_difference_trace.json\
-- evidence_delta_trace.json\
-- comparison_suppression_trace.json\
-- same_video_repeatability_trace.json\
-- route_variance_trace.json\
-\
-Export must produce an export manifest and parity proof.\
-If export does not exist, no-export proof requires source, config, UI and log evidence.\
-\
-## 6. Same-video comparison rule\
-\
-For the same video submitted repeatedly to the same audition with the same brief:\
-\
-- The system must detect duplicate or near-duplicate input.\
-- The system must not force a winner unless there is a decisive evidence delta.\
-- Overall score must not be the primary winner-forcing metric.\
-- Component split instability must trigger a warning or suppression.\
-- Same-confidence masking must be blocked.\
-- The expected safe result is no reliable material difference, analysis variance warning, or suppressed recommendation.\
-\
-GF-01 / RT-15 is the P0 acceptance fixture for this rule.\
-\
-## 7. Technique public authority rule\
-\
-Technique names must not appear publicly unless they pass:\
-\
-1. Source stability.\
-2. Self-tape observability.\
-3. Fairness and safety.\
-4. Repeatability.\
-5. Public wording quality.\
-6. EvidenceAnchor linkage.\
-7. PublicClaimTrace linkage.\
-8. Benchmark requirement.\
-9. Expert review where required.\
-10. Display eligibility.\
-\
-Until then, technique terms remain:\
-- internal_shadow\
-- descriptor_only\
-- limitation_only\
-- blocked\
-\
-No row may become production_safe without explicit later approval.\
-\
-## 8. Output and comparison direction\
-\
-The future report and comparison experience should move away from visible numerical score-first feedback.\
-\
-User-facing output should prioritise:\
-- qualitative readiness language\
-- selected-level calibration\
-- component-aware evidence\
-- first fix\
-- next-take plan\
-- limitations\
-- comparison only where there is a reliable evidence delta\
-\
-Internal scoring may remain private for calibration, gates and debugging.\
-\
-## 9. Definition of done for the current stage\
-\
-Current stage is complete when:\
-\
-- GF-01 / RT-15 evidence is registered.\
-- Current same-video false-winner defect is documented.\
-- Evidence folder and fixture manifest exist.\
-- Artefact bundle requirements are defined.\
-- Source emitters are found or missing-emitter implementation tickets are created.\
-- Public named technique display remains blocked.\
-- Public scoring remains blocked.\
-- production_safe remains blocked.\
-- The next implementation work can add automated artefact emitters.\
-\
-This stage does not require public release.\
-This stage does not require public technique authority.\
-This stage does not require export implementation.\
-\
-## 10. Current P0 blockers\
-\
-- Missing raw report JSON.\
-- Missing comparison JSON.\
-- Missing EvidenceAnchors.\
-- Missing PublicClaimTrace.\
-- Missing ScoreTrace.\
-- Missing ModelRunTrace.\
-- Missing validator trace.\
-- Missing redaction trace.\
-- Missing TruthStateMap.\
-- Missing resolver output.\
-- Missing same-video repeatability trace.\
-- Missing route variance trace.\
-- Missing comparison suppression trace.\
-- Missing no-export source/config/UI/log proof.\
-- Same-video forced winner.\
-- Score-first comparison logic.\
-- Same-confidence masking.\
-- Component split instability.\
-- Public technique-name risk.\
-- Brief/truth-state trace gaps.\
-\
-## 11. Next track\
-\
-After the QA artefact-emitter path is defined, deep technique-library work resumes.\
-\
-Technique-library research should be automated where possible:\
-- source crawling and classification\
-- alias extraction\
-- definition extraction\
-- observability tagging\
-- public wording gating\
-- blocked wording mapping\
-- benchmark need generation\
-\
-Human review is used only for high-impact public-facing candidates, access/fairness issues, disputed terminology and maturity advancement.}
+# TapeCoach v3 — Scope, QA Approach and Definition of Done
+
+## 1. Product purpose
+
+TapeCoach evaluates whether a self-tape is ready to submit for the performer’s selected level, audition type, and optional casting brief.
+
+The report must answer:
+1. Is this tape good enough to submit?
+2. If not, what should the performer fix first?
+
+The product judgement should combine UK casting-director, agent, and acting/vocal/movement-coach perspectives.
+
+## 2. Architecture scope
+
+TapeCoach v3 is a gold-standard system architecture redesign.
+
+The rebuild covers five tracks:
+1. System architecture redesign.
+2. Technique library.
+3. User input review.
+4. Analysis pipeline review.
+5. Output and comparison improvements.
+
+## 3. Live locked-down production-domain testing rule
+
+All testing is production-domain testing on the live TapeCoach website.
+
+There is no separate staging, pre-prod, or beta environment in scope for this phase. Access remains locked down to internal QA/development policy.
+
+## 4. Evidence levels (0–4)
+
+- **Level 0 — Planning/documentation:** Architecture documents, manifests, source maps, defect lists.
+- **Level 1 — Source-only:** Inspected source files, type contracts, validators, tests.
+- **Level 2 — Specific-run artefact QA:** Raw report JSON, rendered report payload, comparison JSON, traces, and parity artefacts for a specific run.
+- **Level 3 — Repeatability:** Repeated-run or model-route variance evidence.
+- **Level 4 — Controlled live-output evidence:** Live production-domain QA with complete artefact bundles and P0 gates passing.
+
+## 5. Required automated QA artefact bundle
+
+Every analysis/comparison run intended for QA should emit a complete internal bundle, including manifest, input record, resolver output, truth-state map, per-take raw reports, comparison raw JSON, traces, comparison traces, no-export proof (where applicable), and parity files.
+
+## 6. GF-01 / RT-15 same-video comparison rule
+
+For the same video submitted repeatedly to the same audition with the same brief:
+- Duplicate or near-duplicate input must be detected.
+- The system must suppress a public winner unless there is a decisive evidence delta.
+- Overall score must not be a primary winner-forcing metric.
+- Component split instability and same-confidence masking must be surfaced as failure conditions.
+
+GF-01 / RT-15 remains the active P0 acceptance fixture for this rule.
+
+## 7. Technique public authority rule
+
+Technique names must not appear publicly unless technique eligibility and public-claim criteria are passed (including trace linkage and policy gates).
+
+Until then, technique terms remain internal/blocked/descriptor-only, and public technique authority remains blocked.
+
+## 8. Output and comparison direction
+
+Future public report output should move away from visible score-first language and toward qualitative readiness language calibrated by private scoring logic.
+
+Comparison output should only show a winner when evidence supports a decisive material difference.
+
+## 9. Definition of done for the current stage
+
+Current stage is complete when:
+- GF-01 / RT-15 evidence is registered.
+- Same-video false-winner behaviour is documented as active.
+- Evidence folders and fixture docs exist in clean Markdown.
+- Automated artefact emitter implementation plan is documented.
+- Public technique authority remains blocked.
+- Public scoring remains blocked.
+- `production_safe` remains blocked.
+
+## 10. Current P0 blockers
+
+- Same-video forced winner still present.
+- Comparison score-first logic still present.
+- Component split instability still present.
+- Same-confidence masking still present.
+- Missing automated internal artefact bundle emission for QA manifest and trace files.
+
+## 11. Priority order
+
+- **Next engineering priority:** internal-only automated QA artefact emitters and manifest JSON generation.
+- **Next research priority:** deep technique library expansion and maturity-gating evidence.
