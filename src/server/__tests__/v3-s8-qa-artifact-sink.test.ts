@@ -11,13 +11,18 @@ vi.mock('@/integrations/supabase/client.server', () => ({
 import { writeQAArtifact } from '@/server/v3/qa-artifact-sink.server';
 
 describe('v3 s8 qa artifact sink', () => {
-  beforeEach(() => { upload.mockReset(); upload.mockResolvedValue({ error: null }); });
+  beforeEach(() => {
+    upload.mockReset();
+    upload.mockResolvedValue({ error: null });
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'false';
+  });
 
   it('file sink writes as before', async () => {
     process.env.QA_ARTIFACT_SINK = 'file';
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-sink-'));
     const out = await writeQAArtifact({ run_id: 'r1', root_dir: root, relative_path: 'reports/a.json', payload: { ok: true } });
     expect(out.written).toBe(true);
+    expect(out.sink_write_status).toBe('written');
     const body = JSON.parse(await readFile(path.join(root, 'r1', 'reports', 'a.json'), 'utf8'));
     expect(body.ok).toBe(true);
   });
@@ -30,11 +35,50 @@ describe('v3 s8 qa artifact sink', () => {
     expect(out.storage_bucket).toBe('qa-artifacts');
   });
 
-  it('console_jsonl sink emits prefixed log', async () => {
+  it('storage failure + log fallback returns written false', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    upload.mockResolvedValue({ error: { message: 'boom' } });
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const out = await writeQAArtifact({ run_id: 'r4', relative_path: 'manifest.json', payload: { run_id: 'r4' } });
+    expect(out.written).toBe(false);
+    expect(out.sink_write_status).toBe('failed');
+    expect(out.log_fallback_emitted).toBe(true);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('TAPECOACH_QA_ARTIFACT_JSON:'));
+    spy.mockRestore();
+  });
+
+  it('file failure + log fallback returns written false', async () => {
+    process.env.QA_ARTIFACT_SINK = 'file';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const out = await writeQAArtifact({ run_id: 'r5', root_dir: '/dev/null', relative_path: 'manifest.json', payload: { run_id: 'r5' } });
+    expect(out.written).toBe(false);
+    expect(out.sink_write_status).toBe('failed');
+    expect(out.log_fallback_emitted).toBe(true);
+    spy.mockRestore();
+  });
+
+  it('console_jsonl primary sink success remains written true', async () => {
     process.env.QA_ARTIFACT_SINK = 'console_jsonl';
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    await writeQAArtifact({ run_id: 'r3', relative_path: 'manifest.json', payload: { a: 1 } });
+    const out = await writeQAArtifact({ run_id: 'r3', relative_path: 'manifest.json', payload: { a: 1 } });
+    expect(out.written).toBe(true);
+    expect(out.sink_write_status).toBe('written');
     expect(spy).toHaveBeenCalledWith(expect.stringContaining('TAPECOACH_QA_ARTIFACT_JSON:'));
+    spy.mockRestore();
+  });
+
+  it('fallback log failure remains non-throwing and written false', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    upload.mockResolvedValue({ error: { message: 'boom' } });
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => { throw new Error('log fail'); });
+    const out = await writeQAArtifact({ run_id: 'r6', relative_path: 'manifest.json', payload: { run_id: 'r6' } });
+    expect(out.written).toBe(false);
+    expect(out.sink_write_status).toBe('failed');
+    expect(out.log_fallback_emitted).toBe(false);
+    expect(out.warning).toContain('fallback_log_failed');
     spy.mockRestore();
   });
 });

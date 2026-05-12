@@ -41,4 +41,18 @@ describe('v3 s8-23 raw json emitters', () => {
     expect(manifest.blocker_codes).toContain('comparison_JSON_missing');
     expect(manifest.level2_qa_acceptance).toBe('not_accepted');
   });
+
+  it('storage/file failure does not clear raw_JSON_missing blocker', async () => {
+    process.env.QA_ARTIFACT_SINK = 'file';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const root = '/dev/null';
+    const out = await emitRawReportArtefact({ run_id: 'r5', take_id: 't5', source_stage: 'x', source_module: 'm', report_data: {}, root_dir: root, internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    await emitQAManifestForAnalysisRun({ run_id: 'r5', root_dir: await mkdtemp(path.join(os.tmpdir(), 'qa-manifest-')), internal_qa_emit: true, emitted_artefact_ids: out.written ? ['raw_report'] : [] });
+    const mroot = await mkdtemp(path.join(os.tmpdir(), 'qa-manifest2-'));
+    await emitQAManifestForAnalysisRun({ run_id: 'r5', root_dir: mroot, internal_qa_emit: true, emitted_artefact_ids: [] });
+    const manifest = JSON.parse(await readFile(path.join(mroot, 'r5', 'manifest.json'), 'utf8'));
+    expect(manifest.emitted_artifacts).not.toContain('raw_report');
+    expect(manifest.blocker_codes).toContain('raw_JSON_missing');
+  });
 });
