@@ -92,4 +92,20 @@ describe('v3 s8 qa artifact sink', () => {
     expect(out.warning).toContain('fallback_log_failed');
     spy.mockRestore();
   });
+
+
+  it('success-path log failure does not flip primary write to failed', async () => {
+    process.env.QA_ARTIFACT_SINK = 'file';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-sink-'));
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => { throw new Error('log fail'); });
+    const out = await writeQAArtifact({ run_id: 'r8', root_dir: root, relative_path: 'reports/b.json', payload: { ok: true } });
+    expect(out.written).toBe(true);
+    expect(out.sink_write_status).toBe('written');
+    expect(out.log_fallback_emitted).toBe(false);
+    expect(out.warning).toContain('qa_artifact_success_log_failed');
+    const body = JSON.parse(await readFile(path.join(root, 'r8', 'reports', 'b.json'), 'utf8'));
+    expect(body.ok).toBe(true);
+    spy.mockRestore();
+  });
 });
