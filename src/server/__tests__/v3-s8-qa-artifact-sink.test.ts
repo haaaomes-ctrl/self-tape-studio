@@ -108,4 +108,14 @@ describe('v3 s8 qa artifact sink', () => {
     expect(body.ok).toBe(true);
     spy.mockRestore();
   });
+
+
+  it('rejects unsafe relative path in storage mode', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'false';
+    const out = await writeQAArtifact({ run_id: 'r9', relative_path: '../manifest.json', payload: { run_id: 'r9' } });
+    expect(out.written).toBe(false);
+    expect(out.sink_write_status).toBe('failed');
+    expect(out.warning).toContain('artefact_path_invalid');
+  });
 });

@@ -9,6 +9,14 @@ export interface QAArtifactWriteResult { written: boolean; sink_mode: QAArtifact
 
 const LOG_PREFIX = 'TAPECOACH_QA_ARTIFACT_JSON:';
 
+
+function validateRelativePath(relativePath: string): string {
+  if (!/^[A-Za-z0-9._/-]+$/.test(relativePath)) throw new Error('artefact_path_invalid');
+  const normalized = path.posix.normalize(relativePath);
+  if (normalized.startsWith('../') || normalized === '..' || path.posix.isAbsolute(relativePath)) throw new Error('artefact_path_invalid');
+  return normalized;
+}
+
 function resolveMode(env = process.env): QAArtifactSinkMode {
   const mode = env.QA_ARTIFACT_SINK as QAArtifactSinkMode | undefined;
   if (mode === 'storage' || mode === 'console_jsonl' || mode === 'file') return mode;
@@ -27,8 +35,9 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
   const payloadText = stableStringify(input.payload) + '\n';
   const root = input.root_dir ?? 'qa-artifacts';
   const storage_bucket = process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
-  const storage_path = `v3/${input.run_id}/${input.relative_path}`;
 
+  let validatedRelativePath = input.relative_path;
+  let storage_path = `v3/${input.run_id}/${input.relative_path}`;
 
   const trySuccessLog = (args: Parameters<typeof emitLog>[0]): { emitted: boolean; warning?: string } => {
     if (!allowLogFallback) return { emitted: false };
@@ -40,7 +49,7 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
   const tryFallbackLog = (warning: string): { attempted: boolean; emitted: boolean } => {
     if (!allowLogFallback) return { attempted: false, emitted: false };
     try {
-      emitLog({ sink_mode: mode, sink_write_status: 'failed', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: input.relative_path, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, payload: input.payload, warning, blocker_codes: ['qa_artifact_sink_write_failed'] });
+      emitLog({ sink_mode: mode, sink_write_status: 'failed', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, payload: input.payload, warning, blocker_codes: ['qa_artifact_sink_write_failed'] });
       return { attempted: true, emitted: true };
     } catch {
       return { attempted: true, emitted: false };
@@ -48,22 +57,24 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
   };
 
   try {
+    validatedRelativePath = validateRelativePath(input.relative_path);
+    storage_path = `v3/${input.run_id}/${validatedRelativePath}`;
     if (mode === 'file') {
-      const abs = path.join(root, input.run_id, input.relative_path);
+      const abs = path.join(root, input.run_id, validatedRelativePath);
       const prefix = path.resolve(path.join(root, input.run_id)) + path.sep;
       if (!path.resolve(abs).startsWith(prefix)) throw new Error('artefact_path_invalid');
       await mkdir(path.dirname(abs), { recursive: true });
       await writeFile(abs, payloadText, 'utf8');
-      const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: input.relative_path, payload: input.payload });
+      const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, payload: input.payload });
       return { written: true, sink_mode: mode, sink_write_status: 'written', path: abs, log_fallback_emitted: successLog.emitted, warning: successLog.warning };
     }
     if (mode === 'storage') {
       const { error } = await supabaseAdmin.storage.from(storage_bucket).upload(storage_path, payloadText, { upsert: true, contentType: 'application/json' });
       if (error) throw new Error(`storage_upload_failed:${error.message}`);
-      const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: input.relative_path, storage_bucket, storage_path, payload: input.payload });
+      const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, storage_bucket, storage_path, payload: input.payload });
       return { written: true, sink_mode: mode, sink_write_status: 'written', storage_bucket, storage_path, log_fallback_emitted: successLog.emitted, warning: successLog.warning };
     }
-    emitLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: input.relative_path, payload: input.payload });
+    emitLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, payload: input.payload });
     return { written: true, sink_mode: mode, sink_write_status: 'written', log_fallback_emitted: true };
   } catch (error) {
     const warning = error instanceof Error ? error.message : 'unknown_sink_error';
