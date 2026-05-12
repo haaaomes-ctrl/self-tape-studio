@@ -1,0 +1,48 @@
+import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { emitQAManifestForAnalysisRun, resolveInternalQAEmitEnabled } from '@/server/v3/qa-artifacts-wiring';
+
+describe('v3 s8 qa artifact wiring', () => {
+  it('ordinary run with internal_qa_emit false writes nothing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-wiring-'));
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'run-1', root_dir: root, internal_qa_emit: false });
+    expect(out.written).toBe(false);
+    await expect(stat(path.join(root, 'run-1', 'manifest.json'))).rejects.toBeTruthy();
+  });
+
+  it('enabled run writes and carries runtime metadata while preserving blocked statuses', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-wiring-'));
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: 'run-2',
+      root_dir: root,
+      internal_qa_emit: true,
+      submission_id: 'sub-123',
+      take_ids: ['take-a', 'take-b'],
+      route_module: 'analysis-wrapper',
+      fixture_id: 'GF-01 / RT-15 / MT-same-video-20260511',
+      mux_playback_ids: { take_1_mux_playback_id: 'abc' },
+    });
+    expect(out.written).toBe(true);
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-2', 'manifest.json'), 'utf8'));
+    expect(manifest.input_refs).toContain('submission:sub-123');
+    expect(manifest.take_refs).toEqual(['take-a', 'take-b']);
+    expect(manifest.fixture_refs).toContain('route:analysis-wrapper');
+    expect(manifest.production_safe_status).toBe('blocked');
+    expect(manifest.public_technique_authority_status).toBe('blocked');
+    expect(manifest.public_scoring_status).toBe('blocked');
+    expect(manifest.gate_statuses.some((g: { blocker_code: string }) => g.blocker_code === 'same_video_false_winner_active_P0')).toBe(true);
+  });
+
+  it('emitter failure is captured as warning and does not throw', async () => {
+    const out = await emitQAManifestForAnalysisRun({ run_id: '../bad', internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    expect(out.warning).toContain('internal_qa_manifest_emit_failed');
+  });
+
+  it('env-based enabling remains explicit and off by default', () => {
+    expect(resolveInternalQAEmitEnabled({ env: {} as NodeJS.ProcessEnv })).toBe(false);
+    expect(resolveInternalQAEmitEnabled({ env: { V3_QA_ARTIFACTS_ENABLED: 'true' } as NodeJS.ProcessEnv })).toBe(true);
+  });
+});

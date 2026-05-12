@@ -29,6 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
+import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring';
 import {
   scrubReportQuality,
   normaliseTimestampedNotes,
@@ -3183,6 +3184,42 @@ export async function runProcessTake(
           status: null,
         });
       }
+    }
+
+
+    const qaArtefactIds: string[] = [];
+    const rawReportEmit = await emitRawReportArtefact({
+      run_id: `take-${takeId}`,
+      take_id: takeId,
+      take_index: 1,
+      submission_id: audition.id,
+      mux_playback_id: take.mux_playback_id ?? undefined,
+      source_stage: 'process_take_success',
+      source_module: 'process-take.server',
+      route_or_model_marker: 'runProcessTake',
+      commit_sha: process.env.GIT_COMMIT_SHA,
+      branch_name: process.env.GIT_BRANCH_NAME,
+      internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      report_data: report as Record<string, unknown>,
+    });
+    if (rawReportEmit.written) qaArtefactIds.push(rawReportEmit.artefact_id);
+
+    const qaEmitResult = await emitQAManifestForAnalysisRun({
+      run_id: `take-${takeId}`,
+      submission_id: audition.id,
+      take_ids: [takeId],
+      route_module: 'runProcessTake',
+      internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      mux_playback_ids: take.mux_playback_id ? { take_1_mux_playback_id: take.mux_playback_id } : {},
+      commit_sha: process.env.GIT_COMMIT_SHA,
+      branch_name: process.env.GIT_BRANCH_NAME,
+      emitted_artefact_ids: qaArtefactIds,
+    });
+    if (qaEmitResult.warning) {
+      console.warn('[take-pipeline] internal_qa_manifest_emit_warning', {
+        take_id: takeId,
+        warning: qaEmitResult.warning,
+      });
     }
 
     return { ok: true, tier };

@@ -40,3 +40,6 @@ export {
   validateComponentSplitInstability,
 } from './s6-variance-comparison';
 export * from './s6-internal-comparison-renderer';
+
+export * from './qa-artifacts';
+export * from './qa-artifacts-wiring';
