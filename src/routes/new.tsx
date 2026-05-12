@@ -24,9 +24,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
 import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
-import { createMuxDirectUpload } from "@/server/mux.functions";
+import { createMuxDirectUpload } from "@/server-fns/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
-import { resetTake } from "@/server/process-take.functions";
+import { resetTake } from "@/server-fns/process-take.functions";
 import { brandTitle } from "@/config/brand";
 
 export const Route = createFileRoute("/new")({

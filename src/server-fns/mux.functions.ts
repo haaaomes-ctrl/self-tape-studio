@@ -3,13 +3,13 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import { getMux } from "./mux.server";
+import { getMux } from "@/server/mux.server";
 import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
-} from "./quota.server";
-import { getResolvedConfig } from "./app-config.server";
-import { metric } from "./metrics.server";
+} from "@/server/quota.server";
+import { getResolvedConfig } from "@/server/app-config.server";
+import { metric } from "@/server/metrics.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
