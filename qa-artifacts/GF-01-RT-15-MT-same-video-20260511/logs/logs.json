@@ -1,0 +1,1802 @@
+[
+  {
+    "timestamp": 1778569080122000,
+    "id": "efl-0",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7884e4fc703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778569080122000
+    }
+  },
+  {
+    "timestamp": 1778569065785000,
+    "id": "efl-1",
+    "event_message": "GET https://id-preview--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/ → 200 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa787f2cc4ff663",
+      "event_message": "GET https://id-preview--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/ → 200 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "GET",
+      "request_url": "https://id-preview--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/",
+      "response_status": 200,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778569065785000
+    }
+  },
+  {
+    "timestamp": 1778569020139000,
+    "id": "efl-2",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa786d7683f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778569020139000
+    }
+  },
+  {
+    "timestamp": 1778568967609000,
+    "id": "efl-3",
+    "event_message": "GET https://tapecoach.co.uk/ → 200 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7858c5aafec8f",
+      "event_message": "GET https://tapecoach.co.uk/ → 200 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "GET",
+      "request_url": "https://tapecoach.co.uk/",
+      "response_status": 200,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568967609000
+    }
+  },
+  {
+    "timestamp": 1778568960119000,
+    "id": "efl-4",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa785606aa803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568960119000
+    }
+  },
+  {
+    "timestamp": 1778568900175000,
+    "id": "efl-5",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa783e9bc3003f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568900175000
+    }
+  },
+  {
+    "timestamp": 1778568840145000,
+    "id": "efl-6",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa782728d7a03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568840145000
+    }
+  },
+  {
+    "timestamp": 1778568780329000,
+    "id": "efl-7",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa780fc8a3203f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568780329000
+    }
+  },
+  {
+    "timestamp": 1778568755347000,
+    "id": "efl-8",
+    "event_message": "GET https://tapecoach.co.uk/favicon.ico → 404 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7805e2b650f96",
+      "event_message": "GET https://tapecoach.co.uk/favicon.ico → 404 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "GET",
+      "request_url": "https://tapecoach.co.uk/favicon.ico",
+      "response_status": 404,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568755347000
+    }
+  },
+  {
+    "timestamp": 1778568750774000,
+    "id": "efl-9",
+    "event_message": "GET https://tapecoach.co.uk/ → 200 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7803dbcdd0f96",
+      "event_message": "GET https://tapecoach.co.uk/ → 200 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "GET",
+      "request_url": "https://tapecoach.co.uk/",
+      "response_status": 200,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568750774000
+    }
+  },
+  {
+    "timestamp": 1778568720535000,
+    "id": "efl-10",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa77f8568e903f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568720535000
+    }
+  },
+  {
+    "timestamp": 1778568660158000,
+    "id": "efl-11",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa77e0d691503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568660158000
+    }
+  },
+  {
+    "timestamp": 1778568600218000,
+    "id": "efl-12",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa77c96586603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568600218000
+    }
+  },
+  {
+    "timestamp": 1778568540361000,
+    "id": "efl-13",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa77b1f882403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568540361000
+    }
+  },
+  {
+    "timestamp": 1778568480533000,
+    "id": "efl-14",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa779a83c8003f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568480533000
+    }
+  },
+  {
+    "timestamp": 1778568420226000,
+    "id": "efl-15",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa77832095603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568420226000
+    }
+  },
+  {
+    "timestamp": 1778568360120000,
+    "id": "efl-16",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa776ba593803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568360120000
+    }
+  },
+  {
+    "timestamp": 1778568300227000,
+    "id": "efl-17",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa775440e5103f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568300227000
+    }
+  },
+  {
+    "timestamp": 1778568240175000,
+    "id": "efl-18",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa773cc9bea03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568240175000
+    }
+  },
+  {
+    "timestamp": 1778568180228000,
+    "id": "efl-19",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa772560e4503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568180228000
+    }
+  },
+  {
+    "timestamp": 1778568120420000,
+    "id": "efl-20",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa770e0488703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568120420000
+    }
+  },
+  {
+    "timestamp": 1778568060109000,
+    "id": "efl-21",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa76f674f2f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568060109000
+    }
+  },
+  {
+    "timestamp": 1778568000151000,
+    "id": "efl-22",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa76df08eea03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778568000151000
+    }
+  },
+  {
+    "timestamp": 1778567940123000,
+    "id": "efl-23",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa76c796ede03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567940123000
+    }
+  },
+  {
+    "timestamp": 1778567880127000,
+    "id": "efl-24",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa76b026c0c03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567880127000
+    }
+  },
+  {
+    "timestamp": 1778567820187000,
+    "id": "efl-25",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7698bcc8903f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567820187000
+    }
+  },
+  {
+    "timestamp": 1778567760131000,
+    "id": "efl-26",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa768146a2703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567760131000
+    }
+  },
+  {
+    "timestamp": 1778567700145000,
+    "id": "efl-27",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7669d8cfe03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567700145000
+    }
+  },
+  {
+    "timestamp": 1778567640142000,
+    "id": "efl-28",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa765266f5403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567640142000
+    }
+  },
+  {
+    "timestamp": 1778567580271000,
+    "id": "efl-29",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa763b04adb03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567580271000
+    }
+  },
+  {
+    "timestamp": 1778567520281000,
+    "id": "efl-30",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa762395cf703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567520281000
+    }
+  },
+  {
+    "timestamp": 1778567460152000,
+    "id": "efl-31",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa760c1893603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567460152000
+    }
+  },
+  {
+    "timestamp": 1778567400133000,
+    "id": "efl-32",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa75f4a790803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567400133000
+    }
+  },
+  {
+    "timestamp": 1778567340119000,
+    "id": "efl-33",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa75dd35ec003f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567340119000
+    }
+  },
+  {
+    "timestamp": 1778567280097000,
+    "id": "efl-34",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa75c5c391d03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567280097000
+    }
+  },
+  {
+    "timestamp": 1778567220115000,
+    "id": "efl-35",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa75ae55f4803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567220115000
+    }
+  },
+  {
+    "timestamp": 1778567160122000,
+    "id": "efl-36",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7596e4e7b03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567160122000
+    }
+  },
+  {
+    "timestamp": 1778567100183000,
+    "id": "efl-37",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa757f7b83603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567100183000
+    }
+  },
+  {
+    "timestamp": 1778567040208000,
+    "id": "efl-38",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa75680ea9403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778567040208000
+    }
+  },
+  {
+    "timestamp": 1778566980476000,
+    "id": "efl-39",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7550b8c4403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566980476000
+    }
+  },
+  {
+    "timestamp": 1778566920121000,
+    "id": "efl-40",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa753925a6e03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566920121000
+    }
+  },
+  {
+    "timestamp": 1778566860118000,
+    "id": "efl-41",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7521b68b503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566860118000
+    }
+  },
+  {
+    "timestamp": 1778566800119000,
+    "id": "efl-42",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa750a45cd703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566800119000
+    }
+  },
+  {
+    "timestamp": 1778566740142000,
+    "id": "efl-43",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa74f2d7e6f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566740142000
+    }
+  },
+  {
+    "timestamp": 1778566680148000,
+    "id": "efl-44",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa74db68c8503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566680148000
+    }
+  },
+  {
+    "timestamp": 1778566620132000,
+    "id": "efl-45",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa74c3f694503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566620132000
+    }
+  },
+  {
+    "timestamp": 1778566560115000,
+    "id": "efl-46",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa74ac8594703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566560115000
+    }
+  },
+  {
+    "timestamp": 1778566500147000,
+    "id": "efl-47",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7495189d103f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566500147000
+    }
+  },
+  {
+    "timestamp": 1778566440108000,
+    "id": "efl-48",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa747da5fcd03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566440108000
+    }
+  },
+  {
+    "timestamp": 1778566380161000,
+    "id": "efl-49",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa74663ac1e03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566380161000
+    }
+  },
+  {
+    "timestamp": 1778566320242000,
+    "id": "efl-50",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa744ed19e603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566320242000
+    }
+  },
+  {
+    "timestamp": 1778566260311000,
+    "id": "efl-51",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa743769e9f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566260311000
+    }
+  },
+  {
+    "timestamp": 1778566200130000,
+    "id": "efl-52",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa741fe59d603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566200130000
+    }
+  },
+  {
+    "timestamp": 1778566140145000,
+    "id": "efl-53",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa740878b7e03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566140145000
+    }
+  },
+  {
+    "timestamp": 1778566080115000,
+    "id": "efl-54",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa73f105d7803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566080115000
+    }
+  },
+  {
+    "timestamp": 1778566020169000,
+    "id": "efl-55",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa73d99b88303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778566020169000
+    }
+  },
+  {
+    "timestamp": 1778565960116000,
+    "id": "efl-56",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa73c225ced03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565960116000
+    }
+  },
+  {
+    "timestamp": 1778565900136000,
+    "id": "efl-57",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa73aab7b3603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565900136000
+    }
+  },
+  {
+    "timestamp": 1778565840570000,
+    "id": "efl-58",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa739372bb503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565840570000
+    }
+  },
+  {
+    "timestamp": 1778565780125000,
+    "id": "efl-59",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa737bd6edc03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565780125000
+    }
+  },
+  {
+    "timestamp": 1778565720198000,
+    "id": "efl-60",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa736467dc403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565720198000
+    }
+  },
+  {
+    "timestamp": 1778565660108000,
+    "id": "efl-61",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa734cf4df603f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565660108000
+    }
+  },
+  {
+    "timestamp": 1778565600122000,
+    "id": "efl-62",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa733586af003f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565600122000
+    }
+  },
+  {
+    "timestamp": 1778565540183000,
+    "id": "efl-63",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa731e1b90f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565540183000
+    }
+  },
+  {
+    "timestamp": 1778565480137000,
+    "id": "efl-64",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7306a588e03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565480137000
+    }
+  },
+  {
+    "timestamp": 1778565420179000,
+    "id": "efl-65",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa72ef3bb6403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565420179000
+    }
+  },
+  {
+    "timestamp": 1778565360108000,
+    "id": "efl-66",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa72d7c4bc303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565360108000
+    }
+  },
+  {
+    "timestamp": 1778565300178000,
+    "id": "efl-67",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa72c05be1d03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565300178000
+    }
+  },
+  {
+    "timestamp": 1778565240102000,
+    "id": "efl-68",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa72a8e4c1403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565240102000
+    }
+  },
+  {
+    "timestamp": 1778565180255000,
+    "id": "efl-69",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa729182a1503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565180255000
+    }
+  },
+  {
+    "timestamp": 1778565120114000,
+    "id": "efl-70",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa727a048e203f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565120114000
+    }
+  },
+  {
+    "timestamp": 1778565060129000,
+    "id": "efl-71",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa72629797903f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565060129000
+    }
+  },
+  {
+    "timestamp": 1778565000147000,
+    "id": "efl-72",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa724b278ee03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778565000147000
+    }
+  },
+  {
+    "timestamp": 1778564940109000,
+    "id": "efl-73",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7233b5ed403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564940109000
+    }
+  },
+  {
+    "timestamp": 1778564880107000,
+    "id": "efl-74",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa721c45e7b03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564880107000
+    }
+  },
+  {
+    "timestamp": 1778564820120000,
+    "id": "efl-75",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7204d69e803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564820120000
+    }
+  },
+  {
+    "timestamp": 1778564760131000,
+    "id": "efl-76",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa71ed66bd303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564760131000
+    }
+  },
+  {
+    "timestamp": 1778564700179000,
+    "id": "efl-77",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa71d5fcbba03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564700179000
+    }
+  },
+  {
+    "timestamp": 1778564640134000,
+    "id": "efl-78",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa71be88ac903f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564640134000
+    }
+  },
+  {
+    "timestamp": 1778564580153000,
+    "id": "efl-79",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa71a718b6903f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564580153000
+    }
+  },
+  {
+    "timestamp": 1778564560979000,
+    "id": "efl-80",
+    "event_message": "GET https://tapecoach.co.uk/ → 200 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa719eeed6b6995",
+      "event_message": "GET https://tapecoach.co.uk/ → 200 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "GET",
+      "request_url": "https://tapecoach.co.uk/",
+      "response_status": 200,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564560979000
+    }
+  },
+  {
+    "timestamp": 1778564520244000,
+    "id": "efl-81",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa718fb1d9c03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564520244000
+    }
+  },
+  {
+    "timestamp": 1778564460132000,
+    "id": "efl-82",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7178378f703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564460132000
+    }
+  },
+  {
+    "timestamp": 1778564400104000,
+    "id": "efl-83",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7160c593a03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564400104000
+    }
+  },
+  {
+    "timestamp": 1778564340113000,
+    "id": "efl-84",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa714955f7103f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564340113000
+    }
+  },
+  {
+    "timestamp": 1778564280112000,
+    "id": "efl-85",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7131e5d4103f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564280112000
+    }
+  },
+  {
+    "timestamp": 1778564220158000,
+    "id": "efl-86",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa711a79bce03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564220158000
+    }
+  },
+  {
+    "timestamp": 1778564160135000,
+    "id": "efl-87",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa710307a4703f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564160135000
+    }
+  },
+  {
+    "timestamp": 1778564100562000,
+    "id": "efl-88",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa70ebc2ae303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564100562000
+    }
+  },
+  {
+    "timestamp": 1778564040108000,
+    "id": "efl-89",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa70d424a4503f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778564040108000
+    }
+  },
+  {
+    "timestamp": 1778563980096000,
+    "id": "efl-90",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa70bcb3ce303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563980096000
+    }
+  },
+  {
+    "timestamp": 1778563920139000,
+    "id": "efl-91",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa70a545f0303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563920139000
+    }
+  },
+  {
+    "timestamp": 1778563860105000,
+    "id": "efl-92",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa708dd5e0a03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563860105000
+    }
+  },
+  {
+    "timestamp": 1778563800121000,
+    "id": "efl-93",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa707666f1d03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563800121000
+    }
+  },
+  {
+    "timestamp": 1778563740126000,
+    "id": "efl-94",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa705ef6c6303f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563740126000
+    }
+  },
+  {
+    "timestamp": 1778563680104000,
+    "id": "efl-95",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa704784f7803f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563680104000
+    }
+  },
+  {
+    "timestamp": 1778563620145000,
+    "id": "efl-96",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa703018de403f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563620145000
+    }
+  },
+  {
+    "timestamp": 1778563560108000,
+    "id": "efl-97",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa7018a496f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563560108000
+    }
+  },
+  {
+    "timestamp": 1778563500154000,
+    "id": "efl-98",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa700139d8f03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563500154000
+    }
+  },
+  {
+    "timestamp": 1778563440144000,
+    "id": "efl-99",
+    "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+    "log_level": "info",
+    "details": {
+      "cf_ray": "9fa6fe9c8e9a03f8",
+      "event_message": "POST https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes → 401 (ok)",
+      "log_level": "info",
+      "outcome": "ok",
+      "request_method": "POST",
+      "request_url": "https://project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+      "response_status": 401,
+      "script_name": "",
+      "source": "request",
+      "timestamp": 1778563440144000
+    }
+  }
+]
