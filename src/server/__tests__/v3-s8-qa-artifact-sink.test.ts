@@ -69,6 +69,17 @@ describe('v3 s8 qa artifact sink', () => {
     spy.mockRestore();
   });
 
+
+  it('fallback disabled does not report fallback_log_failed', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'false';
+    upload.mockResolvedValue({ error: { message: 'boom' } });
+    const out = await writeQAArtifact({ run_id: 'r7', relative_path: 'manifest.json', payload: { run_id: 'r7' } });
+    expect(out.written).toBe(false);
+    expect(out.warning).toContain('storage_upload_failed:boom');
+    expect(out.warning).not.toContain('fallback_log_failed');
+    expect(out.log_fallback_emitted).toBe(false);
+  });
   it('fallback log failure remains non-throwing and written false', async () => {
     process.env.QA_ARTIFACT_SINK = 'storage';
     process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';

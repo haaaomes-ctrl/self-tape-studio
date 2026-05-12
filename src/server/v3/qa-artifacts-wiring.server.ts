@@ -52,7 +52,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
     const out = await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: metadata.run_id, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: metadata.emitted_artefact_ids ?? [] });
-    return { written: out.written, warning: null as string | null, manifest_path: (out as { manifest_path?: string }).manifest_path };
+    const warning = out.written ? null : ((out as { warning?: string | null; sink_warning?: string | null }).warning ?? (out as { sink_warning?: string | null }).sink_warning ?? 'internal_qa_manifest_sink_write_failed');
+    return { written: out.written, warning, manifest_path: (out as { manifest_path?: string }).manifest_path };
   } catch (error) {
     return { written: false, warning: `internal_qa_manifest_emit_failed:${error instanceof Error ? error.message : 'unknown'}` };
   }

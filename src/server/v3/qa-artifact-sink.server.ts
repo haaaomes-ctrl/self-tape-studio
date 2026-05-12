@@ -29,13 +29,13 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
   const storage_bucket = process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
   const storage_path = `v3/${input.run_id}/${input.relative_path}`;
 
-  const tryFallbackLog = (warning: string): boolean => {
-    if (!allowLogFallback) return false;
+  const tryFallbackLog = (warning: string): { attempted: boolean; emitted: boolean } => {
+    if (!allowLogFallback) return { attempted: false, emitted: false };
     try {
       emitLog({ sink_mode: mode, sink_write_status: 'failed', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: input.relative_path, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, payload: input.payload, warning, blocker_codes: ['qa_artifact_sink_write_failed'] });
-      return true;
+      return { attempted: true, emitted: true };
     } catch {
-      return false;
+      return { attempted: true, emitted: false };
     }
   };
 
@@ -59,7 +59,8 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
     return { written: true, sink_mode: mode, sink_write_status: 'written', log_fallback_emitted: true };
   } catch (error) {
     const warning = error instanceof Error ? error.message : 'unknown_sink_error';
-    const logFallbackEmitted = tryFallbackLog(warning);
-    return { written: false, sink_mode: mode, sink_write_status: 'failed', warning: logFallbackEmitted ? warning : `${warning};fallback_log_failed`, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, log_fallback_emitted: logFallbackEmitted };
+    const fallback = tryFallbackLog(warning);
+    const warningOut = fallback.attempted && !fallback.emitted ? `${warning};fallback_log_failed` : warning;
+    return { written: false, sink_mode: mode, sink_write_status: 'failed', warning: warningOut, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, log_fallback_emitted: fallback.emitted };
   }
 }
