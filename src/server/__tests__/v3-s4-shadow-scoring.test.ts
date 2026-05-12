@@ -83,17 +83,17 @@ describe('v3 s4 core shadow scoring contracts', () => {
 
 
   it('valid ComponentScore passes', () => {
-    const c = { component_score_id:'cs1', component_id:'song', take_id:'t1', component_type:'song', component_criticality:'essential', component_weight_source:'discipline_standard', dimension_score_ids:['d1'], observed_component_score:88, level_adjusted_component_score:84, confidence:0.8, reliability:0.8, evidence_sufficiency:'sufficient', assessability_status:'sufficient', cap_applied:false, gate_refs:[], rationale_private:'internal', validator_status:'pass', visibility:'private' } as const;
+    const c = { component_score_id:'cs1', component_id:'song', take_id:'t1', component_type:'song', component_criticality:'essential', component_weight_source:'discipline_standard', dimension_score_ids:['d1'] as string[], observed_component_score:88, level_adjusted_component_score:84, confidence:0.8, reliability:0.8, evidence_sufficiency:'sufficient', assessability_status:'sufficient', cap_applied:false, gate_refs:[] as string[], rationale_private:'internal', validator_status:'pass', visibility:'private' } as const;
     expect(validateComponentScore(c)).toBe(true);
   });
 
   it('essential failure cannot be overridden by strong component', () => {
-    const c = { component_score_id:'cs2', component_id:'acting', take_id:'t1', component_type:'acting', component_criticality:'essential', component_weight_source:'discipline_standard', dimension_score_ids:['d1'], observed_component_score:94, level_adjusted_component_score:90, confidence:0.9, reliability:0.9, evidence_sufficiency:'sufficient', assessability_status:'sufficient', cap_applied:true, gate_refs:['g1'], rationale_private:'internal', validator_status:'warn', visibility:'private' } as const;
+    const c = { component_score_id:'cs2', component_id:'acting', take_id:'t1', component_type:'acting', component_criticality:'essential', component_weight_source:'discipline_standard', dimension_score_ids:['d1'] as string[], observed_component_score:94, level_adjusted_component_score:90, confidence:0.9, reliability:0.9, evidence_sufficiency:'sufficient', assessability_status:'sufficient', cap_applied:true, gate_refs:['g1'] as string[], rationale_private:'internal', validator_status:'warn', visibility:'private' } as const;
     expect(canComponentScoreOverrideEssentialGate(c)).toBe(false);
   });
 
   it('uncertain criticality cannot hard-gate', () => {
-    const c = { component_score_id:'cs3', component_id:'slate', take_id:'t1', component_type:'slate_ident', component_criticality:'unknown', component_weight_source:'fallback', dimension_score_ids:['d1'], observed_component_score:90, level_adjusted_component_score:90, confidence:0.5, reliability:0.5, evidence_sufficiency:'partial', assessability_status:'partial', cap_applied:true, gate_refs:['g1'], rationale_private:'internal', validator_status:'warn', visibility:'private' } as const;
+    const c = { component_score_id:'cs3', component_id:'slate', take_id:'t1', component_type:'slate_ident', component_criticality:'unknown', component_weight_source:'fallback', dimension_score_ids:['d1'] as string[], observed_component_score:90, level_adjusted_component_score:90, confidence:0.5, reliability:0.5, evidence_sufficiency:'partial', assessability_status:'partial', cap_applied:true, gate_refs:['g1'] as string[], rationale_private:'internal', validator_status:'warn', visibility:'private' } as const;
     expect(validateComponentScore(c)).toBe(false);
   });
 

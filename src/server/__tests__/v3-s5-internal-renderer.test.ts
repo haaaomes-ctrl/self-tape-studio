@@ -11,7 +11,7 @@ const input: InternalQARenderInput = { public_report_v3:report, validator_trace_
 
 describe('s5 internal renderer',()=>{
  it('accepts minimal valid public report',()=>{ const out=renderInternalQAReport(input); expect(out.blocked_public_release).toBe(true); });
- it('comparison placeholder suppresses unsafe wording',()=>{ const bad={...report,comparison_summary:{status:'placeholder_only_no_recommendation',note:'Submit Take 1 winner best take'}} as PublicReportV3; const out=renderInternalQAReport({...input,public_report_v3:bad}); const c=out.sections.find((s)=>s.section_id==='comparison_placeholder')!; expect(c.safe_text.join(' ')).not.toMatch(/submit take|winner|best take/i); });
+ it('comparison placeholder suppresses unsafe wording',()=>{ const bad={...report,comparison_summary:{status:'placeholder_only_no_recommendation',note:'Submit Take 1 winner best take'}} as unknown as PublicReportV3; const out=renderInternalQAReport({...input,public_report_v3:bad}); const c=out.sections.find((s)=>s.section_id==='comparison_placeholder')!; expect(c.safe_text.join(' ')).not.toMatch(/submit take|winner|best take/i); });
  it('renders full 21-section map',()=>{ const out=renderInternalQAReport(input); expect(out.sections.filter((s)=>s.section_id!=='validator_block_notice').length).toBe(21); });
  it('redacts ids and no raw scoretrace',()=>{ const r=redactPublicReportForInternalRender(report); expect(r.claim_traces[0].report_claim_id).toContain('claim:'); expect(JSON.stringify(r)).not.toContain('ScoreTrace'); });
  it('trace display redacts ids only',()=>{ const out=renderInternalQAReport(input); expect(out.trace_rows[0].linked_evidence_anchor_ids[0]).toContain('ev:'); expect(JSON.stringify(out.trace_rows[0])).not.toContain('ea1'); });

@@ -1,4 +1,5 @@
-import type { AuditionContext, PerformerLevel, QAValidationResult, V3ReleaseState } from './types';
+import type { AuditionContext, PerformerLevel, QAValidationResult } from './types';
+import type { V3ReleaseState } from './release-state';
 import { validateNoBriefInvention, validateUKEnglish } from './validation';
 
 export const S6_ALLOWED_RELEASE_STATES = ['design_only', 'dark_mode_internal', 'internal_rendered_QA'] as const;
