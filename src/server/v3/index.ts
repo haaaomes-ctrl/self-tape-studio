@@ -7,7 +7,37 @@ export * from './fixtures';
 export * from './evaluation-harness';
 export * from './flags';
 
-export * from './s4-shadow-scoring';
+export {
+  V3_FLAG_DEFAULTS,
+  type Assessability,
+  type ComponentScore,
+  type DimensionScore,
+  type ScoreTrace,
+  type LevelStandard,
+  applyCriticalGateCapShadow,
+  applyOverallGateCapsShadow,
+  canComponentScoreOverrideEssentialGate,
+  createDimensionScore,
+  createScoreTrace,
+  evaluateSameVideoScoreVarianceShadow,
+  findWeakestCriticalComponent,
+  getAllLevelStandards,
+  getLevelAdjustedReadiness,
+  getLevelBandForScore,
+  getProfessionalScoreBand,
+  getScoringSentinelRegistry,
+  requiresExceptionalEvidence,
+  requiresProfessionalStandoutEvidence,
+  validateCleanCaptureInflation,
+  validateComponentScore,
+  validateCriticalComponentGate,
+  validateOldSixFieldLeakage,
+  validateProfessionalHighScoreEvidence,
+  validatePublicScoreExposure,
+  validateRoleFitWording,
+  validateScoringSentinelRegistry,
+  validateSubmissionCohesion,
+} from './s4-shadow-scoring';
 
 // s5-public-report re-declares a handful of symbols that also live in
 // release-state.ts and s5-internal-renderer.ts. Re-export everything except
