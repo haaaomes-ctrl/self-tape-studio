@@ -7,37 +7,12 @@ export * from './fixtures';
 export * from './evaluation-harness';
 export * from './flags';
 
-export {
-  V3_FLAG_DEFAULTS,
-  type Assessability,
-  type ComponentScore,
-  type DimensionScore,
-  type ScoreTrace,
-  type LevelStandard,
-  applyCriticalGateCapShadow,
-  applyOverallGateCapsShadow,
-  canComponentScoreOverrideEssentialGate,
-  createDimensionScore,
-  createScoreTrace,
-  evaluateSameVideoScoreVarianceShadow,
-  findWeakestCriticalComponent,
-  getAllLevelStandards,
-  getLevelAdjustedReadiness,
-  getLevelBandForScore,
-  getProfessionalScoreBand,
-  getScoringSentinelRegistry,
-  requiresExceptionalEvidence,
-  requiresProfessionalStandoutEvidence,
-  validateCleanCaptureInflation,
-  validateComponentScore,
-  validateCriticalComponentGate,
-  validateOldSixFieldLeakage,
-  validateProfessionalHighScoreEvidence,
-  validatePublicScoreExposure,
-  validateRoleFitWording,
-  validateScoringSentinelRegistry,
-  validateSubmissionCohesion,
-} from './s4-shadow-scoring';
+export * from './s4-shadow-scoring';
+// Disambiguate: EvidenceSufficiency and QAValidationResult are also declared
+// in ./s4-shadow-scoring with a narrower shape used only inside that module.
+// The canonical surface is ./types — re-export explicitly to win over the
+// `export *` ambiguity above.
+export type { EvidenceSufficiency, QAValidationResult } from './types';
 
 // s5-public-report re-declares a handful of symbols that also live in
 // release-state.ts and s5-internal-renderer.ts. Re-export everything except
