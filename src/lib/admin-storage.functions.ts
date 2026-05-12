@@ -25,6 +25,24 @@ export type ArtifactEntry = {
   updated_at: string | null;
 };
 
+export const whoAmIAdmin = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    try {
+      setResponseHeader("Cache-Control", "no-store");
+    } catch {}
+    const claims = (context as { claims?: { email?: string | null; sub?: string | null } }).claims;
+    const rawEmail = claims?.email ?? null;
+    const normalized = normalizeEmail(rawEmail);
+    return {
+      rawEmail,
+      normalizedEmail: normalized,
+      expectedEmail: ADMIN_EMAIL,
+      isAdmin: normalized === ADMIN_EMAIL,
+      userId: claims?.sub ?? null,
+    };
+  });
+
 export const listAllArtifacts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -53,7 +71,6 @@ export const listAllArtifacts = createServerFn({ method: "GET" })
 
         for (const entry of data) {
           const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-          // Folders have id === null in supabase-js storage list
           if (entry.id === null) {
             await walk(fullPath);
           } else {
