@@ -15,6 +15,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
+import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 import { Route as ApiPublicDiagMuxProbeRouteImport } from './routes/api/public/diag-mux-probe'
@@ -50,6 +51,11 @@ const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
   path: '/audition/$auditionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminStorageDownloadsRoute = AdminStorageDownloadsRouteImport.update({
+  id: '/admin/storage-downloads',
+  path: '/admin/storage-downloads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicReconcileStaleTakesRoute =
   ApiPublicReconcileStaleTakesRouteImport.update({
     id: '/api/public/reconcile-stale-takes',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/api/public/admin-config'
     | '/api/public/diag-mux-probe'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/api/public/admin-config'
     | '/api/public/diag-mux-probe'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/api/public/admin-config'
     | '/api/public/diag-mux-probe'
@@ -154,6 +166,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
+  AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicDiagMuxProbeRoute: typeof ApiPublicDiagMuxProbeRoute
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuditionAuditionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/storage-downloads': {
+      id: '/admin/storage-downloads'
+      path: '/admin/storage-downloads'
+      fullPath: '/admin/storage-downloads'
+      preLoaderRoute: typeof AdminStorageDownloadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/reconcile-stale-takes': {
       id: '/api/public/reconcile-stale-takes'
       path: '/api/public/reconcile-stale-takes'
@@ -242,6 +262,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
+  AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicDiagMuxProbeRoute: ApiPublicDiagMuxProbeRoute,
@@ -251,3 +272,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
