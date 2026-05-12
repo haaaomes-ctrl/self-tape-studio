@@ -27,10 +27,14 @@ export * from './s5-internal-renderer';
 // already live in release-state.ts). Re-export everything except those.
 export {
   type ComparisonResult,
+  type ComparisonConfidenceTrace,
   type EvidenceDeltaSummary,
   isComparisonState,
   validateComparisonState,
+  evaluateDuplicateDetectionShadow,
   evaluateEvidenceDeltaDecisiveness,
+  evaluateRecommendationSuppressionShadow,
+  evaluateTieSuppressionShadow,
   validateDuplicateRecommendationSuppression,
   validateNearTieSuppression,
   validateSameBandSuppression,
@@ -38,6 +42,12 @@ export {
   validateAnalysisVarianceWarning,
   validateSameVideoScoreVarianceComparison,
   validateComponentSplitInstability,
+  validatePublicRecommendationExposure,
+  validateComparisonPrivateTraceLeakage,
+  validateComparisonHiddenReasoningLeakage,
+  validateNoBriefComparisonOverclaim,
+  validateComparisonUKEnglish,
+  validateGF01FalseWinnerBlock,
 } from './s6-variance-comparison';
 export * from './s6-internal-comparison-renderer';
 

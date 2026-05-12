@@ -30,6 +30,14 @@ import {
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
 import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring';
+async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
+  try {
+    return await emitRawReportArtefact(input);
+  } catch (error) {
+    console.warn('[take-pipeline] internal_qa_raw_report_emit_warning', { warning: error instanceof Error ? error.message : 'unknown' });
+    return { written: false as const };
+  }
+}
 import {
   scrubReportQuality,
   normaliseTimestampedNotes,
@@ -3188,7 +3196,7 @@ export async function runProcessTake(
 
 
     const qaArtefactIds: string[] = [];
-    const rawReportEmit = await emitRawReportArtefact({
+    const rawReportEmit = await safeEmitRawReportForQA({
       run_id: `take-${takeId}`,
       take_id: takeId,
       take_index: 1,
@@ -3202,7 +3210,7 @@ export async function runProcessTake(
       internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       report_data: report as Record<string, unknown>,
     });
-    if (rawReportEmit.written) qaArtefactIds.push(rawReportEmit.artefact_id);
+    if (rawReportEmit.written && 'artefact_id' in rawReportEmit) qaArtefactIds.push(rawReportEmit.artefact_id);
 
     const qaEmitResult = await emitQAManifestForAnalysisRun({
       run_id: `take-${takeId}`,
