@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring';
+import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3210,7 +3210,7 @@ export async function runProcessTake(
       internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       report_data: report as Record<string, unknown>,
     });
-    if (rawReportEmit.written && 'artefact_id' in rawReportEmit) qaArtefactIds.push(rawReportEmit.artefact_id);
+    if (rawReportEmit.written && 'artefact_id' in rawReportEmit && typeof rawReportEmit.artefact_id === 'string' && rawReportEmit.artefact_id.length > 0) qaArtefactIds.push(rawReportEmit.artefact_id);
 
     const qaEmitResult = await emitQAManifestForAnalysisRun({
       run_id: `take-${takeId}`,

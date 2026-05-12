@@ -116,7 +116,7 @@ export function renderInternalComparisonQA(input: InternalComparisonRenderInput)
     conf('comparison_confidence', result.confidence_deltas.comparison_confidence),
   ];
 
-  const varianceRows = result.variance_warnings.map((w, i)=>({ code:`vw-${i}`, severity:'P1' as const, safe_summary:sanitise(w) }));
+  const varianceRows: Array<{ code: string; severity: 'P0' | 'P1'; safe_summary: string }> = result.variance_warnings.map((w, i)=>({ code:`vw-${i}`, severity:'P1' as const, safe_summary:sanitise(w) }));
   if (result.duplicate_detection.duplicate_detection_status === 'confirmed_duplicate' && varianceRows.length===0) varianceRows.push({ code:'vw-duplicate-required', severity:'P0', safe_summary:'Same-video duplicate requires an analysis variance warning.' });
 
   const validatorRows = input.validator_trace_summary.map((v)=>({ validator_name:v.validator_name, validator_group:groupFor(v.validator_name), section_affected:v.affected_claim_ids?.[0] ?? 'comparison', severity:v.severity, action:v.action, passed:v.passed, safe_summary:sanitise(v.message ?? 'Validator result'), blocked_comparison_reference:red(result.comparison_id,'cmp') }));

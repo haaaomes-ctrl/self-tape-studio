@@ -2,7 +2,7 @@ import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitQAManifestForAnalysisRun, resolveInternalQAEmitEnabled } from '@/server/v3/qa-artifacts-wiring';
+import { emitQAManifestForAnalysisRun, resolveInternalQAEmitEnabled } from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s8 qa artifact wiring', () => {
   it('ordinary run with internal_qa_emit false writes nothing', async () => {

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitInternalQAArtifactManifest } from '@/server/v3/qa-artifacts';
+import { emitInternalQAArtifactManifest } from '@/server/v3/qa-artifacts.server';
 
 describe('v3 s8 internal qa artefact emitter', () => {
   it('disabled by default writes no files', async () => {

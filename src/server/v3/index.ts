@@ -8,6 +8,11 @@ export * from './evaluation-harness';
 export * from './flags';
 
 export * from './s4-shadow-scoring';
+// Disambiguate: EvidenceSufficiency and QAValidationResult are also declared
+// in ./s4-shadow-scoring with a narrower shape used only inside that module.
+// The canonical surface is ./types — re-export explicitly to win over the
+// `export *` ambiguity above.
+export type { EvidenceSufficiency, QAValidationResult } from './types';
 
 // s5-public-report re-declares a handful of symbols that also live in
 // release-state.ts and s5-internal-renderer.ts. Re-export everything except
@@ -51,5 +56,5 @@ export {
 } from './s6-variance-comparison';
 export * from './s6-internal-comparison-renderer';
 
-export * from './qa-artifacts';
-export * from './qa-artifacts-wiring';
+export * from './qa-artifacts.server';
+export * from './qa-artifacts-wiring.server';

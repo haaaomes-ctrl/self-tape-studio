@@ -2,12 +2,13 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitNoExportProofBundle, emitQAManifestForAnalysisRun, emitTraceArtefact } from '@/server/v3/qa-artifacts-wiring';
+import { emitNoExportProofBundle, emitQAManifestForAnalysisRun, emitTraceArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s8 trace + no-export proof emitters', () => {
   it('gate_trace has distinct blocker from validator_trace', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-trace-'));
     const trace = await emitTraceArtefact({ run_id: 'run-g1', artefact_id: 'validator_trace', relative_path: 'traces/validator_trace.json', trace_data: { ok: true }, root_dir: root, internal_qa_emit: true });
+    if (!trace.written) throw new Error('expected emit');
     await emitQAManifestForAnalysisRun({ run_id: 'run-g1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: [trace.artefact_id] });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-g1', 'manifest.json'), 'utf8'));
     expect(manifest.blocker_codes).toContain('gate_trace_missing');

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import * as wiring from '@/server/v3/qa-artifacts-wiring';
+import * as wiring from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s8 raw report non-blocking helper', () => {
   it('emitRawReportArtefact failure can be caught by caller without affecting flow', async () => {
