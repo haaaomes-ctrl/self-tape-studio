@@ -33,10 +33,10 @@ export const whoAmIAdmin = createServerFn({ method: "GET" })
       setResponseHeader("Cache-Control", "no-store");
     } catch {}
     const claims = (context as { claims?: { email?: string | null; sub?: string | null } }).claims;
-    const rawEmail = claims?.email ?? null;
-    const normalized = normalizeEmail(rawEmail);
+    const claimsEmail = claims?.email ?? null;
+    const normalized = normalizeEmail(claimsEmail);
     return {
-      rawEmail,
+      claimsEmail,
       normalizedEmail: normalized,
       expectedEmail: ADMIN_EMAIL,
       isAdmin: normalized === ADMIN_EMAIL,
