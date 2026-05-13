@@ -3195,40 +3195,59 @@ export async function runProcessTake(
     }
 
 
-    const qaArtefactIds: string[] = [];
-    const rawReportEmit = await safeEmitRawReportForQA({
-      run_id: `take-${takeId}`,
-      take_id: takeId,
-      take_index: 1,
-      submission_id: audition.id,
-      mux_playback_id: take.mux_playback_id ?? undefined,
-      source_stage: 'process_take_success',
-      source_module: 'process-take.server',
-      route_or_model_marker: 'runProcessTake',
-      commit_sha: process.env.GIT_COMMIT_SHA,
-      branch_name: process.env.GIT_BRANCH_NAME,
-      internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
-      report_data: report as Record<string, unknown>,
-    });
-    if (rawReportEmit.written && 'artefact_id' in rawReportEmit && typeof rawReportEmit.artefact_id === 'string' && rawReportEmit.artefact_id.length > 0) qaArtefactIds.push(rawReportEmit.artefact_id);
+    // QA artefact emission is fire-and-forget AFTER status=complete is written.
+    // Bounded by a hard timeout so a stuck Storage upload can never affect the
+    // user-facing pipeline. Failures are logged warnings only.
+    const QA_EMIT_TIMEOUT_MS = 5000;
+    void (async () => {
+      try {
+        const qaPromise = (async () => {
+          const qaArtefactIds: string[] = [];
+          const rawReportEmit = await safeEmitRawReportForQA({
+            run_id: `take-${takeId}`,
+            take_id: takeId,
+            take_index: 1,
+            submission_id: audition.id,
+            mux_playback_id: take.mux_playback_id ?? undefined,
+            source_stage: 'process_take_success',
+            source_module: 'process-take.server',
+            route_or_model_marker: 'runProcessTake',
+            commit_sha: process.env.GIT_COMMIT_SHA,
+            branch_name: process.env.GIT_BRANCH_NAME,
+            internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+            report_data: report as Record<string, unknown>,
+          });
+          if (rawReportEmit.written && 'artefact_id' in rawReportEmit && typeof rawReportEmit.artefact_id === 'string' && rawReportEmit.artefact_id.length > 0) qaArtefactIds.push(rawReportEmit.artefact_id);
 
-    const qaEmitResult = await emitQAManifestForAnalysisRun({
-      run_id: `take-${takeId}`,
-      submission_id: audition.id,
-      take_ids: [takeId],
-      route_module: 'runProcessTake',
-      internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
-      mux_playback_ids: take.mux_playback_id ? { take_1_mux_playback_id: take.mux_playback_id } : {},
-      commit_sha: process.env.GIT_COMMIT_SHA,
-      branch_name: process.env.GIT_BRANCH_NAME,
-      emitted_artefact_ids: qaArtefactIds,
-    });
-    if (qaEmitResult.warning) {
-      console.warn('[take-pipeline] internal_qa_manifest_emit_warning', {
-        take_id: takeId,
-        warning: qaEmitResult.warning,
-      });
-    }
+          const qaEmitResult = await emitQAManifestForAnalysisRun({
+            run_id: `take-${takeId}`,
+            submission_id: audition.id,
+            take_ids: [takeId],
+            route_module: 'runProcessTake',
+            internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+            mux_playback_ids: take.mux_playback_id ? { take_1_mux_playback_id: take.mux_playback_id } : {},
+            commit_sha: process.env.GIT_COMMIT_SHA,
+            branch_name: process.env.GIT_BRANCH_NAME,
+            emitted_artefact_ids: qaArtefactIds,
+          });
+          if (qaEmitResult.warning) {
+            console.warn('[take-pipeline] internal_qa_manifest_emit_warning', {
+              take_id: takeId,
+              warning: qaEmitResult.warning,
+            });
+          }
+        })();
+        const timeoutPromise = new Promise<void>((resolve) =>
+          setTimeout(() => resolve(), QA_EMIT_TIMEOUT_MS),
+        );
+        await Promise.race([qaPromise, timeoutPromise]);
+      } catch (qaErr) {
+        console.warn('[take-pipeline] internal_qa_emit_warning', {
+          take_id: takeId,
+          warning: qaErr instanceof Error ? qaErr.message : 'unknown',
+        });
+      }
+    })();
 
     return { ok: true, tier };
   } catch (err) {

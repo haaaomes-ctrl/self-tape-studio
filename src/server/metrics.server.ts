@@ -84,6 +84,7 @@ export type MetricName =
   | "reconciler_run"
   | "reconciler_recovered"
   | "reconciler_forced_error"
+  | "reconciler_recovered_complete"
   | "already_running_skip"
   | "result_discarded_state_changed"
   // User behaviour

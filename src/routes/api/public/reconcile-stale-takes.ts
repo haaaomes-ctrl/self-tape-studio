@@ -267,7 +267,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         ).toISOString();
         const { data: staleFinalising, error: fErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, processing_phase, attempt_count")
+          .select("id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence")
           .eq("processing_phase", "finalising")
           .eq("status", "processing")
           .lt("updated_at", finalisingCutoff)
@@ -282,6 +282,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const reconciled: string[] = [];
         const giveUp: string[] = [];
         const finalisingForcedError: string[] = [];
+        const finalisingRecoveredComplete: string[] = [];
         const transcodingRecovered: string[] = [];
         const transcodingForcedError: string[] = [];
         const uploadingRecovered: string[] = [];
@@ -295,6 +296,51 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             (now - new Date(take.created_at).getTime()) / 1000;
           const idleSeconds =
             (now - new Date(take.updated_at).getTime()) / 1000;
+
+          // If the report payload landed but the final status flip was lost
+          // (e.g. worker died after persist or QA emission stalled the
+          // post-write tail), surface the completed report rather than
+          // force-erroring a row that already has a usable result.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const reportRow = take as any;
+          const hasReport = reportRow.report && typeof reportRow.report === "object";
+          const hasScores = reportRow.scores && typeof reportRow.scores === "object";
+          if (hasReport && hasScores) {
+            const { error: recoverErr } = await supabaseAdmin
+              .from("takes")
+              .update({
+                status: "complete",
+                processing_phase: "complete",
+                error_message: null,
+              })
+              .eq("id", take.id)
+              .eq("processing_phase", "finalising")
+              .eq("status", "processing");
+            if (recoverErr) {
+              console.error("finalising_orphan_recover_complete_failed", {
+                takeId: take.id,
+                recoverErr,
+              });
+              metric("phase_transition_failure", {
+                take_id: take.id,
+                reason: "finalising_orphan_recover_complete_failed",
+              });
+              continue;
+            }
+            console.warn("[take-pipeline] finalising_orphan_recovered_complete", {
+              take_id: take.id,
+              age_seconds: Math.round(ageSeconds),
+              idle_seconds: Math.round(idleSeconds),
+            });
+            metric("reconciler_recovered_complete", {
+              take_id: take.id,
+              processing_phase: "finalising",
+              reason: "report_present",
+            });
+            finalisingRecoveredComplete.push(take.id);
+            continue;
+          }
+
           const { error: failErr } = await supabaseAdmin
             .from("takes")
             .update({
@@ -693,6 +739,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           reconciled,
           giveUp,
           finalisingForcedError,
+          finalisingRecoveredComplete,
           transcodingRecovered,
           transcodingForcedError,
           uploadingRecovered,

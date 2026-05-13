@@ -118,4 +118,19 @@ describe('v3 s8 qa artifact sink', () => {
     expect(out.sink_write_status).toBe('failed');
     expect(out.warning).toContain('artefact_path_invalid');
   });
+
+  it('storage upload that never resolves times out within budget', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'false';
+    process.env.QA_ARTIFACT_STORAGE_TIMEOUT_MS = '50';
+    upload.mockImplementation(() => new Promise(() => {})); // never resolves
+    const start = Date.now();
+    const out = await writeQAArtifact({ run_id: 'r10', relative_path: 'manifest.json', payload: { run_id: 'r10' } });
+    const elapsed = Date.now() - start;
+    expect(out.written).toBe(false);
+    expect(out.sink_write_status).toBe('failed');
+    expect(out.warning).toContain('storage_upload_timeout');
+    expect(elapsed).toBeLessThan(2000);
+    delete process.env.QA_ARTIFACT_STORAGE_TIMEOUT_MS;
+  });
 });
