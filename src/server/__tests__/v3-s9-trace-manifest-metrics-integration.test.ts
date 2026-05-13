@@ -22,6 +22,7 @@ describe('v3 s9 trace manifest metrics integration', () => {
       artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter' },
       artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false },
       legacy_adapter_artefact_ids: ['raw_report', 'evidence_anchors', 'public_claim_trace'],
+      public_claim_trace_summary: claimsOut.summary,
     });
     const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
@@ -39,6 +40,8 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
     expect(metrics.public_claim_trace_status).toBe('emitted');
     expect(metrics.public_claim_gate_status).toBe('insufficient');
+    expect(metrics.public_claim_trace_summary.claim_count).toBeGreaterThan(0);
+    expect(metrics.public_claim_trace_summary.rewrite_required_count).toBeGreaterThan(0);
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.gf01_rt15_status).toBe('blocked');
     expect(metrics.production_safe_status).toBe('blocked');

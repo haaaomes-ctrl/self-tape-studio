@@ -14,13 +14,13 @@ describe('v3 s9 public claim trace first pass', () => {
       casting_headline: 'Perfect match for this role',
       strengths: ['strong presence', 'great energy'],
       fix_first: 'send with confidence',
-      timestamped_notes: [{ timestamp: '00:10', note: 'fits the brief perfectly' }],
+      timestamped_notes: [{ timestamp: '00:10', note: 'First note' }, { timestamp: '00:20', text: 'Second note text' }],
     };
     await emitRawReportArtefact({ run_id: run, take_id: take, submission_id: 'sub1', source_stage: 'unit', source_module: 'test', report_data: report, root_dir: root, internal_qa_emit: true });
     const anchors = await emitEvidenceAnchorsFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: report, root_dir: root, internal_qa_emit: true });
     expect(anchors.written).toBe(true);
     const evidence = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'EvidenceAnchors.json'), 'utf8'));
-    const out = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: report, evidence_anchors_data: evidence, root_dir: root, internal_qa_emit: true });
+    const out = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: { artefact_type: 'raw_report', report_data: report }, evidence_anchors_data: evidence, root_dir: root, internal_qa_emit: true });
     expect(out.written).toBe(true);
     const trace = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'PublicClaimTrace.json'), 'utf8'));
     expect(trace.artefact_type).toBe('public_claim_trace');
@@ -30,8 +30,15 @@ describe('v3 s9 public claim trace first pass', () => {
     expect(trace.claims.every((c: any) => c.source_family === 'legacy_adapter')).toBe(true);
     expect(trace.claims.some((c: any) => c.public_safety_status === 'unsafe_or_overclaim')).toBe(true);
     expect(trace.claims.some((c: any) => c.claim_type === 'score_or_verdict' && (c.public_safety_status === 'blocked' || c.public_safety_status === 'internal_only'))).toBe(true);
+    const first = trace.claims.find((c: any) => c.claim_text === 'First note');
+    const second = trace.claims.find((c: any) => c.claim_text === 'Second note text');
+    expect(first.source_path).toBe('report_data.timestamped_notes[0].note');
+    expect(second.source_path).toBe('report_data.timestamped_notes[1].text');
+    expect(first.linked_evidence_anchor_ids.length).toBe(1);
+    expect(second.linked_evidence_anchor_ids.length).toBe(1);
+    expect(first.linked_evidence_anchor_ids[0]).not.toBe(second.linked_evidence_anchor_ids[0]);
 
-    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', 'evidence_anchors', 'public_claim_trace'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false }, legacy_adapter_artefact_ids: ['raw_report', 'evidence_anchors', 'public_claim_trace'] });
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', 'evidence_anchors', 'public_claim_trace'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false }, legacy_adapter_artefact_ids: ['raw_report', 'evidence_anchors', 'public_claim_trace'], public_claim_trace_summary: out.summary });
     const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.public_claim_trace).toBe('emitted');
     expect(manifest.missing_artifacts).not.toContain('public_claim_trace');
@@ -43,6 +50,8 @@ describe('v3 s9 public claim trace first pass', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+    expect(metrics.public_claim_trace_summary.claim_count).toBeGreaterThan(0);
+    expect(metrics.public_claim_trace_summary.rewrite_required_count).toBeGreaterThan(0);
   });
 
   it('does not emit when no claim source exists', async () => {

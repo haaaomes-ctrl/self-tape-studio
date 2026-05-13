@@ -16,7 +16,7 @@ function getQAWriteWarning(result: unknown): string | null {
   );
 }
 
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -69,6 +69,23 @@ export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolea
 async function writeInternalJson(root: string, run_id: string, relPath: string, payload: unknown, artefact_id?: string, fixture_id?: string) {
   return writeQAArtifact({ root_dir: root, run_id, relative_path: relPath, payload, artefact_id, fixture_id });
 }
+function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
+function unwrapRawReportData(raw: unknown): Record<string, unknown> {
+  const wrapper = isRecord(raw) ? raw : {};
+  const nested = isRecord(wrapper.report_data) ? wrapper.report_data : null;
+  return nested ?? wrapper;
+}
+function getTimestampedNoteText(row: Record<string, unknown>): string | null {
+  const note = typeof row.note === 'string' ? row.note.trim() : '';
+  const text = typeof row.text === 'string' ? row.text.trim() : '';
+  return note || text || null;
+}
+function getTimestampedNoteTextField(row: Record<string, unknown>): 'note' | 'text' | null {
+  if (typeof row.note === 'string' && row.note.trim()) return 'note';
+  if (typeof row.text === 'string' && row.text.trim()) return 'text';
+  return null;
+}
+function normaliseTraceText(value: unknown): string { return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 
 export async function emitRawReportArtefact(input: RawReportEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false };
@@ -124,7 +141,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids };
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary };
     const out = await emitInternalQAArtifactManifest(baseOptions);
     if (!out.written || !('manifest' in out)) {
       const initialWarning = mergeQAWarnings(
@@ -169,19 +186,21 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const root = input.root_dir ?? DEFAULT_ROOT;
-  const reportData = (input.raw_report_data ?? {}) as Record<string, unknown>;
+  const reportData = unwrapRawReportData(input.raw_report_data);
   const timestampedNotes = Array.isArray(reportData.timestamped_notes) ? reportData.timestamped_notes : [];
   const anchors = timestampedNotes
     .filter((x) => x && typeof x === 'object')
     .map((item, index) => {
       const row = item as Record<string, unknown>;
       const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
-      const note = typeof row.note === 'string' ? row.note : (typeof row.text === 'string' ? row.text : 'legacy report snapshot note');
+      const note = getTimestampedNoteText(row) ?? 'legacy report snapshot note';
+      const textField = getTimestampedNoteTextField(row) ?? 'note';
       return {
         evidence_anchor_id: `ea-${input.take_id}-${index + 1}`,
         source_family: 'legacy_adapter',
         source_artefact_id: 'raw_report',
-        source_path: 'report_data.timestamped_notes',
+        source_path: `report_data.timestamped_notes[${index}].${textField}`,
+        source_index: index,
         source_stage: input.source_stage,
         evidence_status: 'derived_from_legacy_report_snapshot',
         timestamp: ts,
@@ -236,18 +255,31 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
 
 const OVERCLAIM_PATTERN = /(perfect match|fits the brief perfectly|perfectly suits|professional standard|strong internal life|send with confidence|well aligned)/i;
 const GENERIC_PRAISE_PATTERN = /\b(strong presence|natural|confident|good storytelling|nice warmth|strong voice|great energy)\b/i;
+function findLinkedEvidenceAnchorForClaim(args: { claimText: string; sourcePath: string; timestamp?: string | null; anchors: Array<Record<string, unknown>>; }) {
+  const anchors = args.anchors;
+  const exactPathMatches = anchors.filter((anchor) => anchor.source_path === args.sourcePath);
+  if (exactPathMatches.length === 1) return exactPathMatches[0];
+  const normalisedClaim = normaliseTraceText(args.claimText);
+  const timestampMatches = anchors.filter((anchor) => args.timestamp && anchor.timestamp === args.timestamp && normaliseTraceText(anchor.evidence_text) === normalisedClaim);
+  if (timestampMatches.length === 1) return timestampMatches[0];
+  const textMatches = anchors.filter((anchor) => normaliseTraceText(anchor.evidence_text) === normalisedClaim);
+  if (textMatches.length === 1) return textMatches[0];
+  const broadMatches = anchors.filter((anchor) => anchor.source_path === 'report_data.timestamped_notes' && args.sourcePath.startsWith('report_data.timestamped_notes['));
+  if (broadMatches.length === 1) return broadMatches[0];
+  return null;
+}
 
 export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const root = input.root_dir ?? DEFAULT_ROOT;
-  const reportData = (input.raw_report_data ?? {}) as Record<string, unknown>;
+  const reportData = unwrapRawReportData(input.raw_report_data);
   const claims: Array<Record<string, unknown>> = [];
-  const addClaim = (claimText: string, sourcePath: string, claimType: string) => {
+  const addClaim = (claimText: string, sourcePath: string, claimType: string, timestamp?: string | null) => {
     const isScoreLike = claimType === 'score_or_verdict' || /\b\d{2,3}\b/.test(claimText);
     const isOverclaim = OVERCLAIM_PATTERN.test(claimText);
     const isGeneric = GENERIC_PRAISE_PATTERN.test(claimText);
-    const linked = (input.evidence_anchors_data?.anchors ?? []).find((a) => a.source_path === sourcePath || (a.evidence_text && claimText.includes(String(a.evidence_text))));
+    const linked = findLinkedEvidenceAnchorForClaim({ claimText, sourcePath, timestamp, anchors: (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>> });
     const linkedId = linked?.evidence_anchor_id ? [linked.evidence_anchor_id] : [];
     const hasLegacyLinkOnly = linkedId.length > 0 && linked?.source_family !== 'real_runtime_v3';
     const supportStatus = isScoreLike ? 'blocked' : (hasLegacyLinkOnly ? 'legacy_untraced_claim' : (linkedId.length > 0 ? 'supported_by_evidence_anchor' : 'missing_evidence'));
@@ -285,9 +317,12 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   for (const [pathKey, arr, type] of [['strengths', reportData.strengths, 'performance_quality'], ['improvements', reportData.improvements, 'technical_or_assessability'], ['category_notes', reportData.category_notes, 'performance_quality'], ['category_rationale', reportData.category_rationale, 'readiness']] as const) {
     if (Array.isArray(arr)) for (const item of arr) if (typeof item === 'string' && item.trim()) addClaim(item.trim(), `report_data.${pathKey}`, type);
   }
-  if (Array.isArray(reportData.timestamped_notes)) for (const item of reportData.timestamped_notes) {
+  if (Array.isArray(reportData.timestamped_notes)) for (const [index, item] of reportData.timestamped_notes.entries()) {
     const row = item as Record<string, unknown>;
-    if (typeof row.note === 'string' && row.note.trim()) addClaim(row.note.trim(), 'report_data.timestamped_notes', 'performance_quality');
+    const text = getTimestampedNoteText(row);
+    const field = getTimestampedNoteTextField(row);
+    const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
+    if (text && field) addClaim(text, `report_data.timestamped_notes[${index}].${field}`, 'performance_quality', ts);
   }
   if (claims.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const payload = {
@@ -317,7 +352,17 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   };
   assertSafeSegment(input.take_id, 'take_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/PublicClaimTrace.json`, payload, 'public_claim_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['public_claim_trace'] : [] };
+  return {
+    written: result.written as boolean,
+    emitted_artefact_ids: result.written ? ['public_claim_trace'] : [],
+    summary: {
+      claim_count: payload.claim_count,
+      unsupported_claim_count: payload.unsupported_claim_count,
+      legacy_untraced_claim_count: payload.legacy_untraced_claim_count,
+      unsafe_or_overclaim_count: payload.unsafe_or_overclaim_count,
+      rewrite_required_count: payload.rewrite_required_count,
+    },
+  };
 }
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
   return emitTraceArtefact({ ...input, artefact_id: 'model_run_trace', relative_path: 'traces/ModelRunTrace.json' });
