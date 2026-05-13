@@ -20,6 +20,18 @@ export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submis
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
+export interface EvidenceAnchorsEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  submission_id?: string;
+  take_id: string;
+  comparison_run_id?: string | null;
+  source_module: string;
+  source_stage: string;
+  raw_report_data?: Record<string, unknown> | null;
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
 export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
@@ -137,6 +149,75 @@ export async function emitTraceArtefact(input: TraceEmitterInput) {
   const root = input.root_dir ?? DEFAULT_ROOT;
   const result = await writeInternalJson(root, input.run_id, input.relative_path, input.trace_data, input.artefact_id);
   return { written: result.written as boolean, path: result.path ?? result.storage_path, artefact_id: input.artefact_id, warning: result.warning };
+}
+
+export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const reportData = (input.raw_report_data ?? {}) as Record<string, unknown>;
+  const timestampedNotes = Array.isArray(reportData.timestamped_notes) ? reportData.timestamped_notes : [];
+  const anchors = timestampedNotes
+    .filter((x) => x && typeof x === 'object')
+    .map((item, index) => {
+      const row = item as Record<string, unknown>;
+      const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
+      const note = typeof row.note === 'string' ? row.note : (typeof row.text === 'string' ? row.text : 'legacy report snapshot note');
+      return {
+        evidence_anchor_id: `ea-${input.take_id}-${index + 1}`,
+        source_family: 'legacy_adapter',
+        source_artefact_id: 'raw_report',
+        source_path: 'report_data.timestamped_notes',
+        source_stage: input.source_stage,
+        evidence_status: 'derived_from_legacy_report_snapshot',
+        timestamp: ts,
+        timestamp_source: ts ? 'raw_report_timestamped_note' : 'unavailable',
+        component_id: null,
+        claim_supported: false,
+        evidence_text: note,
+        confidence_or_strength: null,
+        assessability_limitations: ['legacy_report_snapshot_not_v3_multimodal'],
+        public_safe: true,
+        cannot_satisfy_v3_gate: true,
+        blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
+      };
+    });
+  if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
+  const payload = {
+    schema_version: 'tapecoach_v3_evidence_anchors_first_pass_v1',
+    artefact_type: 'evidence_anchors',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id,
+    comparison_run_id: input.comparison_run_id ?? null,
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    generated_at: new Date().toISOString(),
+    anchor_count: anchors.length,
+    anchors,
+    legacy_adapter_anchor_count: anchors.length,
+    report_snapshot_anchor_count: anchors.length,
+    real_runtime_anchor_count: 0,
+    timestamped_anchor_count: anchors.filter((a) => typeof a.timestamp === 'string' && a.timestamp.length > 0).length,
+    cannot_satisfy_v3_evidence_anchor_gate: true,
+    gate_satisfaction_reason: 'legacy_report_snapshot_only',
+    blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
+    redaction_notes: ['Internal-only trace; no secrets/tokens/session credentials emitted'],
+  };
+  assertSafeSegment(input.take_id, 'take_id');
+  const rel = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/EvidenceAnchors.json`;
+  const result = await writeInternalJson(root, input.run_id, rel, payload, 'evidence_anchors');
+  return {
+    written: result.written as boolean,
+    emitted: result.written as boolean,
+    emitted_artefact_ids: result.written ? ['evidence_anchors'] : [],
+    source_classification: result.written ? ('legacy_adapter' as const) : ('missing' as const),
+    level2_satisfies: false as const,
+    warning: result.warning ?? null,
+  };
 }
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
   return emitTraceArtefact({ ...input, artefact_id: 'model_run_trace', relative_path: 'traces/ModelRunTrace.json' });
