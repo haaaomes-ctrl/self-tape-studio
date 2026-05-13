@@ -23,6 +23,7 @@ describe('v3 s9 take input artifacts', () => {
       audition_type: 'screen',
       selected_level: 'advanced',
       brief_presence: 'supplied',
+      brief_presence_source: 'audition.brief',
       material_presence: 'unknown',
       mux_playback_id: 'pb1',
       mux_asset_or_upload_id_present: true,
@@ -102,6 +103,7 @@ describe('v3 s9 take input artifacts', () => {
       audition_type: null,
       selected_level: audition.audition_level,
       brief_presence: ((audition.brief && audition.brief.trim().length > 0) || (audition.extracted_brief && audition.extracted_brief.trim().length > 0)) ? 'supplied' : 'absent',
+      brief_presence_source: 'audition.brief',
       material_presence: 'unknown',
       mux_playback_id: 'pb-x',
       mux_asset_or_upload_id_present: true,
@@ -111,7 +113,7 @@ describe('v3 s9 take input artifacts', () => {
       take_updated_at: null,
       take_index: null,
       take_index_source: 'unavailable',
-      unavailable_fields: ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_created_at', 'take_updated_at', 'take_index'],
+      unavailable_fields: ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_created_at', 'take_updated_at', 'take_index', 'component_or_task_declaration'],
       internal_qa_emit: true,
       root_dir: root,
     });
@@ -126,12 +128,40 @@ describe('v3 s9 take input artifacts', () => {
     expect(submission.selected_level).toBe('intermediate');
     expect(submission.submission_created_at).toBeNull();
     expect(submission.submission_updated_at).toBeNull();
+    expect(submission.component_or_task_declaration).toBeNull();
+    expect(submission.component_or_task_declaration_status).toBe('unknown');
+    expect(submission.component_or_task_declaration_source).toBe('not_loaded');
     const take = JSON.parse(await readFile(path.join(base, 'take.json'), 'utf8'));
     expect(take.take_index).toBeNull();
     expect(take.take_index_source).toBe('unavailable');
     expect(take.unavailable_fields).toEqual(expect.arrayContaining(['take_index', 'take_created_at', 'take_updated_at']));
     expect(inputRecord.unavailable_fields).toEqual(expect.arrayContaining(['audition_type', 'material_presence_source']));
     expect(submission.unavailable_fields).toEqual(expect.arrayContaining(['submission_created_at', 'submission_updated_at']));
+  });
+
+  it('treats structured and json-string extracted brief cache as supplied and empty cache as absent', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s903-briefcache-'));
+    const baseInput = {
+      run_id: 'r1',
+      analysis_run_id: 'r1',
+      submission_id: 's1',
+      take_id: 't1',
+      source_module: 'process-take.server',
+      source_stage: 'process_take_success',
+      material_presence: 'unknown' as const,
+      internal_qa_emit: true,
+      root_dir: root,
+    };
+    await emitAnalysisInputArtefacts({ ...baseInput, brief_presence: 'supplied', brief_presence_source: 'audition.extracted_brief_cached', unavailable_fields: [] });
+    const one = JSON.parse(await readFile(path.join(root, 'r1', 'takes', 'take-t1', 'analysis-r1', 'inputs', 'input_record.json'), 'utf8'));
+    expect(one.brief_presence).toBe('supplied');
+    expect(one.brief_presence_source).toBe('audition.extracted_brief_cached');
+    await emitAnalysisInputArtefacts({ ...baseInput, run_id: 'r2', analysis_run_id: 'r2', take_id: 't2', brief_presence: 'supplied', brief_presence_source: 'audition.extracted_brief_cached', unavailable_fields: [] });
+    const two = JSON.parse(await readFile(path.join(root, 'r2', 'takes', 'take-t2', 'analysis-r2', 'inputs', 'input_record.json'), 'utf8'));
+    expect(two.brief_presence).toBe('supplied');
+    await emitAnalysisInputArtefacts({ ...baseInput, run_id: 'r3', analysis_run_id: 'r3', take_id: 't3', brief_presence: 'absent', brief_presence_source: 'none_loaded', unavailable_fields: [] });
+    const three = JSON.parse(await readFile(path.join(root, 'r3', 'takes', 'take-t3', 'analysis-r3', 'inputs', 'input_record.json'), 'utf8'));
+    expect(three.brief_presence).toBe('absent');
   });
 
   it('populates take timestamps when loaded and omits unavailable timestamp flags', async () => {
