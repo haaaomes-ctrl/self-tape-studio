@@ -18,6 +18,10 @@ function normalisePresenceTruthState(value: PresenceValue | null | undefined, so
   if (normalizedValue === 'unknown') return { value: normalizedValue, source: normalizedSource, status: 'unknown' };
   return { value: normalizedValue, source: normalizedSource, status: 'known' };
 }
+function assignPresenceTruthBucket(field: string, state: { value: PresenceValue; status: 'known' | 'unknown' | 'unavailable' }, known_truths: Record<string, unknown>, unavailable_truths: Record<string, unknown>) {
+  if (state.status === 'known') known_truths[field] = state.value;
+  else unavailable_truths[field] = state.value;
+}
 
 export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolean; env?: NodeJS.ProcessEnv }) { if (input?.internal_qa_emit === true) return true; const env = input?.env ?? process.env; return env.V3_QA_ARTIFACTS_ENABLED === 'true' || env.INTERNAL_QA_EMIT === 'true'; }
 
@@ -228,25 +232,23 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   const unresolved_inputs: string[] = [];
   const unavailable_fields = [...(input.unavailable_fields ?? [])];
   const known_truths: Record<string, unknown> = { take_id: input.take_id, analysis_run_id: analysisRunId };
+  const unavailable_truths: Record<string, unknown> = {};
   if (input.submission_id) known_truths.submission_id = input.submission_id;
   if (input.selected_level) known_truths.selected_level = input.selected_level;
   const briefPresenceState = normalisePresenceTruthState(input.brief_presence, input.brief_presence_source ?? 'unavailable');
   const materialPresenceState = normalisePresenceTruthState(input.material_presence, input.material_presence_source ?? 'unavailable');
-  if (briefPresenceState.status === 'known') known_truths.brief_presence = briefPresenceState.value;
-  if (materialPresenceState.status === 'known') known_truths.material_presence = materialPresenceState.value;
+  assignPresenceTruthBucket('brief_presence', briefPresenceState, known_truths, unavailable_truths);
+  assignPresenceTruthBucket('material_presence', materialPresenceState, known_truths, unavailable_truths);
   known_truths.safe_media_reference_state = { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' };
   if (input.take_created_at) known_truths.take_created_at = input.take_created_at;
   if (input.take_updated_at) known_truths.take_updated_at = input.take_updated_at;
   if (input.take_index != null) known_truths.take_index = input.take_index;
   const inferred_truths: Record<string, unknown> = { comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [input.take_id] };
-  const unavailable_truths = {
-    material_presence: materialPresenceState.value,
-    role_fit: 'unavailable_without_brief_or_material_support',
-    comparison_evidence: 'not_executed',
-    evidence_anchors: 'not_emitted',
-    public_claim_support: 'not_emitted',
-    component_or_task_declaration: input.component_or_task_declaration_status === 'unknown' ? 'unknown_or_not_loaded' : null,
-  };
+  unavailable_truths.role_fit = 'unavailable_without_brief_or_material_support';
+  unavailable_truths.comparison_evidence = 'not_executed';
+  unavailable_truths.evidence_anchors = 'not_emitted';
+  unavailable_truths.public_claim_support = 'not_emitted';
+  if ((input.component_or_task_declaration_status ?? 'unknown') === 'unknown') unavailable_truths.component_or_task_declaration = 'unknown_or_not_loaded';
   const unsafe_or_blocked_truths = { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', gf01_rt15_status: 'blocked', same_video_comparison_status: 'not_executed_single_take' };
   const redaction_notes = ['No secret/token/session fields emitted; only safe booleans/refs included'];
   const resolver_output = {

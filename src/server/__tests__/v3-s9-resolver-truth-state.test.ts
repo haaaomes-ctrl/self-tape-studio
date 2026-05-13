@@ -27,6 +27,21 @@ describe('v3 s9 resolver_output presence truthfulness', () => {
     expect(['unknown', 'unavailable']).toContain(resolverOutput.material_presence.status);
     expect(resolverOutput.material_presence.status).not.toBe('known');
     expect(truth.known_truths.material_presence).toBeUndefined();
+    expect(truth.unavailable_truths.material_presence).toBe('unknown');
+  });
+
+  it('known supplied material is known and not unavailable', async () => {
+    const { resolverOutput, truth } = await emitAndRead({ material_presence: 'supplied', material_presence_source: 'loaded_runtime_field' });
+    expect(resolverOutput.material_presence.status).toBe('known');
+    expect(truth.known_truths.material_presence).toBe('supplied');
+    expect('material_presence' in truth.unavailable_truths).toBe(false);
+  });
+
+  it('known absent material is known and not unavailable', async () => {
+    const { resolverOutput, truth } = await emitAndRead({ material_presence: 'absent', material_presence_source: 'loaded_runtime_field' });
+    expect(resolverOutput.material_presence.status).toBe('known');
+    expect(truth.known_truths.material_presence).toBe('absent');
+    expect('material_presence' in truth.unavailable_truths).toBe(false);
   });
 
   it('material_presence unknown/not_loaded is not known and stays unavailable bucket', async () => {
@@ -61,5 +76,15 @@ describe('v3 s9 resolver_output presence truthfulness', () => {
     expect(manifest.public_technique_authority_status).toBe('blocked');
     const txt = `${JSON.stringify(resolverOutput)}${JSON.stringify(truth)}`.toLowerCase();
     for (const banned of ['reconciler_secret','anon_session_secret','mux_token_id','mux_token_secret','mux_webhook_secret','token_secret','webhook_secret','session_secret']) expect(txt).not.toContain(banned);
+  });
+
+  it('truth buckets are mutually exclusive for relevant keys', async () => {
+    const { truth } = await emitAndRead({ brief_presence: 'unknown', brief_presence_source: 'unavailable', material_presence: 'unknown', material_presence_source: 'not_loaded' });
+    const buckets = [truth.known_truths ?? {}, truth.inferred_truths ?? {}, truth.unavailable_truths ?? {}, truth.unsafe_or_blocked_truths ?? {}];
+    const relevantKeys = ['material_presence', 'brief_presence', 'component_or_task_declaration', 'take_index'];
+    for (const key of relevantKeys) {
+      const count = buckets.reduce((acc, b) => acc + (Object.prototype.hasOwnProperty.call(b, key) ? 1 : 0), 0);
+      expect(count).toBeLessThanOrEqual(1);
+    }
   });
 });
