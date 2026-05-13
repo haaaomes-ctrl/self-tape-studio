@@ -64,7 +64,7 @@ const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[]
   { artefact_id: 'validator_trace', name: 'ValidatorTrace', expected_path: 'traces/validator_trace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'gate_trace', name: 'GateTrace', expected_path: 'traces/gate_trace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'model_run_trace', name: 'ModelRunTrace', expected_path: 'traces/ModelRunTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
-  { artefact_id: 'raw_report', name: 'raw report', expected_path: 'reports/take_1.raw_report.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'raw_report', name: 'raw report', expected_path: 'reports/raw_report.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'comparison_raw', name: 'comparison raw', expected_path: 'comparison/comparison.raw.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'comparison_report_internal', name: 'comparison report internal', expected_path: 'comparison/comparison.report.internal.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'same_video_repeatability_trace', name: 'same video repeatability trace', expected_path: 'comparison_traces/same_video_repeatability_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
