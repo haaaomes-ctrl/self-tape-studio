@@ -3224,7 +3224,11 @@ export async function runProcessTake(
           ? audition.extracted_brief
           : null;
       const briefPresence: 'supplied' | 'absent' = briefSourceText ? 'supplied' : 'absent';
-      const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_created_at', 'take_updated_at'];
+      const takeCreatedAt = take.created_at ? new Date(take.created_at).toISOString() : null;
+      const takeUpdatedAt = take.updated_at ? new Date(take.updated_at).toISOString() : null;
+      const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index'];
+      if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
+      if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
       const inputArtefacts = await emitAnalysisInputArtefacts({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -3243,9 +3247,10 @@ export async function runProcessTake(
         mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
         submission_created_at: null,
         submission_updated_at: null,
-        take_created_at: null,
-        take_updated_at: null,
-        take_index: 1,
+        take_created_at: takeCreatedAt,
+        take_updated_at: takeUpdatedAt,
+        take_index: null,
+        take_index_source: 'unavailable',
         component_or_task_declaration: [],
         media_readiness_state: take.status ?? null,
         unavailable_fields: unavailableInputFields,

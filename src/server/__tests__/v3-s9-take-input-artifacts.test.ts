@@ -58,6 +58,7 @@ describe('v3 s9 take input artifacts', () => {
     }
 
     expect(take.stable_take_identity).toEqual({ take_id: takeId, analysis_run_id: run });
+    expect(take.take_index_source).toBe('loaded_take_index');
 
     await emitRawReportArtefact({ run_id: run, take_id: takeId, submission_id: 'sub1', source_stage: 'unit', source_module: 'test', report_data: { schema_version: 'v1-legacy' }, root_dir: root, internal_qa_emit: true });
     await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: takeId, submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', ...emit.emitted_artefact_ids], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false } });
@@ -108,7 +109,9 @@ describe('v3 s9 take input artifacts', () => {
       submission_updated_at: null,
       take_created_at: null,
       take_updated_at: null,
-      unavailable_fields: ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_created_at', 'take_updated_at'],
+      take_index: null,
+      take_index_source: 'unavailable',
+      unavailable_fields: ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_created_at', 'take_updated_at', 'take_index'],
       internal_qa_emit: true,
       root_dir: root,
     });
@@ -123,7 +126,38 @@ describe('v3 s9 take input artifacts', () => {
     expect(submission.selected_level).toBe('intermediate');
     expect(submission.submission_created_at).toBeNull();
     expect(submission.submission_updated_at).toBeNull();
+    const take = JSON.parse(await readFile(path.join(base, 'take.json'), 'utf8'));
+    expect(take.take_index).toBeNull();
+    expect(take.take_index_source).toBe('unavailable');
+    expect(take.unavailable_fields).toEqual(expect.arrayContaining(['take_index', 'take_created_at', 'take_updated_at']));
     expect(inputRecord.unavailable_fields).toEqual(expect.arrayContaining(['audition_type', 'material_presence_source']));
     expect(submission.unavailable_fields).toEqual(expect.arrayContaining(['submission_created_at', 'submission_updated_at']));
+  });
+
+  it('populates take timestamps when loaded and omits unavailable timestamp flags', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s903-ts-'));
+    await emitAnalysisInputArtefacts({
+      run_id: 'take-ts',
+      analysis_run_id: 'take-ts',
+      submission_id: 'sub-ts',
+      take_id: 'tk-ts',
+      source_module: 'process-take.server',
+      source_stage: 'process_take_success',
+      brief_presence: 'supplied',
+      material_presence: 'unknown',
+      take_created_at: '2026-03-01T10:00:00.000Z',
+      take_updated_at: '2026-03-01T10:05:00.000Z',
+      take_index: null,
+      take_index_source: 'unavailable',
+      unavailable_fields: ['take_index'],
+      internal_qa_emit: true,
+      root_dir: root,
+    });
+    const take = JSON.parse(await readFile(path.join(root, 'take-ts', 'takes', 'take-tk-ts', 'analysis-take-ts', 'inputs', 'take.json'), 'utf8'));
+    expect(take.take_created_at).toBe('2026-03-01T10:00:00.000Z');
+    expect(take.take_updated_at).toBe('2026-03-01T10:05:00.000Z');
+    expect(take.unavailable_fields).not.toContain('take_created_at');
+    expect(take.unavailable_fields).not.toContain('take_updated_at');
+    expect(take.stable_take_identity).toEqual({ take_id: 'tk-ts', analysis_run_id: 'take-ts' });
   });
 });
