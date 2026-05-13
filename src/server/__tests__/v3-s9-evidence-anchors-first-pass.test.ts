@@ -63,4 +63,42 @@ describe('v3 s9 evidence anchors first pass', () => {
     expect(traces.anchors[0].evidence_text).toBe('Direct text note');
     expect(traces.anchors[0].source_path).toBe('report_data.timestamped_notes[0].text');
   });
+  it('skips malformed timestamped rows and only emits real note/text anchors', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906b-malformed-'));
+    const out = await emitEvidenceAnchorsFirstPass({
+      run_id: 'run-malformed',
+      analysis_run_id: 'run-malformed',
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      raw_report_data: { artefact_type: 'raw_report', report_data: { schema_version: 'v1-legacy', timestamped_notes: [{}, { note: '' }, { text: '' }, { note: 'Real note', timestamp: '00:10' }] } },
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(out.written).toBe(true);
+    const traces = JSON.parse(await readFile(path.join(root, 'run-malformed', 'takes', 'take-t1', 'analysis-run-malformed', 'traces', 'EvidenceAnchors.json'), 'utf8'));
+    expect(traces.anchor_count).toBe(1);
+    expect(traces.anchors[0].evidence_text).toBe('Real note');
+    expect(traces.anchors[0].source_path).toBe('report_data.timestamped_notes[3].note');
+    expect(traces.anchors.map((a: any) => a.evidence_text)).not.toContain('legacy report snapshot note');
+  });
+
+  it('does not emit when all timestamped rows are malformed/blank', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906b-all-blank-'));
+    const out = await emitEvidenceAnchorsFirstPass({
+      run_id: 'run-all-blank',
+      analysis_run_id: 'run-all-blank',
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      raw_report_data: { artefact_type: 'raw_report', report_data: { schema_version: 'v1-legacy', timestamped_notes: [{}, { note: '' }, { text: '   ' }] } },
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
+    await expect(access(path.join(root, 'run-all-blank', 'takes', 'take-t1', 'analysis-run-all-blank', 'traces', 'EvidenceAnchors.json'))).rejects.toThrow();
+  });
 });

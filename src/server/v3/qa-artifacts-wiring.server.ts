@@ -193,8 +193,9 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     .map((item, index) => {
       const row = item as Record<string, unknown>;
       const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
-      const note = getTimestampedNoteText(row) ?? 'legacy report snapshot note';
-      const textField = getTimestampedNoteTextField(row) ?? 'note';
+      const note = getTimestampedNoteText(row);
+      const textField = getTimestampedNoteTextField(row);
+      if (!note || !textField) return null;
       return {
         evidence_anchor_id: `ea-${input.take_id}-${index + 1}`,
         source_family: 'legacy_adapter',
@@ -214,7 +215,8 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
         cannot_satisfy_v3_gate: true,
         blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
       };
-    });
+    })
+    .filter((anchor): anchor is NonNullable<typeof anchor> => anchor !== null);
   if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
   const payload = {
     schema_version: 'tapecoach_v3_evidence_anchors_first_pass_v1',
