@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth, signOut } from "@/lib/auth";
 import {
   listAllArtifacts,
   signArtifactDownload,
@@ -18,6 +18,42 @@ function normalizeEmail(email?: string | null): string {
   return email?.trim().toLowerCase() ?? "";
 }
 
+function RouteErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+  const router = useRouter();
+  const status = (error as unknown as { status?: number }).status;
+  return (
+    <div className="mx-auto max-w-2xl px-6 py-12">
+      <h1 className="font-display text-2xl font-bold text-foreground">
+        Storage downloads — error
+      </h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Something failed inside the admin storage page. Details below.
+      </p>
+      <dl className="mt-4 grid grid-cols-[120px_1fr] gap-y-1 rounded-md border border-border bg-card p-4 font-mono text-xs">
+        <dt>name</dt>
+        <dd>{error?.name ?? "Error"}</dd>
+        <dt>status</dt>
+        <dd>{status ?? "—"}</dd>
+        <dt>message</dt>
+        <dd className="break-all">{error?.message ?? String(error)}</dd>
+      </dl>
+      <div className="mt-4 flex gap-2">
+        <Button
+          onClick={() => {
+            router.invalidate();
+            reset();
+          }}
+        >
+          Retry
+        </Button>
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Reload page
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/admin/storage-downloads")({
   head: () => ({
     meta: [
@@ -26,6 +62,7 @@ export const Route = createFileRoute("/admin/storage-downloads")({
     ],
   }),
   component: StorageDownloadsPage,
+  errorComponent: RouteErrorComponent,
 });
 
 function formatBytes(n: number): string {
@@ -50,75 +87,45 @@ function triggerDownload(url: string, filename: string) {
   a.remove();
 }
 
-type ClientAuthState = {
-  loading: boolean;
-  hasSession: boolean;
-  rawEmail: string | null;
+type WhoAmI = {
+  claimsEmail: string | null;
   normalizedEmail: string;
+  expectedEmail: string;
   isAdmin: boolean;
-  error: string | null;
 };
 
-function useClientAuth(): ClientAuthState {
-  const [state, setState] = useState<ClientAuthState>({
-    loading: true,
-    hasSession: false,
-    rawEmail: null,
-    normalizedEmail: "",
-    isAdmin: false,
-    error: null,
-  });
+type ServerError = { status: number | null; message: string } | null;
 
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (cancelled) return;
-      const email = data?.user?.email ?? null;
-      const normalized = normalizeEmail(email);
-      setState({
-        loading: false,
-        hasSession: !!data?.user,
-        rawEmail: email,
-        normalizedEmail: normalized,
-        isAdmin: normalized === ADMIN_EMAIL,
-        error: error?.message ?? null,
-      });
-    };
-    refresh();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      refresh();
-    });
-    return () => {
-      cancelled = true;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  return state;
+async function toServerError(e: unknown): Promise<ServerError> {
+  if (e instanceof Response) {
+    const text = await e.text().catch(() => e.statusText);
+    return { status: e.status, message: text || e.statusText };
+  }
+  if (e instanceof Error) return { status: null, message: e.message };
+  return { status: null, message: String(e) };
 }
 
 function StorageDownloadsPage() {
-  const clientAuth = useClientAuth();
+  const { user, loading } = useAuth();
   const list = useServerFn(listAllArtifacts);
   const sign = useServerFn(signArtifactDownload);
   const whoAmI = useServerFn(whoAmIAdmin);
 
-  const whoAmIQ = useQuery({
-    queryKey: ["admin", "whoami"],
-    queryFn: () => whoAmI(),
-    enabled: !clientAuth.loading && clientAuth.hasSession,
-    retry: false,
-  });
+  const clientEmail = user?.email ?? null;
+  const clientNormalized = normalizeEmail(clientEmail);
+  const clientEmailMatches = clientNormalized === ADMIN_EMAIL;
 
-  const serverIsAdmin = whoAmIQ.data?.isAdmin === true;
+  const [whoState, setWhoState] = useState<{
+    loading: boolean;
+    data: WhoAmI | null;
+    error: ServerError;
+  }>({ loading: false, data: null, error: null });
 
-  const filesQ = useQuery({
-    queryKey: ["admin", "qa-artifacts"],
-    queryFn: () => list(),
-    enabled: serverIsAdmin,
-    retry: false,
-  });
+  const [filesState, setFilesState] = useState<{
+    loading: boolean;
+    data: ArtifactEntry[] | null;
+    error: ServerError;
+  }>({ loading: false, data: null, error: null });
 
   const [busyPath, setBusyPath] = useState<string | null>(null);
   const [bulk, setBulk] = useState<{
@@ -129,21 +136,56 @@ function StorageDownloadsPage() {
     failed: { path: string; error: string }[];
   }>({ running: false, done: 0, total: 0, current: null, failed: [] });
 
+  // Verify admin server-side only when client is signed in as the expected email.
+  useEffect(() => {
+    if (loading || !user || !clientEmailMatches) return;
+    let cancelled = false;
+    setWhoState({ loading: true, data: null, error: null });
+    whoAmI()
+      .then(async (data) => {
+        if (cancelled) return;
+        setWhoState({ loading: false, data: data as WhoAmI, error: null });
+      })
+      .catch(async (e) => {
+        if (cancelled) return;
+        setWhoState({ loading: false, data: null, error: await toServerError(e) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, user, clientEmailMatches, whoAmI]);
+
+  const serverIsAdmin = whoState.data?.isAdmin === true;
+
+  const loadFiles = useCallback(async () => {
+    setFilesState({ loading: true, data: null, error: null });
+    try {
+      const data = (await list()) as ArtifactEntry[];
+      setFilesState({ loading: false, data, error: null });
+    } catch (e) {
+      setFilesState({ loading: false, data: null, error: await toServerError(e) });
+    }
+  }, [list]);
+
+  useEffect(() => {
+    if (serverIsAdmin) loadFiles();
+  }, [serverIsAdmin, loadFiles]);
+
   async function downloadOne(entry: ArtifactEntry) {
     setBusyPath(entry.path);
     try {
       const { signedUrl } = await sign({ data: { path: entry.path } });
       triggerDownload(signedUrl, entry.path.split("/").pop() || "download");
     } catch (e) {
-      console.error("download failed", e);
-      alert(`Download failed: ${(e as Error).message}`);
+      const err = await toServerError(e);
+      alert(`Download failed: ${err?.message ?? "unknown"}`);
     } finally {
       setBusyPath(null);
     }
   }
 
   async function downloadAll() {
-    const data = filesQ.data;
+    const data = filesState.data;
     if (!data || data.length === 0) return;
     setBulk({ running: true, done: 0, total: data.length, current: null, failed: [] });
     const failed: { path: string; error: string }[] = [];
@@ -154,7 +196,8 @@ function StorageDownloadsPage() {
         const { signedUrl } = await sign({ data: { path: entry.path } });
         triggerDownload(signedUrl, entry.path.split("/").pop() || "download");
       } catch (e) {
-        failed.push({ path: entry.path, error: (e as Error).message });
+        const err = await toServerError(e);
+        failed.push({ path: entry.path, error: err?.message ?? "unknown" });
       }
       await new Promise((r) => setTimeout(r, 600));
     }
@@ -167,7 +210,7 @@ function StorageDownloadsPage() {
     });
   }
 
-  const data = filesQ.data;
+  // ---- Render ----
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
@@ -180,160 +223,248 @@ function StorageDownloadsPage() {
 
       {/* Diagnostics */}
       <div className="mt-6 rounded-md border border-border bg-card p-4 text-sm">
-        <div className="font-semibold mb-2">Auth diagnostics</div>
-        <dl className="grid grid-cols-[200px_1fr] gap-y-1 font-mono text-xs">
+        <div className="font-semibold mb-2">Diagnostics</div>
+        <dl className="grid grid-cols-[220px_1fr] gap-y-1 font-mono text-xs">
           <dt>pathname</dt>
           <dd>{typeof window !== "undefined" ? window.location.pathname : "(ssr)"}</dd>
-          <dt>component loaded</dt>
-          <dd>yes</dd>
           <dt>client.loading</dt>
-          <dd>{String(clientAuth.loading)}</dd>
+          <dd>{String(loading)}</dd>
           <dt>client.hasSession</dt>
-          <dd>{String(clientAuth.hasSession)}</dd>
+          <dd>{String(!!user)}</dd>
           <dt>client.rawEmail</dt>
-          <dd>{JSON.stringify(clientAuth.rawEmail)}</dd>
+          <dd>{JSON.stringify(clientEmail)}</dd>
           <dt>client.normalizedEmail</dt>
-          <dd>{JSON.stringify(clientAuth.normalizedEmail)}</dd>
+          <dd>{JSON.stringify(clientNormalized)}</dd>
           <dt>expectedAdminEmail</dt>
           <dd>{JSON.stringify(ADMIN_EMAIL)}</dd>
-          <dt>client.isAdmin</dt>
-          <dd>{String(clientAuth.isAdmin)}</dd>
-          <dt>client.error</dt>
-          <dd>{JSON.stringify(clientAuth.error)}</dd>
-          <dt>server.status</dt>
-          <dd>
-            {whoAmIQ.isLoading
-              ? "loading"
-              : whoAmIQ.error
-                ? `error: ${(whoAmIQ.error as Error).message}`
-                : whoAmIQ.data
-                  ? "ok"
-                  : "idle"}
-          </dd>
-          <dt>server.rawEmail</dt>
-          <dd>{JSON.stringify(whoAmIQ.data?.rawEmail ?? null)}</dd>
+          <dt>client.matches</dt>
+          <dd>{String(clientEmailMatches)}</dd>
+          <dt>server.loading</dt>
+          <dd>{String(whoState.loading)}</dd>
+          <dt>server.claimsEmail</dt>
+          <dd>{JSON.stringify(whoState.data?.claimsEmail ?? null)}</dd>
           <dt>server.normalizedEmail</dt>
-          <dd>{JSON.stringify(whoAmIQ.data?.normalizedEmail ?? null)}</dd>
-          <dt>server.userId</dt>
-          <dd>{JSON.stringify(whoAmIQ.data?.userId ?? null)}</dd>
+          <dd>{JSON.stringify(whoState.data?.normalizedEmail ?? null)}</dd>
           <dt>server.isAdmin</dt>
           <dd>{String(serverIsAdmin)}</dd>
+          <dt>server.error</dt>
+          <dd>
+            {whoState.error
+              ? `${whoState.error.status ?? ""} ${whoState.error.message}`
+              : "—"}
+          </dd>
+          <dt>files.error</dt>
+          <dd>
+            {filesState.error
+              ? `${filesState.error.status ?? ""} ${filesState.error.message}`
+              : "—"}
+          </dd>
         </dl>
       </div>
 
-      {!serverIsAdmin ? (
-        <div className="mt-6 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          Storage listing is hidden until the server confirms admin email.
-          {clientAuth.loading
-            ? " Waiting for session to hydrate…"
-            : !clientAuth.hasSession
-              ? " You are not signed in."
-              : ""}
-        </div>
-      ) : (
-        <>
-          <div className="mt-6 flex items-center gap-3">
-            <Button
-              onClick={() => filesQ.refetch()}
-              variant="outline"
-              disabled={filesQ.isLoading}
-            >
-              Refresh
-            </Button>
-            <Button
-              onClick={downloadAll}
-              disabled={!data || data.length === 0 || bulk.running}
-            >
-              {bulk.running ? "Downloading…" : "Download all"}
-            </Button>
-          </div>
-
-          <p className="mt-2 text-xs text-muted-foreground">
-            Your browser may block multiple automatic downloads — allow them when prompted.
+      {/* State machine */}
+      {loading ? (
+        <Panel>Checking your app login session…</Panel>
+      ) : !user ? (
+        <Panel>
+          <p>
+            You must sign in to the app as <code>{ADMIN_EMAIL}</code> to access
+            storage downloads.
           </p>
-
-          {bulk.running || bulk.done > 0 ? (
-            <div className="mt-4 rounded-md border border-border bg-card p-4">
-              <div className="text-sm">
-                {bulk.done} of {bulk.total} downloaded
-                {bulk.current ? (
-                  <>
-                    {" "}
-                    — <span className="font-mono text-xs">{bulk.current}</span>
-                  </>
-                ) : null}
-              </div>
-              <Progress
-                value={bulk.total ? (bulk.done / bulk.total) * 100 : 0}
-                className="mt-2"
-              />
-              {bulk.failed.length > 0 ? (
-                <div className="mt-3 text-sm text-destructive">
-                  <div className="font-semibold">Failed ({bulk.failed.length}):</div>
-                  <ul className="mt-1 list-disc pl-5">
-                    {bulk.failed.map((f) => (
-                      <li key={f.path} className="font-mono text-xs">
-                        {f.path}: {f.error}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="mt-6 overflow-x-auto rounded-md border border-border">
-            {filesQ.isLoading ? (
-              <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-            ) : filesQ.error ? (
-              <div className="p-6 text-sm text-destructive">
-                Error: {(filesQ.error as Error).message}
-              </div>
-            ) : !data || data.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">No files found.</div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted text-left">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Path</th>
-                    <th className="px-3 py-2 font-medium">Size</th>
-                    <th className="px-3 py-2 font-medium">Modified</th>
-                    <th className="px-3 py-2 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((f) => (
-                    <tr key={f.path} className="border-t border-border">
-                      <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {formatBytes(f.size)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                        {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => downloadOne(f)}
-                          disabled={busyPath === f.path || bulk.running}
-                        >
-                          {busyPath === f.path ? "…" : "Download"}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {data ? (
-              <div className="border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                {data.length} file{data.length === 1 ? "" : "s"}
-              </div>
-            ) : null}
+          <div className="mt-4">
+            <Button asChild>
+              <Link to="/login">Sign in to continue</Link>
+            </Button>
           </div>
-        </>
+        </Panel>
+      ) : !clientEmailMatches ? (
+        <Panel tone="warn">
+          <p>This account is not authorized for storage downloads.</p>
+          <ul className="mt-2 font-mono text-xs">
+            <li>current: {clientEmail ?? "(none)"}</li>
+            <li>normalized: {clientNormalized || "(none)"}</li>
+            <li>expected: {ADMIN_EMAIL}</li>
+          </ul>
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await signOut();
+              }}
+            >
+              Sign out
+            </Button>
+          </div>
+        </Panel>
+      ) : whoState.loading ? (
+        <Panel>Verifying admin access with the server…</Panel>
+      ) : whoState.error ? (
+        <Panel tone="warn">
+          <p>Server could not verify admin access.</p>
+          <pre className="mt-2 overflow-x-auto rounded bg-muted p-2 text-xs">
+            {whoState.error.status ?? ""} {whoState.error.message}
+          </pre>
+        </Panel>
+      ) : !serverIsAdmin ? (
+        <Panel tone="warn">
+          <p>Server rejected admin access.</p>
+          <ul className="mt-2 font-mono text-xs">
+            <li>server email: {whoState.data?.claimsEmail ?? "(none)"}</li>
+            <li>server normalized: {whoState.data?.normalizedEmail ?? "(none)"}</li>
+            <li>expected: {ADMIN_EMAIL}</li>
+          </ul>
+        </Panel>
+      ) : (
+        <FilesUI
+          state={filesState}
+          reload={loadFiles}
+          downloadOne={downloadOne}
+          downloadAll={downloadAll}
+          busyPath={busyPath}
+          bulk={bulk}
+        />
       )}
     </div>
+  );
+}
+
+function Panel({
+  children,
+  tone = "info",
+}: {
+  children: React.ReactNode;
+  tone?: "info" | "warn";
+}) {
+  return (
+    <div
+      className={
+        "mt-6 rounded-md border p-4 text-sm " +
+        (tone === "warn"
+          ? "border-destructive/40 bg-destructive/5"
+          : "border-border bg-card")
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+function FilesUI({
+  state,
+  reload,
+  downloadOne,
+  downloadAll,
+  busyPath,
+  bulk,
+}: {
+  state: { loading: boolean; data: ArtifactEntry[] | null; error: ServerError };
+  reload: () => void;
+  downloadOne: (e: ArtifactEntry) => void;
+  downloadAll: () => void;
+  busyPath: string | null;
+  bulk: {
+    running: boolean;
+    done: number;
+    total: number;
+    current: string | null;
+    failed: { path: string; error: string }[];
+  };
+}) {
+  const data = state.data;
+  return (
+    <>
+      <div className="mt-6 flex items-center gap-3">
+        <Button onClick={reload} variant="outline" disabled={state.loading}>
+          Refresh
+        </Button>
+        <Button
+          onClick={downloadAll}
+          disabled={!data || data.length === 0 || bulk.running}
+        >
+          {bulk.running ? "Downloading…" : "Download all"}
+        </Button>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Your browser may block multiple automatic downloads — allow them when prompted.
+      </p>
+
+      {bulk.running || bulk.done > 0 ? (
+        <div className="mt-4 rounded-md border border-border bg-card p-4">
+          <div className="text-sm">
+            {bulk.done} of {bulk.total} downloaded
+            {bulk.current ? (
+              <>
+                {" "}— <span className="font-mono text-xs">{bulk.current}</span>
+              </>
+            ) : null}
+          </div>
+          <Progress
+            value={bulk.total ? (bulk.done / bulk.total) * 100 : 0}
+            className="mt-2"
+          />
+          {bulk.failed.length > 0 ? (
+            <div className="mt-3 text-sm text-destructive">
+              <div className="font-semibold">Failed ({bulk.failed.length}):</div>
+              <ul className="mt-1 list-disc pl-5">
+                {bulk.failed.map((f) => (
+                  <li key={f.path} className="font-mono text-xs">
+                    {f.path}: {f.error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-6 overflow-x-auto rounded-md border border-border">
+        {state.loading ? (
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        ) : state.error ? (
+          <div className="p-6 text-sm text-destructive">
+            Error: {state.error.status ?? ""} {state.error.message}
+          </div>
+        ) : !data || data.length === 0 ? (
+          <div className="p-6 text-sm text-muted-foreground">No files found.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted text-left">
+              <tr>
+                <th className="px-3 py-2 font-medium">Path</th>
+                <th className="px-3 py-2 font-medium">Size</th>
+                <th className="px-3 py-2 font-medium">Modified</th>
+                <th className="px-3 py-2 font-medium text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((f) => (
+                <tr key={f.path} className="border-t border-border">
+                  <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatBytes(f.size)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                    {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadOne(f)}
+                      disabled={busyPath === f.path || bulk.running}
+                    >
+                      {busyPath === f.path ? "…" : "Download"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {data ? (
+          <div className="border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {data.length} file{data.length === 1 ? "" : "s"}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }

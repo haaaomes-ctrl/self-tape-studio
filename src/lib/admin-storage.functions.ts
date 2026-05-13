@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { setResponseHeader } from "@tanstack/react-start/server";
 
 const ADMIN_EMAIL = "o.halawi90@gmail.com";
@@ -26,16 +27,16 @@ export type ArtifactEntry = {
 };
 
 export const whoAmIAdmin = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     try {
       setResponseHeader("Cache-Control", "no-store");
     } catch {}
     const claims = (context as { claims?: { email?: string | null; sub?: string | null } }).claims;
-    const rawEmail = claims?.email ?? null;
-    const normalized = normalizeEmail(rawEmail);
+    const claimsEmail = claims?.email ?? null;
+    const normalized = normalizeEmail(claimsEmail);
     return {
-      rawEmail,
+      claimsEmail,
       normalizedEmail: normalized,
       expectedEmail: ADMIN_EMAIL,
       isAdmin: normalized === ADMIN_EMAIL,
@@ -44,7 +45,7 @@ export const whoAmIAdmin = createServerFn({ method: "GET" })
   });
 
 export const listAllArtifacts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
     try {
@@ -98,7 +99,7 @@ const SignArtifactDownloadInput = z.object({
 });
 
 export const signArtifactDownload = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((input: unknown) => SignArtifactDownloadInput.parse(input))
   .handler(async ({ data, context }) => {
     assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
