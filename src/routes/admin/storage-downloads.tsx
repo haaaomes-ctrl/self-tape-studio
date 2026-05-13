@@ -371,18 +371,62 @@ function FilesUI({
   };
 }) {
   const data = state.data;
+  const [sortMode, setSortMode] = useState<"newest" | "oldest" | "path">("newest");
+
+  const sorted = (() => {
+    if (!data) return null;
+    const arr = [...data];
+    if (sortMode === "path") {
+      arr.sort((a, b) => a.path.localeCompare(b.path));
+    } else {
+      arr.sort((a, b) => {
+        const ta = a.updated_at ? Date.parse(a.updated_at) : 0;
+        const tb = b.updated_at ? Date.parse(b.updated_at) : 0;
+        return sortMode === "newest" ? tb - ta : ta - tb;
+      });
+    }
+    return arr;
+  })();
+
+  const grouped = (() => {
+    if (!sorted || sortMode === "path") return null;
+    const groups = new Map<string, ArtifactEntry[]>();
+    for (const f of sorted) {
+      const key = f.updated_at
+        ? new Date(f.updated_at).toISOString().slice(0, 10)
+        : "unknown date";
+      const list = groups.get(key) ?? [];
+      list.push(f);
+      groups.set(key, list);
+    }
+    return Array.from(groups.entries());
+  })();
+
   return (
     <>
-      <div className="mt-6 flex items-center gap-3">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         <Button onClick={reload} variant="outline" disabled={state.loading}>
           Refresh
         </Button>
         <Button
           onClick={downloadAll}
-          disabled={!data || data.length === 0 || bulk.running}
+          disabled={!sorted || sorted.length === 0 || bulk.running}
         >
           {bulk.running ? "Downloading…" : "Download all"}
         </Button>
+        <div className="ml-auto flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Sort by</span>
+          {(["newest", "oldest", "path"] as const).map((m) => (
+            <Button
+              key={m}
+              size="sm"
+              variant={sortMode === m ? "default" : "outline"}
+              onClick={() => setSortMode(m)}
+            >
+              {m === "newest" ? "Newest first" : m === "oldest" ? "Oldest first" : "Path A→Z"}
+            </Button>
+          ))}
+        </div>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
         Your browser may block multiple automatic downloads — allow them when prompted.
@@ -424,7 +468,7 @@ function FilesUI({
           <div className="p-6 text-sm text-destructive">
             Error: {state.error.status ?? ""} {state.error.message}
           </div>
-        ) : !data || data.length === 0 ? (
+        ) : !sorted || sorted.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">No files found.</div>
         ) : (
           <table className="w-full text-sm">
@@ -437,31 +481,58 @@ function FilesUI({
               </tr>
             </thead>
             <tbody>
-              {data.map((f) => (
-                <tr key={f.path} className="border-t border-border">
-                  <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{formatBytes(f.size)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                    {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => downloadOne(f)}
-                      disabled={busyPath === f.path || bulk.running}
-                    >
-                      {busyPath === f.path ? "…" : "Download"}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {grouped
+                ? grouped.flatMap(([day, files]) => [
+                    <tr key={`group-${day}`} className="border-t border-border bg-muted/40">
+                      <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+                        {day} · {files.length} file{files.length === 1 ? "" : "s"}
+                      </td>
+                    </tr>,
+                    ...files.map((f) => (
+                      <tr key={f.path} className="border-t border-border">
+                        <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{formatBytes(f.size)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                          {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => downloadOne(f)}
+                            disabled={busyPath === f.path || bulk.running}
+                          >
+                            {busyPath === f.path ? "…" : "Download"}
+                          </Button>
+                        </td>
+                      </tr>
+                    )),
+                  ])
+                : sorted.map((f) => (
+                    <tr key={f.path} className="border-t border-border">
+                      <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{formatBytes(f.size)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                        {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadOne(f)}
+                          disabled={busyPath === f.path || bulk.running}
+                        >
+                          {busyPath === f.path ? "…" : "Download"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
         )}
-        {data ? (
+        {sorted ? (
           <div className="border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            {data.length} file{data.length === 1 ? "" : "s"}
+            {sorted.length} file{sorted.length === 1 ? "" : "s"}
           </div>
         ) : null}
       </div>
