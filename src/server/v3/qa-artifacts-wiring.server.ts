@@ -6,6 +6,9 @@ export interface RawReportEmitterInput { run_id: string; take_id: string; take_i
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
+export interface AnalysisInputArtefactEmitterInput {
+  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable'; material_presence?: 'supplied' | 'absent' | 'unknown'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
+}
 
 export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolean; env?: NodeJS.ProcessEnv }) { if (input?.internal_qa_emit === true) return true; const env = input?.env ?? process.env; return env.V3_QA_ARTIFACTS_ENABLED === 'true' || env.INTERNAL_QA_EMIT === 'true'; }
 
@@ -148,4 +151,62 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     if (w.written) emitted_blocked_artefact_ids.push('route_variance_trace'); else hadFailure = true;
   }
   return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
+}
+
+export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const generatedAt = new Date().toISOString();
+  const unavailableCommon = [...(input.unavailable_fields ?? [])] as string[];
+  if (!input.submission_id) unavailableCommon.push('submission_id');
+  if (!input.audition_type) unavailableCommon.push('audition_type');
+  if (!input.selected_level) unavailableCommon.push('selected_level');
+  const boolFromEnvOrUnknown = (name: 'V3_QA_ARTIFACTS_ENABLED' | 'INTERNAL_QA_EMIT'): boolean | 'unknown' => {
+    const v = process.env[name];
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    return 'unknown';
+  };
+  const redaction_notes = ['Internal QA snapshot only; secrets/tokens/session credentials are excluded by design'];
+  const inputRecord = {
+    schema_version: 'tapecoach_v3_analysis_input_record_v1', artefact_type: 'analysis_input_record', internal_only: true, privacy_classification: 'internal_private',
+    run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [],
+    source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt, analysis_route: input.analysis_route ?? null, route_or_model_marker: input.route_or_model_marker ?? null,
+    audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: input.brief_presence ?? 'unknown', brief_presence_source: input.brief_presence_source ?? 'unavailable', material_presence: input.material_presence ?? 'unknown',
+    media_reference_state: { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
+    qa_emit_enabled_state: { V3_QA_ARTIFACTS_ENABLED: boolFromEnvOrUnknown('V3_QA_ARTIFACTS_ENABLED'), INTERNAL_QA_EMIT: boolFromEnvOrUnknown('INTERNAL_QA_EMIT') },
+    unavailable_fields: unavailableCommon, redaction_notes,
+  };
+  const submissionSnapshot = {
+    schema_version: 'tapecoach_v3_analysis_submission_v1', artefact_type: 'analysis_submission', internal_only: true, privacy_classification: 'internal_private',
+    run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt,
+    audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: input.brief_presence ?? 'unknown', brief_presence_source: input.brief_presence_source ?? 'unavailable', material_presence: input.material_presence ?? 'unknown',
+    submission_created_at: input.submission_created_at ?? null, submission_updated_at: input.submission_updated_at ?? null, component_or_task_declaration: input.component_or_task_declaration ?? null, component_or_task_declaration_status: input.component_or_task_declaration_status ?? (input.component_or_task_declaration == null ? 'unknown' : (input.component_or_task_declaration.length === 0 ? 'known_empty' : 'supplied')), component_or_task_declaration_source: input.component_or_task_declaration_source ?? (input.component_or_task_declaration == null ? 'not_loaded' : 'loaded_runtime_field'),
+    safe_submission_refs: input.safe_submission_refs ?? (input.submission_id ? [`submission:${input.submission_id}`] : []),
+    unavailable_fields: [...unavailableCommon, ...(input.submission_created_at ? [] : ['submission_created_at']), ...(input.submission_updated_at ? [] : ['submission_updated_at'])], redaction_notes,
+  };
+  const takeSnapshot = {
+    schema_version: 'tapecoach_v3_analysis_take_v1', artefact_type: 'analysis_take', internal_only: true, privacy_classification: 'internal_private',
+    run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt,
+    take_created_at: input.take_created_at ?? null, take_updated_at: input.take_updated_at ?? null, take_index: input.take_index ?? null,
+    take_index_source: input.take_index_source ?? (input.take_index == null ? 'unavailable' : 'loaded_take_index'),
+    stable_take_identity: { take_id: input.take_id, analysis_run_id: analysisRunId }, mux_playback_id_present: Boolean(input.mux_playback_id), safe_mux_playback_ref: input.safe_mux_playback_ref ?? input.mux_playback_id ?? null,
+    media_readiness_state: input.media_readiness_state ?? null,
+    unavailable_fields: [...unavailableCommon, ...(input.take_created_at ? [] : ['take_created_at']), ...(input.take_updated_at ? [] : ['take_updated_at'])], redaction_notes,
+  };
+  assertSafeSegment(input.take_id, 'take_id');
+  const base = `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs`;
+  const emitted_artefact_ids: string[] = [];
+  let hadFailure = false;
+  const writes: Array<[string, string, unknown]> = [
+    ['analysis_input_record', `${base}/input_record.json`, inputRecord],
+    ['analysis_submission', `${base}/submission.json`, submissionSnapshot],
+    ['analysis_take', `${base}/take.json`, takeSnapshot],
+  ];
+  for (const [id, rel, payload] of writes) {
+    const w = await writeInternalJson(root, input.run_id, rel, payload, id);
+    if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
+  }
+  return { written: !hadFailure, emitted_artefact_ids };
 }

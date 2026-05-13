@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3218,6 +3218,58 @@ export async function runProcessTake(
         report_data: report as Record<string, unknown>,
       });
       if (rawReportEmit.written && 'artefact_id' in rawReportEmit && typeof rawReportEmit.artefact_id === 'string' && rawReportEmit.artefact_id.length > 0) qaArtefactIds.push(rawReportEmit.artefact_id);
+      const hasMeaningfulBriefValue = (value: unknown): boolean => {
+        if (value == null) return false;
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (!trimmed || trimmed === 'null' || trimmed === '{}' || trimmed === '[]') return false;
+          try { return hasMeaningfulBriefValue(JSON.parse(trimmed)); } catch { return trimmed.length > 0; }
+        }
+        if (Array.isArray(value)) return value.some((item) => hasMeaningfulBriefValue(item));
+        if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some((v) => hasMeaningfulBriefValue(v));
+        return true;
+      };
+      const hasBrief = hasMeaningfulBriefValue(audition.brief);
+      const hasExtractedBrief = hasMeaningfulBriefValue(audition.extracted_brief);
+      const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
+      const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
+        hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
+      const takeCreatedAt = take.created_at ? new Date(take.created_at).toISOString() : null;
+      const takeUpdatedAt = take.updated_at ? new Date(take.updated_at).toISOString() : null;
+      const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
+      if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
+      if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
+      const inputArtefacts = await emitAnalysisInputArtefacts({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        compared_take_ids: [takeId],
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: 'runProcessTake',
+        route_or_model_marker: 'runProcessTake',
+        audition_type: null,
+        selected_level: audition.audition_level ?? null,
+        brief_presence: briefPresence,
+        brief_presence_source: briefPresenceSource,
+        material_presence: 'unknown',
+        mux_playback_id: take.mux_playback_id ?? null,
+        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        submission_created_at: null,
+        submission_updated_at: null,
+        take_created_at: takeCreatedAt,
+        take_updated_at: takeUpdatedAt,
+        take_index: null,
+        take_index_source: 'unavailable',
+        component_or_task_declaration: null,
+        component_or_task_declaration_status: 'unknown',
+        component_or_task_declaration_source: 'not_loaded',
+        media_readiness_state: take.status ?? null,
+        unavailable_fields: unavailableInputFields,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      qaArtefactIds.push(...inputArtefacts.emitted_artefact_ids);
 
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
