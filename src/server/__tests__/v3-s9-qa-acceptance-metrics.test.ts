@@ -56,6 +56,27 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(out.written).toBe(false);
     expect(out.warning).toContain('internal_qa_manifest_sink_write_failed');
   });
+
+
+  it('returns written false when initial qa_acceptance_metrics write fails and preserves warning + fallback', async () => {
+    const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
+    const emitSpy = vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest').mockResolvedValueOnce({ written: true, manifest });
+    vi.spyOn(qaSinkModule, 'writeQAArtifact').mockResolvedValueOnce({ written: false, warning: 'metrics storage write failed' } as any);
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    expect(out.warning).toContain('metrics storage write failed');
+    expect(out.warning).toContain('qa_acceptance_metrics_not_written');
+    expect(emitSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns fallback warning when initial qa_acceptance_metrics write fails without warning text', async () => {
+    const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
+    vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest').mockResolvedValueOnce({ written: true, manifest });
+    vi.spyOn(qaSinkModule, 'writeQAArtifact').mockResolvedValueOnce({ written: false } as any);
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    expect(out.warning).toContain('qa_acceptance_metrics_not_written');
+  });
 it('returns warning from final manifest write failure and never returns written:false with warning:null', async () => {
     const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
     const emitSpy = vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest')

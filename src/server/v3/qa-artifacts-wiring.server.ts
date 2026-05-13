@@ -125,7 +125,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       );
       return { written: finalOut.written, warning: finalWarning, manifest_path: (finalOut as { manifest_path?: string }).manifest_path };
     }
-    return { written: true, warning: qaWrite.warning ?? 'qa_acceptance_metrics_not_written' };
+    const qaWriteWarning = mergeQAWarnings(getQAWriteWarning(qaWrite), 'qa_acceptance_metrics_not_written');
+    return { written: false, warning: qaWriteWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
   } catch (error) {
     return { written: false, warning: `internal_qa_manifest_emit_failed:${error instanceof Error ? error.message : 'unknown'}` };
   }
