@@ -14,7 +14,7 @@ describe('v3 s8-23 raw json emitters', () => {
   it('raw report enabled writes and preserves supplied report', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-raw-'));
     await emitRawReportArtefact({ run_id: 'r2', take_id: 't2', source_stage: 'process_take_success', source_module: 'process-take', report_data: { headline: 'ok', scores: { overall: 91 } }, submission_id: 'sub', root_dir: root, internal_qa_emit: true });
-    const body = JSON.parse(await readFile(path.join(root, 'r2', 'reports', 'take_1.raw_report.json'), 'utf8'));
+    const body = JSON.parse(await readFile(path.join(root, 'r2', 'takes', 'take-t2', 'analysis-r2', 'reports', 'raw_report.json'), 'utf8'));
     expect(body.report_data.headline).toBe('ok');
     expect(body.missing_required_fields).toEqual([]);
   });
@@ -22,13 +22,14 @@ describe('v3 s8-23 raw json emitters', () => {
   it('comparison enabled writes and preserves supplied object', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-cmp-'));
     await emitComparisonRawArtefact({ run_id: 'r3', source_stage: 'comparison_success', source_module: 'comparison', comparison_data: { recommendation: { label: 'Take 2' }, ranking: ['t1', 't2'] }, comparison_id: 'cmp-1', root_dir: root, internal_qa_emit: true });
-    const body = JSON.parse(await readFile(path.join(root, 'r3', 'comparison', 'comparison.raw.json'), 'utf8'));
+    const body = JSON.parse(await readFile(path.join(root, 'r3', 'comparisons', 'comparison-cmp-1', 'comparison', 'comparison.raw.json'), 'utf8'));
     expect(body.comparison_data.recommendation.label).toBe('Take 2');
     expect(body.missing_required_fields).toEqual([]);
   });
 
   it('path traversal rejected', async () => {
     await expect(emitRawReportArtefact({ run_id: '../bad', take_id: 't1', source_stage: 'x', source_module: 'm', report_data: {}, internal_qa_emit: true })).rejects.toThrow();
+    await expect(emitRawReportArtefact({ run_id: 'r-bad', take_id: 'a/../../comparisons/comparison-c1', source_stage: 'x', source_module: 'm', report_data: {}, internal_qa_emit: true })).rejects.toThrow('take_id_invalid_path');
   });
 
   it('manifest clears only written blockers', async () => {

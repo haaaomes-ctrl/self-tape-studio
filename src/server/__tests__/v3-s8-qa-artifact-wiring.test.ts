@@ -33,6 +33,15 @@ describe('v3 s8 qa artifact wiring', () => {
     expect(manifest.public_technique_authority_status).toBe('blocked');
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.gate_statuses.some((g: { blocker_code: string }) => g.blocker_code === 'same_video_false_winner_active_P0')).toBe(true);
+    expect(manifest.public_output_unchanged).toBe(true);
+    expect(manifest.user_experience_unchanged).toBe(true);
+  });
+
+  it('preserves manifest default runtime evidence derivation when caller does not pass explicit lists', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-wiring-'));
+    await emitQAManifestForAnalysisRun({ run_id: 'run-ev', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-ev', 'manifest.json'), 'utf8'));
+    expect(manifest.runtime_evidence_accepted_by_id).toContain('raw_report');
   });
 
   it('emitter failure is captured as warning and does not throw', async () => {

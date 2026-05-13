@@ -4,8 +4,10 @@ This note implements the first internal-only QA artefact emitter foundation for 
 
 - The emitter is **internal-only** and **disabled by default**.
 - When explicitly enabled, it writes a deterministic run manifest to:
-  - `qa-artifacts/<run_id>/manifest.json`
-- The manifest is for Level 2 QA bookkeeping and records emitted/missing/deferred/not_applicable artefacts.
+  - persisted sink path: `qa-artifacts/<run_id>/manifest.json`
+  - manifest-declared QA root: `qa-artifacts/takes/take-<take_id>/analysis-<analysis_run_id>/` or `qa-artifacts/comparisons/comparison-<comparison_run_id>/`
+- The manifest is for Level 2 QA bookkeeping and records emitted/emitted_blocked/missing/deferred/not_applicable artefacts.
+- `emitted_blocked` means we emitted a trace/report describing blocked/deferred/not-executed runtime evidence and **does not** count as successful runtime-evidence proof.
 - Missing artefacts are intentionally recorded with blocker codes (not fabricated).
 - Generated run artefacts are not public output and must not be exposed via public routes.
 - MP4 media files are not required for manifest emission and should not be committed as QA output evidence.
@@ -17,7 +19,7 @@ This note implements the first internal-only QA artefact emitter foundation for 
 
 - Wired at server analysis pipeline surface: `runProcessTake` in `src/server/process-take.server.ts` via `emitQAManifestForAnalysisRun`.
 - Enabling path is explicit: `internal_qa_emit` input or env flags `V3_QA_ARTIFACTS_ENABLED=true` / `INTERNAL_QA_EMIT=true`.
-- Output remains limited to `manifest.json` under `qa-artifacts/<run_id>/`.
+- Output remains internal-only and best-effort. Current sink layout stores files under `qa-artifacts/<run_id>/...` while manifest metadata provides stable take/comparison identity roots.
 - Manifest emission is best-effort and non-blocking for user-facing analysis completion; failures are logged as internal warnings.
 - Public response/report/comparison payloads are unchanged by wiring.
 - Level 2 QA remains not accepted because raw reports, comparison raw JSON, full traces, parity, and no-export four-lane proof files are still missing unless separately emitted.
@@ -36,8 +38,8 @@ This note implements the first internal-only QA artefact emitter foundation for 
   - `V3_QA_ARTIFACTS_ENABLED=true`
   - `INTERNAL_QA_EMIT=true`
 - Output paths:
-  - `qa-artifacts/<run_id>/reports/take_<n>.raw_report.json`
-  - `qa-artifacts/<run_id>/comparison/comparison.raw.json`
+  - `qa-artifacts/<run_id>/takes/take-<take_id>/analysis-<analysis_run_id>/reports/raw_report.json`
+  - `qa-artifacts/<run_id>/comparisons/comparison-<comparison_run_id>/comparison/comparison.raw.json`
   - `qa-artifacts/<run_id>/manifest.json`
 - Current artefacts produced:
   - per-take raw report JSON from analysis path when enabled;
@@ -50,6 +52,9 @@ This note implements the first internal-only QA artefact emitter foundation for 
   - `comparison_JSON_missing` only when comparison raw emitter writes and manifest is passed `comparison_raw` in emitted artefact IDs.
 - Blockers still active:
   - all remaining blocker codes stay active unless corresponding artefacts are genuinely emitted.
+- GF-01 / RT-15 status:
+  - remains blocked/not accepted unless repeatability, route-variance and suppression traces contain real runtime evidence;
+  - synthetic/default/placeholder traces must not clear comparison-safety gates.
 - Live production-domain locked-down test requirement:
   - still required for release evidence; not required to merge this dark-mode internal foundation PR.
 - PR merge:
