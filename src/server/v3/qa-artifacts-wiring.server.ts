@@ -32,6 +32,20 @@ export interface EvidenceAnchorsEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
+export interface PublicClaimTraceEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  submission_id?: string;
+  take_id: string;
+  comparison_run_id?: string | null;
+  source_module: string;
+  source_stage: string;
+  raw_report_data?: Record<string, unknown> | null;
+  evidence_anchors_data?: { anchors?: Array<{ evidence_anchor_id?: string; source_path?: string; evidence_text?: string; source_family?: string }> } | null;
+  truth_state_map_data?: Record<string, unknown> | null;
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
 export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
@@ -218,6 +232,92 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     level2_satisfies: false as const,
     warning: result.warning ?? null,
   };
+}
+
+const OVERCLAIM_PATTERN = /(perfect match|fits the brief perfectly|perfectly suits|professional standard|strong internal life|send with confidence|well aligned)/i;
+const GENERIC_PRAISE_PATTERN = /\b(strong presence|natural|confident|good storytelling|nice warmth|strong voice|great energy)\b/i;
+
+export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const reportData = (input.raw_report_data ?? {}) as Record<string, unknown>;
+  const claims: Array<Record<string, unknown>> = [];
+  const addClaim = (claimText: string, sourcePath: string, claimType: string) => {
+    const isScoreLike = claimType === 'score_or_verdict' || /\b\d{2,3}\b/.test(claimText);
+    const isOverclaim = OVERCLAIM_PATTERN.test(claimText);
+    const isGeneric = GENERIC_PRAISE_PATTERN.test(claimText);
+    const linked = (input.evidence_anchors_data?.anchors ?? []).find((a) => a.source_path === sourcePath || (a.evidence_text && claimText.includes(String(a.evidence_text))));
+    const linkedId = linked?.evidence_anchor_id ? [linked.evidence_anchor_id] : [];
+    const hasLegacyLinkOnly = linkedId.length > 0 && linked?.source_family !== 'real_runtime_v3';
+    const supportStatus = isScoreLike ? 'blocked' : (hasLegacyLinkOnly ? 'legacy_untraced_claim' : (linkedId.length > 0 ? 'supported_by_evidence_anchor' : 'missing_evidence'));
+    const safetyStatus = isScoreLike ? 'blocked' : (isOverclaim ? 'unsafe_or_overclaim' : (isGeneric ? 'internal_only' : 'needs_rewrite'));
+    claims.push({
+      claim_id: `pc-${input.take_id}-${claims.length + 1}`,
+      claim_text: claimText,
+      source_family: 'legacy_adapter',
+      source_artefact_id: 'raw_report',
+      source_path: sourcePath,
+      claim_type: claimType,
+      linked_evidence_anchor_ids: linkedId,
+      linked_truth_state_ids: [],
+      support_status: supportStatus,
+      public_safety_status: safetyStatus,
+      rewrite_required: supportStatus !== 'supported_by_evidence_anchor' || safetyStatus !== 'public_safe_descriptor',
+      blocker_codes: [
+        ...(isScoreLike ? ['public_scoring_blocked'] : []),
+        ...(isOverclaim ? ['unsupported_overclaim_requires_rewrite'] : []),
+        ...(linkedId.length === 0 ? ['missing_evidence_anchor_support'] : []),
+      ],
+      notes: hasLegacyLinkOnly ? 'linked anchor is legacy-only and cannot satisfy v3 gate' : 'legacy report snapshot trace',
+    });
+  };
+  const fields: Array<[string, unknown, string]> = [
+    ['submission_verdict.label', (reportData.submission_verdict as Record<string, unknown> | undefined)?.label, 'score_or_verdict'],
+    ['submission_verdict.reason', (reportData.submission_verdict as Record<string, unknown> | undefined)?.reason, 'readiness'],
+    ['verdict_final', reportData.verdict_final, 'score_or_verdict'],
+    ['casting_insight', reportData.casting_insight, 'role_or_brief_fit'],
+    ['casting_headline', reportData.casting_headline, 'role_or_brief_fit'],
+    ['fix_first', reportData.fix_first, 'technical_or_assessability'],
+    ['presentation_notes', reportData.presentation_notes, 'performance_quality'],
+  ];
+  for (const [pathKey, value, type] of fields) if (typeof value === 'string' && value.trim()) addClaim(value.trim(), `report_data.${pathKey}`, type);
+  for (const [pathKey, arr, type] of [['strengths', reportData.strengths, 'performance_quality'], ['improvements', reportData.improvements, 'technical_or_assessability'], ['category_notes', reportData.category_notes, 'performance_quality'], ['category_rationale', reportData.category_rationale, 'readiness']] as const) {
+    if (Array.isArray(arr)) for (const item of arr) if (typeof item === 'string' && item.trim()) addClaim(item.trim(), `report_data.${pathKey}`, type);
+  }
+  if (Array.isArray(reportData.timestamped_notes)) for (const item of reportData.timestamped_notes) {
+    const row = item as Record<string, unknown>;
+    if (typeof row.note === 'string' && row.note.trim()) addClaim(row.note.trim(), 'report_data.timestamped_notes', 'performance_quality');
+  }
+  if (claims.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const payload = {
+    schema_version: 'tapecoach_v3_public_claim_trace_first_pass_v1',
+    artefact_type: 'public_claim_trace',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id,
+    comparison_run_id: input.comparison_run_id ?? null,
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    generated_at: new Date().toISOString(),
+    claim_count: claims.length,
+    claims,
+    unsupported_claim_count: claims.filter((c) => ['unsupported', 'missing_evidence', 'legacy_untraced_claim'].includes(String(c.support_status))).length,
+    legacy_untraced_claim_count: claims.filter((c) => c.support_status === 'legacy_untraced_claim').length,
+    unsafe_or_overclaim_count: claims.filter((c) => c.public_safety_status === 'unsafe_or_overclaim').length,
+    public_safe_claim_count: claims.filter((c) => c.public_safety_status === 'public_safe_descriptor').length,
+    rewrite_required_count: claims.filter((c) => c.rewrite_required === true).length,
+    cannot_satisfy_public_claim_gate: true,
+    gate_satisfaction_reason: 'legacy_report_snapshot_only_or_unsupported_claims',
+    blocker_codes: ['public_claim_trace_legacy_or_unsupported'],
+    redaction_notes: ['Internal-only trace; no secrets or token/session credentials included'],
+  };
+  assertSafeSegment(input.take_id, 'take_id');
+  const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/PublicClaimTrace.json`, payload, 'public_claim_trace');
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['public_claim_trace'] : [] };
 }
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
   return emitTraceArtefact({ ...input, artefact_id: 'model_run_trace', relative_path: 'traces/ModelRunTrace.json' });
