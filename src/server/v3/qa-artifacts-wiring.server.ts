@@ -5,7 +5,7 @@ export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submis
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
-export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
+export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 
 export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolean; env?: NodeJS.ProcessEnv }) { if (input?.internal_qa_emit === true) return true; const env = input?.env ?? process.env; return env.V3_QA_ARTIFACTS_ENABLED === 'true' || env.INTERNAL_QA_EMIT === 'true'; }
 
@@ -83,7 +83,11 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   let hadFailure = false;
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids };
   const root = input.root_dir ?? DEFAULT_ROOT;
-  const comparisonRunId = input.comparison_run_id ?? (input.comparison_raw_data?.comparison_run_id as string | undefined) ?? input.run_id;
+  const comparisonRunId = input.comparison_run_id
+    ?? input.comparison_id
+    ?? (input.comparison_raw_data?.comparison_run_id as string | undefined)
+    ?? (input.comparison_raw_data?.comparison_id as string | undefined)
+    ?? input.run_id;
   const comparisonRoot = `comparisons/comparison-${comparisonRunId}`;
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, comparison_run_id: comparisonRunId, compared_take_ids: input.compared_take_ids ?? input.comparison_raw_data.compared_take_ids ?? [] }, 'comparison_raw');

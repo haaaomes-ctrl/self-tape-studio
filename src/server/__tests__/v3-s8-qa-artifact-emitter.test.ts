@@ -49,4 +49,11 @@ describe('v3 s8 internal qa artefact emitter', () => {
   it('rejects path traversal', async () => {
     await expect(emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: '../bad' })).rejects.toThrow('run_id_invalid_path');
   });
+
+  it('infers comparison qa_artifact_root when comparison artefacts are emitted without explicit comparison_run_id', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-artifacts-'));
+    await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: 'run-e', root_dir: root, emitted_artefact_ids: ['comparison_raw'] });
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-e', 'manifest.json'), 'utf8'));
+    expect(manifest.qa_artifact_root).toContain('comparisons/comparison-run-e');
+  });
 });

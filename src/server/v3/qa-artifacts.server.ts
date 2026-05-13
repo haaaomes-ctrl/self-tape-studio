@@ -113,8 +113,12 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const internal_qa_emit = options.internal_qa_emit ?? false;
   if (!internal_qa_emit) return { written: false };
   const root = options.root_dir ?? DEFAULT_ROOT;
-  const mode = options.comparison_run_id ? 'comparison' : 'take';
-  const runDir = resolveRunDir(root, options.run_id, mode, options.take_id, options.analysis_run_id, options.comparison_run_id);
+  const comparisonArtefactIds = new Set(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace', 'parity_comparison']);
+  const emittedForMode = [...(options.emitted_artefact_ids ?? []), ...(options.emitted_blocked_artefact_ids ?? [])];
+  const inferredComparisonMode = emittedForMode.some((id) => comparisonArtefactIds.has(id));
+  const mode = (options.comparison_run_id || inferredComparisonMode) ? 'comparison' : 'take';
+  const comparisonRunId = options.comparison_run_id ?? (inferredComparisonMode ? options.run_id : undefined);
+  const runDir = resolveRunDir(root, options.run_id, mode, options.take_id, options.analysis_run_id, comparisonRunId);
   const emittedIds = new Set(options.emitted_artefact_ids ?? []);
   const emittedBlockedIds = new Set(options.emitted_blocked_artefact_ids ?? []);
   const deferredIds = new Set(options.deferred_artefact_ids ?? []);

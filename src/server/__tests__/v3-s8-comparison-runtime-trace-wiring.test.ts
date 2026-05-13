@@ -34,6 +34,12 @@ describe('v3 s8 comparison runtime traces', () => {
     await expect(stat(path.join(root, 'run-9', 'comparisons', 'comparison-cmp-9', 'comparison', 'comparison.report.internal.json'))).resolves.toBeTruthy();
   });
 
+  it('uses comparison_id fallback so runtime artefacts stay in same directory family', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-cmp-'));
+    await emitComparisonRuntimeArtifacts({ run_id: 'run-10', comparison_id: 'cmp-10', root_dir: root, internal_qa_emit: true, comparison_raw_data: { recommendation_suppressed: true } });
+    await expect(stat(path.join(root, 'run-10', 'comparisons', 'comparison-cmp-10', 'comparison', 'comparison.raw.json'))).resolves.toBeTruthy();
+  });
+
 
   it('returns written false when comparison runtime sink writes fail', async () => {
     process.env.QA_ARTIFACT_SINK = 'file';
