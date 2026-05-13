@@ -33,6 +33,8 @@ describe('v3 s8 qa artifact wiring', () => {
     expect(manifest.public_technique_authority_status).toBe('blocked');
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.gate_statuses.some((g: { blocker_code: string }) => g.blocker_code === 'same_video_false_winner_active_P0')).toBe(true);
+    expect(manifest.public_output_unchanged).toBe(true);
+    expect(manifest.user_experience_unchanged).toBe(true);
   });
 
   it('emitter failure is captured as warning and does not throw', async () => {

@@ -11,9 +11,9 @@ describe('v3 s8 internal qa artefact emitter', () => {
     expect(out.written).toBe(false);
   });
 
-  it('enabled writes manifest under qa-artifacts/<run_id>/manifest.json', async () => {
+  it('enabled writes manifest under qa-artifacts/takes/take-<id>/analysis-<id>/manifest.json', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-artifacts-'));
-    const out = await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: 'run-b', root_dir: root, generated_at: '2026-05-12T00:00:00.000Z' });
+    const out = await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: 'run-b', take_id: 'take-b', analysis_run_id: 'run-b', root_dir: root, generated_at: '2026-05-12T00:00:00.000Z' });
     expect(out.written).toBe(true);
     const manifestPath = path.join(root, 'run-b', 'manifest.json');
     await expect(stat(manifestPath)).resolves.toBeTruthy();
@@ -22,6 +22,9 @@ describe('v3 s8 internal qa artefact emitter', () => {
     expect(manifest.public_technique_authority_status).toBe('blocked');
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.no_export_status).toBe('no_export_proof_missing');
+    expect(manifest.qa_artifact_root).toContain('takes/take-take-b/analysis-run-b');
+    expect(manifest.artefact_status_by_id.comparison_report_internal).toBe('missing');
+    expect(Array.isArray(manifest.emitted_blocked_artefact_ids)).toBe(true);
   });
 
   it('includes GF-01 fixture metadata and active P0', async () => {
@@ -40,6 +43,7 @@ describe('v3 s8 internal qa artefact emitter', () => {
     expect(manifest.missing_artifacts).toContain('raw_report');
     expect(manifest.blocker_codes).toContain('raw_JSON_missing');
     expect(manifest.blocker_codes).toContain('no_export_proof_missing');
+    expect(manifest.required_artifacts.length).toBeGreaterThanOrEqual(26);
   });
 
   it('rejects path traversal', async () => {
