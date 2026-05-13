@@ -29,6 +29,7 @@ describe('v3 s8-23 raw json emitters', () => {
 
   it('path traversal rejected', async () => {
     await expect(emitRawReportArtefact({ run_id: '../bad', take_id: 't1', source_stage: 'x', source_module: 'm', report_data: {}, internal_qa_emit: true })).rejects.toThrow();
+    await expect(emitRawReportArtefact({ run_id: 'r-bad', take_id: 'a/../../comparisons/comparison-c1', source_stage: 'x', source_module: 'm', report_data: {}, internal_qa_emit: true })).rejects.toThrow('take_id_invalid_path');
   });
 
   it('manifest clears only written blockers', async () => {

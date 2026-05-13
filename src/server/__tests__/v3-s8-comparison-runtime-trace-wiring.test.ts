@@ -43,6 +43,11 @@ describe('v3 s8 comparison runtime traces', () => {
   });
 
 
+
+  it('rejects unsafe comparison id segments before writing runtime artifacts', async () => {
+    await expect(emitComparisonRuntimeArtifacts({ run_id: 'run-unsafe', comparison_id: 'cmp/../../other', internal_qa_emit: true })).rejects.toThrow('comparison_run_id_invalid_path');
+  });
+
   it('returns written false when comparison runtime sink writes fail', async () => {
     process.env.QA_ARTIFACT_SINK = 'file';
     process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';

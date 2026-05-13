@@ -1,4 +1,4 @@
-import { DEFAULT_ROOT, emitInternalQAArtifactManifest } from './qa-artifacts.server';
+import { assertSafeSegment, DEFAULT_ROOT, emitInternalQAArtifactManifest } from './qa-artifacts.server';
 import { writeQAArtifact } from './qa-artifact-sink.server';
 
 export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; }
@@ -25,6 +25,7 @@ export async function emitRawReportArtefact(input: RawReportEmitterInput) {
     scores_or_readiness_fields: (input.report_data.scores ?? input.report_data.overall_readiness ?? null), component_fields: input.report_data.components ?? null, claim_like_fields: input.report_data.claim_traces ?? null,
     limitation_fields: input.report_data.limitations ?? null, public_output_snapshot: null, missing_required_fields: miss, blocker_codes: miss.includes('submission_id') ? ['raw_report_submission_id_missing'] : [], privacy_classification: 'internal_private', internal_only: true,
   };
+  assertSafeSegment(input.take_id, 'take_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${input.run_id}/reports/raw_report.json`, payload, 'raw_report', input.fixture_id);
   return { written: result.written, path: result.path ?? result.storage_path, artefact_id: 'raw_report' as const, warning: result.warning };
 }
@@ -88,6 +89,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     ?? (input.comparison_raw_data?.comparison_run_id as string | undefined)
     ?? (input.comparison_raw_data?.comparison_id as string | undefined)
     ?? input.run_id;
+  assertSafeSegment(comparisonRunId, 'comparison_run_id');
   const comparisonRoot = `comparisons/comparison-${comparisonRunId}`;
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, comparison_run_id: comparisonRunId, compared_take_ids: input.compared_take_ids ?? input.comparison_raw_data.compared_take_ids ?? [] }, 'comparison_raw');
