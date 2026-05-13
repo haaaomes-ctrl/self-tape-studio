@@ -42,6 +42,11 @@ export interface QAArtifactEmitterOptions {
   not_applicable_artefact_ids?: string[];
   runtime_evidence_accepted_by_id?: string[];
   runtime_evidence_blocked_by_id?: string[];
+  artefact_source_classification_by_id?: Record<string, string>;
+  artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>;
+  legacy_adapter_artefact_ids?: string[];
+  real_v3_spine_artefact_ids?: string[];
+  defect_risk_ids?: string[];
 }
 
 export const DEFAULT_ROOT = 'qa-artifacts';
@@ -145,6 +150,11 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     required_artifacts, emitted_artifacts, emitted_blocked_artefact_ids, missing_artifacts, deferred_artifact_ids, not_applicable_artifact_ids, artefact_status_by_id, blocker_codes,
     runtime_evidence_accepted_by_id: options.runtime_evidence_accepted_by_id ?? emitted_artifacts,
     runtime_evidence_blocked_by_id: options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids,
+    artefact_source_classification_by_id: options.artefact_source_classification_by_id ?? {},
+    artefact_level2_spine_satisfaction_by_id: options.artefact_level2_spine_satisfaction_by_id ?? {},
+    legacy_adapter_artefact_ids: options.legacy_adapter_artefact_ids ?? [],
+    real_v3_spine_artefact_ids: options.real_v3_spine_artefact_ids ?? [],
+    defect_risk_ids: options.defect_risk_ids ?? [],
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },
     gate_statuses: [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }],
     warnings: ['Rendered PDFs/page-prints are manual-render evidence only'], privacy_notes: ['Internal-only dark mode artefact manifest; no public output changes'], redaction_notes: ['Private traces must not be exposed publicly'],
