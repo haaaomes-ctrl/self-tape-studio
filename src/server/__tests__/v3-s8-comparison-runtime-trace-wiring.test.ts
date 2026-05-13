@@ -42,4 +42,12 @@ describe('v3 s8 comparison runtime traces', () => {
     expect(cmp.written).toBe(false);
     expect(cmp.emitted_artefact_ids).toEqual([]);
   });
+
+  it('does not claim emitted_blocked when blocked trace file writes fail', async () => {
+    process.env.QA_ARTIFACT_SINK = 'file';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const cmp = await emitComparisonRuntimeArtifacts({ run_id: 'run-4', root_dir: '/dev/null', internal_qa_emit: true });
+    expect(cmp.written).toBe(false);
+    expect(cmp.emitted_blocked_artefact_ids).toEqual([]);
+  });
 });

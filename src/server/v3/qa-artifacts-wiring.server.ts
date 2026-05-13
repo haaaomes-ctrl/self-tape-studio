@@ -51,7 +51,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
-    const out = await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: metadata.emitted_artefact_ids ?? [], emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id ?? [], runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id ?? [] });
+    const out = await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: metadata.emitted_artefact_ids ?? [], emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id });
     const warning = out.written ? null : ((out as { warning?: string | null; sink_warning?: string | null }).warning ?? (out as { sink_warning?: string | null }).sink_warning ?? 'internal_qa_manifest_sink_write_failed');
     return { written: out.written, warning, manifest_path: (out as { manifest_path?: string }).manifest_path };
   } catch (error) {
@@ -115,8 +115,17 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
-  if (!input.suppression_trace) { emitted_blocked_artefact_ids.push('comparison_suppression_trace'); await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/comparison_suppression_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'comparison_suppression_not_executed' }, 'comparison_suppression_trace'); }
-  if (!input.same_video_repeatability_trace) { emitted_blocked_artefact_ids.push('same_video_repeatability_trace'); await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/same_video_repeatability_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'repeatability_not_executed' }, 'same_video_repeatability_trace'); }
-  if (!input.route_variance_trace) { emitted_blocked_artefact_ids.push('route_variance_trace'); await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/route_variance_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'route_variance_not_executed' }, 'route_variance_trace'); }
+  if (!input.suppression_trace) {
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/comparison_suppression_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'comparison_suppression_not_executed' }, 'comparison_suppression_trace');
+    if (w.written) emitted_blocked_artefact_ids.push('comparison_suppression_trace'); else hadFailure = true;
+  }
+  if (!input.same_video_repeatability_trace) {
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/same_video_repeatability_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'repeatability_not_executed' }, 'same_video_repeatability_trace');
+    if (w.written) emitted_blocked_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
+  }
+  if (!input.route_variance_trace) {
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/route_variance_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'route_variance_not_executed' }, 'route_variance_trace');
+    if (w.written) emitted_blocked_artefact_ids.push('route_variance_trace'); else hadFailure = true;
+  }
   return { written: !hadFailure, emitted_artefact_ids, emitted_blocked_artefact_ids };
 }
