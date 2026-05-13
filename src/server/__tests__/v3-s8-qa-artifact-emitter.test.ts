@@ -55,5 +55,6 @@ describe('v3 s8 internal qa artefact emitter', () => {
     await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: 'run-e', root_dir: root, emitted_artefact_ids: ['comparison_raw'] });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-e', 'manifest.json'), 'utf8'));
     expect(manifest.qa_artifact_root).toContain('comparisons/comparison-run-e');
+    expect(manifest.comparison_run_id).toBe('run-e');
   });
 });
