@@ -22,8 +22,8 @@ describe('v3 s9 take input artifacts', () => {
       route_or_model_marker: 'runProcessTake',
       audition_type: 'screen',
       selected_level: 'advanced',
-      brief_present: true,
-      material_present: false,
+      brief_presence: 'supplied',
+      material_presence: 'unknown',
       mux_playback_id: 'pb1',
       mux_asset_or_upload_id_present: true,
       submission_created_at: '2026-01-01T00:00:00.000Z',
@@ -74,5 +74,56 @@ describe('v3 s9 take input artifacts', () => {
     expect(manifest.public_technique_authority_status).toBe('blocked');
     expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('missing');
     expect(manifest.artefact_source_classification_by_id.raw_report).toBe('legacy_adapter');
+  });
+
+  it('uses loaded audition-shape truth and keeps not-loaded fields unknown/unavailable', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s903-loaded-'));
+    const audition = {
+      id: 'sub-loaded',
+      brief: 'Play urgency and stakes.',
+      brief_source: 'user',
+      mode: 'brief',
+      title: 'Loaded shape',
+      audition_level: 'intermediate',
+      extracted_brief: '',
+    };
+
+    const emitted = await emitAnalysisInputArtefacts({
+      run_id: 'take-loaded',
+      analysis_run_id: 'take-loaded',
+      submission_id: audition.id,
+      take_id: 'tk-loaded',
+      compared_take_ids: ['tk-loaded'],
+      source_module: 'process-take.server',
+      source_stage: 'process_take_success',
+      analysis_route: 'runProcessTake',
+      route_or_model_marker: 'runProcessTake',
+      audition_type: null,
+      selected_level: audition.audition_level,
+      brief_presence: ((audition.brief && audition.brief.trim().length > 0) || (audition.extracted_brief && audition.extracted_brief.trim().length > 0)) ? 'supplied' : 'absent',
+      material_presence: 'unknown',
+      mux_playback_id: 'pb-x',
+      mux_asset_or_upload_id_present: true,
+      submission_created_at: null,
+      submission_updated_at: null,
+      take_created_at: null,
+      take_updated_at: null,
+      unavailable_fields: ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_created_at', 'take_updated_at'],
+      internal_qa_emit: true,
+      root_dir: root,
+    });
+    expect(emitted.emitted_artefact_ids.sort()).toEqual(['analysis_input_record', 'analysis_submission', 'analysis_take']);
+
+    const base = path.join(root, 'take-loaded', 'takes', 'take-tk-loaded', 'analysis-take-loaded', 'inputs');
+    const inputRecord = JSON.parse(await readFile(path.join(base, 'input_record.json'), 'utf8'));
+    const submission = JSON.parse(await readFile(path.join(base, 'submission.json'), 'utf8'));
+    expect(inputRecord.audition_type).toBeNull();
+    expect(inputRecord.brief_presence).toBe('supplied');
+    expect(inputRecord.material_presence).toBe('unknown');
+    expect(submission.selected_level).toBe('intermediate');
+    expect(submission.submission_created_at).toBeNull();
+    expect(submission.submission_updated_at).toBeNull();
+    expect(inputRecord.unavailable_fields).toEqual(expect.arrayContaining(['audition_type', 'material_presence_source']));
+    expect(submission.unavailable_fields).toEqual(expect.arrayContaining(['submission_created_at', 'submission_updated_at']));
   });
 });

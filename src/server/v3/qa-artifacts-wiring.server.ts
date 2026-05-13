@@ -7,7 +7,7 @@ export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Re
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface AnalysisInputArtefactEmitterInput {
-  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_present?: boolean | null; material_present?: boolean | null; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; component_or_task_declaration?: string[] | null; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; root_dir?: string; internal_qa_emit?: boolean;
+  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; material_presence?: 'supplied' | 'absent' | 'unknown'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; component_or_task_declaration?: string[] | null; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
 
 export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolean; env?: NodeJS.ProcessEnv }) { if (input?.internal_qa_emit === true) return true; const env = input?.env ?? process.env; return env.V3_QA_ARTIFACTS_ENABLED === 'true' || env.INTERNAL_QA_EMIT === 'true'; }
@@ -153,18 +153,12 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
 }
 
-function presenceState(flag: boolean | null | undefined): 'supplied' | 'absent' | 'unknown' {
-  if (flag === true) return 'supplied';
-  if (flag === false) return 'absent';
-  return 'unknown';
-}
-
 export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const generatedAt = new Date().toISOString();
-  const unavailableCommon = [] as string[];
+  const unavailableCommon = [...(input.unavailable_fields ?? [])] as string[];
   if (!input.submission_id) unavailableCommon.push('submission_id');
   if (!input.audition_type) unavailableCommon.push('audition_type');
   if (!input.selected_level) unavailableCommon.push('selected_level');
@@ -179,7 +173,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     schema_version: 'tapecoach_v3_analysis_input_record_v1', artefact_type: 'analysis_input_record', internal_only: true, privacy_classification: 'internal_private',
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [],
     source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt, analysis_route: input.analysis_route ?? null, route_or_model_marker: input.route_or_model_marker ?? null,
-    audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: presenceState(input.brief_present), material_presence: presenceState(input.material_present),
+    audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: input.brief_presence ?? 'unknown', material_presence: input.material_presence ?? 'unknown',
     media_reference_state: { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
     qa_emit_enabled_state: { V3_QA_ARTIFACTS_ENABLED: boolFromEnvOrUnknown('V3_QA_ARTIFACTS_ENABLED'), INTERNAL_QA_EMIT: boolFromEnvOrUnknown('INTERNAL_QA_EMIT') },
     unavailable_fields: unavailableCommon, redaction_notes,
@@ -187,7 +181,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
   const submissionSnapshot = {
     schema_version: 'tapecoach_v3_analysis_submission_v1', artefact_type: 'analysis_submission', internal_only: true, privacy_classification: 'internal_private',
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt,
-    audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: presenceState(input.brief_present), material_presence: presenceState(input.material_present),
+    audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: input.brief_presence ?? 'unknown', material_presence: input.material_presence ?? 'unknown',
     submission_created_at: input.submission_created_at ?? null, submission_updated_at: input.submission_updated_at ?? null, component_or_task_declaration: input.component_or_task_declaration ?? null,
     safe_submission_refs: input.safe_submission_refs ?? (input.submission_id ? [`submission:${input.submission_id}`] : []),
     unavailable_fields: [...unavailableCommon, ...(input.submission_created_at ? [] : ['submission_created_at']), ...(input.submission_updated_at ? [] : ['submission_updated_at'])], redaction_notes,
