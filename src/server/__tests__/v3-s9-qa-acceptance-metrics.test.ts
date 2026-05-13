@@ -40,7 +40,23 @@ describe('v3 s9 qa acceptance metrics', () => {
     for (const blocked of ['reconciler_secret', 'anon_session_secret', 'mux_token_secret', 'mux_webhook_secret', 'token_secret', 'webhook_secret', 'session_secret']) expect(txt).not.toContain(blocked);
   });
 
-  it('returns warning from final manifest write failure and never returns written:false with warning:null', async () => {
+  
+
+  it('preserves sink-specific warning when initial manifest write fails', async () => {
+    vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest').mockResolvedValueOnce({ written: false, warning: 'storage upload failed: bucket/path unavailable' });
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    expect(out.warning).toContain('storage upload failed: bucket/path unavailable');
+    expect(out.warning).not.toBeNull();
+  });
+
+  it('returns fallback warning when initial manifest write fails without warning text', async () => {
+    vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest').mockResolvedValueOnce({ written: false });
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
+    expect(out.written).toBe(false);
+    expect(out.warning).toContain('internal_qa_manifest_sink_write_failed');
+  });
+it('returns warning from final manifest write failure and never returns written:false with warning:null', async () => {
     const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
     const emitSpy = vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest')
       .mockResolvedValueOnce({ written: true, manifest })
@@ -64,7 +80,35 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(out.warning).toContain('final QA manifest write failed after qa_acceptance_metrics emission');
   });
 
-  it('keeps warning null when final manifest succeeds without warnings', async () => {
+  
+
+  it('surfaces warning when final qa_acceptance_metrics rewrite fails', async () => {
+    const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
+    vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest')
+      .mockResolvedValueOnce({ written: true, manifest })
+      .mockResolvedValueOnce({ written: true, manifest });
+    vi.spyOn(qaSinkModule, 'writeQAArtifact')
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
+      .mockResolvedValueOnce({ written: false, warning: 'final metrics storage failure' } as any);
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
+    expect(out.warning).toContain('final metrics storage failure');
+    expect(out.warning).not.toBeNull();
+    expect(!(out.written === true && out.warning === null)).toBe(true);
+  });
+
+  it('returns fallback warning when final qa_acceptance_metrics rewrite fails without warning text', async () => {
+    const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
+    vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest')
+      .mockResolvedValueOnce({ written: true, manifest })
+      .mockResolvedValueOnce({ written: true, manifest });
+    vi.spyOn(qaSinkModule, 'writeQAArtifact')
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
+      .mockResolvedValueOnce({ written: false } as any);
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
+    expect(out.warning).toContain('final qa_acceptance_metrics rewrite failed after final manifest emission');
+    expect(out.warning).not.toBeNull();
+  });
+it('keeps warning null when final manifest succeeds without warnings', async () => {
     const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted' }, legacy_adapter_artefact_ids: ['raw_report'], real_v3_spine_artefact_ids: [] };
     vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest')
       .mockResolvedValueOnce({ written: true, manifest })
