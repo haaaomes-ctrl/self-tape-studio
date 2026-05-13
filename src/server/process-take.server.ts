@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3270,6 +3270,35 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       qaArtefactIds.push(...inputArtefacts.emitted_artefact_ids);
+      const resolverTruth = await emitResolverOutputAndTruthStateMap({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        compared_take_ids: [takeId],
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: 'runProcessTake',
+        route_or_model_marker: 'runProcessTake',
+        audition_type: null,
+        selected_level: audition.audition_level ?? null,
+        brief_presence: briefPresence,
+        brief_presence_source: briefPresenceSource,
+        material_presence: 'unknown',
+        mux_playback_id: take.mux_playback_id ?? null,
+        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        take_created_at: takeCreatedAt,
+        take_updated_at: takeUpdatedAt,
+        take_index: null,
+        take_index_source: 'unavailable',
+        component_or_task_declaration: null,
+        component_or_task_declaration_status: 'unknown',
+        component_or_task_declaration_source: 'not_loaded',
+        media_readiness_state: take.status ?? null,
+        unavailable_fields: unavailableInputFields,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
 
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,

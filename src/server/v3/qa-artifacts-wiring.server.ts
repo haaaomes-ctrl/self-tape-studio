@@ -9,6 +9,7 @@ export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_ru
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable'; material_presence?: 'supplied' | 'absent' | 'unknown'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
+export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
 
 export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolean; env?: NodeJS.ProcessEnv }) { if (input?.internal_qa_emit === true) return true; const env = input?.env ?? process.env; return env.V3_QA_ARTIFACTS_ENABLED === 'true' || env.INTERNAL_QA_EMIT === 'true'; }
 
@@ -205,6 +206,79 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     ['analysis_take', `${base}/take.json`, takeSnapshot],
   ];
   for (const [id, rel, payload] of writes) {
+    const w = await writeInternalJson(root, input.run_id, rel, payload, id);
+    if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
+  }
+  return { written: !hadFailure, emitted_artefact_ids };
+}
+
+export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthStateEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const generatedAt = new Date().toISOString();
+  const unresolved_inputs: string[] = [];
+  const unavailable_fields = [...(input.unavailable_fields ?? [])];
+  const known_truths: Record<string, unknown> = { take_id: input.take_id, analysis_run_id: analysisRunId };
+  if (input.submission_id) known_truths.submission_id = input.submission_id;
+  if (input.selected_level) known_truths.selected_level = input.selected_level;
+  known_truths.brief_presence = input.brief_presence ?? 'unknown';
+  known_truths.safe_media_reference_state = { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' };
+  if (input.take_created_at) known_truths.take_created_at = input.take_created_at;
+  if (input.take_updated_at) known_truths.take_updated_at = input.take_updated_at;
+  if (input.take_index != null) known_truths.take_index = input.take_index;
+  const inferred_truths: Record<string, unknown> = { comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [input.take_id] };
+  const unavailable_truths = {
+    material_presence: input.material_presence ?? 'unknown',
+    role_fit: 'unavailable_without_brief_or_material_support',
+    comparison_evidence: 'not_executed',
+    evidence_anchors: 'not_emitted',
+    public_claim_support: 'not_emitted',
+    component_or_task_declaration: input.component_or_task_declaration_status === 'unknown' ? 'unknown_or_not_loaded' : null,
+  };
+  const unsafe_or_blocked_truths = { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', gf01_rt15_status: 'blocked', same_video_comparison_status: 'not_executed_single_take' };
+  const redaction_notes = ['No secret/token/session fields emitted; only safe booleans/refs included'];
+  const resolver_output = {
+    schema_version: 'tapecoach_v3_resolver_output_v1', artefact_type: 'resolver_output', internal_only: true, privacy_classification: 'internal_private',
+    run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null,
+    source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt, analysis_route: input.analysis_route ?? null,
+    input_artifact_refs: {
+      analysis_input_record: `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs/input_record.json`,
+      analysis_submission: `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs/submission.json`,
+      analysis_take: `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs/take.json`,
+    },
+    audition_type: { value: input.audition_type ?? null, source: input.audition_type ? 'loaded_runtime_field' : 'unavailable', status: input.audition_type ? 'known' : 'unknown' },
+    selected_level: { value: input.selected_level ?? null, source: input.selected_level ? 'loaded_runtime_field' : 'unavailable', status: input.selected_level ? 'known' : 'unknown' },
+    brief_presence: { value: input.brief_presence ?? 'unknown', source: input.brief_presence_source ?? 'unavailable', status: input.brief_presence ? 'known' : 'unknown' },
+    material_presence: { value: input.material_presence ?? 'unknown', source: 'unavailable', status: input.material_presence === 'unknown' ? 'unknown' : 'known' },
+    component_declaration_source: input.component_or_task_declaration_source ?? 'not_loaded',
+    component_or_task_declaration_status: input.component_or_task_declaration_status ?? 'unknown',
+    media_readiness_state: { value: input.media_readiness_state ?? null, source: input.media_readiness_state ? 'loaded_runtime_field' : 'unavailable', status: input.media_readiness_state ? 'known' : 'unknown' },
+    safe_media_reference_state: { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
+    take_identity: { take_id: input.take_id, analysis_run_id: analysisRunId, take_index: input.take_index ?? null, take_index_source: input.take_index_source ?? 'unavailable' },
+    timestamps: { take_created_at: input.take_created_at ?? null, take_updated_at: input.take_updated_at ?? null, timestamp_source: (input.take_created_at || input.take_updated_at) ? 'loaded_take_row' : 'unavailable' },
+    legacy_adapter_present: true,
+    v3_spine_available: { input_artefacts_available: true, resolver_output_available: true, truth_state_map_available: true, evidence_anchors_available: false, public_claim_trace_available: false },
+    unresolved_inputs, unavailable_fields, blocker_codes: ['gf01_rt15_blocked_no_comparison_runtime_evidence'], redaction_notes,
+  };
+  const truth_state_map = {
+    schema_version: 'tapecoach_v3_truth_state_map_v1', artefact_type: 'truth_state_map', internal_only: true, privacy_classification: 'internal_private',
+    run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null,
+    source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt,
+    known_truths, inferred_truths, unavailable_truths, unsafe_or_blocked_truths,
+    brief_truths: { brief_presence: input.brief_presence ?? 'unknown', source: input.brief_presence_source ?? 'unavailable' },
+    media_truths: { media_readiness_state: input.media_readiness_state ?? null, mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
+    component_truths: { declaration_source: input.component_or_task_declaration_source ?? 'not_loaded', declaration_status: input.component_or_task_declaration_status ?? 'unknown', legacy_report_detected_components: 'legacy_adapter_report_snapshot_not_v3_input_truth' },
+    level_truths: { selected_level: input.selected_level ?? null, status: input.selected_level ? 'known' : 'unknown' },
+    role_truths: { status: 'unavailable', reason: 'insufficient_reliable_brief_or_material_context' },
+    comparison_truths: { comparison_run_executed: false, status: 'blocked_or_not_executed', compared_take_ids: input.compared_take_ids ?? [input.take_id] },
+    public_authority_truths: { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', raw_report_legacy_adapter_not_v3_proof: true },
+    source_refs: resolver_output.input_artifact_refs, redaction_notes,
+  };
+  const base = `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver`;
+  const emitted_artefact_ids: string[] = [];
+  let hadFailure = false;
+  for (const [id, rel, payload] of [['resolver_output', `${base}/resolver_output.json`, resolver_output], ['truth_state_map', `${base}/TruthStateMap.json`, truth_state_map]] as const) {
     const w = await writeInternalJson(root, input.run_id, rel, payload, id);
     if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
   }
