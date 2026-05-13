@@ -267,7 +267,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         ).toISOString();
         const { data: staleFinalising, error: fErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, processing_phase, attempt_count")
+          .select("id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence")
           .eq("processing_phase", "finalising")
           .eq("status", "processing")
           .lt("updated_at", finalisingCutoff)
