@@ -7,9 +7,17 @@ export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Re
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface AnalysisInputArtefactEmitterInput {
-  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable'; material_presence?: 'supplied' | 'absent' | 'unknown'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
+  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
 export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
+type PresenceValue = 'supplied' | 'absent' | 'unknown';
+function normalisePresenceTruthState(value: PresenceValue | null | undefined, source: string | null | undefined): { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' } {
+  const normalizedValue: PresenceValue = value === 'supplied' || value === 'absent' || value === 'unknown' ? value : 'unknown';
+  const normalizedSource = source ?? 'unavailable';
+  if (normalizedSource === 'unavailable' || normalizedSource === 'not_loaded' || normalizedSource === 'none_loaded') return { value: normalizedValue, source: normalizedSource, status: normalizedValue === 'unknown' ? 'unknown' : 'unavailable' };
+  if (normalizedValue === 'unknown') return { value: normalizedValue, source: normalizedSource, status: 'unknown' };
+  return { value: normalizedValue, source: normalizedSource, status: 'known' };
+}
 
 export function resolveInternalQAEmitEnabled(input?: { internal_qa_emit?: boolean; env?: NodeJS.ProcessEnv }) { if (input?.internal_qa_emit === true) return true; const env = input?.env ?? process.env; return env.V3_QA_ARTIFACTS_ENABLED === 'true' || env.INTERNAL_QA_EMIT === 'true'; }
 
@@ -222,14 +230,17 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   const known_truths: Record<string, unknown> = { take_id: input.take_id, analysis_run_id: analysisRunId };
   if (input.submission_id) known_truths.submission_id = input.submission_id;
   if (input.selected_level) known_truths.selected_level = input.selected_level;
-  known_truths.brief_presence = input.brief_presence ?? 'unknown';
+  const briefPresenceState = normalisePresenceTruthState(input.brief_presence, input.brief_presence_source ?? 'unavailable');
+  const materialPresenceState = normalisePresenceTruthState(input.material_presence, input.material_presence_source ?? 'unavailable');
+  if (briefPresenceState.status === 'known') known_truths.brief_presence = briefPresenceState.value;
+  if (materialPresenceState.status === 'known') known_truths.material_presence = materialPresenceState.value;
   known_truths.safe_media_reference_state = { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' };
   if (input.take_created_at) known_truths.take_created_at = input.take_created_at;
   if (input.take_updated_at) known_truths.take_updated_at = input.take_updated_at;
   if (input.take_index != null) known_truths.take_index = input.take_index;
   const inferred_truths: Record<string, unknown> = { comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [input.take_id] };
   const unavailable_truths = {
-    material_presence: input.material_presence ?? 'unknown',
+    material_presence: materialPresenceState.value,
     role_fit: 'unavailable_without_brief_or_material_support',
     comparison_evidence: 'not_executed',
     evidence_anchors: 'not_emitted',
@@ -249,8 +260,8 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     },
     audition_type: { value: input.audition_type ?? null, source: input.audition_type ? 'loaded_runtime_field' : 'unavailable', status: input.audition_type ? 'known' : 'unknown' },
     selected_level: { value: input.selected_level ?? null, source: input.selected_level ? 'loaded_runtime_field' : 'unavailable', status: input.selected_level ? 'known' : 'unknown' },
-    brief_presence: { value: input.brief_presence ?? 'unknown', source: input.brief_presence_source ?? 'unavailable', status: input.brief_presence ? 'known' : 'unknown' },
-    material_presence: { value: input.material_presence ?? 'unknown', source: 'unavailable', status: input.material_presence === 'unknown' ? 'unknown' : 'known' },
+    brief_presence: briefPresenceState,
+    material_presence: materialPresenceState,
     component_declaration_source: input.component_or_task_declaration_source ?? 'not_loaded',
     component_or_task_declaration_status: input.component_or_task_declaration_status ?? 'unknown',
     media_readiness_state: { value: input.media_readiness_state ?? null, source: input.media_readiness_state ? 'loaded_runtime_field' : 'unavailable', status: input.media_readiness_state ? 'known' : 'unknown' },
@@ -266,7 +277,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null,
     source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt,
     known_truths, inferred_truths, unavailable_truths, unsafe_or_blocked_truths,
-    brief_truths: { brief_presence: input.brief_presence ?? 'unknown', source: input.brief_presence_source ?? 'unavailable' },
+    brief_truths: { brief_presence: briefPresenceState.value, source: briefPresenceState.source, status: briefPresenceState.status },
     media_truths: { media_readiness_state: input.media_readiness_state ?? null, mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
     component_truths: { declaration_source: input.component_or_task_declaration_source ?? 'not_loaded', declaration_status: input.component_or_task_declaration_status ?? 'unknown', legacy_report_detected_components: 'legacy_adapter_report_snapshot_not_v3_input_truth' },
     level_truths: { selected_level: input.selected_level ?? null, status: input.selected_level ? 'known' : 'unknown' },
