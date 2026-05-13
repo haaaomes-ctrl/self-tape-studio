@@ -79,12 +79,12 @@ describe('v3 s9 runtime evidence spine audit map', () => {
 
   it('fails closed for unknown artefact ids', () => {
     expect(() => classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'typo_new_unknown_artefact' })).toThrow(/Unknown runtime evidence artefact_id/);
-    expect(() => classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'typo_new_unknown_artefact', manifest_status: 'blocked_not_executed' })).toThrow(/Unknown runtime evidence artefact_id/);
+    expect(() => classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'typo_new_unknown_artefact', manifest_status: 'emitted_blocked', evidence_status: 'not_executed' })).toThrow(/Unknown runtime evidence artefact_id/);
   });
 
   it('uses fallback and override rules for known artefacts', () => {
     expect(classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'analysis_input_record' })).toEqual({ status: 'missing' });
-    expect(classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'analysis_input_record', manifest_status: 'blocked_not_executed' })).toEqual({ status: 'missing' });
+    expect(classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'analysis_input_record', manifest_status: 'emitted_blocked', evidence_status: 'not_executed' })).toEqual({ status: 'emitted_blocked', evidence_status: 'not_executed' });
     expect(classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'raw_report', manifest_status: 'emitted' })).toEqual({ status: 'emitted' });
   });
 });

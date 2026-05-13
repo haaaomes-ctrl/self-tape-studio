@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitQAManifestForAnalysisRun, emitRawReportArtefact } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3218,6 +3218,32 @@ export async function runProcessTake(
         report_data: report as Record<string, unknown>,
       });
       if (rawReportEmit.written && 'artefact_id' in rawReportEmit && typeof rawReportEmit.artefact_id === 'string' && rawReportEmit.artefact_id.length > 0) qaArtefactIds.push(rawReportEmit.artefact_id);
+      const inputArtefacts = await emitAnalysisInputArtefacts({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        compared_take_ids: [takeId],
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: 'runProcessTake',
+        route_or_model_marker: 'runProcessTake',
+        audition_type: (audition as { audition_type?: string | null }).audition_type ?? null,
+        selected_level: (audition as { audition_level?: string | null }).audition_level ?? null,
+        brief_present: Boolean((audition as { brief_text?: string | null }).brief_text),
+        material_present: Boolean((audition as { material_text?: string | null }).material_text),
+        mux_playback_id: take.mux_playback_id ?? null,
+        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        submission_created_at: (audition as { created_at?: string | null }).created_at ?? null,
+        submission_updated_at: (audition as { updated_at?: string | null }).updated_at ?? null,
+        take_created_at: (take as { created_at?: string | null }).created_at ?? null,
+        take_updated_at: (take as { updated_at?: string | null }).updated_at ?? null,
+        take_index: 1,
+        component_or_task_declaration: [],
+        media_readiness_state: (take as { status?: string | null }).status ?? null,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      qaArtefactIds.push(...inputArtefacts.emitted_artefact_ids);
 
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
