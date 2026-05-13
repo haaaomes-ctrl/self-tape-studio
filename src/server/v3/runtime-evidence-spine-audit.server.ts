@@ -71,11 +71,24 @@ export function classifyRuntimeEvidenceArtefactStatus(input: {
   manifest_status?: string | null;
   evidence_status?: string | null;
 }): { status: ArtefactStatus; evidence_status?: 'not_executed' } {
-  const item = RUNTIME_EVIDENCE_SPINE_AUDIT_MAP.find((a) => a.artefact_id === input.artefact_id);
-  const status = (input.manifest_status && ALLOWED_STATUSES.has(input.manifest_status as ArtefactStatus)
-    ? input.manifest_status
-    : item?.current_manifest_status
-  ) as ArtefactStatus;
+  const item = RUNTIME_EVIDENCE_SPINE_AUDIT_MAP.find((candidate) => candidate.artefact_id === input.artefact_id);
+  if (!item) {
+    throw new Error(
+      `Unknown runtime evidence artefact_id "${input.artefact_id}". Add it to RUNTIME_EVIDENCE_SPINE_AUDIT_MAP before classifying status.`,
+    );
+  }
+
+  const status: ArtefactStatus =
+    input.manifest_status && ALLOWED_STATUSES.has(input.manifest_status as ArtefactStatus)
+      ? (input.manifest_status as ArtefactStatus)
+      : item.current_manifest_status;
+
+  if (!ALLOWED_STATUSES.has(status)) {
+    throw new Error(
+      `Invalid runtime evidence status "${String(status)}" for artefact_id "${input.artefact_id}".`,
+    );
+  }
+
   if (status === 'emitted_blocked') {
     return { status, evidence_status: input.evidence_status === 'not_executed' ? 'not_executed' : 'not_executed' };
   }
