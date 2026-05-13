@@ -282,6 +282,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const reconciled: string[] = [];
         const giveUp: string[] = [];
         const finalisingForcedError: string[] = [];
+        const finalisingRecoveredComplete: string[] = [];
         const transcodingRecovered: string[] = [];
         const transcodingForcedError: string[] = [];
         const uploadingRecovered: string[] = [];
