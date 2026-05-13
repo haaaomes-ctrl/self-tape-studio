@@ -90,7 +90,13 @@ export const listAllArtifacts = createServerFn({ method: "GET" })
     }
 
     await walk("");
-    results.sort((a, b) => a.path.localeCompare(b.path));
+    // Newest first by updated_at; fall back to path for stability when null/equal.
+    results.sort((a, b) => {
+      const ta = a.updated_at ? Date.parse(a.updated_at) : 0;
+      const tb = b.updated_at ? Date.parse(b.updated_at) : 0;
+      if (tb !== ta) return tb - ta;
+      return a.path.localeCompare(b.path);
+    });
     return results;
   });
 
