@@ -114,6 +114,75 @@ export function resolveRunDir(root: string, run_id: string, mode: 'take' | 'comp
   return path.join(root, 'takes', `take-${tid}`, `analysis-${aid}`);
 }
 
+
+
+export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
+  const emitted = manifest.emitted_artifacts ?? [];
+  const missing = manifest.missing_artifacts ?? [];
+  const emittedBlocked = manifest.emitted_blocked_artefact_ids ?? [];
+  const deferred = manifest.deferred_artifact_ids ?? [];
+  const notApplicable = manifest.not_applicable_artifact_ids ?? [];
+  const defects = [...new Set(manifest.defect_risk_ids ?? [])];
+  return {
+    schema_version: 'tapecoach_v3_qa_acceptance_metrics_v1',
+    artefact_type: 'qa_acceptance_metrics',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    run_id: manifest.run_id,
+    analysis_run_id: manifest.analysis_run_id,
+    submission_id: manifest.submission_id,
+    take_id: manifest.take_id,
+    comparison_run_id: manifest.comparison_run_id ?? null,
+    compared_take_ids: manifest.compared_take_ids ?? [],
+    source_module: 'src/server/v3/qa-artifacts.server.ts',
+    source_stage: 'manifest_classification_summary',
+    generated_at: manifest.generated_at,
+    qa_artifact_root: manifest.qa_artifact_root,
+    qc_level_requested: 'L2',
+    level2_status: 'not_accepted',
+    level3_status: 'blocked',
+    level4_status: 'blocked',
+    gf01_rt15_status: 'blocked',
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    public_output_unchanged: true,
+    required_artefact_counts: { emitted: emitted.length, missing: missing.length, emitted_blocked: emittedBlocked.length, deferred: deferred.length, not_applicable: notApplicable.length },
+    required_artefact_total: (manifest.required_artifacts ?? []).length,
+    emitted_artefacts: emitted,
+    missing_required_artefacts: missing,
+    emitted_blocked_artefacts: emittedBlocked,
+    deferred_artefacts: deferred,
+    not_applicable_artefacts: notApplicable,
+    blocker_codes: manifest.blocker_codes ?? [],
+    runtime_evidence_accepted_by_id: manifest.runtime_evidence_accepted_by_id ?? [],
+    runtime_evidence_blocked_by_id: manifest.runtime_evidence_blocked_by_id ?? [],
+    legacy_adapter_artefacts: manifest.legacy_adapter_artefact_ids ?? [],
+    real_v3_spine_artefacts: manifest.real_v3_spine_artefact_ids ?? [],
+    real_v3_spine_artefact_count: (manifest.real_v3_spine_artefact_ids ?? []).length,
+    legacy_adapter_artefact_count: (manifest.legacy_adapter_artefact_ids ?? []).length,
+    output_quality_defects: defects,
+    defect_risk_ids: defects,
+    public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: 'blocked', export_or_no_export_status: manifest.no_export_status ?? 'blocked',
+    comparison_evidence_status: emitted.includes('comparison_raw') ? 'available' : 'missing',
+    truth_state_status: manifest.artefact_status_by_id?.truth_state_map ?? 'missing',
+    resolver_status: manifest.artefact_status_by_id?.resolver_output ?? 'missing',
+    input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
+    raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
+    acceptance_decision: 'not_accepted',
+    acceptance_reasons: [
+      'missing required Level 2 artefacts',
+      'raw_report is legacy_adapter where applicable',
+      'comparison evidence missing',
+      'GF-01 / RT-15 blocked',
+      'production/public authority gates blocked',
+      'qa_acceptance_metrics emitted but does not satisfy evidence gates',
+    ],
+    next_required_engineering_tasks: ['S9-06 EvidenceAnchors and PublicClaimTrace', 'TechniqueObservationTrace', 'ScoreTrace/GateTrace/ModelRunTrace/validator_trace', 'comparison runtime artefacts', 'parity and no-export proof'],
+    redaction_notes: ['Internal-only QA summary; no secrets or tokens are emitted'],
+  };
+}
+
 export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterOptions) {
   const internal_qa_emit = options.internal_qa_emit ?? false;
   if (!internal_qa_emit) return { written: false };

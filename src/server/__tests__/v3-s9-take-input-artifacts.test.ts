@@ -74,7 +74,7 @@ describe('v3 s9 take input artifacts', () => {
     expect(manifest.production_safe_status).toBe('blocked');
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.public_technique_authority_status).toBe('blocked');
-    expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('missing');
+    expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('emitted');
     expect(manifest.artefact_source_classification_by_id.raw_report).toBe('legacy_adapter');
   });
 

@@ -56,10 +56,10 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
-  it('keeps qa_acceptance_metrics missing and comparison blocked traces non-proof', () => {
+  it('keeps qa_acceptance_metrics emitted and comparison blocked traces non-proof', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const qaMetrics = map.find((x) => x.artefact_id === 'qa_acceptance_metrics');
-    expect(qaMetrics?.current_manifest_status).toBe('missing');
+    expect(qaMetrics?.current_manifest_status).toBe('emitted');
 
     const comparisonTraceIds = ['same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
     for (const id of comparisonTraceIds) {
