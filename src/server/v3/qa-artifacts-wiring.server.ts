@@ -44,7 +44,7 @@ export async function emitComparisonRawArtefact(input: ComparisonRawEmitterInput
   };
   const cmpId = input.comparison_id ?? `${input.submission_id ?? 'submission-unknown'}-${(input.take_ids ?? []).join('-')}`;
   const result = await writeInternalJson(root, input.run_id, `comparisons/comparison-${cmpId}/comparison/comparison.raw.json`, payload, 'comparison_raw', input.fixture_id);
-  return { written: result.written, path: result.path ?? result.storage_path, artefact_id: 'comparison_raw' as const, warning: result.warning };
+  return { written: result.written, path: result.path ?? result.storage_path, artefact_id: 'comparison_raw' as const, comparison_run_id: cmpId, warning: result.warning };
 }
 
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
@@ -131,5 +131,5 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/route_variance_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'route_variance_not_executed' }, 'route_variance_trace');
     if (w.written) emitted_blocked_artefact_ids.push('route_variance_trace'); else hadFailure = true;
   }
-  return { written: !hadFailure, emitted_artefact_ids, emitted_blocked_artefact_ids };
+  return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
 }

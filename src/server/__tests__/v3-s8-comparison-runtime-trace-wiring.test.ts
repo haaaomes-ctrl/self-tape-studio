@@ -30,13 +30,15 @@ describe('v3 s8 comparison runtime traces', () => {
   it('emits internal comparison report when comparison raw is written', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-cmp-'));
     const cmp = await emitComparisonRuntimeArtifacts({ run_id: 'run-9', root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_run_id: 'cmp-9', compared_take_ids: ['a', 'b'], duplicate_or_near_duplicate_detected: true } });
+    expect(cmp.comparison_run_id).toBe('cmp-9');
     expect(cmp.emitted_artefact_ids).toContain('comparison_report_internal');
     await expect(stat(path.join(root, 'run-9', 'comparisons', 'comparison-cmp-9', 'comparison', 'comparison.report.internal.json'))).resolves.toBeTruthy();
   });
 
   it('uses comparison_id fallback so runtime artefacts stay in same directory family', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-cmp-'));
-    await emitComparisonRuntimeArtifacts({ run_id: 'run-10', comparison_id: 'cmp-10', root_dir: root, internal_qa_emit: true, comparison_raw_data: { recommendation_suppressed: true } });
+    const cmp = await emitComparisonRuntimeArtifacts({ run_id: 'run-10', comparison_id: 'cmp-10', root_dir: root, internal_qa_emit: true, comparison_raw_data: { recommendation_suppressed: true } });
+    expect(cmp.comparison_run_id).toBe('cmp-10');
     await expect(stat(path.join(root, 'run-10', 'comparisons', 'comparison-cmp-10', 'comparison', 'comparison.raw.json'))).resolves.toBeTruthy();
   });
 
