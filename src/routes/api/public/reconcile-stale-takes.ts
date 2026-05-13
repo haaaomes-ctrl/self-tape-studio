@@ -739,6 +739,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           reconciled,
           giveUp,
           finalisingForcedError,
+          finalisingRecoveredComplete,
           transcodingRecovered,
           transcodingForcedError,
           uploadingRecovered,
