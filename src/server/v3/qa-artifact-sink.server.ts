@@ -69,7 +69,10 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
       return { written: true, sink_mode: mode, sink_write_status: 'written', path: abs, log_fallback_emitted: successLog.emitted, warning: successLog.warning };
     }
     if (mode === 'storage') {
-      const { error } = await supabaseAdmin.storage.from(storage_bucket).upload(storage_path, payloadText, { upsert: true, contentType: 'application/json' });
+      const STORAGE_UPLOAD_TIMEOUT_MS = Number(process.env.QA_ARTIFACT_STORAGE_TIMEOUT_MS ?? 5000);
+      const uploadPromise = supabaseAdmin.storage.from(storage_bucket).upload(storage_path, payloadText, { upsert: true, contentType: 'application/json' });
+      const timeoutPromise = new Promise<{ error: { message: string } }>((resolve) => setTimeout(() => resolve({ error: { message: 'storage_upload_timeout' } }), STORAGE_UPLOAD_TIMEOUT_MS));
+      const { error } = await Promise.race([uploadPromise, timeoutPromise]) as { error: { message: string } | null };
       if (error) throw new Error(`storage_upload_failed:${error.message}`);
       const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, storage_bucket, storage_path, payload: input.payload });
       return { written: true, sink_mode: mode, sink_write_status: 'written', storage_bucket, storage_path, log_fallback_emitted: successLog.emitted, warning: successLog.warning };
