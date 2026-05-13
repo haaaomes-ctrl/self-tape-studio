@@ -27,7 +27,7 @@ export type ArtifactEntry = {
 };
 
 export const whoAmIAdmin = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     try {
       setResponseHeader("Cache-Control", "no-store");
@@ -45,7 +45,7 @@ export const whoAmIAdmin = createServerFn({ method: "GET" })
   });
 
 export const listAllArtifacts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
     try {
@@ -99,7 +99,7 @@ const SignArtifactDownloadInput = z.object({
 });
 
 export const signArtifactDownload = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((input: unknown) => SignArtifactDownloadInput.parse(input))
   .handler(async ({ data, context }) => {
     assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
