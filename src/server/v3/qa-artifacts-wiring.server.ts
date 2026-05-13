@@ -1,5 +1,20 @@
-import { assertSafeSegment, DEFAULT_ROOT, emitInternalQAArtifactManifest } from './qa-artifacts.server';
+import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest } from './qa-artifacts.server';
 import { writeQAArtifact } from './qa-artifact-sink.server';
+
+function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
+  const present = warnings.filter((warning): warning is string => Boolean(warning && warning.trim()));
+  return present.length > 0 ? present.join('; ') : null;
+}
+
+function getQAWriteWarning(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null;
+  const warning = (result as { warning?: unknown }).warning;
+  const sinkWarning = (result as { sink_warning?: unknown }).sink_warning;
+  return mergeQAWarnings(
+    typeof warning === 'string' ? warning : null,
+    typeof sinkWarning === 'string' ? sinkWarning : null,
+  );
+}
 
 export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
@@ -82,9 +97,36 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
-    const out = await emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: metadata.emitted_artefact_ids ?? [], emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids });
-    const warning = out.written ? null : ((out as { warning?: string | null; sink_warning?: string | null }).warning ?? (out as { sink_warning?: string | null }).sink_warning ?? 'internal_qa_manifest_sink_write_failed');
-    return { written: out.written, warning, manifest_path: (out as { manifest_path?: string }).manifest_path };
+    const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids };
+    const out = await emitInternalQAArtifactManifest(baseOptions);
+    if (!out.written || !('manifest' in out)) {
+      const initialWarning = mergeQAWarnings(
+        getQAWriteWarning(out),
+        'internal_qa_manifest_sink_write_failed',
+      );
+      return { written: false, warning: initialWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
+    }
+    const metrics = buildQAAcceptanceMetrics((out as any).manifest);
+    const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: 'qa/acceptance_metrics.json', payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
+    if (qaWrite.written) {
+      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, emitted_artefact_ids: [...initialEmitted, 'qa_acceptance_metrics'], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? initialEmitted), 'qa_acceptance_metrics'])] });
+      let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
+      if (finalOut.written && 'manifest' in (finalOut as any)) {
+        const finalMetrics = buildQAAcceptanceMetrics((finalOut as any).manifest);
+        finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: 'qa/acceptance_metrics.json', payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
+      }
+      const finalWarning = mergeQAWarnings(
+        qaWrite.warning,
+        getQAWriteWarning(finalOut),
+        getQAWriteWarning(finalMetricsWrite),
+        finalOut.written ? null : 'final QA manifest write failed after qa_acceptance_metrics emission',
+        finalOut.written && finalMetricsWrite && !finalMetricsWrite.written ? 'final qa_acceptance_metrics rewrite failed after final manifest emission' : null,
+      );
+      return { written: finalOut.written, warning: finalWarning, manifest_path: (finalOut as { manifest_path?: string }).manifest_path };
+    }
+    const qaWriteWarning = mergeQAWarnings(getQAWriteWarning(qaWrite), 'qa_acceptance_metrics_not_written');
+    return { written: false, warning: qaWriteWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
   } catch (error) {
     return { written: false, warning: `internal_qa_manifest_emit_failed:${error instanceof Error ? error.message : 'unknown'}` };
   }

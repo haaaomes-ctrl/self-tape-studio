@@ -47,7 +47,7 @@ describe('v3 s9 legacy adapter reclassification', () => {
     expect(manifest.production_safe_status).toBe('blocked');
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.public_technique_authority_status).toBe('blocked');
-    expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('missing');
+    expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('emitted');
 
     expect(raw.defect_risk_ids).toEqual(expect.arrayContaining([
       'legacy_schema_snapshot',

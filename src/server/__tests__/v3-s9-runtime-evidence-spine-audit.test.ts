@@ -56,10 +56,10 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
-  it('keeps qa_acceptance_metrics missing and comparison blocked traces non-proof', () => {
+  it('keeps qa_acceptance_metrics emitted and comparison blocked traces non-proof', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const qaMetrics = map.find((x) => x.artefact_id === 'qa_acceptance_metrics');
-    expect(qaMetrics?.current_manifest_status).toBe('missing');
+    expect(qaMetrics?.current_manifest_status).toBe('emitted');
 
     const comparisonTraceIds = ['same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
     for (const id of comparisonTraceIds) {
@@ -69,7 +69,25 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
-  it('preserves blocked/not accepted implications for current release state', () => {
+  
+
+  it('uses allowed source classification for qa_acceptance_metrics and appears exactly once', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const qaEntries = map.filter((x) => x.artefact_id === 'qa_acceptance_metrics');
+    expect(qaEntries).toHaveLength(1);
+    expect(qaEntries[0]?.source_classification).toBe('real_runtime_v3');
+    expect(qaEntries[0]?.source_classification).not.toBe('runtime_v3');
+    expect(qaEntries[0]?.current_manifest_status).toBe('emitted');
+    expect(qaEntries[0]?.expected_path).toBe('qa/acceptance_metrics.json');
+    expect(qaEntries[0]?.can_emit_without_invention).toBe(true);
+
+    const allowedClassifications = new Set(['real_runtime_v3','legacy_adapter','source_only_stub','emitted_not_wired','missing','deferred','not_applicable','emitted_blocked']);
+    for (const item of map) {
+      expect(allowedClassifications.has(item.source_classification)).toBe(true);
+      expect(item.source_classification).not.toBe('runtime_v3');
+    }
+  });
+it('preserves blocked/not accepted implications for current release state', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const hasBlockedComparisonEvidence = map.some((x) => x.current_manifest_status === 'emitted_blocked');
     const hasRequiredMissingEvidence = map.some((x) => x.required_for_level === 'L2' && x.current_manifest_status === 'missing');
