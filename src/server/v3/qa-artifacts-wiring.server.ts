@@ -256,7 +256,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
 }
 
 const OVERCLAIM_PATTERN = /(perfect match|fits the brief perfectly|perfectly suits|professional standard|strong internal life|send with confidence|well aligned)/i;
-const GENERIC_PRAISE_PATTERN = /\b(strong presence|natural|confident|good storytelling|nice warmth|strong voice|great energy)\b/i;
+const GENERIC_PRAISE_PATTERN = /\b(strong energy|good movement|high-energy movement|strong vocal control|vocal resonance|grounded acting|natural|believable|professional|technically strong|strong presence|strong acting|clear technique|strong technique|nice musicality|polished|expressive|dynamic|confident|good storytelling|nice warmth|strong voice|great energy)\b/i;
 function findLinkedEvidenceAnchorForClaim(args: { claimText: string; sourcePath: string; timestamp?: string | null; anchors: Array<Record<string, unknown>>; }) {
   const anchors = args.anchors;
   const exactPathMatches = anchors.filter((anchor) => anchor.source_path === args.sourcePath);
@@ -285,6 +285,17 @@ function isExplicitScoreClaim(args: { claimType: string; sourcePath: string; cla
   const t = normaliseTraceText(args.claimText);
   return /(overall score|final score|model score|readiness score|rating|scored?\s+\d+|score[:\s]+\d+|\b\d+\s*\/\s*100\b)/i.test(t);
 }
+function classifyNumericOrScoreClaim(args: { claimType: string; sourcePath: string; claimText: string }) {
+  const p = args.sourcePath;
+  const t = normaliseTraceText(args.claimText);
+  const overallPaths = new Set(['report_data.overall_score', 'report_data.overall_score_final', 'report_data.overall_score_model', 'report_data.overall_readiness', 'report_data.overall_readiness_score', 'report_data.readiness_score', 'scores_or_readiness_fields.overall_score', 'scores_or_readiness_fields.overall_score_final', 'scores_or_readiness_fields.overall_readiness']);
+  if (overallPaths.has(p)) return { score_scope: 'overall_readiness', is_public_overall_readiness_score_risk: true, is_score_claim: true } as const;
+  if (p.startsWith('report_data.scores.') || p.startsWith('scores_or_readiness_fields.')) return { score_scope: 'discipline_attribute', is_public_overall_readiness_score_risk: false, is_score_claim: true } as const;
+  if (p.includes('.score')) return { score_scope: 'component_score', is_public_overall_readiness_score_risk: false, is_score_claim: true } as const;
+  if (/(overall readiness|overall score|readiness score|final score|model score)/i.test(t)) return { score_scope: 'overall_readiness', is_public_overall_readiness_score_risk: true, is_score_claim: true } as const;
+  if (isExplicitScoreClaim(args)) return { score_scope: 'explicit_score_wording', is_public_overall_readiness_score_risk: false, is_score_claim: true } as const;
+  return { score_scope: 'not_score', is_public_overall_readiness_score_risk: false, is_score_claim: false } as const;
+}
 
 export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -293,14 +304,15 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   const reportData = unwrapRawReportData(input.raw_report_data);
   const claims: Array<Record<string, unknown>> = [];
   const addClaim = (claimText: string, sourcePath: string, claimType: string, timestamp?: string | null) => {
-    const isScoreLike = isExplicitScoreClaim({ claimType, sourcePath, claimText });
+    const scoreMeta = classifyNumericOrScoreClaim({ claimType, sourcePath, claimText });
+    const isScoreLike = scoreMeta.is_score_claim;
     const isOverclaim = OVERCLAIM_PATTERN.test(claimText);
     const isGeneric = GENERIC_PRAISE_PATTERN.test(claimText);
     const linked = findLinkedEvidenceAnchorForClaim({ claimText, sourcePath, timestamp, anchors: (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>> });
     const linkedId = linked?.evidence_anchor_id ? [linked.evidence_anchor_id] : [];
     const hasLegacyLinkOnly = linkedId.length > 0 && linked?.source_family !== 'real_runtime_v3';
     const supportStatus = isScoreLike ? 'blocked' : (hasLegacyLinkOnly ? 'legacy_untraced_claim' : (linkedId.length > 0 ? 'supported_by_evidence_anchor' : 'missing_evidence'));
-    const safetyStatus = isScoreLike ? 'blocked' : (isOverclaim ? 'unsafe_or_overclaim' : (isGeneric ? 'internal_only' : 'needs_rewrite'));
+    const safetyStatus = scoreMeta.is_public_overall_readiness_score_risk ? 'blocked' : (isOverclaim ? 'unsafe_or_overclaim' : (isGeneric ? 'internal_only' : (isScoreLike ? 'internal_only' : 'needs_rewrite')));
     claims.push({
       claim_id: `pc-${input.take_id}-${claims.length + 1}`,
       claim_text: claimText,
@@ -308,13 +320,15 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       source_artefact_id: 'raw_report',
       source_path: sourcePath,
       claim_type: isScoreLike ? 'score_or_verdict' : claimType,
+      score_scope: scoreMeta.score_scope,
       linked_evidence_anchor_ids: linkedId,
       linked_truth_state_ids: [],
       support_status: supportStatus,
       public_safety_status: safetyStatus,
       rewrite_required: supportStatus !== 'supported_by_evidence_anchor' || safetyStatus !== 'public_safe_descriptor',
       blocker_codes: [
-        ...(isScoreLike ? ['public_scoring_blocked'] : []),
+        ...(scoreMeta.is_public_overall_readiness_score_risk ? ['public_scoring_blocked'] : []),
+        ...((isGeneric && linkedId.length === 0) ? ['generic_phrase_unanchored'] : []),
         ...(isOverclaim ? ['unsupported_overclaim_requires_rewrite'] : []),
         ...(linkedId.length === 0 ? ['missing_evidence_anchor_support'] : []),
       ],

@@ -81,16 +81,36 @@ describe('v3 s9 public claim trace first pass', () => {
     for (const txt of ['At 00:12 the eyeline shifts clearly.', 'Try 20% slower through the transition.', 'hold for 10 seconds', 'take 2 has clearer diction', 'find 3 tactics before the song', 'Clean 720p resolution with stable framing']) {
       const c = byText(txt);
       expect(c.claim_type).not.toBe('score_or_verdict');
+      expect(c.score_scope).toBe('not_score');
       expect(c.blocker_codes).not.toContain('public_scoring_blocked');
     }
     for (const txt of ['overall score: 92', 'final score 92', 'readiness score 92']) {
       const c = byText(txt);
       expect(c.claim_type).toBe('score_or_verdict');
+      expect(c.score_scope).toBe('overall_readiness');
       expect(c.blocker_codes).toContain('public_scoring_blocked');
     }
-    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score' && c.claim_type === 'score_or_verdict')).toBe(true);
-    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score_final' && c.claim_type === 'score_or_verdict')).toBe(true);
-    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score_model' && c.claim_type === 'score_or_verdict')).toBe(true);
-    expect(trace.claims.some((c: any) => c.source_path === 'report_data.scores.acting' && c.claim_type === 'score_or_verdict')).toBe(true);
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score' && c.claim_type === 'score_or_verdict' && c.score_scope === 'overall_readiness')).toBe(true);
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score_final' && c.score_scope === 'overall_readiness')).toBe(true);
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score_model' && c.score_scope === 'overall_readiness')).toBe(true);
+    const actingScore = trace.claims.find((c: any) => c.source_path === 'report_data.scores.acting');
+    expect(actingScore.score_scope).toBe('discipline_attribute');
+    expect(actingScore.blocker_codes).not.toContain('public_scoring_blocked');
+  });
+
+  it('flags generic unanchored phrases for rewrite/internal handling', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906c-generic-'));
+    const run = 'run-generic';
+    const report = { schema_version: 'v1-legacy', strengths: ['strong vocal control', 'grounded acting', 'natural', 'strong energy'] };
+    const out = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: report, root_dir: root, internal_qa_emit: true });
+    expect(out.written).toBe(true);
+    const trace = JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'PublicClaimTrace.json'), 'utf8'));
+    for (const txt of report.strengths) {
+      const c = trace.claims.find((x: any) => x.claim_text === txt)!;
+      expect(['missing_evidence', 'legacy_untraced_claim']).toContain(c.support_status);
+      expect(['internal_only', 'needs_rewrite', 'unsafe_or_overclaim']).toContain(c.public_safety_status);
+      expect(c.rewrite_required).toBe(true);
+      expect(c.blocker_codes).toContain('generic_phrase_unanchored');
+    }
   });
 });
