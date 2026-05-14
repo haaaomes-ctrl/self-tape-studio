@@ -540,6 +540,9 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
       notes: ['descriptor_only', 'public_authority_unapproved', 'insufficient_for_public_technique_authority'],
     });
   };
+  const addIfString = (value: unknown, sourcePath: string, family: 'legacy_adapter' | 'report_snapshot', timestamp?: string | null, index?: number) => {
+    if (typeof value === 'string' && value.trim()) addObs(value, sourcePath, family, timestamp, index);
+  };
   for (const key of ['detected_components', 'category_notes', 'category_rationale', 'strengths', 'improvements', 'priority_fixes'] as const) {
     const arr = reportData[key];
     if (!Array.isArray(arr)) continue;
@@ -549,6 +552,23 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
         const text = [item.note, item.text, item.label, item.summary].find((v) => typeof v === 'string' && v.trim()) as string | undefined;
         if (text) addObs(text, `report_data.${key}[${idx}]`, 'legacy_adapter', typeof item.timestamp === 'string' ? item.timestamp : null, idx);
       }
+    });
+  }
+  if (isRecord(reportData.category_notes)) {
+    for (const [k, v] of Object.entries(reportData.category_notes)) addIfString(v, `report_data.category_notes.${k}`, 'report_snapshot');
+  }
+  if (isRecord(reportData.category_rationale)) {
+    for (const [k, v] of Object.entries(reportData.category_rationale)) {
+      if (typeof v === 'string') addIfString(v, `report_data.category_rationale.${k}`, 'report_snapshot');
+      else if (isRecord(v)) for (const field of ['what_works', 'why_not_full_score', 'close_gap', 'standout_delta']) addIfString(v[field], `report_data.category_rationale.${k}.${field}`, 'report_snapshot');
+    }
+  }
+  addIfString(reportData.fix_first, 'report_data.fix_first', 'report_snapshot');
+  if (isRecord(reportData.brief_adherence_breakdown)) addIfString(reportData.brief_adherence_breakdown.note, 'report_data.brief_adherence_breakdown.note', 'report_snapshot');
+  if (isRecord(reportData.next_take_plan) && Array.isArray((reportData.next_take_plan as Record<string, unknown>).groups)) {
+    ((reportData.next_take_plan as Record<string, unknown>).groups as unknown[]).forEach((g, gi) => {
+      if (!isRecord(g) || !Array.isArray(g.items)) return;
+      g.items.forEach((item, ii) => addIfString(item, `report_data.next_take_plan.groups[${gi}].items[${ii}]`, 'report_snapshot', null, ii));
     });
   }
   if (Array.isArray(reportData.timestamped_notes)) reportData.timestamped_notes.forEach((item, idx) => {
