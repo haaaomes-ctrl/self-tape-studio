@@ -621,12 +621,13 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
   const push = (scope: string, name: string, value: unknown, sourcePath: string, extra: Record<string, unknown> = {}) => {
     const num = finiteNum(value);
     if (num == null) return;
+    const scoreScale = scope === 'component_weight' ? '0-1' : (scope === 'calibration_modifier' ? 'modifier' : '0-100');
     entries.push({
       score_trace_id: `st-${input.take_id}-${entries.length + 1}`,
       score_scope: scope,
       score_name: name,
       score_value: num,
-      score_scale: '0-100',
+      score_scale: scoreScale,
       source_artefact_id: 'raw_report',
       source_family: 'legacy_adapter',
       source_path: sourcePath,
@@ -643,7 +644,8 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
   };
   ['overall_score','overall_score_final','overall_score_model'].forEach((k)=>push('overall_readiness',k,reportData[k],`report_data.${k}`));
   if (isRecord(reportData.scores)) for (const [k,v] of Object.entries(reportData.scores)) push('discipline_attribute',k,v,`report_data.scores.${k}`);
-  if (Array.isArray(reportData.detected_components)) reportData.detected_components.forEach((c,i)=>{ if(!isRecord(c)) return; push('component_score','score',c.score,`report_data.detected_components[${i}].score`,{source_index:i,component_type:typeof c.type==='string'?c.type:null}); push('component_weight','weight',c.weight,`report_data.detected_components[${i}].weight`,{source_index:i,component_type:typeof c.type==='string'?c.type:null,component_weight:finiteNum(c.weight)}); });
+  let skipped_component_weight_out_of_range = 0;
+  if (Array.isArray(reportData.detected_components)) reportData.detected_components.forEach((c,i)=>{ if(!isRecord(c)) return; push('component_score','score',c.score,`report_data.detected_components[${i}].score`,{source_index:i,component_type:typeof c.type==='string'?c.type:null}); const weight = finiteNum(c.weight); if (weight == null) return; if (weight < 0 || weight > 1) { skipped_component_weight_out_of_range += 1; return; } push('component_weight','weight',weight,`report_data.detected_components[${i}].weight`,{source_index:i,component_type:typeof c.type==='string'?c.type:null,component_weight:weight,score_value_semantics:'component_weight_fraction'}); });
   if (isRecord(reportData.brief_adherence_breakdown)) ['instruction_precision','material_compliance','professionalism_signals','technical_compliance'].forEach((k)=>push('brief_adherence_subscore',k,(reportData.brief_adherence_breakdown as Record<string,unknown>)[k],`report_data.brief_adherence_breakdown.${k}`));
   push('assessment_confidence','confidence',reportData.confidence,'report_data.confidence');
   push('calibration_modifier','consistency_modifier',reportData.consistency_modifier,'report_data.consistency_modifier');
@@ -666,9 +668,9 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
     score_trace_gate_status: 'insufficient' as const,
     score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace' as const,
   };
-  const payload = { schema_version:'tapecoach_v3_score_trace_first_pass_v1', artefact_type:'score_trace', internal_only:true, privacy_classification:'internal_private', run_id:input.run_id, analysis_run_id:analysisRunId, take_id:input.take_id, generated_at:new Date().toISOString(), source_module:'qa-artifacts-wiring.server', source_stage:input.source_stage, trace_mode:'first_pass_legacy_report_snapshot', score_count:entries.length, score_entries:entries, source_family_summary, overall_readiness_public_score_status:'blocked', discipline_attribute_score_status:'internal_trace_only', cannot_satisfy_score_gate:true, gate_satisfaction_reason:'legacy_report_snapshot_not_real_runtime_score_trace', blocker_codes:['ScoreTrace_legacy_only'], linked_public_claim_trace_summary:{ claim_count: claims.length }, score_trace_summary: summary, ...resolveQADeploymentProvenance() };
+  const payload = { schema_version:'tapecoach_v3_score_trace_first_pass_v1', artefact_type:'score_trace', internal_only:true, privacy_classification:'internal_private', run_id:input.run_id, analysis_run_id:analysisRunId, take_id:input.take_id, generated_at:new Date().toISOString(), source_module:'qa-artifacts-wiring.server', source_stage:input.source_stage, trace_mode:'first_pass_legacy_report_snapshot', score_count:entries.length, score_entries:entries, source_family_summary, overall_readiness_public_score_status:'blocked', discipline_attribute_score_status:'internal_trace_only', cannot_satisfy_score_gate:true, gate_satisfaction_reason:'legacy_report_snapshot_not_real_runtime_score_trace', blocker_codes:['ScoreTrace_legacy_only'], linked_public_claim_trace_summary:{ claim_count: claims.length }, score_trace_summary: { ...summary, skipped_component_weight_out_of_range }, ...resolveQADeploymentProvenance() };
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ScoreTrace.json`, payload, 'score_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['score_trace'] : [], source_classification: 'legacy_adapter' as const, level2_satisfies: false as const, score_entries: entries, score_trace_summary: summary };
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['score_trace'] : [], source_classification: 'legacy_adapter' as const, level2_satisfies: false as const, score_entries: entries, score_trace_summary: { ...summary, skipped_component_weight_out_of_range } };
 }
 
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
