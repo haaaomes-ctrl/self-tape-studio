@@ -331,6 +331,7 @@ function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busy
   const [filter, setFilter] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
+  const [zipError, setZipError] = useState<string | null>(null);
   const data = state.data ?? [];
   const sorted = useMemo(() => filterAndSortArtifacts(data, filter, sortMode as any), [data, filter, sortMode]);
   const selectedPaths = sorted.filter((f: ArtifactEntry) => selected[f.path]).map((f: ArtifactEntry) => f.path);
@@ -342,8 +343,8 @@ function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busy
   return <>
     <div className="mt-6 flex flex-wrap gap-2">
       <Button onClick={reload} variant="outline">Refresh</Button>
-      <Button onClick={async ()=>{if(!visibleZipGuard.ok) return; const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); triggerDownload(r.signedUrl, r.filename);}} disabled={!visibleZipGuard.ok}>Download all visible</Button>
-      <Button onClick={async ()=>{if(!selectedZipGuard.ok) return; const r=await zipSelected({data:{paths:selectedPaths}}); triggerDownload(r.signedUrl, r.filename);}} disabled={!selectedZipGuard.ok}>Download selected zip</Button>
+      <Button onClick={async ()=>{if(!visibleZipGuard.ok) return; setZipError(null); try { const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); triggerDownload(r.signedUrl, r.filename);} catch (e) { const message = e instanceof Error ? e.message : String(e); setZipError(`Zip download failed: ${message}`); }}} disabled={!visibleZipGuard.ok}>Download all visible</Button>
+      <Button onClick={async ()=>{if(!selectedZipGuard.ok) return; setZipError(null); try { const r=await zipSelected({data:{paths:selectedPaths}}); triggerDownload(r.signedUrl, r.filename);} catch (e) { const message = e instanceof Error ? e.message : String(e); setZipError(`Zip download failed: ${message}`); }}} disabled={!selectedZipGuard.ok}>Download selected zip</Button>
       <Button
         variant="destructive"
         onClick={async () => {
@@ -384,6 +385,7 @@ function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busy
     <p className="mt-2 text-xs text-muted-foreground">Selected: {selectedPaths.length} · {formatBytes(selectedSize)}</p>
     {!visibleZipGuard.ok ? <p className="text-xs text-amber-600">{visibleZipGuard.reason}</p> : null}
     {selectedPaths.length > 0 && !selectedZipGuard.ok ? <p className="text-xs text-amber-600">Too many selected files to zip at once. Narrow the filter or select up to 500 files.</p> : null}
+    {zipError ? <p className="text-xs text-destructive">{zipError}</p> : null}
     {selectedPaths.length > 0 && !deleteGuard.ok ? <p className="text-xs text-amber-600">Too many selected files to delete at once. Select up to 500 files.</p> : null}
     {deleteSummary ? <p className="text-xs text-emerald-700">{deleteSummary}</p> : null}
     {deleteError ? <p className="text-xs text-destructive">{deleteError}</p> : null}

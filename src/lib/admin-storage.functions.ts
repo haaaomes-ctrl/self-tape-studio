@@ -20,27 +20,37 @@ export function isAdminZipTempPath(path: string): boolean {
 }
 
 export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
-  const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(ZIP_TMP_PREFIX, {
-    limit: PAGE_SIZE,
-    offset: 0,
-    sortBy: { column: 'name', order: 'asc' },
-  });
-  if (error || !data) return { deleted: [], failed: [] as Array<{ path: string; error: string }> };
-  const expired = data
-    .filter((e) => e.id !== null)
-    .map((e) => ({ name: e.name, updated_at: e.updated_at ?? null }))
-    .filter((e) => {
-      const t = e.updated_at ? Date.parse(e.updated_at) : NaN;
-      return Number.isFinite(t) && now - t > ZIP_TMP_TTL_MS;
-    })
-    .map((e) => `${ZIP_TMP_PREFIX}/${e.name}`);
-
   const failed: Array<{ path: string; error: string }> = [];
   const deleted: string[] = [];
-  for (const path of expired) {
-    const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
-    if (rmErr) failed.push({ path, error: rmErr.message });
-    else deleted.push(path);
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(ZIP_TMP_PREFIX, {
+      limit: PAGE_SIZE,
+      offset,
+      sortBy: { column: 'name', order: 'asc' },
+    });
+    if (error || !data) {
+      failed.push({ path: ZIP_TMP_PREFIX, error: error?.message ?? "failed to list zip temp objects" });
+      break;
+    }
+
+    const expired = data
+      .filter((e) => e.id !== null)
+      .map((e) => ({ name: e.name, updated_at: e.updated_at ?? null }))
+      .filter((e) => {
+        const t = e.updated_at ? Date.parse(e.updated_at) : NaN;
+        return Number.isFinite(t) && now - t > ZIP_TMP_TTL_MS;
+      })
+      .map((e) => `${ZIP_TMP_PREFIX}/${e.name}`);
+
+    for (const path of expired) {
+      const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
+      if (rmErr) failed.push({ path, error: rmErr.message });
+      else deleted.push(path);
+    }
+
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
   }
   return { deleted, failed };
 }

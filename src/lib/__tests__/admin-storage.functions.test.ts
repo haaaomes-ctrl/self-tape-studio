@@ -54,6 +54,27 @@ describe('admin storage impl', () => {
     expect(out.deleted).toEqual(['admin-zips/old.zip']);
   });
 
+  it('cleanup paginates beyond first page and deletes expired on later pages', async () => {
+    const mod = await import('@/lib/admin-storage.functions');
+    const now = Date.parse('2026-05-14T12:00:00Z');
+    const firstPage = Array.from({ length: 1000 }, (_, i) => ({
+      id: String(i + 1),
+      name: `fresh-${i}.zip`,
+      updated_at: '2026-05-14T11:59:00Z',
+    }));
+    mockList
+      .mockResolvedValueOnce({ data: firstPage, error: null })
+      .mockResolvedValueOnce({
+        data: [{ id: '1001', name: 'old-page-2.zip', updated_at: '2026-05-14T08:00:00Z' }],
+        error: null,
+      });
+    mockRemove.mockResolvedValue({ error: null });
+    const out = await mod.cleanupExpiredAdminZipsImpl(now);
+    expect(mockList).toHaveBeenCalledTimes(2);
+    expect(mockRemove).toHaveBeenCalledWith(['admin-zips/old-page-2.zip']);
+    expect(out.deleted).toContain('admin-zips/old-page-2.zip');
+  });
+
   it('zip returns signed url (no base64 payload) and stages binary zip', async () => {
     const mod = await import('@/lib/admin-storage.functions');
     mockList.mockResolvedValue({ data: [], error: null });
