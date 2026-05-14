@@ -3327,6 +3327,8 @@ export async function runProcessTake(
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
 
+      const publicClaimTraceClaims = publicClaimTrace.written && Array.isArray(publicClaimTrace.claims) ? publicClaimTrace.claims : [];
+
       const techniqueObservationTrace = await emitTechniqueObservationTraceFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -3336,7 +3338,7 @@ export async function runProcessTake(
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
         evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
-        public_claim_trace_data: publicClaimTrace.written ? { claims: (publicClaimTrace as unknown as { claims?: Array<Record<string, unknown>> }).claims ?? [] } : null,
+        public_claim_trace_data: publicClaimTrace.written ? { claims: publicClaimTraceClaims } : null,
         truth_state_map_data: null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });

@@ -440,6 +440,7 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   return {
     written: result.written as boolean,
     emitted_artefact_ids: result.written ? ['public_claim_trace'] : [],
+    claims: result.written ? claims : [],
     summary: {
       claim_count: payload.claim_count,
       unsupported_claim_count: payload.unsupported_claim_count,

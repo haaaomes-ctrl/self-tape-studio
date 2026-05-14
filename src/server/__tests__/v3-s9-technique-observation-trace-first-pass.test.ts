@@ -12,12 +12,18 @@ describe('S9 technique observation trace first pass', () => {
     const raw = { report_data: { detected_components:['contemporary legit'], strengths:['grounded'], improvements:['clear diction'], timestamped_notes:[{timestamp:'00:01', note:'grounded beat'}] } };
     const anchors = await emitEvidenceAnchorsFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: raw, root_dir: root, internal_qa_emit: true });
     const claims = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: raw, evidence_anchors_data: { anchors: anchors.anchors ?? [] }, root_dir: root, internal_qa_emit: true });
+    expect(claims.written).toBe(true);
+    expect(claims.emitted_artefact_ids).toContain('public_claim_trace');
+    expect(Array.isArray(claims.claims)).toBe(true);
+    expect((claims.claims ?? []).length).toBeGreaterThan(0);
+    expect((claims.claims ?? [])[0]).toEqual(expect.objectContaining({ claim_id: expect.any(String), source_path: expect.any(String) }));
     const out = await emitTechniqueObservationTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: raw, evidence_anchors_data: { anchors: anchors.anchors ?? [] }, public_claim_trace_data: { claims: (claims as any).claims ?? [] }, root_dir: root, internal_qa_emit: true });
     expect(out.written).toBe(true);
     const payload = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
     expect(payload.observation_count).toBeGreaterThan(0);
     expect(payload.cannot_satisfy_technique_observation_gate).toBe(true);
     expect(payload.observations.every((x:any)=>['legacy_adapter','report_snapshot'].includes(x.source_family))).toBe(true);
+    expect(payload.observations.some((x:any)=>Array.isArray(x.linked_public_claim_ids) && x.linked_public_claim_ids.length > 0)).toBe(true);
     await rm(root, { recursive: true, force: true });
   });
 
@@ -38,6 +44,19 @@ describe('S9 technique observation trace first pass', () => {
     expect(metrics.technique_observation_trace_status).toBe('emitted');
     expect(metrics.technique_observation_gate_status).toBe('insufficient');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('does not create false public-claim links on non-match', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 's9-tech-'));
+    const raw = { report_data: { strengths: ['alpha text'], improvements: ['beta text'] } };
+    const out = await emitTechniqueObservationTraceFirstPass({
+      run_id: 'r4', analysis_run_id: 'r4', submission_id: 's1', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: raw,
+      public_claim_trace_data: { claims: [{ claim_id: 'pc-t1-1', claim_text: 'no matching text', source_path: 'report_data.other[0]' }] }, root_dir: root, internal_qa_emit: true,
+    });
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'r4', 'takes', 'take-t1', 'analysis-r4', 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
+    expect(payload.observations.every((x:any)=>Array.isArray(x.linked_public_claim_ids) && x.linked_public_claim_ids.length === 0)).toBe(true);
     await rm(root, { recursive: true, force: true });
   });
 });
