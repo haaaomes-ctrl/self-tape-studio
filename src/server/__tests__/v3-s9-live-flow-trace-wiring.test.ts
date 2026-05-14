@@ -50,7 +50,7 @@ describe('v3 s9 live flow trace wiring', () => {
     expect(manifest.emitted_artifacts).not.toContain('public_claim_trace');
   });
 
-  it('C/E: propagates raw_report legacy classification and README source scope metadata', async () => {
+  it('C/E: propagates raw_report legacy classification and truthful source scope metadata', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-live-wire-meta-'));
     const run = 'take-t3';
     await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 't3', submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false }, legacy_adapter_artefact_ids: ['raw_report'] });
@@ -61,8 +61,9 @@ describe('v3 s9 live flow trace wiring', () => {
     expect(manifest.legacy_adapter_artefact_ids).toContain('raw_report');
     expect(metrics.legacy_adapter_artefacts).toContain('raw_report');
     expect(metrics.real_v3_spine_artefacts).not.toContain('raw_report');
-    expect(manifest.source_scope_file).toBe('README.md');
-    expect(manifest.controlling_source_file).toBe('README.md');
-    expect(manifest.controlling_requirements_status).not.toBe('operator_supplied_replacement_README');
+    expect(['README.md', 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md']).toContain(manifest.source_scope_file);
+    expect(manifest.controlling_source_file).toBe(manifest.source_scope_file);
+    if (manifest.source_scope_file === 'README.md') expect(manifest.controlling_requirements_status).toBe('root_readme_present');
+    else expect(manifest.controlling_requirements_status).toBe('operator_supplied_replacement_README');
   });
 });
