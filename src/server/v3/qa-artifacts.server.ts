@@ -65,6 +65,22 @@ export interface QAArtifactEmitterOptions {
     input_artifact: number;
     resolver_truth_state: number;
   };
+  score_trace_summary?: {
+    score_count: number;
+    overall_count: number;
+    discipline_attribute_count: number;
+    component_score_count: number;
+    component_weight_count: number;
+    brief_adherence_subscore_count: number;
+    assessment_confidence_count: number;
+    calibration_modifier_count: number;
+    calibration_metadata_count: number;
+    source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; };
+    overall_readiness_public_score_status: 'blocked';
+    discipline_attribute_score_trace_status: 'internal_trace_only';
+    score_trace_gate_status: 'insufficient';
+    score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace';
+  };
 }
 
 export const DEFAULT_ROOT = 'qa-artifacts';
@@ -320,6 +336,30 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     unsafe_or_overclaim_count: 0,
     rewrite_required_count: 0,
   };
+
+  const scoreTraceSummary = manifest.score_trace_summary ?? {
+    score_count: 0,
+    overall_count: 0,
+    discipline_attribute_count: 0,
+    component_score_count: 0,
+    component_weight_count: 0,
+    brief_adherence_subscore_count: 0,
+    assessment_confidence_count: 0,
+    calibration_modifier_count: 0,
+    calibration_metadata_count: 0,
+    source_family_summary: {
+      real_runtime_v3: sourceClassById.score_trace === 'real_runtime_v3' ? 1 : 0,
+      legacy_adapter: sourceClassById.score_trace === 'legacy_adapter' ? 1 : 0,
+      report_snapshot: sourceClassById.score_trace === 'report_snapshot' ? 1 : 0,
+      input_artifact: sourceClassById.score_trace === 'input_artifact' ? 1 : 0,
+      resolver_truth_state: sourceClassById.score_trace === 'resolver_truth_state' ? 1 : 0,
+    },
+    overall_readiness_public_score_status: 'blocked',
+    discipline_attribute_score_trace_status: scoreTraceStatus === 'emitted' ? 'internal_trace_only' : 'missing',
+    score_trace_gate_status: scoreTraceGateStatus,
+    score_trace_gate_reason: scoreTraceGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (scoreTraceStatus === 'missing' ? 'trace_not_emitted' : 'legacy_report_snapshot_not_real_runtime_score_trace'),
+  };
+
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
   const nextTasks = [
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
@@ -393,22 +433,16 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
 
     score_trace_status: scoreTraceStatus,
     score_trace_gate_status: scoreTraceGateStatus,
-    score_trace_gate_reason: scoreTraceGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (scoreTraceStatus === 'missing' ? 'trace_not_emitted' : 'legacy_report_snapshot_not_real_runtime_score_trace'),
-    score_trace_source_family_summary: {
-      real_runtime_v3: sourceClassById.score_trace === 'real_runtime_v3' ? 1 : 0,
-      legacy_adapter: sourceClassById.score_trace === 'legacy_adapter' ? 1 : 0,
-      report_snapshot: sourceClassById.score_trace === 'report_snapshot' ? 1 : 0,
-      input_artifact: sourceClassById.score_trace === 'input_artifact' ? 1 : 0,
-      resolver_truth_state: sourceClassById.score_trace === 'resolver_truth_state' ? 1 : 0,
-    },
-    score_trace_count: sourceClassById.score_trace === 'missing' ? 0 : (scoreTraceStatus === 'emitted' ? 1 : 0),
-    overall_readiness_public_score_status: 'blocked',
-    discipline_attribute_score_trace_status: scoreTraceStatus === 'emitted' ? 'internal_trace_only' : 'missing',
-    score_trace_overall_count: 0,
-    score_trace_discipline_attribute_count: 0,
-    score_trace_component_score_count: 0,
-    score_trace_brief_adherence_subscore_count: 0,
-    score_trace_calibration_metadata_count: 0,
+    score_trace_gate_reason: scoreTraceSummary.score_trace_gate_reason,
+    score_trace_source_family_summary: scoreTraceSummary.source_family_summary,
+    score_trace_count: scoreTraceSummary.score_count,
+    overall_readiness_public_score_status: scoreTraceSummary.overall_readiness_public_score_status,
+    discipline_attribute_score_trace_status: scoreTraceSummary.discipline_attribute_score_trace_status,
+    score_trace_overall_count: scoreTraceSummary.overall_count,
+    score_trace_discipline_attribute_count: scoreTraceSummary.discipline_attribute_count,
+    score_trace_component_score_count: scoreTraceSummary.component_score_count,
+    score_trace_brief_adherence_subscore_count: scoreTraceSummary.brief_adherence_subscore_count,
+    score_trace_calibration_metadata_count: scoreTraceSummary.calibration_metadata_count,
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
     acceptance_decision: 'not_accepted',
@@ -499,6 +533,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     defect_risk_ids: options.defect_risk_ids ?? [],
     public_claim_trace_summary: options.public_claim_trace_summary ?? undefined,
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
+    score_trace_summary: options.score_trace_summary ?? undefined,
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },
     gate_statuses: [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }],
     warnings: ['Rendered PDFs/page-prints are manual-render evidence only'], privacy_notes: ['Internal-only dark mode artefact manifest; no public output changes'], redaction_notes: ['Private traces must not be exposed publicly'],

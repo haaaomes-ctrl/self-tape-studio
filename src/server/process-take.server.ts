@@ -3404,6 +3404,7 @@ export async function runProcessTake(
         real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
+        score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

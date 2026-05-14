@@ -11,6 +11,18 @@ afterEach(() => {
 });
 
 describe('v3 s9 qa acceptance metrics', () => {
+  it('populates score trace counters from manifest score_trace_summary', () => {
+    const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], comparison_run_id: null, generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['raw_report','score_trace'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { raw_report: 'emitted', score_trace: 'emitted' }, artefact_source_classification_by_id: { score_trace: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { score_trace: false }, legacy_adapter_artefact_ids: ['raw_report','score_trace'], real_v3_spine_artefact_ids: [], score_trace_summary: { score_count: 8, overall_count: 3, discipline_attribute_count: 2, component_score_count: 1, component_weight_count: 0, brief_adherence_subscore_count: 1, assessment_confidence_count: 1, calibration_modifier_count: 1, calibration_metadata_count: 2, source_family_summary: { legacy_adapter: 8, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 }, overall_readiness_public_score_status: 'blocked', discipline_attribute_score_trace_status: 'internal_trace_only', score_trace_gate_status: 'insufficient', score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace' } };
+    const m = qaArtifactsModule.buildQAAcceptanceMetrics(manifest as any);
+    expect(m.score_trace_status).toBe('emitted');
+    expect(m.score_trace_count).toBe(8);
+    expect(m.score_trace_overall_count).toBe(3);
+    expect(m.score_trace_discipline_attribute_count).toBe(2);
+    expect(m.score_trace_component_score_count).toBe(1);
+    expect(m.score_trace_brief_adherence_subscore_count).toBe(1);
+    expect(m.score_trace_calibration_metadata_count).toBe(2);
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';
