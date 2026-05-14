@@ -106,30 +106,77 @@ const BLOCKERS: Record<string, string> = {
 };
 
 
-function findProjectRootFrom(startDir: string): string | null {
-  let current = path.resolve(startDir);
+function safeExists(filePath: unknown): boolean {
+  if (typeof filePath !== 'string' || !filePath.trim()) return false;
+  try { return existsSync(filePath); } catch { return false; }
+}
+
+function safeJoin(...segments: Array<string | null | undefined>): string | null {
+  if (segments.some((s) => typeof s !== 'string' || !s.trim())) return null;
+  try { return path.join(...(segments as string[])); } catch { return null; }
+}
+
+export function findProjectRootFrom(startDir: unknown): string | null {
+  if (typeof startDir !== 'string' || !startDir.trim()) return null;
+  let current: string;
+  try {
+    current = path.resolve(startDir);
+  } catch {
+    return null;
+  }
   while (true) {
-    const hasPackage = existsSync(path.join(current, 'package.json'));
-    const hasSrcMarker = existsSync(path.join(current, 'src', 'server', 'v3', 'qa-artifacts.server.ts')) || existsSync(path.join(current, 'dist', 'server'));
-    const hasReadme = existsSync(path.join(current, 'README.md'));
+    const packagePath = safeJoin(current, 'package.json');
+    const srcMarkerPath = safeJoin(current, 'src', 'server', 'v3', 'qa-artifacts.server.ts');
+    const distMarkerPath = safeJoin(current, 'dist', 'server');
+    const readmePath = safeJoin(current, 'README.md');
+    const hasPackage = safeExists(packagePath);
+    const hasSrcMarker = safeExists(srcMarkerPath) || safeExists(distMarkerPath);
+    const hasReadme = safeExists(readmePath);
     if (hasPackage || hasSrcMarker || hasReadme) return current;
-    const parent = path.dirname(current);
+    let parent: string;
+    try { parent = path.dirname(current); } catch { return null; }
     if (parent === current) return null;
     current = parent;
   }
 }
 
-export function resolveProjectRootForQAManifest(): string {
-  const envRoot = process.env.QA_PROJECT_ROOT ?? process.env.PROJECT_ROOT;
-  if (envRoot) {
-    const resolved = path.resolve(envRoot);
-    if (existsSync(resolved)) return resolved;
+function resolveModuleDirForQAManifest(): string | null {
+  try {
+    const metaUrl = import.meta?.url;
+    if (typeof metaUrl !== 'string' || !metaUrl.trim()) return null;
+    const filePath = fileURLToPath(metaUrl);
+    if (typeof filePath !== 'string' || !filePath.trim()) return null;
+    return path.dirname(filePath);
+  } catch {
+    return null;
   }
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const fromModule = findProjectRootFrom(moduleDir);
-  if (fromModule) return fromModule;
-  const fromCwd = findProjectRootFrom(process.cwd());
-  return fromCwd ?? process.cwd();
+}
+
+function resolveExplicitProjectRootOverride(env: NodeJS.ProcessEnv = process.env): string | null {
+  const candidates = [env.QA_PROJECT_ROOT, env.PROJECT_ROOT];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    try {
+      const resolved = path.resolve(candidate);
+      if (safeExists(resolved)) return resolved;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export function resolveProjectRootForQAManifest(): string {
+  const explicitRoot = resolveExplicitProjectRootOverride();
+  if (explicitRoot) return explicitRoot;
+  const candidates: Array<string | null> = [];
+  candidates.push(resolveModuleDirForQAManifest());
+  try { candidates.push(process.cwd()); } catch {}
+  for (const candidate of candidates) {
+    const root = findProjectRootFrom(candidate);
+    if (root) return root;
+  }
+  try { return process.cwd(); } catch { return '.'; }
 }
 export function assertSafeSegment(value: string, field: string) {
   if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..') || path.isAbsolute(value)) throw new Error(`${field}_invalid_path`);
@@ -279,12 +326,15 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const blocker_codes = [...new Set(required_artifacts.map((a) => a.blocker_code).filter(Boolean) as string[])];
   const artefact_status_by_id = Object.fromEntries(required_artifacts.map((a) => [a.artefact_id, a.status]));
   const resolvedProjectRoot = resolveProjectRootForQAManifest();
+  let cwdFallback = '.';
+  try { cwdFallback = process.cwd(); } catch {}
   const projectRoot = typeof resolvedProjectRoot === 'string' && resolvedProjectRoot.trim().length > 0
     ? resolvedProjectRoot
-    : process.cwd();
+    : cwdFallback;
   const rootReadmeExists = (() => {
     try {
-      return existsSync(path.join(projectRoot, 'README.md'));
+      const readmePath = safeJoin(projectRoot, 'README.md');
+      return safeExists(readmePath);
     } catch {
       return false;
     }
