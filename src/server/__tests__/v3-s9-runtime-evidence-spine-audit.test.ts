@@ -47,6 +47,21 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(isV3EvidenceSpineCompleteFromStatuses(statuses)).toBe(false);
   });
 
+  it('emitted technique trace row does not use missing blocker code', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const technique = map.find((x) => x.artefact_id === 'technique_observation_trace');
+    expect(technique?.current_manifest_status).toBe('emitted');
+    expect(technique?.blocker_code).not.toBe('TechniqueObservation_trace_missing');
+  });
+
+  it('keeps missing blockers for actually missing artefacts', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    expect(map.find((x) => x.artefact_id === 'score_trace')?.blocker_code).toBe('ScoreTrace_missing');
+    expect(map.find((x) => x.artefact_id === 'validator_trace')?.blocker_code).toBe('validator_trace_missing');
+    expect(map.find((x) => x.artefact_id === 'gate_trace')?.blocker_code).toBe('gate_trace_missing');
+    expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_missing');
+  });
+
   it('marks immediate input artefacts as emit-capable without invention', () => {
     const ids = ['analysis_input_record', 'analysis_submission', 'analysis_take'];
     const map = getRuntimeEvidenceSpineAuditMap();

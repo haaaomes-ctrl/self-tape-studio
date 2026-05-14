@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3327,6 +3327,23 @@ export async function runProcessTake(
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
 
+      const publicClaimTraceClaims = publicClaimTrace.written && Array.isArray(publicClaimTrace.claims) ? publicClaimTrace.claims : [];
+
+      const techniqueObservationTrace = await emitTechniqueObservationTraceFirstPass({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        raw_report_data: rawReportPayload,
+        evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
+        public_claim_trace_data: publicClaimTrace.written ? { claims: publicClaimTraceClaims } : null,
+        truth_state_map_data: null,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      if (techniqueObservationTrace.written) qaArtefactIds.push(...techniqueObservationTrace.emitted_artefact_ids);
+
       console.info('[internal-qa] emitQAManifestForAnalysisRun_start', {
         event: 'emitQAManifestForAnalysisRun_start',
         run_id: `take-${takeId}`,
@@ -3335,6 +3352,7 @@ export async function runProcessTake(
         emitted_artefact_ids_before_manifest: qaArtefactIds,
         includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors'),
         includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace'),
+        includes_technique_observation_trace: qaArtefactIds.includes('technique_observation_trace'),
       });
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
@@ -3350,19 +3368,23 @@ export async function runProcessTake(
           raw_report: 'legacy_adapter',
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
           ...(publicClaimTrace.written ? { public_claim_trace: 'legacy_adapter' } : {}),
+          ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.level2_satisfies } : {}),
           ...(publicClaimTrace.written ? { public_claim_trace: false } : {}),
+          ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
         },
         legacy_adapter_artefact_ids: [
           'raw_report',
           ...(evidenceAnchors.written ? ['evidence_anchors'] : []),
           ...(publicClaimTrace.written ? ['public_claim_trace'] : []),
+          ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
+        technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',
