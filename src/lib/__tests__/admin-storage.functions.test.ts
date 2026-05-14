@@ -75,4 +75,16 @@ describe('admin storage impl', () => {
     expect(mockRemove.mock.calls.map((c:any)=>c[0])).toEqual([['a.json'], ['b.json']]);
     expect(out.results[1]).toEqual({ path: 'b.json', ok: false, error: 'denied' });
   });
+
+  it('cleanup reports remove failures without touching non-temp paths', async () => {
+    const mod = await import('@/lib/admin-storage.functions');
+    const now = Date.parse('2026-05-14T12:00:00Z');
+    mockList.mockResolvedValueOnce({ data: [
+      { id: '1', name: 'old.zip', updated_at: '2026-05-14T08:00:00Z' },
+    ], error: null });
+    mockRemove.mockResolvedValueOnce({ error: { message: 'cannot-delete' } });
+    const out = await mod.cleanupExpiredAdminZipsImpl(now);
+    expect(out.failed[0]).toEqual({ path: 'admin-zips/old.zip', error: 'cannot-delete' });
+  });
+
 });

@@ -50,3 +50,11 @@ export function filterAndSortArtifacts(data: ArtifactEntry[], filter: string, so
 export function getVisiblePaths(data: ArtifactEntry[], filter: string, sortMode: SortMode): string[] {
   return filterAndSortArtifacts(data, filter, sortMode).map((f) => f.path);
 }
+
+
+export const MAX_ZIP_PATHS = 500;
+export function canZipPaths(paths: string[]): { ok: boolean; reason: string | null } {
+  if (paths.length === 0) return { ok: false, reason: "No visible files to zip." };
+  if (paths.length > MAX_ZIP_PATHS) return { ok: false, reason: "Too many visible files to zip at once. Narrow the filter or select up to 500 files." };
+  return { ok: true, reason: null };
+}
