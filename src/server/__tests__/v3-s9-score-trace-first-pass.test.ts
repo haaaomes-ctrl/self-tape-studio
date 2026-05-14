@@ -23,6 +23,8 @@ describe('v3 s9 score trace first pass', () => {
     expect(componentWeightEntry.score_scale).toBe('0-1');
     expect(componentWeightEntry.score_value).toBe(0.4);
     expect(componentWeightEntry.public_display_status).toBe('internal_only');
+    expect(payload.source_module).toBe('test');
+    expect(payload.source_stage).toBe('unit');
   });
 
   it('skips invalid component weights safely', async () => {
@@ -31,6 +33,16 @@ describe('v3 s9 score trace first pass', () => {
     expect(out.written).toBe(true);
     expect(out.score_trace_summary.component_weight_count).toBe(1);
     expect(out.score_trace_summary.skipped_component_weight_out_of_range).toBe(2);
+  });
+
+
+
+  it('uses safe source_module fallback for direct emitter call', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
+    const out = await emitScoreTraceFirstPass({ run_id: 'r4', analysis_run_id: 'r4', submission_id: 's', take_id: 't1', raw_report_data: { report_data: { overall_score: 90 } }, internal_qa_emit: true, root_dir: root } as any);
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'r4', 'takes', 'take-t1', 'analysis-r4', 'traces', 'ScoreTrace.json'), 'utf8'));
+    expect(payload.source_module).toBe('qa-artifacts-wiring.server');
   });
 
   it('does not emit from prose numbers only', async () => {
