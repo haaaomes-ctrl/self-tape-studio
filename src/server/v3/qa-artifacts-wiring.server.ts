@@ -141,13 +141,31 @@ export async function emitComparisonRawArtefact(input: ComparisonRawEmitterInput
   return { written: result.written, path: result.path ?? result.storage_path, artefact_id: 'comparison_raw' as const, comparison_run_id: cmpId, warning: result.warning };
 }
 
+
+function buildTakeAnalysisRelativePath(input: { take_id?: string; analysis_run_id?: string; run_id: string; leaf: string }): string {
+  const takeId = input.take_id ?? (input.run_id.startsWith('take-') ? input.run_id.slice(5) : null);
+  if (!takeId) return input.leaf;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  return `takes/take-${takeId}/analysis-${analysisRunId}/${input.leaf}`;
+}
+
+function shouldUseExpandedManifestPaths(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.QA_ARTIFACT_SINK ?? 'file') === 'storage';
+}
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
     const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary };
-    const out = await emitInternalQAArtifactManifest(baseOptions);
+    const manifestRelativePath = shouldUseExpandedManifestPaths()
+      ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'manifest.json' })
+      : 'manifest.json';
+    const metricsRelativePath = shouldUseExpandedManifestPaths()
+      ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'qa/acceptance_metrics.json' })
+      : 'qa/acceptance_metrics.json';
+
+    const out = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath });
     console.info('[internal-qa] manifest_write_attempt', {
       run_id: metadata.run_id,
       take_id: baseOptions.take_id ?? null,
@@ -163,7 +181,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       return { written: false, warning: initialWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
     }
     const metrics = buildQAAcceptanceMetrics((out as any).manifest);
-    const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: 'qa/acceptance_metrics.json', payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
+    const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     console.info('[internal-qa] acceptance_metrics_write_attempt', {
       run_id: metadata.run_id,
       take_id: baseOptions.take_id ?? null,
@@ -172,11 +190,11 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       warning: getQAWriteWarning(qaWrite),
     });
     if (qaWrite.written) {
-      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, emitted_artefact_ids: [...initialEmitted, 'qa_acceptance_metrics'], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? initialEmitted), 'qa_acceptance_metrics'])] });
+      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...initialEmitted, 'qa_acceptance_metrics'], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? initialEmitted), 'qa_acceptance_metrics'])] });
       let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
       if (finalOut.written && 'manifest' in (finalOut as any)) {
         const finalMetrics = buildQAAcceptanceMetrics((finalOut as any).manifest);
-        finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: 'qa/acceptance_metrics.json', payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
+        finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
       }
       const finalWarning = mergeQAWarnings(
         qaWrite.warning,

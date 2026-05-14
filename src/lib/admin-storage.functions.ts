@@ -130,6 +130,22 @@ export async function listAllArtifactsImpl() {
   return results;
 }
 
+
+
+export async function checkExactArtifactKeysImpl(paths: string[]) {
+  const results: Array<{ path: string; exists: boolean; error: string | null }> = [];
+  for (const objectPath of paths) {
+    const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).createSignedUrl(objectPath, 60);
+    if (error) {
+      const msg = error.message ?? 'unknown';
+      const notFound = /not\s*found|does not exist/i.test(msg);
+      results.push({ path: objectPath, exists: false, error: notFound ? null : msg });
+      continue;
+    }
+    results.push({ path: objectPath, exists: Boolean(data?.signedUrl), error: null });
+  }
+  return results;
+}
 export async function zipSelectedArtifactsImpl(paths: string[]) {
   await cleanupExpiredAdminZipsImpl();
   const { default: JSZip } = await import(/* @vite-ignore */ "jszip");
