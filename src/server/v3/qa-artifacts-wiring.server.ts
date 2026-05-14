@@ -466,6 +466,18 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
     const idx = Number(match[1]);
     return Number.isInteger(idx) ? idx : null;
   };
+  const getTraceSourcePathFamily = (value: unknown): string | null => {
+    if (typeof value !== 'string' || !value.startsWith('report_data.')) return null;
+    if (value.startsWith('report_data.timestamped_notes[')) return 'report_data.timestamped_notes';
+    const knownPrefixes = [
+      'report_data.strengths', 'report_data.improvements', 'report_data.priority_fixes', 'report_data.fix_first',
+      'report_data.category_notes', 'report_data.category_rationale', 'report_data.detected_components',
+      'report_data.coaching_drills', 'report_data.scores', 'report_data.submission_verdict', 'report_data.verdict_final',
+      'report_data.overall_score', 'report_data.brief_adherence_breakdown',
+    ];
+    const found = knownPrefixes.find((p) => value === p || value.startsWith(`${p}[`) || value.startsWith(`${p}.`));
+    return found ?? null;
+  };
   const mkLinks = (text: string, sourcePath: string, timestamp?: string | null) => {
     const n = normaliseTraceText(text);
     const observationIndex = extractTimestampedNoteIndex(sourcePath);
@@ -485,9 +497,24 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
       const claimIndex = extractTimestampedNoteIndex(c.source_path);
       if (observationIndex != null && claimIndex != null && observationIndex !== claimIndex) return false;
       const indexMatch = observationIndex != null && claimIndex != null && observationIndex === claimIndex;
-      return pathMatch || contentMatch || indexMatch;
+      if (pathMatch || indexMatch) return true;
+      if (!contentMatch) return false;
+      if (observationIndex != null || claimIndex != null) return false;
+      const obsFamily = getTraceSourcePathFamily(sourcePath);
+      const claimFamily = getTraceSourcePathFamily(c.source_path);
+      if (obsFamily && claimFamily && obsFamily !== claimFamily) return false;
+      if (obsFamily === 'report_data.scores' || claimFamily === 'report_data.scores') return obsFamily === claimFamily;
+      return true;
     }).map((c) => String(c.claim_id ?? '')).filter(Boolean);
-    return { linkedEvidence: [...new Set(linkedEvidence)], linkedClaims: [...new Set(linkedClaims)] };
+    const linkedClaimCandidates = claims.filter((c) => linkedClaims.includes(String(c.claim_id ?? '')));
+    const pathOrIndexMatches = linkedClaimCandidates.filter((c) => c.source_path === sourcePath || (() => {
+      const claimIndex = extractTimestampedNoteIndex(c.source_path);
+      return observationIndex != null && claimIndex != null && observationIndex === claimIndex;
+    })());
+    const uniqueContentMatches = linkedClaimCandidates.filter((c) => normaliseTraceText(c.claim_text) === n && !pathOrIndexMatches.includes(c));
+    const contentOnlyIds = uniqueContentMatches.length === 1 ? [String(uniqueContentMatches[0].claim_id ?? '')] : [];
+    const deterministicClaimIds = [...new Set([...pathOrIndexMatches.map((c) => String(c.claim_id ?? '')).filter(Boolean), ...contentOnlyIds])];
+    return { linkedEvidence: [...new Set(linkedEvidence)], linkedClaims: deterministicClaimIds };
   };
   const addObs = (text: string, sourcePath: string, sourceFamily: 'legacy_adapter' | 'report_snapshot', timestamp?: string | null, index?: number) => {
     const clean = text.trim();
