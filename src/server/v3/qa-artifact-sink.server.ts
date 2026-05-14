@@ -10,6 +10,14 @@ export interface QAArtifactWriteResult { written: boolean; sink_mode: QAArtifact
 const LOG_PREFIX = 'TAPECOACH_QA_ARTIFACT_JSON:';
 
 
+function toCanonicalStoragePath(runId: string, relativePath: string): string {
+  const normalized = path.posix.normalize(relativePath);
+  const m = normalized.match(/^takes\/take-([^/]+)\/analysis-([^/]+)\/(.+)$/);
+  if (m) return `take-${m[1]}/analysis-${m[2]}/${m[3]}`;
+  return `${runId}/${normalized}`;
+}
+
+
 function validateRelativePath(relativePath: string): string {
   if (!/^[A-Za-z0-9._/-]+$/.test(relativePath)) throw new Error('artefact_path_invalid');
   const normalized = path.posix.normalize(relativePath);
@@ -37,7 +45,7 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
   const storage_bucket = process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
 
   let validatedRelativePath = input.relative_path;
-  let storage_path = `v3/${input.run_id}/${input.relative_path}`;
+  let storage_path = toCanonicalStoragePath(input.run_id, input.relative_path);
 
   const trySuccessLog = (args: Parameters<typeof emitLog>[0]): { emitted: boolean; warning?: string } => {
     if (!allowLogFallback) return { emitted: false };
@@ -58,7 +66,7 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
 
   try {
     validatedRelativePath = validateRelativePath(input.relative_path);
-    storage_path = `v3/${input.run_id}/${validatedRelativePath}`;
+    storage_path = toCanonicalStoragePath(input.run_id, validatedRelativePath);
     if (mode === 'file') {
       const abs = path.join(root, input.run_id, validatedRelativePath);
       const prefix = path.resolve(path.join(root, input.run_id)) + path.sep;

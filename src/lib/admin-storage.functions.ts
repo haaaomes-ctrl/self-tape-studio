@@ -10,43 +10,45 @@ import { setResponseHeader } from "@tanstack/react-start/server";
 const ADMIN_EMAIL = "o.halawi90@gmail.com";
 const BUCKET_NAME = "qa-artifacts";
 const SIGNED_URL_TTL_SECONDS = 3600;
-const ZIP_TMP_PREFIX = "admin-zips";
+const ZIP_TMP_PREFIX = "admin-temp-zips";
+const LEGACY_ZIP_TMP_PREFIX = "admin-zips";
 const PAGE_SIZE = 1000;
 const ZIP_TMP_TTL_MS = 2 * 60 * 60 * 1000;
 
 export function isAdminZipTempPath(path: string): boolean {
   const normalized = path.replace(/^\/+/, '').replace(/^qa-artifacts\//, '');
-  return normalized.startsWith(`${ZIP_TMP_PREFIX}/`);
+  return normalized.startsWith(`${ZIP_TMP_PREFIX}/`) || normalized.startsWith(`${LEGACY_ZIP_TMP_PREFIX}/`);
 }
 
 export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
+  const prefixes = [ZIP_TMP_PREFIX, LEGACY_ZIP_TMP_PREFIX];
   const failed: Array<{ path: string; error: string }> = [];
   const deleted: string[] = [];
   const candidates: string[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(ZIP_TMP_PREFIX, {
-      limit: PAGE_SIZE,
-      offset,
-      sortBy: { column: 'name', order: 'asc' },
-    });
-    if (error || !data) {
-      failed.push({ path: ZIP_TMP_PREFIX, error: error?.message ?? "failed to list zip temp objects" });
-      break;
+  for (const prefix of prefixes) {
+    let offset = 0;
+    while (true) {
+      const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(prefix, {
+        limit: PAGE_SIZE,
+        offset,
+        sortBy: { column: 'name', order: 'asc' },
+      });
+      if (error || !data) {
+        failed.push({ path: prefix, error: error?.message ?? "failed to list zip temp objects" });
+        break;
+      }
+      const expired = data
+        .filter((e) => e.id !== null)
+        .map((e) => ({ name: e.name, updated_at: e.updated_at ?? null }))
+        .filter((e) => {
+          const t = e.updated_at ? Date.parse(e.updated_at) : NaN;
+          return Number.isFinite(t) && now - t > ZIP_TMP_TTL_MS;
+        })
+        .map((e) => `${prefix}/${e.name}`);
+      candidates.push(...expired);
+      if (data.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
-
-    const expired = data
-      .filter((e) => e.id !== null)
-      .map((e) => ({ name: e.name, updated_at: e.updated_at ?? null }))
-      .filter((e) => {
-        const t = e.updated_at ? Date.parse(e.updated_at) : NaN;
-        return Number.isFinite(t) && now - t > ZIP_TMP_TTL_MS;
-      })
-      .map((e) => `${ZIP_TMP_PREFIX}/${e.name}`);
-    candidates.push(...expired);
-
-    if (data.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
   }
   for (const path of candidates) {
     const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
@@ -147,11 +149,13 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
   }
   const bytes = await zip.generateAsync({ type: "uint8array" });
   const filename = `qa-artifacts-selected-${new Date().toISOString().replace(/[:.]/g, "")}Z.zip`;
+  const expiresAt = new Date(Date.now() + ZIP_TMP_TTL_MS).toISOString();
   const objectPath = `${ZIP_TMP_PREFIX}/${Date.now()}-${Math.random().toString(36).slice(2)}.zip`;
 
   const { error: uploadError } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(objectPath, bytes, {
     contentType: "application/zip",
     upsert: false,
+    metadata: { temp_zip: "true", expires_at: expiresAt },
   });
   if (uploadError) throw new Response(`Failed to stage zip: ${uploadError.message}`, { status: 500 });
 
