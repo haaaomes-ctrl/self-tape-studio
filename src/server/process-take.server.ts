@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3300,6 +3300,33 @@ export async function runProcessTake(
       });
       qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
 
+      const rawReportPayload = rawReportEmit.written ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>) : (report as Record<string, unknown>);
+      const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        raw_report_data: rawReportPayload,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      if (evidenceAnchors.written) qaArtefactIds.push(...evidenceAnchors.emitted_artefact_ids);
+
+      const publicClaimTrace = await emitPublicClaimTraceFirstPass({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        raw_report_data: rawReportPayload,
+        evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
+        truth_state_map_data: null,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
+
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
         submission_id: audition.id,
@@ -3310,6 +3337,23 @@ export async function runProcessTake(
         commit_sha: process.env.GIT_COMMIT_SHA,
         branch_name: process.env.GIT_BRANCH_NAME,
         emitted_artefact_ids: qaArtefactIds,
+        artefact_source_classification_by_id: {
+          raw_report: 'legacy_adapter',
+          ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
+          ...(publicClaimTrace.written ? { public_claim_trace: 'legacy_adapter' } : {}),
+        },
+        artefact_level2_spine_satisfaction_by_id: {
+          raw_report: false,
+          ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.level2_satisfies } : {}),
+          ...(publicClaimTrace.written ? { public_claim_trace: false } : {}),
+        },
+        legacy_adapter_artefact_ids: [
+          'raw_report',
+          ...(evidenceAnchors.written ? ['evidence_anchors'] : []),
+          ...(publicClaimTrace.written ? ['public_claim_trace'] : []),
+        ],
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace'].includes(id)),
+        public_claim_trace_summary: publicClaimTrace.summary,
       });
       if (qaEmitResult.warning) {
         console.warn('[take-pipeline] internal_qa_manifest_emit_warning', {

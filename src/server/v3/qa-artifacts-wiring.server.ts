@@ -146,7 +146,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary };
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, source_scope_file: 'README.md', input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary };
     const out = await emitInternalQAArtifactManifest(baseOptions);
     if (!out.written || !('manifest' in out)) {
       const initialWarning = mergeQAWarnings(
@@ -221,7 +221,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
         blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
       });
     });
-  if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
+  if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const, anchors: [] as Array<Record<string, unknown>> };
   const payload = {
     schema_version: 'tapecoach_v3_evidence_anchors_first_pass_v1',
     artefact_type: 'evidence_anchors',
@@ -256,6 +256,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     source_classification: result.written ? ('legacy_adapter' as const) : ('missing' as const),
     level2_satisfies: false as const,
     warning: result.warning ?? null,
+    anchors,
   };
 }
 
@@ -484,7 +485,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const generatedAt = new Date().toISOString();
-  const unavailableCommon = [...(input.unavailable_fields ?? [])] as string[];
+  const unavailableCommon = [...new Set(input.unavailable_fields ?? [])] as string[];
   if (!input.submission_id) unavailableCommon.push('submission_id');
   if (!input.audition_type) unavailableCommon.push('audition_type');
   if (!input.selected_level) unavailableCommon.push('selected_level');
@@ -543,7 +544,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const generatedAt = new Date().toISOString();
   const unresolved_inputs: string[] = [];
-  const unavailable_fields = [...(input.unavailable_fields ?? [])];
+  const unavailable_fields = [...new Set(input.unavailable_fields ?? [])];
   const known_truths: Record<string, unknown> = { take_id: input.take_id, analysis_run_id: analysisRunId };
   const unavailable_truths: Record<string, unknown> = {};
   if (input.submission_id) known_truths.submission_id = input.submission_id;
