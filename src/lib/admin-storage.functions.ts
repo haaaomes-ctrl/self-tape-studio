@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import JSZip from "jszip";
 import { buildQAArtifactDownloadFilename, parseQAArtifactPath, stableCollisionSuffix } from "@/lib/admin-storage-utils";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -133,6 +132,7 @@ export async function listAllArtifactsImpl() {
 
 export async function zipSelectedArtifactsImpl(paths: string[]) {
   await cleanupExpiredAdminZipsImpl();
+  const { default: JSZip } = await import(/* @vite-ignore */ "jszip");
   const zip = new JSZip();
   const used = new Set<string>();
   for (const path of paths) {

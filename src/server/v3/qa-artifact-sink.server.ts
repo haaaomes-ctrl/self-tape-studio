@@ -14,6 +14,10 @@ function toCanonicalStoragePath(runId: string, relativePath: string): string {
   const normalized = path.posix.normalize(relativePath);
   const m = normalized.match(/^takes\/take-([^/]+)\/analysis-([^/]+)\/(.+)$/);
   if (m) return `take-${m[1]}/analysis-${m[2]}/${m[3]}`;
+  const takeRun = runId.match(/^take-([^/]+)$/);
+  if (takeRun && (normalized === 'manifest.json' || normalized === 'qa/acceptance_metrics.json')) {
+    return `take-${takeRun[1]}/analysis-${runId}/${normalized}`;
+  }
   return `${runId}/${normalized}`;
 }
 

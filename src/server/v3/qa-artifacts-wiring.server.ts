@@ -148,6 +148,13 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
     const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary };
     const out = await emitInternalQAArtifactManifest(baseOptions);
+    console.info('[internal-qa] manifest_write_attempt', {
+      run_id: metadata.run_id,
+      take_id: baseOptions.take_id ?? null,
+      manifest_path: (out as { manifest_path?: string }).manifest_path ?? null,
+      written: Boolean(out.written),
+      warning: getQAWriteWarning(out),
+    });
     if (!out.written || !('manifest' in out)) {
       const initialWarning = mergeQAWarnings(
         getQAWriteWarning(out),
@@ -157,6 +164,13 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     }
     const metrics = buildQAAcceptanceMetrics((out as any).manifest);
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: 'qa/acceptance_metrics.json', payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
+    console.info('[internal-qa] acceptance_metrics_write_attempt', {
+      run_id: metadata.run_id,
+      take_id: baseOptions.take_id ?? null,
+      metrics_path: qaWrite.path ?? qaWrite.storage_path ?? null,
+      written: Boolean(qaWrite.written),
+      warning: getQAWriteWarning(qaWrite),
+    });
     if (qaWrite.written) {
       const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, emitted_artefact_ids: [...initialEmitted, 'qa_acceptance_metrics'], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? initialEmitted), 'qa_acceptance_metrics'])] });
       let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;

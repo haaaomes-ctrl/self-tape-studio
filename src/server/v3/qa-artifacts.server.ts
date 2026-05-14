@@ -151,6 +151,7 @@ export function resolveRunDir(root: string, run_id: string, mode: 'take' | 'comp
 
 
 
+
 export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const emitted = manifest.emitted_artifacts ?? [];
   const missing = manifest.missing_artifacts ?? [];
