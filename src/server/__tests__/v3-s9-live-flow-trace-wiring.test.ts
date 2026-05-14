@@ -9,16 +9,20 @@ describe('v3 s9 live flow trace wiring', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-live-wire-'));
     const run = 'take-t1';
     const take = 't1';
-    const wrapped = { report_data: { schema_version: 'v1-legacy', timestamped_notes: [{ timestamp: '00:07', note: 'eye-line drifts right before line' }], strengths: ['grounded choices'], improvements: ['cleaner diction'], priority_fixes: ['reduce plosives'], category_notes: ['good momentum'], category_rationale: ['needs clearer objective turn'], verdict_final: 'ready soon', submission_verdict: { label: 'close', reason: 'delivery uneven' }, overall_score: 77, scores: { acting: 80 } } };
+    const wrapped = { report_data: { schema_version: 'v1-legacy', timestamped_notes: [null, { timestamp: '00:07', note: 'eye-line drifts right before line' }, 'bad row', { timestamp: '00:19', text: 'breath support drops on phrase end' }], strengths: ['grounded choices'], improvements: ['cleaner diction'], priority_fixes: ['reduce plosives'], category_notes: ['good momentum'], category_rationale: ['needs clearer objective turn'], verdict_final: 'ready soon', submission_verdict: { label: 'close', reason: 'delivery uneven' }, overall_score: 77, scores: { acting: 80 } } };
     await emitRawReportArtefact({ run_id: run, take_id: take, submission_id: 'sub1', source_stage: 'unit', source_module: 'test', report_data: wrapped.report_data, root_dir: root, internal_qa_emit: true });
     const anchors = await emitEvidenceAnchorsFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: wrapped, root_dir: root, internal_qa_emit: true });
     const claims = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: wrapped, evidence_anchors_data: { anchors: anchors.anchors ?? [] }, root_dir: root, internal_qa_emit: true });
     await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: take, submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', ...(anchors.written ? ['evidence_anchors'] : []), ...(claims.written ? ['public_claim_trace'] : [])], artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false }, legacy_adapter_artefact_ids: ['raw_report', 'evidence_anchors', 'public_claim_trace'], public_claim_trace_summary: claims.summary });
+    const anchorsTrace = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'EvidenceAnchors.json'), 'utf8'));
+    const claimsTrace = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'PublicClaimTrace.json'), 'utf8'));
     const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, run, 'qa/acceptance_metrics.json'), 'utf8'));
 
     expect(anchors.written).toBe(true);
     expect(claims.written).toBe(true);
+    expect(anchorsTrace.anchors.map((a: any) => a.source_path)).toEqual(expect.arrayContaining(['report_data.timestamped_notes[1].note', 'report_data.timestamped_notes[3].text']));
+    expect(claimsTrace.claims.filter((c: any) => ['eye-line drifts right before line', 'breath support drops on phrase end'].includes(c.claim_text)).map((c: any) => c.source_path)).toEqual(expect.arrayContaining(['report_data.timestamped_notes[1].note', 'report_data.timestamped_notes[3].text']));
     expect(manifest.emitted_artifacts).toEqual(expect.arrayContaining(['evidence_anchors', 'public_claim_trace']));
     expect(manifest.missing_artifacts).not.toEqual(expect.arrayContaining(['evidence_anchors', 'public_claim_trace']));
     expect(metrics.required_artefact_counts.emitted).toBe(manifest.emitted_artifacts.length);
