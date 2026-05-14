@@ -152,10 +152,24 @@ function resolveModuleDirForQAManifest(): string | null {
   }
 }
 
+function resolveExplicitProjectRootOverride(env: NodeJS.ProcessEnv = process.env): string | null {
+  const candidates = [env.QA_PROJECT_ROOT, env.PROJECT_ROOT];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    try {
+      const resolved = path.resolve(candidate);
+      if (safeExists(resolved)) return resolved;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export function resolveProjectRootForQAManifest(): string {
+  const explicitRoot = resolveExplicitProjectRootOverride();
+  if (explicitRoot) return explicitRoot;
   const candidates: Array<string | null> = [];
-  const envRoot = process.env.QA_PROJECT_ROOT ?? process.env.PROJECT_ROOT;
-  if (typeof envRoot === 'string' && envRoot.trim()) candidates.push(envRoot);
   candidates.push(resolveModuleDirForQAManifest());
   try { candidates.push(process.cwd()); } catch {}
   for (const candidate of candidates) {
