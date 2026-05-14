@@ -189,32 +189,6 @@ function StorageDownloadsPage() {
     }
   }
 
-  async function downloadAll() {
-    const data = filesState.data;
-    if (!data || data.length === 0) return;
-    setBulk({ running: true, done: 0, total: data.length, current: null, failed: [] });
-    const failed: { path: string; error: string }[] = [];
-    for (let i = 0; i < data.length; i++) {
-      const entry = data[i];
-      setBulk((b) => ({ ...b, current: entry.path, done: i }));
-      try {
-        const { signedUrl } = await sign({ data: { path: entry.path } });
-        triggerDownload(signedUrl, entry.path.split("/").pop() || "download");
-      } catch (e) {
-        const err = await toServerError(e);
-        failed.push({ path: entry.path, error: err?.message ?? "unknown" });
-      }
-      await new Promise((r) => setTimeout(r, 600));
-    }
-    setBulk({
-      running: false,
-      done: data.length,
-      total: data.length,
-      current: null,
-      failed,
-    });
-  }
-
   // ---- Render ----
 
   return (
@@ -316,7 +290,6 @@ function StorageDownloadsPage() {
           state={filesState}
           reload={loadFiles}
           downloadOne={downloadOne}
-          downloadAll={downloadAll}
           zipSelected={zipSelected}
           deleteSelected={deleteSelected}
           busyPath={busyPath}
@@ -348,7 +321,7 @@ function Panel({
   );
 }
 
-function FilesUI({ state, reload, downloadOne, downloadAll, zipSelected, deleteSelected, busyPath, bulk }: any) {
+function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busyPath, bulk }: any) {
   const [sortMode, setSortMode] = useState("newest");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
@@ -360,7 +333,7 @@ function FilesUI({ state, reload, downloadOne, downloadAll, zipSelected, deleteS
   return <>
     <div className="mt-6 flex flex-wrap gap-2">
       <Button onClick={reload} variant="outline">Refresh</Button>
-      <Button onClick={downloadAll} disabled={!sorted.length}>Download all visible</Button>
+      <Button onClick={async ()=>{if(!sorted.length) return; const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); const url=`data:application/zip;base64,${r.base64Zip}`; triggerDownload(url,r.filename);}} disabled={!sorted.length}>Download all visible</Button>
       <Button onClick={async ()=>{const r=await zipSelected({data:{paths:selectedPaths}}); const url=`data:application/zip;base64,${r.base64Zip}`; triggerDownload(url,r.filename);}} disabled={!selectedPaths.length}>Download selected zip</Button>
       <Button variant="destructive" onClick={async ()=>{ if(!confirm(`You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete ${selectedPaths.length} files?\n${selectedPaths.slice(0,3).join("\n")}`)) return; await deleteSelected({data:{paths:selectedPaths}}); await reload(); setSelected({});}} disabled={!selectedPaths.length}>Delete selected</Button>
       <input className="border rounded px-2 py-1 text-sm" placeholder="Filter take_id / analysis / path / type / ext" value={filter} onChange={(e)=>setFilter(e.target.value)} />
