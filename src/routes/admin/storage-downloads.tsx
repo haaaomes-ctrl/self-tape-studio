@@ -333,8 +333,8 @@ function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busy
   return <>
     <div className="mt-6 flex flex-wrap gap-2">
       <Button onClick={reload} variant="outline">Refresh</Button>
-      <Button onClick={async ()=>{if(!sorted.length) return; const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); const url=`data:application/zip;base64,${r.base64Zip}`; triggerDownload(url,r.filename);}} disabled={!sorted.length}>Download all visible</Button>
-      <Button onClick={async ()=>{const r=await zipSelected({data:{paths:selectedPaths}}); const url=`data:application/zip;base64,${r.base64Zip}`; triggerDownload(url,r.filename);}} disabled={!selectedPaths.length}>Download selected zip</Button>
+      <Button onClick={async ()=>{if(!sorted.length) return; const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); triggerDownload(r.signedUrl, r.filename);}} disabled={!sorted.length}>Download all visible</Button>
+      <Button onClick={async ()=>{const r=await zipSelected({data:{paths:selectedPaths}}); triggerDownload(r.signedUrl, r.filename);}} disabled={!selectedPaths.length}>Download selected zip</Button>
       <Button variant="destructive" onClick={async ()=>{ if(!confirm(`You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete ${selectedPaths.length} files?\n${selectedPaths.slice(0,3).join("\n")}`)) return; await deleteSelected({data:{paths:selectedPaths}}); await reload(); setSelected({});}} disabled={!selectedPaths.length}>Delete selected</Button>
       <input className="border rounded px-2 py-1 text-sm" placeholder="Filter take_id / analysis / path / type / ext" value={filter} onChange={(e)=>setFilter(e.target.value)} />
       <select className="border rounded px-2 py-1 text-sm" value={sortMode} onChange={(e)=>setSortMode(e.target.value)}>

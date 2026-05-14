@@ -10,6 +10,7 @@ import { setResponseHeader } from "@tanstack/react-start/server";
 const ADMIN_EMAIL = "o.halawi90@gmail.com";
 const BUCKET_NAME = "qa-artifacts";
 const SIGNED_URL_TTL_SECONDS = 3600;
+const ZIP_TMP_PREFIX = "admin-zips";
 const PAGE_SIZE = 1000;
 
 function normalizeEmail(email?: string | null): string {
@@ -99,9 +100,23 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
     zip.file(name, await blob.arrayBuffer());
   }
   const bytes = await zip.generateAsync({ type: "uint8array" });
+  const filename = `qa-artifacts-selected-${new Date().toISOString().replace(/[:.]/g, "")}Z.zip`;
+  const objectPath = `${ZIP_TMP_PREFIX}/${Date.now()}-${Math.random().toString(36).slice(2)}.zip`;
+
+  const { error: uploadError } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(objectPath, bytes, {
+    contentType: "application/zip",
+    upsert: false,
+  });
+  if (uploadError) throw new Response(`Failed to stage zip: ${uploadError.message}`, { status: 500 });
+
+  const { data: signed, error: signError } = await supabaseAdmin.storage
+    .from(BUCKET_NAME)
+    .createSignedUrl(objectPath, SIGNED_URL_TTL_SECONDS, { download: filename });
+  if (signError || !signed?.signedUrl) throw new Response(`Failed to sign zip: ${signError?.message ?? "unknown"}`, { status: 500 });
+
   return {
-    base64Zip: Buffer.from(bytes).toString("base64"),
-    filename: `qa-artifacts-selected-${new Date().toISOString().replace(/[:.]/g, "")}Z.zip`,
+    signedUrl: signed.signedUrl,
+    filename,
     count: paths.length,
   };
 }
