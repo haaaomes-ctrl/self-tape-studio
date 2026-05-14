@@ -1,14 +1,21 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, signOut } from "@/lib/auth";
 import {
+  canDeletePaths,
+  canZipPaths,
+  filterAndSortArtifacts,
+} from "@/lib/admin-storage-view-model";
+import {
   listAllArtifacts,
   signArtifactDownload,
   whoAmIAdmin,
+  zipSelectedArtifacts,
+  deleteSelectedArtifacts,
   type ArtifactEntry,
 } from "@/lib/admin-storage.functions";
 
@@ -110,6 +117,8 @@ function StorageDownloadsPage() {
   const list = useServerFn(listAllArtifacts);
   const sign = useServerFn(signArtifactDownload);
   const whoAmI = useServerFn(whoAmIAdmin);
+  const zipSelected = useServerFn(zipSelectedArtifacts);
+  const deleteSelected = useServerFn(deleteSelectedArtifacts);
 
   const clientEmail = user?.email ?? null;
   const clientNormalized = normalizeEmail(clientEmail);
@@ -184,32 +193,6 @@ function StorageDownloadsPage() {
     }
   }
 
-  async function downloadAll() {
-    const data = filesState.data;
-    if (!data || data.length === 0) return;
-    setBulk({ running: true, done: 0, total: data.length, current: null, failed: [] });
-    const failed: { path: string; error: string }[] = [];
-    for (let i = 0; i < data.length; i++) {
-      const entry = data[i];
-      setBulk((b) => ({ ...b, current: entry.path, done: i }));
-      try {
-        const { signedUrl } = await sign({ data: { path: entry.path } });
-        triggerDownload(signedUrl, entry.path.split("/").pop() || "download");
-      } catch (e) {
-        const err = await toServerError(e);
-        failed.push({ path: entry.path, error: err?.message ?? "unknown" });
-      }
-      await new Promise((r) => setTimeout(r, 600));
-    }
-    setBulk({
-      running: false,
-      done: data.length,
-      total: data.length,
-      current: null,
-      failed,
-    });
-  }
-
   // ---- Render ----
 
   return (
@@ -231,20 +214,10 @@ function StorageDownloadsPage() {
           <dd>{String(loading)}</dd>
           <dt>client.hasSession</dt>
           <dd>{String(!!user)}</dd>
-          <dt>client.rawEmail</dt>
-          <dd>{JSON.stringify(clientEmail)}</dd>
-          <dt>client.normalizedEmail</dt>
-          <dd>{JSON.stringify(clientNormalized)}</dd>
-          <dt>expectedAdminEmail</dt>
-          <dd>{JSON.stringify(ADMIN_EMAIL)}</dd>
           <dt>client.matches</dt>
           <dd>{String(clientEmailMatches)}</dd>
           <dt>server.loading</dt>
           <dd>{String(whoState.loading)}</dd>
-          <dt>server.claimsEmail</dt>
-          <dd>{JSON.stringify(whoState.data?.claimsEmail ?? null)}</dd>
-          <dt>server.normalizedEmail</dt>
-          <dd>{JSON.stringify(whoState.data?.normalizedEmail ?? null)}</dd>
           <dt>server.isAdmin</dt>
           <dd>{String(serverIsAdmin)}</dd>
           <dt>server.error</dt>
@@ -253,6 +226,8 @@ function StorageDownloadsPage() {
               ? `${whoState.error.status ?? ""} ${whoState.error.message}`
               : "—"}
           </dd>
+          <dt>files.count</dt>
+          <dd>{filesState.data?.length ?? 0}</dd>
           <dt>files.error</dt>
           <dd>
             {filesState.error
@@ -319,7 +294,8 @@ function StorageDownloadsPage() {
           state={filesState}
           reload={loadFiles}
           downloadOne={downloadOne}
-          downloadAll={downloadAll}
+          zipSelected={zipSelected}
+          deleteSelected={deleteSelected}
           busyPath={busyPath}
           bulk={bulk}
         />
@@ -349,193 +325,72 @@ function Panel({
   );
 }
 
-function FilesUI({
-  state,
-  reload,
-  downloadOne,
-  downloadAll,
-  busyPath,
-  bulk,
-}: {
-  state: { loading: boolean; data: ArtifactEntry[] | null; error: ServerError };
-  reload: () => void;
-  downloadOne: (e: ArtifactEntry) => void;
-  downloadAll: () => void;
-  busyPath: string | null;
-  bulk: {
-    running: boolean;
-    done: number;
-    total: number;
-    current: string | null;
-    failed: { path: string; error: string }[];
-  };
-}) {
-  const data = state.data;
-  const [sortMode, setSortMode] = useState<"newest" | "oldest" | "path">("newest");
+function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busyPath, bulk }: any) {
+  const [sortMode, setSortMode] = useState("newest");
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [filter, setFilter] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
+  const [zipError, setZipError] = useState<string | null>(null);
+  const data = state.data ?? [];
+  const sorted = useMemo(() => filterAndSortArtifacts(data, filter, sortMode as any), [data, filter, sortMode]);
+  const selectedPaths = sorted.filter((f: ArtifactEntry) => selected[f.path]).map((f: ArtifactEntry) => f.path);
+  const selectedSize = sorted.filter((f: ArtifactEntry) => selected[f.path]).reduce((n: number, f: ArtifactEntry) => n + f.size, 0);
+  const visibleZipGuard = canZipPaths(sorted.map((f: ArtifactEntry) => f.path));
+  const selectedZipGuard = canZipPaths(selectedPaths);
+  const deleteGuard = canDeletePaths(selectedPaths);
 
-  const sorted = (() => {
-    if (!data) return null;
-    const arr = [...data];
-    if (sortMode === "path") {
-      arr.sort((a, b) => a.path.localeCompare(b.path));
-    } else {
-      arr.sort((a, b) => {
-        const ta = a.updated_at ? Date.parse(a.updated_at) : 0;
-        const tb = b.updated_at ? Date.parse(b.updated_at) : 0;
-        return sortMode === "newest" ? tb - ta : ta - tb;
-      });
-    }
-    return arr;
-  })();
-
-  const grouped = (() => {
-    if (!sorted || sortMode === "path") return null;
-    const groups = new Map<string, ArtifactEntry[]>();
-    for (const f of sorted) {
-      const key = f.updated_at
-        ? new Date(f.updated_at).toISOString().slice(0, 10)
-        : "unknown date";
-      const list = groups.get(key) ?? [];
-      list.push(f);
-      groups.set(key, list);
-    }
-    return Array.from(groups.entries());
-  })();
-
-  return (
-    <>
-      <div className="mt-6 flex flex-wrap items-center gap-3">
-        <Button onClick={reload} variant="outline" disabled={state.loading}>
-          Refresh
-        </Button>
-        <Button
-          onClick={downloadAll}
-          disabled={!sorted || sorted.length === 0 || bulk.running}
-        >
-          {bulk.running ? "Downloading…" : "Download all"}
-        </Button>
-        <div className="ml-auto flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Sort by</span>
-          {(["newest", "oldest", "path"] as const).map((m) => (
-            <Button
-              key={m}
-              size="sm"
-              variant={sortMode === m ? "default" : "outline"}
-              onClick={() => setSortMode(m)}
-            >
-              {m === "newest" ? "Newest first" : m === "oldest" ? "Oldest first" : "Path A→Z"}
-            </Button>
-          ))}
-        </div>
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Your browser may block multiple automatic downloads — allow them when prompted.
-      </p>
-
-      {bulk.running || bulk.done > 0 ? (
-        <div className="mt-4 rounded-md border border-border bg-card p-4">
-          <div className="text-sm">
-            {bulk.done} of {bulk.total} downloaded
-            {bulk.current ? (
-              <>
-                {" "}— <span className="font-mono text-xs">{bulk.current}</span>
-              </>
-            ) : null}
-          </div>
-          <Progress
-            value={bulk.total ? (bulk.done / bulk.total) * 100 : 0}
-            className="mt-2"
-          />
-          {bulk.failed.length > 0 ? (
-            <div className="mt-3 text-sm text-destructive">
-              <div className="font-semibold">Failed ({bulk.failed.length}):</div>
-              <ul className="mt-1 list-disc pl-5">
-                {bulk.failed.map((f) => (
-                  <li key={f.path} className="font-mono text-xs">
-                    {f.path}: {f.error}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="mt-6 overflow-x-auto rounded-md border border-border">
-        {state.loading ? (
-          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-        ) : state.error ? (
-          <div className="p-6 text-sm text-destructive">
-            Error: {state.error.status ?? ""} {state.error.message}
-          </div>
-        ) : !sorted || sorted.length === 0 ? (
-          <div className="p-6 text-sm text-muted-foreground">No files found.</div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-left">
-              <tr>
-                <th className="px-3 py-2 font-medium">Path</th>
-                <th className="px-3 py-2 font-medium">Size</th>
-                <th className="px-3 py-2 font-medium">Modified</th>
-                <th className="px-3 py-2 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {grouped
-                ? grouped.flatMap(([day, files]) => [
-                    <tr key={`group-${day}`} className="border-t border-border bg-muted/40">
-                      <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold text-muted-foreground">
-                        {day} · {files.length} file{files.length === 1 ? "" : "s"}
-                      </td>
-                    </tr>,
-                    ...files.map((f) => (
-                      <tr key={f.path} className="border-t border-border">
-                        <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
-                        <td className="px-3 py-2 whitespace-nowrap">{formatBytes(f.size)}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                          {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => downloadOne(f)}
-                            disabled={busyPath === f.path || bulk.running}
-                          >
-                            {busyPath === f.path ? "…" : "Download"}
-                          </Button>
-                        </td>
-                      </tr>
-                    )),
-                  ])
-                : sorted.map((f) => (
-                    <tr key={f.path} className="border-t border-border">
-                      <td className="px-3 py-2 font-mono text-xs">{f.path}</td>
-                      <td className="px-3 py-2 whitespace-nowrap">{formatBytes(f.size)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                        {f.updated_at ? new Date(f.updated_at).toLocaleString() : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => downloadOne(f)}
-                          disabled={busyPath === f.path || bulk.running}
-                        >
-                          {busyPath === f.path ? "…" : "Download"}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-            </tbody>
-          </table>
-        )}
-        {sorted ? (
-          <div className="border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            {sorted.length} file{sorted.length === 1 ? "" : "s"}
-          </div>
-        ) : null}
-      </div>
-    </>
-  );
+  return <>
+    <div className="mt-6 flex flex-wrap gap-2">
+      <Button onClick={reload} variant="outline">Refresh</Button>
+      <Button onClick={async ()=>{if(!visibleZipGuard.ok) return; setZipError(null); try { const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); triggerDownload(r.signedUrl, r.filename);} catch (e) { const message = e instanceof Error ? e.message : String(e); setZipError(`Zip download failed: ${message}`); }}} disabled={!visibleZipGuard.ok}>Download all visible</Button>
+      <Button onClick={async ()=>{if(!selectedZipGuard.ok) return; setZipError(null); try { const r=await zipSelected({data:{paths:selectedPaths}}); triggerDownload(r.signedUrl, r.filename);} catch (e) { const message = e instanceof Error ? e.message : String(e); setZipError(`Zip download failed: ${message}`); }}} disabled={!selectedZipGuard.ok}>Download selected zip</Button>
+      <Button
+        variant="destructive"
+        onClick={async () => {
+          if (!deleteGuard.ok) return;
+          setDeleteError(null);
+          setDeleteSummary(null);
+          if (
+            !confirm(
+              `You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete ${selectedPaths.length} files?\n${selectedPaths.slice(0, 3).join("\n")}`,
+            )
+          )
+            return;
+          try {
+            const result = await deleteSelected({ data: { paths: selectedPaths } });
+            const rows = (result?.results ?? []) as Array<{ ok: boolean }>;
+            const failed = rows.filter((r) => !r.ok).length;
+            setDeleteSummary(`Deleted ${rows.length - failed} of ${rows.length} selected files.`);
+            if (failed > 0) {
+              setDeleteError(`Delete failed for ${failed} file(s).`);
+            } else {
+              await reload();
+              setSelected({});
+            }
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            setDeleteError(`Delete failed: ${message}`);
+          }
+        }}
+        disabled={!deleteGuard.ok}
+      >
+        Delete selected
+      </Button>
+      <input className="border rounded px-2 py-1 text-sm" placeholder="Filter take_id / analysis / path / type / ext" value={filter} onChange={(e)=>setFilter(e.target.value)} />
+      <select className="border rounded px-2 py-1 text-sm" value={sortMode} onChange={(e)=>setSortMode(e.target.value)}>
+        <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name_asc">Path A–Z</option><option value="name_desc">Path Z–A</option><option value="size_asc">Size small→large</option><option value="size_desc">Size large→small</option><option value="type">Artefact type</option><option value="take">take_id</option><option value="analysis">analysis_run_id</option><option value="comparison">comparison_run_id</option>
+      </select>
+    </div>
+    <p className="mt-2 text-xs text-muted-foreground">Selected: {selectedPaths.length} · {formatBytes(selectedSize)}</p>
+    {!visibleZipGuard.ok ? <p className="text-xs text-amber-600">{visibleZipGuard.reason}</p> : null}
+    {selectedPaths.length > 0 && !selectedZipGuard.ok ? <p className="text-xs text-amber-600">Too many selected files to zip at once. Narrow the filter or select up to 500 files.</p> : null}
+    {zipError ? <p className="text-xs text-destructive">{zipError}</p> : null}
+    {selectedPaths.length > 0 && !deleteGuard.ok ? <p className="text-xs text-amber-600">Too many selected files to delete at once. Select up to 500 files.</p> : null}
+    {deleteSummary ? <p className="text-xs text-emerald-700">{deleteSummary}</p> : null}
+    {deleteError ? <p className="text-xs text-destructive">{deleteError}</p> : null}
+    <div className="mt-4 overflow-x-auto rounded-md border border-border">
+      {state.loading ? <div className="p-6 text-sm text-muted-foreground">Loading files…</div> : state.error ? <div className="p-6 text-sm text-destructive">Error loading files: {state.error.message}</div> : !sorted.length ? <div className="p-6 text-sm text-muted-foreground">No files found.</div> : <table className="w-full text-sm"><thead className="bg-muted"><tr><th className="px-2"><input type="checkbox" checked={sorted.length>0 && selectedPaths.length===sorted.length} onChange={(e)=>setSelected(e.target.checked?Object.fromEntries(sorted.map((f:ArtifactEntry)=>[f.path,true])):{})} /></th><th>Path</th><th>Display</th><th>Type</th><th>take_id</th><th>analysis_run_id</th><th>comparison_run_id</th><th>Size</th><th>Last modified</th><th>Content-Type</th><th/></tr></thead><tbody>{sorted.map((f:ArtifactEntry)=><tr key={f.path} className="border-t"><td className="px-2"><input type="checkbox" checked={!!selected[f.path]} onChange={(e)=>setSelected((s:any)=>({...s,[f.path]:e.target.checked}))}/></td><td className="font-mono text-xs">{f.path}</td><td>{f.displayName}</td><td>{f.artifactType}</td><td>{f.takeId??"—"}</td><td>{f.analysisRunId??"—"}</td><td>{f.comparisonRunId??"—"}</td><td>{formatBytes(f.size)}</td><td>{f.lastModified?new Date(f.lastModified).toLocaleString():"—"}</td><td>{f.contentType??"—"}</td><td className="space-x-2"><Button size="sm" variant="outline" onClick={()=>downloadOne(f)} disabled={busyPath===f.path||bulk.running}>Download</Button><Button size="sm" variant="destructive" onClick={async()=>{ setDeleteError(null); setDeleteSummary(null); if(!confirm(`You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete 1 file?\n${f.path}`)) return; try { const result = await deleteSelected({data:{paths:[f.path]}}); const failed = (result?.results ?? []).filter((r:any)=>!r.ok).length; if (failed > 0) { setDeleteError(`Delete failed for ${failed} file(s).`); return; } setDeleteSummary('Deleted 1 file.'); await reload(); } catch (e) { const message = e instanceof Error ? e.message : String(e); setDeleteError(`Delete failed: ${message}`); }}}>Delete</Button></td></tr>)}</tbody></table>}
+    </div>
+  </>
 }
