@@ -87,6 +87,17 @@ function getTimestampedNoteTextField(row: Record<string, unknown>): 'note' | 'te
 }
 function normaliseTraceText(value: unknown): string { return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 
+function getQAProvenance(env: NodeJS.ProcessEnv = process.env) {
+  const buildCommit = env.VERCEL_GIT_COMMIT_SHA ?? env.LOVABLE_GIT_COMMIT_SHA ?? env.COMMIT_SHA ?? env.GIT_SHA ?? env.GIT_COMMIT_SHA ?? 'unknown';
+  return {
+    build_commit_sha: buildCommit,
+    deployment_revision: env.VERCEL_GIT_COMMIT_SHA ?? env.DEPLOYMENT_REVISION ?? 'unknown',
+    qa_emitter_version: 'xfix-v3-s9-storage-p1-runtime-prove-deployed',
+    storage_path_mapper_version: 'expanded-storage-mode-paths-v1',
+    source_branch: env.VERCEL_GIT_COMMIT_REF ?? env.GIT_BRANCH_NAME ?? env.BRANCH_NAME ?? 'unknown',
+  } as const;
+}
+
 export async function emitRawReportArtefact(input: RawReportEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false };
   const root = input.root_dir ?? DEFAULT_ROOT;
@@ -117,6 +128,7 @@ export async function emitRawReportArtefact(input: RawReportEmitterInput) {
     linked_v3_trace_ids: [],
     legacy_snapshot_reason: isLegacyV1 ? 'Current production report snapshot emitted for QA; not v3 scoring brain proof' : null,
     defect_risk_ids: [...new Set(defectRiskIds)],
+    ...getQAProvenance(),
   };
   assertSafeSegment(input.take_id, 'take_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${input.run_id}/reports/raw_report.json`, payload, 'raw_report', input.fixture_id);
@@ -165,8 +177,9 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'qa/acceptance_metrics.json' })
       : 'qa/acceptance_metrics.json';
 
+    console.info('[internal-qa] manifest_write_attempt', { event: 'manifest_write_attempt', run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: baseOptions.take_id ?? null, artefact_id: 'manifest', relative_path: manifestRelativePath, resolved_storage_path: null, sink: process.env.QA_ARTIFACT_SINK ?? 'file', bucket: process.env.QA_ARTIFACTS_BUCKET ?? null, emitted_artefact_ids: initialEmitted, timestamp: new Date().toISOString() });
     const out = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath });
-    console.info('[internal-qa] manifest_write_attempt', {
+    console.info('[internal-qa] manifest_write_result', { event: 'manifest_write_result',
       run_id: metadata.run_id,
       take_id: baseOptions.take_id ?? null,
       manifest_path: (out as { manifest_path?: string }).manifest_path ?? null,
@@ -180,20 +193,21 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       );
       return { written: false, warning: initialWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
     }
-    const metrics = buildQAAcceptanceMetrics((out as any).manifest);
+    const metrics = { ...buildQAAcceptanceMetrics((out as any).manifest), ...getQAProvenance() };
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
-    console.info('[internal-qa] acceptance_metrics_write_attempt', {
+    console.info('[internal-qa] acceptance_metrics_write_attempt', { event: 'acceptance_metrics_write_attempt',
       run_id: metadata.run_id,
       take_id: baseOptions.take_id ?? null,
       metrics_path: qaWrite.path ?? qaWrite.storage_path ?? null,
       written: Boolean(qaWrite.written),
       warning: getQAWriteWarning(qaWrite),
     });
+    console.info('[internal-qa] acceptance_metrics_write_result', { event: 'acceptance_metrics_write_result', written: Boolean(qaWrite.written), warning: getQAWriteWarning(qaWrite), sink_warning: (qaWrite as any)?.sink_warning ?? null, resolved_storage_path: qaWrite.storage_path ?? qaWrite.path ?? null });
     if (qaWrite.written) {
       const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...initialEmitted, 'qa_acceptance_metrics'], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? initialEmitted), 'qa_acceptance_metrics'])] });
       let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
       if (finalOut.written && 'manifest' in (finalOut as any)) {
-        const finalMetrics = buildQAAcceptanceMetrics((finalOut as any).manifest);
+        const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...getQAProvenance() };
         finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
       }
       const finalWarning = mergeQAWarnings(
@@ -277,6 +291,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     gate_satisfaction_reason: 'legacy_report_snapshot_only',
     blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
     redaction_notes: ['Internal-only trace; no secrets/tokens/session credentials emitted'],
+    ...getQAProvenance(),
   };
   assertSafeSegment(input.take_id, 'take_id');
   const rel = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/EvidenceAnchors.json`;
