@@ -60,4 +60,37 @@ describe('v3 s9 public claim trace first pass', () => {
     expect(out.written).toBe(false);
     await expect(access(path.join(root, 'run-none', 'takes', 'take-t1', 'analysis-run-none', 'traces', 'PublicClaimTrace.json'))).rejects.toThrow();
   });
+  it('does not mark ordinary numeric craft/timestamp text as score-like, but blocks explicit score fields/wording', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906c-score-det-'));
+    const run = 'run-score-det';
+    const report = {
+      schema_version: 'v1-legacy',
+      fix_first: 'Try 20% slower through the transition.',
+      presentation_notes: 'Clean 720p resolution with stable framing',
+      improvements: ['hold for 10 seconds', 'take 2 has clearer diction', 'find 3 tactics before the song', 'overall score: 92', 'final score 92', 'readiness score 92'],
+      timestamped_notes: [{ note: 'At 00:12 the eyeline shifts clearly.', timestamp: '00:12' }],
+      overall_score: 92,
+      overall_score_final: 92,
+      overall_score_model: 91,
+      scores: { acting: 88 },
+    };
+    const out = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: { artefact_type: 'raw_report', report_data: report }, root_dir: root, internal_qa_emit: true });
+    expect(out.written).toBe(true);
+    const trace = JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'PublicClaimTrace.json'), 'utf8'));
+    const byText = (t: string) => trace.claims.find((c: any) => c.claim_text === t);
+    for (const txt of ['At 00:12 the eyeline shifts clearly.', 'Try 20% slower through the transition.', 'hold for 10 seconds', 'take 2 has clearer diction', 'find 3 tactics before the song', 'Clean 720p resolution with stable framing']) {
+      const c = byText(txt);
+      expect(c.claim_type).not.toBe('score_or_verdict');
+      expect(c.blocker_codes).not.toContain('public_scoring_blocked');
+    }
+    for (const txt of ['overall score: 92', 'final score 92', 'readiness score 92']) {
+      const c = byText(txt);
+      expect(c.claim_type).toBe('score_or_verdict');
+      expect(c.blocker_codes).toContain('public_scoring_blocked');
+    }
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score' && c.claim_type === 'score_or_verdict')).toBe(true);
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score_final' && c.claim_type === 'score_or_verdict')).toBe(true);
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.overall_score_model' && c.claim_type === 'score_or_verdict')).toBe(true);
+    expect(trace.claims.some((c: any) => c.source_path === 'report_data.scores.acting' && c.claim_type === 'score_or_verdict')).toBe(true);
+  });
 });

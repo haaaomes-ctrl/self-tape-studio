@@ -270,6 +270,21 @@ function findLinkedEvidenceAnchorForClaim(args: { claimText: string; sourcePath:
   if (broadMatches.length === 1) return broadMatches[0];
   return null;
 }
+function isExplicitScoreClaim(args: { claimType: string; sourcePath: string; claimText: string }): boolean {
+  if (args.claimType === 'score_or_verdict') return true;
+  const p = args.sourcePath;
+  if (
+    p === 'report_data.overall_score'
+    || p === 'report_data.overall_score_final'
+    || p === 'report_data.overall_score_model'
+    || p === 'report_data.scores'
+    || p.startsWith('report_data.scores.')
+    || p.includes('.score')
+    || p.startsWith('scores_or_readiness_fields')
+  ) return true;
+  const t = normaliseTraceText(args.claimText);
+  return /(overall score|final score|model score|readiness score|rating|scored?\s+\d+|score[:\s]+\d+|\b\d+\s*\/\s*100\b)/i.test(t);
+}
 
 export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -278,7 +293,7 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   const reportData = unwrapRawReportData(input.raw_report_data);
   const claims: Array<Record<string, unknown>> = [];
   const addClaim = (claimText: string, sourcePath: string, claimType: string, timestamp?: string | null) => {
-    const isScoreLike = claimType === 'score_or_verdict' || /\b\d{2,3}\b/.test(claimText);
+    const isScoreLike = isExplicitScoreClaim({ claimType, sourcePath, claimText });
     const isOverclaim = OVERCLAIM_PATTERN.test(claimText);
     const isGeneric = GENERIC_PRAISE_PATTERN.test(claimText);
     const linked = findLinkedEvidenceAnchorForClaim({ claimText, sourcePath, timestamp, anchors: (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>> });
@@ -292,7 +307,7 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       source_family: 'legacy_adapter',
       source_artefact_id: 'raw_report',
       source_path: sourcePath,
-      claim_type: claimType,
+      claim_type: isScoreLike ? 'score_or_verdict' : claimType,
       linked_evidence_anchor_ids: linkedId,
       linked_truth_state_ids: [],
       support_status: supportStatus,
@@ -316,6 +331,15 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
     ['presentation_notes', reportData.presentation_notes, 'performance_quality'],
   ];
   for (const [pathKey, value, type] of fields) if (typeof value === 'string' && value.trim()) addClaim(value.trim(), `report_data.${pathKey}`, type);
+  for (const key of ['overall_score', 'overall_score_final', 'overall_score_model'] as const) {
+    const v = reportData[key];
+    if (typeof v === 'number' || typeof v === 'string') addClaim(String(v), `report_data.${key}`, 'score_or_verdict');
+  }
+  if (isRecord(reportData.scores)) {
+    for (const [k, v] of Object.entries(reportData.scores)) {
+      if (typeof v === 'number' || typeof v === 'string') addClaim(`${k}: ${String(v)}`, `report_data.scores.${k}`, 'score_or_verdict');
+    }
+  }
   for (const [pathKey, arr, type] of [['strengths', reportData.strengths, 'performance_quality'], ['improvements', reportData.improvements, 'technical_or_assessability'], ['category_notes', reportData.category_notes, 'performance_quality'], ['category_rationale', reportData.category_rationale, 'readiness']] as const) {
     if (Array.isArray(arr)) for (const item of arr) if (typeof item === 'string' && item.trim()) addClaim(item.trim(), `report_data.${pathKey}`, type);
   }
