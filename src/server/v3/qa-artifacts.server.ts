@@ -212,6 +212,9 @@ export function resolveRunDir(root: string, run_id: string, mode: 'take' | 'comp
 function isCommitLike(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._-]{6,80}$/.test(value.trim());
 }
+function isSafeRefLike(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._/-]{1,120}$/.test(value.trim());
+}
 
 function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
   for (const key of keys) {
@@ -222,20 +225,25 @@ function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
 }
 
 export function resolveQADeploymentProvenance(env: NodeJS.ProcessEnv = process.env) {
-  const safeSourcesChecked = ['BUILD_COMMIT_SHA','DEPLOYMENT_REVISION','SOURCE_VERSION','GITHUB_SHA','GITHUB_REF_NAME','VERCEL_GIT_COMMIT_SHA','VERCEL_GIT_COMMIT_REF','CF_PAGES_COMMIT_SHA','CF_PAGES_BRANCH','LOVABLE_GIT_COMMIT_SHA','LOVABLE_DEPLOYMENT_ID'] as const;
-  const commitCandidate = firstPresent(env, ['VERCEL_GIT_COMMIT_SHA', 'LOVABLE_GIT_COMMIT_SHA', 'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'CF_PAGES_COMMIT_SHA']);
-  const sourceBranchCandidate = firstPresent(env, ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME']);
-  const deploymentRevisionCandidate = firstPresent(env, ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION']);
-  const hasAnySafeValue = safeSourcesChecked.some((key) => typeof env[key] === 'string' && env[key]?.trim().length);
-  const invalidCommitValue = commitCandidate != null && !isCommitLike(commitCandidate);
-  const sourceBranch = sourceBranchCandidate ?? 'unknown';
-  const deploymentRevision = deploymentRevisionCandidate ?? 'unknown';
+  const SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS = ['BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME', 'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF', 'VERCEL_DEPLOYMENT_ID', 'CF_PAGES_COMMIT_SHA', 'CF_PAGES_BRANCH', 'LOVABLE_GIT_COMMIT_SHA', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION'] as const;
+  const commitKeys = ['VERCEL_GIT_COMMIT_SHA', 'LOVABLE_GIT_COMMIT_SHA', 'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'CF_PAGES_COMMIT_SHA'] as const;
+  const branchKeys = ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME'] as const;
+  const deploymentKeys = ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION'] as const;
+  const commitCandidate = firstPresent(env, [...commitKeys]);
+  const sourceBranchCandidate = firstPresent(env, [...branchKeys]);
+  const deploymentRevisionCandidate = firstPresent(env, [...deploymentKeys]);
+  const hasAnySafeValue = SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS.some((key) => typeof env[key] === 'string' && env[key]?.trim().length);
+  const acceptedCommit = isCommitLike(commitCandidate) ? commitCandidate : null;
+  const sourceBranch = isSafeRefLike(sourceBranchCandidate) ? sourceBranchCandidate : 'unknown';
+  const deploymentRevision = isSafeRefLike(deploymentRevisionCandidate) ? deploymentRevisionCandidate : 'unknown';
+  const acceptedAny = Boolean(acceptedCommit || sourceBranch !== 'unknown' || deploymentRevision !== 'unknown');
+  const invalidPresentValues = hasAnySafeValue && !acceptedAny;
   return {
-    build_commit_sha: isCommitLike(commitCandidate) ? commitCandidate : 'unknown',
+    build_commit_sha: acceptedCommit ?? 'unknown',
     deployment_revision: deploymentRevision,
     source_branch: sourceBranch,
-    deployment_provenance_status: invalidCommitValue ? 'invalid_env_value_ignored' : (hasAnySafeValue ? 'resolved' : 'unknown_no_safe_env_var_found'),
-    deployment_provenance_sources_checked: safeSourcesChecked,
+    deployment_provenance_status: acceptedAny ? 'resolved' : (invalidPresentValues ? 'invalid_env_value_ignored' : 'unknown_no_safe_env_var_found'),
+    deployment_provenance_sources_checked: SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS,
     qa_emitter_version: 'xfix-v3-s9-hygiene-provenance-v1',
     storage_path_mapper_version: 'expanded-storage-mode-paths-v1',
     qa_finaliser_version: 'xfix-v3-s9-hygiene-provenance-v1',

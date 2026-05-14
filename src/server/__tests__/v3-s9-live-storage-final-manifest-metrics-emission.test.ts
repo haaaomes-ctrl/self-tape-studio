@@ -17,8 +17,11 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     process.env.V3_QA_ARTIFACTS_ENABLED = 'true';
     process.env.INTERNAL_QA_EMIT = 'true';
     delete process.env.BUILD_COMMIT_SHA;
+    delete process.env.COMMIT_SHA;
+    delete process.env.GIT_SHA;
     delete process.env.DEPLOYMENT_REVISION;
     delete process.env.BRANCH_NAME;
+    delete process.env.VERCEL_DEPLOYMENT_ID;
     delete process.env.GIT_COMMIT_SHA;
     delete process.env.GIT_BRANCH_NAME;
   });
@@ -83,6 +86,43 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.build_commit_sha).toBe('git-sha-123');
     expect(manifestPayload.source_branch).toBe('git-branch');
     expect(metricsPayload.source_branch).toBe('git-branch');
+    expect(manifestPayload.deployment_provenance_status).toBe('resolved');
+    expect(manifestPayload.deployment_provenance_sources_checked).toEqual(expect.arrayContaining(['GIT_COMMIT_SHA', 'GIT_BRANCH_NAME']));
+  });
+
+  it('uses COMMIT_SHA fallback as resolved provenance', async () => {
+    process.env.COMMIT_SHA = 'abcdef1234567890abcdef1234567890abcdef12';
+    const run = 'take-tlive-commitsha';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 'tlive-commitsha', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const root = `take-tlive-commitsha/analysis-${run}/`;
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    expect(manifestPayload.build_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(manifestPayload.deployment_provenance_status).toBe('resolved');
+    expect(manifestPayload.deployment_provenance_sources_checked).toEqual(expect.arrayContaining(['COMMIT_SHA']));
+  });
+
+  it('uses GIT_SHA fallback as resolved provenance', async () => {
+    process.env.GIT_SHA = 'abcdef1234567890abcdef1234567890abcdef12';
+    const run = 'take-tlive-gitsha';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 'tlive-gitsha', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const root = `take-tlive-gitsha/analysis-${run}/`;
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    expect(manifestPayload.build_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(manifestPayload.deployment_provenance_status).toBe('resolved');
+    expect(manifestPayload.deployment_provenance_sources_checked).toEqual(expect.arrayContaining(['GIT_SHA']));
+  });
+
+  it('uses fallback branch and deployment env keys as resolved provenance', async () => {
+    process.env.BRANCH_NAME = 'main';
+    process.env.VERCEL_DEPLOYMENT_ID = 'dep_abc123';
+    const run = 'take-tlive-fallback-branch-dep';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 'tlive-fallback-branch-dep', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const root = `take-tlive-fallback-branch-dep/analysis-${run}/`;
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    expect(manifestPayload.source_branch).toBe('main');
+    expect(manifestPayload.deployment_revision).toBe('dep_abc123');
+    expect(manifestPayload.deployment_provenance_status).toBe('resolved');
+    expect(manifestPayload.deployment_provenance_sources_checked).toEqual(expect.arrayContaining(['BRANCH_NAME', 'VERCEL_DEPLOYMENT_ID']));
   });
 
   it('keeps unknown provenance safely when env is absent', async () => {
@@ -97,6 +137,9 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.deployment_revision).toBe('unknown');
     expect(manifestPayload.deployment_provenance_status).toBe('unknown_no_safe_env_var_found');
     expect(metricsPayload.deployment_provenance_status).toBe('unknown_no_safe_env_var_found');
+    expect(manifestPayload.deployment_provenance_sources_checked).toEqual([
+      'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME', 'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF', 'VERCEL_DEPLOYMENT_ID', 'CF_PAGES_COMMIT_SHA', 'CF_PAGES_BRANCH', 'LOVABLE_GIT_COMMIT_SHA', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION',
+    ]);
   });
 
   it('ignores invalid safe env commit values and reports diagnostic status', async () => {
@@ -111,6 +154,7 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(manifestPayload.deployment_provenance_sources_checked).toEqual(expect.arrayContaining(['BUILD_COMMIT_SHA', 'GITHUB_SHA', 'LOVABLE_DEPLOYMENT_ID']));
     expect(JSON.stringify(manifestPayload).toLowerCase()).not.toContain('mux_token_secret');
     expect(JSON.stringify(manifestPayload).toLowerCase()).not.toContain('never-emit');
+    expect(manifestPayload.deployment_provenance_status).not.toBe('unknown_no_safe_env_var_found');
   });
 
   it('surfaces non-null warning when manifest or metrics write fails', async () => {
