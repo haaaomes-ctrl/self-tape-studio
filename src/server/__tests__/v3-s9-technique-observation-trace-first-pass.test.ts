@@ -59,4 +59,37 @@ describe('S9 technique observation trace first pass', () => {
     expect(payload.observations.every((x:any)=>Array.isArray(x.linked_public_claim_ids) && x.linked_public_claim_ids.length === 0)).toBe(true);
     await rm(root, { recursive: true, force: true });
   });
+
+  it('rejects timestamp-only evidence matching and preserves deterministic link rules', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 's9-tech-'));
+    const out = await emitTechniqueObservationTraceFirstPass({
+      run_id: 'r5', analysis_run_id: 'r5', submission_id: 's1', take_id: 't1', source_module: 'test', source_stage: 'unit',
+      raw_report_data: { report_data: { timestamped_notes: [{ timestamp: '00:42', note: 'observation x' }, { timestamp: '00:42', note: 'match me' }, { timestamp: '00:42', note: 'different row' }] } },
+      evidence_anchors_data: {
+        anchors: [
+          { evidence_anchor_id: 'ea-a', source_path: 'report_data.timestamped_notes[9].note', evidence_text: 'unrelated text', timestamp: '00:42' },
+          { evidence_anchor_id: 'ea-b', source_path: 'report_data.timestamped_notes[1].note', evidence_text: 'match me', timestamp: '00:01' },
+          { evidence_anchor_id: 'ea-c', source_path: 'report_data.timestamped_notes[2].note', evidence_text: 'different row', timestamp: '00:42' },
+        ],
+      },
+      public_claim_trace_data: {
+        claims: [
+          { claim_id: 'pc-a', source_path: 'report_data.timestamped_notes[9].note', claim_text: 'unrelated text' },
+          { claim_id: 'pc-b', source_path: 'report_data.timestamped_notes[1].note', claim_text: 'match me' },
+        ],
+      },
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'r5', 'takes', 'take-t1', 'analysis-r5', 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
+    const byPath = Object.fromEntries(payload.observations.map((o: any) => [o.source_path, o]));
+    expect(byPath['report_data.timestamped_notes[0]'].linked_evidence_anchor_ids).toEqual([]);
+    expect(byPath['report_data.timestamped_notes[0]'].linked_public_claim_ids).toEqual([]);
+    expect(byPath['report_data.timestamped_notes[1]'].linked_evidence_anchor_ids).toContain('ea-b');
+    expect(byPath['report_data.timestamped_notes[1]'].linked_public_claim_ids).toContain('pc-b');
+    expect(byPath['report_data.timestamped_notes[2]'].linked_evidence_anchor_ids).toEqual(['ea-c']);
+    expect(byPath['report_data.timestamped_notes[2]'].linked_evidence_anchor_ids).not.toContain('ea-a');
+    await rm(root, { recursive: true, force: true });
+  });
 });

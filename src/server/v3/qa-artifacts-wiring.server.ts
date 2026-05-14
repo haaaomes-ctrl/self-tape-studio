@@ -459,10 +459,32 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const anchors = (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>>;
   const claims = (input.public_claim_trace_data?.claims ?? []) as Array<Record<string, unknown>>;
   const observations: Array<Record<string, unknown>> = [];
+  const extractTimestampedNoteIndex = (value: unknown): number | null => {
+    if (typeof value !== 'string') return null;
+    const match = value.match(/report_data\.timestamped_notes\[(\d+)\]\.(note|text)$/);
+    if (!match) return null;
+    const idx = Number(match[1]);
+    return Number.isInteger(idx) ? idx : null;
+  };
   const mkLinks = (text: string, sourcePath: string, timestamp?: string | null) => {
     const n = normaliseTraceText(text);
-    const linkedEvidence = anchors.filter((a) => normaliseTraceText(a.evidence_text) === n || a.source_path === sourcePath || (timestamp && a.timestamp === timestamp)).map((a) => String(a.evidence_anchor_id ?? '')).filter(Boolean);
-    const linkedClaims = claims.filter((c) => normaliseTraceText(c.claim_text) === n || c.source_path === sourcePath).map((c) => String(c.claim_id ?? '')).filter(Boolean);
+    const observationIndex = extractTimestampedNoteIndex(sourcePath);
+    const linkedEvidence = anchors.filter((a) => {
+      const pathMatch = a.source_path === sourcePath;
+      const contentMatch = normaliseTraceText(a.evidence_text) === n;
+      const anchorIndex = extractTimestampedNoteIndex(a.source_path);
+      const indexMatch = observationIndex != null && anchorIndex != null && observationIndex === anchorIndex;
+      const timestampMatch = Boolean(timestamp && a.timestamp === timestamp);
+      const safeTimestampMatch = timestampMatch && (pathMatch || contentMatch || indexMatch);
+      return pathMatch || contentMatch || safeTimestampMatch;
+    }).map((a) => String(a.evidence_anchor_id ?? '')).filter(Boolean);
+    const linkedClaims = claims.filter((c) => {
+      const pathMatch = c.source_path === sourcePath;
+      const contentMatch = normaliseTraceText(c.claim_text) === n;
+      const claimIndex = extractTimestampedNoteIndex(c.source_path);
+      const indexMatch = observationIndex != null && claimIndex != null && observationIndex === claimIndex;
+      return pathMatch || contentMatch || indexMatch;
+    }).map((c) => String(c.claim_id ?? '')).filter(Boolean);
     return { linkedEvidence: [...new Set(linkedEvidence)], linkedClaims: [...new Set(linkedClaims)] };
   };
   const addObs = (text: string, sourcePath: string, sourceFamily: 'legacy_adapter' | 'report_snapshot', timestamp?: string | null, index?: number) => {
