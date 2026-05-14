@@ -19,6 +19,8 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     delete process.env.BUILD_COMMIT_SHA;
     delete process.env.DEPLOYMENT_REVISION;
     delete process.env.BRANCH_NAME;
+    delete process.env.GIT_COMMIT_SHA;
+    delete process.env.GIT_BRANCH_NAME;
   });
 
   it('uploads traces + manifest + acceptance metrics under one canonical take-analysis root', async () => {
@@ -65,7 +67,22 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.source_branch).toBe('test-branch');
     expect(manifestPayload.qa_artifact_root).toBe(`take-${take}/analysis-${run}`);
     expect(metricsPayload.qa_artifact_root).toBe(`take-${take}/analysis-${run}`);
+    expect(manifestPayload.storage_bucket).toBe('qa-artifacts');
     expect(metricsPayload.next_required_engineering_tasks).not.toContain('S9-06 EvidenceAnchors and PublicClaimTrace');
+  });
+
+  it('uses GIT_* provenance fallbacks when primary env vars are absent', async () => {
+    process.env.GIT_COMMIT_SHA = 'git-sha-123';
+    process.env.GIT_BRANCH_NAME = 'git-branch';
+    const run = 'take-tlive3';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 'tlive3', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const root = `take-tlive3/analysis-${run}/`;
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    const metricsPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}qa/acceptance_metrics.json`)?.[1] ?? '{}');
+    expect(manifestPayload.build_commit_sha).toBe('git-sha-123');
+    expect(metricsPayload.build_commit_sha).toBe('git-sha-123');
+    expect(manifestPayload.source_branch).toBe('git-branch');
+    expect(metricsPayload.source_branch).toBe('git-branch');
   });
 
   it('keeps unknown provenance safely when env is absent', async () => {
