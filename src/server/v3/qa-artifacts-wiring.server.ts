@@ -461,7 +461,7 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const observations: Array<Record<string, unknown>> = [];
   const extractTimestampedNoteIndex = (value: unknown): number | null => {
     if (typeof value !== 'string') return null;
-    const match = value.match(/report_data\.timestamped_notes\[(\d+)\]\.(note|text)$/);
+    const match = value.match(/^report_data\.timestamped_notes\[(\d+)\](?:\.(note|text))?$/);
     if (!match) return null;
     const idx = Number(match[1]);
     return Number.isInteger(idx) ? idx : null;
@@ -473,6 +473,7 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
       const pathMatch = a.source_path === sourcePath;
       const contentMatch = normaliseTraceText(a.evidence_text) === n;
       const anchorIndex = extractTimestampedNoteIndex(a.source_path);
+      if (observationIndex != null && anchorIndex != null && observationIndex !== anchorIndex) return false;
       const indexMatch = observationIndex != null && anchorIndex != null && observationIndex === anchorIndex;
       const timestampMatch = Boolean(timestamp && a.timestamp === timestamp);
       const safeTimestampMatch = timestampMatch && (pathMatch || contentMatch || indexMatch);
@@ -482,6 +483,7 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
       const pathMatch = c.source_path === sourcePath;
       const contentMatch = normaliseTraceText(c.claim_text) === n;
       const claimIndex = extractTimestampedNoteIndex(c.source_path);
+      if (observationIndex != null && claimIndex != null && observationIndex !== claimIndex) return false;
       const indexMatch = observationIndex != null && claimIndex != null && observationIndex === claimIndex;
       return pathMatch || contentMatch || indexMatch;
     }).map((c) => String(c.claim_id ?? '')).filter(Boolean);
@@ -525,8 +527,9 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   if (Array.isArray(reportData.timestamped_notes)) reportData.timestamped_notes.forEach((item, idx) => {
     if (!isRecord(item)) return;
     const text = getTimestampedNoteText(item);
+    const field = getTimestampedNoteTextField(item);
     const ts = typeof item.timestamp === 'string' ? item.timestamp : (typeof item.time === 'string' ? item.time : null);
-    if (text) addObs(text, `report_data.timestamped_notes[${idx}]`, 'report_snapshot', ts, idx);
+    if (text && field) addObs(text, `report_data.timestamped_notes[${idx}].${field}`, 'report_snapshot', ts, idx);
   });
   if (observations.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const sourceFamilySummary = observations.reduce<Record<string, number>>((acc, obs) => {
