@@ -137,6 +137,11 @@ describe('v3 s9 take input artifacts', () => {
     expect(take.unavailable_fields).toEqual(expect.arrayContaining(['take_index', 'take_created_at', 'take_updated_at']));
     expect(inputRecord.unavailable_fields).toEqual(expect.arrayContaining(['audition_type', 'material_presence_source']));
     expect(submission.unavailable_fields).toEqual(expect.arrayContaining(['submission_created_at', 'submission_updated_at']));
+    expect(new Set(inputRecord.unavailable_fields).size).toBe(inputRecord.unavailable_fields.length);
+    expect(new Set(submission.unavailable_fields).size).toBe(submission.unavailable_fields.length);
+    expect(new Set(take.unavailable_fields).size).toBe(take.unavailable_fields.length);
+    expect(submission.component_or_task_declaration_status).toBe('unknown');
+    expect(take.take_index_source).toBe('unavailable');
   });
 
   it('treats structured and json-string extracted brief cache as supplied and empty cache as absent', async () => {

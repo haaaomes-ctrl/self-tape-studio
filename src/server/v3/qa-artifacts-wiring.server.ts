@@ -675,10 +675,11 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const generatedAt = new Date().toISOString();
-  const unavailableCommon = [...new Set(input.unavailable_fields ?? [])] as string[];
+  const unavailableCommon = dedupePreservingOrder(input.unavailable_fields ?? []);
   if (!input.submission_id) unavailableCommon.push('submission_id');
   if (!input.audition_type) unavailableCommon.push('audition_type');
   if (!input.selected_level) unavailableCommon.push('selected_level');
+  const unavailableCommonDedupe = dedupePreservingOrder(unavailableCommon);
   const boolFromEnvOrUnknown = (name: 'V3_QA_ARTIFACTS_ENABLED' | 'INTERNAL_QA_EMIT'): boolean | 'unknown' => {
     const v = process.env[name];
     if (v === 'true') return true;
@@ -693,7 +694,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: input.brief_presence ?? 'unknown', brief_presence_source: input.brief_presence_source ?? 'unavailable', material_presence: input.material_presence ?? 'unknown',
     media_reference_state: { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
     qa_emit_enabled_state: { V3_QA_ARTIFACTS_ENABLED: boolFromEnvOrUnknown('V3_QA_ARTIFACTS_ENABLED'), INTERNAL_QA_EMIT: boolFromEnvOrUnknown('INTERNAL_QA_EMIT') },
-    unavailable_fields: unavailableCommon, redaction_notes,
+    unavailable_fields: unavailableCommonDedupe, redaction_notes,
   };
   const submissionSnapshot = {
     schema_version: 'tapecoach_v3_analysis_submission_v1', artefact_type: 'analysis_submission', internal_only: true, privacy_classification: 'internal_private',
@@ -701,7 +702,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     audition_type: input.audition_type ?? null, selected_level: input.selected_level ?? null, brief_presence: input.brief_presence ?? 'unknown', brief_presence_source: input.brief_presence_source ?? 'unavailable', material_presence: input.material_presence ?? 'unknown',
     submission_created_at: input.submission_created_at ?? null, submission_updated_at: input.submission_updated_at ?? null, component_or_task_declaration: input.component_or_task_declaration ?? null, component_or_task_declaration_status: input.component_or_task_declaration_status ?? (input.component_or_task_declaration == null ? 'unknown' : (input.component_or_task_declaration.length === 0 ? 'known_empty' : 'supplied')), component_or_task_declaration_source: input.component_or_task_declaration_source ?? (input.component_or_task_declaration == null ? 'not_loaded' : 'loaded_runtime_field'),
     safe_submission_refs: input.safe_submission_refs ?? (input.submission_id ? [`submission:${input.submission_id}`] : []),
-    unavailable_fields: [...unavailableCommon, ...(input.submission_created_at ? [] : ['submission_created_at']), ...(input.submission_updated_at ? [] : ['submission_updated_at'])], redaction_notes,
+    unavailable_fields: dedupePreservingOrder([...unavailableCommonDedupe, ...(input.submission_created_at ? [] : ['submission_created_at']), ...(input.submission_updated_at ? [] : ['submission_updated_at'])]), redaction_notes,
   };
   const takeSnapshot = {
     schema_version: 'tapecoach_v3_analysis_take_v1', artefact_type: 'analysis_take', internal_only: true, privacy_classification: 'internal_private',
@@ -710,7 +711,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     take_index_source: input.take_index_source ?? (input.take_index == null ? 'unavailable' : 'loaded_take_index'),
     stable_take_identity: { take_id: input.take_id, analysis_run_id: analysisRunId }, mux_playback_id_present: Boolean(input.mux_playback_id), safe_mux_playback_ref: input.safe_mux_playback_ref ?? input.mux_playback_id ?? null,
     media_readiness_state: input.media_readiness_state ?? null,
-    unavailable_fields: [...unavailableCommon, ...(input.take_created_at ? [] : ['take_created_at']), ...(input.take_updated_at ? [] : ['take_updated_at'])], redaction_notes,
+    unavailable_fields: dedupePreservingOrder([...unavailableCommonDedupe, ...(input.take_created_at ? [] : ['take_created_at']), ...(input.take_updated_at ? [] : ['take_updated_at'])]), redaction_notes,
   };
   assertSafeSegment(input.take_id, 'take_id');
   const base = `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs`;
@@ -734,7 +735,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const generatedAt = new Date().toISOString();
   const unresolved_inputs: string[] = [];
-  const unavailable_fields = [...new Set(input.unavailable_fields ?? [])];
+  const unavailable_fields = dedupePreservingOrder(input.unavailable_fields ?? []);
   const known_truths: Record<string, unknown> = { take_id: input.take_id, analysis_run_id: analysisRunId };
   const unavailable_truths: Record<string, unknown> = {};
   if (input.submission_id) known_truths.submission_id = input.submission_id;
@@ -782,6 +783,10 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     schema_version: 'tapecoach_v3_truth_state_map_v1', artefact_type: 'truth_state_map', internal_only: true, privacy_classification: 'internal_private',
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null,
     source_module: input.source_module, source_stage: input.source_stage, generated_at: generatedAt,
+    truth_state_scope: 'resolver_stage_snapshot',
+    final_artefact_status_source: 'manifest.json',
+    final_qa_acceptance_source: 'qa/acceptance_metrics.json',
+    not_final_artefact_emission_state: true,
     known_truths, inferred_truths, unavailable_truths, unsafe_or_blocked_truths,
     brief_truths: { brief_presence: briefPresenceState.value, source: briefPresenceState.source, status: briefPresenceState.status },
     media_truths: { media_readiness_state: input.media_readiness_state ?? null, mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
@@ -800,4 +805,15 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
   }
   return { written: !hadFailure, emitted_artefact_ids };
+}
+
+export function dedupePreservingOrder(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
 }

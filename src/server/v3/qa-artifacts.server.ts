@@ -210,7 +210,10 @@ export function resolveRunDir(root: string, run_id: string, mode: 'take' | 'comp
 }
 
 function isCommitLike(value: unknown): value is string {
-  return typeof value === 'string' && /^[A-Za-z0-9._-]{6,80}$/.test(value.trim());
+  return typeof value === 'string' && /^[a-fA-F0-9]{7,64}$/.test(value.trim());
+}
+function isSafeRefLike(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._/-]{1,120}$/.test(value.trim());
 }
 
 function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
@@ -220,15 +223,56 @@ function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
   }
   return null;
 }
+function firstValidPresent(
+  env: Record<string, string | undefined>,
+  keys: readonly string[],
+  validator: (value: string) => boolean,
+): { value: string | null; source_key: string | null; invalid_keys_seen: string[]; present_keys_seen: string[] } {
+  const invalid_keys_seen: string[] = [];
+  const present_keys_seen: string[] = [];
+  for (const key of keys) {
+    const raw = env[key];
+    if (typeof raw !== 'string') continue;
+    const value = raw.trim();
+    if (!value) continue;
+    present_keys_seen.push(key);
+    if (!validator(value)) {
+      invalid_keys_seen.push(key);
+      continue;
+    }
+    return { value, source_key: key, invalid_keys_seen, present_keys_seen };
+  }
+  return { value: null, source_key: null, invalid_keys_seen, present_keys_seen };
+}
 
 export function resolveQADeploymentProvenance(env: NodeJS.ProcessEnv = process.env) {
-  const commitCandidate = firstPresent(env, ['VERCEL_GIT_COMMIT_SHA', 'LOVABLE_GIT_COMMIT_SHA', 'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'CF_PAGES_COMMIT_SHA']);
-  const sourceBranch = firstPresent(env, ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME']) ?? 'unknown';
-  const deploymentRevision = firstPresent(env, ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION']) ?? 'unknown';
+  const SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS = ['BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME', 'VERCEL_GIT_COMMIT_SHA', 'VERCEL_GIT_COMMIT_REF', 'VERCEL_DEPLOYMENT_ID', 'CF_PAGES_COMMIT_SHA', 'CF_PAGES_BRANCH', 'LOVABLE_GIT_COMMIT_SHA', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION'] as const;
+  const commitKeys = ['VERCEL_GIT_COMMIT_SHA', 'LOVABLE_GIT_COMMIT_SHA', 'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'CF_PAGES_COMMIT_SHA'] as const;
+  const branchKeys = ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME'] as const;
+  const deploymentKeys = ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION'] as const;
+  const commitResolved = firstValidPresent(env, commitKeys, (value) => isCommitLike(value));
+  const branchResolved = firstValidPresent(env, branchKeys, (value) => isSafeRefLike(value));
+  const deploymentResolved = firstValidPresent(env, deploymentKeys, (value) => isSafeRefLike(value));
+  const hasAnySafeValue = SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS.some((key) => typeof env[key] === 'string' && env[key]?.trim().length);
+  const acceptedCommit = commitResolved.value;
+  const sourceBranch = branchResolved.value ?? 'unknown';
+  const deploymentRevision = deploymentResolved.value ?? 'unknown';
+  const acceptedAny = Boolean(acceptedCommit || sourceBranch !== 'unknown' || deploymentRevision !== 'unknown');
+  const invalidPresentValues = hasAnySafeValue && !acceptedAny;
+  const invalidSourcesIgnored = [...new Set([...commitResolved.invalid_keys_seen, ...branchResolved.invalid_keys_seen, ...deploymentResolved.invalid_keys_seen])];
+  const resolvedSources = {
+    ...(commitResolved.source_key ? { build_commit_sha: commitResolved.source_key } : {}),
+    ...(branchResolved.source_key ? { source_branch: branchResolved.source_key } : {}),
+    ...(deploymentResolved.source_key ? { deployment_revision: deploymentResolved.source_key } : {}),
+  };
   return {
-    build_commit_sha: isCommitLike(commitCandidate) ? commitCandidate : 'unknown',
+    build_commit_sha: acceptedCommit ?? 'unknown',
     deployment_revision: deploymentRevision,
     source_branch: sourceBranch,
+    deployment_provenance_status: acceptedAny ? 'resolved' : (invalidPresentValues ? 'invalid_env_value_ignored' : 'unknown_no_safe_env_var_found'),
+    deployment_provenance_sources_checked: SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS,
+    deployment_provenance_resolved_sources: resolvedSources,
+    deployment_provenance_invalid_sources_ignored: invalidSourcesIgnored,
     qa_emitter_version: 'xfix-v3-s9-hygiene-provenance-v1',
     storage_path_mapper_version: 'expanded-storage-mode-paths-v1',
     qa_finaliser_version: 'xfix-v3-s9-hygiene-provenance-v1',
