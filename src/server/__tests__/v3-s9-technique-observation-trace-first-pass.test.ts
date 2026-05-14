@@ -75,4 +75,25 @@ describe('S9 technique observation trace first pass non-array extraction', () =>
     expect(metrics.production_safe_status).toBe('blocked');
     await rm(root, { recursive: true, force: true });
   });
+
+  it('next_take_plan family is recognized and does not cross-link by text-only', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 's9-tech-'));
+    const out = await emitTechniqueObservationTraceFirstPass({
+      run_id: 'r4', analysis_run_id: 'r4', submission_id: 's1', take_id: 't1', source_module: 'test', source_stage: 'unit', root_dir: root, internal_qa_emit: true,
+      raw_report_data: { report_data: { next_take_plan: { groups: [{ items: ['Same instruction'] }] } } },
+      public_claim_trace_data: { claims: [
+        { claim_id: 'pc-fix', source_path: 'report_data.fix_first', claim_text: 'Same instruction' },
+        { claim_id: 'pc-strength', source_path: 'report_data.strengths', claim_text: 'Same instruction' },
+        { claim_id: 'pc-next', source_path: 'report_data.next_take_plan.groups[0].items[0]', claim_text: 'Same instruction' },
+      ] },
+    });
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'r4', 'takes', 'take-t1', 'analysis-r4', 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
+    const obs = payload.observations.find((o:any)=>o.source_path==='report_data.next_take_plan.groups[0].items[0]');
+    expect(obs).toBeDefined();
+    expect(obs.linked_public_claim_ids).toContain('pc-next');
+    expect(obs.linked_public_claim_ids).not.toContain('pc-fix');
+    expect(obs.linked_public_claim_ids).not.toContain('pc-strength');
+    await rm(root, { recursive: true, force: true });
+  });
 });

@@ -473,7 +473,7 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
       'report_data.strengths', 'report_data.improvements', 'report_data.priority_fixes', 'report_data.fix_first',
       'report_data.category_notes', 'report_data.category_rationale', 'report_data.detected_components',
       'report_data.coaching_drills', 'report_data.scores', 'report_data.submission_verdict', 'report_data.verdict_final',
-      'report_data.overall_score', 'report_data.brief_adherence_breakdown',
+      'report_data.overall_score', 'report_data.brief_adherence_breakdown', 'report_data.next_take_plan',
     ];
     const found = knownPrefixes.find((p) => value === p || value.startsWith(`${p}[`) || value.startsWith(`${p}.`));
     return found ?? null;
@@ -502,6 +502,7 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
       if (observationIndex != null || claimIndex != null) return false;
       const obsFamily = getTraceSourcePathFamily(sourcePath);
       const claimFamily = getTraceSourcePathFamily(c.source_path);
+      if ((obsFamily && !claimFamily) || (!obsFamily && claimFamily)) return false;
       if (obsFamily && claimFamily && obsFamily !== claimFamily) return false;
       if (obsFamily === 'report_data.scores' || claimFamily === 'report_data.scores') return obsFamily === claimFamily;
       return true;
