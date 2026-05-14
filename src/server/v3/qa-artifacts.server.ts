@@ -58,6 +58,13 @@ export interface QAArtifactEmitterOptions {
     unsafe_or_overclaim_count?: number;
     rewrite_required_count?: number;
   };
+  technique_observation_trace_summary?: {
+    legacy_adapter: number;
+    report_snapshot: number;
+    real_runtime_v3: number;
+    input_artifact: number;
+    resolver_truth_state: number;
+  };
 }
 
 export const DEFAULT_ROOT = 'qa-artifacts';
@@ -246,7 +253,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
 
   const techniqueObservationStatus = manifest.artefact_status_by_id?.technique_observation_trace ?? 'missing';
   const techniqueObservationGateStatus = techniqueObservationStatus === 'missing' ? 'missing' : (spineById.technique_observation_trace === true ? 'satisfied' : 'insufficient');
-  const techniqueObservationSourceSummary = {
+  const techniqueObservationSourceSummary = manifest.technique_observation_trace_summary ?? {
     real_runtime_v3: sourceClassById.technique_observation_trace === 'real_runtime_v3' ? 1 : 0,
     legacy_adapter: sourceClassById.technique_observation_trace === 'legacy_adapter' ? 1 : 0,
     report_snapshot: sourceClassById.technique_observation_trace === 'report_snapshot' ? 1 : 0,
@@ -424,6 +431,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     real_v3_spine_artefact_ids: options.real_v3_spine_artefact_ids ?? [],
     defect_risk_ids: options.defect_risk_ids ?? [],
     public_claim_trace_summary: options.public_claim_trace_summary ?? undefined,
+    technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },
     gate_statuses: [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }],
     warnings: ['Rendered PDFs/page-prints are manual-render evidence only'], privacy_notes: ['Internal-only dark mode artefact manifest; no public output changes'], redaction_notes: ['Private traces must not be exposed publicly'],

@@ -9,7 +9,7 @@ describe('S9 technique observation trace first pass', () => {
   it('emits from legacy fields and stays insufficient', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 's9-tech-'));
     const run = 'run1'; const take='t1';
-    const raw = { report_data: { detected_components:['contemporary legit'], strengths:['grounded'], improvements:['clear diction'], timestamped_notes:[{timestamp:'00:01', note:'grounded beat'}] } };
+    const raw = { report_data: { timestamped_notes:[{timestamp:'00:01', note:'grounded beat'}] } };
     const anchors = await emitEvidenceAnchorsFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: raw, root_dir: root, internal_qa_emit: true });
     const claims = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: raw, evidence_anchors_data: { anchors: anchors.anchors ?? [] }, root_dir: root, internal_qa_emit: true });
     expect(claims.written).toBe(true);
@@ -17,6 +17,9 @@ describe('S9 technique observation trace first pass', () => {
     const out = await emitTechniqueObservationTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's1', take_id: take, source_module: 'test', source_stage: 'unit', raw_report_data: raw, evidence_anchors_data: { anchors: anchors.anchors ?? [] }, public_claim_trace_data: { claims: claims.claims ?? [] }, root_dir: root, internal_qa_emit: true });
     const payload = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
     expect(out.written).toBe(true);
+    expect(out.source_classification).toBe('report_snapshot');
+    expect(out.source_family_summary.report_snapshot).toBeGreaterThan(0);
+    expect(out.source_family_summary.legacy_adapter).toBe(0);
     expect(payload.cannot_satisfy_technique_observation_gate).toBe(true);
     expect(payload.observations.some((x:any)=>x.source_path === 'report_data.timestamped_notes[0].note')).toBe(true);
     await rm(root, { recursive: true, force: true });
