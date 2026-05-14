@@ -49,6 +49,8 @@ export interface PublicClaimTraceEmitterInput {
 export interface TechniqueObservationTraceEmitterInput extends PublicClaimTraceEmitterInput {
   public_claim_trace_data?: { claims?: Array<Record<string, unknown>> } | null;
 }
+
+export interface ScoreTraceEmitterInput extends TechniqueObservationTraceEmitterInput {}
 export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
@@ -600,6 +602,58 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/TechniqueObservationTrace.json`, payload, 'technique_observation_trace');
   return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['technique_observation_trace'] : [], source_classification: derivedSourceClassification as 'legacy_adapter' | 'report_snapshot', source_family_summary: sourceFamilySummary as { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number }, level2_satisfies: false as const };
 }
+
+export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const reportData = unwrapRawReportData(input.raw_report_data);
+  const claims = (input.public_claim_trace_data?.claims ?? []) as Array<Record<string, unknown>>;
+  const entries: Array<Record<string, unknown>> = [];
+  const finiteNum = (v: unknown): number | null => {
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() && Number.isFinite(Number(v))) return Number(v);
+    return null;
+  };
+  const linkClaims = (sourcePath: string, scoreScope: string, scoreName: string, value: number) => claims
+    .filter((c) => c?.source_path === sourcePath || (c?.source_path === sourcePath && Number(c?.claim_text) === value) || (Number(c?.claim_text) === value && c?.score_scope === scoreScope && String(c?.source_path ?? '').startsWith(sourcePath.split('.').slice(0,3).join('.')) && c?.score_name === scoreName))
+    .map((c) => String(c.claim_id ?? '')).filter(Boolean);
+  const push = (scope: string, name: string, value: unknown, sourcePath: string, extra: Record<string, unknown> = {}) => {
+    const num = finiteNum(value);
+    if (num == null) return;
+    entries.push({
+      score_trace_id: `st-${input.take_id}-${entries.length + 1}`,
+      score_scope: scope,
+      score_name: name,
+      score_value: num,
+      score_scale: '0-100',
+      source_artefact_id: 'raw_report',
+      source_family: 'legacy_adapter',
+      source_path: sourcePath,
+      public_scoring_status: scope === 'overall_readiness' ? 'blocked' : 'internal_trace_only',
+      public_display_status: 'internal_only',
+      linked_public_claim_ids: linkClaims(sourcePath, scope, name, num),
+      linked_evidence_anchor_ids: [],
+      linked_truth_state_ids: [],
+      cannot_satisfy_v3_gate: true,
+      notes: 'first-pass legacy/report-snapshot derived trace',
+      blocker_codes: ['ScoreTrace_legacy_only'],
+      ...extra,
+    });
+  };
+  ['overall_score','overall_score_final','overall_score_model'].forEach((k)=>push('overall_readiness',k,reportData[k],`report_data.${k}`));
+  if (isRecord(reportData.scores)) for (const [k,v] of Object.entries(reportData.scores)) push('discipline_attribute',k,v,`report_data.scores.${k}`);
+  if (Array.isArray(reportData.detected_components)) reportData.detected_components.forEach((c,i)=>{ if(!isRecord(c)) return; push('component_score','score',c.score,`report_data.detected_components[${i}].score`,{source_index:i,component_type:typeof c.type==='string'?c.type:null}); push('component_weight','weight',c.weight,`report_data.detected_components[${i}].weight`,{source_index:i,component_type:typeof c.type==='string'?c.type:null,component_weight:finiteNum(c.weight)}); });
+  if (isRecord(reportData.brief_adherence_breakdown)) ['instruction_precision','material_compliance','professionalism_signals','technical_compliance'].forEach((k)=>push('brief_adherence_subscore',k,(reportData.brief_adherence_breakdown as Record<string,unknown>)[k],`report_data.brief_adherence_breakdown.${k}`));
+  push('assessment_confidence','confidence',reportData.confidence,'report_data.confidence');
+  push('calibration_modifier','consistency_modifier',reportData.consistency_modifier,'report_data.consistency_modifier');
+  if (!entries.length) return { written: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const, score_entries: [] };
+  const source_family_summary = { legacy_adapter: entries.length, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 };
+  const payload = { schema_version:'tapecoach_v3_score_trace_first_pass_v1', artefact_type:'score_trace', internal_only:true, privacy_classification:'internal_private', run_id:input.run_id, analysis_run_id:analysisRunId, take_id:input.take_id, generated_at:new Date().toISOString(), source_module:'qa-artifacts-wiring.server', source_stage:input.source_stage, trace_mode:'first_pass_legacy_report_snapshot', score_count:entries.length, score_entries:entries, source_family_summary, overall_readiness_public_score_status:'blocked', discipline_attribute_score_status:'internal_trace_only', cannot_satisfy_score_gate:true, gate_satisfaction_reason:'legacy_report_snapshot_not_real_runtime_score_trace', blocker_codes:['ScoreTrace_legacy_only'], linked_public_claim_trace_summary:{ claim_count: claims.length }, ...resolveQADeploymentProvenance() };
+  const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ScoreTrace.json`, payload, 'score_trace');
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['score_trace'] : [], source_classification: 'legacy_adapter' as const, level2_satisfies: false as const, score_entries: entries };
+}
+
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
   return emitTraceArtefact({ ...input, artefact_id: 'model_run_trace', relative_path: 'traces/ModelRunTrace.json' });
 }

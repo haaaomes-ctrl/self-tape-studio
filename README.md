@@ -38,7 +38,7 @@ This document defines the target redesigned behaviour.
 The current S9 internal QA Storage validation state is:
 
 - live Storage validation has passed for current internal QA bundle emission;
-- the current live Storage validation target is 11 files per take when TechniqueObservationTrace source data exists;
+- the current live Storage validation target is 12 files per take when TechniqueObservationTrace source data exists;
 - `manifest.json` and `qa/acceptance_metrics.json` are required bundle members;
 - internal QA bundle emission is not the same as Level 2 acceptance;
 - Level 2 remains `not_accepted` until all required evidence, trace and proof gates pass;
@@ -46,7 +46,7 @@ The current S9 internal QA Storage validation state is:
 - comparison evidence remains missing;
 - further trace and proof artefacts are required before Level 2 can be accepted.
 
-The current 11-file analysis-run Storage bundle (when TechniqueObservationTrace source data exists) is:
+The current 12-file analysis-run Storage bundle (when TechniqueObservationTrace source data exists) is:
 
 ```text
 inputs/input_record.json

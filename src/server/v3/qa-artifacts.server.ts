@@ -296,7 +296,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true ? 'satisfied' : 'insufficient');
 
   const techniqueObservationStatus = manifest.artefact_status_by_id?.technique_observation_trace ?? 'missing';
+  const scoreTraceStatus = manifest.artefact_status_by_id?.score_trace ?? 'missing';
   const techniqueObservationGateStatus = techniqueObservationStatus === 'missing' ? 'missing' : (spineById.technique_observation_trace === true ? 'satisfied' : 'insufficient');
+  const scoreTraceGateStatus = scoreTraceStatus === 'missing' ? 'missing' : (spineById.score_trace === true ? 'satisfied' : 'insufficient');
   const techniqueObservationSourceSummary = manifest.technique_observation_trace_summary ?? {
     real_runtime_v3: sourceClassById.technique_observation_trace === 'real_runtime_v3' ? 1 : 0,
     legacy_adapter: sourceClassById.technique_observation_trace === 'legacy_adapter' ? 1 : 0,
@@ -324,7 +326,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(tracesEmitted && (evidenceAnchorGateStatus !== 'satisfied' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
     ...(techniqueObservationStatus === 'missing' ? ['TechniqueObservationTrace'] : []),
     ...(techniqueObservationStatus !== 'missing' && techniqueObservationGateStatus !== 'satisfied' ? ['real runtime technique observation evidence linkage'] : []),
-    'ScoreTrace/GateTrace/ModelRunTrace/validator_trace',
+    ...(scoreTraceStatus === 'missing' ? ['ScoreTrace'] : []),
+    ...(scoreTraceStatus !== 'missing' && scoreTraceGateStatus !== 'satisfied' ? ['real runtime score trace/proof linkage'] : []),
+    'GateTrace/ModelRunTrace/validator_trace',
     'comparison runtime artefacts',
     'parity and no-export proof',
   ];
@@ -386,6 +390,25 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     technique_observation_gate_status: techniqueObservationGateStatus,
     technique_observation_source_family_summary: techniqueObservationSourceSummary,
     technique_observation_gate_reason: techniqueObservationGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (techniqueObservationStatus === 'missing' ? 'trace_not_emitted' : 'legacy_report_snapshot_not_real_runtime_technique_evidence'),
+
+    score_trace_status: scoreTraceStatus,
+    score_trace_gate_status: scoreTraceGateStatus,
+    score_trace_gate_reason: scoreTraceGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (scoreTraceStatus === 'missing' ? 'trace_not_emitted' : 'legacy_report_snapshot_not_real_runtime_score_trace'),
+    score_trace_source_family_summary: {
+      real_runtime_v3: sourceClassById.score_trace === 'real_runtime_v3' ? 1 : 0,
+      legacy_adapter: sourceClassById.score_trace === 'legacy_adapter' ? 1 : 0,
+      report_snapshot: sourceClassById.score_trace === 'report_snapshot' ? 1 : 0,
+      input_artifact: sourceClassById.score_trace === 'input_artifact' ? 1 : 0,
+      resolver_truth_state: sourceClassById.score_trace === 'resolver_truth_state' ? 1 : 0,
+    },
+    score_trace_count: sourceClassById.score_trace === 'missing' ? 0 : (scoreTraceStatus === 'emitted' ? 1 : 0),
+    overall_readiness_public_score_status: 'blocked',
+    discipline_attribute_score_trace_status: scoreTraceStatus === 'emitted' ? 'internal_trace_only' : 'missing',
+    score_trace_overall_count: 0,
+    score_trace_discipline_attribute_count: 0,
+    score_trace_component_score_count: 0,
+    score_trace_brief_adherence_subscore_count: 0,
+    score_trace_calibration_metadata_count: 0,
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
     acceptance_decision: 'not_accepted',
