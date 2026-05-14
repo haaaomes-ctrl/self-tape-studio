@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { writeQAArtifact } from './qa-artifact-sink.server';
 
 export type ArtefactStatus = 'emitted' | 'emitted_blocked' | 'missing' | 'deferred' | 'not_applicable';
@@ -101,6 +103,32 @@ const BLOCKERS: Record<string, string> = {
   comparison_report_internal: 'comparison_report_unavailable',
 };
 
+
+function findProjectRootFrom(startDir: string): string | null {
+  let current = path.resolve(startDir);
+  while (true) {
+    const hasPackage = existsSync(path.join(current, 'package.json'));
+    const hasSrcMarker = existsSync(path.join(current, 'src', 'server', 'v3', 'qa-artifacts.server.ts')) || existsSync(path.join(current, 'dist', 'server'));
+    const hasReadme = existsSync(path.join(current, 'README.md'));
+    if (hasPackage || hasSrcMarker || hasReadme) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+export function resolveProjectRootForQAManifest(): string {
+  const envRoot = process.env.QA_PROJECT_ROOT ?? process.env.PROJECT_ROOT;
+  if (envRoot) {
+    const resolved = path.resolve(envRoot);
+    if (existsSync(resolved)) return resolved;
+  }
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const fromModule = findProjectRootFrom(moduleDir);
+  if (fromModule) return fromModule;
+  const fromCwd = findProjectRootFrom(process.cwd());
+  return fromCwd ?? process.cwd();
+}
 export function assertSafeSegment(value: string, field: string) {
   if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..') || path.isAbsolute(value)) throw new Error(`${field}_invalid_path`);
 }
@@ -247,10 +275,19 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const not_applicable_artifact_ids = required_artifacts.filter((a) => a.status === 'not_applicable').map((a) => a.artefact_id);
   const blocker_codes = [...new Set(required_artifacts.map((a) => a.blocker_code).filter(Boolean) as string[])];
   const artefact_status_by_id = Object.fromEntries(required_artifacts.map((a) => [a.artefact_id, a.status]));
+  const projectRoot = resolveProjectRootForQAManifest();
+  const rootReadmeExists = existsSync(path.join(projectRoot, 'README.md'));
+  const fallbackScopeFile = 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md';
+  const requestedSourceScopeFile = options.source_scope_file ?? null;
+  const requestedReadmeButMissing = requestedSourceScopeFile === 'README.md' && !rootReadmeExists;
+  const sourceScopeFile = requestedReadmeButMissing
+    ? fallbackScopeFile
+    : (options.source_scope_file ?? (rootReadmeExists ? 'README.md' : fallbackScopeFile));
+  const usingRootReadme = rootReadmeExists && sourceScopeFile === 'README.md';
   const manifest = {
     schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: options.compared_take_ids ?? [], fixture_id: options.fixture_id ?? null,
     generated_at: options.generated_at ?? new Date().toISOString(), commit_sha: options.commit_sha ?? 'unknown', branch_name: options.branch_name ?? null, release_state: RELEASE_STATE, internal_qa_emit,
-    qa_artifact_root: runDir, source_scope_file: options.source_scope_file ?? 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md', controlling_source_location_note: 'Replacement README supplied externally; root README.md not present in workspace', controlling_requirements_status: 'operator_supplied_replacement_README', fixture_refs: options.fixture_refs ?? [], input_refs: options.input_refs ?? [], take_refs: options.take_refs ?? [], mux_playback_ids: options.mux_playback_ids ?? {}, public_output_unchanged: true, user_experience_unchanged: true,
+    qa_artifact_root: runDir, requested_source_scope_file: requestedSourceScopeFile, source_scope_file: sourceScopeFile, controlling_source_file: sourceScopeFile, controlling_source_location_note: usingRootReadme ? 'Using repository root README.md as controlling requirements source' : (requestedReadmeButMissing ? 'Requested README.md was not present in runtime workspace; using fallback scope file' : 'Replacement README supplied externally; root README.md not present in resolved project root'), controlling_requirements_status: usingRootReadme ? 'root_readme_present' : 'operator_supplied_replacement_README', fixture_refs: options.fixture_refs ?? [], input_refs: options.input_refs ?? [], take_refs: options.take_refs ?? [], mux_playback_ids: options.mux_playback_ids ?? {}, public_output_unchanged: true, user_experience_unchanged: true,
     required_artifacts, emitted_artifacts, emitted_blocked_artefact_ids, missing_artifacts, deferred_artifact_ids, not_applicable_artifact_ids, artefact_status_by_id, blocker_codes,
     runtime_evidence_accepted_by_id: options.runtime_evidence_accepted_by_id ?? emitted_artifacts,
     runtime_evidence_blocked_by_id: options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids,
