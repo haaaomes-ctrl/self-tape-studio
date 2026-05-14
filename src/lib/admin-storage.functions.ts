@@ -12,6 +12,39 @@ const BUCKET_NAME = "qa-artifacts";
 const SIGNED_URL_TTL_SECONDS = 3600;
 const ZIP_TMP_PREFIX = "admin-zips";
 const PAGE_SIZE = 1000;
+const ZIP_TMP_TTL_MS = 2 * 60 * 60 * 1000;
+
+export function isAdminZipTempPath(path: string): boolean {
+  const normalized = path.replace(/^\/+/, '').replace(/^qa-artifacts\//, '');
+  return normalized.startsWith(`${ZIP_TMP_PREFIX}/`);
+}
+
+export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
+  const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(ZIP_TMP_PREFIX, {
+    limit: PAGE_SIZE,
+    offset: 0,
+    sortBy: { column: 'name', order: 'asc' },
+  });
+  if (error || !data) return { deleted: [], failed: [] as Array<{ path: string; error: string }> };
+  const expired = data
+    .filter((e) => e.id !== null)
+    .map((e) => ({ name: e.name, updated_at: e.updated_at ?? null }))
+    .filter((e) => {
+      const t = e.updated_at ? Date.parse(e.updated_at) : NaN;
+      return Number.isFinite(t) && now - t > ZIP_TMP_TTL_MS;
+    })
+    .map((e) => `${ZIP_TMP_PREFIX}/${e.name}`);
+
+  const failed: Array<{ path: string; error: string }> = [];
+  const deleted: string[] = [];
+  for (const path of expired) {
+    const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
+    if (rmErr) failed.push({ path, error: rmErr.message });
+    else deleted.push(path);
+  }
+  return { deleted, failed };
+}
+
 
 function normalizeEmail(email?: string | null): string {
   return email?.trim().toLowerCase() ?? "";
@@ -57,6 +90,7 @@ export async function listAllArtifactsImpl() {
       if (!data || data.length === 0) break;
       for (const entry of data) {
         const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (isAdminZipTempPath(fullPath)) continue;
         if (entry.id === null) await walk(fullPath);
         else {
           const meta = (entry.metadata ?? {}) as { size?: number };
@@ -85,6 +119,7 @@ export async function listAllArtifactsImpl() {
 }
 
 export async function zipSelectedArtifactsImpl(paths: string[]) {
+  await cleanupExpiredAdminZipsImpl();
   const zip = new JSZip();
   const used = new Set<string>();
   for (const path of paths) {
@@ -155,6 +190,7 @@ export const listAllArtifacts = createServerFn({ method: "GET" })
       setResponseHeader("Cache-Control", "no-store");
     } catch {}
 
+    await cleanupExpiredAdminZipsImpl();
     return listAllArtifactsImpl();
   });
 

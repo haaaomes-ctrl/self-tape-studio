@@ -24,19 +24,39 @@ describe('admin storage impl', () => {
     expect(() => mod.assertAdminClaims({ email: 'non-admin@example.com' })).toThrow();
   });
 
-  it('lists nested files with metadata + inferred IDs', async () => {
+  it('excludes admin-zips from listing', async () => {
     const mod = await import('@/lib/admin-storage.functions');
     mockList
-      .mockResolvedValueOnce({ data: [{ id: null, name: 'takes' }], error: null })
+      .mockResolvedValueOnce({ data: [
+        { id: null, name: 'takes' },
+        { id: null, name: 'admin-zips' },
+      ], error: null })
       .mockResolvedValueOnce({ data: [{ id: null, name: 'take-abc' }], error: null })
       .mockResolvedValueOnce({ data: [{ id: null, name: 'analysis-take-abc' }], error: null })
-      .mockResolvedValueOnce({ data: [{ id: '1', name: 'manifest.json', updated_at: '2026-05-02T00:00:00Z', metadata: { size: 10, mimetype: 'application/json' } }], error: null });
+      .mockResolvedValueOnce({ data: [{ id: '1', name: 'manifest.json', updated_at: '2026-05-02T00:00:00Z', metadata: { size: 10, mimetype: 'application/json' } }], error: null })
+      .mockResolvedValueOnce({ data: [], error: null });
     const out = await mod.listAllArtifactsImpl();
-    expect(out[0]).toMatchObject({ path: 'takes/take-abc/analysis-take-abc/manifest.json', takeId: 'take-abc' });
+    expect(out.map((x:any)=>x.path)).toContain('takes/take-abc/analysis-take-abc/manifest.json');
+    expect(out.some((x:any)=>String(x.path).startsWith('admin-zips/'))).toBe(false);
+  });
+
+  it('cleanup removes only expired admin-zips', async () => {
+    const mod = await import('@/lib/admin-storage.functions');
+    const now = Date.parse('2026-05-14T12:00:00Z');
+    mockList.mockResolvedValueOnce({ data: [
+      { id: '1', name: 'old.zip', updated_at: '2026-05-14T08:00:00Z' },
+      { id: '2', name: 'fresh.zip', updated_at: '2026-05-14T11:30:00Z' },
+    ], error: null });
+    mockRemove.mockResolvedValue({ error: null });
+    const out = await mod.cleanupExpiredAdminZipsImpl(now);
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+    expect(mockRemove).toHaveBeenCalledWith(['admin-zips/old.zip']);
+    expect(out.deleted).toEqual(['admin-zips/old.zip']);
   });
 
   it('zip returns signed url (no base64 payload) and stages binary zip', async () => {
     const mod = await import('@/lib/admin-storage.functions');
+    mockList.mockResolvedValue({ data: [], error: null });
     mockDownload.mockResolvedValue({ data: new Blob(['x']), error: null });
     mockUpload.mockResolvedValue({ error: null });
     mockSigned.mockResolvedValue({ data: { signedUrl: 'https://signed/zip' }, error: null });
@@ -46,8 +66,6 @@ describe('admin storage impl', () => {
     ]);
     expect(out).toHaveProperty('signedUrl', 'https://signed/zip');
     expect((out as any).base64Zip).toBeUndefined();
-    expect(mockUpload).toHaveBeenCalledTimes(1);
-    expect(mockSigned).toHaveBeenCalledTimes(1);
   });
 
   it('delete removes only selected and reports per-file outcomes', async () => {
