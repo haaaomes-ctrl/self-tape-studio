@@ -153,15 +153,19 @@ function resolveModuleDirForQAManifest(): string | null {
 }
 
 function resolveExplicitProjectRootOverride(env: NodeJS.ProcessEnv = process.env): string | null {
-  const candidates = [env.QA_PROJECT_ROOT, env.PROJECT_ROOT];
-  for (const candidate of candidates) {
-    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+  const qaCandidate = env.QA_PROJECT_ROOT;
+  if (typeof qaCandidate === 'string' && qaCandidate.trim()) {
     try {
-      const resolved = path.resolve(candidate);
+      const resolved = path.resolve(qaCandidate);
       if (safeExists(resolved)) return resolved;
-    } catch {
-      continue;
-    }
+    } catch {}
+  }
+  const projectCandidate = env.PROJECT_ROOT;
+  if (typeof projectCandidate === 'string' && projectCandidate.trim()) {
+    try {
+      const resolved = path.resolve(projectCandidate);
+      if (safeExists(resolved)) return resolved;
+    } catch {}
   }
   return null;
 }
@@ -198,6 +202,31 @@ export function resolveRunDir(root: string, run_id: string, mode: 'take' | 'comp
   return path.join(root, 'takes', `take-${tid}`, `analysis-${aid}`);
 }
 
+function isCommitLike(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._-]{6,80}$/.test(value.trim());
+}
+
+function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = env[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+export function resolveQADeploymentProvenance(env: NodeJS.ProcessEnv = process.env) {
+  const commitCandidate = firstPresent(env, ['VERCEL_GIT_COMMIT_SHA', 'LOVABLE_GIT_COMMIT_SHA', 'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'CF_PAGES_COMMIT_SHA']);
+  const sourceBranch = firstPresent(env, ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME']) ?? 'unknown';
+  const deploymentRevision = firstPresent(env, ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION']) ?? 'unknown';
+  return {
+    build_commit_sha: isCommitLike(commitCandidate) ? commitCandidate : 'unknown',
+    deployment_revision: deploymentRevision,
+    source_branch: sourceBranch,
+    qa_emitter_version: 'xfix-v3-s9-hygiene-provenance-v1',
+    storage_path_mapper_version: 'expanded-storage-mode-paths-v1',
+    qa_finaliser_version: 'xfix-v3-s9-hygiene-provenance-v1',
+  } as const;
+}
 
 
 
@@ -228,6 +257,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     unsafe_or_overclaim_count: 0,
     rewrite_required_count: 0,
   };
+  const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
+  const nextTasks = [
+    ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
+    ...(tracesEmitted && (evidenceAnchorGateStatus !== 'satisfied' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
+    'TechniqueObservationTrace',
+    'ScoreTrace/GateTrace/ModelRunTrace/validator_trace',
+    'comparison runtime artefacts',
+    'parity and no-export proof',
+  ];
   return {
     schema_version: 'tapecoach_v3_qa_acceptance_metrics_v1',
     artefact_type: 'qa_acceptance_metrics',
@@ -243,6 +281,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     source_stage: 'manifest_classification_summary',
     generated_at: manifest.generated_at,
     qa_artifact_root: manifest.qa_artifact_root,
+    storage_bucket: manifest.storage_bucket ?? null,
+    storage_key_root: manifest.storage_key_root ?? null,
     qc_level_requested: 'L2',
     level2_status: 'not_accepted',
     level3_status: 'blocked',
@@ -291,7 +331,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
       'production/public authority gates blocked',
       'qa_acceptance_metrics emitted but does not satisfy evidence gates',
     ],
-    next_required_engineering_tasks: ['S9-06 EvidenceAnchors and PublicClaimTrace', 'TechniqueObservationTrace', 'ScoreTrace/GateTrace/ModelRunTrace/validator_trace', 'comparison runtime artefacts', 'parity and no-export proof'],
+    build_commit_sha: manifest.build_commit_sha ?? 'unknown',
+    deployment_revision: manifest.deployment_revision ?? 'unknown',
+    source_branch: manifest.source_branch ?? manifest.branch_name ?? 'unknown',
+    qa_emitter_version: manifest.qa_emitter_version ?? 'unknown',
+    storage_path_mapper_version: manifest.storage_path_mapper_version ?? 'unknown',
+    qa_finaliser_version: manifest.qa_finaliser_version ?? 'unknown',
+    next_required_engineering_tasks: nextTasks,
     redaction_notes: ['Internal-only QA summary; no secrets or tokens are emitted'],
   };
 }
@@ -339,6 +385,10 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
       return false;
     }
   })();
+  const storageRoot = mode === 'take'
+    ? `take-${options.take_id ?? 'take-unknown'}/analysis-${options.analysis_run_id ?? options.run_id}`
+    : null;
+  const provenance = resolveQADeploymentProvenance();
   const fallbackScopeFile = 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md';
   const requestedSourceScopeFile = options.source_scope_file ?? null;
   const requestedReadmeButMissing = requestedSourceScopeFile === 'README.md' && !rootReadmeExists;
@@ -348,8 +398,8 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const usingRootReadme = rootReadmeExists && sourceScopeFile === 'README.md';
   const manifest = {
     schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: options.compared_take_ids ?? [], fixture_id: options.fixture_id ?? null,
-    generated_at: options.generated_at ?? new Date().toISOString(), commit_sha: options.commit_sha ?? 'unknown', branch_name: options.branch_name ?? null, release_state: RELEASE_STATE, internal_qa_emit,
-    qa_artifact_root: runDir, requested_source_scope_file: requestedSourceScopeFile, source_scope_file: sourceScopeFile, controlling_source_file: sourceScopeFile, controlling_source_location_note: usingRootReadme ? 'Using repository root README.md as controlling requirements source' : (requestedReadmeButMissing ? 'Requested README.md was not present in runtime workspace; using fallback scope file' : 'Replacement README supplied externally; root README.md not present in resolved project root'), controlling_requirements_status: usingRootReadme ? 'root_readme_present' : 'operator_supplied_replacement_README', fixture_refs: options.fixture_refs ?? [], input_refs: options.input_refs ?? [], take_refs: options.take_refs ?? [], mux_playback_ids: options.mux_playback_ids ?? {}, public_output_unchanged: true, user_experience_unchanged: true,
+    generated_at: options.generated_at ?? new Date().toISOString(), commit_sha: options.commit_sha ?? provenance.build_commit_sha, branch_name: options.branch_name ?? provenance.source_branch, release_state: RELEASE_STATE, internal_qa_emit,
+    qa_artifact_root: (process.env.QA_ARTIFACT_SINK === 'storage' && storageRoot) ? storageRoot : runDir, storage_bucket: process.env.QA_ARTIFACT_SINK === 'storage' ? (process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts') : null, storage_key_root: process.env.QA_ARTIFACT_SINK === 'storage' ? storageRoot : null, requested_source_scope_file: requestedSourceScopeFile, source_scope_file: sourceScopeFile, controlling_source_file: sourceScopeFile, controlling_source_location_note: usingRootReadme ? 'Using repository root README.md as controlling requirements source' : (requestedReadmeButMissing ? 'Requested README.md was not present in runtime workspace; using fallback scope file' : 'Replacement README supplied externally; root README.md not present in resolved project root'), controlling_requirements_status: usingRootReadme ? 'root_readme_present' : 'operator_supplied_replacement_README', fixture_refs: options.fixture_refs ?? [], input_refs: options.input_refs ?? [], take_refs: options.take_refs ?? [], mux_playback_ids: options.mux_playback_ids ?? {}, public_output_unchanged: true, user_experience_unchanged: true,
     required_artifacts, emitted_artifacts, emitted_blocked_artefact_ids, missing_artifacts, deferred_artifact_ids, not_applicable_artifact_ids, artefact_status_by_id, blocker_codes,
     runtime_evidence_accepted_by_id: options.runtime_evidence_accepted_by_id ?? emitted_artifacts,
     runtime_evidence_blocked_by_id: options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids,
@@ -364,6 +414,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     warnings: ['Rendered PDFs/page-prints are manual-render evidence only'], privacy_notes: ['Internal-only dark mode artefact manifest; no public output changes'], redaction_notes: ['Private traces must not be exposed publicly'],
     no_export_status: 'no_export_proof_missing', production_safe_status: BLOCKED_STATUS, public_technique_authority_status: BLOCKED_STATUS, public_scoring_status: BLOCKED_STATUS, export_share_enabled: BLOCKED_STATUS,
     fixture_observations: options.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511' ? { take_scores: [91, 94, 91], comparison_recommendation: 'Take 2', same_video_operator_confirmation: true } : undefined,
+    ...provenance,
     level2_qa_acceptance: 'not_accepted',
   };
   const manifestRelativePath = options.manifest_relative_path ?? 'manifest.json';
