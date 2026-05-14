@@ -38,7 +38,7 @@ This document defines the target redesigned behaviour.
 The current S9 internal QA Storage validation state is:
 
 - live Storage validation has passed for current internal QA bundle emission;
-- the current live Storage validation target is 10 files per take;
+- the current live Storage validation target is 11 files per take when TechniqueObservationTrace source data exists;
 - `manifest.json` and `qa/acceptance_metrics.json` are required bundle members;
 - internal QA bundle emission is not the same as Level 2 acceptance;
 - Level 2 remains `not_accepted` until all required evidence, trace and proof gates pass;
@@ -46,7 +46,7 @@ The current S9 internal QA Storage validation state is:
 - comparison evidence remains missing;
 - further trace and proof artefacts are required before Level 2 can be accepted.
 
-The current 10-file analysis-run Storage bundle is:
+The current 11-file analysis-run Storage bundle (when TechniqueObservationTrace source data exists) is:
 
 ```text
 inputs/input_record.json
@@ -57,6 +57,7 @@ resolver/resolver_output.json
 resolver/TruthStateMap.json
 traces/EvidenceAnchors.json
 traces/PublicClaimTrace.json
+traces/TechniqueObservationTrace.json
 manifest.json
 qa/acceptance_metrics.json
 ```
@@ -72,7 +73,7 @@ qa_acceptance_metrics: emitted
 level2_status: not_accepted
 ```
 
-That state is valid because the emitted first-pass traces are not yet sufficient Level 2 proof.
+That state is valid because some emitted first-pass traces are still not sufficient Level 2 proof.
 
 ### Current EvidenceAnchors / PublicClaimTrace status
 
@@ -89,6 +90,8 @@ When these artefacts are derived from `raw_report` or report-snapshot fields:
 Legacy-derived evidence anchors are currently based on `raw_report` timestamped notes and carry `cannot_satisfy_v3_gate: true`. Legacy-derived public claim traces may identify unsupported, overclaim or public-scoring risks, but they cannot satisfy the public-claim gate by themselves.
 
 Level 2 requires real runtime evidence or equivalent `real_runtime_v3` linkage, not legacy report snapshots.
+
+`TechniqueObservationTrace.json` is now emitted in first-pass internal form. It remains emitted-but-insufficient for Level 2 when derived from legacy/report-snapshot data; future work requires real runtime technique-observation evidence linkage.
 
 ### Current public scoring decision
 
@@ -116,20 +119,20 @@ Deployment provenance should use safe non-secret build or deployment environment
 
 Level 2 remains blocked while any required Level 2 artefacts or proof gates are missing. Current known missing / blocked families include:
 
-- `TechniqueObservationTrace`;
 - `ScoreTrace`;
 - `validator_trace`;
 - `gate_trace`;
 - `ModelRunTrace`;
 - comparison runtime artefacts;
 - same-video repeatability, comparison suppression and route-variance traces;
+- real runtime technique-observation evidence linkage (TechniqueObservationTrace currently emitted but insufficient for gate satisfaction);
 - parity artefacts;
 - no-export proof artefacts;
 - production-safe proof;
 - public-scoring proof;
 - public-technique-authority proof.
 
-Do not mark Level 2 accepted while required artefacts are missing, comparison evidence is missing, public/production gates are blocked, or the v3 spine relies on `legacy_adapter` artefacts.
+Do not mark Level 2 accepted while required artefacts are missing, comparison evidence is missing, emitted artefacts remain insufficient, public/production gates are blocked, or the v3 spine relies on `legacy_adapter` artefacts.
 
 ---
 
@@ -1106,7 +1109,7 @@ Every QA run should emit a structured internal artefact bundle that can prove wh
 
 Artefacts are internal-only and must not leak into public output.
 
-The current S9 live Storage validation target is the 10-file analysis-run bundle listed in `Current internal QA / S9 implementation state`. That passing bundle is not the full Level 2 artefact target.
+The current S9 live Storage validation target is the 11-file analysis-run bundle (when TechniqueObservationTrace source data exists) listed in `Current internal QA / S9 implementation state`. That passing bundle is not the full Level 2 artefact target.
 
 Minimum analysis-run artefacts:
 

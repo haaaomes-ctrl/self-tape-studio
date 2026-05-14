@@ -87,4 +87,12 @@ describe('v3 s9 resolver_output presence truthfulness', () => {
       expect(count).toBeLessThanOrEqual(1);
     }
   });
+
+  it('declares resolver-stage snapshot scope and final-status sources', async () => {
+    const { truth } = await emitAndRead({ brief_presence: 'supplied', brief_presence_source: 'audition.brief' });
+    expect(truth.truth_state_scope).toBe('resolver_stage_snapshot');
+    expect(truth.final_artefact_status_source).toBe('manifest.json');
+    expect(truth.final_qa_acceptance_source).toBe('qa/acceptance_metrics.json');
+    expect(truth.not_final_artefact_emission_state).toBe(true);
+  });
 });

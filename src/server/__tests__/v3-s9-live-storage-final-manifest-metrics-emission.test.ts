@@ -95,6 +95,22 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.build_commit_sha).toBe('unknown');
     expect(manifestPayload.deployment_revision).toBe('unknown');
     expect(metricsPayload.deployment_revision).toBe('unknown');
+    expect(manifestPayload.deployment_provenance_status).toBe('unknown_no_safe_env_var_found');
+    expect(metricsPayload.deployment_provenance_status).toBe('unknown_no_safe_env_var_found');
+  });
+
+  it('ignores invalid safe env commit values and reports diagnostic status', async () => {
+    process.env.BUILD_COMMIT_SHA = '%%%';
+    process.env.MUX_TOKEN_SECRET = 'never-emit';
+    const run = 'take-tlive4';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 'tlive4', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const root = `take-tlive4/analysis-${run}/`;
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    expect(manifestPayload.build_commit_sha).toBe('unknown');
+    expect(manifestPayload.deployment_provenance_status).toBe('invalid_env_value_ignored');
+    expect(manifestPayload.deployment_provenance_sources_checked).toEqual(expect.arrayContaining(['BUILD_COMMIT_SHA', 'GITHUB_SHA', 'LOVABLE_DEPLOYMENT_ID']));
+    expect(JSON.stringify(manifestPayload).toLowerCase()).not.toContain('mux_token_secret');
+    expect(JSON.stringify(manifestPayload).toLowerCase()).not.toContain('never-emit');
   });
 
   it('surfaces non-null warning when manifest or metrics write fails', async () => {

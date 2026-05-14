@@ -222,13 +222,20 @@ function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
 }
 
 export function resolveQADeploymentProvenance(env: NodeJS.ProcessEnv = process.env) {
+  const safeSourcesChecked = ['BUILD_COMMIT_SHA','DEPLOYMENT_REVISION','SOURCE_VERSION','GITHUB_SHA','GITHUB_REF_NAME','VERCEL_GIT_COMMIT_SHA','VERCEL_GIT_COMMIT_REF','CF_PAGES_COMMIT_SHA','CF_PAGES_BRANCH','LOVABLE_GIT_COMMIT_SHA','LOVABLE_DEPLOYMENT_ID'] as const;
   const commitCandidate = firstPresent(env, ['VERCEL_GIT_COMMIT_SHA', 'LOVABLE_GIT_COMMIT_SHA', 'BUILD_COMMIT_SHA', 'COMMIT_SHA', 'GIT_SHA', 'GIT_COMMIT_SHA', 'SOURCE_VERSION', 'GITHUB_SHA', 'CF_PAGES_COMMIT_SHA']);
-  const sourceBranch = firstPresent(env, ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME']) ?? 'unknown';
-  const deploymentRevision = firstPresent(env, ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION']) ?? 'unknown';
+  const sourceBranchCandidate = firstPresent(env, ['VERCEL_GIT_COMMIT_REF', 'CF_PAGES_BRANCH', 'GITHUB_REF_NAME', 'BRANCH_NAME', 'GIT_BRANCH_NAME']);
+  const deploymentRevisionCandidate = firstPresent(env, ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION']);
+  const hasAnySafeValue = safeSourcesChecked.some((key) => typeof env[key] === 'string' && env[key]?.trim().length);
+  const invalidCommitValue = commitCandidate != null && !isCommitLike(commitCandidate);
+  const sourceBranch = sourceBranchCandidate ?? 'unknown';
+  const deploymentRevision = deploymentRevisionCandidate ?? 'unknown';
   return {
     build_commit_sha: isCommitLike(commitCandidate) ? commitCandidate : 'unknown',
     deployment_revision: deploymentRevision,
     source_branch: sourceBranch,
+    deployment_provenance_status: invalidCommitValue ? 'invalid_env_value_ignored' : (hasAnySafeValue ? 'resolved' : 'unknown_no_safe_env_var_found'),
+    deployment_provenance_sources_checked: safeSourcesChecked,
     qa_emitter_version: 'xfix-v3-s9-hygiene-provenance-v1',
     storage_path_mapper_version: 'expanded-storage-mode-paths-v1',
     qa_finaliser_version: 'xfix-v3-s9-hygiene-provenance-v1',
