@@ -3327,6 +3327,15 @@ export async function runProcessTake(
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
 
+      console.info('[internal-qa] emitQAManifestForAnalysisRun_start', {
+        event: 'emitQAManifestForAnalysisRun_start',
+        run_id: `take-${takeId}`,
+        take_id: takeId,
+        analysis_run_id: `take-${takeId}`,
+        emitted_artefact_ids_before_manifest: qaArtefactIds,
+        includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors'),
+        includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace'),
+      });
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
         submission_id: audition.id,
@@ -3354,6 +3363,16 @@ export async function runProcessTake(
         ],
         real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
+      });
+      console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
+        event: 'emitQAManifestForAnalysisRun_result',
+        run_id: `take-${takeId}`,
+        take_id: takeId,
+        analysis_run_id: `take-${takeId}`,
+        written: Boolean(qaEmitResult.written),
+        warning: qaEmitResult.warning ?? null,
+        manifest_path: (qaEmitResult as { manifest_path?: string }).manifest_path ?? null,
+        resolved_storage_path: (qaEmitResult as { path?: string }).path ?? null,
       });
       if (qaEmitResult.warning) {
         console.warn('[take-pipeline] internal_qa_manifest_emit_warning', {

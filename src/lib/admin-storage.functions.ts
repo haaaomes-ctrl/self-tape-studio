@@ -271,3 +271,17 @@ export const deleteSelectedArtifacts = createServerFn({ method: "POST" })
     assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
     return deleteSelectedArtifactsImpl(data.paths);
   });
+
+
+const CheckExactArtifactKeysInput = z.object({
+  paths: z.array(z.string().min(1).max(1024)).min(1).max(100),
+});
+
+export const checkExactArtifactKeys = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((input: unknown) => CheckExactArtifactKeysInput.parse(input))
+  .handler(async ({ data, context }) => {
+    assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
+    try { setResponseHeader("Cache-Control", "no-store"); } catch {}
+    return checkExactArtifactKeysImpl(data.paths);
+  });
