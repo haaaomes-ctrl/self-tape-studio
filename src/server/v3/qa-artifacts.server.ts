@@ -278,8 +278,17 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const not_applicable_artifact_ids = required_artifacts.filter((a) => a.status === 'not_applicable').map((a) => a.artefact_id);
   const blocker_codes = [...new Set(required_artifacts.map((a) => a.blocker_code).filter(Boolean) as string[])];
   const artefact_status_by_id = Object.fromEntries(required_artifacts.map((a) => [a.artefact_id, a.status]));
-  const projectRoot = resolveProjectRootForQAManifest();
-  const rootReadmeExists = existsSync(path.join(projectRoot, 'README.md'));
+  const resolvedProjectRoot = resolveProjectRootForQAManifest();
+  const projectRoot = typeof resolvedProjectRoot === 'string' && resolvedProjectRoot.trim().length > 0
+    ? resolvedProjectRoot
+    : process.cwd();
+  const rootReadmeExists = (() => {
+    try {
+      return existsSync(path.join(projectRoot, 'README.md'));
+    } catch {
+      return false;
+    }
+  })();
   const fallbackScopeFile = 'docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md';
   const requestedSourceScopeFile = options.source_scope_file ?? null;
   const requestedReadmeButMissing = requestedSourceScopeFile === 'README.md' && !rootReadmeExists;
