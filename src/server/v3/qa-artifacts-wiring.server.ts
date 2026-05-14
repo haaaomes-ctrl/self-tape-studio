@@ -98,6 +98,11 @@ export async function emitRawReportArtefact(input: RawReportEmitterInput) {
     ...(input.report_data.claim_traces == null ? ['v3_claim_fields_null'] : []),
     'public_output_snapshot_missing',
     ...((input.report_data.scores != null || input.report_data.overall_score != null || input.report_data.overall_score_final != null || input.report_data.overall_readiness != null) ? ['legacy_numeric_score_snapshot'] : []),
+    ...((input.report_data.fix_first != null) ? ['legacy_fix_first_field_present'] : []),
+    ...((input.report_data.next_take_plan != null) ? ['legacy_next_take_plan_field_present'] : []),
+    ...((!Array.isArray(input.report_data.priority_fixes) || input.report_data.priority_fixes.length === 0) ? ['priority_fixes_missing'] : []),
+    ...((Array.isArray(input.report_data.priority_fixes) && input.report_data.priority_fixes.length > 0 && input.report_data.priority_fixes.length < 2) ? ['priority_fixes_too_thin'] : []),
+    ...((input.report_data.action_plan == null) ? ['action_plan_missing'] : []),
   ];
   const payload = {
     schema_version: 'tapecoach_v3_internal_raw_report_v1', artefact_type: 'raw_report', run_id: input.run_id, fixture_id: input.fixture_id ?? null, submission_id: input.submission_id ?? null, take_id: input.take_id,
