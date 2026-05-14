@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canZipPaths, compareByLastModified, filterAndSortArtifacts, getVisiblePaths } from '@/lib/admin-storage-view-model';
+import { canDeletePaths, canZipPaths, compareByLastModified, filterAndSortArtifacts, getVisiblePaths } from '@/lib/admin-storage-view-model';
 
 const rows: any[] = [
   { path: 'takes/take-b/analysis-2/manifest.json', size: 5, lastModified: '2026-05-01T00:00:00Z', takeId: 'take-b', analysisRunId: 'analysis-2', comparisonRunId: null, artifactType: 'analysis-2', contentType: 'application/json' },
@@ -50,6 +50,12 @@ describe('filterAndSortArtifacts', () => {
     expect(canZipPaths([]).ok).toBe(false);
     expect(canZipPaths(Array.from({ length: 501 }, (_, i) => `p-${i}`)).ok).toBe(false);
     expect(canZipPaths(Array.from({ length: 500 }, (_, i) => `p-${i}`)).ok).toBe(true);
+  });
+
+  it('delete guard blocks >500 and empty payloads', () => {
+    expect(canDeletePaths([]).ok).toBe(false);
+    expect(canDeletePaths(Array.from({ length: 501 }, (_, i) => `p-${i}`)).ok).toBe(false);
+    expect(canDeletePaths(Array.from({ length: 500 }, (_, i) => `p-${i}`)).ok).toBe(true);
   });
 
 });

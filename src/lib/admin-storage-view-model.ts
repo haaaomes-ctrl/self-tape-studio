@@ -58,3 +58,10 @@ export function canZipPaths(paths: string[]): { ok: boolean; reason: string | nu
   if (paths.length > MAX_ZIP_PATHS) return { ok: false, reason: "Too many visible files to zip at once. Narrow the filter or select up to 500 files." };
   return { ok: true, reason: null };
 }
+
+
+export function canDeletePaths(paths: string[]): { ok: boolean; reason: string | null } {
+  if (paths.length === 0) return { ok: false, reason: "No selected files to delete." };
+  if (paths.length > MAX_ZIP_PATHS) return { ok: false, reason: "Too many selected files to delete at once. Select up to 500 files." };
+  return { ok: true, reason: null };
+}
