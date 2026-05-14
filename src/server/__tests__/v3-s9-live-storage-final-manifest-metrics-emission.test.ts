@@ -16,9 +16,15 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     process.env.QA_ARTIFACT_LOG_FALLBACK = 'false';
     process.env.V3_QA_ARTIFACTS_ENABLED = 'true';
     process.env.INTERNAL_QA_EMIT = 'true';
+    delete process.env.BUILD_COMMIT_SHA;
+    delete process.env.DEPLOYMENT_REVISION;
+    delete process.env.BRANCH_NAME;
   });
 
   it('uploads traces + manifest + acceptance metrics under one canonical take-analysis root', async () => {
+    process.env.BUILD_COMMIT_SHA = 'test-sha';
+    process.env.DEPLOYMENT_REVISION = 'test-revision';
+    process.env.BRANCH_NAME = 'test-branch';
     const run = 'take-tlive1';
     const take = 'tlive1';
     const raw = { report_data: { timestamped_notes: [{ timestamp: '00:01', note: 'Beat lands' }] } } as Record<string, unknown>;
@@ -49,6 +55,29 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(keys).toContain(`${root}qa/acceptance_metrics.json`);
 
     expect(out.warning).toBeNull();
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    const metricsPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}qa/acceptance_metrics.json`)?.[1] ?? '{}');
+    expect(manifestPayload.build_commit_sha).toBe('test-sha');
+    expect(manifestPayload.deployment_revision).toBe('test-revision');
+    expect(manifestPayload.source_branch).toBe('test-branch');
+    expect(metricsPayload.build_commit_sha).toBe('test-sha');
+    expect(metricsPayload.deployment_revision).toBe('test-revision');
+    expect(metricsPayload.source_branch).toBe('test-branch');
+    expect(manifestPayload.qa_artifact_root).toBe(`take-${take}/analysis-${run}`);
+    expect(metricsPayload.qa_artifact_root).toBe(`take-${take}/analysis-${run}`);
+    expect(metricsPayload.next_required_engineering_tasks).not.toContain('S9-06 EvidenceAnchors and PublicClaimTrace');
+  });
+
+  it('keeps unknown provenance safely when env is absent', async () => {
+    const run = 'take-tlive2';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 'tlive2', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
+    const root = `take-tlive2/analysis-${run}/`;
+    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
+    const metricsPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}qa/acceptance_metrics.json`)?.[1] ?? '{}');
+    expect(manifestPayload.build_commit_sha).toBe('unknown');
+    expect(metricsPayload.build_commit_sha).toBe('unknown');
+    expect(manifestPayload.deployment_revision).toBe('unknown');
+    expect(metricsPayload.deployment_revision).toBe('unknown');
   });
 
   it('surfaces non-null warning when manifest or metrics write fails', async () => {
