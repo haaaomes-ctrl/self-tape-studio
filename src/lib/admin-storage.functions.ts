@@ -22,6 +22,7 @@ export function isAdminZipTempPath(path: string): boolean {
 export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
   const failed: Array<{ path: string; error: string }> = [];
   const deleted: string[] = [];
+  const candidates: string[] = [];
   let offset = 0;
   while (true) {
     const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(ZIP_TMP_PREFIX, {
@@ -42,15 +43,15 @@ export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
         return Number.isFinite(t) && now - t > ZIP_TMP_TTL_MS;
       })
       .map((e) => `${ZIP_TMP_PREFIX}/${e.name}`);
-
-    for (const path of expired) {
-      const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
-      if (rmErr) failed.push({ path, error: rmErr.message });
-      else deleted.push(path);
-    }
+    candidates.push(...expired);
 
     if (data.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
+  }
+  for (const path of candidates) {
+    const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
+    if (rmErr) failed.push({ path, error: rmErr.message });
+    else deleted.push(path);
   }
   return { deleted, failed };
 }
