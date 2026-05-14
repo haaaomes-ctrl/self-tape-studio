@@ -193,20 +193,20 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
   const root = input.root_dir ?? DEFAULT_ROOT;
   const reportData = unwrapRawReportData(input.raw_report_data);
   const timestampedNotes = Array.isArray(reportData.timestamped_notes) ? reportData.timestamped_notes : [];
-  const anchors = timestampedNotes
-    .filter((x) => x && typeof x === 'object')
-    .map((item, index) => {
+  const anchors: Array<Record<string, unknown>> = [];
+  timestampedNotes.forEach((item, originalIndex) => {
+      if (!item || typeof item !== 'object') return;
       const row = item as Record<string, unknown>;
       const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
       const note = getTimestampedNoteText(row);
       const textField = getTimestampedNoteTextField(row);
-      if (!note || !textField) return null;
-      return {
-        evidence_anchor_id: `ea-${input.take_id}-${index + 1}`,
+      if (!note || !textField) return;
+      anchors.push({
+        evidence_anchor_id: `ea-${input.take_id}-${anchors.length + 1}`,
         source_family: 'legacy_adapter',
         source_artefact_id: 'raw_report',
-        source_path: `report_data.timestamped_notes[${index}].${textField}`,
-        source_index: index,
+        source_path: `report_data.timestamped_notes[${originalIndex}].${textField}`,
+        source_index: originalIndex,
         source_stage: input.source_stage,
         evidence_status: 'derived_from_legacy_report_snapshot',
         timestamp: ts,
@@ -219,9 +219,8 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
         public_safe: true,
         cannot_satisfy_v3_gate: true,
         blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
-      };
-    })
-    .filter((anchor): anchor is NonNullable<typeof anchor> => anchor !== null);
+      });
+    });
   if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
   const payload = {
     schema_version: 'tapecoach_v3_evidence_anchors_first_pass_v1',
@@ -363,6 +362,7 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
     if (Array.isArray(arr)) for (const item of arr) if (typeof item === 'string' && item.trim()) addClaim(item.trim(), `report_data.${pathKey}`, type);
   }
   if (Array.isArray(reportData.timestamped_notes)) for (const [index, item] of reportData.timestamped_notes.entries()) {
+    if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
     const text = getTimestampedNoteText(row);
     const field = getTimestampedNoteTextField(row);

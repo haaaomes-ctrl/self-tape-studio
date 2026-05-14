@@ -83,6 +83,29 @@ describe('v3 s9 evidence anchors first pass', () => {
     expect(traces.anchors[0].source_path).toBe('report_data.timestamped_notes[3].note');
     expect(traces.anchors.map((a: any) => a.evidence_text)).not.toContain('legacy report snapshot note');
   });
+  it('preserves original timestamped_notes indexes when non-object rows are present', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906b-indexes-'));
+    const out = await emitEvidenceAnchorsFirstPass({
+      run_id: 'run-indexes',
+      analysis_run_id: 'run-indexes',
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      raw_report_data: { artefact_type: 'raw_report', report_data: { schema_version: 'v1-legacy', timestamped_notes: [null, { note: 'First real note', timestamp: '00:10' }, 'bad row', { text: 'Second real note', timestamp: '00:20' }] } },
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(out.written).toBe(true);
+    const traces = JSON.parse(await readFile(path.join(root, 'run-indexes', 'takes', 'take-t1', 'analysis-run-indexes', 'traces', 'EvidenceAnchors.json'), 'utf8'));
+    expect(traces.anchor_count).toBe(2);
+    expect(traces.anchors[0].evidence_text).toBe('First real note');
+    expect(traces.anchors[0].source_index).toBe(1);
+    expect(traces.anchors[0].source_path).toBe('report_data.timestamped_notes[1].note');
+    expect(traces.anchors[1].evidence_text).toBe('Second real note');
+    expect(traces.anchors[1].source_index).toBe(3);
+    expect(traces.anchors[1].source_path).toBe('report_data.timestamped_notes[3].text');
+  });
 
   it('does not emit when all timestamped rows are malformed/blank', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906b-all-blank-'));

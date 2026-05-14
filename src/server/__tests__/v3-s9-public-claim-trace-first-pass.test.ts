@@ -113,4 +113,22 @@ describe('v3 s9 public claim trace first pass', () => {
       expect(c.blocker_codes).toContain('generic_phrase_unanchored');
     }
   });
+  it('preserves original timestamped-note indexes and links each claim to matching anchor', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s906c-index-link-'));
+    const run = 'run-index-link';
+    const report = { schema_version: 'v1-legacy', timestamped_notes: [null, { note: 'First real note', timestamp: '00:10' }, 'bad row', { text: 'Second real note', timestamp: '00:20' }] };
+    await emitRawReportArtefact({ run_id: run, take_id: 't1', submission_id: 'sub1', source_stage: 'unit', source_module: 'test', report_data: report, root_dir: root, internal_qa_emit: true });
+    await emitEvidenceAnchorsFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: { artefact_type: 'raw_report', report_data: report }, root_dir: root, internal_qa_emit: true });
+    const anchors = JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'EvidenceAnchors.json'), 'utf8'));
+    await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 'sub1', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: { artefact_type: 'raw_report', report_data: report }, evidence_anchors_data: anchors, root_dir: root, internal_qa_emit: true });
+    const trace = JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'PublicClaimTrace.json'), 'utf8'));
+    const first = trace.claims.find((c: any) => c.claim_text === 'First real note');
+    const second = trace.claims.find((c: any) => c.claim_text === 'Second real note');
+    expect(first.source_path).toBe('report_data.timestamped_notes[1].note');
+    expect(second.source_path).toBe('report_data.timestamped_notes[3].text');
+    const firstAnchor = anchors.anchors.find((a: any) => a.source_path === 'report_data.timestamped_notes[1].note');
+    const secondAnchor = anchors.anchors.find((a: any) => a.source_path === 'report_data.timestamped_notes[3].text');
+    expect(first.linked_evidence_anchor_ids).toEqual([firstAnchor.evidence_anchor_id]);
+    expect(second.linked_evidence_anchor_ids).toEqual([secondAnchor.evidence_anchor_id]);
+  });
 });
