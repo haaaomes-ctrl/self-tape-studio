@@ -389,6 +389,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
+  const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
+  const comparisonEmittedCount = comparisonArtefactIds.filter((id) => manifest.artefact_status_by_id?.[id] === 'emitted').length;
+  const comparisonEvidenceStatus = comparisonEmittedCount === 5 ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
   const nextTasks = [
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
     ...(tracesEmitted && (evidenceAnchorGateStatus !== 'satisfied' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
@@ -402,7 +405,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(gateTraceStatus !== 'missing' && gateTraceGateStatus !== 'satisfied' ? ['independent runtime gate proof chain'] : []),
     ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
     ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
-    'comparison runtime artefacts',
+    ...(comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof']),
     'parity and no-export proof',
   ];
   return {
@@ -448,7 +451,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     output_quality_defects: defects,
     defect_risk_ids: defects,
     public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: 'blocked', export_or_no_export_status: manifest.no_export_status ?? 'blocked',
-    comparison_evidence_status: emitted.includes('comparison_raw') ? 'available' : 'missing',
+    comparison_evidence_status: comparisonEvidenceStatus,
+    comparison_raw_status: manifest.artefact_status_by_id?.comparison_raw ?? 'missing',
+    comparison_report_internal_status: manifest.artefact_status_by_id?.comparison_report_internal ?? 'missing',
+    same_video_repeatability_trace_status: manifest.artefact_status_by_id?.same_video_repeatability_trace ?? 'missing',
+    comparison_suppression_trace_status: manifest.artefact_status_by_id?.comparison_suppression_trace ?? 'missing',
+    route_variance_trace_status: manifest.artefact_status_by_id?.route_variance_trace ?? 'missing',
+    comparison_runtime_artifact_count: comparisonEmittedCount,
     truth_state_status: manifest.artefact_status_by_id?.truth_state_map ?? 'missing',
     resolver_status: manifest.artefact_status_by_id?.resolver_output ?? 'missing',
     evidence_anchor_trace_status: evidenceAnchorStatus,

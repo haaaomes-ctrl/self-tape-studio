@@ -25,14 +25,9 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
-  it('forces not_executed evidence status for emitted_blocked traces', () => {
-    const blocked = getRuntimeEvidenceSpineAuditMap().filter((x) => x.current_manifest_status === 'emitted_blocked');
-    expect(blocked.length).toBeGreaterThan(0);
-    for (const artefact of blocked) {
-      expect(artefact.evidence_status).toBe('not_executed');
-      const classified = classifyRuntimeEvidenceArtefactStatus({ artefact_id: artefact.artefact_id, manifest_status: artefact.current_manifest_status, evidence_status: artefact.evidence_status });
-      expect(classified).toEqual({ status: 'emitted_blocked', evidence_status: 'not_executed' });
-    }
+  it('still classifies emitted_blocked fail-closed when explicitly requested', () => {
+    const classified = classifyRuntimeEvidenceArtefactStatus({ artefact_id: 'comparison_raw', manifest_status: 'emitted_blocked', evidence_status: 'not_executed' });
+    expect(classified).toEqual({ status: 'emitted_blocked', evidence_status: 'not_executed' });
   });
 
   it('marks raw_report as legacy adapter and not sufficient for v3 spine completion', () => {
@@ -91,7 +86,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
-  it('keeps qa_acceptance_metrics emitted and comparison blocked traces non-proof', () => {
+  it('keeps qa_acceptance_metrics emitted and comparison traces internal/missing by default', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const qaMetrics = map.find((x) => x.artefact_id === 'qa_acceptance_metrics');
     expect(qaMetrics?.current_manifest_status).toBe('emitted');
@@ -99,8 +94,8 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     const comparisonTraceIds = ['same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
     for (const id of comparisonTraceIds) {
       const item = map.find((x) => x.artefact_id === id);
-      expect(item?.current_manifest_status).toBe('emitted_blocked');
-      expect(item?.evidence_status).toBe('not_executed');
+      expect(item?.current_manifest_status).toBe('missing');
+      expect(item?.source_classification).toBe('internal_comparison_trace');
     }
   });
 
@@ -116,7 +111,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(qaEntries[0]?.expected_path).toBe('qa/acceptance_metrics.json');
     expect(qaEntries[0]?.can_emit_without_invention).toBe(true);
 
-    const allowedClassifications = new Set(['real_runtime_v3','legacy_adapter','source_only_stub','emitted_not_wired','missing','deferred','not_applicable','emitted_blocked','internal_validator','internal_gate_trace','internal_model_run_trace']);
+    const allowedClassifications = new Set(['real_runtime_v3','legacy_adapter','source_only_stub','emitted_not_wired','missing','deferred','not_applicable','emitted_blocked','internal_validator','internal_gate_trace','internal_model_run_trace','internal_comparison_runtime','internal_comparison_report','internal_comparison_trace']);
     for (const item of map) {
       expect(allowedClassifications.has(item.source_classification)).toBe(true);
       expect(item.source_classification).not.toBe('runtime_v3');
@@ -124,10 +119,19 @@ describe('v3 s9 runtime evidence spine audit map', () => {
   });
 it('preserves blocked/not accepted implications for current release state', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
-    const hasBlockedComparisonEvidence = map.some((x) => x.current_manifest_status === 'emitted_blocked');
+    const hasBlockedComparisonEvidence = map.some((x) => x.category === 'comparison' && x.current_manifest_status === 'missing');
     const hasRequiredMissingEvidence = map.some((x) => x.required_for_level === 'L2' && x.current_manifest_status === 'missing');
     expect(hasBlockedComparisonEvidence).toBe(true);
     expect(hasRequiredMissingEvidence).toBe(true);
+  });
+
+  it('uses writer-compatible expected paths for comparison artefacts', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    expect(map.find((x) => x.artefact_id === 'comparison_raw')?.expected_path).toBe('comparison/comparison.raw.json');
+    expect(map.find((x) => x.artefact_id === 'comparison_report_internal')?.expected_path).toBe('comparison/comparison.report.internal.json');
+    expect(map.find((x) => x.artefact_id === 'same_video_repeatability_trace')?.expected_path).toBe('comparison_traces/same_video_repeatability_trace.json');
+    expect(map.find((x) => x.artefact_id === 'comparison_suppression_trace')?.expected_path).toBe('comparison_traces/comparison_suppression_trace.json');
+    expect(map.find((x) => x.artefact_id === 'route_variance_trace')?.expected_path).toBe('comparison_traces/route_variance_trace.json');
   });
 
   it('fails closed for unknown artefact ids', () => {
