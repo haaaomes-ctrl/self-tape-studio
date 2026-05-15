@@ -62,6 +62,14 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_missing');
   });
 
+  it('uses PascalCase expected paths for validator and gate traces', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    expect(map.find((x) => x.artefact_id === 'validator_trace')?.expected_path).toBe('traces/ValidatorTrace.json');
+    expect(map.find((x) => x.artefact_id === 'gate_trace')?.expected_path).toBe('traces/GateTrace.json');
+    expect(map.find((x) => x.artefact_id === 'validator_trace')?.expected_path).not.toBe('traces/validator_trace.json');
+    expect(map.find((x) => x.artefact_id === 'gate_trace')?.expected_path).not.toBe('traces/gate_trace.json');
+  });
+
   it('marks immediate input artefacts as emit-capable without invention', () => {
     const ids = ['analysis_input_record', 'analysis_submission', 'analysis_take'];
     const map = getRuntimeEvidenceSpineAuditMap();

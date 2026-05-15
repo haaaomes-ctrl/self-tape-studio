@@ -164,4 +164,15 @@ it('keeps warning null when final manifest succeeds without warnings', async () 
     expect(out.written).toBe(true);
     expect(out.warning).toContain('metrics sink warn');
   });
+
+  it('does not fail when take_id is unavailable in storage-mode first-pass trace stage', async () => {
+    const manifest = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: null, compared_take_ids: [], comparison_run_id: 'cmp-1', generated_at: new Date().toISOString(), qa_artifact_root: 'x', emitted_artifacts: ['comparison_raw'], missing_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], blocker_codes: [], required_artifacts: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], artefact_status_by_id: { comparison_raw: 'emitted' }, legacy_adapter_artefact_ids: [], real_v3_spine_artefact_ids: [] };
+    vi.spyOn(qaArtifactsModule, 'emitInternalQAArtifactManifest')
+      .mockResolvedValueOnce({ written: true, manifest })
+      .mockResolvedValueOnce({ written: true, manifest: { ...manifest, emitted_artifacts: ['comparison_raw', 'qa_acceptance_metrics'] } } as any);
+    vi.spyOn(qaSinkModule, 'writeQAArtifact').mockResolvedValue({ written: true, warning: null } as any);
+    const out = await emitQAManifestForAnalysisRun({ run_id: 'r', analysis_run_id: 'r', comparison_run_id: 'cmp-1', submission_id: 's', internal_qa_emit: true });
+    expect(out.written).toBe(true);
+    expect(out.warning).toBeNull();
+  });
 });

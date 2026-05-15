@@ -195,9 +195,13 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
     let validatorTraceSummary: Record<string, unknown> | undefined;
     let gateTraceSummary: Record<string, unknown> | undefined;
-    if (shouldUseExpandedManifestPaths()) {
+    const takeIdForFirstPassTraces = typeof baseOptions.take_id === 'string' && baseOptions.take_id.trim().length > 0
+      ? baseOptions.take_id.trim()
+      : null;
+    const canEmitTakeScopedFirstPassTraces = shouldUseExpandedManifestPaths() && takeIdForFirstPassTraces !== null;
+    if (canEmitTakeScopedFirstPassTraces) {
     const validatorWrite = await emitValidatorTraceFirstPass({
-      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: baseOptions.take_id ?? '',
+      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces,
       source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
       manifest_snapshot: preFinalManifest, acceptance_metrics_snapshot: preFinalMetrics, emitted_artefact_ids: emittedWithInternalTraces,
       artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
@@ -211,7 +215,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       validatorTraceSummary = validatorWrite.validator_trace_summary;
     }
     const gateWrite = await emitGateTraceFirstPass({
-      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: baseOptions.take_id ?? '',
+      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces,
       source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
       manifest_snapshot: preFinalManifest, acceptance_metrics_snapshot: preFinalMetrics, emitted_artefact_ids: emittedWithInternalTraces,
       missing_artefact_ids: (preFinalManifest?.missing_artifacts ?? []) as string[], blocker_codes: (preFinalManifest?.blocker_codes ?? []) as string[],

@@ -49,6 +49,8 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     const root = `take-${take}/analysis-${run}/`;
     expect(keys).toContain(`${root}traces/EvidenceAnchors.json`);
     expect(keys).toContain(`${root}traces/PublicClaimTrace.json`);
+    expect(keys).toContain(`${root}traces/ValidatorTrace.json`);
+    expect(keys).toContain(`${root}traces/GateTrace.json`);
     expect(keys).toContain(`${root}manifest.json`);
     expect(keys).toContain(`${root}qa/acceptance_metrics.json`);
 
@@ -65,6 +67,24 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.qa_artifact_root).toBe(`take-${take}/analysis-${run}`);
     expect(manifestPayload.storage_bucket).toBe('qa-artifacts');
     expect(metricsPayload.next_required_engineering_tasks).not.toContain('S9-06 EvidenceAnchors and PublicClaimTrace');
+  });
+
+  it('does not fail manifest finalisation when take_id is unavailable in storage mode', async () => {
+    const run = 'comparison-run-no-take';
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      comparison_run_id: 'cmp-1',
+      submission_id: 's1',
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['comparison_raw'],
+    });
+    expect(out.written).toBe(true);
+    const keys = upload.mock.calls.map((c) => c[0]);
+    expect(keys.some((k) => String(k).includes('ValidatorTrace.json'))).toBe(false);
+    expect(keys.some((k) => String(k).includes('GateTrace.json'))).toBe(false);
+    expect(keys.some((k) => String(k).endsWith('/manifest.json'))).toBe(true);
+    expect(keys.some((k) => String(k).endsWith('/qa/acceptance_metrics.json'))).toBe(true);
   });
 
   it('uses GIT_* provenance fallbacks when primary env vars are absent', async () => {
