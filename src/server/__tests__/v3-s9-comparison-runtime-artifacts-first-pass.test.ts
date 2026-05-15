@@ -21,6 +21,12 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       route_variance_trace: { route_variance_detected: false },
     });
     expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    const base = path.join(root, 'take-root1', 'takes', 'take-root1', 'analysis-ar-1');
+    await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8');
+    await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8');
+    await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8');
+    await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8');
+    await readFile(path.join(base, 'comparison_traces', 'route_variance_trace.json'), 'utf8');
     await emitQAManifestForAnalysisRun({ run_id: 'take-root1', take_id: 'root1', analysis_run_id: 'ar-1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: out.emitted_artefact_ids });
     const manifest = JSON.parse(await readFile(path.join(root, 'take-root1', 'manifest.json'), 'utf8'));
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'comparison_raw').expected_path).toBe('comparison/comparison.raw.json');
@@ -28,6 +34,12 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'same_video_repeatability_trace').expected_path).toBe('comparison_traces/same_video_repeatability_trace.json');
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'comparison_suppression_trace').expected_path).toBe('comparison_traces/comparison_suppression_trace.json');
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'route_variance_trace').expected_path).toBe('comparison_traces/route_variance_trace.json');
+    const advertised = (manifest.required_artifacts ?? []).map((a: any) => a.expected_path);
+    expect(advertised).not.toContain('comparison/comparison_raw.json');
+    expect(advertised).not.toContain('comparison/comparison_report_internal.json');
+    expect(advertised).not.toContain('traces/SameVideoRepeatabilityTrace.json');
+    expect(advertised).not.toContain('traces/ComparisonSuppressionTrace.json');
+    expect(advertised).not.toContain('traces/RouteVarianceTrace.json');
   });
 
   it('does not emit for ordinary no-comparison single take runs', async () => {

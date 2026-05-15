@@ -11,8 +11,8 @@ describe('v3 s8 comparison runtime traces', () => {
     expect(cmp.emitted_artefact_ids).not.toContain('route_variance_trace');
     expect(cmp.emitted_artefact_ids).not.toContain('comparison_suppression_trace');
     expect(cmp.emitted_artefact_ids).not.toContain('same_video_repeatability_trace');
-    await expect(stat(path.join(root, 'run-1', 'takes', 'take-unknown', 'analysis-run-1', 'traces', 'ComparisonSuppressionTrace.json'))).rejects.toBeTruthy();
-    await expect(stat(path.join(root, 'run-1', 'takes', 'take-unknown', 'analysis-run-1', 'traces', 'SameVideoRepeatabilityTrace.json'))).rejects.toBeTruthy();
+    await expect(stat(path.join(root, 'run-1', 'takes', 'take-unknown', 'analysis-run-1', 'comparison_traces', 'comparison_suppression_trace.json'))).rejects.toBeTruthy();
+    await expect(stat(path.join(root, 'run-1', 'takes', 'take-unknown', 'analysis-run-1', 'comparison_traces', 'same_video_repeatability_trace.json'))).rejects.toBeTruthy();
     await emitQAManifestForAnalysisRun({ run_id: 'run-1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: cmp.emitted_artefact_ids, emitted_blocked_artefact_ids: cmp.emitted_blocked_artefact_ids });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-1', 'manifest.json'), 'utf8'));
     const blocked = manifest.required_artifacts.filter((a: {status:string}) => a.status === 'emitted_blocked').map((a: {artefact_id:string}) => a.artefact_id);
@@ -31,14 +31,14 @@ describe('v3 s8 comparison runtime traces', () => {
     const cmp = await emitComparisonRuntimeArtifacts({ run_id: 'take-a', take_id: 'a', analysis_run_id: 'run-9', root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_run_id: 'cmp-9', compared_take_ids: ['a', 'b'], comparison_execution_status: 'executed', comparison_result_summary: { winner: 'a' }, duplicate_or_near_duplicate_detected: true } });
     expect(cmp.comparison_run_id).toBe('cmp-9');
     expect(cmp.emitted_artefact_ids).toContain('comparison_report_internal');
-    await expect(stat(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-run-9', 'comparison', 'comparison_report_internal.json'))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-run-9', 'comparison', 'comparison.report.internal.json'))).resolves.toBeTruthy();
   });
 
   it('uses comparison_id fallback so runtime artefacts stay in same directory family', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-cmp-'));
     const cmp = await emitComparisonRuntimeArtifacts({ run_id: 'take-a', take_id: 'a', analysis_run_id: 'run-10', comparison_id: 'cmp-10', root_dir: root, internal_qa_emit: true, compared_take_ids: ['a', 'b'], comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'a' }, recommendation_suppressed: true } });
     expect(cmp.comparison_run_id).toBe('cmp-10');
-    await expect(stat(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-run-10', 'comparison', 'comparison_raw.json'))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-run-10', 'comparison', 'comparison.raw.json'))).resolves.toBeTruthy();
   });
 
 
