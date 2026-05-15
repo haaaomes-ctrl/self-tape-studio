@@ -8,9 +8,16 @@ import { assertSafeSegment } from "@/server/v3/qa-artifacts.server";
 
 const ADMIN_EMAIL = "o.halawi90@gmail.com";
 const normalizeEmail = (email?: string | null) => email?.trim().toLowerCase() ?? "";
+const COMPLETED_ANALYSIS_STATUSES = new Set(["complete", "completed", "succeeded", "processed"]);
 export const assertAdminEmail = (claims: { email?: string | null } | null | undefined) => {
   if (normalizeEmail(claims?.email) !== ADMIN_EMAIL) throw new Response("Forbidden", { status: 403 });
 };
+export function isExplicitCompletedAnalysisStatus(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return COMPLETED_ANALYSIS_STATUSES.has(normalized);
+}
 
 const InternalComparisonTriggerInput = z.object({
   root_take_id: z.string().min(1).max(256),
@@ -46,9 +53,7 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
   } catch {
     return null;
   }
-  const status = typeof (data as any).analysis_status === "string" ? String((data as any).analysis_status).trim().toLowerCase() : null;
-  const completedStatuses = new Set(["completed", "succeeded", "processed"]);
-  const completed = Boolean(status && completedStatuses.has(status));
+  const completed = isExplicitCompletedAnalysisStatus((data as any).analysis_status);
   if (!completed) return null;
   return {
     take_id: String((data as any).id ?? takeId),

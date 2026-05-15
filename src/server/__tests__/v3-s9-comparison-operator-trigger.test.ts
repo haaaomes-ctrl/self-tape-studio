@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
-import { assertAdminEmail, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
+import { assertAdminEmail, isExplicitCompletedAnalysisStatus, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
 import { assertSafeSegment } from '@/server/v3/qa-artifacts.server';
 import { z } from 'zod';
 
@@ -370,5 +370,17 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(out.emitted_artefact_ids).toEqual([]);
     expect(out.comparison_run_id).toBeNull();
     await expect(readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toBeTruthy();
+  });
+
+  it('accepts complete status and normalizes trim/case', () => {
+    for (const v of ['complete', ' complete ', 'Complete', 'completed', 'succeeded', 'processed']) {
+      expect(isExplicitCompletedAnalysisStatus(v)).toBe(true);
+    }
+  });
+
+  it('rejects missing/unknown/active/error statuses', () => {
+    for (const v of [undefined, null, '', 123, {}, 'unknown', 'pending', 'processing', 'analysing', 'failed', 'error', 'cancelled']) {
+      expect(isExplicitCompletedAnalysisStatus(v)).toBe(false);
+    }
   });
 });
