@@ -112,4 +112,130 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(raw.forbidden_fields_absent).toBe(true);
     expect(Array.isArray(raw.redacted_fields)).toBe(true);
   });
+
+  it('detects duplicate mux pair in 3+ inputs and suppresses internal winner', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-mux-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-dup-mux-root',
+      root_take_id: 'dup-mux-root',
+      source_module: 'test',
+      source_stage: 'dup-mux',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 't-a', analysis_run_id: 'ar-a', mux_playback_ref: 'pb-a' },
+        { take_id: 't-b', analysis_run_id: 'ar-b', mux_playback_ref: 'pb-a' },
+        { take_id: 't-c', analysis_run_id: 'ar-c', mux_playback_ref: 'pb-b' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-dup-mux-root', 'takes', 'take-dup-mux-root', 'analysis-ar-a');
+    const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    expect(sameVideo.same_mux_playback_ref).toBe(true);
+    expect(sameVideo.same_video_detected).toBe(true);
+    expect(sameVideo.repeated_input_detected).toBe(true);
+    expect(suppression.suppression_decision).toBe('suppressed');
+    expect(raw.selected_take_id_internal_only).toBeNull();
+    expect(raw.public_output_unchanged).toBe(true);
+    expect(raw.comparison_decision_status).toBe('suppressed_same_video');
+  });
+
+  it('detects duplicate fingerprint pair in 3+ inputs and suppresses internal winner', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-fp-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-dup-fp-root',
+      root_take_id: 'dup-fp-root',
+      source_module: 'test',
+      source_stage: 'dup-fp',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 't-a1', analysis_run_id: 'ar-a1', mux_playback_ref: 'pb-a1', safe_media_fingerprint: 'fp-a' },
+        { take_id: 't-b1', analysis_run_id: 'ar-b1', mux_playback_ref: 'pb-b1', safe_media_fingerprint: 'fp-a' },
+        { take_id: 't-c1', analysis_run_id: 'ar-c1', mux_playback_ref: 'pb-c1', safe_media_fingerprint: 'fp-b' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-dup-fp-root', 'takes', 'take-dup-fp-root', 'analysis-ar-a1');
+    const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    expect(sameVideo.same_video_detected).toBe(true);
+    expect(sameVideo.repeated_input_detected).toBe(true);
+    expect(sameVideo.false_winner_risk).toBe(true);
+    expect(raw.selected_take_id_internal_only).toBeNull();
+  });
+
+  it('does not trigger same-video suppression for 3+ all-unique refs', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-unique-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-unique-root',
+      root_take_id: 'unique-root',
+      source_module: 'test',
+      source_stage: 'all-unique',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'tu-a', analysis_run_id: 'aru-a', mux_playback_ref: 'pb-a', safe_media_fingerprint: 'fp-a', analysis_route: 'same-route', model_provider_family: 'same-provider' },
+        { take_id: 'tu-b', analysis_run_id: 'aru-b', mux_playback_ref: 'pb-b', safe_media_fingerprint: 'fp-b', analysis_route: 'same-route', model_provider_family: 'same-provider' },
+        { take_id: 'tu-c', analysis_run_id: 'aru-c', mux_playback_ref: 'pb-c', safe_media_fingerprint: 'fp-c', analysis_route: 'same-route', model_provider_family: 'same-provider' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-unique-root', 'takes', 'take-unique-root', 'analysis-aru-a');
+    const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    expect(sameVideo.same_video_detected).toBe(false);
+    expect(sameVideo.repeated_input_detected).toBe(false);
+  });
+
+  it('ignores blank mux refs for duplicate detection', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-blank-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-blank-root',
+      root_take_id: 'blank-root',
+      source_module: 'test',
+      source_stage: 'blank-refs',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'tb-a', analysis_run_id: 'arb-a', mux_playback_ref: '' },
+        { take_id: 'tb-b', analysis_run_id: 'arb-b', mux_playback_ref: '   ' },
+        { take_id: 'tb-c', analysis_run_id: 'arb-c', mux_playback_ref: 'pb-a' },
+        { take_id: 'tb-d', analysis_run_id: 'arb-d', mux_playback_ref: 'pb-b' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-blank-root', 'takes', 'take-blank-root', 'analysis-arb-a');
+    const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    expect(sameVideo.same_mux_playback_ref).toBe(false);
+    expect(sameVideo.same_video_detected).toBe(false);
+  });
+
+  it('detects duplicate take_id/analysis_run_id pairs in 3+ inputs', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-ids-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-dup-ids-root',
+      root_take_id: 'dup-ids-root',
+      source_module: 'test',
+      source_stage: 'dup-ids',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'tid-a', analysis_run_id: 'arid-a' },
+        { take_id: 'tid-a', analysis_run_id: 'arid-b' },
+        { take_id: 'tid-c', analysis_run_id: 'arid-b' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-dup-ids-root', 'takes', 'take-dup-ids-root', 'analysis-arid-a');
+    const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    expect(sameVideo.same_take_id).toBe(true);
+    expect(sameVideo.same_analysis_run_id).toBe(true);
+    expect(sameVideo.same_video_detected).toBe(true);
+    expect(suppression.suppression_decision).toBe('suppressed');
+    expect(raw.selected_take_id_internal_only).toBeNull();
+  });
 });

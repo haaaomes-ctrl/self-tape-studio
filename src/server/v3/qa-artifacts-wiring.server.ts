@@ -239,6 +239,17 @@ function stripForbiddenFieldsDeep(value: unknown): unknown {
   }
   return out;
 }
+function hasDuplicateNonEmptyString(values: unknown[]): boolean {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) return true;
+    seen.add(trimmed);
+  }
+  return false;
+}
 function computeDeterministicComparisonRunId(comparedTakeIds: string[], comparedAnalysisRunIds: string[]): string {
   const base = [...comparedTakeIds.map((s) => s.trim()), ...comparedAnalysisRunIds.map((s) => s.trim())].filter(Boolean).sort().join('-').toLowerCase().replace(/[^a-z0-9-]/g, '-');
   return `comparison-${base.slice(0, 48) || 'unknown'}`;
@@ -246,19 +257,19 @@ function computeDeterministicComparisonRunId(comparedTakeIds: string[], compared
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.root_take_id, 'root_take_id');
-  const comparedTakeIds = [...new Set(input.compared_takes.map((t) => t.take_id).filter(Boolean))];
-  const comparedAnalysisRunIds = [...new Set(input.compared_takes.map((t) => t.analysis_run_id).filter(Boolean))];
+  const comparedTakeIdsRaw = input.compared_takes.map((t) => t.take_id).filter(Boolean);
+  const comparedAnalysisRunIdsRaw = input.compared_takes.map((t) => t.analysis_run_id).filter(Boolean);
+  const comparedTakeIds = [...new Set(comparedTakeIdsRaw)];
+  const comparedAnalysisRunIds = [...new Set(comparedAnalysisRunIdsRaw)];
   if (comparedTakeIds.length < 2 || comparedAnalysisRunIds.length < 2) return { written: false as const, emitted_artefact_ids: [] as string[] };
   comparedTakeIds.forEach((id) => assertSafeSegment(id, 'compared_take_id'));
   comparedAnalysisRunIds.forEach((id) => assertSafeSegment(id, 'compared_analysis_run_id'));
   const comparison_run_id = input.comparison_run_id ?? computeDeterministicComparisonRunId(comparedTakeIds, comparedAnalysisRunIds);
   assertSafeSegment(comparison_run_id, 'comparison_run_id');
-  const sameTake = new Set(comparedTakeIds).size < input.compared_takes.length;
-  const sameAnalysis = new Set(comparedAnalysisRunIds).size < input.compared_takes.length;
-  const muxRefs = input.compared_takes.map((t) => t.mux_playback_ref).filter((v): v is string => Boolean(v));
-  const sameMux = muxRefs.length > 1 && new Set(muxRefs).size === 1;
-  const fingerprints = input.compared_takes.map((t) => t.safe_media_fingerprint).filter((v): v is string => Boolean(v));
-  const sameFingerprint = fingerprints.length > 1 && new Set(fingerprints).size === 1;
+  const sameTake = hasDuplicateNonEmptyString(comparedTakeIdsRaw);
+  const sameAnalysis = hasDuplicateNonEmptyString(comparedAnalysisRunIdsRaw);
+  const sameMux = hasDuplicateNonEmptyString(input.compared_takes.map((t) => t.mux_playback_ref));
+  const sameFingerprint = hasDuplicateNonEmptyString(input.compared_takes.map((t) => t.safe_media_fingerprint));
   const sameVideoDetected = sameTake || sameAnalysis || sameMux || sameFingerprint;
   const routes = input.compared_takes.map((t) => `${t.analysis_route ?? 'unknown'}|${t.model_provider_family ?? 'unknown'}`);
   const routeVarianceDetected = new Set(routes).size > 1;
