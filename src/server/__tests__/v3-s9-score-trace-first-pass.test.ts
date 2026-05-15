@@ -25,6 +25,9 @@ describe('v3 s9 score trace first pass', () => {
     expect(componentWeightEntry.public_display_status).toBe('internal_only');
     expect(payload.source_module).toBe('test');
     expect(payload.source_stage).toBe('unit');
+    expect(payload.discipline_attribute_score_trace_status).toBe('internal_trace_only');
+    expect(payload.discipline_attribute_score_status).toBeUndefined();
+    expect(payload.score_trace_summary.discipline_attribute_score_trace_status).toBe('internal_trace_only');
   });
 
   it('skips invalid component weights safely', async () => {
