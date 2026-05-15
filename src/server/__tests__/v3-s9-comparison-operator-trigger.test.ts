@@ -327,4 +327,48 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(generated.comparison_run_id).toMatch(/^comparison-[a-z0-9-]+$/);
     expect(generated.warning).toBeNull();
   });
+
+  it('fails closed when resolver rejects and does not leak raw error text', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'resolver-reject',
+      internal_qa_emit: true,
+    }, async (takeId) => {
+      if (takeId === 'b') throw new Error('SUPABASE_SERVICE_ROLE_KEY=secret-test-value signed_url=https://example.invalid/private');
+      return { take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true };
+    });
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('take_resolution_failed');
+    expect(out.blocker_codes).toContain('take_resolution_failed');
+    expect(out.comparison_run_id).toBeNull();
+    expect(out.emitted_artefact_ids).toEqual([]);
+    const txt = JSON.stringify(out);
+    expect(txt).not.toContain('secret-test-value');
+    expect(txt).not.toContain('signed_url');
+    expect(txt).not.toContain('example.invalid/private');
+  });
+
+  it('fails closed when first resolver succeeds and second rejects (no partial emit)', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-reject-partial-'));
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'resolver-reject-partial',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => {
+      if (takeId === 'a') return { take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true };
+      throw new Error('resolver transient failure');
+    });
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('take_resolution_failed');
+    expect(out.emitted_artefact_ids).toEqual([]);
+    expect(out.comparison_run_id).toBeNull();
+    await expect(readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toBeTruthy();
+  });
 });

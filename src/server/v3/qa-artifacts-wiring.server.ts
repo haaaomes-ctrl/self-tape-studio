@@ -296,7 +296,23 @@ export async function runInternalComparisonOperatorTrigger(
   const resolvedRows: CompletedTakeComparisonSource[] = [];
   const seenResolvedTakeIds = new Set<string>();
   for (const requestedTakeId of ids) {
-    const resolved = await resolveCompletedTakeAnalysis(requestedTakeId);
+    let resolved: CompletedTakeComparisonSource | null = null;
+    try {
+      resolved = await resolveCompletedTakeAnalysis(requestedTakeId);
+    } catch {
+      return {
+        ok: false,
+        written: false,
+        comparison_run_id: null,
+        root_take_id: input.root_take_id,
+        root_analysis_run_id: null,
+        compared_take_ids: ids,
+        compared_analysis_run_ids: [],
+        emitted_artefact_ids: [],
+        warning: 'take_resolution_failed',
+        blocker_codes: ['take_resolution_failed'],
+      };
+    }
     if (!resolved) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
     if (typeof resolved.take_id !== 'string' || !resolved.take_id.trim() || resolved.take_id !== requestedTakeId) {
       return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'resolver_take_id_mismatch', blocker_codes: ['resolver_take_id_mismatch'] };
