@@ -262,7 +262,7 @@ describe('v3 s9 comparison operator trigger', () => {
     const unsafeOut = await runInternalComparisonOperatorTrigger({ ...base, compared_analysis_run_ids: ['../unsafe', 'ar-b'] }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
     expect(shortOut.warning).toBe('compared_analysis_run_ids_length_mismatch');
     expect(longOut.warning).toBe('compared_analysis_run_ids_length_mismatch');
-    expect(unsafeOut.warning).toBe('explicit_analysis_run_id_mismatch');
+    expect(unsafeOut.warning).toBe('analysis_run_id_invalid_path');
     expect(shortOut.written).toBe(false);
     expect(longOut.written).toBe(false);
     expect(unsafeOut.written).toBe(false);
@@ -414,5 +414,63 @@ describe('v3 s9 comparison operator trigger', () => {
     }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
     expect(out.ok).toBe(false);
     expect(out.warning).toBe('duplicate_compared_take_id');
+  });
+
+  it('fails closed for unsafe resolver analysis_run_id values', async () => {
+    for (const bad of ['../bad', 'analysis/a', 'analysis\\a', 'analysis bad']) {
+      const out = await runInternalComparisonOperatorTrigger({
+        root_take_id: 'take-a',
+        compared_take_ids: ['take-a', 'take-b'],
+        source_module: 'test',
+        source_stage: `unsafe-analysis-${bad}`,
+        internal_qa_emit: true,
+      }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? bad : 'safe-analysis-b', completed: true }));
+      expect(out.ok).toBe(false);
+      expect(out.written).toBe(false);
+      expect(out.warning).toBe('analysis_run_id_invalid_path');
+      expect(out.blocker_codes).toContain('analysis_run_id_invalid_path');
+      expect(out.emitted_artefact_ids).toEqual([]);
+      expect(out.comparison_run_id).toBeNull();
+    }
+  });
+
+  it('explicit safe compared_analysis_run_id exact match succeeds and mismatch fails closed', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-explicit-analysis-'));
+    const good = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      compared_analysis_run_ids: ['safe-analysis-a', 'safe-analysis-b'],
+      source_module: 'test',
+      source_stage: 'explicit-match',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
+    expect(good.ok).toBe(true);
+    const bad = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      compared_analysis_run_ids: ['safe-analysis-a', 'safe-analysis-c'],
+      source_module: 'test',
+      source_stage: 'explicit-mismatch',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
+    expect(bad.ok).toBe(false);
+    expect(bad.written).toBe(false);
+    expect(bad.warning).toBe('explicit_analysis_run_id_mismatch');
+  });
+
+  it('unsafe explicit compared_analysis_run_id fails closed', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      compared_analysis_run_ids: ['../bad', 'safe-analysis-b'],
+      source_module: 'test',
+      source_stage: 'explicit-unsafe',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('analysis_run_id_invalid_path');
+    expect(out.emitted_artefact_ids).toEqual([]);
   });
 });

@@ -338,10 +338,17 @@ export async function runInternalComparisonOperatorTrigger(
     const row = byTake.get(takeId);
     if (!row) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
     if (row.completed !== true || !row.analysis_run_id) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_analysis_not_completed', blocker_codes: ['take_not_completed'] };
+    if (/[\\/\s]/.test(row.analysis_run_id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] };
+    try {
+      assertSafeSegment(row.analysis_run_id, 'analysis_run_id');
+    } catch {
+      return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] };
+    }
     const explicit = input.compared_analysis_run_ids?.[i];
     if (explicit !== undefined) {
       if (typeof explicit !== 'string' || !explicit.trim()) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] };
-      try { assertSafeSegment(explicit, 'compared_analysis_run_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] }; }
+      if (/[\\/\s]/.test(explicit)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] };
+      try { assertSafeSegment(explicit, 'compared_analysis_run_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] }; }
     }
     if (explicit && explicit !== row.analysis_run_id) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] };
     compared_takes.push({ ...row, take_id: row.take_id, analysis_run_id: row.analysis_run_id });
