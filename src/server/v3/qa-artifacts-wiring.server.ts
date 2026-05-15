@@ -96,6 +96,7 @@ export interface InternalComparisonTakeInput {
 export interface InternalComparisonRuntimeSourceInput {
   run_id: string;
   root_take_id: string;
+  root_analysis_run_id?: string;
   compared_takes: InternalComparisonTakeInput[];
   comparison_run_id?: string;
   source_module: string;
@@ -257,6 +258,12 @@ function computeDeterministicComparisonRunId(comparedTakeIds: string[], compared
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.root_take_id, 'root_take_id');
+  const rootTake = input.compared_takes.find((t) => t.take_id === input.root_take_id);
+  if (!rootTake) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const rootAnalysisRunId = input.root_analysis_run_id ?? rootTake.analysis_run_id;
+  if (!rootAnalysisRunId) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  assertSafeSegment(rootAnalysisRunId, 'analysis_run_id');
+  if (input.root_analysis_run_id && input.root_analysis_run_id !== rootTake.analysis_run_id) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const comparedTakeIdsRaw = input.compared_takes.map((t) => t.take_id).filter(Boolean);
   const comparedAnalysisRunIdsRaw = input.compared_takes.map((t) => t.analysis_run_id).filter(Boolean);
   const comparedTakeIds = [...new Set(comparedTakeIdsRaw)];
@@ -275,6 +282,9 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
   const routeVarianceDetected = new Set(routes).size > 1;
   const suppressionRequired = sameVideoDetected || routeVarianceDetected;
   const suppressionDecision = suppressionRequired ? 'suppressed' : 'allowed_internal_only';
+  const suppressionReasons = [...(sameVideoDetected ? ['same_video_or_repeated_input'] : []), ...(routeVarianceDetected ? ['unresolved_route_variance'] : [])];
+  const suppressionReason = suppressionReasons[0] ?? null;
+  const recommendationSuppressed = suppressionRequired;
   const comparisonDecisionStatus = sameVideoDetected ? 'suppressed_same_video' : (routeVarianceDetected ? 'suppressed_route_variance' : 'internal_preference');
   const selectedTakeId = suppressionRequired ? null : comparedTakeIds[0];
   const comparison_raw_data = stripForbiddenFieldsDeep({
@@ -284,6 +294,10 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
     comparison_execution_status: 'executed',
     comparison_run_executed: true,
     comparison_decision_status: comparisonDecisionStatus,
+    recommendation_suppressed: recommendationSuppressed,
+    suppression_reason: suppressionReason,
+    suppression_reasons: suppressionReasons,
+    suppression_decision: suppressionDecision,
     comparison_source_kind: 'internal_runtime_comparison',
     comparison_runtime_source_module: input.source_module,
     comparison_runtime_source_stage: input.source_stage,
@@ -299,12 +313,12 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
     same_take_id: sameTake, same_analysis_run_id: sameAnalysis, same_mux_playback_ref: sameMux, same_video_detected: sameVideoDetected, repeated_input_detected: sameVideoDetected, forced_winner_risk: sameVideoDetected, false_winner_risk: sameVideoDetected, suppression_required: suppressionRequired, suppression_applied: suppressionRequired, diagnostic_entries: [{ compared_take_ids: comparedTakeIds, compared_analysis_run_ids: comparedAnalysisRunIds }], same_video_repeatability_trace_summary: { same_video_detected: sameVideoDetected },
   };
   const suppression_trace = {
-    suppression_decision: suppressionDecision, suppression_reasons: [...(sameVideoDetected ? ['same_video_or_repeat_input'] : []), ...(routeVarianceDetected ? ['route_variance_unresolved'] : [])], affected_public_surfaces: ['public_output_unchanged_internal_only'], false_winner_prevention_status: suppressionRequired ? 'active' : 'not_required', same_video_suppression_status: sameVideoDetected ? 'suppressed' : 'not_applicable', route_variance_suppression_status: routeVarianceDetected ? 'suppressed' : 'not_applicable', decision_source_refs: comparedAnalysisRunIds, comparison_suppression_trace_summary: { suppression_decision: suppressionDecision }, public_output_unchanged: true,
+    suppression_decision: suppressionDecision, suppression_reason: suppressionReason, suppression_reasons: suppressionReasons, recommendation_suppressed: recommendationSuppressed, affected_public_surfaces: ['public_output_unchanged_internal_only'], false_winner_prevention_status: suppressionRequired ? 'active' : 'not_required', same_video_suppression_status: sameVideoDetected ? 'suppressed' : 'not_applicable', route_variance_suppression_status: routeVarianceDetected ? 'suppressed' : 'not_applicable', decision_source_refs: comparedAnalysisRunIds, comparison_suppression_trace_summary: { suppression_decision: suppressionDecision }, public_output_unchanged: true,
   };
   const route_variance_trace = {
     route_variance_status: routeVarianceDetected ? 'detected' : 'not_detected', compared_run_routes: routes, route_mismatch_detected: routeVarianceDetected, route_variance_detected: routeVarianceDetected, route_variance_risk: routeVarianceDetected, route_variance_mitigation_status: routeVarianceDetected ? 'unresolved_blocked' : 'not_required', route_variance_trace_summary: { route_variance_detected: routeVarianceDetected },
   };
-  return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: input.compared_takes[0]?.analysis_run_id ?? input.run_id, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
+  return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: rootAnalysisRunId, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
 }
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });

@@ -51,9 +51,16 @@ describe('v3 s9 comparison runtime source wiring', () => {
     const base = path.join(root, 'take-dup-root', 'takes', 'take-dup-root', 'analysis-ar1');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
     expect(sameVideo.same_video_detected).toBe(true);
     expect(sameVideo.false_winner_risk).toBe(true);
     expect(suppression.suppression_decision).toBe('suppressed');
+    expect(suppression.recommendation_suppressed).toBe(true);
+    expect(raw.recommendation_suppressed).toBe(true);
+    expect(raw.suppression_reasons).toContain('same_video_or_repeated_input');
+    expect(report.recommendation_suppressed).toBe(true);
+    expect(raw.selected_take_id_internal_only).toBeNull();
     expect(suppression.public_output_unchanged).toBe(true);
   });
 
@@ -117,7 +124,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-mux-'));
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-mux-root',
-      root_take_id: 'dup-mux-root',
+      root_take_id: 't-a',
       source_module: 'test',
       source_stage: 'dup-mux',
       root_dir: root,
@@ -129,7 +136,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
       ],
     });
     expect(out.written).toBe(true);
-    const base = path.join(root, 'take-dup-mux-root', 'takes', 'take-dup-mux-root', 'analysis-ar-a');
+    const base = path.join(root, 'take-dup-mux-root', 'takes', 'take-t-a', 'analysis-ar-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
@@ -146,7 +153,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-fp-'));
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-fp-root',
-      root_take_id: 'dup-fp-root',
+      root_take_id: 't-a1',
       source_module: 'test',
       source_stage: 'dup-fp',
       root_dir: root,
@@ -158,7 +165,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
       ],
     });
     expect(out.written).toBe(true);
-    const base = path.join(root, 'take-dup-fp-root', 'takes', 'take-dup-fp-root', 'analysis-ar-a1');
+    const base = path.join(root, 'take-dup-fp-root', 'takes', 'take-t-a1', 'analysis-ar-a1');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
     expect(sameVideo.same_video_detected).toBe(true);
@@ -171,7 +178,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-unique-'));
     const out = await runInternalComparisonForTakes({
       run_id: 'take-unique-root',
-      root_take_id: 'unique-root',
+      root_take_id: 'tu-a',
       source_module: 'test',
       source_stage: 'all-unique',
       root_dir: root,
@@ -183,17 +190,101 @@ describe('v3 s9 comparison runtime source wiring', () => {
       ],
     });
     expect(out.written).toBe(true);
-    const base = path.join(root, 'take-unique-root', 'takes', 'take-unique-root', 'analysis-aru-a');
+    const base = path.join(root, 'take-unique-root', 'takes', 'take-tu-a', 'analysis-aru-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
     expect(sameVideo.same_video_detected).toBe(false);
     expect(sameVideo.repeated_input_detected).toBe(false);
+    expect(raw.recommendation_suppressed).toBe(false);
+    expect(report.recommendation_suppressed).toBe(false);
+    expect(suppression.suppression_decision).toBe('allowed_internal_only');
+  });
+
+  it('keeps route-variance suppression fields consistent across artefacts', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-route-suppress-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-route-root',
+      root_take_id: 'route-root',
+      source_module: 'test',
+      source_stage: 'route-variance',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'route-root', analysis_run_id: 'route-ar-a', analysis_route: 'route-a', model_provider_family: 'provider-a', mux_playback_ref: 'pb-r1', safe_media_fingerprint: 'fp-r1' },
+        { take_id: 'route-b', analysis_run_id: 'route-ar-b', analysis_route: 'route-b', model_provider_family: 'provider-b', mux_playback_ref: 'pb-r2', safe_media_fingerprint: 'fp-r2' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-route-root', 'takes', 'take-route-root', 'analysis-route-ar-a');
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    const route = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'route_variance_trace.json'), 'utf8'));
+    expect(raw.recommendation_suppressed).toBe(true);
+    expect(raw.suppression_reasons).toContain('unresolved_route_variance');
+    expect(report.recommendation_suppressed).toBe(true);
+    expect(route.route_variance_detected).toBe(true);
+    expect(['suppressed', 'blocked']).toContain(suppression.suppression_decision);
+    expect(raw.selected_take_id_internal_only).toBeNull();
+  });
+
+  it('uses root take analysis_run_id when root take is not first', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-root-analysis-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-root-order',
+      root_take_id: 'take-b',
+      source_module: 'test',
+      source_stage: 'root-order',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'take-a', analysis_run_id: 'analysis-a', mux_playback_ref: 'pb-a', safe_media_fingerprint: 'fp-a' },
+        { take_id: 'take-b', analysis_run_id: 'analysis-b', mux_playback_ref: 'pb-b', safe_media_fingerprint: 'fp-b' },
+        { take_id: 'take-c', analysis_run_id: 'analysis-c', mux_playback_ref: 'pb-c', safe_media_fingerprint: 'fp-c' },
+      ],
+    });
+    expect(out.written).toBe(true);
+    await expect(readFile(path.join(root, 'take-root-order', 'takes', 'take-take-b', 'analysis-analysis-b', 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(root, 'take-root-order', 'takes', 'take-take-b', 'analysis-analysis-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toBeTruthy();
+  });
+
+  it('fails closed when root take is missing from compared_takes', async () => {
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-missing-root',
+      root_take_id: 'take-z',
+      source_module: 'test',
+      source_stage: 'missing-root',
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'take-a', analysis_run_id: 'analysis-a' },
+        { take_id: 'take-b', analysis_run_id: 'analysis-b' },
+      ],
+    });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
+  });
+
+  it('fails closed when root take analysis_run_id is unsafe', async () => {
+    await expect(runInternalComparisonForTakes({
+      run_id: 'take-unsafe-analysis',
+      root_take_id: 'take-safe',
+      source_module: 'test',
+      source_stage: 'unsafe-analysis',
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'take-safe', analysis_run_id: '../analysis-b' },
+        { take_id: 'take-b', analysis_run_id: 'analysis-b' },
+      ],
+    })).rejects.toThrow(/analysis_run_id|segment/i);
   });
 
   it('ignores blank mux refs for duplicate detection', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-blank-'));
     const out = await runInternalComparisonForTakes({
       run_id: 'take-blank-root',
-      root_take_id: 'blank-root',
+      root_take_id: 'tb-a',
       source_module: 'test',
       source_stage: 'blank-refs',
       root_dir: root,
@@ -206,7 +297,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
       ],
     });
     expect(out.written).toBe(true);
-    const base = path.join(root, 'take-blank-root', 'takes', 'take-blank-root', 'analysis-arb-a');
+    const base = path.join(root, 'take-blank-root', 'takes', 'take-tb-a', 'analysis-arb-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
     expect(sameVideo.same_mux_playback_ref).toBe(false);
     expect(sameVideo.same_video_detected).toBe(false);
@@ -216,7 +307,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-ids-'));
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-ids-root',
-      root_take_id: 'dup-ids-root',
+      root_take_id: 'tid-a',
       source_module: 'test',
       source_stage: 'dup-ids',
       root_dir: root,
@@ -228,7 +319,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
       ],
     });
     expect(out.written).toBe(true);
-    const base = path.join(root, 'take-dup-ids-root', 'takes', 'take-dup-ids-root', 'analysis-arid-a');
+    const base = path.join(root, 'take-dup-ids-root', 'takes', 'take-tid-a', 'analysis-arid-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
