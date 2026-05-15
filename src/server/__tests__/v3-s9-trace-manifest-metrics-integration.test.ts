@@ -79,4 +79,23 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(validator?.expected_path).toBe('traces/ValidatorTrace.json');
     expect(gate?.expected_path).toBe('traces/GateTrace.json');
   });
+
+  it('keeps comparison expected paths writer-compatible and does not advertise unmigrated canonical variants', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-compat-'));
+    const run = 'run-s911-compat';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 't1', submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false } });
+    const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+    const byId = Object.fromEntries((manifest.required_artifacts ?? []).map((x: any) => [x.artefact_id, x.expected_path]));
+    expect(byId.comparison_raw).toBe('comparison/comparison.raw.json');
+    expect(byId.comparison_report_internal).toBe('comparison/comparison.report.internal.json');
+    expect(byId.same_video_repeatability_trace).toBe('comparison_traces/same_video_repeatability_trace.json');
+    expect(byId.comparison_suppression_trace).toBe('comparison_traces/comparison_suppression_trace.json');
+    expect(byId.route_variance_trace).toBe('comparison_traces/route_variance_trace.json');
+    const advertised = Object.values(byId);
+    expect(advertised).not.toContain('comparison/comparison_raw.json');
+    expect(advertised).not.toContain('comparison/comparison_report_internal.json');
+    expect(advertised).not.toContain('traces/SameVideoRepeatabilityTrace.json');
+    expect(advertised).not.toContain('traces/ComparisonSuppressionTrace.json');
+    expect(advertised).not.toContain('traces/RouteVarianceTrace.json');
+  });
 });

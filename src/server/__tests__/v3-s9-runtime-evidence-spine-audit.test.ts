@@ -125,13 +125,13 @@ it('preserves blocked/not accepted implications for current release state', () =
     expect(hasRequiredMissingEvidence).toBe(true);
   });
 
-  it('uses S9-11 canonical expected paths for comparison artefacts', () => {
+  it('uses writer-compatible expected paths for comparison artefacts', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
-    expect(map.find((x) => x.artefact_id === 'comparison_raw')?.expected_path).toBe('comparison/comparison_raw.json');
-    expect(map.find((x) => x.artefact_id === 'comparison_report_internal')?.expected_path).toBe('comparison/comparison_report_internal.json');
-    expect(map.find((x) => x.artefact_id === 'same_video_repeatability_trace')?.expected_path).toBe('traces/SameVideoRepeatabilityTrace.json');
-    expect(map.find((x) => x.artefact_id === 'comparison_suppression_trace')?.expected_path).toBe('traces/ComparisonSuppressionTrace.json');
-    expect(map.find((x) => x.artefact_id === 'route_variance_trace')?.expected_path).toBe('traces/RouteVarianceTrace.json');
+    expect(map.find((x) => x.artefact_id === 'comparison_raw')?.expected_path).toBe('comparison/comparison.raw.json');
+    expect(map.find((x) => x.artefact_id === 'comparison_report_internal')?.expected_path).toBe('comparison/comparison.report.internal.json');
+    expect(map.find((x) => x.artefact_id === 'same_video_repeatability_trace')?.expected_path).toBe('comparison_traces/same_video_repeatability_trace.json');
+    expect(map.find((x) => x.artefact_id === 'comparison_suppression_trace')?.expected_path).toBe('comparison_traces/comparison_suppression_trace.json');
+    expect(map.find((x) => x.artefact_id === 'route_variance_trace')?.expected_path).toBe('comparison_traces/route_variance_trace.json');
   });
 
   it('fails closed for unknown artefact ids', () => {
