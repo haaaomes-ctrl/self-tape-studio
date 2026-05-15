@@ -39,8 +39,9 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
   } catch {
     return null;
   }
-  const status = typeof (data as any).analysis_status === "string" ? String((data as any).analysis_status).toLowerCase() : "";
-  const completed = Boolean(analysisRunId) && (status === "completed" || status === "succeeded" || status === "processed" || status === "");
+  const status = typeof (data as any).analysis_status === "string" ? String((data as any).analysis_status).trim().toLowerCase() : null;
+  const completedStatuses = new Set(["completed", "succeeded", "processed"]);
+  const completed = Boolean(status && completedStatuses.has(status));
   if (!completed) return null;
   return {
     take_id: String((data as any).id ?? takeId),

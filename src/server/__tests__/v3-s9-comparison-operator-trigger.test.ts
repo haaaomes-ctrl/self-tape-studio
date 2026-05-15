@@ -205,4 +205,84 @@ describe('v3 s9 comparison operator trigger', () => {
       expect(out.emitted_artefact_ids).toEqual([]);
     }
   });
+
+  it('fails closed for missing/null/non-string/empty analysis_status mapped completion uncertainty', async () => {
+    const mk = async (completed: unknown) => runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'status-missing-null-nonstr-empty',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: completed as boolean }));
+    for (const out of [await mk(undefined), await mk(null), await mk(123), await mk('' as unknown as boolean)]) {
+      expect(out.ok).toBe(false);
+      expect(out.written).toBe(false);
+      expect(out.emitted_artefact_ids).toEqual([]);
+      expect(out.comparison_run_id).toBeNull();
+    }
+  });
+
+  it('fails closed for pending/processing/failed style statuses mapped to incomplete', async () => {
+    for (const status of ['pending', 'processing', 'failed']) {
+      const out = await runAdminInternalComparisonTriggerImpl({
+        root_take_id: 'a',
+        compared_take_ids: ['a', 'b'],
+        source_module: 'test',
+        source_stage: `status-${status}`,
+        internal_qa_emit: true,
+      }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: false }));
+      expect(out.ok).toBe(false);
+      expect(out.written).toBe(false);
+      expect(out.emitted_artefact_ids).toEqual([]);
+    }
+  });
+
+  it('accepted explicit completed statuses remain eligible', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-status-ok-'));
+    for (const status of ['completed', 'succeeded', 'processed']) {
+      const out = await runAdminInternalComparisonTriggerImpl({
+        root_take_id: 'a',
+        compared_take_ids: ['a', 'b'],
+        source_module: 'test',
+        source_stage: `status-${status}`,
+        root_dir: root,
+        internal_qa_emit: true,
+      }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}-${status}`, completed: true }));
+      expect(out.ok).toBe(true);
+      expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'].sort());
+    }
+  });
+
+  it('fails closed for compared_analysis_run_ids too short/long and unsafe explicit ids', async () => {
+    const base = { root_take_id: 'a', compared_take_ids: ['a', 'b'], source_module: 'test', source_stage: 'cardinality', internal_qa_emit: true } as const;
+    const shortOut = await runInternalComparisonOperatorTrigger({ ...base, compared_analysis_run_ids: ['ar-a'] }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    const longOut = await runInternalComparisonOperatorTrigger({ ...base, compared_analysis_run_ids: ['ar-a', 'ar-b', 'ar-c'] }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    const unsafeOut = await runInternalComparisonOperatorTrigger({ ...base, compared_analysis_run_ids: ['../unsafe', 'ar-b'] }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(shortOut.warning).toBe('compared_analysis_run_ids_length_mismatch');
+    expect(longOut.warning).toBe('compared_analysis_run_ids_length_mismatch');
+    expect(unsafeOut.warning).toBe('explicit_analysis_run_id_mismatch');
+    expect(shortOut.written).toBe(false);
+    expect(longOut.written).toBe(false);
+    expect(unsafeOut.written).toBe(false);
+  });
+
+  it('succeeds when compared_analysis_run_ids exact length and matching', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-cardinality-ok-'));
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      compared_analysis_run_ids: ['ar-a', 'ar-b'],
+      source_module: 'test',
+      source_stage: 'cardinality-ok',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(true);
+    const base = path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a');
+    await expect(readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(base, 'comparison_traces', 'route_variance_trace.json'), 'utf8')).resolves.toBeTruthy();
+  });
 });
