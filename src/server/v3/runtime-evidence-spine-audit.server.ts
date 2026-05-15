@@ -4,6 +4,8 @@ export type RuntimeEvidenceArtefactCategory = 'analysis_take' | 'comparison' | '
 export type RuntimeEvidenceSourceClassification =
   | 'real_runtime_v3'
   | 'legacy_adapter'
+  | 'internal_validator'
+  | 'internal_gate_trace'
   | 'source_only_stub'
   | 'emitted_not_wired'
   | 'missing'

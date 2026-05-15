@@ -70,6 +70,18 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(map.find((x) => x.artefact_id === 'gate_trace')?.expected_path).not.toBe('traces/gate_trace.json');
   });
 
+  it('uses internal validator/gate source classifications and never promotes them', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const validator = map.find((x) => x.artefact_id === 'validator_trace');
+    const gate = map.find((x) => x.artefact_id === 'gate_trace');
+    expect(validator?.source_classification).toBe('internal_validator');
+    expect(gate?.source_classification).toBe('internal_gate_trace');
+    expect(validator?.source_classification).not.toBe('real_runtime_v3');
+    expect(gate?.source_classification).not.toBe('real_runtime_v3');
+    expect(validator?.source_classification).not.toBe('legacy_adapter');
+    expect(gate?.source_classification).not.toBe('legacy_adapter');
+  });
+
   it('marks immediate input artefacts as emit-capable without invention', () => {
     const ids = ['analysis_input_record', 'analysis_submission', 'analysis_take'];
     const map = getRuntimeEvidenceSpineAuditMap();

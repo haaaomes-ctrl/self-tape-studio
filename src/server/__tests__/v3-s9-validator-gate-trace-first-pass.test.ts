@@ -29,4 +29,34 @@ describe('v3 s9 validator/gate trace first pass', () => {
     await expect(emitValidatorTraceFirstPass({ ...base, take_id: '../bad' })).rejects.toThrow(/take_id_invalid_path/);
     await expect(emitGateTraceFirstPass({ ...base, take_id: '../bad' })).rejects.toThrow(/take_id_invalid_path/);
   });
+
+  it('uses run_id fallback for analysis_run_id consistently', async () => {
+    const out = await emitValidatorTraceFirstPass({ ...base, run_id: 'take-abc123', analysis_run_id: undefined });
+    expect(out.written).toBe(true);
+    expect(String(out.path)).toContain('analysis-take-abc123');
+    expect(String(out.path)).not.toContain('analysis-undefined');
+  });
+
+  it('uses run_id fallback for gate trace analysis_run_id consistently', async () => {
+    const out = await emitGateTraceFirstPass({ ...base, run_id: 'take-abc123', analysis_run_id: undefined });
+    expect(out.written).toBe(true);
+    expect(String(out.path)).toContain('analysis-take-abc123');
+    expect(String(out.path)).not.toContain('analysis-undefined');
+  });
+
+  it('keeps explicit analysis_run_id when provided', async () => {
+    const outV = await emitValidatorTraceFirstPass({ ...base, run_id: 'take-run', analysis_run_id: 'analysis-explicit' });
+    const outG = await emitGateTraceFirstPass({ ...base, run_id: 'take-run', analysis_run_id: 'analysis-explicit' });
+    expect(String(outV.path)).toContain('analysis-analysis-explicit');
+    expect(String(outG.path)).toContain('analysis-analysis-explicit');
+  });
+
+  it('does not write when both run_id and analysis_run_id are missing', async () => {
+    const outV = await emitValidatorTraceFirstPass({ ...base, run_id: '', analysis_run_id: undefined });
+    const outG = await emitGateTraceFirstPass({ ...base, run_id: '', analysis_run_id: undefined });
+    expect(outV.written).toBe(false);
+    expect(outG.written).toBe(false);
+    expect(outV.emitted_artefact_ids).toEqual([]);
+    expect(outG.emitted_artefact_ids).toEqual([]);
+  });
 });
