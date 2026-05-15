@@ -93,6 +93,34 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(keys.some((k) => String(k).endsWith('/qa/acceptance_metrics.json'))).toBe(true);
   });
 
+  it('infers take_id from run_id for first-pass validator/gate traces', async () => {
+    const run = 'take-derived123';
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 's1',
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+    });
+    expect(out.written).toBe(true);
+    const keys = upload.mock.calls.map((c) => c[0]);
+    expect(keys).toContain('take-derived123/analysis-take-derived123/traces/ValidatorTrace.json');
+    expect(keys).toContain('take-derived123/analysis-take-derived123/traces/GateTrace.json');
+  });
+
+  it('does not emit validator/gate traces for unsafe inferred run_id suffix', async () => {
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: 'take-../bad',
+      analysis_run_id: 'take-../bad',
+      submission_id: 's1',
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+    });
+    const keys = upload.mock.calls.map((c) => c[0]);
+    expect(keys.some((k) => String(k).includes('ValidatorTrace.json'))).toBe(false);
+    expect(keys.some((k) => String(k).includes('GateTrace.json'))).toBe(false);
+  });
+
   it('uses GIT_* provenance fallbacks when primary env vars are absent', async () => {
     process.env.GIT_COMMIT_SHA = 'abcdef1234567890abcdef1234567890abcdef12';
     process.env.GIT_BRANCH_NAME = 'git-branch';

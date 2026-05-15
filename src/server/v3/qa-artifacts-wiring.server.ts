@@ -158,6 +158,25 @@ function buildTakeAnalysisRelativePath(input: { take_id?: string; analysis_run_i
 function shouldUseExpandedManifestPaths(env: NodeJS.ProcessEnv = process.env): boolean {
   return (env.QA_ARTIFACT_SINK ?? 'file') === 'storage';
 }
+
+function resolveTakeIdForFirstPassTraces(options: { take_id?: string | null; run_id?: string | null }): string | null {
+  if (typeof options.take_id === 'string' && options.take_id.trim().length > 0) {
+    const explicit = options.take_id.trim();
+    assertSafeSegment(explicit, 'take_id');
+    return explicit;
+  }
+  const runId = typeof options.run_id === 'string' ? options.run_id.trim() : '';
+  const match = /^take-(.+)$/.exec(runId);
+  if (!match) return null;
+  const inferred = match[1]?.trim() ?? '';
+  if (!inferred) return null;
+  try {
+    assertSafeSegment(inferred, 'take_id');
+    return inferred;
+  } catch {
+    return null;
+  }
+}
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
   if (!internalEmit) return { written: false, warning: null as string | null };
@@ -195,9 +214,12 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
     let validatorTraceSummary: Record<string, unknown> | undefined;
     let gateTraceSummary: Record<string, unknown> | undefined;
-    const takeIdForFirstPassTraces = typeof baseOptions.take_id === 'string' && baseOptions.take_id.trim().length > 0
-      ? baseOptions.take_id.trim()
-      : null;
+    let takeIdForFirstPassTraces: string | null = null;
+    try {
+      takeIdForFirstPassTraces = resolveTakeIdForFirstPassTraces({ take_id: baseOptions.take_id, run_id: baseOptions.run_id });
+    } catch {
+      takeIdForFirstPassTraces = null;
+    }
     const canEmitTakeScopedFirstPassTraces = shouldUseExpandedManifestPaths() && takeIdForFirstPassTraces !== null;
     if (canEmitTakeScopedFirstPassTraces) {
     const validatorWrite = await emitValidatorTraceFirstPass({

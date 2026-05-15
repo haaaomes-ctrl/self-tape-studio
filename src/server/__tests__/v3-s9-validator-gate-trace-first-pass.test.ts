@@ -59,4 +59,11 @@ describe('v3 s9 validator/gate trace first pass', () => {
     expect(outV.emitted_artefact_ids).toEqual([]);
     expect(outG.emitted_artefact_ids).toEqual([]);
   });
+
+  it('explicit take_id wins over run_id-derived take identity', async () => {
+    const outV = await emitValidatorTraceFirstPass({ ...base, take_id: 'explicit-take', run_id: 'take-derived', analysis_run_id: 'take-derived' });
+    const outG = await emitGateTraceFirstPass({ ...base, take_id: 'explicit-take', run_id: 'take-derived', analysis_run_id: 'take-derived' });
+    expect(String(outV.path)).toContain('takes/take-explicit-take/analysis-take-derived');
+    expect(String(outG.path)).toContain('takes/take-explicit-take/analysis-take-derived');
+  });
 });
