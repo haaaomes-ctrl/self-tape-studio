@@ -1,5 +1,7 @@
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
 import { writeQAArtifact } from './qa-artifact-sink.server';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 
 function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
   const present = warnings.filter((warning): warning is string => Boolean(warning && warning.trim()));
@@ -14,6 +16,32 @@ function getQAWriteWarning(result: unknown): string | null {
     typeof warning === 'string' ? warning : null,
     typeof sinkWarning === 'string' ? sinkWarning : null,
   );
+}
+function loadExistingManifestState(rootDir: string, runId: string, takeId: string, analysisRunId: string): { emitted: string[]; runtimeAccepted: string[]; sourceById: Record<string, string>; level2ById: Record<string, boolean>; defectRiskIds: string[]; summaries: Record<string, unknown> } {
+  const manifestRelativePath = shouldUseExpandedManifestPaths()
+    ? buildTakeAnalysisRelativePath({ run_id: runId, take_id: takeId, analysis_run_id: analysisRunId, leaf: 'manifest.json' })
+    : 'manifest.json';
+  const manifestPath = path.join(rootDir, runId, manifestRelativePath);
+  if (!existsSync(manifestPath)) return { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
+  try {
+    const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    return {
+      emitted: Array.isArray(raw?.emitted_artifacts) ? raw.emitted_artifacts.filter((v: unknown): v is string => typeof v === 'string') : [],
+      runtimeAccepted: Array.isArray(raw?.runtime_evidence_accepted_by_id) ? raw.runtime_evidence_accepted_by_id.filter((v: unknown): v is string => typeof v === 'string') : [],
+      sourceById: raw?.artefact_source_classification_by_id && typeof raw.artefact_source_classification_by_id === 'object' ? raw.artefact_source_classification_by_id : {},
+      level2ById: raw?.artefact_level2_spine_satisfaction_by_id && typeof raw.artefact_level2_spine_satisfaction_by_id === 'object' ? raw.artefact_level2_spine_satisfaction_by_id : {},
+      defectRiskIds: Array.isArray(raw?.defect_risk_ids) ? raw.defect_risk_ids.filter((v: unknown): v is string => typeof v === 'string') : [],
+      summaries: {
+        comparison_raw_summary: raw?.comparison_raw_summary,
+        comparison_report_internal_summary: raw?.comparison_report_internal_summary,
+        same_video_repeatability_trace_summary: raw?.same_video_repeatability_trace_summary,
+        comparison_suppression_trace_summary: raw?.comparison_suppression_trace_summary,
+        route_variance_trace_summary: raw?.route_variance_trace_summary,
+      },
+    };
+  } catch {
+    return { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
+  }
 }
 
 export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
@@ -1148,6 +1176,41 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
+  const takeScopedManifestRewrite = emitted_artefact_ids.length > 0;
+  if (takeScopedManifestRewrite && input.take_id) {
+    const existing = loadExistingManifestState(root, input.run_id, takeId, analysisRunId);
+    const emittedAll = [...new Set([...existing.emitted, ...emitted_artefact_ids])];
+    const runtimeAccepted = [...new Set([...existing.runtimeAccepted, ...emitted_artefact_ids])];
+    const sourceById = { ...existing.sourceById };
+    const level2ById = { ...existing.level2ById };
+    for (const id of emitted_artefact_ids) {
+      sourceById[id] = 'internal_comparison_runtime';
+      level2ById[id] = false;
+    }
+    const summaryPatch: Record<string, unknown> = {
+      ...existing.summaries,
+      ...(emitted_artefact_ids.includes('comparison_raw') ? { comparison_raw_summary: input.comparison_raw_data ?? null } : {}),
+      ...(emitted_artefact_ids.includes('comparison_report_internal') ? { comparison_report_internal_summary: { comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, recommendation_suppressed: Boolean(input.comparison_raw_data?.recommendation_suppressed ?? input.comparison_raw_data?.duplicate_or_near_duplicate_detected) } } : {}),
+      ...(emitted_artefact_ids.includes('same_video_repeatability_trace') ? { same_video_repeatability_trace_summary: input.same_video_repeatability_trace?.same_video_repeatability_trace_summary ?? null } : {}),
+      ...(emitted_artefact_ids.includes('comparison_suppression_trace') ? { comparison_suppression_trace_summary: input.suppression_trace?.comparison_suppression_trace_summary ?? null } : {}),
+      ...(emitted_artefact_ids.includes('route_variance_trace') ? { route_variance_trace_summary: input.route_variance_trace?.route_variance_trace_summary ?? null } : {}),
+    };
+    await emitQAManifestForAnalysisRun({
+      run_id: input.run_id,
+      analysis_run_id: analysisRunId,
+      take_id: takeId,
+      compared_take_ids: comparedTakeIds,
+      comparison_run_id: comparisonRunId,
+      emitted_artefact_ids: emittedAll,
+      runtime_evidence_accepted_by_id: runtimeAccepted,
+      artefact_source_classification_by_id: sourceById,
+      artefact_level2_spine_satisfaction_by_id: level2ById,
+      defect_risk_ids: existing.defectRiskIds,
+      root_dir: input.root_dir,
+      internal_qa_emit: input.internal_qa_emit,
+      ...summaryPatch,
+    } as QARuntimeMetadata & Record<string, unknown>);
+  }
   return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
 }
 
