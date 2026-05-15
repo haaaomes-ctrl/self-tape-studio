@@ -109,4 +109,25 @@ describe('v3 s9 live flow trace wiring', () => {
     expect(metrics.model_run_trace_status).toBe('emitted');
     expect(metrics.model_run_count).toBeGreaterThan(0);
   });
+
+  it('non-model-run metadata path finalises without model-run local ReferenceError signatures', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-live-wire-no-modelrun-'));
+    const run = 'take-t-no-modelrun';
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: run, analysis_run_id: run, take_id: 't-no-modelrun', submission_id: 'sub1', root_dir: root, internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter' },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false },
+      legacy_adapter_artefact_ids: ['raw_report'],
+    });
+    expect(out.written).toBe(true);
+    expect(String(out.warning ?? '')).not.toContain('not defined');
+    expect(String(out.warning ?? '')).not.toContain('geminiRetryCount');
+    expect(String(out.warning ?? '')).not.toContain('geminiAttempt');
+    expect(String(out.warning ?? '')).not.toContain('lastAttemptStartedAtIso');
+    const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa/acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.model_run_trace).toBe('missing');
+    expect(metrics.model_run_trace_status).toBe('missing');
+  });
 });

@@ -1549,20 +1549,20 @@ export async function runProcessTake(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let report: any = null;
     let aiResp: Response | null = null;
+    let geminiAttempt = 0;
+    let geminiRetryCount = 0;
+    let lastAttemptStartedAtIso: string | null = null;
+    let lastAttemptCompletedAtIso: string | null = null;
+    let lastAttemptDurationMs: number | null = null;
+    let lastAttemptTimeoutMs: number | null = null;
+    let lastAttemptTimedOut: boolean | null = null;
+    let lastAttemptHttpStatus: number | null = null;
     if (twoStepReport) {
       // Two-step pipeline produced (or fell back to) a report. Skip the
       // single-pass Gemini call and parse stages entirely.
       report = twoStepReport;
     } else {
-    let geminiAttempt = 0;
-    let geminiRetryCount = 0;
     const geminiStartedAt = Date.now();
-    let lastAttemptStartedAtIso: string | null = null;
-    let lastAttemptCompletedAtIso: string | null = null;
-    let lastAttemptDurationMs: number | null = null;
-    let lastAttemptTimeoutMs: number | null = null;
-    let lastAttemptTimedOut = false;
-    let lastAttemptHttpStatus: number | null = null;
     console.info("[take-pipeline] ai_model_selected", {
       take_id: takeId,
       model: currentModel,
@@ -3370,14 +3370,8 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (scoreTrace.written) qaArtefactIds.push(...scoreTrace.emitted_artefact_ids);
-      const modelRunTrace = await emitModelRunTraceFirstPass({
-        run_id: `take-${takeId}`,
-        analysis_run_id: `take-${takeId}`,
-        take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        analysis_route: isTwoStepEnabled() ? 'two_step_or_fallback_single_pass' : 'single_pass',
-        model_run_entries: [{
+      const safeModelRunEntries = (lastAttemptStartedAtIso || lastAttemptCompletedAtIso || lastAttemptDurationMs != null || lastAttemptHttpStatus != null)
+        ? [{
           model_run_id: `mr-${takeId}-1`,
           model_provider: 'openrouter',
           model_name: currentModel,
@@ -3387,7 +3381,7 @@ export async function runProcessTake(
           completed_at: lastAttemptCompletedAtIso ?? undefined,
           duration_ms: lastAttemptDurationMs ?? undefined,
           timeout_ms: lastAttemptTimeoutMs ?? ANALYSIS_GEMINI_TIMEOUT_MS,
-          timed_out: lastAttemptTimedOut,
+          timed_out: lastAttemptTimedOut ?? false,
           retry_count: geminiRetryCount,
           attempt_index: geminiAttempt,
           http_status: lastAttemptHttpStatus ?? undefined,
@@ -3396,7 +3390,15 @@ export async function runProcessTake(
           analysis_tier: tier,
           request_status: lastAttemptTimedOut ? 'timed_out' : 'completed',
           parse_status: report ? 'completed' : 'unknown',
-        }],
+        }] : [];
+      const modelRunTrace = await emitModelRunTraceFirstPass({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: isTwoStepEnabled() ? 'two_step_or_fallback_single_pass' : 'single_pass',
+        model_run_entries: safeModelRunEntries,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (modelRunTrace.written) qaArtefactIds.push(...modelRunTrace.emitted_artefact_ids);
