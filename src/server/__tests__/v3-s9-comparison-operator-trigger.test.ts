@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
-import { runAdminInternalComparisonTriggerImpl } from '@/server-fns/internal-comparison-trigger.functions';
+import { assertAdminEmail, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
 
 describe('v3 s9 comparison operator trigger', () => {
   it('emits comparison artifacts for two completed analyses via trigger path', async () => {
@@ -106,5 +106,59 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(out.ok).toBe(true);
     const route = JSON.parse(await readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a', 'comparison_traces', 'route_variance_trace.json'), 'utf8'));
     expect(route.route_variance_detected).toBe(true);
+  });
+
+  it('unauthenticated/non-admin guard fails closed before helper invocation', async () => {
+    try {
+      assertAdminEmail(null);
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Response);
+      expect((err as Response).status).toBe(403);
+    }
+    try {
+      assertAdminEmail({ email: 'not-admin@example.com' });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Response);
+      expect((err as Response).status).toBe(403);
+    }
+  });
+
+  it('admin guard allows admin caller', async () => {
+    expect(() => assertAdminEmail({ email: 'o.halawi90@gmail.com' })).not.toThrow();
+  });
+
+  it('resolver fails closed for unsafe take id', async () => {
+    const row = await resolveCompletedTakeComparisonSourceByTakeId('../unsafe');
+    expect(row).toBeNull();
+  });
+
+  it('resolver safety: unresolved and incomplete takes fail closed; safe fields only', async () => {
+    const unresolved = await runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'unresolved',
+      internal_qa_emit: true,
+    }, async (takeId) => takeId === 'b' ? null : ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(unresolved.ok).toBe(false);
+    const incomplete = await runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'incomplete',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: takeId !== 'b' }));
+    expect(incomplete.ok).toBe(false);
+    const safe = await runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'safe-fields',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true, mux_playback_ref: 'pb', analysis_route: 'route', model_provider_family: 'provider', artefact_summaries: { score_trace_summary: { score_count: 1 } } }));
+    const txt = JSON.stringify(safe);
+    for (const banned of ['prompt', 'raw_response', 'token', 'secret', 'signed_url', 'video_url', 'cookie', 'session']) expect(txt).not.toContain(banned);
   });
 });

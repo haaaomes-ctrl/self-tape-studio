@@ -4,10 +4,11 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runInternalComparisonOperatorTrigger, type CompletedTakeComparisonSource, type InternalComparisonOperatorTriggerInput } from "@/server/v3/qa-artifacts-wiring.server";
+import { assertSafeSegment } from "@/server/v3/qa-artifacts.server";
 
 const ADMIN_EMAIL = "o.halawi90@gmail.com";
 const normalizeEmail = (email?: string | null) => email?.trim().toLowerCase() ?? "";
-const assertAdminEmail = (claims: { email?: string | null } | null | undefined) => {
+export const assertAdminEmail = (claims: { email?: string | null } | null | undefined) => {
   if (normalizeEmail(claims?.email) !== ADMIN_EMAIL) throw new Response("Forbidden", { status: 403 });
 };
 
@@ -20,6 +21,11 @@ const InternalComparisonTriggerInput = z.object({
 });
 
 export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: string): Promise<CompletedTakeComparisonSource | null> {
+  try {
+    assertSafeSegment(takeId, "take_id");
+  } catch {
+    return null;
+  }
   const { data, error } = await supabaseAdmin
     .from("takes")
     .select("id, analysis_run_id, mux_playback_id, analysis_route, model_provider_family, analysis_status")
@@ -27,11 +33,18 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
     .maybeSingle();
   if (error || !data) return null;
   const analysisRunId = typeof (data as any).analysis_run_id === "string" ? (data as any).analysis_run_id : null;
+  if (!analysisRunId) return null;
+  try {
+    assertSafeSegment(analysisRunId, "analysis_run_id");
+  } catch {
+    return null;
+  }
   const status = typeof (data as any).analysis_status === "string" ? String((data as any).analysis_status).toLowerCase() : "";
   const completed = Boolean(analysisRunId) && (status === "completed" || status === "succeeded" || status === "processed" || status === "");
+  if (!completed) return null;
   return {
     take_id: String((data as any).id ?? takeId),
-    analysis_run_id: analysisRunId ?? "",
+    analysis_run_id: analysisRunId,
     mux_playback_ref: typeof (data as any).mux_playback_id === "string" ? (data as any).mux_playback_id : null,
     analysis_route: typeof (data as any).analysis_route === "string" ? (data as any).analysis_route : null,
     model_provider_family: typeof (data as any).model_provider_family === "string" ? (data as any).model_provider_family : null,
