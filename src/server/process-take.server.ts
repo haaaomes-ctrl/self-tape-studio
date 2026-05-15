@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -1549,13 +1549,19 @@ export async function runProcessTake(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let report: any = null;
     let aiResp: Response | null = null;
+    let geminiAttempt = 0;
+    let geminiRetryCount = 0;
+    let lastAttemptStartedAtIso: string | null = null;
+    let lastAttemptCompletedAtIso: string | null = null;
+    let lastAttemptDurationMs: number | null = null;
+    let lastAttemptTimeoutMs: number | null = null;
+    let lastAttemptTimedOut: boolean | null = null;
+    let lastAttemptHttpStatus: number | null = null;
     if (twoStepReport) {
       // Two-step pipeline produced (or fell back to) a report. Skip the
       // single-pass Gemini call and parse stages entirely.
       report = twoStepReport;
     } else {
-    let geminiAttempt = 0;
-    let geminiRetryCount = 0;
     const geminiStartedAt = Date.now();
     console.info("[take-pipeline] ai_model_selected", {
       take_id: takeId,
@@ -1609,6 +1615,7 @@ export async function runProcessTake(
 
       geminiAttempt += 1;
       const attemptStart = Date.now();
+      lastAttemptStartedAtIso = new Date(attemptStart).toISOString();
       // Per-attempt deadline is the smaller of the per-attempt cap and the
       // remaining total budget — never start a long attempt we can't finish.
       const remainingBudgetMs = ANALYSIS_TOTAL_TIMEOUT_MS - elapsedRunMs;
@@ -1616,6 +1623,7 @@ export async function runProcessTake(
         1_000,
         Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, remainingBudgetMs),
       );
+      lastAttemptTimeoutMs = Number.isFinite(attemptTimeoutMs) && attemptTimeoutMs >= 0 ? attemptTimeoutMs : null;
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), attemptTimeoutMs);
 
@@ -1636,6 +1644,10 @@ export async function runProcessTake(
       }
 
       const status = aiResp?.status ?? null;
+      lastAttemptCompletedAtIso = new Date().toISOString();
+      lastAttemptDurationMs = Date.now() - attemptStart;
+      lastAttemptTimedOut = timedOut;
+      lastAttemptHttpStatus = status;
       console.log("[take-pipeline] gemini response received", {
         ...baseLog,
         analysis_tier: tier,
@@ -3358,6 +3370,38 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (scoreTrace.written) qaArtefactIds.push(...scoreTrace.emitted_artefact_ids);
+      const safeModelRunEntries = (lastAttemptStartedAtIso || lastAttemptCompletedAtIso || lastAttemptDurationMs != null || lastAttemptHttpStatus != null)
+        ? [{
+          model_run_id: `mr-${takeId}-1`,
+          model_provider: 'openrouter',
+          model_name: currentModel,
+          model_role: geminiRetryCount > 0 || circuitOpenAtStart ? 'fallback' : 'primary',
+          source_stage: 'analysis_generation',
+          started_at: lastAttemptStartedAtIso ?? undefined,
+          completed_at: lastAttemptCompletedAtIso ?? undefined,
+          duration_ms: lastAttemptDurationMs ?? undefined,
+          timeout_ms: lastAttemptTimeoutMs ?? ANALYSIS_GEMINI_TIMEOUT_MS,
+          timed_out: lastAttemptTimedOut ?? false,
+          retry_count: geminiRetryCount,
+          attempt_index: geminiAttempt,
+          http_status: lastAttemptHttpStatus ?? undefined,
+          circuit_open: circuitOpenAtStart,
+          fallback_used: geminiRetryCount > 0 || circuitOpenAtStart,
+          analysis_tier: tier,
+          request_status: lastAttemptTimedOut ? 'timed_out' : 'completed',
+          parse_status: report ? 'completed' : 'unknown',
+        }] : [];
+      const modelRunTrace = await emitModelRunTraceFirstPass({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: isTwoStepEnabled() ? 'two_step_or_fallback_single_pass' : 'single_pass',
+        model_run_entries: safeModelRunEntries,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      if (modelRunTrace.written) qaArtefactIds.push(...modelRunTrace.emitted_artefact_ids);
 
       console.info('[internal-qa] emitQAManifestForAnalysisRun_start', {
         event: 'emitQAManifestForAnalysisRun_start',
@@ -3369,6 +3413,7 @@ export async function runProcessTake(
         includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace'),
         includes_technique_observation_trace: qaArtefactIds.includes('technique_observation_trace'),
         includes_score_trace: qaArtefactIds.includes('score_trace'),
+        includes_model_run_trace: qaArtefactIds.includes('model_run_trace'),
       });
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
@@ -3386,6 +3431,7 @@ export async function runProcessTake(
           ...(publicClaimTrace.written ? { public_claim_trace: 'legacy_adapter' } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
+          ...(modelRunTrace.written ? { model_run_trace: 'internal_model_run_trace' } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
@@ -3393,6 +3439,7 @@ export async function runProcessTake(
           ...(publicClaimTrace.written ? { public_claim_trace: false } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
           ...(scoreTrace.written ? { score_trace: false } : {}),
+          ...(modelRunTrace.written ? { model_run_trace: false } : {}),
         },
         legacy_adapter_artefact_ids: [
           'raw_report',
@@ -3401,10 +3448,11 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
           ...(scoreTrace.written ? ['score_trace'] : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
+        model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

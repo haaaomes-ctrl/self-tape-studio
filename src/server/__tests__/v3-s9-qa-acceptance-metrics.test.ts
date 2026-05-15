@@ -44,6 +44,34 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(emitted.next_required_engineering_tasks).toContain('ModelRunTrace');
   });
 
+  it('derives model run counters and tasks from manifest model_run_trace_summary', () => {
+    const base: any = {
+      run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], generated_at: new Date().toISOString(), qa_artifact_root: 'x',
+      required_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [],
+      artefact_source_classification_by_id: { model_run_trace: 'internal_model_run_trace' }, artefact_level2_spine_satisfaction_by_id: { model_run_trace: false }, legacy_adapter_artefact_ids: [], real_v3_spine_artefact_ids: [],
+    };
+    const emitted = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base, emitted_artifacts: ['model_run_trace'], missing_artifacts: [], blocker_codes: [],
+      artefact_status_by_id: { model_run_trace: 'emitted' },
+      model_run_trace_summary: { model_run_count: 2, model_run_completed_count: 1, model_run_failed_count: 1, model_run_timeout_count: 0, model_run_fallback_count: 1, model_run_trace_gate_reason: 'runtime_metadata_without_independent_model_proof_chain' },
+    });
+    expect(emitted.model_run_trace_status).toBe('emitted');
+    expect(emitted.model_run_trace_gate_status).toBe('insufficient');
+    expect(emitted.model_run_count).toBe(2);
+    expect(emitted.model_run_completed_count).toBe(1);
+    expect(emitted.model_run_failed_count).toBe(1);
+    expect(emitted.model_run_fallback_count).toBe(1);
+    expect(emitted.next_required_engineering_tasks).toContain('independent model-run proof chain');
+    expect(emitted.next_required_engineering_tasks).not.toContain('ModelRunTrace');
+
+    const missing = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base, emitted_artifacts: [], missing_artifacts: ['model_run_trace'], blocker_codes: ['ModelRunTrace_missing'], artefact_status_by_id: { model_run_trace: 'missing' },
+    });
+    expect(missing.model_run_trace_status).toBe('missing');
+    expect(missing.model_run_count).toBe(0);
+    expect(missing.next_required_engineering_tasks).toContain('ModelRunTrace');
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';

@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitScoreTraceFirstPass } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitScoreTraceFirstPass } from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s9 live flow trace wiring', () => {
   it('A/D/F: combined flow emits traces and manifest/metrics agree while gate posture stays blocked', async () => {
@@ -76,5 +76,58 @@ describe('v3 s9 live flow trace wiring', () => {
     expect(manifest.controlling_source_file).toBe(manifest.source_scope_file);
     if (manifest.source_scope_file === 'README.md') expect(manifest.controlling_requirements_status).toBe('root_readme_present');
     else expect(manifest.controlling_requirements_status).toBe('operator_supplied_replacement_README');
+  });
+
+  it('propagates model_run_trace summary with computed timeout-backed entry', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-live-wire-modelrun-'));
+    const run = 'take-t-modelrun';
+    const take = 't-modelrun';
+    const modelRun = await emitModelRunTraceFirstPass({
+      run_id: run,
+      analysis_run_id: run,
+      take_id: take,
+      source_module: 'process-take.server',
+      source_stage: 'process_take_success',
+      internal_qa_emit: true,
+      root_dir: root,
+      model_run_entries: [{ model_name: 'm', timeout_ms: 12000, request_status: 'completed', retry_count: 0, fallback_used: false }],
+    });
+    expect(modelRun.written).toBe(true);
+    await emitQAManifestForAnalysisRun({
+      run_id: run, analysis_run_id: run, take_id: take, submission_id: 'sub1', root_dir: root, internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report', 'model_run_trace'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter', model_run_trace: 'internal_model_run_trace' },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false, model_run_trace: false },
+      legacy_adapter_artefact_ids: ['raw_report'],
+      model_run_trace_summary: modelRun.model_run_trace_summary as any,
+    });
+    const trace = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'ModelRunTrace.json'), 'utf8'));
+    const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa/acceptance_metrics.json'), 'utf8'));
+    expect(trace.model_run_entries[0].timeout_ms).toBe(12000);
+    expect(manifest.model_run_trace_summary.model_run_count).toBeGreaterThan(0);
+    expect(metrics.model_run_trace_status).toBe('emitted');
+    expect(metrics.model_run_count).toBeGreaterThan(0);
+  });
+
+  it('non-model-run metadata path finalises without model-run local ReferenceError signatures', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-live-wire-no-modelrun-'));
+    const run = 'take-t-no-modelrun';
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: run, analysis_run_id: run, take_id: 't-no-modelrun', submission_id: 'sub1', root_dir: root, internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter' },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false },
+      legacy_adapter_artefact_ids: ['raw_report'],
+    });
+    expect(out.written).toBe(true);
+    expect(String(out.warning ?? '')).not.toContain('not defined');
+    expect(String(out.warning ?? '')).not.toContain('geminiRetryCount');
+    expect(String(out.warning ?? '')).not.toContain('geminiAttempt');
+    expect(String(out.warning ?? '')).not.toContain('lastAttemptStartedAtIso');
+    const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa/acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.model_run_trace).toBe('missing');
+    expect(metrics.model_run_trace_status).toBe('missing');
   });
 });
