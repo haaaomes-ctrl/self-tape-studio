@@ -56,7 +56,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
 
   it('keeps missing blockers for actually missing artefacts', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
-    expect(map.find((x) => x.artefact_id === 'score_trace')?.blocker_code).toBe('ScoreTrace_missing');
+    expect(map.find((x) => x.artefact_id === 'score_trace')?.blocker_code).toBe('ScoreTrace_legacy_only');
     expect(map.find((x) => x.artefact_id === 'validator_trace')?.blocker_code).toBe('validator_trace_missing');
     expect(map.find((x) => x.artefact_id === 'gate_trace')?.blocker_code).toBe('gate_trace_missing');
     expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_missing');
