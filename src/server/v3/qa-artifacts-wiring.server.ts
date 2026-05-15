@@ -301,6 +301,11 @@ export async function runInternalComparisonOperatorTrigger(
   if (input.compared_analysis_run_ids && input.compared_analysis_run_ids.length !== ids.length) {
     return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'compared_analysis_run_ids_length_mismatch', blocker_codes: ['analysis_run_id_cardinality_mismatch'] };
   }
+  if (input.comparison_run_id !== undefined) {
+    const explicitComparisonRunId = String(input.comparison_run_id);
+    if (!explicitComparisonRunId.trim()) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_run_id_invalid_path', blocker_codes: ['comparison_run_id_invalid'] };
+    try { assertSafeSegment(explicitComparisonRunId, 'comparison_run_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_run_id_invalid_path', blocker_codes: ['comparison_run_id_invalid'] }; }
+  }
   const resolvedRows: CompletedTakeComparisonSource[] = [];
   const seenResolvedTakeIds = new Set<string>();
   for (const requestedTakeId of ids) {

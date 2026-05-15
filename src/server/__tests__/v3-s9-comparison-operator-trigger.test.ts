@@ -1,4 +1,5 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -472,5 +473,26 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(out.written).toBe(false);
     expect(out.warning).toBe('analysis_run_id_invalid_path');
     expect(out.emitted_artefact_ids).toEqual([]);
+  });
+
+  it('unsafe comparison_run_id direct helper call fails closed', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      comparison_run_id: '../x',
+      source_module: 'test',
+      source_stage: 'unsafe-comparison-run-id-direct',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `safe-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.warning).toBe('comparison_run_id_invalid_path');
+    expect(out.blocker_codes).toContain('comparison_run_id_invalid');
+    expect(out.emitted_artefact_ids).toEqual([]);
+    expect(out.comparison_run_id).toBeNull();
+  });
+
+  it('public routes do not import internal comparison serverfn', async () => {
+    const txt = readFileSync('src/routes/admin/storage-downloads.tsx', 'utf8');
+    expect(txt).not.toContain('runInternalComparisonOperatorTriggerFn');
   });
 });

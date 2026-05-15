@@ -75,6 +75,20 @@ export const runInternalComparisonOperatorTriggerFn = createServerFn({ method: "
   .inputValidator((input: unknown) => InternalComparisonTriggerInput.parse(input))
   .handler(async ({ data, context }) => {
     assertAdminEmail((context as { claims?: { email?: string | null } }).claims);
+    if (process.env.INTERNAL_COMPARISON_TRIGGER_ENABLED !== "true") {
+      return {
+        ok: false,
+        written: false,
+        comparison_run_id: null,
+        root_take_id: data.root_take_id,
+        root_analysis_run_id: null,
+        compared_take_ids: data.compared_take_ids,
+        compared_analysis_run_ids: [],
+        emitted_artefact_ids: [],
+        warning: "internal_comparison_trigger_disabled",
+        blocker_codes: ["internal_comparison_trigger_disabled"],
+      };
+    }
     return runAdminInternalComparisonTriggerImpl({
       root_take_id: data.root_take_id,
       compared_take_ids: data.compared_take_ids,
