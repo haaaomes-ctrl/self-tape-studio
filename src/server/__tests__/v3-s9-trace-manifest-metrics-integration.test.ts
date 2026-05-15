@@ -47,6 +47,10 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+    expect(metrics.validator_trace_status).toBe('missing');
+    expect(metrics.gate_trace_status).toBe('missing');
+    expect(metrics.validator_trace_validation_count).toBe(0);
+    expect(metrics.gate_trace_gate_count).toBe(0);
   });
 
   it('does not predeclare traces when they are not written', async () => {
@@ -58,5 +62,21 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(manifest.emitted_artifacts).not.toContain('public_claim_trace');
     expect(manifest.artefact_status_by_id.evidence_anchors).not.toBe('emitted');
     expect(manifest.artefact_status_by_id.public_claim_trace).not.toBe('emitted');
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(metrics.validator_trace_status).toBe('missing');
+    expect(metrics.gate_trace_status).toBe('missing');
+    expect(metrics.validator_trace_validation_count).toBe(0);
+    expect(metrics.gate_trace_gate_count).toBe(0);
+  });
+
+  it('advertises PascalCase expected paths for validator/gate trace inventory', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s909-paths-'));
+    const run = 'run-s909-paths';
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: 't1', submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false } });
+    const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+    const validator = (manifest.required_artifacts ?? []).find((x: any) => x.artefact_id === 'validator_trace');
+    const gate = (manifest.required_artifacts ?? []).find((x: any) => x.artefact_id === 'gate_trace');
+    expect(validator?.expected_path).toBe('traces/ValidatorTrace.json');
+    expect(gate?.expected_path).toBe('traces/GateTrace.json');
   });
 });

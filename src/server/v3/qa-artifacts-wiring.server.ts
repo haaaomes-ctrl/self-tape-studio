@@ -158,6 +158,25 @@ function buildTakeAnalysisRelativePath(input: { take_id?: string; analysis_run_i
 function shouldUseExpandedManifestPaths(env: NodeJS.ProcessEnv = process.env): boolean {
   return (env.QA_ARTIFACT_SINK ?? 'file') === 'storage';
 }
+
+function resolveTakeIdForFirstPassTraces(options: { take_id?: string | null; run_id?: string | null }): string | null {
+  if (typeof options.take_id === 'string' && options.take_id.trim().length > 0) {
+    const explicit = options.take_id.trim();
+    assertSafeSegment(explicit, 'take_id');
+    return explicit;
+  }
+  const runId = typeof options.run_id === 'string' ? options.run_id.trim() : '';
+  const match = /^take-(.+)$/.exec(runId);
+  if (!match) return null;
+  const inferred = match[1]?.trim() ?? '';
+  if (!inferred) return null;
+  try {
+    assertSafeSegment(inferred, 'take_id');
+    return inferred;
+  } catch {
+    return null;
+  }
+}
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
   if (!internalEmit) return { written: false, warning: null as string | null };
@@ -187,7 +206,50 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       );
       return { written: false, warning: initialWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
     }
-    const metrics = { ...buildQAAcceptanceMetrics((out as any).manifest), ...resolveQADeploymentProvenance() };
+    const preFinalManifest = (out as any).manifest;
+    const preFinalMetrics = { ...buildQAAcceptanceMetrics(preFinalManifest), ...resolveQADeploymentProvenance() };
+    const intendedSameFinalisationArtefactIds = ['validator_trace', 'gate_trace'];
+    let emittedWithInternalTraces = [...new Set(initialEmitted)];
+    let artefactSourceClassificationById = { ...(metadata.artefact_source_classification_by_id ?? {}) };
+    let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
+    let validatorTraceSummary: Record<string, unknown> | undefined;
+    let gateTraceSummary: Record<string, unknown> | undefined;
+    let takeIdForFirstPassTraces: string | null = null;
+    try {
+      takeIdForFirstPassTraces = resolveTakeIdForFirstPassTraces({ take_id: baseOptions.take_id, run_id: baseOptions.run_id });
+    } catch {
+      takeIdForFirstPassTraces = null;
+    }
+    const canEmitTakeScopedFirstPassTraces = shouldUseExpandedManifestPaths() && takeIdForFirstPassTraces !== null;
+    if (canEmitTakeScopedFirstPassTraces) {
+    const validatorWrite = await emitValidatorTraceFirstPass({
+      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces,
+      source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
+      manifest_snapshot: preFinalManifest, acceptance_metrics_snapshot: preFinalMetrics, emitted_artefact_ids: emittedWithInternalTraces,
+      artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
+      public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary,
+      score_trace_summary: metadata.score_trace_summary, root_dir: metadata.root_dir, internal_qa_emit: true, intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+    });
+    if (validatorWrite.written) {
+      emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'validator_trace'])];
+      artefactSourceClassificationById.validator_trace = 'internal_validator';
+      artefactLevel2ById.validator_trace = false;
+      validatorTraceSummary = validatorWrite.validator_trace_summary;
+    }
+    const gateWrite = await emitGateTraceFirstPass({
+      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces,
+      source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
+      manifest_snapshot: preFinalManifest, acceptance_metrics_snapshot: preFinalMetrics, emitted_artefact_ids: emittedWithInternalTraces,
+      missing_artefact_ids: (preFinalManifest?.missing_artifacts ?? []) as string[], blocker_codes: (preFinalManifest?.blocker_codes ?? []) as string[],
+      validator_trace_summary: validatorTraceSummary, root_dir: metadata.root_dir, internal_qa_emit: true, intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+    });
+    if (gateWrite.written) {
+      emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'gate_trace'])];
+      artefactSourceClassificationById.gate_trace = 'internal_gate_trace';
+      artefactLevel2ById.gate_trace = false;
+      gateTraceSummary = gateWrite.gate_trace_summary;
+    }}
+    const metrics = preFinalMetrics;
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     console.info('[internal-qa] acceptance_metrics_write_attempt', { event: 'acceptance_metrics_write_attempt',
       run_id: metadata.run_id,
@@ -198,7 +260,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     });
     console.info('[internal-qa] acceptance_metrics_write_result', { event: 'acceptance_metrics_write_result', written: Boolean(qaWrite.written), warning: getQAWriteWarning(qaWrite), sink_warning: (qaWrite as any)?.sink_warning ?? null, resolved_storage_path: qaWrite.storage_path ?? qaWrite.path ?? null });
     if (qaWrite.written) {
-      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...initialEmitted, 'qa_acceptance_metrics'], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? initialEmitted), 'qa_acceptance_metrics'])] });
+      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
       let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
       if (finalOut.written && 'manifest' in (finalOut as any)) {
         const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };
@@ -880,6 +942,48 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
   }
   return { written: !hadFailure, emitted_artefact_ids };
+}
+
+export async function emitValidatorTraceFirstPass(input: any) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false, emitted_artefact_ids: [] as string[] };
+  if (!input.manifest_snapshot || !input.acceptance_metrics_snapshot) return { written: false, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = typeof input.analysis_run_id === 'string' && input.analysis_run_id.trim().length
+    ? input.analysis_run_id.trim()
+    : String(input.run_id ?? '').trim();
+  if (!analysisRunId) return { written: false, emitted_artefact_ids: [] as string[] };
+  assertSafeSegment(input.take_id, 'take_id');
+  assertSafeSegment(analysisRunId, 'analysis_run_id');
+  const entries = [
+    { validation_id: 'level2_status_agreement', validation_area: 'manifest_metrics_agreement', subject: 'level2_status', status: input.manifest_snapshot.level2_qa_acceptance === input.acceptance_metrics_snapshot.level2_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.level2_status, observed: input.manifest_snapshot.level2_qa_acceptance, source_path: 'manifest.level2_qa_acceptance', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
+    { validation_id: 'public_scoring_status_agreement', validation_area: 'manifest_metrics_agreement', subject: 'public_scoring_status', status: input.manifest_snapshot.public_scoring_status === input.acceptance_metrics_snapshot.public_scoring_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.public_scoring_status, observed: input.manifest_snapshot.public_scoring_status, source_path: 'manifest.public_scoring_status', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
+  ];
+  const summary = { validation_count: entries.length, pass_count: entries.filter((e) => e.status === 'pass').length, warning_count: entries.filter((e) => e.status === 'warn').length, fail_count: 0, blocked_count: 0 };
+  const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: true, gate_satisfaction_reason: 'internal_bundle_validator_not_independent_runtime_v3_proof', blocker_codes: ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
+  const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ValidatorTrace.json`;
+  const w = await writeInternalJson(input.root_dir ?? DEFAULT_ROOT, input.run_id, relPath, payload, 'validator_trace');
+  if (!w.written) return { written: false, emitted_artefact_ids: [] as string[] };
+  return { written: true, emitted_artefact_ids: ['validator_trace'], path: w.path ?? w.storage_path, validator_trace_summary: summary };
+}
+
+export async function emitGateTraceFirstPass(input: any) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false, emitted_artefact_ids: [] as string[] };
+  if (!input.manifest_snapshot || !input.acceptance_metrics_snapshot) return { written: false, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = typeof input.analysis_run_id === 'string' && input.analysis_run_id.trim().length
+    ? input.analysis_run_id.trim()
+    : String(input.run_id ?? '').trim();
+  if (!analysisRunId) return { written: false, emitted_artefact_ids: [] as string[] };
+  assertSafeSegment(input.take_id, 'take_id');
+  assertSafeSegment(analysisRunId, 'analysis_run_id');
+  const gate_entries = [
+    { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', notes: null },
+    { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing', expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [], blocker_codes: ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', notes: null },
+  ];
+  const summary = { gate_count: gate_entries.length, passed_gate_count: 0, blocked_gate_count: gate_entries.filter((g) => g.status === 'blocked').length, insufficient_gate_count: gate_entries.filter((g) => g.status === 'insufficient').length, missing_gate_count: gate_entries.filter((g) => g.status === 'missing').length, not_applicable_gate_count: 0 };
+  const payload = { schema_version: 'tapecoach_v3_gate_trace_first_pass_v1', artefact_type: 'gate_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, trace_mode: 'first_pass_internal_gate_snapshot', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, gate_entries, gate_trace_summary: summary, cannot_satisfy_level2_gate_trace_gate: true, gate_satisfaction_reason: 'internal_gate_snapshot_not_independent_runtime_v3_proof', blocker_codes: ['GateTrace_internal_only'], level2_status: 'not_accepted', production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', public_output_unchanged: true, ...resolveQADeploymentProvenance() };
+  const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/GateTrace.json`;
+  const w = await writeInternalJson(input.root_dir ?? DEFAULT_ROOT, input.run_id, relPath, payload, 'gate_trace');
+  if (!w.written) return { written: false, emitted_artefact_ids: [] as string[] };
+  return { written: true, emitted_artefact_ids: ['gate_trace'], path: w.path ?? w.storage_path, gate_trace_summary: summary };
 }
 
 export function dedupePreservingOrder(values: string[]): string[] {

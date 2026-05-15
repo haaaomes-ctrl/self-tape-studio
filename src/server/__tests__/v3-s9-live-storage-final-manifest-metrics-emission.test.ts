@@ -49,12 +49,20 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     const root = `take-${take}/analysis-${run}/`;
     expect(keys).toContain(`${root}traces/EvidenceAnchors.json`);
     expect(keys).toContain(`${root}traces/PublicClaimTrace.json`);
+    expect(keys).toContain(`${root}traces/ValidatorTrace.json`);
+    expect(keys).toContain(`${root}traces/GateTrace.json`);
     expect(keys).toContain(`${root}manifest.json`);
     expect(keys).toContain(`${root}qa/acceptance_metrics.json`);
 
     expect(out.warning).toBeNull();
-    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
-    const metricsPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}qa/acceptance_metrics.json`)?.[1] ?? '{}');
+    const manifestWrites = upload.mock.calls.filter((c) => c[0] === `${root}manifest.json`);
+    const metricsWrites = upload.mock.calls.filter((c) => c[0] === `${root}qa/acceptance_metrics.json`);
+    const manifestPayload = JSON.parse(manifestWrites[manifestWrites.length - 1]?.[1] ?? '{}');
+    const metricsPayload = JSON.parse(metricsWrites[metricsWrites.length - 1]?.[1] ?? '{}');
+    expect((manifestPayload.validator_trace_summary?.validation_count ?? 0)).toBeGreaterThan(0);
+    expect((manifestPayload.gate_trace_summary?.gate_count ?? 0)).toBeGreaterThan(0);
+    expect(metricsPayload.validator_trace_validation_count).toBe(manifestPayload.validator_trace_summary.validation_count);
+    expect(metricsPayload.gate_trace_gate_count).toBe(manifestPayload.gate_trace_summary.gate_count);
     expect(manifestPayload.build_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
     expect(manifestPayload.deployment_revision).toBe('test-revision');
     expect(manifestPayload.source_branch).toBe('test-branch');
@@ -65,6 +73,52 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.qa_artifact_root).toBe(`take-${take}/analysis-${run}`);
     expect(manifestPayload.storage_bucket).toBe('qa-artifacts');
     expect(metricsPayload.next_required_engineering_tasks).not.toContain('S9-06 EvidenceAnchors and PublicClaimTrace');
+  });
+
+  it('does not fail manifest finalisation when take_id is unavailable in storage mode', async () => {
+    const run = 'comparison-run-no-take';
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      comparison_run_id: 'cmp-1',
+      submission_id: 's1',
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['comparison_raw'],
+    });
+    expect(out.written).toBe(true);
+    const keys = upload.mock.calls.map((c) => c[0]);
+    expect(keys.some((k) => String(k).includes('ValidatorTrace.json'))).toBe(false);
+    expect(keys.some((k) => String(k).includes('GateTrace.json'))).toBe(false);
+    expect(keys.some((k) => String(k).endsWith('/manifest.json'))).toBe(true);
+    expect(keys.some((k) => String(k).endsWith('/qa/acceptance_metrics.json'))).toBe(true);
+  });
+
+  it('infers take_id from run_id for first-pass validator/gate traces', async () => {
+    const run = 'take-derived123';
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 's1',
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+    });
+    expect(out.written).toBe(true);
+    const keys = upload.mock.calls.map((c) => c[0]);
+    expect(keys).toContain('take-derived123/analysis-take-derived123/traces/ValidatorTrace.json');
+    expect(keys).toContain('take-derived123/analysis-take-derived123/traces/GateTrace.json');
+  });
+
+  it('does not emit validator/gate traces for unsafe inferred run_id suffix', async () => {
+    const out = await emitQAManifestForAnalysisRun({
+      run_id: 'take-../bad',
+      analysis_run_id: 'take-../bad',
+      submission_id: 's1',
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+    });
+    const keys = upload.mock.calls.map((c) => c[0]);
+    expect(keys.some((k) => String(k).includes('ValidatorTrace.json'))).toBe(false);
+    expect(keys.some((k) => String(k).includes('GateTrace.json'))).toBe(false);
   });
 
   it('uses GIT_* provenance fallbacks when primary env vars are absent', async () => {
@@ -218,10 +272,10 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(outManifestFail.warning).toMatch(/manifest/i);
 
     upload.mockReset();
-    upload
-      .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: { message: 'metrics-fail' } })
-      .mockResolvedValue({ error: null });
+    upload.mockImplementation(async (key: string) => {
+      if (String(key).endsWith('/qa/acceptance_metrics.json')) return { error: { message: 'metrics-fail' } } as any;
+      return { error: null } as any;
+    });
 
     const outMetricsFail = await emitQAManifestForAnalysisRun({ run_id: 'take-tfail2', analysis_run_id: 'take-tfail2', take_id: 'tfail2', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
     expect(outMetricsFail.written).toBe(false);
