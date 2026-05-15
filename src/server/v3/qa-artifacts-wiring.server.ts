@@ -84,6 +84,25 @@ export interface ModelRunTraceEmitterInput {
   internal_qa_emit?: boolean;
 }
 export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
+export interface InternalComparisonTakeInput {
+  take_id: string;
+  analysis_run_id: string;
+  analysis_route?: string | null;
+  model_provider_family?: string | null;
+  mux_playback_ref?: string | null;
+  safe_media_fingerprint?: string | null;
+  artefact_summaries?: Record<string, unknown>;
+}
+export interface InternalComparisonRuntimeSourceInput {
+  run_id: string;
+  root_take_id: string;
+  compared_takes: InternalComparisonTakeInput[];
+  comparison_run_id?: string;
+  source_module: string;
+  source_stage: string;
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
@@ -208,6 +227,72 @@ function resolveTakeIdForFirstPassTraces(options: { take_id?: string | null; run
   } catch {
     return null;
   }
+}
+function stripForbiddenFieldsDeep(value: unknown): unknown {
+  const forbidden = new Set(['raw_prompt', 'prompt', 'system_prompt', 'user_prompt', 'request_body', 'raw_response', 'response_text', 'model_output', 'candidates', 'completion_text', 'headers', 'authorization', 'api_key', 'token', 'secret', 'cookie', 'session', 'signed_url', 'playback_url', 'video_url']);
+  if (Array.isArray(value)) return value.map((v) => stripForbiddenFieldsDeep(v));
+  if (!value || typeof value !== 'object') return value;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (forbidden.has(k.toLowerCase())) continue;
+    out[k] = stripForbiddenFieldsDeep(v);
+  }
+  return out;
+}
+function computeDeterministicComparisonRunId(comparedTakeIds: string[], comparedAnalysisRunIds: string[]): string {
+  const base = [...comparedTakeIds.map((s) => s.trim()), ...comparedAnalysisRunIds.map((s) => s.trim())].filter(Boolean).sort().join('-').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  return `comparison-${base.slice(0, 48) || 'unknown'}`;
+}
+export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const comparedTakeIds = [...new Set(input.compared_takes.map((t) => t.take_id).filter(Boolean))];
+  const comparedAnalysisRunIds = [...new Set(input.compared_takes.map((t) => t.analysis_run_id).filter(Boolean))];
+  if (comparedTakeIds.length < 2 || comparedAnalysisRunIds.length < 2) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  comparedTakeIds.forEach((id) => assertSafeSegment(id, 'compared_take_id'));
+  comparedAnalysisRunIds.forEach((id) => assertSafeSegment(id, 'compared_analysis_run_id'));
+  const comparison_run_id = input.comparison_run_id ?? computeDeterministicComparisonRunId(comparedTakeIds, comparedAnalysisRunIds);
+  assertSafeSegment(comparison_run_id, 'comparison_run_id');
+  const sameTake = new Set(comparedTakeIds).size < input.compared_takes.length;
+  const sameAnalysis = new Set(comparedAnalysisRunIds).size < input.compared_takes.length;
+  const muxRefs = input.compared_takes.map((t) => t.mux_playback_ref).filter((v): v is string => Boolean(v));
+  const sameMux = muxRefs.length > 1 && new Set(muxRefs).size === 1;
+  const fingerprints = input.compared_takes.map((t) => t.safe_media_fingerprint).filter((v): v is string => Boolean(v));
+  const sameFingerprint = fingerprints.length > 1 && new Set(fingerprints).size === 1;
+  const sameVideoDetected = sameTake || sameAnalysis || sameMux || sameFingerprint;
+  const routes = input.compared_takes.map((t) => `${t.analysis_route ?? 'unknown'}|${t.model_provider_family ?? 'unknown'}`);
+  const routeVarianceDetected = new Set(routes).size > 1;
+  const suppressionRequired = sameVideoDetected || routeVarianceDetected;
+  const suppressionDecision = suppressionRequired ? 'suppressed' : 'allowed_internal_only';
+  const comparisonDecisionStatus = sameVideoDetected ? 'suppressed_same_video' : (routeVarianceDetected ? 'suppressed_route_variance' : 'internal_preference');
+  const selectedTakeId = suppressionRequired ? null : comparedTakeIds[0];
+  const comparison_raw_data = stripForbiddenFieldsDeep({
+    comparison_run_id,
+    compared_take_ids: comparedTakeIds,
+    compared_analysis_run_ids: comparedAnalysisRunIds,
+    comparison_execution_status: 'executed',
+    comparison_run_executed: true,
+    comparison_decision_status: comparisonDecisionStatus,
+    comparison_source_kind: 'internal_runtime_comparison',
+    comparison_runtime_source_module: input.source_module,
+    comparison_runtime_source_stage: input.source_stage,
+    selected_take_id_internal_only: selectedTakeId,
+    rejected_public_winner_reason: suppressionRequired ? 'public_comparison_forbidden_or_insufficient' : null,
+    comparison_result_summary: { selected_take_id_internal_only: selectedTakeId, basis: 'internal_runtime_input_summaries' },
+    redaction_policy: 'exclude prompts/raw responses/request bodies/headers/secrets/tokens/cookies/signed URLs/video URLs',
+    redacted_fields: ['raw_prompt', 'prompt', 'system_prompt', 'user_prompt', 'request_body', 'raw_response', 'response_text', 'model_output', 'candidates', 'completion_text', 'headers', 'authorization', 'api_key', 'token', 'secret', 'cookie', 'session', 'signed_url', 'playback_url', 'video_url'],
+    forbidden_fields_absent: true,
+    public_output_unchanged: true,
+  }) as Record<string, unknown>;
+  const same_video_repeatability_trace = {
+    same_take_id: sameTake, same_analysis_run_id: sameAnalysis, same_mux_playback_ref: sameMux, same_video_detected: sameVideoDetected, repeated_input_detected: sameVideoDetected, forced_winner_risk: sameVideoDetected, false_winner_risk: sameVideoDetected, suppression_required: suppressionRequired, suppression_applied: suppressionRequired, diagnostic_entries: [{ compared_take_ids: comparedTakeIds, compared_analysis_run_ids: comparedAnalysisRunIds }], same_video_repeatability_trace_summary: { same_video_detected: sameVideoDetected },
+  };
+  const suppression_trace = {
+    suppression_decision: suppressionDecision, suppression_reasons: [...(sameVideoDetected ? ['same_video_or_repeat_input'] : []), ...(routeVarianceDetected ? ['route_variance_unresolved'] : [])], affected_public_surfaces: ['public_output_unchanged_internal_only'], false_winner_prevention_status: suppressionRequired ? 'active' : 'not_required', same_video_suppression_status: sameVideoDetected ? 'suppressed' : 'not_applicable', route_variance_suppression_status: routeVarianceDetected ? 'suppressed' : 'not_applicable', decision_source_refs: comparedAnalysisRunIds, comparison_suppression_trace_summary: { suppression_decision: suppressionDecision }, public_output_unchanged: true,
+  };
+  const route_variance_trace = {
+    route_variance_status: routeVarianceDetected ? 'detected' : 'not_detected', compared_run_routes: routes, route_mismatch_detected: routeVarianceDetected, route_variance_detected: routeVarianceDetected, route_variance_risk: routeVarianceDetected, route_variance_mitigation_status: routeVarianceDetected ? 'unresolved_blocked' : 'not_required', route_variance_trace_summary: { route_variance_detected: routeVarianceDetected },
+  };
+  return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: input.compared_takes[0]?.analysis_run_id ?? input.run_id, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
 }
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
