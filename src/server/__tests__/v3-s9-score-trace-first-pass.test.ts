@@ -45,6 +45,18 @@ describe('v3 s9 score trace first pass', () => {
     expect(payload.source_module).toBe('qa-artifacts-wiring.server');
   });
 
+
+
+  it('rejects unsafe take_id before write', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
+    await expect(emitScoreTraceFirstPass({ run_id: 'r5', analysis_run_id: 'r5', submission_id: 's', take_id: '../bad', source_module: 'test', source_stage: 'unit', raw_report_data: { report_data: { overall_score: 90 } }, internal_qa_emit: true, root_dir: root } as any)).rejects.toThrow();
+  });
+
+  it('rejects unsafe analysis_run_id before write', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
+    await expect(emitScoreTraceFirstPass({ run_id: 'r6', analysis_run_id: '../oops', submission_id: 's', take_id: 't-safe', source_module: 'test', source_stage: 'unit', raw_report_data: { report_data: { overall_score: 90 } }, internal_qa_emit: true, root_dir: root } as any)).rejects.toThrow();
+  });
+
   it('does not emit from prose numbers only', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
     const out = await emitScoreTraceFirstPass({ run_id: 'r2', analysis_run_id: 'r2', submission_id: 's', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: { report_data: { notes: 'try 20% slower at 00:42 and hold for 10 seconds with three clear beats' } }, internal_qa_emit: true, root_dir: root });

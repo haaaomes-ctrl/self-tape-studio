@@ -669,6 +669,8 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
     score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace' as const,
   };
   const payload = { schema_version:'tapecoach_v3_score_trace_first_pass_v1', artefact_type:'score_trace', internal_only:true, privacy_classification:'internal_private', run_id:input.run_id, analysis_run_id:analysisRunId, take_id:input.take_id, generated_at:new Date().toISOString(), source_module:input.source_module ?? 'qa-artifacts-wiring.server', source_stage:input.source_stage ?? 'process_take_success', trace_mode:'first_pass_legacy_report_snapshot', score_count:entries.length, score_entries:entries, source_family_summary, overall_readiness_public_score_status:'blocked', discipline_attribute_score_status:'internal_trace_only', cannot_satisfy_score_gate:true, gate_satisfaction_reason:'legacy_report_snapshot_not_real_runtime_score_trace', blocker_codes:['ScoreTrace_legacy_only'], linked_public_claim_trace_summary:{ claim_count: claims.length }, score_trace_summary: { ...summary, skipped_component_weight_out_of_range }, ...resolveQADeploymentProvenance() };
+  assertSafeSegment(input.take_id, 'take_id');
+  assertSafeSegment(analysisRunId, 'analysis_run_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ScoreTrace.json`, payload, 'score_trace');
   return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['score_trace'] : [], source_classification: 'legacy_adapter' as const, level2_satisfies: false as const, score_entries: entries, score_trace_summary: { ...summary, skipped_component_weight_out_of_range } };
 }
