@@ -81,6 +81,15 @@ export interface QAArtifactEmitterOptions {
     score_trace_gate_status: 'insufficient';
     score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace';
   };
+  model_run_trace_summary?: {
+    model_run_count?: number;
+    model_run_completed_count?: number;
+    model_run_failed_count?: number;
+    model_run_timeout_count?: number;
+    model_run_fallback_count?: number;
+    model_run_trace_gate_status?: 'insufficient' | 'missing' | 'satisfied';
+    model_run_trace_gate_reason?: string;
+  };
   validator_trace_summary?: Record<string, unknown>;
   gate_trace_summary?: Record<string, unknown>;
 }
@@ -363,6 +372,17 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   };
   const validatorTraceStatus = manifest.artefact_status_by_id?.validator_trace ?? 'missing';
   const gateTraceStatus = manifest.artefact_status_by_id?.gate_trace ?? 'missing';
+  const modelRunTraceStatus = manifest.artefact_status_by_id?.model_run_trace ?? 'missing';
+  const modelRunTraceGateStatus = modelRunTraceStatus === 'missing' ? 'missing' : (spineById.model_run_trace === true ? 'satisfied' : 'insufficient');
+  const modelRunTraceSummary = manifest.model_run_trace_summary ?? {
+    model_run_count: 0,
+    model_run_completed_count: 0,
+    model_run_failed_count: 0,
+    model_run_timeout_count: 0,
+    model_run_fallback_count: 0,
+    model_run_trace_gate_status: modelRunTraceGateStatus,
+    model_run_trace_gate_reason: modelRunTraceStatus === 'missing' ? 'trace_not_emitted' : 'runtime_metadata_without_independent_model_proof_chain',
+  };
   const validatorTraceSummary = manifest.validator_trace_summary ?? {};
   const gateTraceSummary = manifest.gate_trace_summary ?? {};
   const validatorTraceGateStatus = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
@@ -380,7 +400,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(validatorTraceStatus !== 'missing' && validatorTraceGateStatus !== 'satisfied' ? ['independent runtime validator proof chain'] : []),
     ...(gateTraceStatus === 'missing' ? ['GateTrace'] : []),
     ...(gateTraceStatus !== 'missing' && gateTraceGateStatus !== 'satisfied' ? ['independent runtime gate proof chain'] : []),
-    'ModelRunTrace',
+    ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
+    ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
     'comparison runtime artefacts',
     'parity and no-export proof',
   ];
@@ -474,6 +495,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     gate_trace_missing_gate_count: Number(gateTraceSummary.missing_gate_count ?? 0),
     gate_trace_not_applicable_gate_count: Number(gateTraceSummary.not_applicable_gate_count ?? 0),
     gate_trace_summary: gateTraceSummary,
+    model_run_trace_status: modelRunTraceStatus,
+    model_run_trace_gate_status: modelRunTraceGateStatus,
+    model_run_trace_gate_reason: String(modelRunTraceSummary.model_run_trace_gate_reason ?? (modelRunTraceStatus === 'missing' ? 'trace_not_emitted' : 'runtime_metadata_without_independent_model_proof_chain')),
+    model_run_count: Number(modelRunTraceSummary.model_run_count ?? 0),
+    model_run_completed_count: Number(modelRunTraceSummary.model_run_completed_count ?? 0),
+    model_run_failed_count: Number(modelRunTraceSummary.model_run_failed_count ?? 0),
+    model_run_timeout_count: Number(modelRunTraceSummary.model_run_timeout_count ?? 0),
+    model_run_fallback_count: Number(modelRunTraceSummary.model_run_fallback_count ?? 0),
+    model_run_trace_summary: modelRunTraceSummary,
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
     acceptance_decision: 'not_accepted',
@@ -565,6 +595,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     public_claim_trace_summary: options.public_claim_trace_summary ?? undefined,
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
     score_trace_summary: options.score_trace_summary ?? undefined,
+    model_run_trace_summary: options.model_run_trace_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },

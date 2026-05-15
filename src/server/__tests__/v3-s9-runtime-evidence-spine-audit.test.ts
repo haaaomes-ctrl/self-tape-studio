@@ -59,7 +59,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(map.find((x) => x.artefact_id === 'score_trace')?.blocker_code).toBe('ScoreTrace_legacy_only');
     expect(map.find((x) => x.artefact_id === 'validator_trace')?.blocker_code).toBe('ValidatorTrace_internal_only');
     expect(map.find((x) => x.artefact_id === 'gate_trace')?.blocker_code).toBe('GateTrace_internal_only');
-    expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_missing');
+    expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_internal_only');
   });
 
   it('uses PascalCase expected paths for validator and gate traces', () => {
@@ -116,7 +116,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(qaEntries[0]?.expected_path).toBe('qa/acceptance_metrics.json');
     expect(qaEntries[0]?.can_emit_without_invention).toBe(true);
 
-    const allowedClassifications = new Set(['real_runtime_v3','legacy_adapter','source_only_stub','emitted_not_wired','missing','deferred','not_applicable','emitted_blocked','internal_validator','internal_gate_trace']);
+    const allowedClassifications = new Set(['real_runtime_v3','legacy_adapter','source_only_stub','emitted_not_wired','missing','deferred','not_applicable','emitted_blocked','internal_validator','internal_gate_trace','internal_model_run_trace']);
     for (const item of map) {
       expect(allowedClassifications.has(item.source_classification)).toBe(true);
       expect(item.source_classification).not.toBe('runtime_v3');
