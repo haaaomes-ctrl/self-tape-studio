@@ -81,6 +81,8 @@ export interface QAArtifactEmitterOptions {
     score_trace_gate_status: 'insufficient';
     score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace';
   };
+  validator_trace_summary?: Record<string, unknown>;
+  gate_trace_summary?: Record<string, unknown>;
 }
 
 export const DEFAULT_ROOT = 'qa-artifacts';
@@ -359,6 +361,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     score_trace_gate_status: scoreTraceGateStatus,
     score_trace_gate_reason: scoreTraceGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (scoreTraceStatus === 'missing' ? 'trace_not_emitted' : 'legacy_report_snapshot_not_real_runtime_score_trace'),
   };
+  const validatorTraceStatus = manifest.artefact_status_by_id?.validator_trace ?? 'missing';
+  const gateTraceStatus = manifest.artefact_status_by_id?.gate_trace ?? 'missing';
+  const validatorTraceSummary = manifest.validator_trace_summary ?? {};
+  const gateTraceSummary = manifest.gate_trace_summary ?? {};
+  const validatorTraceGateStatus = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
+  const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
   const nextTasks = [
@@ -368,7 +376,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(techniqueObservationStatus !== 'missing' && techniqueObservationGateStatus !== 'satisfied' ? ['real runtime technique observation evidence linkage'] : []),
     ...(scoreTraceStatus === 'missing' ? ['ScoreTrace'] : []),
     ...(scoreTraceStatus !== 'missing' && scoreTraceGateStatus !== 'satisfied' ? ['real runtime score trace/proof linkage'] : []),
-    'GateTrace/ModelRunTrace/validator_trace',
+    ...(validatorTraceStatus === 'missing' ? ['ValidatorTrace'] : []),
+    ...(gateTraceStatus === 'missing' ? ['GateTrace'] : []),
+    'ModelRunTrace',
     'comparison runtime artefacts',
     'parity and no-export proof',
   ];
@@ -443,6 +453,25 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     score_trace_component_score_count: scoreTraceSummary.component_score_count,
     score_trace_brief_adherence_subscore_count: scoreTraceSummary.brief_adherence_subscore_count,
     score_trace_calibration_metadata_count: scoreTraceSummary.calibration_metadata_count,
+    validator_trace_status: validatorTraceStatus,
+    validator_trace_gate_status: validatorTraceGateStatus,
+    validator_trace_gate_reason: validatorTraceStatus === 'missing' ? 'trace_not_emitted' : 'internal_bundle_validator_not_independent_runtime_v3_proof',
+    validator_trace_validation_count: Number(validatorTraceSummary.validation_count ?? 0),
+    validator_trace_pass_count: Number(validatorTraceSummary.pass_count ?? 0),
+    validator_trace_warning_count: Number(validatorTraceSummary.warning_count ?? 0),
+    validator_trace_fail_count: Number(validatorTraceSummary.fail_count ?? 0),
+    validator_trace_blocked_count: Number(validatorTraceSummary.blocked_count ?? 0),
+    validator_trace_summary: validatorTraceSummary,
+    gate_trace_status: gateTraceStatus,
+    gate_trace_gate_status: gateTraceGateStatus,
+    gate_trace_gate_reason: gateTraceStatus === 'missing' ? 'trace_not_emitted' : 'internal_gate_snapshot_not_independent_runtime_v3_proof',
+    gate_trace_gate_count: Number(gateTraceSummary.gate_count ?? 0),
+    gate_trace_passed_gate_count: Number(gateTraceSummary.passed_gate_count ?? 0),
+    gate_trace_blocked_gate_count: Number(gateTraceSummary.blocked_gate_count ?? 0),
+    gate_trace_insufficient_gate_count: Number(gateTraceSummary.insufficient_gate_count ?? 0),
+    gate_trace_missing_gate_count: Number(gateTraceSummary.missing_gate_count ?? 0),
+    gate_trace_not_applicable_gate_count: Number(gateTraceSummary.not_applicable_gate_count ?? 0),
+    gate_trace_summary: gateTraceSummary,
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
     acceptance_decision: 'not_accepted',

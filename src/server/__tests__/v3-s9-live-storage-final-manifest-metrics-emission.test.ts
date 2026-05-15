@@ -218,10 +218,10 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(outManifestFail.warning).toMatch(/manifest/i);
 
     upload.mockReset();
-    upload
-      .mockResolvedValueOnce({ error: null })
-      .mockResolvedValueOnce({ error: { message: 'metrics-fail' } })
-      .mockResolvedValue({ error: null });
+    upload.mockImplementation(async (key: string) => {
+      if (String(key).endsWith('/qa/acceptance_metrics.json')) return { error: { message: 'metrics-fail' } } as any;
+      return { error: null } as any;
+    });
 
     const outMetricsFail = await emitQAManifestForAnalysisRun({ run_id: 'take-tfail2', analysis_run_id: 'take-tfail2', take_id: 'tfail2', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
     expect(outMetricsFail.written).toBe(false);
