@@ -38,7 +38,7 @@ This document defines the target redesigned behaviour.
 The current S9 internal QA Storage validation state is:
 
 - live Storage validation has passed for current internal QA bundle emission;
-- the current live Storage validation target is 12 files per take when TechniqueObservationTrace source data exists;
+- the current live Storage validation target is 12 files per take when TechniqueObservationTrace and ScoreTrace source data exists;
 - `manifest.json` and `qa/acceptance_metrics.json` are required bundle members;
 - internal QA bundle emission is not the same as Level 2 acceptance;
 - Level 2 remains `not_accepted` until all required evidence, trace and proof gates pass;
@@ -46,7 +46,7 @@ The current S9 internal QA Storage validation state is:
 - comparison evidence remains missing;
 - further trace and proof artefacts are required before Level 2 can be accepted.
 
-The current 12-file analysis-run Storage bundle (when TechniqueObservationTrace source data exists) is:
+The current 12-file analysis-run Storage bundle (when TechniqueObservationTrace and ScoreTrace source data exists) is:
 
 ```text
 inputs/input_record.json
@@ -58,6 +58,7 @@ resolver/TruthStateMap.json
 traces/EvidenceAnchors.json
 traces/PublicClaimTrace.json
 traces/TechniqueObservationTrace.json
+traces/ScoreTrace.json
 manifest.json
 qa/acceptance_metrics.json
 ```
@@ -91,7 +92,11 @@ Legacy-derived evidence anchors are currently based on `raw_report` timestamped 
 
 Level 2 requires real runtime evidence or equivalent `real_runtime_v3` linkage, not legacy report snapshots.
 
-`TechniqueObservationTrace.json` is now emitted in first-pass internal form. It remains emitted-but-insufficient for Level 2 when derived from legacy/report-snapshot data; future work requires real runtime technique-observation evidence linkage.
+`EvidenceAnchors.json`, `PublicClaimTrace.json`, `TechniqueObservationTrace.json` and `ScoreTrace.json` are emitted in first-pass internal form.
+
+These emitted first-pass traces remain legacy/report-snapshot derived for current internal QA, so they remain emitted-but-insufficient for Level 2 gate satisfaction until real runtime evidence linkage and proof artefacts are available.
+
+`ScoreTrace.json` is emitted from explicit score/calibration fields only; it must not be treated as public overall-readiness score approval.
 
 ### Current public scoring decision
 
@@ -119,7 +124,6 @@ Deployment provenance should use safe non-secret build or deployment environment
 
 Level 2 remains blocked while any required Level 2 artefacts or proof gates are missing. Current known missing / blocked families include:
 
-- `ScoreTrace`;
 - `validator_trace`;
 - `gate_trace`;
 - `ModelRunTrace`;
@@ -1109,7 +1113,7 @@ Every QA run should emit a structured internal artefact bundle that can prove wh
 
 Artefacts are internal-only and must not leak into public output.
 
-The current S9 live Storage validation target is the 11-file analysis-run bundle (when TechniqueObservationTrace source data exists) listed in `Current internal QA / S9 implementation state`. That passing bundle is not the full Level 2 artefact target.
+The current S9 live Storage validation target is the 12-file analysis-run bundle (when TechniqueObservationTrace and ScoreTrace source data exists) listed in `Current internal QA / S9 implementation state`. That passing bundle is not the full Level 2 artefact target.
 
 Minimum analysis-run artefacts:
 
