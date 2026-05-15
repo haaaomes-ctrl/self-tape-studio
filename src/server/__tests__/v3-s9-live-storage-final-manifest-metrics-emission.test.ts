@@ -55,8 +55,14 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(keys).toContain(`${root}qa/acceptance_metrics.json`);
 
     expect(out.warning).toBeNull();
-    const manifestPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}manifest.json`)?.[1] ?? '{}');
-    const metricsPayload = JSON.parse(upload.mock.calls.find((c) => c[0] === `${root}qa/acceptance_metrics.json`)?.[1] ?? '{}');
+    const manifestWrites = upload.mock.calls.filter((c) => c[0] === `${root}manifest.json`);
+    const metricsWrites = upload.mock.calls.filter((c) => c[0] === `${root}qa/acceptance_metrics.json`);
+    const manifestPayload = JSON.parse(manifestWrites[manifestWrites.length - 1]?.[1] ?? '{}');
+    const metricsPayload = JSON.parse(metricsWrites[metricsWrites.length - 1]?.[1] ?? '{}');
+    expect((manifestPayload.validator_trace_summary?.validation_count ?? 0)).toBeGreaterThan(0);
+    expect((manifestPayload.gate_trace_summary?.gate_count ?? 0)).toBeGreaterThan(0);
+    expect(metricsPayload.validator_trace_validation_count).toBe(manifestPayload.validator_trace_summary.validation_count);
+    expect(metricsPayload.gate_trace_gate_count).toBe(manifestPayload.gate_trace_summary.gate_count);
     expect(manifestPayload.build_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
     expect(manifestPayload.deployment_revision).toBe('test-revision');
     expect(manifestPayload.source_branch).toBe('test-branch');

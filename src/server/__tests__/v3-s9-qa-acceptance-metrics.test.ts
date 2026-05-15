@@ -23,6 +23,27 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(m.score_trace_calibration_metadata_count).toBe(2);
   });
 
+  it('distinguishes missing validator/gate traces from emitted-but-insufficient follow-up tasks', () => {
+    const base: any = { run_id: 'r', analysis_run_id: 'r', submission_id: 's', take_id: 't', compared_take_ids: ['t'], generated_at: new Date().toISOString(), qa_artifact_root: 'x', required_artifacts: [], emitted_blocked_artefact_ids: [], deferred_artifact_ids: [], not_applicable_artifact_ids: [], runtime_evidence_accepted_by_id: [], runtime_evidence_blocked_by_id: [], blocker_codes: [], artefact_source_classification_by_id: {}, artefact_level2_spine_satisfaction_by_id: {}, legacy_adapter_artefact_ids: [], real_v3_spine_artefact_ids: [], artefact_status_by_id: { evidence_anchors: 'missing', public_claim_trace: 'missing', technique_observation_trace: 'missing', score_trace: 'missing', validator_trace: 'missing', gate_trace: 'missing' }, emitted_artifacts: [], missing_artifacts: ['validator_trace', 'gate_trace'] };
+    const missing = qaArtifactsModule.buildQAAcceptanceMetrics(base);
+    expect(missing.next_required_engineering_tasks).toContain('ValidatorTrace');
+    expect(missing.next_required_engineering_tasks).toContain('GateTrace');
+
+    const emitted = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base,
+      emitted_artifacts: ['validator_trace', 'gate_trace'],
+      missing_artifacts: [],
+      artefact_status_by_id: { ...base.artefact_status_by_id, validator_trace: 'emitted', gate_trace: 'emitted' },
+      validator_trace_summary: { validation_count: 2, pass_count: 1, warning_count: 1, fail_count: 0, blocked_count: 0 },
+      gate_trace_summary: { gate_count: 2, passed_gate_count: 0, blocked_gate_count: 1, insufficient_gate_count: 1, missing_gate_count: 0, not_applicable_gate_count: 0 },
+    });
+    expect(emitted.next_required_engineering_tasks).not.toContain('ValidatorTrace');
+    expect(emitted.next_required_engineering_tasks).not.toContain('GateTrace');
+    expect(emitted.next_required_engineering_tasks).toContain('independent runtime validator proof chain');
+    expect(emitted.next_required_engineering_tasks).toContain('independent runtime gate proof chain');
+    expect(emitted.next_required_engineering_tasks).toContain('ModelRunTrace');
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';

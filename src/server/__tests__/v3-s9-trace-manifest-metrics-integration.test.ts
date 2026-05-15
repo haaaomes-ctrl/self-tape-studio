@@ -47,6 +47,10 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+    expect(metrics.validator_trace_status).toBe('missing');
+    expect(metrics.gate_trace_status).toBe('missing');
+    expect(metrics.validator_trace_validation_count).toBe(0);
+    expect(metrics.gate_trace_gate_count).toBe(0);
   });
 
   it('does not predeclare traces when they are not written', async () => {
@@ -58,6 +62,11 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(manifest.emitted_artifacts).not.toContain('public_claim_trace');
     expect(manifest.artefact_status_by_id.evidence_anchors).not.toBe('emitted');
     expect(manifest.artefact_status_by_id.public_claim_trace).not.toBe('emitted');
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(metrics.validator_trace_status).toBe('missing');
+    expect(metrics.gate_trace_status).toBe('missing');
+    expect(metrics.validator_trace_validation_count).toBe(0);
+    expect(metrics.gate_trace_gate_count).toBe(0);
   });
 
   it('advertises PascalCase expected paths for validator/gate trace inventory', async () => {
