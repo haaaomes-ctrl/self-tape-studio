@@ -245,6 +245,7 @@ function computeDeterministicComparisonRunId(comparedTakeIds: string[], compared
 }
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  assertSafeSegment(input.root_take_id, 'root_take_id');
   const comparedTakeIds = [...new Set(input.compared_takes.map((t) => t.take_id).filter(Boolean))];
   const comparedAnalysisRunIds = [...new Set(input.compared_takes.map((t) => t.analysis_run_id).filter(Boolean))];
   if (comparedTakeIds.length < 2 || comparedAnalysisRunIds.length < 2) return { written: false as const, emitted_artefact_ids: [] as string[] };

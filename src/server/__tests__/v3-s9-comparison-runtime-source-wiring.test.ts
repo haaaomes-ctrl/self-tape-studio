@@ -56,4 +56,60 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(suppression.suppression_decision).toBe('suppressed');
     expect(suppression.public_output_unchanged).toBe(true);
   });
+
+  it('fails closed for ordinary single-take/raw-report-only style input and emits nothing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-single-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-only-root',
+      root_take_id: 'only-root',
+      source_module: 'test',
+      source_stage: 'single-take',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [{ take_id: 'only-root', analysis_run_id: 'ar-only', artefact_summaries: { raw_report: { comparison_run_executed: false } } }],
+    });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
+  });
+
+  it('rejects unsafe IDs and does not emit', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-unsafe-'));
+    await expect(runInternalComparisonForTakes({
+      run_id: 'take-unsafe-root',
+      root_take_id: '../unsafe',
+      source_module: 'test',
+      source_stage: 'unsafe-id',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'a', analysis_run_id: 'ar-a' },
+        { take_id: 'b', analysis_run_id: 'ar-b' },
+      ],
+    })).rejects.toThrow(/root_take_id|segment/i);
+  });
+
+  it('redacts forbidden fields from emitted comparison payload', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-redact-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-redact-root',
+      root_take_id: 'redact-root',
+      source_module: 'test',
+      source_stage: 'redaction',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'redact-root', analysis_run_id: 'ar-r1', artefact_summaries: { prompt: 'SECRET_PROMPT', signed_url: 'https://signed.example/a' } },
+        { take_id: 'redact-alt', analysis_run_id: 'ar-r2', artefact_summaries: { token: 'SECRET_TOKEN', video_url: 'https://video.example/b' } },
+      ],
+    });
+    expect(out.written).toBe(true);
+    const base = path.join(root, 'take-redact-root', 'takes', 'take-redact-root', 'analysis-ar-r1');
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    expect(JSON.stringify(raw)).not.toContain('SECRET_PROMPT');
+    expect(JSON.stringify(raw)).not.toContain('SECRET_TOKEN');
+    expect(JSON.stringify(raw)).not.toContain('signed.example');
+    expect(JSON.stringify(raw)).not.toContain('video.example');
+    expect(raw.forbidden_fields_absent).toBe(true);
+    expect(Array.isArray(raw.redacted_fields)).toBe(true);
+  });
 });
