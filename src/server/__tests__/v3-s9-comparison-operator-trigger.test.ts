@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
+import { runAdminInternalComparisonTriggerImpl } from '@/server-fns/internal-comparison-trigger.functions';
 
 describe('v3 s9 comparison operator trigger', () => {
   it('emits comparison artifacts for two completed analyses via trigger path', async () => {
@@ -42,5 +43,68 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(result.ok).toBe(false);
     expect(result.written).toBe(false);
     expect(result.warning).toContain('disabled');
+  });
+
+  it('admin/internal entrypoint succeeds and preserves suppression for same-video', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-admin-'));
+    const out = await runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'admin-entry',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({
+      take_id: takeId,
+      analysis_run_id: `ar-${takeId}`,
+      completed: true,
+      mux_playback_ref: 'pb-same',
+      artefact_summaries: { token: 'SECRET_TOKEN', signed_url: 'https://signed.example' },
+    }));
+    expect(out.ok).toBe(true);
+    const base = path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a');
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    expect(raw.recommendation_suppressed).toBe(true);
+    expect(report.recommendation_suppressed).toBe(true);
+    expect(suppression.suppression_decision).toBe('suppressed');
+    expect(raw.selected_take_id_internal_only).toBeNull();
+    expect(JSON.stringify(raw)).not.toContain('SECRET_TOKEN');
+  });
+
+  it('fails closed on explicit compared analysis run mismatch via entrypoint', async () => {
+    const out = await runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      compared_analysis_run_ids: ['ar-a', 'ar-wrong'],
+      source_module: 'test',
+      source_stage: 'mismatch',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.blocker_codes).toContain('analysis_run_id_mismatch');
+  });
+
+  it('suppresses on route variance via entrypoint', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-route-'));
+    const out = await runAdminInternalComparisonTriggerImpl({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'route-variance',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({
+      take_id: takeId,
+      analysis_run_id: `ar-${takeId}`,
+      completed: true,
+      analysis_route: takeId === 'a' ? 'route-a' : 'route-b',
+      model_provider_family: takeId === 'a' ? 'provider-a' : 'provider-b',
+    }));
+    expect(out.ok).toBe(true);
+    const route = JSON.parse(await readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a', 'comparison_traces', 'route_variance_trace.json'), 'utf8'));
+    expect(route.route_variance_detected).toBe(true);
   });
 });
