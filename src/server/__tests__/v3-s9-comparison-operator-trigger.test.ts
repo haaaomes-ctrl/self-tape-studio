@@ -4,6 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
 import { assertAdminEmail, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
+import { assertSafeSegment } from '@/server/v3/qa-artifacts.server';
+import { z } from 'zod';
 
 describe('v3 s9 comparison operator trigger', () => {
   it('emits comparison artifacts for two completed analyses via trigger path', async () => {
@@ -284,5 +286,45 @@ describe('v3 s9 comparison operator trigger', () => {
     await expect(readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8')).resolves.toBeTruthy();
     await expect(readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8')).resolves.toBeTruthy();
     await expect(readFile(path.join(base, 'comparison_traces', 'route_variance_trace.json'), 'utf8')).resolves.toBeTruthy();
+  });
+
+  it('fails closed for unsafe comparison_run_id values at boundary-equivalent validation', async () => {
+    const schema = z.string().min(1).max(256).regex(/^[A-Za-z0-9_-]+$/).refine((value) => {
+      try {
+        assertSafeSegment(value, 'comparison_run_id');
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    for (const bad of ['comparison bad', 'comparison!', '../comparison-x', 'comparison/x', 'comparison\\x', '.', '..']) {
+      expect(schema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('safe explicit comparison_run_id succeeds and omitted comparison_run_id generates safe id', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-runid-'));
+    const explicit = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'b'],
+      comparison_run_id: 'comparison-safe-123',
+      source_module: 'test',
+      source_stage: 'safe-explicit-id',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(explicit.ok).toBe(true);
+    expect(explicit.comparison_run_id).toBe('comparison-safe-123');
+    const generated = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'c',
+      compared_take_ids: ['c', 'd'],
+      source_module: 'test',
+      source_stage: 'generated-id',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(generated.ok).toBe(true);
+    expect(generated.comparison_run_id).toMatch(/^comparison-[a-z0-9-]+$/);
+    expect(generated.warning).toBeNull();
   });
 });

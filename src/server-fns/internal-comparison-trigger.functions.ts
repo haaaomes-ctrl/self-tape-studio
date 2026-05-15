@@ -16,7 +16,14 @@ const InternalComparisonTriggerInput = z.object({
   root_take_id: z.string().min(1).max(256),
   compared_take_ids: z.array(z.string().min(1).max(256)).min(2).max(20),
   compared_analysis_run_ids: z.array(z.string().min(1).max(256)).max(20).optional(),
-  comparison_run_id: z.string().min(1).max(256).optional(),
+  comparison_run_id: z.string().min(1).max(256).regex(/^[A-Za-z0-9_-]+$/, "comparison_run_id contains unsafe characters").refine((value) => {
+    try {
+      assertSafeSegment(value, "comparison_run_id");
+      return true;
+    } catch {
+      return false;
+    }
+  }, { message: "comparison_run_id must be a safe segment" }).optional(),
   comparison_reason: z.enum(["operator_validation", "qa_validation", "same_video_check", "route_variance_check"]).optional(),
 });
 
