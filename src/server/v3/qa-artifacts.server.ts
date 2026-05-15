@@ -115,11 +115,11 @@ const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[]
   { artefact_id: 'gate_trace', name: 'GateTrace', expected_path: 'traces/GateTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'model_run_trace', name: 'ModelRunTrace', expected_path: 'traces/ModelRunTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'raw_report', name: 'raw report', expected_path: 'reports/raw_report.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
-  { artefact_id: 'comparison_raw', name: 'comparison raw', expected_path: 'comparison/comparison.raw.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
-  { artefact_id: 'comparison_report_internal', name: 'comparison report internal', expected_path: 'comparison/comparison.report.internal.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
-  { artefact_id: 'same_video_repeatability_trace', name: 'same video repeatability trace', expected_path: 'comparison_traces/same_video_repeatability_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
-  { artefact_id: 'comparison_suppression_trace', name: 'comparison suppression trace', expected_path: 'comparison_traces/comparison_suppression_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
-  { artefact_id: 'route_variance_trace', name: 'route variance trace', expected_path: 'comparison_traces/route_variance_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'comparison_raw', name: 'comparison raw', expected_path: 'comparison/comparison_raw.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'comparison_report_internal', name: 'comparison report internal', expected_path: 'comparison/comparison_report_internal.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'same_video_repeatability_trace', name: 'same video repeatability trace', expected_path: 'traces/SameVideoRepeatabilityTrace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'comparison_suppression_trace', name: 'comparison suppression trace', expected_path: 'traces/ComparisonSuppressionTrace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'route_variance_trace', name: 'route variance trace', expected_path: 'traces/RouteVarianceTrace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'parity_report', name: 'report parity', expected_path: 'parity/report_parity_result.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'parity_comparison', name: 'comparison parity', expected_path: 'parity/comparison_parity.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'no_export_proof', name: 'no export proof', expected_path: 'export_or_no_export/no_export_proof.json', category: 'export_no_export', required_for_level: 'L2', linked_artifacts: ['no_export_source_proof', 'no_export_config_proof', 'no_export_ui_proof', 'no_export_log_proof'] },
@@ -389,6 +389,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
+  const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
+  const comparisonEmittedCount = comparisonArtefactIds.filter((id) => manifest.artefact_status_by_id?.[id] === 'emitted').length;
+  const comparisonEvidenceStatus = comparisonEmittedCount === 5 ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
   const nextTasks = [
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
     ...(tracesEmitted && (evidenceAnchorGateStatus !== 'satisfied' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
@@ -402,7 +405,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(gateTraceStatus !== 'missing' && gateTraceGateStatus !== 'satisfied' ? ['independent runtime gate proof chain'] : []),
     ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
     ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
-    'comparison runtime artefacts',
+    ...(comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof']),
     'parity and no-export proof',
   ];
   return {
@@ -448,7 +451,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     output_quality_defects: defects,
     defect_risk_ids: defects,
     public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: 'blocked', export_or_no_export_status: manifest.no_export_status ?? 'blocked',
-    comparison_evidence_status: emitted.includes('comparison_raw') ? 'available' : 'missing',
+    comparison_evidence_status: comparisonEvidenceStatus,
+    comparison_raw_status: manifest.artefact_status_by_id?.comparison_raw ?? 'missing',
+    comparison_report_internal_status: manifest.artefact_status_by_id?.comparison_report_internal ?? 'missing',
+    same_video_repeatability_trace_status: manifest.artefact_status_by_id?.same_video_repeatability_trace ?? 'missing',
+    comparison_suppression_trace_status: manifest.artefact_status_by_id?.comparison_suppression_trace ?? 'missing',
+    route_variance_trace_status: manifest.artefact_status_by_id?.route_variance_trace ?? 'missing',
+    comparison_runtime_artifact_count: comparisonEmittedCount,
     truth_state_status: manifest.artefact_status_by_id?.truth_state_map ?? 'missing',
     resolver_status: manifest.artefact_status_by_id?.resolver_output ?? 'missing',
     evidence_anchor_trace_status: evidenceAnchorStatus,

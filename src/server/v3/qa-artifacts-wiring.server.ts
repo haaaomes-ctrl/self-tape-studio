@@ -83,7 +83,7 @@ export interface ModelRunTraceEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
-export interface ComparisonRuntimeArtifactsInput { run_id: string; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
+export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
@@ -863,52 +863,51 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   const comparisonRunId = input.comparison_run_id
     ?? input.comparison_id
     ?? (input.comparison_raw_data?.comparison_run_id as string | undefined)
-    ?? (input.comparison_raw_data?.comparison_id as string | undefined)
-    ?? input.run_id;
+    ?? (input.comparison_raw_data?.comparison_id as string | undefined);
+  if (!comparisonRunId) return { written: false as const, emitted_artefact_ids, emitted_blocked_artefact_ids: [] as string[] };
+  const comparedTakeIds = input.compared_take_ids ?? (input.comparison_raw_data?.compared_take_ids as string[] | undefined) ?? [];
+  const hasComparisonDecision = Boolean(input.comparison_raw_data && (input.comparison_raw_data.comparison_result_summary || input.comparison_raw_data.raw_comparison_decision_snapshot || input.comparison_raw_data.comparison_execution_status === 'executed'));
+  if (comparedTakeIds.length < 2 || !hasComparisonDecision) return { written: false as const, emitted_artefact_ids, emitted_blocked_artefact_ids: [] as string[] };
   assertSafeSegment(comparisonRunId, 'comparison_run_id');
-  const comparisonRoot = `comparisons/comparison-${comparisonRunId}`;
+  const takeId = resolveTakeIdForFirstPassTraces({ take_id: input.take_id, run_id: input.run_id });
+  if (!takeId) return { written: false as const, emitted_artefact_ids, emitted_blocked_artefact_ids: [] as string[] };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  assertSafeSegment(analysisRunId, 'analysis_run_id');
+  const comparisonRoot = `takes/take-${takeId}/analysis-${analysisRunId}`;
   if (input.comparison_raw_data) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, comparison_run_id: comparisonRunId, compared_take_ids: input.compared_take_ids ?? input.comparison_raw_data.compared_take_ids ?? [] }, 'comparison_raw');
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison_raw.json`, { ...input.comparison_raw_data, schema_version: 'tapecoach_v3_comparison_raw_first_pass_v1', artefact_type: 'comparison_raw', internal_only: true, privacy_classification: 'internal_private', source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: input.source_stage ?? 'emitComparisonRuntimeArtifacts', comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_raw');
     if (w.written) emitted_artefact_ids.push('comparison_raw'); else hadFailure = true;
     const report = {
-      schema_version: 'tapecoach_v3_internal_comparison_report_v1',
+      schema_version: 'tapecoach_v3_comparison_report_internal_first_pass_v1',
       artefact_type: 'comparison_report_internal',
+      internal_only: true,
+      privacy_classification: 'internal_private',
       run_id: input.run_id,
       comparison_run_id: comparisonRunId,
-      compared_take_ids: input.compared_take_ids ?? (input.comparison_raw_data.compared_take_ids as string[] | undefined) ?? [],
+      compared_take_ids: comparedTakeIds,
       recommendation_suppressed: Boolean(input.comparison_raw_data.recommendation_suppressed ?? input.comparison_raw_data.duplicate_or_near_duplicate_detected),
       suppression_reason: input.comparison_raw_data.suppression_reason ?? (input.comparison_raw_data.duplicate_or_near_duplicate_detected ? 'public_recommendation_suppressed_same_video_or_near_duplicate' : null),
       public_output_unchanged: true,
       user_experience_unchanged: true,
+      cannot_satisfy_level2_comparison_gate: true,
+      forbidden_fields_absent: true,
     };
-    const rw = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.report.internal.json`, report, 'comparison_report_internal');
+    const rw = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison_report_internal.json`, report, 'comparison_report_internal');
     if (rw.written) emitted_artefact_ids.push('comparison_report_internal'); else hadFailure = true;
   }
   if (input.route_variance_trace) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/route_variance_trace.json`, input.route_variance_trace, 'route_variance_trace');
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/traces/RouteVarianceTrace.json`, { ...input.route_variance_trace, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'route_variance_trace');
     if (w.written) emitted_artefact_ids.push('route_variance_trace'); else hadFailure = true;
   }
   if (input.suppression_trace) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/comparison_suppression_trace.json`, input.suppression_trace, 'comparison_suppression_trace');
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/traces/ComparisonSuppressionTrace.json`, { ...input.suppression_trace, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_suppression_trace');
     if (w.written) emitted_artefact_ids.push('comparison_suppression_trace'); else hadFailure = true;
   }
   if (input.same_video_repeatability_trace) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/same_video_repeatability_trace.json`, input.same_video_repeatability_trace, 'same_video_repeatability_trace');
+    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/traces/SameVideoRepeatabilityTrace.json`, { ...input.same_video_repeatability_trace, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'same_video_repeatability_trace');
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
-  if (!input.suppression_trace) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/comparison_suppression_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'comparison_suppression_not_executed' }, 'comparison_suppression_trace');
-    if (w.written) emitted_blocked_artefact_ids.push('comparison_suppression_trace'); else hadFailure = true;
-  }
-  if (!input.same_video_repeatability_trace) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/same_video_repeatability_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'repeatability_not_executed' }, 'same_video_repeatability_trace');
-    if (w.written) emitted_blocked_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
-  }
-  if (!input.route_variance_trace) {
-    const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/route_variance_trace.json`, { artefact_status: 'emitted_blocked', evidence_status: 'not_executed', blocker_code: 'route_variance_not_executed' }, 'route_variance_trace');
-    if (w.written) emitted_blocked_artefact_ids.push('route_variance_trace'); else hadFailure = true;
-  }
   return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
 }
 
