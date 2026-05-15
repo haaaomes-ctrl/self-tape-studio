@@ -104,6 +104,31 @@ export interface InternalComparisonRuntimeSourceInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
+export interface InternalComparisonOperatorTriggerInput {
+  root_take_id: string;
+  compared_take_ids: string[];
+  compared_analysis_run_ids?: string[];
+  comparison_run_id?: string;
+  source_module: string;
+  source_stage: string;
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+export interface CompletedTakeComparisonSource extends InternalComparisonTakeInput {
+  completed?: boolean;
+}
+export interface InternalComparisonOperatorTriggerResult {
+  ok: boolean;
+  written: boolean;
+  comparison_run_id: string | null;
+  root_take_id: string;
+  root_analysis_run_id: string | null;
+  compared_take_ids: string[];
+  compared_analysis_run_ids: string[];
+  emitted_artefact_ids: string[];
+  warning?: string | null;
+  blocker_codes?: string[];
+}
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
@@ -254,6 +279,110 @@ function hasDuplicateNonEmptyString(values: unknown[]): boolean {
 function computeDeterministicComparisonRunId(comparedTakeIds: string[], comparedAnalysisRunIds: string[]): string {
   const base = [...comparedTakeIds.map((s) => s.trim()), ...comparedAnalysisRunIds.map((s) => s.trim())].filter(Boolean).sort().join('-').toLowerCase().replace(/[^a-z0-9-]/g, '-');
   return `comparison-${base.slice(0, 48) || 'unknown'}`;
+}
+export async function runInternalComparisonOperatorTrigger(
+  input: InternalComparisonOperatorTriggerInput,
+  resolveCompletedTakeAnalysis: (takeId: string) => Promise<CompletedTakeComparisonSource | null>,
+): Promise<InternalComparisonOperatorTriggerResult> {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
+    return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'internal_qa_emit_disabled', blocker_codes: ['qa_flags_disabled'] };
+  }
+  const rawIds = (input.compared_take_ids ?? []).map((id) => typeof id === 'string' ? id.trim() : '').filter(Boolean);
+  const ids: string[] = [];
+  const seenInputTakeIds = new Set<string>();
+  for (const id of rawIds) {
+    try { assertSafeSegment(id, 'compared_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_compared_take_id', blocker_codes: ['unsafe_compared_take_id'] }; }
+    if (seenInputTakeIds.has(id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_compared_take_id', blocker_codes: ['duplicate_compared_take_id'] };
+    seenInputTakeIds.add(id);
+    ids.push(id);
+  }
+  if (ids.length < 2) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_requires_two_or_more_takes', blocker_codes: ['insufficient_compared_takes'] };
+  if (!ids.includes(input.root_take_id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'root_take_id_must_be_in_compared_take_ids', blocker_codes: ['root_take_missing'] };
+  if (input.compared_analysis_run_ids && input.compared_analysis_run_ids.length !== ids.length) {
+    return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'compared_analysis_run_ids_length_mismatch', blocker_codes: ['analysis_run_id_cardinality_mismatch'] };
+  }
+  if (input.comparison_run_id !== undefined) {
+    const explicitComparisonRunId = String(input.comparison_run_id);
+    if (!explicitComparisonRunId.trim()) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_run_id_invalid_path', blocker_codes: ['comparison_run_id_invalid'] };
+    try { assertSafeSegment(explicitComparisonRunId, 'comparison_run_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_run_id_invalid_path', blocker_codes: ['comparison_run_id_invalid'] }; }
+  }
+  const resolvedRows: CompletedTakeComparisonSource[] = [];
+  const seenResolvedTakeIds = new Set<string>();
+  for (const requestedTakeId of ids) {
+    let resolved: CompletedTakeComparisonSource | null = null;
+    try {
+      resolved = await resolveCompletedTakeAnalysis(requestedTakeId);
+    } catch {
+      return {
+        ok: false,
+        written: false,
+        comparison_run_id: null,
+        root_take_id: input.root_take_id,
+        root_analysis_run_id: null,
+        compared_take_ids: ids,
+        compared_analysis_run_ids: [],
+        emitted_artefact_ids: [],
+        warning: 'take_resolution_failed',
+        blocker_codes: ['take_resolution_failed'],
+      };
+    }
+    if (!resolved) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
+    if (typeof resolved.take_id !== 'string' || !resolved.take_id.trim() || resolved.take_id !== requestedTakeId) {
+      return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'resolver_take_id_mismatch', blocker_codes: ['resolver_take_id_mismatch'] };
+    }
+    if (seenResolvedTakeIds.has(resolved.take_id)) {
+      return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_resolved_take_id', blocker_codes: ['duplicate_resolved_take_id'] };
+    }
+    seenResolvedTakeIds.add(resolved.take_id);
+    resolvedRows.push(resolved);
+  }
+  const byTake = new Map(resolvedRows.map((row) => [row.take_id, row]));
+  const compared_takes: InternalComparisonTakeInput[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const takeId = ids[i]!;
+    const row = byTake.get(takeId);
+    if (!row) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
+    if (row.completed !== true || !row.analysis_run_id) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_analysis_not_completed', blocker_codes: ['take_not_completed'] };
+    if (/[\\/\s]/.test(row.analysis_run_id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] };
+    try {
+      assertSafeSegment(row.analysis_run_id, 'analysis_run_id');
+    } catch {
+      return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] };
+    }
+    const explicit = input.compared_analysis_run_ids?.[i];
+    if (explicit !== undefined) {
+      if (typeof explicit !== 'string' || !explicit.trim()) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] };
+      if (/[\\/\s]/.test(explicit)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] };
+      try { assertSafeSegment(explicit, 'compared_analysis_run_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'analysis_run_id_invalid_path', blocker_codes: ['analysis_run_id_invalid_path'] }; }
+    }
+    if (explicit && explicit !== row.analysis_run_id) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] };
+    compared_takes.push({ ...row, take_id: row.take_id, analysis_run_id: row.analysis_run_id });
+  }
+  const root = byTake.get(input.root_take_id);
+  if (!root) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
+  const out = await runInternalComparisonForTakes({
+    run_id: input.root_take_id,
+    root_take_id: input.root_take_id,
+    root_analysis_run_id: root.analysis_run_id,
+    compared_takes,
+    comparison_run_id: input.comparison_run_id,
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    root_dir: input.root_dir,
+    internal_qa_emit: input.internal_qa_emit,
+  });
+  return {
+    ok: out.written === true,
+    written: out.written === true,
+    comparison_run_id: out.comparison_run_id ?? null,
+    root_take_id: input.root_take_id,
+    root_analysis_run_id: root.analysis_run_id ?? null,
+    compared_take_ids: ids,
+    compared_analysis_run_ids: compared_takes.map((t) => t.analysis_run_id),
+    emitted_artefact_ids: out.emitted_artefact_ids ?? [],
+    warning: out.warning ?? null,
+    blocker_codes: out.written ? [] : ['comparison_not_emitted'],
+  };
 }
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
