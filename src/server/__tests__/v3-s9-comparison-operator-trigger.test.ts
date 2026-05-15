@@ -161,4 +161,48 @@ describe('v3 s9 comparison operator trigger', () => {
     const txt = JSON.stringify(safe);
     for (const banned of ['prompt', 'raw_response', 'token', 'secret', 'signed_url', 'video_url', 'cookie', 'session']) expect(txt).not.toContain(banned);
   });
+
+  it('fails closed for resolver take_id mismatch without throw', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      source_module: 'test',
+      source_stage: 'resolver-mismatch',
+      internal_qa_emit: true,
+    }, async (takeId) => takeId === 'take-a'
+      ? ({ take_id: 'take-x', analysis_run_id: 'ar-x', completed: true })
+      : ({ take_id: 'take-b', analysis_run_id: 'ar-b', completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('resolver_take_id_mismatch');
+    expect(out.emitted_artefact_ids).toEqual([]);
+    expect(out.comparison_run_id).toBeNull();
+  });
+
+  it('fails closed for duplicate resolved take ids without throw', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      source_module: 'test',
+      source_stage: 'duplicate-resolved',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: 'take-a', analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(['duplicate_resolved_take_id', 'resolver_take_id_mismatch']).toContain(out.warning);
+    expect(out.emitted_artefact_ids).toEqual([]);
+  });
+
+  it('fails closed when completed is undefined or null or false', async () => {
+    const baseInput = { root_take_id: 'a', compared_take_ids: ['a', 'b'], source_module: 'test', source_stage: 'completed-state', internal_qa_emit: true } as const;
+    const u = await runInternalComparisonOperatorTrigger(baseInput, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: undefined as unknown as boolean }));
+    const n = await runInternalComparisonOperatorTrigger(baseInput, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: null as unknown as boolean }));
+    const f = await runInternalComparisonOperatorTrigger(baseInput, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: false }));
+    for (const out of [u, n, f]) {
+      expect(out.ok).toBe(false);
+      expect(out.written).toBe(false);
+      expect(out.warning).toBe('take_analysis_not_completed');
+      expect(out.emitted_artefact_ids).toEqual([]);
+    }
+  });
 });
