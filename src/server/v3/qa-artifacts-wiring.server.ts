@@ -287,7 +287,15 @@ export async function runInternalComparisonOperatorTrigger(
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
     return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'internal_qa_emit_disabled', blocker_codes: ['qa_flags_disabled'] };
   }
-  const ids = [...new Set((input.compared_take_ids ?? []).filter(Boolean))];
+  const rawIds = (input.compared_take_ids ?? []).map((id) => typeof id === 'string' ? id.trim() : '').filter(Boolean);
+  const ids: string[] = [];
+  const seenInputTakeIds = new Set<string>();
+  for (const id of rawIds) {
+    try { assertSafeSegment(id, 'compared_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_compared_take_id', blocker_codes: ['unsafe_compared_take_id'] }; }
+    if (seenInputTakeIds.has(id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_compared_take_id', blocker_codes: ['duplicate_compared_take_id'] };
+    seenInputTakeIds.add(id);
+    ids.push(id);
+  }
   if (ids.length < 2) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_requires_two_or_more_takes', blocker_codes: ['insufficient_compared_takes'] };
   if (!ids.includes(input.root_take_id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'root_take_id_must_be_in_compared_take_ids', blocker_codes: ['root_take_missing'] };
   if (input.compared_analysis_run_ids && input.compared_analysis_run_ids.length !== ids.length) {

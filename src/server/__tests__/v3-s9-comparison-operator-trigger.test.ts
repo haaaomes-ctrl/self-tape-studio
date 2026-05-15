@@ -383,4 +383,36 @@ describe('v3 s9 comparison operator trigger', () => {
       expect(isExplicitCompletedAnalysisStatus(v)).toBe(false);
     }
   });
+
+  it('fails closed for duplicate compared_take_ids before resolver invocation', async () => {
+    let calls = 0;
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', 'take-a', 'take-b'],
+      source_module: 'test',
+      source_stage: 'dup-compared-take-id',
+      internal_qa_emit: true,
+    }, async () => {
+      calls += 1;
+      return { take_id: 'take-a', analysis_run_id: 'ar-a', completed: true };
+    });
+    expect(out.ok).toBe(false);
+    expect(out.warning).toBe('duplicate_compared_take_id');
+    expect(out.blocker_codes).toContain('duplicate_compared_take_id');
+    expect(out.emitted_artefact_ids).toEqual([]);
+    expect(out.comparison_run_id).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('fails closed for duplicate compared_take_ids after trim', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-a',
+      compared_take_ids: ['take-a', ' take-a ', 'take-b'],
+      source_module: 'test',
+      source_stage: 'dup-compared-take-id-trim',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.warning).toBe('duplicate_compared_take_id');
+  });
 });

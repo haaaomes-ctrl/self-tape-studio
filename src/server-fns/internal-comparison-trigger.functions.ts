@@ -42,25 +42,25 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
   }
   const { data, error } = await supabaseAdmin
     .from("takes")
-    .select("id, analysis_run_id, mux_playback_id, analysis_route, model_provider_family, analysis_status")
+    .select("id, mux_playback_id, status")
     .eq("id", takeId)
     .maybeSingle();
   if (error || !data) return null;
-  const analysisRunId = typeof (data as any).analysis_run_id === "string" ? (data as any).analysis_run_id : null;
+  const analysisRunId = `take-${takeId}`;
   if (!analysisRunId) return null;
   try {
     assertSafeSegment(analysisRunId, "analysis_run_id");
   } catch {
     return null;
   }
-  const completed = isExplicitCompletedAnalysisStatus((data as any).analysis_status);
+  const completed = isExplicitCompletedAnalysisStatus((data as any).status);
   if (!completed) return null;
   return {
     take_id: String((data as any).id ?? takeId),
     analysis_run_id: analysisRunId,
     mux_playback_ref: typeof (data as any).mux_playback_id === "string" ? (data as any).mux_playback_id : null,
-    analysis_route: typeof (data as any).analysis_route === "string" ? (data as any).analysis_route : null,
-    model_provider_family: typeof (data as any).model_provider_family === "string" ? (data as any).model_provider_family : null,
+    analysis_route: null,
+    model_provider_family: null,
     completed,
     artefact_summaries: {},
   };
