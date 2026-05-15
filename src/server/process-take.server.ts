@@ -1560,6 +1560,7 @@ export async function runProcessTake(
     let lastAttemptStartedAtIso: string | null = null;
     let lastAttemptCompletedAtIso: string | null = null;
     let lastAttemptDurationMs: number | null = null;
+    let lastAttemptTimeoutMs: number | null = null;
     let lastAttemptTimedOut = false;
     let lastAttemptHttpStatus: number | null = null;
     console.info("[take-pipeline] ai_model_selected", {
@@ -1622,6 +1623,7 @@ export async function runProcessTake(
         1_000,
         Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, remainingBudgetMs),
       );
+      lastAttemptTimeoutMs = Number.isFinite(attemptTimeoutMs) && attemptTimeoutMs >= 0 ? attemptTimeoutMs : null;
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), attemptTimeoutMs);
 
@@ -3384,7 +3386,7 @@ export async function runProcessTake(
           started_at: lastAttemptStartedAtIso ?? undefined,
           completed_at: lastAttemptCompletedAtIso ?? undefined,
           duration_ms: lastAttemptDurationMs ?? undefined,
-          timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+          timeout_ms: lastAttemptTimeoutMs ?? ANALYSIS_GEMINI_TIMEOUT_MS,
           timed_out: lastAttemptTimedOut,
           retry_count: geminiRetryCount,
           attempt_index: geminiAttempt,

@@ -27,6 +27,30 @@ describe('v3 s9 model run trace first pass', () => {
     expect(payload.gate_satisfaction_reason).toContain('runtime_metadata_without_independent_model_proof_chain');
   });
 
+  it('uses computed per-attempt timeout when it differs from global timeout', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-model-run-'));
+    const out = await emitModelRunTraceFirstPass({
+      run_id: 'take-timeout-small', analysis_run_id: 'take-timeout-small', take_id: 'timeout-small', source_module: 'unit-test', source_stage: 'analysis_generation', root_dir: root, internal_qa_emit: true,
+      model_run_entries: [{ model_name: 'm', timeout_ms: 12000, request_status: 'completed' }],
+    });
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'take-timeout-small', 'takes', 'take-timeout-small', 'analysis-take-timeout-small', 'traces', 'ModelRunTrace.json'), 'utf8'));
+    expect(payload.model_run_entries[0].timeout_ms).toBe(12000);
+    expect(payload.model_run_entries[0].timeout_ms).not.toBe(90000);
+  });
+
+  it('keeps default/normal timeout value when computed value equals global timeout', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-model-run-'));
+    const out = await emitModelRunTraceFirstPass({
+      run_id: 'take-timeout-default', analysis_run_id: 'take-timeout-default', take_id: 'timeout-default', source_module: 'unit-test', source_stage: 'analysis_generation', root_dir: root, internal_qa_emit: true,
+      model_run_entries: [{ model_name: 'm', timeout_ms: 90000, request_status: 'completed' }],
+    });
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'take-timeout-default', 'takes', 'take-timeout-default', 'analysis-take-timeout-default', 'traces', 'ModelRunTrace.json'), 'utf8'));
+    expect(payload.model_run_entries[0].timeout_ms).toBe(90000);
+    expect(payload.model_run_entries[0].timeout_ms).not.toBeNull();
+  });
+
   it('returns no write when no safe model metadata exists', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-model-run-'));
     const out = await emitModelRunTraceFirstPass({ run_id: 'take-none', analysis_run_id: 'take-none', take_id: 'none', source_module: 'unit-test', source_stage: 'analysis_generation', root_dir: root, internal_qa_emit: true, model_run_entries: [] });
@@ -57,6 +81,18 @@ describe('v3 s9 model run trace first pass', () => {
   it('path safety rejects unsafe ids', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-model-run-'));
     await expect(emitModelRunTraceFirstPass({ run_id: 'take-../bad', analysis_run_id: '../bad', take_id: '../bad', source_module: 'unit-test', source_stage: 'analysis_generation', root_dir: root, internal_qa_emit: true, model_run_entries: [{ model_name: 'm' }] as any })).rejects.toThrow();
+  });
+
+  it('invalid timeout is not emitted as false data', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-model-run-'));
+    const out = await emitModelRunTraceFirstPass({
+      run_id: 'take-timeout-invalid', analysis_run_id: 'take-timeout-invalid', take_id: 'timeout-invalid', source_module: 'unit-test', source_stage: 'analysis_generation', root_dir: root, internal_qa_emit: true,
+      model_run_entries: [{ model_name: 'm', timeout_ms: Number.NaN, request_status: 'completed' }, { model_name: 'm', timeout_ms: -1, request_status: 'completed' } as any],
+    });
+    expect(out.written).toBe(true);
+    const payload = JSON.parse(await readFile(path.join(root, 'take-timeout-invalid', 'takes', 'take-timeout-invalid', 'analysis-take-timeout-invalid', 'traces', 'ModelRunTrace.json'), 'utf8'));
+    expect(payload.model_run_entries[0].timeout_ms).toBeNull();
+    expect(payload.model_run_entries[1].timeout_ms).toBeNull();
   });
 
   it('supports run_id fallback take identity', async () => {

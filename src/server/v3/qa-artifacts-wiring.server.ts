@@ -789,7 +789,7 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     started_at: entry.started_at ?? null,
     completed_at: entry.completed_at ?? null,
     duration_ms: Number.isFinite(entry.duration_ms) ? entry.duration_ms : null,
-    timeout_ms: Number.isFinite(entry.timeout_ms) ? entry.timeout_ms : null,
+    timeout_ms: Number.isFinite(entry.timeout_ms) && Number(entry.timeout_ms) >= 0 ? Number(entry.timeout_ms) : null,
     timed_out: Boolean(entry.timed_out),
     retry_count: Number.isFinite(entry.retry_count) ? entry.retry_count : 0,
     attempt_index: Number.isFinite(entry.attempt_index) ? entry.attempt_index : (idx + 1),
