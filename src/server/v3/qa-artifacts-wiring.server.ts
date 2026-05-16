@@ -346,7 +346,7 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
   return next;
 }
 
-async function loadExistingRootManifestOrError(params: { root: string; run_id: string; take_id: string; analysis_run_id: string }): Promise<{ ok: true; manifest: Record<string, unknown> } | { ok: false; warning: string; blocker_code: string }> {
+async function loadExistingRootManifestOrError(params: { root: string; run_id: string; take_id: string; analysis_run_id: string }): Promise<{ ok: true; manifest: Record<string, unknown>; canonical_run_id: string; canonical_take_id: string; canonical_analysis_run_id: string; manifest_relative_path: string; metrics_relative_path: string } | { ok: false; warning: string; blocker_code: string }> {
   const resolveCanonicalManifestRunIdForTake = (): string | null => {
     const takeId = params.take_id?.trim();
     if (!takeId) return null;
@@ -397,7 +397,12 @@ async function loadExistingRootManifestOrError(params: { root: string; run_id: s
   try {
     const parsed = JSON.parse(loaded.text);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
-    return { ok: true, manifest: parsed as Record<string, unknown> };
+    const canonicalTakeId = params.take_id.startsWith('take-') ? params.take_id.slice(5) : params.take_id;
+    const canonicalAnalysisRunId = params.analysis_run_id;
+    const metricsRelativePath = sinkMode === 'storage'
+      ? `takes/take-${canonicalTakeId}/analysis-${canonicalAnalysisRunId}/qa/acceptance_metrics.json`
+      : 'qa/acceptance_metrics.json';
+    return { ok: true, manifest: parsed as Record<string, unknown>, canonical_run_id: canonicalManifestRunId, canonical_take_id: canonicalTakeId, canonical_analysis_run_id: canonicalAnalysisRunId, manifest_relative_path: manifestRelativePath, metrics_relative_path: metricsRelativePath };
   } catch {
     return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
   }
@@ -1331,16 +1336,12 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       comparison_run_id: comparisonRunId,
       comparison_summaries_by_id,
     });
-    const manifestRelativePath = shouldUseExpandedManifestPaths()
-      ? `takes/take-${takeId}/analysis-${analysisRunId}/manifest.json`
-      : 'manifest.json';
-    const manifestWrite = await writeQAArtifact({ run_id: input.run_id, root_dir: root, relative_path: manifestRelativePath, payload: reconciled, artefact_id: 'manifest' });
+    const manifestWrite = await writeQAArtifact({ run_id: manifestPreflight.canonical_run_id, root_dir: root, relative_path: manifestPreflight.manifest_relative_path, payload: reconciled, artefact_id: 'manifest' });
     if (!manifestWrite.written) {
       return { written: false as const, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: ['comparison_reconciliation_failed'], warning: mergeQAWarnings('comparison_reconciliation_failed_manifest_write', manifestWrite.warning) };
     }
     const metrics = { ...buildQAAcceptanceMetrics(reconciled as any), ...resolveQADeploymentProvenance() };
-    const metricsRelativePath = shouldUseExpandedManifestPaths() ? `takes/take-${takeId}/analysis-${analysisRunId}/qa/acceptance_metrics.json` : 'qa/acceptance_metrics.json';
-    const metricsWrite = await writeQAArtifact({ run_id: input.run_id, root_dir: root, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics' });
+    const metricsWrite = await writeQAArtifact({ run_id: manifestPreflight.canonical_run_id, root_dir: root, relative_path: manifestPreflight.metrics_relative_path, payload: metrics, artefact_id: 'qa_acceptance_metrics' });
     if (!metricsWrite.written) {
       return { written: false as const, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: ['comparison_reconciliation_failed'], warning: mergeQAWarnings('comparison_reconciliation_failed_metrics_write', metricsWrite.warning) };
     }
