@@ -259,7 +259,7 @@ function resolveTakeIdForFirstPassTraces(options: { take_id?: string | null; run
 const COMPARISON_ARTEFACT_IDS = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'] as const;
 const COMPARISON_BLOCKER_BY_ID: Record<string, string> = {
   comparison_raw: 'comparison_JSON_missing',
-  comparison_report_internal: 'comparison_report_internal_missing',
+  comparison_report_internal: 'comparison_report_unavailable',
   same_video_repeatability_trace: 'same_video_repeatability_trace_missing',
   comparison_suppression_trace: 'comparison_suppression_trace_missing',
   route_variance_trace: 'route_variance_trace_missing',

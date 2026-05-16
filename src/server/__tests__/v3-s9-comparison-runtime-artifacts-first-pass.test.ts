@@ -164,7 +164,8 @@ it('reconcile helper clears stale previous full comparison state when all curren
   const next = reconcileComparisonManifestState(existing, { emitted_artefact_ids: [] });
   expect((next.emitted_artifacts as string[])).toEqual(['raw_report']);
   expect((next.missing_artifacts as string[])).toEqual(expect.arrayContaining(['score_trace', 'comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']));
-  expect((next.blocker_codes as string[])).toEqual(expect.arrayContaining(['comparison_JSON_missing','comparison_report_internal_missing','same_video_repeatability_trace_missing','comparison_suppression_trace_missing','route_variance_trace_missing']));
+  expect((next.blocker_codes as string[])).toEqual(expect.arrayContaining(['comparison_JSON_missing','comparison_report_unavailable','same_video_repeatability_trace_missing','comparison_suppression_trace_missing','route_variance_trace_missing']));
+  expect((next.blocker_codes as string[])).not.toContain('comparison_report_internal_missing');
   expect((next.blocker_codes as string[])).toContain('score_trace_missing');
   expect((next.runtime_evidence_blocked_by_id as string[])).toEqual(['raw_report:legacy']);
   const requiredById = Object.fromEntries(((next.required_artifacts as any[]) ?? []).map((x) => [x.artefact_id, x.status]));
@@ -328,6 +329,72 @@ it('persists reconciled manifest and metrics after successful comparison writes 
   const metrics = JSON.parse(await readFile(path.join(root, 'take-persist', 'qa', 'acceptance_metrics.json'), 'utf8'));
   expect(manifest.artefact_status_by_id.comparison_raw).toBe('emitted');
   expect(metrics.comparison_runtime_artifact_count).toBe(5);
+});
+
+it('full comparison success removes stale comparison_report_unavailable while preserving non-comparison blockers', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-blocker-clear-'));
+  await seedExistingManifest(root, 'take-clear', 'clear', 'take-clear');
+  const manifestPath = path.join(root, 'take-clear', 'manifest.json');
+  const seed = JSON.parse(await readFile(manifestPath, 'utf8'));
+  seed.artefact_status_by_id.comparison_report_internal = 'missing';
+  seed.required_artifacts = (seed.required_artifacts ?? []).map((entry: any) => entry.artefact_id === 'comparison_report_internal' ? { ...entry, status: 'missing' } : entry);
+  seed.missing_artifacts = Array.from(new Set([...(seed.missing_artifacts ?? []), 'comparison_report_internal']));
+  seed.blocker_codes = Array.from(new Set([...(seed.blocker_codes ?? []), 'comparison_report_unavailable', 'validator_trace_missing']));
+  await writeFile(manifestPath, JSON.stringify(seed, null, 2));
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-clear', take_id: 'clear', analysis_run_id: 'take-clear', comparison_run_id: 'cmp-clear', compared_take_ids: ['clear','c2'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'c2' }, raw_comparison_decision_snapshot: { winner: 'c2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(true);
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(root, 'take-clear', 'qa', 'acceptance_metrics.json'), 'utf8'));
+  expect(manifest.artefact_status_by_id.comparison_report_internal).toBe('emitted');
+  const requiredById = Object.fromEntries((manifest.required_artifacts ?? []).map((x: any) => [x.artefact_id, x.status]));
+  expect(requiredById.comparison_report_internal).toBe('emitted');
+  expect(manifest.emitted_artifacts).toContain('comparison_report_internal');
+  expect(manifest.missing_artifacts).not.toContain('comparison_report_internal');
+  expect(manifest.blocker_codes).not.toContain('comparison_report_unavailable');
+  expect(manifest.blocker_codes).not.toContain('comparison_report_internal_missing');
+  expect(manifest.blocker_codes).toContain('validator_trace_missing');
+  expect(metrics.comparison_report_internal_status).toBe('emitted');
+  expect(metrics.blocker_codes).not.toContain('comparison_report_unavailable');
+  expect(JSON.stringify(manifest)).not.toContain('comparison_report_internal_missing');
+  expect(JSON.stringify(metrics)).not.toContain('comparison_report_internal_missing');
+  expect(metrics.level2_status).toBe('not_accepted');
+});
+
+it('partial failure keeps comparison_report_unavailable and removes successful comparison blockers', async () => {
+  const existing = {
+    emitted_artifacts: ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace', 'raw_report'],
+    blocker_codes: ['comparison_report_unavailable', 'validator_trace_missing'],
+    missing_artifacts: ['validator_trace'],
+    required_artifacts: [
+      { artefact_id: 'comparison_raw', status: 'emitted' },
+      { artefact_id: 'comparison_report_internal', status: 'emitted' },
+      { artefact_id: 'same_video_repeatability_trace', status: 'emitted' },
+      { artefact_id: 'comparison_suppression_trace', status: 'emitted' },
+      { artefact_id: 'route_variance_trace', status: 'emitted' },
+      { artefact_id: 'validator_trace', status: 'missing' },
+    ],
+    artefact_status_by_id: {
+      comparison_raw: 'emitted',
+      comparison_report_internal: 'emitted',
+      same_video_repeatability_trace: 'emitted',
+      comparison_suppression_trace: 'emitted',
+      route_variance_trace: 'emitted',
+      validator_trace: 'missing',
+    },
+  } as Record<string, unknown>;
+  const next = reconcileComparisonManifestState(existing, { emitted_artefact_ids: ['comparison_raw', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'] });
+  expect((next.artefact_status_by_id as any).comparison_report_internal).toBe('missing');
+  const requiredById = Object.fromEntries(((next.required_artifacts as any[]) ?? []).map((x) => [x.artefact_id, x.status]));
+  expect(requiredById.comparison_report_internal).toBe('missing');
+  expect((next.missing_artifacts as string[])).toContain('comparison_report_internal');
+  expect((next.blocker_codes as string[])).toContain('comparison_report_unavailable');
+  expect((next.blocker_codes as string[])).not.toContain('comparison_report_internal_missing');
+  expect((next.blocker_codes as string[])).not.toContain('comparison_JSON_missing');
+  expect((next.blocker_codes as string[])).not.toContain('same_video_repeatability_trace_missing');
+  expect((next.blocker_codes as string[])).not.toContain('comparison_suppression_trace_missing');
+  expect((next.blocker_codes as string[])).not.toContain('route_variance_trace_missing');
+  expect((next.blocker_codes as string[])).toContain('validator_trace_missing');
 });
 
 it('readQAArtifactText classifies EISDIR as unreadable', async () => {
