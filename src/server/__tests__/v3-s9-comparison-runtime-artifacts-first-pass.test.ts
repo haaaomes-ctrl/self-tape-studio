@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,6 +21,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       suppression_trace: { suppression_decision: 'allowed' },
       same_video_repeatability_trace: { same_video_detected: false },
       route_variance_trace: { route_variance_detected: false },
+      require_existing_manifest_for_reconciliation: true,
     });
     expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
     const base = path.join(root, 'take-root1', 'takes', 'take-root1', 'analysis-ar-1');
@@ -126,6 +127,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       suppression_trace: { suppression_decision: 'allowed' },
       same_video_repeatability_trace: { same_video_detected: false },
       route_variance_trace: { route_variance_detected: false },
+      require_existing_manifest_for_reconciliation: true,
     });
     expect(out.written).toBe(false);
     expect(out.emitted_artefact_ids).toEqual([]);
@@ -233,5 +235,114 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(out.comparison_run_id).toBeTruthy();
     expect(out.emitted_artefact_ids).toEqual(expect.arrayContaining(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']));
     expect(out.blocker_codes).toContain('comparison_reconciliation_failed');
+  });
+
+  it('fails closed when existing manifest JSON is malformed', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-bad-manifest-json-'));
+    const runDir = path.join(root, 'take-bad-json');
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), '{bad-json', 'utf8');
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: 'take-bad-json',
+      take_id: 'bad-json',
+      analysis_run_id: 'ar-bad-json',
+      comparison_run_id: 'cmp-bad-json',
+      compared_take_ids: ['bad-json', 'other'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+      require_existing_manifest_for_reconciliation: true,
+    });
+    expect(out.written).toBe(false);
+    expect(out.comparison_artefacts_written).toBe(true);
+    expect(out.reconciliation_written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual(expect.arrayContaining(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']));
+    expect(out.warning).toContain('existing_manifest_invalid_json_for_comparison_reconciliation');
+    expect(out.blocker_codes).toContain('comparison_reconciliation_manifest_unreadable');
+    await expect(readFile(path.join(runDir, 'qa', 'acceptance_metrics.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('fails closed when existing manifest is unreadable/directory', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-unreadable-manifest-'));
+    const runDir = path.join(root, 'take-unreadable');
+    await mkdir(path.join(runDir, 'manifest.json'), { recursive: true });
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: 'take-unreadable',
+      take_id: 'unreadable',
+      analysis_run_id: 'ar-unreadable',
+      comparison_run_id: 'cmp-unreadable',
+      compared_take_ids: ['unreadable', 'other'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+      require_existing_manifest_for_reconciliation: true,
+    });
+    expect(out.written).toBe(false);
+    expect(out.comparison_artefacts_written).toBe(true);
+    expect(out.reconciliation_written).toBe(false);
+    expect(out.warning).toContain('existing_manifest_unreadable_for_comparison_reconciliation');
+    expect(out.blocker_codes).toContain('comparison_reconciliation_manifest_unreadable');
+  });
+
+  it('fails closed when existing manifest is missing for comparison reconciliation', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-missing-manifest-'));
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: 'take-missing-manifest',
+      take_id: 'missing-manifest',
+      analysis_run_id: 'ar-missing-manifest',
+      comparison_run_id: 'cmp-missing-manifest',
+      compared_take_ids: ['missing-manifest', 'other'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+      require_existing_manifest_for_reconciliation: true,
+    });
+    expect(out.written).toBe(false);
+    expect(out.reconciliation_written).toBe(false);
+    expect(out.warning).toContain('existing_manifest_missing_for_comparison_reconciliation');
+    expect(out.blocker_codes).toContain('comparison_reconciliation_manifest_unreadable');
+  });
+
+  it('valid existing manifest preserves ordinary artefacts when comparison reconciles', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-preserve-ordinary-'));
+    const runId = 'take-preserve';
+    const runDir = path.join(root, runId);
+    await mkdir(runDir, { recursive: true });
+    const ordinary = ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'validator_trace', 'gate_trace', 'model_run_trace', 'raw_report', 'qa_acceptance_metrics'];
+    await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({
+      emitted_artifacts: ordinary,
+      runtime_evidence_accepted_by_id: ordinary,
+      artefact_source_classification_by_id: {},
+      artefact_level2_spine_satisfaction_by_id: {},
+      defect_risk_ids: [],
+    }), 'utf8');
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: runId,
+      take_id: 'preserve',
+      analysis_run_id: 'ar-preserve',
+      comparison_run_id: 'cmp-preserve',
+      compared_take_ids: ['preserve', 'other'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(true);
+    const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
+    for (const id of ordinary) {
+      expect(manifest.emitted_artifacts).toContain(id);
+      expect(manifest.missing_artifacts).not.toContain(id);
+    }
   });
 });

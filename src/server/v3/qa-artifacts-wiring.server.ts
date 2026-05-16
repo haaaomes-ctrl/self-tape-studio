@@ -17,15 +17,15 @@ function getQAWriteWarning(result: unknown): string | null {
     typeof sinkWarning === 'string' ? sinkWarning : null,
   );
 }
-function loadExistingManifestState(rootDir: string, runId: string, takeId: string, analysisRunId: string): { emitted: string[]; runtimeAccepted: string[]; sourceById: Record<string, string>; level2ById: Record<string, boolean>; defectRiskIds: string[]; summaries: Record<string, unknown> } {
+function loadExistingManifestState(rootDir: string, runId: string, takeId: string, analysisRunId: string): { ok: true; state: { emitted: string[]; runtimeAccepted: string[]; sourceById: Record<string, string>; level2ById: Record<string, boolean>; defectRiskIds: string[]; summaries: Record<string, unknown> } } | { ok: false; warning: string; blocker_codes: string[]; state: null } {
   const manifestRelativePath = shouldUseExpandedManifestPaths()
     ? buildTakeAnalysisRelativePath({ run_id: runId, take_id: takeId, analysis_run_id: analysisRunId, leaf: 'manifest.json' })
     : 'manifest.json';
   const manifestPath = path.join(rootDir, runId, manifestRelativePath);
-  if (!existsSync(manifestPath)) return { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
+  if (!existsSync(manifestPath)) return { ok: false, warning: 'existing_manifest_missing_for_comparison_reconciliation', blocker_codes: ['comparison_reconciliation_manifest_unreadable'], state: null };
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    return {
+    return { ok: true, state: {
       emitted: Array.isArray(raw?.emitted_artifacts) ? raw.emitted_artifacts.filter((v: unknown): v is string => typeof v === 'string') : [],
       runtimeAccepted: Array.isArray(raw?.runtime_evidence_accepted_by_id) ? raw.runtime_evidence_accepted_by_id.filter((v: unknown): v is string => typeof v === 'string') : [],
       sourceById: raw?.artefact_source_classification_by_id && typeof raw.artefact_source_classification_by_id === 'object' ? raw.artefact_source_classification_by_id : {},
@@ -38,9 +38,13 @@ function loadExistingManifestState(rootDir: string, runId: string, takeId: strin
         comparison_suppression_trace_summary: raw?.comparison_suppression_trace_summary,
         route_variance_trace_summary: raw?.route_variance_trace_summary,
       },
-    };
-  } catch {
-    return { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
+    } };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    const warning = /JSON|Unexpected token|position|end of JSON input/i.test(message)
+      ? 'existing_manifest_invalid_json_for_comparison_reconciliation'
+      : 'existing_manifest_unreadable_for_comparison_reconciliation';
+    return { ok: false, warning, blocker_codes: ['comparison_reconciliation_manifest_unreadable'], state: null };
   }
 }
 
@@ -113,7 +117,7 @@ export interface ModelRunTraceEmitterInput {
 }
 interface ComparisonReconciliationResult { written: boolean; warning?: string | null; }
 type ComparisonReconciliationEmitter = (metadata: QARuntimeMetadata) => Promise<ComparisonReconciliationResult>;
-export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; reconciliation_emitter_override?: ComparisonReconciliationEmitter; }
+export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; reconciliation_emitter_override?: ComparisonReconciliationEmitter; require_existing_manifest_for_reconciliation?: boolean; }
 export interface InternalComparisonTakeInput {
   take_id: string;
   analysis_run_id: string;
@@ -1185,7 +1189,23 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   comparison_artefacts_written = emitted_artefact_ids.length > 0;
   const canReconcileTakeScoped = takeScopedManifestRewrite && Boolean(takeId);
   if (canReconcileTakeScoped) {
-    const existing = loadExistingManifestState(root, input.run_id, takeId, analysisRunId);
+    const existingLoad = loadExistingManifestState(root, input.run_id, takeId, analysisRunId);
+    if (!existingLoad.ok && (input.require_existing_manifest_for_reconciliation === true || existingLoad.warning !== 'existing_manifest_missing_for_comparison_reconciliation')) {
+      hadFailure = true;
+      reconciliation_written = false;
+      reconciliation_warning = existingLoad.warning;
+      return {
+        written: false,
+        comparison_run_id: comparisonRunId,
+        emitted_artefact_ids,
+        emitted_blocked_artefact_ids,
+        comparison_artefacts_written,
+        reconciliation_written,
+        warning: existingLoad.warning,
+        blocker_codes: existingLoad.blocker_codes,
+      };
+    }
+    const existing = existingLoad.ok ? existingLoad.state : { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
     const emittedAll = [...new Set([...existing.emitted, ...emitted_artefact_ids])];
     const runtimeAccepted = [...new Set([...existing.runtimeAccepted, ...emitted_artefact_ids])];
     const sourceById = { ...existing.sourceById };
