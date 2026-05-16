@@ -347,6 +347,26 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
 }
 
 async function loadExistingRootManifestOrError(params: { root: string; run_id: string; take_id: string; analysis_run_id: string }): Promise<{ ok: true; manifest: Record<string, unknown> } | { ok: false; warning: string; blocker_code: string }> {
+  const resolveCanonicalManifestRunIdForTake = (): string | null => {
+    const takeId = params.take_id?.trim();
+    if (!takeId) return null;
+    try { assertSafeSegment(takeId, 'take_id'); } catch { return null; }
+    if (takeId.includes('/') || takeId.includes('\\')) return null;
+    const takeIdCore = takeId.startsWith('take-') ? takeId.slice(5) : takeId;
+    if (!takeIdCore) return null;
+    const expectedCanonical = `take-${takeIdCore}`;
+    if (expectedCanonical === 'take-' || expectedCanonical.startsWith('take-take-')) return null;
+    const provided = params.run_id?.trim();
+    if (!provided) return null;
+    try { assertSafeSegment(provided, 'run_id'); } catch { return null; }
+    if (provided.includes('/') || provided.includes('\\')) return null;
+    const analysisRunId = params.analysis_run_id?.trim() ?? '';
+    const preferTakePrefixed = analysisRunId === expectedCanonical;
+    if (provided === expectedCanonical) return expectedCanonical;
+    if (provided === takeId || provided === takeIdCore) return preferTakePrefixed ? expectedCanonical : provided;
+    if (!preferTakePrefixed) return provided;
+    return null;
+  };
   const sinkMode = process.env.QA_ARTIFACT_SINK ?? 'file';
   if (sinkMode === 'console_jsonl') {
     return {
@@ -358,7 +378,15 @@ async function loadExistingRootManifestOrError(params: { root: string; run_id: s
   const manifestRelativePath = sinkMode === 'storage'
     ? `takes/take-${params.take_id}/analysis-${params.analysis_run_id}/manifest.json`
     : 'manifest.json';
-  const loaded = await readQAArtifactText({ run_id: params.run_id, root_dir: params.root, relative_path: manifestRelativePath });
+  const canonicalManifestRunId = resolveCanonicalManifestRunIdForTake();
+  if (!canonicalManifestRunId) {
+    return {
+      ok: false,
+      warning: 'comparison_reconciliation_manifest_unreadable',
+      blocker_code: 'comparison_reconciliation_manifest_unreadable',
+    };
+  }
+  const loaded = await readQAArtifactText({ run_id: canonicalManifestRunId, root_dir: params.root, relative_path: manifestRelativePath });
   if (!loaded.ok) {
     return {
       ok: false,

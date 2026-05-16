@@ -198,6 +198,33 @@ it('storage sink preflight reads canonical key and succeeds when manifest exists
   expect((out as any).warning ?? null).toBeNull();
 });
 
+it('file preflight canonicalises raw run_id to canonical take run root', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-file-canon-'));
+  await seedExistingManifest(root, 'take-u123', 'u123', 'take-u123');
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'u123', analysis_run_id: 'take-u123', take_id: 'u123', comparison_run_id: 'cmp-u123', compared_take_ids: ['u123', 'u124'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'u124' }, raw_comparison_decision_snapshot: { winner: 'u124' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(true);
+  expect((out as any).warning ?? null).toBeNull();
+});
+
+it('file preflight accepts already canonical run_id', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-file-canon2-'));
+  await seedExistingManifest(root, 'take-u200', 'u200', 'take-u200');
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-u200', analysis_run_id: 'take-u200', take_id: 'u200', comparison_run_id: 'cmp-u200', compared_take_ids: ['u200', 'u201'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'u201' }, raw_comparison_decision_snapshot: { winner: 'u201' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(true);
+});
+
+it('file preflight rejects mismatched canonical run_id', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-file-mismatch-'));
+  await seedExistingManifest(root, 'take-u301', 'u301', 'take-u301');
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-u999', analysis_run_id: 'take-u301', take_id: 'u301', comparison_run_id: 'cmp-u301', compared_take_ids: ['u301', 'u302'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'u302' }, raw_comparison_decision_snapshot: { winner: 'u302' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).comparison_artefacts_written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_unreadable');
+});
+
 it('storage sink missing manifest fails closed before writes', async () => {
   process.env.QA_ARTIFACT_SINK = 'storage';
   download.mockResolvedValue({ data: null, error: { status: 404, message: 'not found' } });
@@ -342,6 +369,26 @@ it('storage sink inferred take_id uses canonical inferred key', async () => {
   const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-derivedx', analysis_run_id: 'take-derivedx', comparison_run_id: 'cmp-dx', compared_take_ids: ['derivedx','d2'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'd2' }, raw_comparison_decision_snapshot: { winner: 'd2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
   expect(out.written).toBe(true);
   expect(download).toHaveBeenCalledWith('take-derivedx/analysis-take-derivedx/manifest.json');
+});
+
+it('storage preflight canonicalises raw run_id and does not use raw UUID root key', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => JSON.stringify({ run_id: 'take-u401', artefact_status_by_id: {}, blocker_codes: [] }) }, error: null });
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'u401', analysis_run_id: 'take-u401', take_id: 'u401', comparison_run_id: 'cmp-u401', compared_take_ids: ['u401','u402'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'u402' }, raw_comparison_decision_snapshot: { winner: 'u402' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(true);
+  expect(download).toHaveBeenCalledWith('take-u401/analysis-take-u401/manifest.json');
+  expect(download).not.toHaveBeenCalledWith('u401/takes/take-u401/analysis-take-u401/manifest.json');
+});
+
+it('file preflight does not accept raw UUID fallback manifest path', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-file-rawfallback-'));
+  await mkdir(path.join(root, 'u501'), { recursive: true });
+  await writeFile(path.join(root, 'u501', 'manifest.json'), JSON.stringify({ fake: true }));
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'u501', analysis_run_id: 'take-u501', take_id: 'u501', comparison_run_id: 'cmp-u501', compared_take_ids: ['u501','u502'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'u502' }, raw_comparison_decision_snapshot: { winner: 'u502' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).comparison_artefacts_written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_missing');
 });
 
 it('valid object manifest still allows comparison writes and reconciliation persistence', async () => {
