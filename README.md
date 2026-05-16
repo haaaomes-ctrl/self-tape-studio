@@ -5,6 +5,28 @@
 **Supersedes:** the current README and any earlier report design notes.  
 **Language:** UK English.
 
+## Source hierarchy and delivery documents
+
+`README.md` is the controlling source for TapeCoach product behaviour,
+report requirements, scoring rules, QA artefacts, validator gates, public/private
+boundaries and release decisions.
+
+`tapecoach-v3-parallel-delivery-approach.md` is a delivery overlay.
+It may define workstreams, sequencing, dependencies, acceptance evidence and
+parallel execution rules. It does not override this README.
+
+`tapecoach-v3-roadmap.md`, if present, is a planning index only.
+It must not introduce requirements, public-output permissions or release gates
+that are not already present in this README.
+
+When implementation agents work on a task, they should use:
+1. this README;
+2. the relevant delivery slice;
+3. the specific issue / prompt / acceptance gate for the current task.
+
+Do not load unrelated roadmap sections into implementation tasks unless they are
+needed for dependency or gate reasoning.
+
 ---
 
 ## 0. Executive summary
