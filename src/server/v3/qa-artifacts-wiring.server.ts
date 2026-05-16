@@ -265,7 +265,7 @@ const COMPARISON_BLOCKER_BY_ID: Record<string, string> = {
   route_variance_trace: 'route_variance_trace_missing',
 };
 
-export function reconcileComparisonManifestState(existingManifest: Record<string, unknown>, currentAttempt: { emitted_artefact_ids: string[]; comparison_run_id?: string | null; runtime_evidence_blocked_by_id?: string[] }) {
+export function reconcileComparisonManifestState(existingManifest: Record<string, unknown>, currentAttempt: { emitted_artefact_ids: string[]; comparison_run_id?: string | null; runtime_evidence_blocked_by_id?: string[]; comparison_summaries_by_id?: Record<string, unknown> }) {
   const next = { ...existingManifest } as Record<string, any>;
   const emitted = new Set<string>(Array.isArray(currentAttempt.emitted_artefact_ids) ? currentAttempt.emitted_artefact_ids : []);
   const previousStatuses = { ...(next.artefact_status_by_id ?? {}) };
@@ -317,6 +317,26 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
     });
   }
   for (const key of ['comparison_raw_summary', 'comparison_report_internal_summary', 'same_video_repeatability_trace_summary', 'comparison_suppression_trace_summary', 'route_variance_trace_summary']) delete next[key];
+  const sourceById = { ...(next.artefact_source_classification_by_id ?? {}) } as Record<string, string>;
+  const level2ById = { ...(next.artefact_level2_spine_satisfaction_by_id ?? {}) } as Record<string, boolean>;
+  for (const id of COMPARISON_ARTEFACT_IDS) {
+    if (emitted.has(id)) {
+      sourceById[id] = id === 'comparison_raw'
+        ? 'internal_comparison_runtime'
+        : id === 'comparison_report_internal'
+          ? 'internal_comparison_report'
+          : 'internal_comparison_trace';
+      level2ById[id] = false;
+    }
+  }
+  next.artefact_source_classification_by_id = sourceById;
+  next.artefact_level2_spine_satisfaction_by_id = level2ById;
+  const summaryMap = currentAttempt.comparison_summaries_by_id ?? {};
+  for (const [artefactId, summary] of Object.entries(summaryMap)) {
+    if (!COMPARISON_ARTEFACT_IDS.includes(artefactId as any) || !emitted.has(artefactId)) continue;
+    const key = `${artefactId}_summary`;
+    if (summary !== undefined) next[key] = summary;
+  }
   if (currentAttempt.comparison_run_id) next.comparison_run_id = currentAttempt.comparison_run_id;
   next.real_v3_spine_artefact_ids = nonComparisonOnly(next.real_v3_spine_artefact_ids);
   return next;
@@ -1186,6 +1206,7 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs: R
 }
 export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput) {
   const emitted_artefact_ids: string[] = [];
+  const comparison_summaries_by_id: Record<string, unknown> = {};
   let hadFailure = false;
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids };
   const root = input.root_dir ?? DEFAULT_ROOT;
@@ -1218,7 +1239,10 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   }
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, schema_version: 'tapecoach_v3_comparison_raw_first_pass_v1', artefact_type: 'comparison_raw', internal_only: true, privacy_classification: 'internal_private', source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: input.source_stage ?? 'emitComparisonRuntimeArtifacts', comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_raw');
-    if (w.written) emitted_artefact_ids.push('comparison_raw'); else hadFailure = true;
+    if (w.written) {
+      emitted_artefact_ids.push('comparison_raw');
+      comparison_summaries_by_id.comparison_raw = { comparison_execution_status: input.comparison_raw_data.comparison_execution_status ?? null };
+    } else hadFailure = true;
     const report = {
       schema_version: 'tapecoach_v3_comparison_report_internal_first_pass_v1',
       artefact_type: 'comparison_report_internal',
@@ -1235,25 +1259,38 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       forbidden_fields_absent: true,
     };
     const rw = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.report.internal.json`, report, 'comparison_report_internal');
-    if (rw.written) emitted_artefact_ids.push('comparison_report_internal'); else hadFailure = true;
+    if (rw.written) {
+      emitted_artefact_ids.push('comparison_report_internal');
+      comparison_summaries_by_id.comparison_report_internal = { comparison_run_id: comparisonRunId };
+    } else hadFailure = true;
   }
   if (input.route_variance_trace) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/route_variance_trace.json`, { ...input.route_variance_trace, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'route_variance_trace');
-    if (w.written) emitted_artefact_ids.push('route_variance_trace'); else hadFailure = true;
+    if (w.written) {
+      emitted_artefact_ids.push('route_variance_trace');
+      comparison_summaries_by_id.route_variance_trace = { route_variance_detected: input.route_variance_trace.route_variance_detected ?? null };
+    } else hadFailure = true;
   }
   if (input.suppression_trace) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/comparison_suppression_trace.json`, { ...input.suppression_trace, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_suppression_trace');
-    if (w.written) emitted_artefact_ids.push('comparison_suppression_trace'); else hadFailure = true;
+    if (w.written) {
+      emitted_artefact_ids.push('comparison_suppression_trace');
+      comparison_summaries_by_id.comparison_suppression_trace = { suppression_decision: input.suppression_trace.suppression_decision ?? null };
+    } else hadFailure = true;
   }
   if (input.same_video_repeatability_trace) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison_traces/same_video_repeatability_trace.json`, { ...input.same_video_repeatability_trace, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'same_video_repeatability_trace');
-    if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
+    if (w.written) {
+      emitted_artefact_ids.push('same_video_repeatability_trace');
+      comparison_summaries_by_id.same_video_repeatability_trace = { same_video_detected: input.same_video_repeatability_trace.same_video_detected ?? null };
+    } else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
   try {
     const reconciled = reconcileComparisonManifestState(manifestPreflight.manifest, {
       emitted_artefact_ids,
       comparison_run_id: comparisonRunId,
+      comparison_summaries_by_id,
     });
     const manifestRelativePath = shouldUseExpandedManifestPaths()
       ? `takes/take-${takeId}/analysis-${analysisRunId}/manifest.json`

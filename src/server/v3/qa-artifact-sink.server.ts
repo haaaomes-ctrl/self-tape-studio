@@ -42,9 +42,10 @@ function isStorageNotFoundError(error: unknown): boolean {
   const statusCode = err.statusCode;
   const code = err.code;
   const message = typeof err.message === 'string' ? err.message.toLowerCase() : '';
+  if (message.includes('bucket')) return false;
   if (status === 404 || statusCode === 404 || statusCode === '404' || code === 404 || code === '404') return true;
   if (typeof code === 'string' && code.toLowerCase().includes('notfound')) return true;
-  if (message.includes('not found') || message.includes('no such') || message.includes('does not exist')) return true;
+  if (message.includes('object not found') || message.includes('file not found') || message.includes('no such file')) return true;
   return false;
 }
 
@@ -124,6 +125,7 @@ export async function readQAArtifactText(input: { run_id: string; relative_path:
   let safeRunId: string;
   try {
     assertSafeSegment(input.run_id, 'run_id');
+    if (input.run_id.includes('/') || input.run_id.includes('\\')) throw new Error('run_id_invalid_path_segment');
     safeRunId = input.run_id;
   } catch {
     return { ok: false, code: 'unreadable' };
