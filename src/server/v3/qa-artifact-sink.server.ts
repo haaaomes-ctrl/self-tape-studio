@@ -10,7 +10,7 @@ export interface QAArtifactWriteResult { written: boolean; sink_mode: QAArtifact
 const LOG_PREFIX = 'TAPECOACH_QA_ARTIFACT_JSON:';
 
 
-function toCanonicalStoragePath(runId: string, relativePath: string): string {
+export function toCanonicalStoragePath(runId: string, relativePath: string): string {
   const normalized = path.posix.normalize(relativePath);
   const m = normalized.match(/^takes\/take-([^/]+)\/analysis-([^/]+)\/(.+)$/);
   if (m) return `take-${m[1]}/analysis-${m[2]}/${m[3]}`;
@@ -97,4 +97,33 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
     const warningOut = fallback.attempted && !fallback.emitted ? `${warning};fallback_log_failed` : warning;
     return { written: false, sink_mode: mode, sink_write_status: 'failed', warning: warningOut, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, log_fallback_emitted: fallback.emitted };
   }
+}
+
+export async function readQAArtifactText(input: { run_id: string; relative_path: string; root_dir?: string }): Promise<{ ok: true; text: string; storage_path?: string } | { ok: false; code: 'missing' | 'unreadable'; storage_path?: string }> {
+  const mode = resolveMode();
+  const root = input.root_dir ?? 'qa-artifacts';
+  const validatedRelativePath = validateRelativePath(input.relative_path);
+  if (mode === 'file') {
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const abs = path.join(root, input.run_id, validatedRelativePath);
+      const text = await readFile(abs, 'utf8');
+      return { ok: true, text };
+    } catch {
+      return { ok: false, code: 'missing' };
+    }
+  }
+  if (mode === 'storage') {
+    const storage_bucket = process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
+    const storage_path = toCanonicalStoragePath(input.run_id, validatedRelativePath);
+    try {
+      const { data, error } = await supabaseAdmin.storage.from(storage_bucket).download(storage_path);
+      if (error || !data) return { ok: false, code: 'missing', storage_path };
+      const text = typeof (data as any).text === 'function' ? await (data as any).text() : String(data);
+      return { ok: true, text, storage_path };
+    } catch {
+      return { ok: false, code: 'unreadable', storage_path };
+    }
+  }
+  return { ok: false, code: 'unreadable' };
 }

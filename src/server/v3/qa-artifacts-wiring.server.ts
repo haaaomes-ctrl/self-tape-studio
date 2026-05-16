@@ -1,5 +1,5 @@
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
-import { writeQAArtifact } from './qa-artifact-sink.server';
+import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
 function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
   const present = warnings.filter((warning): warning is string => Boolean(warning && warning.trim()));
@@ -299,13 +299,20 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
 }
 
 async function loadExistingRootManifestOrError(params: { root: string; run_id: string; take_id: string; analysis_run_id: string }): Promise<{ ok: true; manifest: Record<string, unknown> } | { ok: false; warning: string; blocker_code: string }> {
-  const { readFile } = await import('node:fs/promises');
-  const path = await import('node:path');
-  const manifestPath = path.join(params.root, params.run_id, 'manifest.json');
-  let raw: string;
-  try { raw = await readFile(manifestPath, 'utf8'); } catch { return { ok: false, warning: 'comparison_reconciliation_manifest_missing', blocker_code: 'comparison_reconciliation_manifest_missing' }; }
+  const sinkMode = process.env.QA_ARTIFACT_SINK ?? 'file';
+  const manifestRelativePath = sinkMode === 'storage'
+    ? `takes/take-${params.take_id}/analysis-${params.analysis_run_id}/manifest.json`
+    : 'manifest.json';
+  const loaded = await readQAArtifactText({ run_id: params.run_id, root_dir: params.root, relative_path: manifestRelativePath });
+  if (!loaded.ok) {
+    return {
+      ok: false,
+      warning: loaded.code === 'missing' ? 'comparison_reconciliation_manifest_missing' : 'comparison_reconciliation_manifest_unreadable',
+      blocker_code: loaded.code === 'missing' ? 'comparison_reconciliation_manifest_missing' : 'comparison_reconciliation_manifest_unreadable',
+    };
+  }
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(loaded.text);
     if (!parsed || typeof parsed !== 'object') return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
     return { ok: true, manifest: parsed as Record<string, unknown> };
   } catch {

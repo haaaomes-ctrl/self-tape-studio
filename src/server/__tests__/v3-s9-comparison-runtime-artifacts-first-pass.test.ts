@@ -1,14 +1,27 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun, reconcileComparisonManifestState } from '@/server/v3/qa-artifacts-wiring.server';
+
+const upload = vi.fn();
+const download = vi.fn();
+vi.mock('@/integrations/supabase/client.server', () => ({
+  supabaseAdmin: { storage: { from: vi.fn(() => ({ upload, download })) } },
+}));
+
 
 async function seedExistingManifest(root: string, runId: string, takeId: string, analysisRunId: string) {
   await emitQAManifestForAnalysisRun({ run_id: runId, take_id: takeId, analysis_run_id: analysisRunId, submission_id: 'seed-sub', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['analysis_input_record','analysis_submission','analysis_take','resolver_output','truth_state_map','evidence_anchors','public_claim_trace','raw_report','qa_acceptance_metrics'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false } });
 }
 
 describe('v3 s9 comparison runtime artifacts first pass', () => {
+  beforeEach(() => {
+    delete process.env.QA_ARTIFACT_SINK;
+    upload.mockReset();
+    download.mockReset();
+    upload.mockResolvedValue({ error: null });
+  });
   it('emits all five artifacts only when real comparison execution evidence exists', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-'));
     await seedExistingManifest(root, 'take-root1', 'root1', 'ar-1');
@@ -132,4 +145,48 @@ it('reconcile helper clears stale previous full comparison state when all curren
   expect((next as any).same_video_repeatability_trace_summary).toBeUndefined();
   expect((next as any).comparison_suppression_trace_summary).toBeUndefined();
   expect((next as any).route_variance_trace_summary).toBeUndefined();
+});
+
+
+it('storage sink preflight reads canonical key and succeeds when manifest exists', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  process.env.QA_ARTIFACT_STORAGE_BUCKET = 'qa-artifacts';
+  const manifest = { run_id: 'take-s1', artefact_status_by_id: {}, blocker_codes: [] };
+  download.mockResolvedValue({ data: { text: async () => JSON.stringify(manifest) }, error: null });
+  const out = await emitComparisonRuntimeArtifacts({
+    run_id: 'take-s1', analysis_run_id: 'ar-s1', take_id: 's1', comparison_run_id: 'cmp-s1', compared_take_ids: ['s1','s2'], internal_qa_emit: true,
+    comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 's2' }, raw_comparison_decision_snapshot: { winner: 's2' } },
+    suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false },
+  });
+  expect(out.written).toBe(true);
+  expect(download).toHaveBeenCalledWith('take-s1/analysis-ar-s1/manifest.json');
+  expect((out as any).warning ?? null).toBeNull();
+});
+
+it('storage sink missing manifest fails closed before writes', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: null, error: { message: 'not found' } });
+  const beforeUploads = upload.mock.calls.length;
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-s2', analysis_run_id: 'ar-s2', take_id: 's2', comparison_run_id: 'cmp-s2', compared_take_ids: ['s2','s3'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 's3' }, raw_comparison_decision_snapshot: { winner: 's3' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_missing');
+  expect(upload.mock.calls.length).toBe(beforeUploads);
+});
+
+it('storage sink malformed manifest fails closed', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => '{bad-json' }, error: null });
+  const beforeUploads = upload.mock.calls.length;
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-s3', analysis_run_id: 'ar-s3', take_id: 's3', comparison_run_id: 'cmp-s3', compared_take_ids: ['s3','s4'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 's4' }, raw_comparison_decision_snapshot: { winner: 's4' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_unreadable');
+  expect(upload.mock.calls.length).toBe(beforeUploads);
+});
+
+it('storage sink inferred take_id uses canonical inferred key', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => JSON.stringify({ ok: true }) }, error: null });
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-derivedx', analysis_run_id: 'take-derivedx', comparison_run_id: 'cmp-dx', compared_take_ids: ['derivedx','d2'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'd2' }, raw_comparison_decision_snapshot: { winner: 'd2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(true);
+  expect(download).toHaveBeenCalledWith('take-derivedx/analysis-take-derivedx/manifest.json');
 });
