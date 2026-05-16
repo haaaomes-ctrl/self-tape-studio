@@ -441,6 +441,17 @@ function computeDeterministicComparisonRunId(comparedTakeIds: string[], compared
   const base = [...comparedTakeIds.map((s) => s.trim()), ...comparedAnalysisRunIds.map((s) => s.trim())].filter(Boolean).sort().join('-').toLowerCase().replace(/[^a-z0-9-]/g, '-');
   return `comparison-${base.slice(0, 48) || 'unknown'}`;
 }
+function stripTakePrefix(value: string): string {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  return trimmed.startsWith('take-') ? trimmed.slice(5) : trimmed;
+}
+function toCanonicalTakeRunId(value: string): string {
+  const core = stripTakePrefix(value);
+  if (!core) return '';
+  assertSafeSegment(core, 'take_id');
+  return `take-${core}`;
+}
 export async function runInternalComparisonOperatorTrigger(
   input: InternalComparisonOperatorTriggerInput,
   resolveCompletedTakeAnalysis: (takeId: string) => Promise<CompletedTakeComparisonSource | null>,
@@ -448,17 +459,21 @@ export async function runInternalComparisonOperatorTrigger(
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
     return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'internal_qa_emit_disabled', blocker_codes: ['qa_flags_disabled'] };
   }
+  const rootTakeIdCore = stripTakePrefix(input.root_take_id);
+  try { assertSafeSegment(rootTakeIdCore, 'root_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_root_take_id', blocker_codes: ['unsafe_root_take_id'] }; }
+  const canonicalRootTakeRunId = toCanonicalTakeRunId(rootTakeIdCore);
   const rawIds = (input.compared_take_ids ?? []).map((id) => typeof id === 'string' ? id.trim() : '').filter(Boolean);
   const ids: string[] = [];
   const seenInputTakeIds = new Set<string>();
   for (const id of rawIds) {
-    try { assertSafeSegment(id, 'compared_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_compared_take_id', blocker_codes: ['unsafe_compared_take_id'] }; }
-    if (seenInputTakeIds.has(id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_compared_take_id', blocker_codes: ['duplicate_compared_take_id'] };
-    seenInputTakeIds.add(id);
-    ids.push(id);
+    const core = stripTakePrefix(id);
+    try { assertSafeSegment(core, 'compared_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_compared_take_id', blocker_codes: ['unsafe_compared_take_id'] }; }
+    if (seenInputTakeIds.has(core)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_compared_take_id', blocker_codes: ['duplicate_compared_take_id'] };
+    seenInputTakeIds.add(core);
+    ids.push(core);
   }
   if (ids.length < 2) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_requires_two_or_more_takes', blocker_codes: ['insufficient_compared_takes'] };
-  if (!ids.includes(input.root_take_id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'root_take_id_must_be_in_compared_take_ids', blocker_codes: ['root_take_missing'] };
+  if (!ids.includes(rootTakeIdCore)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'root_take_id_must_be_in_compared_take_ids', blocker_codes: ['root_take_missing'] };
   if (input.compared_analysis_run_ids && input.compared_analysis_run_ids.length !== ids.length) {
     return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'compared_analysis_run_ids_length_mismatch', blocker_codes: ['analysis_run_id_cardinality_mismatch'] };
   }
@@ -469,10 +484,10 @@ export async function runInternalComparisonOperatorTrigger(
   }
   const resolvedRows: CompletedTakeComparisonSource[] = [];
   const seenResolvedTakeIds = new Set<string>();
-  for (const requestedTakeId of ids) {
+  for (const requestedTakeIdCore of ids) {
     let resolved: CompletedTakeComparisonSource | null = null;
     try {
-      resolved = await resolveCompletedTakeAnalysis(requestedTakeId);
+      resolved = await resolveCompletedTakeAnalysis(requestedTakeIdCore);
     } catch {
       return {
         ok: false,
@@ -488,14 +503,15 @@ export async function runInternalComparisonOperatorTrigger(
       };
     }
     if (!resolved) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
-    if (typeof resolved.take_id !== 'string' || !resolved.take_id.trim() || resolved.take_id !== requestedTakeId) {
+    const resolvedTakeCore = stripTakePrefix(resolved.take_id);
+    if (typeof resolved.take_id !== 'string' || !resolved.take_id.trim() || resolvedTakeCore !== requestedTakeIdCore) {
       return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'resolver_take_id_mismatch', blocker_codes: ['resolver_take_id_mismatch'] };
     }
-    if (seenResolvedTakeIds.has(resolved.take_id)) {
+    if (seenResolvedTakeIds.has(resolvedTakeCore)) {
       return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_resolved_take_id', blocker_codes: ['duplicate_resolved_take_id'] };
     }
-    seenResolvedTakeIds.add(resolved.take_id);
-    resolvedRows.push(resolved);
+    seenResolvedTakeIds.add(resolvedTakeCore);
+    resolvedRows.push({ ...resolved, take_id: resolvedTakeCore });
   }
   const byTake = new Map(resolvedRows.map((row) => [row.take_id, row]));
   const compared_takes: InternalComparisonTakeInput[] = [];
@@ -519,11 +535,11 @@ export async function runInternalComparisonOperatorTrigger(
     if (explicit && explicit !== row.analysis_run_id) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] };
     compared_takes.push({ ...row, take_id: row.take_id, analysis_run_id: row.analysis_run_id });
   }
-  const root = byTake.get(input.root_take_id);
+  const root = byTake.get(rootTakeIdCore);
   if (!root) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
   const out = await runInternalComparisonForTakes({
-    run_id: `take-${input.root_take_id}`,
-    root_take_id: input.root_take_id,
+    run_id: canonicalRootTakeRunId,
+    root_take_id: rootTakeIdCore,
     root_analysis_run_id: root.analysis_run_id,
     compared_takes,
     manifest_reconciliation_mode: 'required',
