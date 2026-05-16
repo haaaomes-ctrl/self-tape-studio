@@ -1,8 +1,15 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { emitQAManifestForAnalysisRun, runInternalComparisonForTakes } from '@/server/v3/qa-artifacts-wiring.server';
+
+async function seedCanonicalManifest(root: string, core: string) {
+  const runId = `take-${core}`;
+  await mkdir(path.join(root, runId, 'qa'), { recursive: true });
+  await writeFile(path.join(root, runId, 'manifest.json'), JSON.stringify({ run_id: runId, emitted_artifacts: [], missing_artifacts: [], blocker_codes: [] }), 'utf8');
+  await writeFile(path.join(root, runId, 'qa', 'acceptance_metrics.json'), JSON.stringify({ run_id: runId }), 'utf8');
+}
 
 describe('v3 s9 comparison runtime source wiring', () => {
   it('uses upstream internal runtime source for two real completed takes and emits comparison artefacts', async () => {
@@ -31,6 +38,75 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(metrics.comparison_evidence_status).toBe('insufficient');
     expect(metrics.comparison_raw_status).toBe('emitted');
     expect(metrics.level2_status).toBe('not_accepted');
+  });
+
+  it('required mode normalises raw root_take_id to canonical run/analysis identity', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-required-raw-'));
+    await seedCanonicalManifest(root, 'a');
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-a',
+      root_take_id: 'a',
+      source_module: 'test',
+      source_stage: 'required-raw-root',
+      root_dir: root,
+      internal_qa_emit: true,
+      manifest_reconciliation_mode: 'required',
+      compared_takes: [{ take_id: 'a', analysis_run_id: 'analysis-a' }, { take_id: 'b', analysis_run_id: 'analysis-b' }],
+    });
+    expect(out.written).toBe(true);
+    await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('required mode normalises take-shaped root_take_id to canonical run/analysis identity', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-required-shaped-'));
+    await seedCanonicalManifest(root, 'a');
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-a',
+      root_take_id: 'take-a',
+      source_module: 'test',
+      source_stage: 'required-shaped-root',
+      root_dir: root,
+      internal_qa_emit: true,
+      manifest_reconciliation_mode: 'required',
+      compared_takes: [{ take_id: 'take-a', analysis_run_id: 'analysis-a' }, { take_id: 'take-b', analysis_run_id: 'analysis-b' }],
+    });
+    expect(out.written).toBe(true);
+    await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('required mode fails closed for nested take-prefixed root_take_id before writes', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-required-nested-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-a',
+      root_take_id: 'take-take-a',
+      source_module: 'test',
+      source_stage: 'required-nested-root',
+      root_dir: root,
+      internal_qa_emit: true,
+      manifest_reconciliation_mode: 'required',
+      compared_takes: [{ take_id: 'take-take-a', analysis_run_id: 'analysis-a' }, { take_id: 'b', analysis_run_id: 'analysis-b' }],
+    });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
+    await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('required mode fails closed for empty root core before writes', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-required-empty-'));
+    const out = await runInternalComparisonForTakes({
+      run_id: 'take-a',
+      root_take_id: 'take-',
+      source_module: 'test',
+      source_stage: 'required-empty-root',
+      root_dir: root,
+      internal_qa_emit: true,
+      manifest_reconciliation_mode: 'required',
+      compared_takes: [{ take_id: 'take-', analysis_run_id: 'analysis-a' }, { take_id: 'b', analysis_run_id: 'analysis-b' }],
+    });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
   });
 
   it('suppresses decision for same video duplicate input and keeps public winner blocked', async () => {

@@ -1,19 +1,50 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
 import { assertAdminEmail, isExplicitCompletedAnalysisStatus, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
 import { assertSafeSegment } from '@/server/v3/qa-artifacts.server';
 import { z } from 'zod';
 
+
+const ENV_KEYS = ['INTERNAL_QA_EMIT', 'V3_QA_ARTIFACTS_ENABLED'] as const;
+async function seedCanonicalRootManifestForComparison(input: { root: string; root_take_id: string }) {
+  const runId = `take-${input.root_take_id}`;
+  const manifestPath = path.join(input.root, runId, 'manifest.json');
+  const metricsPath = path.join(input.root, runId, 'qa', 'acceptance_metrics.json');
+  await mkdir(path.dirname(metricsPath), { recursive: true });
+  const base = {
+    run_id: runId,
+    emitted_artifacts: ['analysis_input_record', 'analysis_submission', 'analysis_take', 'raw_report', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'qa_acceptance_metrics'],
+    missing_artifacts: ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'],
+    blocker_codes: ['comparison_JSON_missing', 'comparison_report_unavailable', 'same_video_repeatability_trace_missing', 'comparison_suppression_trace_missing', 'route_variance_trace_missing'],
+    required_artifacts: [{ artefact_id: 'comparison_raw', status: 'missing' }, { artefact_id: 'comparison_report_internal', status: 'missing' }, { artefact_id: 'same_video_repeatability_trace', status: 'missing' }, { artefact_id: 'comparison_suppression_trace', status: 'missing' }, { artefact_id: 'route_variance_trace', status: 'missing' }],
+    level2_accepted: false,
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+  };
+  await writeFile(manifestPath, JSON.stringify(base), 'utf8');
+  await writeFile(metricsPath, JSON.stringify({ comparison_runtime_artifact_count: 0, level2_accepted: false, public_scoring_status: 'blocked' }), 'utf8');
+}
+
+beforeEach(() => {
+  for (const key of ENV_KEYS) vi.stubEnv(key, undefined);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 describe('v3 s9 comparison operator trigger', () => {
   it('emits comparison artifacts for two completed analyses via trigger path', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-op-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'b' });
     const result = await runInternalComparisonOperatorTrigger({
-      root_take_id: 'take-b',
-      compared_take_ids: ['take-a', 'take-b'],
+      root_take_id: 'b',
+      compared_take_ids: ['a', 'b'],
       source_module: 'test',
       source_stage: 'operator-trigger',
       root_dir: root,
@@ -21,10 +52,43 @@ describe('v3 s9 comparison operator trigger', () => {
     }, async (takeId) => ({ take_id: takeId, analysis_run_id: `analysis-${takeId}`, completed: true, mux_playback_ref: `pb-${takeId}` }));
     expect(result.ok).toBe(true);
     expect(result.written).toBe(true);
-    expect(result.root_analysis_run_id).toBe('analysis-take-b');
+    expect(result.root_analysis_run_id).toBe('take-b');
     expect(result.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'].sort());
-    const base = path.join(root, 'take-b', 'takes', 'take-take-b', 'analysis-analysis-take-b');
+    const base = path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-b');
     await expect(readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-analysis-b', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+    await expect(readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-take-b', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('returns canonical root_analysis_run_id when root_take_id is already take-shaped', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-op-takeshaped-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'b' });
+    const result = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-b',
+      compared_take_ids: ['take-a', 'take-b'],
+      source_module: 'test',
+      source_stage: 'operator-trigger-takeshaped',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `analysis-${takeId}`, completed: true, mux_playback_ref: `pb-${takeId}` }));
+    expect(result.ok).toBe(true);
+    expect(result.written).toBe(true);
+    expect(result.root_analysis_run_id).toBe('take-b');
+    expect(JSON.stringify(result)).not.toContain('take-take-b');
+  });
+
+  it('failure before writes reports canonical root_analysis_run_id when derivable', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'b',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'operator-trigger-failure-canonical-id',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `analysis-${takeId}`, completed: false }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.root_analysis_run_id).toBeNull();
+    expect(out.root_analysis_run_id).not.toBe('analysis-b');
   });
 
   it('fails closed for one-take input', async () => {
@@ -50,6 +114,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('admin/internal entrypoint succeeds and preserves suppression for same-video', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-admin-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
     const out = await runAdminInternalComparisonTriggerImpl({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -65,7 +130,7 @@ describe('v3 s9 comparison operator trigger', () => {
       artefact_summaries: { token: 'SECRET_TOKEN', signed_url: 'https://signed.example' },
     }));
     expect(out.ok).toBe(true);
-    const base = path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a');
+    const base = path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-a');
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
     const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
@@ -92,6 +157,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('suppresses on route variance via entrypoint', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-route-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
     const out = await runAdminInternalComparisonTriggerImpl({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -107,7 +173,7 @@ describe('v3 s9 comparison operator trigger', () => {
       model_provider_family: takeId === 'a' ? 'provider-a' : 'provider-b',
     }));
     expect(out.ok).toBe(true);
-    const route = JSON.parse(await readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a', 'comparison_traces', 'route_variance_trace.json'), 'utf8'));
+    const route = JSON.parse(await readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-a', 'comparison_traces', 'route_variance_trace.json'), 'utf8'));
     expect(route.route_variance_detected).toBe(true);
   });
 
@@ -242,6 +308,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('accepted explicit completed statuses remain eligible', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-status-ok-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
     for (const status of ['completed', 'succeeded', 'processed']) {
       const out = await runAdminInternalComparisonTriggerImpl({
         root_take_id: 'a',
@@ -271,6 +338,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('succeeds when compared_analysis_run_ids exact length and matching', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-cardinality-ok-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
     const out = await runInternalComparisonOperatorTrigger({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -281,7 +349,7 @@ describe('v3 s9 comparison operator trigger', () => {
       internal_qa_emit: true,
     }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
     expect(out.ok).toBe(true);
-    const base = path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a');
+    const base = path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-a');
     await expect(readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
     await expect(readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8')).resolves.toBeTruthy();
     await expect(readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8')).resolves.toBeTruthy();
@@ -305,6 +373,8 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('safe explicit comparison_run_id succeeds and omitted comparison_run_id generates safe id', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-runid-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'c' });
     const explicit = await runInternalComparisonOperatorTrigger({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -370,7 +440,7 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(out.warning).toBe('take_resolution_failed');
     expect(out.emitted_artefact_ids).toEqual([]);
     expect(out.comparison_run_id).toBeNull();
-    await expect(readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-ar-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toBeTruthy();
+    await expect(readFile(path.join(root, 'a', 'takes', 'take-a', 'analysis-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toBeTruthy();
   });
 
   it('accepts complete status and normalizes trim/case', () => {
@@ -425,7 +495,7 @@ describe('v3 s9 comparison operator trigger', () => {
         source_module: 'test',
         source_stage: `unsafe-analysis-${bad}`,
         internal_qa_emit: true,
-      }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? bad : 'safe-analysis-b', completed: true }));
+      }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'a' ? bad : 'safe-analysis-b', completed: true }));
       expect(out.ok).toBe(false);
       expect(out.written).toBe(false);
       expect(out.warning).toBe('analysis_run_id_invalid_path');
@@ -437,6 +507,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('explicit safe compared_analysis_run_id exact match succeeds and mismatch fails closed', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-explicit-analysis-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
     const good = await runInternalComparisonOperatorTrigger({
       root_take_id: 'take-a',
       compared_take_ids: ['take-a', 'take-b'],
@@ -445,8 +516,9 @@ describe('v3 s9 comparison operator trigger', () => {
       source_stage: 'explicit-match',
       root_dir: root,
       internal_qa_emit: true,
-    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
     expect(good.ok).toBe(true);
+    expect(JSON.stringify(good)).not.toContain('take-take-');
     const bad = await runInternalComparisonOperatorTrigger({
       root_take_id: 'take-a',
       compared_take_ids: ['take-a', 'take-b'],
@@ -454,10 +526,52 @@ describe('v3 s9 comparison operator trigger', () => {
       source_module: 'test',
       source_stage: 'explicit-mismatch',
       internal_qa_emit: true,
-    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'take-a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: takeId === 'a' ? 'safe-analysis-a' : 'safe-analysis-b', completed: true }));
     expect(bad.ok).toBe(false);
     expect(bad.written).toBe(false);
     expect(bad.warning).toBe('explicit_analysis_run_id_mismatch');
+  });
+
+  it('fails closed for empty root take core after strip', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-',
+      compared_take_ids: ['take-', 'take-b'],
+      source_module: 'test',
+      source_stage: 'empty-core-after-strip',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('unsafe_root_take_id');
+  });
+
+  it('fails closed for nested take-prefixed root_take_id', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-nested-root-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'a' });
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-take-a',
+      compared_take_ids: ['take-a', 'take-b'],
+      source_module: 'test',
+      source_stage: 'nested-root-take-id',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('unsafe_root_take_id');
+  });
+
+  it('fails closed for nested take-prefixed compared_take_id', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'a',
+      compared_take_ids: ['a', 'take-take-b'],
+      source_module: 'test',
+      source_stage: 'nested-compared-take-id',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.warning).toBe('unsafe_compared_take_id');
   });
 
   it('unsafe explicit compared_analysis_run_id fails closed', async () => {

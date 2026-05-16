@@ -1,9 +1,19 @@
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emitQAManifestForAnalysisRun, resolveInternalQAEmitEnabled } from '@/server/v3/qa-artifacts-wiring.server';
 
+
+const ENV_KEYS = ['INTERNAL_QA_EMIT', 'V3_QA_ARTIFACTS_ENABLED'] as const;
+
+beforeEach(() => {
+  for (const key of ENV_KEYS) vi.stubEnv(key, undefined);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 describe('v3 s8 qa artifact wiring', () => {
   it('ordinary run with internal_qa_emit false writes nothing', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-wiring-'));
