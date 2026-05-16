@@ -103,10 +103,20 @@ export async function readQAArtifactText(input: { run_id: string; relative_path:
   const mode = resolveMode();
   const root = input.root_dir ?? 'qa-artifacts';
   const validatedRelativePath = validateRelativePath(input.relative_path);
+  let safeRunId: string;
+  try {
+    assertSafeSegment(input.run_id, 'run_id');
+    safeRunId = input.run_id;
+  } catch {
+    return { ok: false, code: 'unreadable' };
+  }
   if (mode === 'file') {
     try {
       const { readFile } = await import('node:fs/promises');
-      const abs = path.join(root, input.run_id, validatedRelativePath);
+      const baseRoot = path.resolve(root);
+      const runRoot = path.resolve(baseRoot, safeRunId);
+      const abs = path.resolve(runRoot, validatedRelativePath);
+      if (abs !== runRoot && !abs.startsWith(runRoot + path.sep)) return { ok: false, code: 'unreadable' };
       const text = await readFile(abs, 'utf8');
       return { ok: true, text };
     } catch (error) {
@@ -116,7 +126,7 @@ export async function readQAArtifactText(input: { run_id: string; relative_path:
   }
   if (mode === 'storage') {
     const storage_bucket = process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
-    const storage_path = toCanonicalStoragePath(input.run_id, validatedRelativePath);
+    const storage_path = toCanonicalStoragePath(safeRunId, validatedRelativePath);
     try {
       const { data, error } = await supabaseAdmin.storage.from(storage_bucket).download(storage_path);
       if (error || !data) return { ok: false, code: 'missing', storage_path };

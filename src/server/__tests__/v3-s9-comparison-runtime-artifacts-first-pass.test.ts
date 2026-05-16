@@ -221,3 +221,31 @@ it('readQAArtifactText classifies ENOENT as missing', async () => {
   expect(out.ok).toBe(false);
   if (!out.ok) expect(out.code).toBe('missing');
 });
+
+
+it('readQAArtifactText rejects traversal/absolute/slashed run_id in file mode', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-unsafe-runid-'));
+  for (const runId of ['../outside', '../../x', '/abs/path', 'take-a/../take-b', 'take-a\\take-b']) {
+    const out = await readQAArtifactText({ run_id: runId, root_dir: root, relative_path: 'manifest.json' });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.code).toBe('unreadable');
+  }
+});
+
+it('readQAArtifactText rejects unsafe storage run_id before download', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockClear();
+  const out = await readQAArtifactText({ run_id: '../outside', relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('unreadable');
+  expect(download).not.toHaveBeenCalled();
+});
+
+it('readQAArtifactText storage safe run_id still reads canonical key', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => '{"ok":true}' }, error: null });
+  const out = await readQAArtifactText({ run_id: 'take-safe123', relative_path: 'takes/take-safe123/analysis-take-safe123/manifest.json' });
+  expect(out.ok).toBe(true);
+  expect(download).toHaveBeenCalledWith('take-safe123/analysis-take-safe123/manifest.json');
+});
