@@ -345,4 +345,69 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       expect(manifest.missing_artifacts).not.toContain(id);
     }
   });
+
+  it('drops stale route_variance_trace emitted state when current route_variance write fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-stale-route-'));
+    const runId = 'take-stale-route';
+    const runDir = path.join(root, runId);
+    await mkdir(runDir, { recursive: true });
+    const ordinary = ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'validator_trace', 'gate_trace', 'model_run_trace', 'raw_report', 'qa_acceptance_metrics'];
+    const allComparison = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
+    await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({
+      emitted_artifacts: [...ordinary, ...allComparison],
+      runtime_evidence_accepted_by_id: [...ordinary, ...allComparison],
+      comparison_run_id: 'cmp-old',
+      route_variance_trace_summary: { stale: true },
+      artefact_source_classification_by_id: { route_variance_trace: 'legacy' },
+      artefact_level2_spine_satisfaction_by_id: { route_variance_trace: true },
+      defect_risk_ids: [],
+    }), 'utf8');
+    const sinkModule = await import('@/server/v3/qa-artifact-sink.server');
+    const originalWrite = sinkModule.writeQAArtifact;
+    vi.spyOn(sinkModule, 'writeQAArtifact').mockImplementation(async (input: any) => {
+      if (String(input?.relative_path).endsWith('/comparison_traces/route_variance_trace.json')) return { written: false, warning: 'forced-route-fail' } as any;
+      return originalWrite(input);
+    });
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: runId, take_id: 'stale-route', analysis_run_id: 'ar-stale-route', comparison_run_id: 'cmp-current', compared_take_ids: ['stale-route', 'other'], root_dir: root, internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(false);
+    const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(runDir, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    for (const id of ordinary) expect(manifest.emitted_artifacts).toContain(id);
+    expect(manifest.artefact_status_by_id.route_variance_trace).toBe('missing');
+    expect(manifest.missing_artifacts).toContain('route_variance_trace');
+    expect(manifest.blocker_codes).toContain('route_variance_trace_missing');
+    expect(manifest.route_variance_trace_summary ?? null).toBeNull();
+    expect(manifest.comparison_run_id).toBe('cmp-current');
+    expect(metrics.route_variance_trace_status).toBe('missing');
+    expect(metrics.comparison_runtime_artifact_count).toBe(4);
+    expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
+  });
+
+  it('drops stale comparison_raw emitted state when current comparison_raw write fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-stale-raw-'));
+    const runId = 'take-stale-raw';
+    const runDir = path.join(root, runId);
+    await mkdir(runDir, { recursive: true });
+    const ordinary = ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'validator_trace', 'gate_trace', 'model_run_trace', 'raw_report', 'qa_acceptance_metrics'];
+    const allComparison = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
+    await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({ emitted_artifacts: [...ordinary, ...allComparison], runtime_evidence_accepted_by_id: [...ordinary, ...allComparison], comparison_raw_summary: { stale: true }, defect_risk_ids: [] }), 'utf8');
+    const sinkModule = await import('@/server/v3/qa-artifact-sink.server');
+    const originalWrite = sinkModule.writeQAArtifact;
+    vi.spyOn(sinkModule, 'writeQAArtifact').mockImplementation(async (input: any) => {
+      if (String(input?.relative_path).endsWith('/comparison/comparison.raw.json')) return { written: false, warning: 'forced-raw-fail' } as any;
+      return originalWrite(input);
+    });
+    const out = await emitComparisonRuntimeArtifacts({ run_id: runId, take_id: 'stale-raw', analysis_run_id: 'ar-stale-raw', comparison_run_id: 'cmp-current-raw', compared_take_ids: ['stale-raw', 'other'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+    expect(out.written).toBe(false);
+    const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(runDir, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.comparison_raw).toBe('missing');
+    expect(manifest.blocker_codes).toContain('comparison_JSON_missing');
+    expect(manifest.comparison_raw_summary ?? null).toBeNull();
+    expect(metrics.comparison_raw_status).toBe('missing');
+    expect(metrics.comparison_runtime_artifact_count).toBe(4);
+  });
 });

@@ -17,6 +17,13 @@ function getQAWriteWarning(result: unknown): string | null {
     typeof sinkWarning === 'string' ? sinkWarning : null,
   );
 }
+const COMPARISON_RUNTIME_ARTEFACT_IDS = new Set([
+  'comparison_raw',
+  'comparison_report_internal',
+  'same_video_repeatability_trace',
+  'comparison_suppression_trace',
+  'route_variance_trace',
+] as const);
 function loadExistingManifestState(rootDir: string, runId: string, takeId: string, analysisRunId: string): { ok: true; state: { emitted: string[]; runtimeAccepted: string[]; sourceById: Record<string, string>; level2ById: Record<string, boolean>; defectRiskIds: string[]; summaries: Record<string, unknown> } } | { ok: false; warning: string; blocker_codes: string[]; state: null } {
   const manifestRelativePath = shouldUseExpandedManifestPaths()
     ? buildTakeAnalysisRelativePath({ run_id: runId, take_id: takeId, analysis_run_id: analysisRunId, leaf: 'manifest.json' })
@@ -1206,16 +1213,29 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       };
     }
     const existing = existingLoad.ok ? existingLoad.state : { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
-    const emittedAll = [...new Set([...existing.emitted, ...emitted_artefact_ids])];
-    const runtimeAccepted = [...new Set([...existing.runtimeAccepted, ...emitted_artefact_ids])];
+    const existingNonComparisonEmitted = existing.emitted.filter((id) => !COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
+    const existingNonComparisonRuntimeAccepted = existing.runtimeAccepted.filter((id) => !COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
+    const currentComparisonEmitted = emitted_artefact_ids.filter((id) => COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
+    const emittedAll = [...new Set([...existingNonComparisonEmitted, ...currentComparisonEmitted])];
+    const runtimeAccepted = [...new Set([...existingNonComparisonRuntimeAccepted, ...currentComparisonEmitted])];
     const sourceById = { ...existing.sourceById };
     const level2ById = { ...existing.level2ById };
+    for (const id of COMPARISON_RUNTIME_ARTEFACT_IDS) {
+      delete sourceById[id];
+      delete level2ById[id];
+    }
     for (const id of emitted_artefact_ids) {
       sourceById[id] = 'internal_comparison_runtime';
       level2ById[id] = false;
     }
+    const nonComparisonSummaries = { ...existing.summaries };
+    delete (nonComparisonSummaries as any).comparison_raw_summary;
+    delete (nonComparisonSummaries as any).comparison_report_internal_summary;
+    delete (nonComparisonSummaries as any).same_video_repeatability_trace_summary;
+    delete (nonComparisonSummaries as any).comparison_suppression_trace_summary;
+    delete (nonComparisonSummaries as any).route_variance_trace_summary;
     const summaryPatch: Record<string, unknown> = {
-      ...existing.summaries,
+      ...nonComparisonSummaries,
       ...(emitted_artefact_ids.includes('comparison_raw') ? { comparison_raw_summary: input.comparison_raw_data ?? null } : {}),
       ...(emitted_artefact_ids.includes('comparison_report_internal') ? { comparison_report_internal_summary: { comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, recommendation_suppressed: Boolean(input.comparison_raw_data?.recommendation_suppressed ?? input.comparison_raw_data?.duplicate_or_near_duplicate_detected) } } : {}),
       ...(emitted_artefact_ids.includes('same_video_repeatability_trace') ? { same_video_repeatability_trace_summary: input.same_video_repeatability_trace?.same_video_repeatability_trace_summary ?? null } : {}),
