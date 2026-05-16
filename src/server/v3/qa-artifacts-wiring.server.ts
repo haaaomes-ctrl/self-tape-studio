@@ -629,7 +629,16 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
     route_variance_status: routeVarianceDetected ? 'detected' : 'not_detected', compared_run_routes: routes, route_mismatch_detected: routeVarianceDetected, route_variance_detected: routeVarianceDetected, route_variance_risk: routeVarianceDetected, route_variance_mitigation_status: routeVarianceDetected ? 'unresolved_blocked' : 'not_required', route_variance_trace_summary: { route_variance_detected: routeVarianceDetected },
   };
   if (input.manifest_reconciliation_mode === 'required') {
-    return emitComparisonRuntimeArtifactsWithManifestReconciliation({ run_id: input.run_id, root_take_id: input.root_take_id, take_id: input.root_take_id, analysis_run_id: `take-${input.root_take_id}`, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
+    try {
+      const canonicalRootTakeCore = stripTakePrefix(input.root_take_id);
+      assertSafeSegment(canonicalRootTakeCore, 'root_take_id');
+      const canonicalRootRunId = toCanonicalTakeRunId(canonicalRootTakeCore);
+      const canonicalComparedTakeIds = comparedTakeIds.map((id) => stripTakePrefix(id)).filter(Boolean);
+      canonicalComparedTakeIds.forEach((id) => assertSafeSegment(id, 'compared_take_id'));
+      return emitComparisonRuntimeArtifactsWithManifestReconciliation({ run_id: canonicalRootRunId, root_take_id: canonicalRootTakeCore, take_id: canonicalRootTakeCore, analysis_run_id: canonicalRootRunId, comparison_run_id, compared_take_ids: canonicalComparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
+    } catch {
+      return { written: false as const, emitted_artefact_ids: [] as string[] };
+    }
   }
   return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: rootAnalysisRunId, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
 }
