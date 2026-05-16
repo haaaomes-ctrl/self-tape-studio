@@ -344,6 +344,13 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
 
 async function loadExistingRootManifestOrError(params: { root: string; run_id: string; take_id: string; analysis_run_id: string }): Promise<{ ok: true; manifest: Record<string, unknown> } | { ok: false; warning: string; blocker_code: string }> {
   const sinkMode = process.env.QA_ARTIFACT_SINK ?? 'file';
+  if (sinkMode === 'console_jsonl') {
+    return {
+      ok: false,
+      warning: 'comparison_reconciliation_manifest_read_unsupported',
+      blocker_code: 'comparison_reconciliation_manifest_read_unsupported',
+    };
+  }
   const manifestRelativePath = sinkMode === 'storage'
     ? `takes/take-${params.take_id}/analysis-${params.analysis_run_id}/manifest.json`
     : 'manifest.json';

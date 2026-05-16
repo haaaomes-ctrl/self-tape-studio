@@ -208,6 +208,34 @@ it('storage sink missing manifest fails closed before writes', async () => {
   expect(upload.mock.calls.length).toBe(beforeUploads);
 });
 
+it('console_jsonl sink fails closed with unsupported-manifest-read warning and no writes', async () => {
+  process.env.QA_ARTIFACT_SINK = 'console_jsonl';
+  upload.mockClear();
+  download.mockClear();
+  const out = await emitComparisonRuntimeArtifacts({
+    run_id: 'take-console1',
+    analysis_run_id: 'ar-console1',
+    take_id: 'console1',
+    comparison_run_id: 'cmp-console1',
+    compared_take_ids: ['console1', 'c2'],
+    internal_qa_emit: true,
+    comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'c2' }, raw_comparison_decision_snapshot: { winner: 'c2' } },
+    suppression_trace: { suppression_decision: 'allowed' },
+    same_video_repeatability_trace: { same_video_detected: false },
+    route_variance_trace: { route_variance_detected: false },
+  });
+  expect(out.written).toBe(false);
+  expect((out as any).reconciliation_written).toBe(false);
+  expect((out as any).comparison_artefacts_written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_read_unsupported');
+  expect((out as any).blocker_codes).toContain('comparison_reconciliation_manifest_read_unsupported');
+  expect((out as any).blocker_codes).not.toContain('comparison_reconciliation_manifest_missing');
+  expect((out as any).blocker_codes).not.toContain('comparison_reconciliation_manifest_unreadable');
+  expect((out as any).emitted_artefact_ids).toEqual([]);
+  expect(upload).not.toHaveBeenCalled();
+  expect(download).not.toHaveBeenCalled();
+});
+
 it('readQAArtifactText storage 404 returns missing with canonical path', async () => {
   process.env.QA_ARTIFACT_SINK = 'storage';
   download.mockResolvedValue({ data: null, error: { statusCode: 404, message: 'Object not found' } });
