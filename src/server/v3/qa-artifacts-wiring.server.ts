@@ -254,6 +254,64 @@ function resolveTakeIdForFirstPassTraces(options: { take_id?: string | null; run
     return null;
   }
 }
+
+
+const COMPARISON_ARTEFACT_IDS = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'] as const;
+const COMPARISON_BLOCKER_BY_ID: Record<string, string> = {
+  comparison_raw: 'comparison_JSON_missing',
+  comparison_report_internal: 'comparison_report_internal_missing',
+  same_video_repeatability_trace: 'same_video_repeatability_trace_missing',
+  comparison_suppression_trace: 'comparison_suppression_trace_missing',
+  route_variance_trace: 'route_variance_trace_missing',
+};
+
+export function reconcileComparisonManifestState(existingManifest: Record<string, unknown>, currentAttempt: { emitted_artefact_ids: string[]; comparison_run_id?: string | null; runtime_evidence_blocked_by_id?: string[] }) {
+  const next = { ...existingManifest } as Record<string, any>;
+  const emitted = new Set<string>(Array.isArray(currentAttempt.emitted_artefact_ids) ? currentAttempt.emitted_artefact_ids : []);
+  const previousStatuses = { ...(next.artefact_status_by_id ?? {}) };
+  for (const id of COMPARISON_ARTEFACT_IDS) delete previousStatuses[id];
+  for (const id of COMPARISON_ARTEFACT_IDS) previousStatuses[id] = emitted.has(id) ? 'emitted' : 'missing';
+  next.artefact_status_by_id = previousStatuses;
+
+  const nonComparisonOnly = (arr: unknown) => (Array.isArray(arr) ? arr.filter((x) => typeof x === 'string' && !COMPARISON_ARTEFACT_IDS.includes(x as any)) : []);
+  next.emitted_artifacts = [...nonComparisonOnly(next.emitted_artifacts), ...COMPARISON_ARTEFACT_IDS.filter((id) => emitted.has(id))];
+  next.runtime_evidence_accepted_by_id = [...nonComparisonOnly(next.runtime_evidence_accepted_by_id), ...COMPARISON_ARTEFACT_IDS.filter((id) => emitted.has(id))];
+  next.emitted_blocked_artefact_ids = nonComparisonOnly(next.emitted_blocked_artefact_ids);
+
+  const blocked = Array.isArray(next.runtime_evidence_blocked_by_id) ? next.runtime_evidence_blocked_by_id.filter((x: unknown) => {
+    const s = typeof x === 'string' ? x : '';
+    return !COMPARISON_ARTEFACT_IDS.some((id) => s === id || s.startsWith(`${id}:`));
+  }) : [];
+  if (Array.isArray(currentAttempt.runtime_evidence_blocked_by_id)) {
+    for (const entry of currentAttempt.runtime_evidence_blocked_by_id) if (!blocked.includes(entry)) blocked.push(entry);
+  }
+  next.runtime_evidence_blocked_by_id = blocked;
+
+  const blockers = Array.isArray(next.blocker_codes) ? next.blocker_codes.filter((b: unknown) => typeof b === 'string' && !Object.values(COMPARISON_BLOCKER_BY_ID).includes(b as string)) : [];
+  for (const id of COMPARISON_ARTEFACT_IDS) if (!emitted.has(id)) blockers.push(COMPARISON_BLOCKER_BY_ID[id]);
+  next.blocker_codes = [...new Set(blockers)];
+
+  next.missing_artifacts = COMPARISON_ARTEFACT_IDS.filter((id) => !emitted.has(id));
+  for (const key of ['comparison_raw_summary', 'comparison_report_internal_summary', 'same_video_repeatability_trace_summary', 'comparison_suppression_trace_summary', 'route_variance_trace_summary']) delete next[key];
+  if (currentAttempt.comparison_run_id) next.comparison_run_id = currentAttempt.comparison_run_id;
+  next.real_v3_spine_artefact_ids = nonComparisonOnly(next.real_v3_spine_artefact_ids);
+  return next;
+}
+
+async function loadExistingRootManifestOrError(params: { root: string; run_id: string; take_id: string; analysis_run_id: string }): Promise<{ ok: true; manifest: Record<string, unknown> } | { ok: false; warning: string; blocker_code: string }> {
+  const { readFile } = await import('node:fs/promises');
+  const path = await import('node:path');
+  const manifestPath = path.join(params.root, params.run_id, 'manifest.json');
+  let raw: string;
+  try { raw = await readFile(manifestPath, 'utf8'); } catch { return { ok: false, warning: 'comparison_reconciliation_manifest_missing', blocker_code: 'comparison_reconciliation_manifest_missing' }; }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
+    return { ok: true, manifest: parsed as Record<string, unknown> };
+  } catch {
+    return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
+  }
+}
 function stripForbiddenFieldsDeep(value: unknown): unknown {
   const forbidden = new Set(['raw_prompt', 'prompt', 'system_prompt', 'user_prompt', 'request_body', 'raw_response', 'response_text', 'model_output', 'candidates', 'completion_text', 'headers', 'authorization', 'api_key', 'token', 'secret', 'cookie', 'session', 'signed_url', 'playback_url', 'video_url']);
   if (Array.isArray(value)) return value.map((v) => stripForbiddenFieldsDeep(v));
@@ -1114,6 +1172,19 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   assertSafeSegment(analysisRunId, 'analysis_run_id');
   const comparisonRoot = `takes/take-${takeId}/analysis-${analysisRunId}`;
+  const manifestPreflight = await loadExistingRootManifestOrError({ root, run_id: input.run_id, take_id: takeId, analysis_run_id: analysisRunId });
+  if (!manifestPreflight.ok) {
+    return {
+      written: false as const,
+      reconciliation_written: false as const,
+      comparison_artefacts_written: false as const,
+      comparison_run_id: comparisonRunId,
+      emitted_artefact_ids,
+      emitted_blocked_artefact_ids: [] as string[],
+      warning: manifestPreflight.warning,
+      blocker_codes: [manifestPreflight.blocker_code],
+    };
+  }
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, schema_version: 'tapecoach_v3_comparison_raw_first_pass_v1', artefact_type: 'comparison_raw', internal_only: true, privacy_classification: 'internal_private', source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: input.source_stage ?? 'emitComparisonRuntimeArtifacts', comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_raw');
     if (w.written) emitted_artefact_ids.push('comparison_raw'); else hadFailure = true;
@@ -1148,7 +1219,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
-  return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
+  return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: hadFailure ? ['comparison_reconciliation_failed'] : [] };
 }
 
 export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmitterInput) {

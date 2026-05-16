@@ -3,14 +3,20 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitQAManifestForAnalysisRun, runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
 import { assertAdminEmail, isExplicitCompletedAnalysisStatus, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
 import { assertSafeSegment } from '@/server/v3/qa-artifacts.server';
 import { z } from 'zod';
 
+async function seedExistingManifest(root: string, runId: string, takeId: string, analysisRunId: string) {
+  await emitQAManifestForAnalysisRun({ run_id: runId, analysis_run_id: analysisRunId, take_id: takeId, submission_id: 'seed-sub', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['analysis_input_record','analysis_submission','analysis_take','resolver_output','truth_state_map','evidence_anchors','public_claim_trace','raw_report','qa_acceptance_metrics'], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false } });
+}
+
+
 describe('v3 s9 comparison operator trigger', () => {
   it('emits comparison artifacts for two completed analyses via trigger path', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-op-'));
+    await seedExistingManifest(root, 'take-b', 'take-b', 'analysis-take-b');
     const result = await runInternalComparisonOperatorTrigger({
       root_take_id: 'take-b',
       compared_take_ids: ['take-a', 'take-b'],
@@ -50,6 +56,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('admin/internal entrypoint succeeds and preserves suppression for same-video', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-admin-'));
+    await seedExistingManifest(root, 'a', 'a', 'ar-a');
     const out = await runAdminInternalComparisonTriggerImpl({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -92,6 +99,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('suppresses on route variance via entrypoint', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-route-'));
+    await seedExistingManifest(root, 'a', 'a', 'ar-a');
     const out = await runAdminInternalComparisonTriggerImpl({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -242,6 +250,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('accepted explicit completed statuses remain eligible', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-status-ok-'));
+    await seedExistingManifest(root, 'a', 'a', 'ar-a-completed');
     for (const status of ['completed', 'succeeded', 'processed']) {
       const out = await runAdminInternalComparisonTriggerImpl({
         root_take_id: 'a',
@@ -271,6 +280,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('succeeds when compared_analysis_run_ids exact length and matching', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-cardinality-ok-'));
+    await seedExistingManifest(root, 'a', 'a', 'ar-a');
     const out = await runInternalComparisonOperatorTrigger({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -305,6 +315,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('safe explicit comparison_run_id succeeds and omitted comparison_run_id generates safe id', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-runid-'));
+    await seedExistingManifest(root, 'a', 'a', 'ar-a');
     const explicit = await runInternalComparisonOperatorTrigger({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -316,6 +327,7 @@ describe('v3 s9 comparison operator trigger', () => {
     }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true }));
     expect(explicit.ok).toBe(true);
     expect(explicit.comparison_run_id).toBe('comparison-safe-123');
+    await seedExistingManifest(root, 'c', 'c', 'ar-c');
     const generated = await runInternalComparisonOperatorTrigger({
       root_take_id: 'c',
       compared_take_ids: ['c', 'd'],
@@ -354,6 +366,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('fails closed when first resolver succeeds and second rejects (no partial emit)', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-reject-partial-'));
+    await seedExistingManifest(root, 'a', 'a', 'ar-a');
     const out = await runInternalComparisonOperatorTrigger({
       root_take_id: 'a',
       compared_take_ids: ['a', 'b'],
@@ -437,6 +450,7 @@ describe('v3 s9 comparison operator trigger', () => {
 
   it('explicit safe compared_analysis_run_id exact match succeeds and mismatch fails closed', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-explicit-analysis-'));
+    await seedExistingManifest(root, 'take-a', 'take-a', 'ar-a');
     const good = await runInternalComparisonOperatorTrigger({
       root_take_id: 'take-a',
       compared_take_ids: ['take-a', 'take-b'],

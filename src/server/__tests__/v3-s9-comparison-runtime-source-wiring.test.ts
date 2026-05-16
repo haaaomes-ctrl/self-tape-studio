@@ -4,9 +4,34 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { emitQAManifestForAnalysisRun, runInternalComparisonForTakes } from '@/server/v3/qa-artifacts-wiring.server';
 
+async function seedExistingManifest(root: string, runId: string, takeId: string, analysisRunId: string) {
+  await emitQAManifestForAnalysisRun({
+    run_id: runId,
+    analysis_run_id: analysisRunId,
+    take_id: takeId,
+    submission_id: 'seed-submission',
+    root_dir: root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: ['analysis_input_record','analysis_submission','analysis_take','resolver_output','truth_state_map','evidence_anchors','public_claim_trace','technique_observation_trace','score_trace','model_run_trace','validator_trace','gate_trace','raw_report','qa_acceptance_metrics'],
+    emitted_blocked_artefact_ids: ['public_output_render'],
+    deferred_artefact_ids: ['parity_comparison'],
+    not_applicable_artefact_ids: ['private_leak_scan'],
+    runtime_evidence_blocked_by_id: ['comparison_raw:block:stale_previous_failure','raw_report:block:legacy'],
+    artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter', score_trace: 'legacy_adapter' },
+    artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false, score_trace: false },
+    defect_risk_ids: ['legacy_schema_snapshot'],
+    public_claim_trace_summary: { claim_count: 2, unsupported_claim_count: 0, legacy_untraced_claim_count: 0, unsafe_or_overclaim_count: 0, rewrite_required_count: 0 },
+    technique_observation_trace_summary: { legacy_adapter: 1, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 },
+    score_trace_summary: { score_count: 1, overall_count: 1, discipline_attribute_count: 0, component_score_count: 0, component_weight_count: 0, brief_adherence_subscore_count: 0, assessment_confidence_count: 0, calibration_modifier_count: 0, calibration_metadata_count: 0, source_family_summary: { legacy_adapter: 1, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 }, overall_readiness_public_score_status: 'blocked', discipline_attribute_score_trace_status: 'internal_trace_only', score_trace_gate_status: 'insufficient', score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace' },
+    model_run_trace_summary: { model_run_count: 1, model_run_completed_count: 1, model_run_failed_count: 0, model_run_timeout_count: 0, model_run_fallback_count: 0, model_run_trace_gate_status: 'insufficient', model_run_trace_gate_reason: 'runtime_metadata_without_independent_model_proof_chain' },
+  });
+}
+
+
 describe('v3 s9 comparison runtime source wiring', () => {
   it('uses upstream internal runtime source for two real completed takes and emits comparison artefacts', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-source-'));
+    await seedExistingManifest(root, 'take-root-a', 'root-a', 'ar-a');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-root-a',
       root_take_id: 'root-a',
@@ -35,6 +60,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('suppresses decision for same video duplicate input and keeps public winner blocked', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-same-video-'));
+    await seedExistingManifest(root, 'take-dup-root', 'dup-root', 'ar1');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-root',
       root_take_id: 'dup-root',
@@ -97,6 +123,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('redacts forbidden fields from emitted comparison payload', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-redact-'));
+    await seedExistingManifest(root, 'take-redact-root', 'redact-root', 'ar-r1');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-redact-root',
       root_take_id: 'redact-root',
@@ -122,6 +149,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('detects duplicate mux pair in 3+ inputs and suppresses internal winner', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-mux-'));
+    await seedExistingManifest(root, 'take-dup-mux-root', 't-a', 'ar-a');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-mux-root',
       root_take_id: 't-a',
@@ -151,6 +179,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('detects duplicate fingerprint pair in 3+ inputs and suppresses internal winner', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-fp-'));
+    await seedExistingManifest(root, 'take-dup-fp-root', 't-a1', 'ar-a1');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-fp-root',
       root_take_id: 't-a1',
@@ -176,6 +205,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('does not trigger same-video suppression for 3+ all-unique refs', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-unique-'));
+    await seedExistingManifest(root, 'take-unique-root', 'tu-a', 'aru-a');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-unique-root',
       root_take_id: 'tu-a',
@@ -204,6 +234,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('keeps route-variance suppression fields consistent across artefacts', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-route-suppress-'));
+    await seedExistingManifest(root, 'take-route-root', 'route-root', 'route-ar-a');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-route-root',
       root_take_id: 'route-root',
@@ -232,6 +263,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('uses root take analysis_run_id when root take is not first', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-root-analysis-'));
+    await seedExistingManifest(root, 'take-root-order', 'take-b', 'ar-b');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-root-order',
       root_take_id: 'take-b',
@@ -282,6 +314,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('ignores blank mux refs for duplicate detection', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-blank-'));
+    await seedExistingManifest(root, 'take-blank-root', 'tb-a', 'arb-a');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-blank-root',
       root_take_id: 'tb-a',
@@ -305,6 +338,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('detects duplicate take_id/analysis_run_id pairs in 3+ inputs', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-dup-ids-'));
+    await seedExistingManifest(root, 'take-dup-ids-root', 'td-a', 'ard-a');
     const out = await runInternalComparisonForTakes({
       run_id: 'take-dup-ids-root',
       root_take_id: 'tid-a',
