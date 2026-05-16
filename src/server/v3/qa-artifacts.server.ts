@@ -92,6 +92,8 @@ export interface QAArtifactEmitterOptions {
   };
   validator_trace_summary?: Record<string, unknown>;
   gate_trace_summary?: Record<string, unknown>;
+  brief_requirement_trace_summary?: Record<string, unknown>;
+  brief_achievement_trace_summary?: Record<string, unknown>;
 }
 
 export const DEFAULT_ROOT = 'qa-artifacts';
@@ -115,6 +117,8 @@ const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[]
   { artefact_id: 'gate_trace', name: 'GateTrace', expected_path: 'traces/GateTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'model_run_trace', name: 'ModelRunTrace', expected_path: 'traces/ModelRunTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'raw_report', name: 'raw report', expected_path: 'reports/raw_report.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'brief_requirement_trace', name: 'BriefRequirementTrace', expected_path: 'brief/BriefRequirementTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'brief_achievement_trace', name: 'BriefAchievementTrace', expected_path: 'brief/BriefAchievementTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: ['brief_requirement_trace'] },
   { artefact_id: 'comparison_raw', name: 'comparison raw', expected_path: 'comparison/comparison.raw.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'comparison_report_internal', name: 'comparison report internal', expected_path: 'comparison/comparison.report.internal.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'same_video_repeatability_trace', name: 'same video repeatability trace', expected_path: 'comparison_traces/same_video_repeatability_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
@@ -137,6 +141,8 @@ const BLOCKERS: Record<string, string> = {
   comparison_suppression_trace: 'comparison_suppression_trace_missing', no_export_proof: 'no_export_proof_missing', parity_report: 'parity_artefacts_missing', parity_comparison: 'parity_artefacts_missing',
   validator_trace: 'validator_trace_missing', gate_trace: 'gate_trace_missing',
   comparison_report_internal: 'comparison_report_unavailable',
+  brief_requirement_trace: 'brief_requirement_trace_write_failed',
+  brief_achievement_trace: 'brief_achievement_trace_write_failed',
 };
 
 
@@ -387,6 +393,26 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const gateTraceSummary = manifest.gate_trace_summary ?? {};
   const validatorTraceGateStatus = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
+  const briefRequirementTraceStatus = manifest.artefact_status_by_id?.brief_requirement_trace ?? 'missing';
+  const briefAchievementTraceStatus = manifest.artefact_status_by_id?.brief_achievement_trace ?? 'missing';
+  const briefRequirementTraceSummary = manifest.brief_requirement_trace_summary ?? {};
+  const briefAchievementTraceSummary = manifest.brief_achievement_trace_summary ?? {};
+  const briefPresentForMetrics = Boolean(
+    briefRequirementTraceSummary.brief_present
+    ?? briefAchievementTraceSummary.brief_present
+    ?? (briefRequirementTraceStatus !== 'not_applicable' && briefAchievementTraceStatus !== 'not_applicable')
+  );
+  const briefRequirementCount = Number(briefRequirementTraceSummary.requirement_count ?? briefAchievementTraceSummary.requirement_count ?? 0);
+  const briefUnresolvedCount = Number(briefRequirementTraceSummary.unresolved_count ?? 0);
+  const briefItemisationGateStatus = briefRequirementTraceStatus === 'emitted'
+    ? 'passed'
+    : (briefRequirementTraceStatus === 'not_applicable' ? 'not_applicable' : 'missing');
+  const briefObligationGateStatus = briefRequirementTraceStatus === 'emitted'
+    ? (briefRequirementCount > 0 || !briefPresentForMetrics ? 'passed' : 'insufficient')
+    : (briefRequirementTraceStatus === 'not_applicable' ? 'not_applicable' : 'missing');
+  const briefAchievementGateStatus = briefAchievementTraceStatus === 'emitted'
+    ? 'passed_for_supported_requirements'
+    : (briefAchievementTraceStatus === 'not_applicable' ? 'not_applicable' : 'missing');
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
   const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
@@ -405,6 +431,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(gateTraceStatus !== 'missing' && gateTraceGateStatus !== 'satisfied' ? ['independent runtime gate proof chain'] : []),
     ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
     ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
+    ...(briefPresentForMetrics && briefRequirementTraceStatus === 'missing' ? ['BriefRequirementTrace'] : []),
+    ...(briefPresentForMetrics && briefAchievementTraceStatus === 'missing' ? ['BriefAchievementTrace'] : []),
     ...(comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof']),
     'parity and no-export proof',
   ];
@@ -434,6 +462,18 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',
     public_output_unchanged: true,
+    r2_brief_achievement_engine_status: briefAchievementGateStatus === 'passed_for_supported_requirements' && briefItemisationGateStatus === 'passed' && briefObligationGateStatus === 'passed' ? 'implemented_internal_only' : (briefAchievementGateStatus === 'not_applicable' ? 'not_applicable' : 'not_accepted'),
+    brief_present: briefPresentForMetrics,
+    brief_requirement_trace_status: briefRequirementTraceStatus,
+    brief_achievement_trace_status: briefAchievementTraceStatus,
+    brief_requirement_count: briefRequirementCount,
+    brief_unresolved_requirement_count: briefUnresolvedCount,
+    brief_requirement_itemisation_gate_status: briefItemisationGateStatus,
+    brief_obligation_classification_gate_status: briefObligationGateStatus,
+    brief_achievement_gate_status: briefAchievementGateStatus,
+    brief_overall_achievement: briefAchievementTraceSummary.overall_brief_achievement ?? 'unknown',
+    brief_readiness_effect: briefAchievementTraceSummary.readiness_effect ?? 'unknown',
+    brief_achievement_trace_summary: briefAchievementTraceSummary,
     required_artefact_counts: { emitted: emitted.length, missing: missing.length, emitted_blocked: emittedBlocked.length, deferred: deferred.length, not_applicable: notApplicable.length },
     required_artefact_total: (manifest.required_artifacts ?? []).length,
     emitted_artefacts: emitted,
@@ -606,6 +646,8 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     score_trace_summary: options.score_trace_summary ?? undefined,
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
+    brief_requirement_trace_summary: options.brief_requirement_trace_summary ?? undefined,
+    brief_achievement_trace_summary: options.brief_achievement_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },
     gate_statuses: [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }],

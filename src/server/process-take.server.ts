@@ -29,7 +29,8 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisInputArtefacts, emitBriefAchievementTraces, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import { attachBriefAchievementToInternalReport, buildBriefAchievementTrace, buildBriefRequirementTrace } from './v3/brief-achievement.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -2647,6 +2648,43 @@ export async function runProcessTake(
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
 
+    // R2 — Brief achievement engine, internal report payload only.
+    // This creates the same conservative requirement/achievement structure
+    // that the QA artefact emitter writes later, without making technique or
+    // repertoire claims before those later systems exist.
+    const r2Signals = {
+      ...((take.signals ?? {}) as Record<string, unknown>),
+      duration: take.mux_duration_seconds ?? null,
+      mux_duration_seconds: take.mux_duration_seconds ?? null,
+    };
+    const r2GeneratedAt = new Date().toISOString();
+    const r2MaterialInstructions = typeof materialRequested === 'string' && materialRequested.trim().length > 0
+      ? materialRequested
+      : null;
+    const briefRequirementTraceForReport = buildBriefRequirementTrace({
+      run_id: `take-${takeId}`,
+      analysis_run_id: `take-${takeId}`,
+      submission_id: audition.id,
+      take_id: takeId,
+      generated_at: r2GeneratedAt,
+      audition_type: auditionType,
+      selected_level: auditionLevel,
+      brief_text: audition.brief ?? null,
+      material_instructions: r2MaterialInstructions,
+      extracted_brief: (extractedBrief ?? null) as Record<string, unknown> | null,
+    });
+    const briefAchievementTraceForReport = buildBriefAchievementTrace({
+      run_id: `take-${takeId}`,
+      analysis_run_id: `take-${takeId}`,
+      submission_id: audition.id,
+      take_id: takeId,
+      generated_at: r2GeneratedAt,
+      requirement_trace: briefRequirementTraceForReport,
+      raw_report_data: report as Record<string, unknown>,
+      signals: r2Signals,
+    });
+    report = attachBriefAchievementToInternalReport(report as Record<string, unknown>, briefRequirementTraceForReport, briefAchievementTraceForReport);
+
     // ---- Feedback reliability correction (user-facing) ----
     // The UI computes a friendly Feedback reliability label from confidence +
     // a few signals. Previously it could downgrade to "Medium" with the reason
@@ -3370,6 +3408,28 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (scoreTrace.written) qaArtefactIds.push(...scoreTrace.emitted_artefact_ids);
+      const briefAchievementArtifacts = await emitBriefAchievementTraces({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        audition_type: (report.audition_type as string | undefined) ?? null,
+        selected_level: audition.audition_level ?? null,
+        brief_text: audition.brief ?? null,
+        material_instructions: typeof materialRequested === 'string' && materialRequested.trim().length > 0 ? materialRequested : null,
+        extracted_brief: (extractedBrief ?? null) as Record<string, unknown> | null,
+        raw_report_data: rawReportPayload,
+        evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
+        signals: {
+          ...((take.signals ?? {}) as Record<string, unknown>),
+          duration: take.mux_duration_seconds ?? null,
+          mux_duration_seconds: take.mux_duration_seconds ?? null,
+        },
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      qaArtefactIds.push(...briefAchievementArtifacts.emitted_artefact_ids);
       const safeModelRunEntries = (lastAttemptStartedAtIso || lastAttemptCompletedAtIso || lastAttemptDurationMs != null || lastAttemptHttpStatus != null)
         ? [{
           model_run_id: `mr-${takeId}-1`,
@@ -3413,6 +3473,8 @@ export async function runProcessTake(
         includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace'),
         includes_technique_observation_trace: qaArtefactIds.includes('technique_observation_trace'),
         includes_score_trace: qaArtefactIds.includes('score_trace'),
+        includes_brief_requirement_trace: qaArtefactIds.includes('brief_requirement_trace'),
+        includes_brief_achievement_trace: qaArtefactIds.includes('brief_achievement_trace'),
         includes_model_run_trace: qaArtefactIds.includes('model_run_trace'),
       });
       const qaEmitResult = await emitQAManifestForAnalysisRun({
@@ -3425,6 +3487,7 @@ export async function runProcessTake(
         commit_sha: process.env.GIT_COMMIT_SHA,
         branch_name: process.env.GIT_BRANCH_NAME,
         emitted_artefact_ids: qaArtefactIds,
+        not_applicable_artefact_ids: briefAchievementArtifacts.not_applicable_artefact_ids,
         artefact_source_classification_by_id: {
           raw_report: 'legacy_adapter',
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
@@ -3432,6 +3495,8 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
           ...(modelRunTrace.written ? { model_run_trace: 'internal_model_run_trace' } : {}),
+          ...(briefAchievementArtifacts.written ? { brief_requirement_trace: briefAchievementArtifacts.source_classification } : {}),
+          ...(briefAchievementArtifacts.written ? { brief_achievement_trace: briefAchievementArtifacts.source_classification } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
@@ -3440,6 +3505,8 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
           ...(scoreTrace.written ? { score_trace: false } : {}),
           ...(modelRunTrace.written ? { model_run_trace: false } : {}),
+          ...(briefAchievementArtifacts.written ? { brief_requirement_trace: false } : {}),
+          ...(briefAchievementArtifacts.written ? { brief_achievement_trace: false } : {}),
         },
         legacy_adapter_artefact_ids: [
           'raw_report',
@@ -3453,6 +3520,8 @@ export async function runProcessTake(
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
+        brief_requirement_trace_summary: briefAchievementArtifacts.brief_requirement_trace_summary,
+        brief_achievement_trace_summary: briefAchievementArtifacts.brief_achievement_trace_summary,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

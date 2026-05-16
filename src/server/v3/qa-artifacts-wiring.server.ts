@@ -1,5 +1,6 @@
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
 import { writeQAArtifact } from './qa-artifact-sink.server';
+import { buildBriefAchievementTrace, buildBriefRequirementTrace, mergeBriefRequirementAchievements } from './brief-achievement.server';
 
 function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
   const present = warnings.filter((warning): warning is string => Boolean(warning && warning.trim()));
@@ -16,7 +17,7 @@ function getQAWriteWarning(result: unknown): string | null {
   );
 }
 
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; brief_requirement_trace_summary?: Record<string, unknown>; brief_achievement_trace_summary?: Record<string, unknown>; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -559,6 +560,137 @@ export async function emitTraceArtefact(input: TraceEmitterInput) {
   const root = input.root_dir ?? DEFAULT_ROOT;
   const result = await writeInternalJson(root, input.run_id, input.relative_path, input.trace_data, input.artefact_id);
   return { written: result.written as boolean, path: result.path ?? result.storage_path, artefact_id: input.artefact_id, warning: result.warning };
+}
+
+export interface BriefAchievementTraceEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  submission_id?: string | null;
+  take_id: string;
+  source_module: string;
+  source_stage: string;
+  audition_type?: string | null;
+  selected_level?: string | null;
+  brief_text?: string | null;
+  task_text?: string | null;
+  material_instructions?: string | null;
+  extracted_brief?: Record<string, unknown> | null;
+  raw_report_data?: Record<string, unknown> | null;
+  signals?: Record<string, unknown> | null;
+  uploaded_material_metadata?: Record<string, unknown> | null;
+  evidence_anchors_data?: { anchors?: Array<Record<string, unknown>> } | null;
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+
+export async function emitBriefAchievementTraces(input: BriefAchievementTraceEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
+    return {
+      written: false as const,
+      emitted_artefact_ids: [] as string[],
+      not_applicable_artefact_ids: [] as string[],
+      source_classification: 'unavailable' as const,
+      level2_satisfies: false as const,
+      brief_requirements: [],
+      brief_achievement_summary: undefined,
+      brief_requirement_trace_summary: undefined,
+      brief_achievement_trace_summary: undefined,
+    };
+  }
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  assertSafeSegment(input.take_id, 'take_id');
+  assertSafeSegment(analysisRunId, 'analysis_run_id');
+  const generatedAt = new Date().toISOString();
+  const requirementTrace = buildBriefRequirementTrace({
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id,
+    generated_at: generatedAt,
+    audition_type: input.audition_type,
+    selected_level: input.selected_level,
+    brief_text: input.brief_text,
+    task_text: input.task_text,
+    material_instructions: input.material_instructions,
+    extracted_brief: input.extracted_brief,
+  });
+  const achievementTrace = buildBriefAchievementTrace({
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id,
+    generated_at: generatedAt,
+    selected_level: input.selected_level,
+    audition_type: input.audition_type,
+    requirement_trace: requirementTrace,
+    raw_report_data: unwrapRawReportData(input.raw_report_data),
+    signals: input.signals,
+    uploaded_material_metadata: input.uploaded_material_metadata,
+    evidence_anchors: input.evidence_anchors_data?.anchors ?? [],
+  });
+  const requirementSummary = { brief_present: requirementTrace.brief_present, source_family: requirementTrace.source_family, requirement_count: requirementTrace.requirements.length, unresolved_count: requirementTrace.unresolved_brief_items.length, extraction_confidence: requirementTrace.extraction_confidence };
+  const achievementSummary = { brief_present: achievementTrace.brief_present, requirement_count: achievementTrace.requirement_results.length, readiness_effect: achievementTrace.readiness_effect, overall_brief_achievement: achievementTrace.summary.overall_brief_achievement, mandatory_total: achievementTrace.summary.mandatory_total, mandatory_not_achieved: achievementTrace.summary.mandatory_not_achieved, mandatory_not_assessable: achievementTrace.summary.mandatory_not_assessable };
+  if (!requirementTrace.brief_present) {
+    return {
+      written: true as const,
+      emitted_artefact_ids: [] as string[],
+      not_applicable_artefact_ids: ['brief_requirement_trace', 'brief_achievement_trace'],
+      source_classification: requirementTrace.source_family,
+      level2_satisfies: false as const,
+      brief_requirements: [] as ReturnType<typeof mergeBriefRequirementAchievements>,
+      brief_achievement_summary: achievementTrace.summary,
+      brief_requirement_trace_summary: requirementSummary,
+      brief_achievement_trace_summary: achievementSummary,
+    };
+  }
+
+  const base = `takes/take-${input.take_id}/analysis-${analysisRunId}/brief`;
+  const emitted_artefact_ids: string[] = [];
+  let hadFailure = false;
+  const requirementWrite = await writeInternalJson(root, input.run_id, `${base}/BriefRequirementTrace.json`, {
+    ...requirementTrace,
+    artefact_type: 'brief_requirement_trace',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    public_output_unchanged: true,
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    ...resolveQADeploymentProvenance(),
+  }, 'brief_requirement_trace');
+  if (requirementWrite.written) emitted_artefact_ids.push('brief_requirement_trace'); else hadFailure = true;
+
+  if (requirementWrite.written) {
+    const achievementWrite = await writeInternalJson(root, input.run_id, `${base}/BriefAchievementTrace.json`, {
+      ...achievementTrace,
+      artefact_type: 'brief_achievement_trace',
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      source_module: input.source_module,
+      source_stage: input.source_stage,
+      public_output_unchanged: true,
+      production_safe_status: 'blocked',
+      public_scoring_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      ...resolveQADeploymentProvenance(),
+    }, 'brief_achievement_trace');
+    if (achievementWrite.written) emitted_artefact_ids.push('brief_achievement_trace'); else hadFailure = true;
+  }
+
+  return {
+    written: !hadFailure,
+    emitted_artefact_ids,
+    not_applicable_artefact_ids: [] as string[],
+    source_classification: requirementTrace.source_family,
+    level2_satisfies: false as const,
+    brief_requirements: mergeBriefRequirementAchievements(requirementTrace.requirements, achievementTrace),
+    brief_achievement_summary: achievementTrace.summary,
+    brief_requirement_trace_summary: requirementSummary,
+    brief_achievement_trace_summary: achievementSummary,
+  };
 }
 
 export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitterInput) {
