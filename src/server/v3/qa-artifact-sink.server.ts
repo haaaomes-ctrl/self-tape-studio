@@ -102,7 +102,12 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
 export async function readQAArtifactText(input: { run_id: string; relative_path: string; root_dir?: string }): Promise<{ ok: true; text: string; storage_path?: string } | { ok: false; code: 'missing' | 'unreadable'; storage_path?: string }> {
   const mode = resolveMode();
   const root = input.root_dir ?? 'qa-artifacts';
-  const validatedRelativePath = validateRelativePath(input.relative_path);
+  let validatedRelativePath: string;
+  try {
+    validatedRelativePath = validateRelativePath(input.relative_path);
+  } catch {
+    return { ok: false, code: 'unreadable' };
+  }
   let safeRunId: string;
   try {
     assertSafeSegment(input.run_id, 'run_id');
