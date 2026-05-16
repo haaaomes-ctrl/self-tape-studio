@@ -557,7 +557,7 @@ export async function runInternalComparisonOperatorTrigger(
     written: out.written === true,
     comparison_run_id: out.comparison_run_id ?? null,
     root_take_id: input.root_take_id,
-    root_analysis_run_id: root.analysis_run_id ?? null,
+    root_analysis_run_id: canonicalRootTakeRunId || null,
     compared_take_ids: ids,
     compared_analysis_run_ids: compared_takes.map((t) => t.analysis_run_id),
     emitted_artefact_ids: out.emitted_artefact_ids ?? [],

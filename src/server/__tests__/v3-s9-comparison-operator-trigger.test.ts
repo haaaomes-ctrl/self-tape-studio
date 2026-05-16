@@ -52,10 +52,43 @@ describe('v3 s9 comparison operator trigger', () => {
     }, async (takeId) => ({ take_id: takeId, analysis_run_id: `analysis-${takeId}`, completed: true, mux_playback_ref: `pb-${takeId}` }));
     expect(result.ok).toBe(true);
     expect(result.written).toBe(true);
-    expect(result.root_analysis_run_id).toBe('analysis-b');
+    expect(result.root_analysis_run_id).toBe('take-b');
     expect(result.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'].sort());
     const base = path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-b');
     await expect(readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-analysis-b', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+    await expect(readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-take-b', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('returns canonical root_analysis_run_id when root_take_id is already take-shaped', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-op-takeshaped-'));
+    await seedCanonicalRootManifestForComparison({ root, root_take_id: 'b' });
+    const result = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-b',
+      compared_take_ids: ['take-a', 'take-b'],
+      source_module: 'test',
+      source_stage: 'operator-trigger-takeshaped',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `analysis-${takeId}`, completed: true, mux_playback_ref: `pb-${takeId}` }));
+    expect(result.ok).toBe(true);
+    expect(result.written).toBe(true);
+    expect(result.root_analysis_run_id).toBe('take-b');
+    expect(JSON.stringify(result)).not.toContain('take-take-b');
+  });
+
+  it('failure before writes reports canonical root_analysis_run_id when derivable', async () => {
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'b',
+      compared_take_ids: ['a', 'b'],
+      source_module: 'test',
+      source_stage: 'operator-trigger-failure-canonical-id',
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `analysis-${takeId}`, completed: false }));
+    expect(out.ok).toBe(false);
+    expect(out.written).toBe(false);
+    expect(out.root_analysis_run_id).toBeNull();
+    expect(out.root_analysis_run_id).not.toBe('analysis-b');
   });
 
   it('fails closed for one-take input', async () => {
