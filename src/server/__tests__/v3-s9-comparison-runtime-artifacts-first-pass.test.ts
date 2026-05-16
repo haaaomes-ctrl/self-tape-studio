@@ -199,12 +199,68 @@ it('storage sink preflight reads canonical key and succeeds when manifest exists
 
 it('storage sink missing manifest fails closed before writes', async () => {
   process.env.QA_ARTIFACT_SINK = 'storage';
-  download.mockResolvedValue({ data: null, error: { message: 'not found' } });
+  download.mockResolvedValue({ data: null, error: { status: 404, message: 'not found' } });
   const beforeUploads = upload.mock.calls.length;
   const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-s2', analysis_run_id: 'ar-s2', take_id: 's2', comparison_run_id: 'cmp-s2', compared_take_ids: ['s2','s3'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 's3' }, raw_comparison_decision_snapshot: { winner: 's3' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
   expect(out.written).toBe(false);
   expect((out as any).warning).toBe('comparison_reconciliation_manifest_missing');
   expect(upload.mock.calls.length).toBe(beforeUploads);
+});
+
+it('readQAArtifactText storage 404 returns missing with canonical path', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: null, error: { statusCode: 404, message: 'Object not found' } });
+  const out = await readQAArtifactText({ run_id: 'take-miss1', relative_path: 'takes/take-miss1/analysis-take-miss1/manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) {
+    expect(out.code).toBe('missing');
+    expect(out.storage_path).toBe('take-miss1/analysis-take-miss1/manifest.json');
+  }
+});
+
+it('readQAArtifactText storage auth/permission errors return unreadable', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: null, error: { status: 403, message: 'forbidden' } });
+  const out = await readQAArtifactText({ run_id: 'take-auth1', relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('unreadable');
+});
+
+it('storage sink auth/permission manifest error fails closed as unreadable', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: null, error: { status: 401, message: 'unauthorized' } });
+  const beforeUploads = upload.mock.calls.length;
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-s2u', analysis_run_id: 'ar-s2u', take_id: 's2u', comparison_run_id: 'cmp-s2u', compared_take_ids: ['s2u','s3u'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 's3u' }, raw_comparison_decision_snapshot: { winner: 's3u' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).reconciliation_written).toBe(false);
+  expect((out as any).comparison_artefacts_written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_unreadable');
+  expect((out as any).blocker_codes).toContain('comparison_reconciliation_manifest_unreadable');
+  expect(upload.mock.calls.length).toBe(beforeUploads);
+});
+
+it('readQAArtifactText storage service errors return unreadable', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: null, error: { status: 500, message: 'storage service down' } });
+  const out = await readQAArtifactText({ run_id: 'take-svc1', relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('unreadable');
+});
+
+it('readQAArtifactText storage no-data/no-error returns unreadable', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: null, error: null });
+  const out = await readQAArtifactText({ run_id: 'take-nodata', relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('unreadable');
+});
+
+it('readQAArtifactText storage text() failure returns unreadable', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => { throw new Error('blob-read-failed'); } }, error: null });
+  const out = await readQAArtifactText({ run_id: 'take-textfail', relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('unreadable');
 });
 
 it('storage sink malformed manifest fails closed', async () => {

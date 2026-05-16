@@ -35,6 +35,19 @@ function resolveMode(env = process.env): QAArtifactSinkMode {
   return 'file';
 }
 
+function isStorageNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as Record<string, unknown>;
+  const status = err.status;
+  const statusCode = err.statusCode;
+  const code = err.code;
+  const message = typeof err.message === 'string' ? err.message.toLowerCase() : '';
+  if (status === 404 || statusCode === 404 || statusCode === '404' || code === 404 || code === '404') return true;
+  if (typeof code === 'string' && code.toLowerCase().includes('notfound')) return true;
+  if (message.includes('not found') || message.includes('no such') || message.includes('does not exist')) return true;
+  return false;
+}
+
 function emitLog(input: { sink_mode: QAArtifactSinkMode; sink_write_status: 'written'|'failed'|'skipped'; run_id: string; fixture_id?: string; artefact_id?: string; relative_path: string; storage_bucket?: string; storage_path?: string; blocker_codes?: string[]; payload: unknown; warning?: string; }) {
   const line = { schema_version: 'tapecoach_v3_internal_qa_sink_log_v1', sink_mode: input.sink_mode, sink_write_status: input.sink_write_status, run_id: input.run_id, fixture_id: input.fixture_id ?? null, artefact_id: input.artefact_id ?? null, relative_path: input.relative_path, storage_bucket: input.storage_bucket ?? null, storage_path: input.storage_path ?? null, emitted_at: new Date().toISOString(), commit_sha: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.COMMIT_SHA ?? null, branch_name: process.env.VERCEL_GIT_COMMIT_REF ?? process.env.BRANCH_NAME ?? null, blocker_codes: input.blocker_codes ?? [], payload_summary: { warning: input.warning ?? null, payload_bytes: Buffer.byteLength(stableStringify(input.payload), 'utf8') }, internal_only: true };
   console.info(`${LOG_PREFIX}${JSON.stringify(line)}`);
@@ -134,7 +147,8 @@ export async function readQAArtifactText(input: { run_id: string; relative_path:
     const storage_path = toCanonicalStoragePath(safeRunId, validatedRelativePath);
     try {
       const { data, error } = await supabaseAdmin.storage.from(storage_bucket).download(storage_path);
-      if (error || !data) return { ok: false, code: 'missing', storage_path };
+      if (error) return { ok: false, code: isStorageNotFoundError(error) ? 'missing' : 'unreadable', storage_path };
+      if (!data) return { ok: false, code: 'unreadable', storage_path };
       const text = typeof (data as any).text === 'function' ? await (data as any).text() : String(data);
       return { ok: true, text, storage_path };
     } catch {
