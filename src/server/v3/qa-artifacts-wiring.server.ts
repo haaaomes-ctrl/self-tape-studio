@@ -1183,7 +1183,8 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   const emitted_blocked_artefact_ids: string[] = [];
   const takeScopedManifestRewrite = emitted_artefact_ids.length > 0;
   comparison_artefacts_written = emitted_artefact_ids.length > 0;
-  if (takeScopedManifestRewrite && input.take_id) {
+  const canReconcileTakeScoped = takeScopedManifestRewrite && Boolean(takeId);
+  if (canReconcileTakeScoped) {
     const existing = loadExistingManifestState(root, input.run_id, takeId, analysisRunId);
     const emittedAll = [...new Set([...existing.emitted, ...emitted_artefact_ids])];
     const runtimeAccepted = [...new Set([...existing.runtimeAccepted, ...emitted_artefact_ids])];
@@ -1221,11 +1222,13 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     reconciliation_warning = typeof reconciliation?.warning === 'string' ? reconciliation.warning : null;
     if (!reconciliation_written) hadFailure = true;
   }
-  const reconciliationFailed = takeScopedManifestRewrite && input.take_id ? !reconciliation_written : false;
+  const reconciliationUnavailable = takeScopedManifestRewrite && !takeId;
+  const reconciliationFailed = canReconcileTakeScoped ? !reconciliation_written : false;
+  if (reconciliationUnavailable) hadFailure = true;
   const warning = reconciliationFailed
     ? mergeQAWarnings(reconciliation_warning, 'comparison_manifest_metrics_reconciliation_failed')
-    : reconciliation_warning;
-  const blocker_codes = reconciliationFailed ? ['comparison_reconciliation_failed'] : [];
+    : (reconciliationUnavailable ? mergeQAWarnings(reconciliation_warning, 'comparison_manifest_metrics_reconciliation_unavailable_take_id_unresolved') : reconciliation_warning);
+  const blocker_codes = reconciliationFailed ? ['comparison_reconciliation_failed'] : (reconciliationUnavailable ? ['comparison_reconciliation_take_id_unresolved'] : []);
   return {
     written: !hadFailure,
     comparison_run_id: comparisonRunId,

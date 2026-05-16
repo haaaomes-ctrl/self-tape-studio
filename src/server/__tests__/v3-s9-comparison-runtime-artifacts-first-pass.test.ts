@@ -69,6 +69,68 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(out.comparison_artefacts_written).toBe(true);
     expect(out.reconciliation_written).toBe(true);
     expect(out.blocker_codes ?? []).not.toContain('comparison_reconciliation_failed');
+    const manifest = JSON.parse(await readFile(path.join(root, 'take-clean', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'take-clean', 'qa/acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.comparison_raw).toBe('emitted');
+    expect(metrics.comparison_raw_status).toBe('emitted');
+  });
+
+  it('reconciles using inferred take_id from run_id when take_id is omitted', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-inferred-take-'));
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: 'take-root-safe-id',
+      analysis_run_id: 'analysis-take-root-safe-id',
+      comparison_run_id: 'cmp-inferred',
+      compared_take_ids: ['root-safe-id', 'alt-safe-id'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'alt-safe-id' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(true);
+    expect(out.reconciliation_written).toBe(true);
+    expect(out.comparison_run_id).toBe('cmp-inferred');
+    expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    const manifest = JSON.parse(await readFile(path.join(root, 'take-root-safe-id', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'take-root-safe-id', 'qa/acceptance_metrics.json'), 'utf8'));
+    for (const id of ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']) {
+      expect(manifest.artefact_status_by_id[id]).toBe('emitted');
+      expect(manifest.missing_artifacts).not.toContain(id);
+    }
+    for (const blocker of ['comparison_JSON_missing', 'comparison_report_unavailable', 'same_video_repeatability_trace_missing', 'comparison_suppression_trace_missing', 'route_variance_trace_missing']) {
+      expect(manifest.blocker_codes).not.toContain(blocker);
+    }
+    expect(metrics.comparison_run_id).toBe('cmp-inferred');
+    expect(metrics.comparison_runtime_artifact_count).toBe(5);
+    expect(metrics.comparison_raw_status).toBe('emitted');
+    expect(metrics.comparison_report_internal_status).toBe('emitted');
+    expect(metrics.same_video_repeatability_trace_status).toBe('emitted');
+    expect(metrics.comparison_suppression_trace_status).toBe('emitted');
+    expect(metrics.route_variance_trace_status).toBe('emitted');
+    expect(metrics.comparison_evidence_status).not.toBe('missing');
+    expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
+  });
+
+  it('non-take run_id with omitted take_id does not fake reconciliation success', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-no-infer-'));
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: 'run-non-take-id',
+      analysis_run_id: 'ar-nt',
+      comparison_run_id: 'cmp-nt',
+      compared_take_ids: ['a', 'b'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'b' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toEqual([]);
+    expect((out as any).comparison_artefacts_written ?? false).toBe(false);
+    expect((out as any).reconciliation_written ?? false).toBe(false);
   });
 
   it('propagates reconciliation failure after all five comparison files write', async () => {
@@ -147,6 +209,29 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(out.emitted_artefact_ids).not.toContain('route_variance_trace');
     expect(out.comparison_artefacts_written).toBe(true);
     expect(out.reconciliation_written).toBe(false);
+    expect(out.blocker_codes).toContain('comparison_reconciliation_failed');
+  });
+
+  it('propagates reconciliation failure in inferred take_id path', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-inferred-fail-'));
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: 'take-inferred-fail',
+      analysis_run_id: 'analysis-take-inferred-fail',
+      comparison_run_id: 'cmp-inferred-fail',
+      compared_take_ids: ['inferred-fail', 'other'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+      reconciliation_emitter_override: async () => ({ written: false, warning: 'forced-inferred-fail' }),
+    });
+    expect(out.written).toBe(false);
+    expect(out.reconciliation_written).toBe(false);
+    expect(out.comparison_artefacts_written).toBe(true);
+    expect(out.comparison_run_id).toBeTruthy();
+    expect(out.emitted_artefact_ids).toEqual(expect.arrayContaining(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']));
     expect(out.blocker_codes).toContain('comparison_reconciliation_failed');
   });
 });
