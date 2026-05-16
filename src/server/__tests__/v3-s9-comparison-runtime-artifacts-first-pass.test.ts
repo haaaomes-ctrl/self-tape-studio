@@ -105,6 +105,14 @@ it('reconcile helper treats comparison family as current-attempt replace-set and
     comparison_raw_summary: { stale: true },
     route_variance_trace_summary: { stale: true },
     blocker_codes: ['comparison_JSON_missing','route_variance_trace_missing','level2_not_accepted'],
+    missing_artifacts: ['score_trace', 'validator_trace', 'comparison_raw'],
+    required_artifacts: [
+      { artefact_id: 'comparison_raw', status: 'missing' },
+      { artefact_id: 'comparison_report_internal', status: 'missing' },
+      { artefact_id: 'route_variance_trace', status: 'missing' },
+      { artefact_id: 'score_trace', status: 'missing' },
+      { artefact_id: 'raw_report', status: 'emitted' },
+    ],
     real_v3_spine_artefact_ids: ['comparison_raw','raw_report'],
   } as Record<string, unknown>;
   const next = reconcileComparisonManifestState(existing, { emitted_artefact_ids: ['comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace'], comparison_run_id: 'cmp-new' });
@@ -120,9 +128,16 @@ it('reconcile helper treats comparison family as current-attempt replace-set and
   expect((next.emitted_blocked_artefact_ids as string[])).toEqual(['public_output_render']);
   expect((next.blocker_codes as string[])).toContain('comparison_JSON_missing');
   expect((next.blocker_codes as string[])).not.toContain('route_variance_trace_missing');
+  expect((next.missing_artifacts as string[])).toEqual(expect.arrayContaining(['score_trace', 'validator_trace', 'comparison_raw']));
+  expect((next.missing_artifacts as string[])).not.toContain('route_variance_trace');
   expect((next as any).comparison_raw_summary).toBeUndefined();
   expect((next as any).route_variance_trace_summary).toBeUndefined();
   expect((next.real_v3_spine_artefact_ids as string[])).toEqual(['raw_report']);
+  const requiredById = Object.fromEntries(((next.required_artifacts as any[]) ?? []).map((x) => [x.artefact_id, x.status]));
+  expect(requiredById.comparison_raw).toBe('missing');
+  expect(requiredById.comparison_report_internal).toBe('emitted');
+  expect(requiredById.route_variance_trace).toBe('emitted');
+  expect(requiredById.score_trace).toBe('missing');
   expect(next.comparison_run_id).toBe('cmp-new');
 });
 
@@ -130,7 +145,16 @@ it('reconcile helper clears stale previous full comparison state when all curren
   const existing = {
     emitted_artifacts: ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace','raw_report'],
     runtime_evidence_blocked_by_id: ['comparison_raw:previous_write_failed','raw_report:legacy'],
-    blocker_codes: [],
+    blocker_codes: ['score_trace_missing', 'comparison_JSON_missing'],
+    missing_artifacts: ['score_trace'],
+    required_artifacts: [
+      { artefact_id: 'comparison_raw', status: 'emitted' },
+      { artefact_id: 'comparison_report_internal', status: 'emitted' },
+      { artefact_id: 'same_video_repeatability_trace', status: 'emitted' },
+      { artefact_id: 'comparison_suppression_trace', status: 'emitted' },
+      { artefact_id: 'route_variance_trace', status: 'emitted' },
+      { artefact_id: 'score_trace', status: 'missing' },
+    ],
     comparison_raw_summary: { stale: true },
     comparison_report_internal_summary: { stale: true },
     same_video_repeatability_trace_summary: { stale: true },
@@ -139,8 +163,17 @@ it('reconcile helper clears stale previous full comparison state when all curren
   } as Record<string, unknown>;
   const next = reconcileComparisonManifestState(existing, { emitted_artefact_ids: [] });
   expect((next.emitted_artifacts as string[])).toEqual(['raw_report']);
+  expect((next.missing_artifacts as string[])).toEqual(expect.arrayContaining(['score_trace', 'comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']));
   expect((next.blocker_codes as string[])).toEqual(expect.arrayContaining(['comparison_JSON_missing','comparison_report_internal_missing','same_video_repeatability_trace_missing','comparison_suppression_trace_missing','route_variance_trace_missing']));
+  expect((next.blocker_codes as string[])).toContain('score_trace_missing');
   expect((next.runtime_evidence_blocked_by_id as string[])).toEqual(['raw_report:legacy']);
+  const requiredById = Object.fromEntries(((next.required_artifacts as any[]) ?? []).map((x) => [x.artefact_id, x.status]));
+  expect(requiredById.comparison_raw).toBe('missing');
+  expect(requiredById.comparison_report_internal).toBe('missing');
+  expect(requiredById.same_video_repeatability_trace).toBe('missing');
+  expect(requiredById.comparison_suppression_trace).toBe('missing');
+  expect(requiredById.route_variance_trace).toBe('missing');
+  expect(requiredById.score_trace).toBe('missing');
   expect((next as any).comparison_raw_summary).toBeUndefined();
   expect((next as any).comparison_report_internal_summary).toBeUndefined();
   expect((next as any).same_video_repeatability_trace_summary).toBeUndefined();

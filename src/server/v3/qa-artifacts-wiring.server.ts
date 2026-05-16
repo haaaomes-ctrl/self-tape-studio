@@ -291,7 +291,31 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
   for (const id of COMPARISON_ARTEFACT_IDS) if (!emitted.has(id)) blockers.push(COMPARISON_BLOCKER_BY_ID[id]);
   next.blocker_codes = [...new Set(blockers)];
 
-  next.missing_artifacts = COMPARISON_ARTEFACT_IDS.filter((id) => !emitted.has(id));
+  const existingMissingNonComparison = Array.isArray(next.missing_artifacts)
+    ? next.missing_artifacts.filter((id: unknown) => typeof id === 'string' && !COMPARISON_ARTEFACT_IDS.includes(id as any))
+    : [];
+  const currentComparisonMissing = COMPARISON_ARTEFACT_IDS.filter((id) => !emitted.has(id));
+  next.missing_artifacts = [...new Set([...existingMissingNonComparison, ...currentComparisonMissing])];
+
+  if (Array.isArray(next.required_artifacts)) {
+    const emittedSet = new Set<string>(Array.isArray(next.emitted_artifacts) ? next.emitted_artifacts : []);
+    const missingSet = new Set<string>(Array.isArray(next.missing_artifacts) ? next.missing_artifacts : []);
+    const emittedBlockedSet = new Set<string>(Array.isArray(next.emitted_blocked_artefact_ids) ? next.emitted_blocked_artefact_ids : []);
+    const deferredSet = new Set<string>(Array.isArray(next.deferred_artifact_ids) ? next.deferred_artifact_ids : []);
+    const notApplicableSet = new Set<string>(Array.isArray(next.not_applicable_artifact_ids) ? next.not_applicable_artifact_ids : []);
+    next.required_artifacts = next.required_artifacts.map((entry: Record<string, unknown>) => {
+      const artefactId = typeof entry?.artefact_id === 'string' ? entry.artefact_id : null;
+      if (!artefactId) return entry;
+      const statusFromMap = next.artefact_status_by_id?.[artefactId];
+      let status = typeof statusFromMap === 'string' ? statusFromMap : (typeof entry.status === 'string' ? entry.status : 'missing');
+      if (emittedBlockedSet.has(artefactId)) status = 'emitted_blocked';
+      else if (deferredSet.has(artefactId)) status = 'deferred';
+      else if (notApplicableSet.has(artefactId)) status = 'not_applicable';
+      else if (emittedSet.has(artefactId)) status = 'emitted';
+      else if (missingSet.has(artefactId)) status = 'missing';
+      return { ...entry, status };
+    });
+  }
   for (const key of ['comparison_raw_summary', 'comparison_report_internal_summary', 'same_video_repeatability_trace_summary', 'comparison_suppression_trace_summary', 'route_variance_trace_summary']) delete next[key];
   if (currentAttempt.comparison_run_id) next.comparison_run_id = currentAttempt.comparison_run_id;
   next.real_v3_spine_artefact_ids = nonComparisonOnly(next.real_v3_spine_artefact_ids);
