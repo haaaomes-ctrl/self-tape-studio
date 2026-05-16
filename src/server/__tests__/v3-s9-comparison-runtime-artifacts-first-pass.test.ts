@@ -410,4 +410,63 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(metrics.comparison_raw_status).toBe('missing');
     expect(metrics.comparison_runtime_artifact_count).toBe(4);
   });
+
+  it('preserves full non-comparison manifest state and summaries during comparison reconciliation', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-preserve-full-state-'));
+    const runId = 'take-preserve-full';
+    const runDir = path.join(root, runId);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({
+      emitted_artifacts: ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'validator_trace', 'gate_trace', 'model_run_trace', 'raw_report', 'qa_acceptance_metrics', 'route_variance_trace'],
+      emitted_blocked_artefact_ids: ['validator_trace'],
+      deferred_artifact_ids: ['parity_report'],
+      not_applicable_artifact_ids: ['parity_comparison'],
+      runtime_evidence_accepted_by_id: ['analysis_input_record', 'analysis_submission', 'analysis_take', 'route_variance_trace'],
+      runtime_evidence_blocked_by_id: ['score_trace'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter', technique_observation_trace: 'legacy_adapter', score_trace: 'legacy_adapter', model_run_trace: 'internal_model_run_trace', validator_trace: 'internal_validator', gate_trace: 'internal_gate_trace', route_variance_trace: 'legacy_adapter' },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false, technique_observation_trace: false, score_trace: false, model_run_trace: false, validator_trace: false, gate_trace: false, route_variance_trace: true },
+      defect_risk_ids: ['legacy_schema_snapshot'],
+      public_claim_trace_summary: { claim_count: 7, unsupported_claim_count: 1 },
+      technique_observation_trace_summary: { legacy_adapter: 2, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0, observation_count: 8 },
+      score_trace_summary: { score_count: 6, overall_count: 1, discipline_attribute_count: 1, component_score_count: 1, component_weight_count: 1, brief_adherence_subscore_count: 1, assessment_confidence_count: 1, calibration_modifier_count: 0, calibration_metadata_count: 0, source_family_summary: { legacy_adapter: 1, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 }, overall_readiness_public_score_status: 'blocked', discipline_attribute_score_trace_status: 'internal_trace_only', score_trace_gate_status: 'insufficient', score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace' },
+      model_run_trace_summary: { model_run_count: 3 },
+      validator_trace_summary: { validation_count: 9 },
+      gate_trace_summary: { gate_count: 5 },
+      route_variance_trace_summary: { stale: true },
+      arbitrary_extra_field: { keep: true },
+    }), 'utf8');
+
+    const sinkModule = await import('@/server/v3/qa-artifact-sink.server');
+    const originalWrite = sinkModule.writeQAArtifact;
+    vi.spyOn(sinkModule, 'writeQAArtifact').mockImplementation(async (input: any) => {
+      if (String(input?.relative_path).endsWith('/comparison_traces/route_variance_trace.json')) return { written: false } as any;
+      return originalWrite(input);
+    });
+
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: runId, take_id: 'preserve-full', analysis_run_id: 'ar-preserve-full', comparison_run_id: 'cmp-new', compared_take_ids: ['preserve-full', 'other'], root_dir: root, internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(false);
+    const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(runDir, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(manifest.public_claim_trace_summary.claim_count).toBe(7);
+    expect(manifest.technique_observation_trace_summary.observation_count).toBe(8);
+    expect(manifest.score_trace_summary.score_count).toBe(6);
+    expect(manifest.model_run_trace_summary.model_run_count).toBe(3);
+    expect((manifest.validator_trace_summary?.validation_count ?? 9)).toBe(9);
+    expect((manifest.gate_trace_summary?.gate_count ?? 5)).toBe(5);
+    expect(Array.isArray(manifest.emitted_blocked_artefact_ids)).toBe(true);
+    expect(manifest.deferred_artifact_ids).toContain('parity_report');
+    expect(manifest.not_applicable_artifact_ids).toContain('parity_comparison');
+    expect(manifest.runtime_evidence_blocked_by_id).toContain('score_trace');
+    expect(manifest.defect_risk_ids).toContain('legacy_schema_snapshot');
+    expect(manifest.artefact_status_by_id.route_variance_trace).toBe('missing');
+    expect(manifest.blocker_codes).toContain('route_variance_trace_missing');
+    expect(manifest.route_variance_trace_summary ?? null).toBeNull();
+    expect(metrics.comparison_runtime_artifact_count).toBe(4);
+    expect(metrics.comparison_evidence_status).not.toBe('emitted');
+    expect(metrics.comparison_runtime_artifact_count).toBe(4);
+    expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
+  });
 });

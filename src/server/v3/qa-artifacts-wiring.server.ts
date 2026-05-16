@@ -24,7 +24,7 @@ const COMPARISON_RUNTIME_ARTEFACT_IDS = new Set([
   'comparison_suppression_trace',
   'route_variance_trace',
 ] as const);
-function loadExistingManifestState(rootDir: string, runId: string, takeId: string, analysisRunId: string): { ok: true; state: { emitted: string[]; runtimeAccepted: string[]; sourceById: Record<string, string>; level2ById: Record<string, boolean>; defectRiskIds: string[]; summaries: Record<string, unknown> } } | { ok: false; warning: string; blocker_codes: string[]; state: null } {
+function loadExistingManifestState(rootDir: string, runId: string, takeId: string, analysisRunId: string): { ok: true; state: { raw_manifest: Record<string, unknown>; emitted: string[]; emittedBlocked: string[]; deferred: string[]; notApplicable: string[]; runtimeAccepted: string[]; runtimeBlocked: string[]; sourceById: Record<string, string>; level2ById: Record<string, boolean>; defectRiskIds: string[]; summaries: Record<string, unknown> } } | { ok: false; warning: string; blocker_codes: string[]; state: null } {
   const manifestRelativePath = shouldUseExpandedManifestPaths()
     ? buildTakeAnalysisRelativePath({ run_id: runId, take_id: takeId, analysis_run_id: analysisRunId, leaf: 'manifest.json' })
     : 'manifest.json';
@@ -33,18 +33,17 @@ function loadExistingManifestState(rootDir: string, runId: string, takeId: strin
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
     return { ok: true, state: {
+      raw_manifest: raw,
       emitted: Array.isArray(raw?.emitted_artifacts) ? raw.emitted_artifacts.filter((v: unknown): v is string => typeof v === 'string') : [],
+      emittedBlocked: Array.isArray(raw?.emitted_blocked_artefact_ids) ? raw.emitted_blocked_artefact_ids.filter((v: unknown): v is string => typeof v === 'string') : [],
+      deferred: Array.isArray(raw?.deferred_artifact_ids) ? raw.deferred_artifact_ids.filter((v: unknown): v is string => typeof v === 'string') : [],
+      notApplicable: Array.isArray(raw?.not_applicable_artifact_ids) ? raw.not_applicable_artifact_ids.filter((v: unknown): v is string => typeof v === 'string') : [],
       runtimeAccepted: Array.isArray(raw?.runtime_evidence_accepted_by_id) ? raw.runtime_evidence_accepted_by_id.filter((v: unknown): v is string => typeof v === 'string') : [],
+      runtimeBlocked: Array.isArray(raw?.runtime_evidence_blocked_by_id) ? raw.runtime_evidence_blocked_by_id.filter((v: unknown): v is string => typeof v === 'string') : [],
       sourceById: raw?.artefact_source_classification_by_id && typeof raw.artefact_source_classification_by_id === 'object' ? raw.artefact_source_classification_by_id : {},
       level2ById: raw?.artefact_level2_spine_satisfaction_by_id && typeof raw.artefact_level2_spine_satisfaction_by_id === 'object' ? raw.artefact_level2_spine_satisfaction_by_id : {},
       defectRiskIds: Array.isArray(raw?.defect_risk_ids) ? raw.defect_risk_ids.filter((v: unknown): v is string => typeof v === 'string') : [],
-      summaries: {
-        comparison_raw_summary: raw?.comparison_raw_summary,
-        comparison_report_internal_summary: raw?.comparison_report_internal_summary,
-        same_video_repeatability_trace_summary: raw?.same_video_repeatability_trace_summary,
-        comparison_suppression_trace_summary: raw?.comparison_suppression_trace_summary,
-        route_variance_trace_summary: raw?.route_variance_trace_summary,
-      },
+      summaries: Object.fromEntries(Object.entries(raw ?? {}).filter(([k]) => k.endsWith('_summary'))),
     } };
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -55,7 +54,7 @@ function loadExistingManifestState(rootDir: string, runId: string, takeId: strin
   }
 }
 
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; validator_trace_summary?: Record<string, unknown>; gate_trace_summary?: Record<string, unknown>; [key: string]: unknown; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -1243,6 +1242,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       ...(emitted_artefact_ids.includes('route_variance_trace') ? { route_variance_trace_summary: input.route_variance_trace?.route_variance_trace_summary ?? null } : {}),
     };
     const reconciliationEmitter = input.reconciliation_emitter_override ?? emitQAManifestForAnalysisRun;
+    const preserved = (existing as any).raw_manifest ?? {};
     const reconciliation = await reconciliationEmitter({
       run_id: input.run_id,
       analysis_run_id: analysisRunId,
@@ -1250,10 +1250,22 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       compared_take_ids: comparedTakeIds,
       comparison_run_id: comparisonRunId,
       emitted_artefact_ids: emittedAll,
+      emitted_blocked_artefact_ids: existing.emittedBlocked,
+      deferred_artefact_ids: existing.deferred,
+      not_applicable_artefact_ids: existing.notApplicable,
       runtime_evidence_accepted_by_id: runtimeAccepted,
+      runtime_evidence_blocked_by_id: existing.runtimeBlocked,
       artefact_source_classification_by_id: sourceById,
       artefact_level2_spine_satisfaction_by_id: level2ById,
       defect_risk_ids: existing.defectRiskIds,
+      legacy_adapter_artefact_ids: Array.isArray(preserved.legacy_adapter_artefact_ids) ? preserved.legacy_adapter_artefact_ids as string[] : undefined,
+      real_v3_spine_artefact_ids: Array.isArray(preserved.real_v3_spine_artefact_ids) ? preserved.real_v3_spine_artefact_ids as string[] : undefined,
+      public_claim_trace_summary: (summaryPatch.public_claim_trace_summary ?? preserved.public_claim_trace_summary) as any,
+      technique_observation_trace_summary: (summaryPatch.technique_observation_trace_summary ?? preserved.technique_observation_trace_summary) as any,
+      score_trace_summary: (summaryPatch.score_trace_summary ?? preserved.score_trace_summary) as any,
+      model_run_trace_summary: (summaryPatch.model_run_trace_summary ?? preserved.model_run_trace_summary) as any,
+      validator_trace_summary: (summaryPatch.validator_trace_summary ?? preserved.validator_trace_summary) as any,
+      gate_trace_summary: (summaryPatch.gate_trace_summary ?? preserved.gate_trace_summary) as any,
       root_dir: input.root_dir,
       internal_qa_emit: input.internal_qa_emit,
       ...summaryPatch,
