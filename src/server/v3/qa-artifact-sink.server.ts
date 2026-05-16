@@ -109,8 +109,9 @@ export async function readQAArtifactText(input: { run_id: string; relative_path:
       const abs = path.join(root, input.run_id, validatedRelativePath);
       const text = await readFile(abs, 'utf8');
       return { ok: true, text };
-    } catch {
-      return { ok: false, code: 'missing' };
+    } catch (error) {
+      const code = (error && typeof error === 'object' && 'code' in (error as any) && (error as any).code === 'ENOENT') ? 'missing' : 'unreadable';
+      return { ok: false, code };
     }
   }
   if (mode === 'storage') {

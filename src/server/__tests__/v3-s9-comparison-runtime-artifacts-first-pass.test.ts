@@ -1,8 +1,9 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun, reconcileComparisonManifestState } from '@/server/v3/qa-artifacts-wiring.server';
+import { readQAArtifactText } from '@/server/v3/qa-artifact-sink.server';
 
 const upload = vi.fn();
 const download = vi.fn();
@@ -189,4 +190,34 @@ it('storage sink inferred take_id uses canonical inferred key', async () => {
   const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-derivedx', analysis_run_id: 'take-derivedx', comparison_run_id: 'cmp-dx', compared_take_ids: ['derivedx','d2'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'd2' }, raw_comparison_decision_snapshot: { winner: 'd2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
   expect(out.written).toBe(true);
   expect(download).toHaveBeenCalledWith('take-derivedx/analysis-take-derivedx/manifest.json');
+});
+
+
+it('persists reconciled manifest and metrics after successful comparison writes (no early return)', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-persist-'));
+  await seedExistingManifest(root, 'take-persist', 'persist', 'take-persist');
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-persist', take_id: 'persist', analysis_run_id: 'take-persist', comparison_run_id: 'cmp-persist', compared_take_ids: ['persist','p2'], root_dir: root, internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'p2' }, raw_comparison_decision_snapshot: { winner: 'p2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect((out as any).reconciliation_written).toBe(true);
+  const manifest = JSON.parse(await readFile(path.join(root, 'take-persist', 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(root, 'take-persist', 'qa', 'acceptance_metrics.json'), 'utf8'));
+  expect(manifest.artefact_status_by_id.comparison_raw).toBe('emitted');
+  expect(metrics.comparison_runtime_artifact_count).toBe(5);
+});
+
+it('readQAArtifactText classifies EISDIR as unreadable', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-readerr-'));
+  await mkdir(path.join(root, 'run-x', 'manifest.json'), { recursive: true });
+  const out = await readQAArtifactText({ run_id: 'run-x', root_dir: root, relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('unreadable');
+});
+
+it('readQAArtifactText classifies ENOENT as missing', async () => {
+  process.env.QA_ARTIFACT_SINK = 'file';
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-missingread-'));
+  const out = await readQAArtifactText({ run_id: 'run-y', root_dir: root, relative_path: 'manifest.json' });
+  expect(out.ok).toBe(false);
+  if (!out.ok) expect(out.code).toBe('missing');
 });

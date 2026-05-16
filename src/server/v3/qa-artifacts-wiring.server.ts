@@ -1226,7 +1226,29 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
-  return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: hadFailure ? ['comparison_reconciliation_failed'] : [] };
+  try {
+    const reconciled = reconcileComparisonManifestState(manifestPreflight.manifest, {
+      emitted_artefact_ids,
+      comparison_run_id: comparisonRunId,
+    });
+    const manifestRelativePath = shouldUseExpandedManifestPaths()
+      ? `takes/take-${takeId}/analysis-${analysisRunId}/manifest.json`
+      : 'manifest.json';
+    const manifestWrite = await writeQAArtifact({ run_id: input.run_id, root_dir: root, relative_path: manifestRelativePath, payload: reconciled, artefact_id: 'manifest' });
+    if (!manifestWrite.written) {
+      return { written: false as const, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: ['comparison_reconciliation_failed'], warning: mergeQAWarnings('comparison_reconciliation_failed_manifest_write', manifestWrite.warning) };
+    }
+    const metrics = { ...buildQAAcceptanceMetrics(reconciled as any), ...resolveQADeploymentProvenance() };
+    const metricsRelativePath = shouldUseExpandedManifestPaths() ? `takes/take-${takeId}/analysis-${analysisRunId}/qa/acceptance_metrics.json` : 'qa/acceptance_metrics.json';
+    const metricsWrite = await writeQAArtifact({ run_id: input.run_id, root_dir: root, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics' });
+    if (!metricsWrite.written) {
+      return { written: false as const, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: ['comparison_reconciliation_failed'], warning: mergeQAWarnings('comparison_reconciliation_failed_metrics_write', metricsWrite.warning) };
+    }
+    const cleanWritten = !hadFailure && emitted_artefact_ids.length === COMPARISON_ARTEFACT_IDS.length;
+    return { written: cleanWritten, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: true as const, blocker_codes: hadFailure ? ['comparison_reconciliation_failed'] : [] as string[] };
+  } catch (error) {
+    return { written: false as const, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids, comparison_artefacts_written: emitted_artefact_ids.length > 0, reconciliation_written: false as const, blocker_codes: ['comparison_reconciliation_failed'], warning: `comparison_reconciliation_failed:${error instanceof Error ? error.message : 'unknown'}` };
+  }
 }
 
 export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmitterInput) {
