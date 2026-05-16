@@ -1141,6 +1141,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   let reconciliation_written = false;
   let reconciliation_warning: string | null = null;
   let comparison_artefacts_written = false;
+  let comparison_write_attempted = false;
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids };
   const root = input.root_dir ?? DEFAULT_ROOT;
   const comparisonRunId = input.comparison_run_id
@@ -1157,6 +1158,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   assertSafeSegment(analysisRunId, 'analysis_run_id');
   const comparisonRoot = `takes/take-${takeId}/analysis-${analysisRunId}`;
+  comparison_write_attempted = true;
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, schema_version: 'tapecoach_v3_comparison_raw_first_pass_v1', artefact_type: 'comparison_raw', internal_only: true, privacy_classification: 'internal_private', source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: input.source_stage ?? 'emitComparisonRuntimeArtifacts', comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_raw');
     if (w.written) emitted_artefact_ids.push('comparison_raw'); else hadFailure = true;
@@ -1191,7 +1193,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
     if (w.written) emitted_artefact_ids.push('same_video_repeatability_trace'); else hadFailure = true;
   }
   const emitted_blocked_artefact_ids: string[] = [];
-  const takeScopedManifestRewrite = emitted_artefact_ids.length > 0;
+  const takeScopedManifestRewrite = comparison_write_attempted;
   comparison_artefacts_written = emitted_artefact_ids.length > 0;
   const canReconcileTakeScoped = takeScopedManifestRewrite && Boolean(takeId);
   if (canReconcileTakeScoped) {
@@ -1278,10 +1280,11 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   const reconciliationUnavailable = takeScopedManifestRewrite && !takeId;
   const reconciliationFailed = canReconcileTakeScoped ? !reconciliation_written : false;
   if (reconciliationUnavailable) hadFailure = true;
+  const allComparisonWritesFailed = comparison_write_attempted && emitted_artefact_ids.length === 0;
   const warning = reconciliationFailed
     ? mergeQAWarnings(reconciliation_warning, 'comparison_manifest_metrics_reconciliation_failed')
-    : (reconciliationUnavailable ? mergeQAWarnings(reconciliation_warning, 'comparison_manifest_metrics_reconciliation_unavailable_take_id_unresolved') : reconciliation_warning);
-  const blocker_codes = reconciliationFailed ? ['comparison_reconciliation_failed'] : (reconciliationUnavailable ? ['comparison_reconciliation_take_id_unresolved'] : []);
+    : (reconciliationUnavailable ? mergeQAWarnings(reconciliation_warning, 'comparison_manifest_metrics_reconciliation_unavailable_take_id_unresolved') : mergeQAWarnings(reconciliation_warning, allComparisonWritesFailed ? 'comparison_runtime_artifacts_all_failed_current_attempt' : null));
+  const blocker_codes = reconciliationFailed ? ['comparison_reconciliation_failed'] : (reconciliationUnavailable ? ['comparison_reconciliation_take_id_unresolved'] : (allComparisonWritesFailed ? ['comparison_runtime_artifacts_write_failed'] : []));
   return {
     written: !hadFailure,
     comparison_run_id: comparisonRunId,

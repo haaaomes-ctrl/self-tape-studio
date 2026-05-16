@@ -317,6 +317,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     const runId = 'take-preserve';
     const runDir = path.join(root, runId);
     await mkdir(runDir, { recursive: true });
+    await mkdir(path.join(runDir, 'qa'), { recursive: true });
     const ordinary = ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'validator_trace', 'gate_trace', 'model_run_trace', 'raw_report', 'qa_acceptance_metrics'];
     await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({
       emitted_artifacts: ordinary,
@@ -505,5 +506,33 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(metrics.comparison_suppression_trace_status).toBe('emitted');
     expect(metrics.route_variance_trace_status).toBe('emitted');
     expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
+  });
+
+  it('all current comparison writes fail but reconciliation clears stale emitted comparison state', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-all-fail-reconcile-'));
+    const runId = 'take-all-fail';
+    const runDir = path.join(root, runId);
+    await mkdir(runDir, { recursive: true });
+    await mkdir(path.join(runDir, 'qa'), { recursive: true });
+    const ordinary = ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'validator_trace', 'gate_trace', 'model_run_trace', 'raw_report', 'qa_acceptance_metrics'];
+    const allComparison = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
+    await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({ emitted_artifacts: [...ordinary, ...allComparison], runtime_evidence_accepted_by_id: [...ordinary, ...allComparison], comparison_run_id: 'cmp-old', comparison_raw_summary: { stale: true }, comparison_report_internal_summary: { stale: true }, same_video_repeatability_trace_summary: { stale: true }, comparison_suppression_trace_summary: { stale: true }, route_variance_trace_summary: { stale: true }, defect_risk_ids: [] }), 'utf8');
+    const sinkModule = await import('@/server/v3/qa-artifact-sink.server');
+    vi.spyOn(sinkModule, 'writeQAArtifact').mockImplementation(async (input: any) => {
+      const rel = String(input?.relative_path ?? '');
+      if (rel.includes('/comparison/')) return { written: false, warning: 'forced-all-fail' } as any;
+      if (rel.includes('/comparison_traces/')) return { written: false, warning: 'forced-all-fail' } as any;
+      return { written: true, path: '/tmp/fake' } as any;
+    });
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: runId, take_id: 'all-fail', analysis_run_id: 'ar-all-fail', comparison_run_id: 'cmp-current', compared_take_ids: ['all-fail', 'other'], root_dir: root, internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false },
+      reconciliation_emitter_override: async (md) => { await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({ emitted_artifacts: md.emitted_artefact_ids, runtime_evidence_accepted_by_id: md.runtime_evidence_accepted_by_id, comparison_run_id: md.comparison_run_id, artefact_status_by_id: {}, missing_artifacts: allComparison, blocker_codes: ['comparison_JSON_missing','comparison_report_unavailable','same_video_repeatability_trace_missing','comparison_suppression_trace_missing','route_variance_trace_missing'] }), 'utf8'); await writeFile(path.join(runDir, 'qa/acceptance_metrics.json'), JSON.stringify({ comparison_runtime_artifact_count: 0, comparison_raw_status: 'missing', comparison_report_internal_status: 'missing', same_video_repeatability_trace_status: 'missing', comparison_suppression_trace_status: 'missing', route_variance_trace_status: 'missing', level2_status: 'not_accepted' }), 'utf8'); return { written: true, warning: null }; },
+    });
+    expect(out.written).toBe(false);
+    expect(out.reconciliation_written).toBe(true);
+    expect(out.emitted_artefact_ids).toEqual([]);
+    expect(out.warning).toContain('comparison_runtime_artifacts_all_failed_current_attempt');
+    expect(out.blocker_codes).toContain('comparison_runtime_artifacts_write_failed');
   });
 });
