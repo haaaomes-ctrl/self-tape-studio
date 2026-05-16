@@ -2,13 +2,39 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runInternalComparisonOperatorTrigger } from '@/server/v3/qa-artifacts-wiring.server';
 import { assertAdminEmail, isExplicitCompletedAnalysisStatus, runAdminInternalComparisonTriggerImpl, resolveCompletedTakeComparisonSourceByTakeId } from '@/server-fns/internal-comparison-trigger.functions';
 import { assertSafeSegment } from '@/server/v3/qa-artifacts.server';
 import { z } from 'zod';
 
 describe('v3 s9 comparison operator trigger', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function readRootManifestAndMetrics(root: string, runId: string, takeId: string, analysisRunId: string) {
+    const runRoot = path.join(root, runId);
+    const manifestCandidates = [
+      path.join(runRoot, 'takes', `take-${takeId}`, `analysis-${analysisRunId}`, 'manifest.json'),
+      path.join(runRoot, 'manifest.json'),
+    ];
+    const metricsCandidates = [
+      path.join(runRoot, 'takes', `take-${takeId}`, `analysis-${analysisRunId}`, 'qa', 'acceptance_metrics.json'),
+      path.join(runRoot, 'qa', 'acceptance_metrics.json'),
+    ];
+    let manifest: any = null;
+    let metrics: any = null;
+    for (const p of manifestCandidates) {
+      try { manifest = JSON.parse(await readFile(p, 'utf8')); break; } catch {}
+    }
+    for (const p of metricsCandidates) {
+      try { metrics = JSON.parse(await readFile(p, 'utf8')); break; } catch {}
+    }
+    if (!manifest || !metrics) throw new Error('manifest_or_metrics_not_found');
+    return { manifest, metrics };
+  }
+
   it('emits comparison artifacts for two completed analyses via trigger path', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911c-op-'));
     const result = await runInternalComparisonOperatorTrigger({
@@ -489,6 +515,93 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(out.blocker_codes).toContain('comparison_run_id_invalid');
     expect(out.emitted_artefact_ids).toEqual([]);
     expect(out.comparison_run_id).toBeNull();
+  });
+
+  it('rewrites root manifest and acceptance metrics after successful comparison artefact emission', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-regression-success-'));
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-root',
+      compared_take_ids: ['take-root', 'take-alt'],
+      source_module: 'test',
+      source_stage: 's9-regression-success',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true, mux_playback_ref: `pb-${takeId}` }));
+
+    expect(out.ok).toBe(true);
+    expect(out.written).toBe(true);
+    expect(out.comparison_run_id).toBeTruthy();
+    expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'].sort());
+
+    const comparisonBase = path.join(root, 'take-root', 'takes', 'take-take-root', 'analysis-ar-take-root');
+    await expect(readFile(path.join(comparisonBase, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(comparisonBase, 'comparison', 'comparison.report.internal.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(comparisonBase, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(comparisonBase, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8')).resolves.toBeTruthy();
+    await expect(readFile(path.join(comparisonBase, 'comparison_traces', 'route_variance_trace.json'), 'utf8')).resolves.toBeTruthy();
+
+    const { manifest, metrics } = await readRootManifestAndMetrics(root, 'take-root', 'take-root', 'ar-take-root');
+    for (const id of ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']) {
+      expect(manifest.artefact_status_by_id[id]).toBe('emitted');
+      expect(manifest.missing_artifacts).not.toContain(id);
+    }
+    for (const blocker of ['comparison_JSON_missing', 'comparison_report_unavailable', 'same_video_repeatability_trace_missing', 'comparison_suppression_trace_missing', 'route_variance_trace_missing']) {
+      expect(manifest.blocker_codes).not.toContain(blocker);
+    }
+    expect(manifest.comparison_run_id).toBe(out.comparison_run_id);
+    expect(manifest.compared_take_ids).toEqual(expect.arrayContaining(['take-root', 'take-alt']));
+    expect(manifest.level2_qa_acceptance).toBe('not_accepted');
+
+    expect(metrics.comparison_run_id).toBe(out.comparison_run_id);
+    expect(metrics.comparison_runtime_artifact_count).toBe(5);
+    expect(metrics.comparison_raw_status).toBe('emitted');
+    expect(metrics.comparison_report_internal_status).toBe('emitted');
+    expect(metrics.same_video_repeatability_trace_status).toBe('emitted');
+    expect(metrics.comparison_suppression_trace_status).toBe('emitted');
+    expect(metrics.route_variance_trace_status).toBe('emitted');
+    expect(metrics.comparison_evidence_status).not.toBe('missing');
+    expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+
+    const nonRootManifestExpandedPath = path.join(root, 'take-root', 'takes', 'take-take-alt', 'analysis-ar-take-alt', 'manifest.json');
+    await expect(readFile(nonRootManifestExpandedPath, 'utf8')).rejects.toThrow();
+  });
+
+  it('keeps failed comparison artefact missing when post-comparison reconciliation runs', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-regression-partial-'));
+    const sinkModule = await import('@/server/v3/qa-artifact-sink.server');
+    const originalWrite = sinkModule.writeQAArtifact;
+    vi.spyOn(sinkModule, 'writeQAArtifact').mockImplementation(async (input: any) => {
+      if (String(input?.relative_path).endsWith('/comparison_traces/route_variance_trace.json')) return { written: false, warning: 'forced-route-variance-fail' } as any;
+      return originalWrite(input);
+    });
+
+    const out = await runInternalComparisonOperatorTrigger({
+      root_take_id: 'take-root',
+      compared_take_ids: ['take-root', 'take-alt'],
+      source_module: 'test',
+      source_stage: 's9-regression-partial',
+      root_dir: root,
+      internal_qa_emit: true,
+    }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}`, completed: true, mux_playback_ref: `pb-${takeId}` }));
+
+    expect(out.written).toBe(false);
+    expect(out.emitted_artefact_ids).toContain('comparison_raw');
+    expect(out.emitted_artefact_ids).not.toContain('route_variance_trace');
+    const { manifest, metrics } = await readRootManifestAndMetrics(root, 'take-root', 'take-root', 'ar-take-root');
+    expect(manifest.artefact_status_by_id.route_variance_trace).toBe('missing');
+    expect(manifest.missing_artifacts).toContain('route_variance_trace');
+    expect(manifest.blocker_codes).toContain('route_variance_trace_missing');
+    expect(manifest.artefact_status_by_id.comparison_raw).toBe('emitted');
+    expect(manifest.artefact_status_by_id.comparison_report_internal).toBe('emitted');
+    expect(manifest.artefact_status_by_id.same_video_repeatability_trace).toBe('emitted');
+    expect(manifest.artefact_status_by_id.comparison_suppression_trace).toBe('emitted');
+    expect(manifest.route_variance_trace_summary ?? null).toBeNull();
+    expect(metrics.comparison_runtime_artifact_count).toBeLessThan(5);
+    expect(['partial', 'insufficient', 'missing']).toContain(metrics.comparison_evidence_status);
+    expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
   });
 
   it('public routes do not import internal comparison serverfn', async () => {
