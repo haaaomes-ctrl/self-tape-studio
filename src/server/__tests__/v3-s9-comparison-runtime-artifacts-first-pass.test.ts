@@ -217,12 +217,48 @@ it('storage sink malformed manifest fails closed', async () => {
   expect(upload.mock.calls.length).toBe(beforeUploads);
 });
 
+it('storage sink array manifest fails closed (no empty-baseline reconciliation)', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => '[]' }, error: null });
+  const beforeUploads = upload.mock.calls.length;
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-s3a', analysis_run_id: 'ar-s3a', take_id: 's3a', comparison_run_id: 'cmp-s3a', compared_take_ids: ['s3a','s4a'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 's4a' }, raw_comparison_decision_snapshot: { winner: 's4a' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).reconciliation_written).toBe(false);
+  expect((out as any).comparison_artefacts_written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_unreadable');
+  expect((out as any).blocker_codes).toContain('comparison_reconciliation_manifest_unreadable');
+  expect(upload.mock.calls.length).toBe(beforeUploads);
+});
+
+it.each(['null', '"hello"', '123', 'true'])('storage sink primitive manifest %s fails closed', async (raw) => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => raw }, error: null });
+  const beforeUploads = upload.mock.calls.length;
+  const out = await emitComparisonRuntimeArtifacts({ run_id: `take-prim-${raw.length}`, analysis_run_id: `ar-prim-${raw.length}`, take_id: `prim${raw.length}`, comparison_run_id: `cmp-prim-${raw.length}`, compared_take_ids: [`prim${raw.length}`,'p2'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'p2' }, raw_comparison_decision_snapshot: { winner: 'p2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(false);
+  expect((out as any).reconciliation_written).toBe(false);
+  expect((out as any).comparison_artefacts_written).toBe(false);
+  expect((out as any).warning).toBe('comparison_reconciliation_manifest_unreadable');
+  expect((out as any).blocker_codes).toContain('comparison_reconciliation_manifest_unreadable');
+  expect(upload.mock.calls.length).toBe(beforeUploads);
+});
+
 it('storage sink inferred take_id uses canonical inferred key', async () => {
   process.env.QA_ARTIFACT_SINK = 'storage';
   download.mockResolvedValue({ data: { text: async () => JSON.stringify({ ok: true }) }, error: null });
   const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-derivedx', analysis_run_id: 'take-derivedx', comparison_run_id: 'cmp-dx', compared_take_ids: ['derivedx','d2'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'd2' }, raw_comparison_decision_snapshot: { winner: 'd2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
   expect(out.written).toBe(true);
   expect(download).toHaveBeenCalledWith('take-derivedx/analysis-take-derivedx/manifest.json');
+});
+
+it('valid object manifest still allows comparison writes and reconciliation persistence', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockResolvedValue({ data: { text: async () => JSON.stringify({ run_id: 'take-good', artefact_status_by_id: {}, blocker_codes: [] }) }, error: null });
+  const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-good', analysis_run_id: 'ar-good', take_id: 'good', comparison_run_id: 'cmp-good', compared_take_ids: ['good','g2'], internal_qa_emit: true, comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'g2' }, raw_comparison_decision_snapshot: { winner: 'g2' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false } });
+  expect(out.written).toBe(true);
+  expect((out as any).comparison_artefacts_written).toBe(true);
+  expect((out as any).reconciliation_written).toBe(true);
+  expect((out as any).warning ?? null).not.toBe('comparison_reconciliation_manifest_unreadable');
 });
 
 
@@ -281,4 +317,11 @@ it('readQAArtifactText storage safe run_id still reads canonical key', async () 
   const out = await readQAArtifactText({ run_id: 'take-safe123', relative_path: 'takes/take-safe123/analysis-take-safe123/manifest.json' });
   expect(out.ok).toBe(true);
   expect(download).toHaveBeenCalledWith('take-safe123/analysis-take-safe123/manifest.json');
+});
+
+it('readQAArtifactText rejects invalid relative_path without throwing and without download', async () => {
+  process.env.QA_ARTIFACT_SINK = 'storage';
+  download.mockClear();
+  await expect(readQAArtifactText({ run_id: 'take-safe123', relative_path: '../manifest.json' })).resolves.toEqual({ ok: false, code: 'unreadable' });
+  expect(download).not.toHaveBeenCalled();
 });

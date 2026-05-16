@@ -337,7 +337,7 @@ async function loadExistingRootManifestOrError(params: { root: string; run_id: s
   }
   try {
     const parsed = JSON.parse(loaded.text);
-    if (!parsed || typeof parsed !== 'object') return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
     return { ok: true, manifest: parsed as Record<string, unknown> };
   } catch {
     return { ok: false, warning: 'comparison_reconciliation_manifest_unreadable', blocker_code: 'comparison_reconciliation_manifest_unreadable' };
