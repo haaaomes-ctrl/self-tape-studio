@@ -320,6 +320,10 @@ export function reconcileComparisonManifestState(existingManifest: Record<string
   const sourceById = { ...(next.artefact_source_classification_by_id ?? {}) } as Record<string, string>;
   const level2ById = { ...(next.artefact_level2_spine_satisfaction_by_id ?? {}) } as Record<string, boolean>;
   for (const id of COMPARISON_ARTEFACT_IDS) {
+    delete sourceById[id];
+    delete level2ById[id];
+  }
+  for (const id of COMPARISON_ARTEFACT_IDS) {
     if (emitted.has(id)) {
       sourceById[id] = id === 'comparison_raw'
         ? 'internal_comparison_runtime'

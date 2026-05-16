@@ -418,6 +418,22 @@ it('partial failure keeps comparison_report_unavailable and removes successful c
       route_variance_trace: 'emitted',
       validator_trace: 'missing',
     },
+    artefact_source_classification_by_id: {
+      raw_report: 'legacy_adapter',
+      comparison_raw: 'internal_comparison_runtime',
+      comparison_report_internal: 'internal_comparison_report',
+      same_video_repeatability_trace: 'internal_comparison_trace',
+      comparison_suppression_trace: 'internal_comparison_trace',
+      route_variance_trace: 'internal_comparison_trace',
+    },
+    artefact_level2_spine_satisfaction_by_id: {
+      raw_report: false,
+      comparison_raw: true,
+      comparison_report_internal: true,
+      same_video_repeatability_trace: true,
+      comparison_suppression_trace: true,
+      route_variance_trace: true,
+    },
   } as Record<string, unknown>;
   const next = reconcileComparisonManifestState(existing, { emitted_artefact_ids: ['comparison_raw', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'] });
   expect((next.artefact_status_by_id as any).comparison_report_internal).toBe('missing');
@@ -431,6 +447,20 @@ it('partial failure keeps comparison_report_unavailable and removes successful c
   expect((next.blocker_codes as string[])).not.toContain('comparison_suppression_trace_missing');
   expect((next.blocker_codes as string[])).not.toContain('route_variance_trace_missing');
   expect((next.blocker_codes as string[])).toContain('validator_trace_missing');
+  const source = next.artefact_source_classification_by_id as Record<string, string>;
+  const level2 = next.artefact_level2_spine_satisfaction_by_id as Record<string, boolean>;
+  expect(source.comparison_raw).toBe('internal_comparison_runtime');
+  expect(source.same_video_repeatability_trace).toBe('internal_comparison_trace');
+  expect(source.comparison_suppression_trace).toBe('internal_comparison_trace');
+  expect(source.route_variance_trace).toBe('internal_comparison_trace');
+  expect(source.comparison_report_internal).toBeUndefined();
+  expect(source.raw_report).toBe('legacy_adapter');
+  expect(level2.comparison_raw).toBe(false);
+  expect(level2.same_video_repeatability_trace).toBe(false);
+  expect(level2.comparison_suppression_trace).toBe(false);
+  expect(level2.route_variance_trace).toBe(false);
+  expect(level2.comparison_report_internal).toBeUndefined();
+  expect(level2.raw_report).toBe(false);
 });
 
 it('reconciliation invariant: comparison states/classification/summaries are self-consistent and non-comparison state preserved', () => {
@@ -490,6 +520,44 @@ it('reconciliation invariant: comparison states/classification/summaries are sel
   expect((next.public_claim_trace_summary as any).claim_count).toBe(2);
   expect((next.blocker_codes as string[])).toContain('validator_trace_missing');
   expect((next.missing_artifacts as string[])).toContain('validator_trace');
+});
+
+it('all-current-write-failure clears stale comparison source + level2 metadata', () => {
+  const existing = {
+    emitted_artifacts: ['raw_report', 'comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'],
+    missing_artifacts: ['validator_trace'],
+    blocker_codes: ['validator_trace_missing'],
+    required_artifacts: [
+      { artefact_id: 'comparison_raw', status: 'emitted' },
+      { artefact_id: 'comparison_report_internal', status: 'emitted' },
+      { artefact_id: 'same_video_repeatability_trace', status: 'emitted' },
+      { artefact_id: 'comparison_suppression_trace', status: 'emitted' },
+      { artefact_id: 'route_variance_trace', status: 'emitted' },
+      { artefact_id: 'validator_trace', status: 'missing' },
+    ],
+    artefact_status_by_id: { raw_report: 'emitted', validator_trace: 'missing', comparison_raw: 'emitted', comparison_report_internal: 'emitted', same_video_repeatability_trace: 'emitted', comparison_suppression_trace: 'emitted', route_variance_trace: 'emitted' },
+    artefact_source_classification_by_id: { raw_report: 'legacy_adapter', comparison_raw: 'internal_comparison_runtime', comparison_report_internal: 'internal_comparison_report', same_video_repeatability_trace: 'internal_comparison_trace', comparison_suppression_trace: 'internal_comparison_trace', route_variance_trace: 'internal_comparison_trace' },
+    artefact_level2_spine_satisfaction_by_id: { raw_report: false, comparison_raw: true, comparison_report_internal: true, same_video_repeatability_trace: true, comparison_suppression_trace: true, route_variance_trace: true },
+    comparison_raw_summary: { stale: true },
+    comparison_report_internal_summary: { stale: true },
+    same_video_repeatability_trace_summary: { stale: true },
+    comparison_suppression_trace_summary: { stale: true },
+    route_variance_trace_summary: { stale: true },
+  } as Record<string, unknown>;
+  const next = reconcileComparisonManifestState(existing, { emitted_artefact_ids: [] });
+  const source = next.artefact_source_classification_by_id as Record<string, string>;
+  const level2 = next.artefact_level2_spine_satisfaction_by_id as Record<string, boolean>;
+  for (const id of ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']) {
+    expect(source[id]).toBeUndefined();
+    expect(level2[id]).toBeUndefined();
+  }
+  expect(source.raw_report).toBe('legacy_adapter');
+  expect(level2.raw_report).toBe(false);
+  expect((next as any).comparison_raw_summary).toBeUndefined();
+  expect((next as any).comparison_report_internal_summary).toBeUndefined();
+  expect((next as any).same_video_repeatability_trace_summary).toBeUndefined();
+  expect((next as any).comparison_suppression_trace_summary).toBeUndefined();
+  expect((next as any).route_variance_trace_summary).toBeUndefined();
 });
 
 it('readQAArtifactText classifies EISDIR as unreadable', async () => {
