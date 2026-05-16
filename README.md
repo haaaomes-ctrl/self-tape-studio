@@ -68,7 +68,7 @@ The current S9 internal QA Storage validation state is:
 - internal QA bundle emission is not the same as Level 2 acceptance;
 - Level 2 remains `not_accepted` until all required evidence, trace and proof gates pass;
 - production-safe, public-scoring and public-technique-authority gates remain blocked;
-- comparison evidence remains missing;
+- comparison evidence remains missing for ordinary single-take runs unless internal comparison is explicitly invoked and reconciled;
 - further trace and proof artefacts are required before Level 2 can be accepted.
 
 The current 12-file analysis-run Storage bundle (when TechniqueObservationTrace and ScoreTrace source data exists) is:
@@ -89,6 +89,16 @@ qa/acceptance_metrics.json
 ```
 
 A run that emits only the first eight files without `manifest.json` and `qa/acceptance_metrics.json` is not a passing Storage validation.
+
+### Comparison invocation and reconciliation modes
+
+- Comparison artefacts are **not** emitted automatically for ordinary single-take analysis runs.
+- Ordinary single-take runs may show comparison artefacts as `missing`, `deferred`, `not_applicable` or `emitted_blocked` depending on run purpose and invoked flow.
+- Absence of comparison artefacts in ordinary single-take runs must not automatically fail ordinary analysis proof.
+- When internal comparison is explicitly invoked (operator/internal trigger path), comparison artefacts, `manifest.json` and `qa/acceptance_metrics.json` must be reconciled together.
+- Canonical comparison reconciliation root is the root take path: `take-[id]/takes/take-[id]/analysis-take-[id]/...` (with manifest/metrics under `take-[id]/`).
+- Low-level comparison emitters must not claim reconciliation unless the reconciliation-enabled path was executed.
+- Level 2 acceptance and public/production gates remain blocked unless separately satisfied by full required evidence/proof gates.
 
 Current S9 metrics may correctly show:
 

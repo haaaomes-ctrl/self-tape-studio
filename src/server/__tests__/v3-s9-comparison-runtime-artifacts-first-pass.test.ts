@@ -1,9 +1,20 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun } from '@/server/v3/qa-artifacts-wiring.server';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun, resolveCanonicalComparisonReconciliationIdentity, reconcileComparisonManifestState } from '@/server/v3/qa-artifacts-wiring.server';
+import { readQAArtifactText } from '@/server/v3/qa-artifact-sink.server';
+import { supabaseAdmin } from '@/integrations/supabase/client.server';
 
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 describe('v3 s9 comparison runtime artifacts first pass', () => {
   it('emits all five artifacts only when real comparison execution evidence exists', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-'));
@@ -46,5 +57,141 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-only1', take_id: 'only1', analysis_run_id: 'ar-2', root_dir: await mkdtemp(path.join(os.tmpdir(), 'qa-s911-')), internal_qa_emit: true, comparison_run_id: 'cmp-2', compared_take_ids: ['only1'], comparison_raw_data: { comparison_run_executed: false } });
     expect(out.written).toBe(false);
     expect(out.emitted_artefact_ids).toEqual([]);
+  });
+});
+
+
+describe('canonical comparison reconciliation identity resolver', () => {
+  it('raw UUID source_run_id canonicalises', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: '123e4567-e89b-42d3-a456-426614174000', take_id: '123e4567-e89b-42d3-a456-426614174000', compared_take_ids: ['123e4567-e89b-42d3-a456-426614174000', 'b'] });
+    expect(out.identity_status).toBe('resolved');
+    expect(out.canonical_qa_run_id).toBe('take-123e4567-e89b-42d3-a456-426614174000');
+  });
+  it('canonical run_id accepted', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'take-a', take_id: 'a', compared_take_ids: ['a','b'] });
+    expect(out.identity_status).toBe('resolved');
+  });
+  it('arbitrary safe source_run_id does not become storage root', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'safe-source-1', take_id: 'a', compared_take_ids: ['a','b'] });
+    expect(out.identity_status).toBe('resolved');
+    expect(out.canonical_qa_run_id).toBe('take-a');
+  });
+  it('take-shaped mismatch fails closed', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'take-b', take_id: 'a', compared_take_ids: ['a','b'] });
+    expect(out.identity_status).toBe('comparison_reconciliation_manifest_identity_mismatch');
+  });
+  it('analysis_run_id mismatch fails closed', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'take-a', take_id: 'a', analysis_run_id: 'wrong', compared_take_ids: ['a','b'] });
+    expect(out.identity_status).toBe('comparison_reconciliation_manifest_identity_mismatch');
+  });
+  it('root take not first resolves root identity correctly', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'take-b', root_take_id: 'b', compared_take_ids: ['a','b'] });
+    expect(out.identity_status).toBe('resolved');
+    expect(out.canonical_take_id).toBe('b');
+  });
+  it('root take missing fails closed', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'take-z', root_take_id: 'z', compared_take_ids: ['a','b'] });
+    expect(out.identity_status).toBe('comparison_reconciliation_manifest_identity_mismatch');
+  });
+  it('no take-take path and no analysis-undefined path and no comparison_run_id root', () => {
+    const out = resolveCanonicalComparisonReconciliationIdentity({ run_id: 'take-a', take_id: 'a', compared_take_ids: ['a','b'] });
+    expect(out.canonical_comparison_root.includes('take-take-')).toBe(false);
+    expect(out.canonical_comparison_root.includes('analysis-undefined')).toBe(false);
+    expect(out.canonical_qa_run_id).not.toContain('cmp-');
+  });
+});
+
+
+describe('sink read hardening for comparison preflight', () => {
+  it('invalid relative_path returns unreadable', async () => {
+    const out = await readQAArtifactText({ run_id: 'take-a', relative_path: '../manifest.json' });
+    expect(out.status).toBe('unreadable');
+  });
+  it('invalid run_id returns unreadable', async () => {
+    const out = await readQAArtifactText({ run_id: '../bad', relative_path: 'manifest.json' });
+    expect(out.status).toBe('unreadable');
+  });
+  it('console_jsonl unsupported', async () => {
+    vi.stubEnv('QA_ARTIFACT_SINK', 'console_jsonl');
+    const out = await readQAArtifactText({ run_id: 'take-a', relative_path: 'manifest.json' });
+    expect(out.status).toBe('unsupported');
+    expect(out.warning).toBe('comparison_reconciliation_manifest_read_unsupported');
+  });
+  it('file missing returns missing', async () => {
+    vi.stubEnv('QA_ARTIFACT_SINK', 'file');
+    const out = await readQAArtifactText({ run_id: 'take-a', relative_path: 'manifest.json', root_dir: '/tmp/non-existent-root' });
+    expect(out.status).toBe('missing');
+  });
+  it('storage 404 returns missing and non-404 unreadable and no-data unreadable and text failure unreadable', async () => {
+    vi.stubEnv('QA_ARTIFACT_SINK', 'storage');
+    vi.stubEnv('SUPABASE_URL', 'https://example.supabase.co');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'test-key');
+    const download = vi.fn()
+      .mockResolvedValueOnce({ data: null, error: { message: '404 object not found' } })
+      .mockResolvedValueOnce({ data: null, error: { message: '403 forbidden' } })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { text: async () => { throw new Error('boom'); } }, error: null });
+    vi.spyOn(supabaseAdmin.storage, 'from').mockReturnValue({ download } as any);
+    expect((await readQAArtifactText({ run_id: 'take-a', relative_path: 'manifest.json' })).status).toBe('missing');
+    expect((await readQAArtifactText({ run_id: 'take-a', relative_path: 'manifest.json' })).status).toBe('unreadable');
+    expect((await readQAArtifactText({ run_id: 'take-a', relative_path: 'manifest.json' })).status).toBe('unreadable');
+    expect((await readQAArtifactText({ run_id: 'take-a', relative_path: 'manifest.json' })).status).toBe('unreadable');
+  });
+});
+
+
+describe('pure comparison manifest reconciliation helper', () => {
+  const baseManifest = {
+    emitted_artifacts: ['raw_report', 'comparison_raw', 'comparison_report_internal'],
+    missing_artifacts: ['resolver_output'],
+    blocker_codes: ['x_other', 'comparison_report_unavailable', 'comparison_report_internal_missing'],
+    runtime_evidence_accepted_by_id: ['raw_report', 'comparison_raw'],
+    runtime_evidence_blocked_by_id: ['truth_state_map', 'comparison_report_internal'],
+    artefact_status_by_id: { raw_report: 'emitted', comparison_raw: 'emitted', comparison_report_internal: 'missing' },
+    artefact_source_classification_by_id: { raw_report: 'legacy_adapter', comparison_raw: 'old_source', comparison_report_internal: 'old_source' },
+    artefact_level2_spine_satisfaction_by_id: { raw_report: false, comparison_raw: true, comparison_report_internal: true },
+    required_artifacts: [
+      { artefact_id: 'raw_report', status: 'emitted' },
+      { artefact_id: 'comparison_raw', status: 'emitted' },
+      { artefact_id: 'comparison_report_internal', status: 'missing' },
+      { artefact_id: 'same_video_repeatability_trace', status: 'missing' },
+      { artefact_id: 'comparison_suppression_trace', status: 'missing' },
+      { artefact_id: 'route_variance_trace', status: 'missing' },
+    ],
+  } as any;
+
+  it('full success marks all five emitted and uses report_unavailable mapping only', () => {
+    const out = reconcileComparisonManifestState({ manifest: baseManifest, comparison_write_success_by_id: {
+      comparison_raw: true, comparison_report_internal: true, same_video_repeatability_trace: true, comparison_suppression_trace: true, route_variance_trace: true,
+    } });
+    for (const id of ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace']) {
+      expect(out.emitted_artifacts).toContain(id);
+      expect(out.artefact_status_by_id[id]).toBe('emitted');
+    }
+    expect(out.blocker_codes).not.toContain('comparison_report_internal_missing');
+    expect(out.blocker_codes).not.toContain('comparison_report_unavailable');
+    expect(out.artefact_source_classification_by_id.comparison_report_internal).toBe('internal_comparison_report');
+    expect(out.artefact_level2_spine_satisfaction_by_id.comparison_raw).toBe(false);
+  });
+
+  it('partial success marks only successful current writes emitted and clears stale metadata for missing', () => {
+    const out = reconcileComparisonManifestState({ manifest: baseManifest, comparison_write_success_by_id: { comparison_raw: true } });
+    expect(out.emitted_artifacts).toContain('comparison_raw');
+    expect(out.emitted_artifacts).not.toContain('comparison_report_internal');
+    expect(out.missing_artifacts).toContain('comparison_report_internal');
+    expect(out.blocker_codes).toContain('comparison_report_unavailable');
+    expect(out.artefact_source_classification_by_id.comparison_report_internal).toBeUndefined();
+    expect(out.artefact_level2_spine_satisfaction_by_id.comparison_report_internal).toBeUndefined();
+  });
+
+  it('all writes fail clears old comparison emitted state and preserves non-comparison', () => {
+    const out = reconcileComparisonManifestState({ manifest: baseManifest, comparison_write_success_by_id: {} });
+    for (const id of ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace']) {
+      expect(out.emitted_artifacts).not.toContain(id);
+      expect(out.missing_artifacts).toContain(id);
+    }
+    expect(out.emitted_artifacts).toContain('raw_report');
+    expect(out.blocker_codes).toContain('x_other');
+    expect(out.required_artifacts.find((a:any)=>a.artefact_id==='comparison_report_internal').status).toBe('missing');
   });
 });
