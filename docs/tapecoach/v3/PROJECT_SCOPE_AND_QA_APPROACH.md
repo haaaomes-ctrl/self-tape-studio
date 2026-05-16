@@ -38,7 +38,7 @@ This scope document is based on the supplied Architecture branch text plus the u
 - `Architecture Merged.md`.
 - `Approach.md`.
 - `XARCH-V3-00-LEVEL1-SOURCE-AUDIT-UK` material embedded in the uploaded set.
-- `20260511 Comparisson .pdf`, `20260511 Test 1.pdf`, `20260511 Test 2.pdf`, `20260511 Test 3.pdf`.
+- `20260511 Comparison .pdf`, `20260511 Test 1.pdf`, `20260511 Test 2.pdf`, `20260511 Test 3.pdf`.
 - Discipline handoffs for Musical Theatre, Acting, Voice / Singing, Dance and Commercial.
 - Consolidated discipline-technique library and S8/S7 technique-public-authority materials.
 
