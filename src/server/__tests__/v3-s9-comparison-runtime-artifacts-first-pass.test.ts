@@ -422,7 +422,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       deferred_artifact_ids: ['parity_report'],
       not_applicable_artifact_ids: ['parity_comparison'],
       runtime_evidence_accepted_by_id: ['analysis_input_record', 'analysis_submission', 'analysis_take', 'route_variance_trace'],
-      runtime_evidence_blocked_by_id: ['score_trace'],
+      runtime_evidence_blocked_by_id: ['score_trace', 'comparison_raw', 'route_variance_trace'],
       artefact_source_classification_by_id: { raw_report: 'legacy_adapter', evidence_anchors: 'legacy_adapter', public_claim_trace: 'legacy_adapter', technique_observation_trace: 'legacy_adapter', score_trace: 'legacy_adapter', model_run_trace: 'internal_model_run_trace', validator_trace: 'internal_validator', gate_trace: 'internal_gate_trace', route_variance_trace: 'legacy_adapter' },
       artefact_level2_spine_satisfaction_by_id: { raw_report: false, evidence_anchors: false, public_claim_trace: false, technique_observation_trace: false, score_trace: false, model_run_trace: false, validator_trace: false, gate_trace: false, route_variance_trace: true },
       defect_risk_ids: ['legacy_schema_snapshot'],
@@ -460,6 +460,8 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(manifest.deferred_artifact_ids).toContain('parity_report');
     expect(manifest.not_applicable_artifact_ids).toContain('parity_comparison');
     expect(manifest.runtime_evidence_blocked_by_id).toContain('score_trace');
+    expect(manifest.runtime_evidence_blocked_by_id).not.toContain('comparison_raw');
+    expect(manifest.runtime_evidence_blocked_by_id).not.toContain('route_variance_trace');
     expect(manifest.defect_risk_ids).toContain('legacy_schema_snapshot');
     expect(manifest.artefact_status_by_id.route_variance_trace).toBe('missing');
     expect(manifest.blocker_codes).toContain('route_variance_trace_missing');
@@ -467,6 +469,41 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(metrics.comparison_runtime_artifact_count).toBe(4);
     expect(metrics.comparison_evidence_status).not.toBe('emitted');
     expect(metrics.comparison_runtime_artifact_count).toBe(4);
+    expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
+  });
+
+  it('full success clears stale blocked comparison ids while preserving non-comparison blocked ids', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s912-clear-stale-blocked-'));
+    const runId = 'take-clear-blocked';
+    const runDir = path.join(root, runId);
+    await mkdir(runDir, { recursive: true });
+    await writeFile(path.join(runDir, 'manifest.json'), JSON.stringify({
+      emitted_artifacts: ['analysis_input_record', 'raw_report'],
+      runtime_evidence_accepted_by_id: ['analysis_input_record'],
+      runtime_evidence_blocked_by_id: ['comparison_raw', 'route_variance_trace', 'public_claim_trace', 'score_trace', 'model_run_trace', 'validator_trace', 'gate_trace'],
+      defect_risk_ids: [],
+    }), 'utf8');
+    const out = await emitComparisonRuntimeArtifacts({
+      run_id: runId, take_id: 'clear-blocked', analysis_run_id: 'ar-clear-blocked', comparison_run_id: 'cmp-clear-blocked', compared_take_ids: ['clear-blocked', 'other'], root_dir: root, internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'other' } }, suppression_trace: { suppression_decision: 'allowed' }, same_video_repeatability_trace: { same_video_detected: false }, route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(true);
+    const manifest = JSON.parse(await readFile(path.join(runDir, 'manifest.json'), 'utf8'));
+    const blocked: string[] = manifest.runtime_evidence_blocked_by_id ?? [];
+    for (const id of ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']) {
+      expect(blocked).not.toContain(id);
+      expect(manifest.emitted_artifacts).toContain(id);
+    }
+    for (const id of ['public_claim_trace', 'score_trace', 'model_run_trace', 'validator_trace', 'gate_trace']) {
+      expect(blocked).toContain(id);
+    }
+    const metrics = JSON.parse(await readFile(path.join(runDir, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(metrics.comparison_runtime_artifact_count).toBe(5);
+    expect(metrics.comparison_raw_status).toBe('emitted');
+    expect(metrics.comparison_report_internal_status).toBe('emitted');
+    expect(metrics.same_video_repeatability_trace_status).toBe('emitted');
+    expect(metrics.comparison_suppression_trace_status).toBe('emitted');
+    expect(metrics.route_variance_trace_status).toBe('emitted');
     expect(metrics.acceptance_decision ?? metrics.level2_status).toBe('not_accepted');
   });
 });

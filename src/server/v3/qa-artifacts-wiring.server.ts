@@ -1211,9 +1211,10 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
         blocker_codes: existingLoad.blocker_codes,
       };
     }
-    const existing = existingLoad.ok ? existingLoad.state : { emitted: [], runtimeAccepted: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
+    const existing = existingLoad.ok ? existingLoad.state : { raw_manifest: {}, emitted: [], emittedBlocked: [], deferred: [], notApplicable: [], runtimeAccepted: [], runtimeBlocked: [], sourceById: {}, level2ById: {}, defectRiskIds: [], summaries: {} };
     const existingNonComparisonEmitted = existing.emitted.filter((id) => !COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
     const existingNonComparisonRuntimeAccepted = existing.runtimeAccepted.filter((id) => !COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
+    const existingNonComparisonRuntimeBlocked = existing.runtimeBlocked.filter((id) => !COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
     const currentComparisonEmitted = emitted_artefact_ids.filter((id) => COMPARISON_RUNTIME_ARTEFACT_IDS.has(id as any));
     const emittedAll = [...new Set([...existingNonComparisonEmitted, ...currentComparisonEmitted])];
     const runtimeAccepted = [...new Set([...existingNonComparisonRuntimeAccepted, ...currentComparisonEmitted])];
@@ -1254,7 +1255,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       deferred_artefact_ids: existing.deferred,
       not_applicable_artefact_ids: existing.notApplicable,
       runtime_evidence_accepted_by_id: runtimeAccepted,
-      runtime_evidence_blocked_by_id: existing.runtimeBlocked,
+      runtime_evidence_blocked_by_id: existingNonComparisonRuntimeBlocked,
       artefact_source_classification_by_id: sourceById,
       artefact_level2_spine_satisfaction_by_id: level2ById,
       defect_risk_ids: existing.defectRiskIds,
