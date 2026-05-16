@@ -1,5 +1,5 @@
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
-import { writeQAArtifact } from './qa-artifact-sink.server';
+import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
 function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
   const present = warnings.filter((warning): warning is string => Boolean(warning && warning.trim()));
@@ -16,6 +16,74 @@ function getQAWriteWarning(result: unknown): string | null {
   );
 }
 
+
+
+const COMPARISON_ARTEFACT_IDS = ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace'] as const;
+type ComparisonArtefactId = typeof COMPARISON_ARTEFACT_IDS[number];
+const COMPARISON_BLOCKER_BY_ID: Record<ComparisonArtefactId,string> = {
+  comparison_raw: 'comparison_JSON_missing',
+  comparison_report_internal: 'comparison_report_unavailable',
+  same_video_repeatability_trace: 'same_video_repeatability_trace_missing',
+  comparison_suppression_trace: 'comparison_suppression_trace_missing',
+  route_variance_trace: 'route_variance_trace_missing',
+};
+const COMPARISON_SOURCE_BY_ID: Record<ComparisonArtefactId,string> = {
+  comparison_raw: 'internal_comparison_runtime',
+  comparison_report_internal: 'internal_comparison_report',
+  same_video_repeatability_trace: 'internal_comparison_trace',
+  comparison_suppression_trace: 'internal_comparison_trace',
+  route_variance_trace: 'internal_comparison_trace',
+};
+function isComparisonArtefactId(value: unknown): value is ComparisonArtefactId {
+  return typeof value === 'string' && (COMPARISON_ARTEFACT_IDS as readonly string[]).includes(value);
+}
+
+export function reconcileComparisonManifestState(input: {
+  manifest: Record<string, any>;
+  comparison_write_success_by_id: Partial<Record<ComparisonArtefactId, boolean>>;
+}) {
+  const manifest = JSON.parse(JSON.stringify(input.manifest ?? {}));
+  const succ = input.comparison_write_success_by_id ?? {};
+  const emittedSet = new Set<string>(manifest.emitted_artifacts ?? []);
+  const missingSet = new Set<string>((manifest.missing_artifacts ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
+  const blockerSet = new Set<string>((manifest.blocker_codes ?? []).filter((b:string)=> b !== 'comparison_report_internal_missing'));
+  const acceptedSet = new Set<string>((manifest.runtime_evidence_accepted_by_id ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
+  const blockedSet = new Set<string>((manifest.runtime_evidence_blocked_by_id ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
+  const statusById = { ...(manifest.artefact_status_by_id ?? {}) };
+  const srcById = { ...(manifest.artefact_source_classification_by_id ?? {}) };
+  const l2ById = { ...(manifest.artefact_level2_spine_satisfaction_by_id ?? {}) };
+  for (const id of COMPARISON_ARTEFACT_IDS) {
+    const ok = Boolean(succ[id]);
+    if (ok) {
+      emittedSet.add(id); missingSet.delete(id); blockerSet.delete(COMPARISON_BLOCKER_BY_ID[id]);
+      acceptedSet.add(id); blockedSet.delete(id);
+      statusById[id] = 'emitted'; srcById[id] = COMPARISON_SOURCE_BY_ID[id]; l2ById[id] = false;
+    } else {
+      emittedSet.delete(id); missingSet.add(id); blockerSet.add(COMPARISON_BLOCKER_BY_ID[id]);
+      acceptedSet.delete(id); blockedSet.add(id);
+      statusById[id] = 'missing'; delete srcById[id]; delete l2ById[id];
+    }
+  }
+  const req = Array.isArray(manifest.required_artifacts) ? manifest.required_artifacts.map((a:any)=>{
+    if (!isComparisonArtefactId(a?.artefact_id)) return a;
+    const id=a.artefact_id as ComparisonArtefactId;
+    const ok = Boolean(succ[id]);
+    return { ...a, status: ok ? 'emitted' : 'missing', blocker_code: ok ? undefined : COMPARISON_BLOCKER_BY_ID[id] };
+  }) : manifest.required_artifacts;
+  delete manifest.comparison_report_internal_missing;
+  return {
+    ...manifest,
+    required_artifacts: req,
+    emitted_artifacts: [...emittedSet],
+    missing_artifacts: [...missingSet],
+    blocker_codes: [...blockerSet],
+    runtime_evidence_accepted_by_id: [...acceptedSet],
+    runtime_evidence_blocked_by_id: [...blockedSet],
+    artefact_status_by_id: statusById,
+    artefact_source_classification_by_id: srcById,
+    artefact_level2_spine_satisfaction_by_id: l2ById,
+  };
+}
 export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
@@ -98,6 +166,7 @@ export interface InternalComparisonRuntimeSourceInput {
   root_take_id: string;
   root_analysis_run_id?: string;
   compared_takes: InternalComparisonTakeInput[];
+  manifest_reconciliation_mode?: 'none' | 'required';
   comparison_run_id?: string;
   source_module: string;
   source_stage: string;
@@ -129,6 +198,98 @@ export interface InternalComparisonOperatorTriggerResult {
   warning?: string | null;
   blocker_codes?: string[];
 }
+
+export interface CanonicalComparisonReconciliationIdentity {
+  source_run_id: string;
+  canonical_qa_run_id: string;
+  canonical_take_id: string;
+  canonical_analysis_run_id: string;
+  manifest_relative_path: 'manifest.json';
+  metrics_relative_path: 'qa/acceptance_metrics.json';
+  comparison_relative_paths: {
+    comparison_raw: 'comparison/comparison.raw.json';
+    comparison_report_internal: 'comparison/comparison.report.internal.json';
+    same_video_repeatability_trace: 'comparison_traces/same_video_repeatability_trace.json';
+    comparison_suppression_trace: 'comparison_traces/comparison_suppression_trace.json';
+    route_variance_trace: 'comparison_traces/route_variance_trace.json';
+  };
+  canonical_manifest_storage_key: string;
+  canonical_metrics_storage_key: string;
+  canonical_comparison_root: string;
+  identity_status: 'resolved' | 'comparison_reconciliation_manifest_identity_mismatch';
+  blocker_code?: 'comparison_reconciliation_manifest_identity_mismatch';
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+export function resolveCanonicalComparisonReconciliationIdentity(input: {
+  run_id: string;
+  take_id?: string | null;
+  root_take_id?: string | null;
+  analysis_run_id?: string;
+  compared_take_ids?: string[];
+}): CanonicalComparisonReconciliationIdentity {
+  const sourceRunId = String(input.run_id ?? '').trim();
+  const takeIdRaw = (input.root_take_id ?? input.take_id ?? '').trim();
+  const compared = (input.compared_take_ids ?? []).map((x) => String(x).trim()).filter(Boolean);
+  const safeMismatch = (): CanonicalComparisonReconciliationIdentity => ({
+    source_run_id: sourceRunId,
+    canonical_qa_run_id: '',
+    canonical_take_id: '',
+    canonical_analysis_run_id: '',
+    manifest_relative_path: 'manifest.json',
+    metrics_relative_path: 'qa/acceptance_metrics.json',
+    comparison_relative_paths: {
+      comparison_raw: 'comparison/comparison.raw.json',
+      comparison_report_internal: 'comparison/comparison.report.internal.json',
+      same_video_repeatability_trace: 'comparison_traces/same_video_repeatability_trace.json',
+      comparison_suppression_trace: 'comparison_traces/comparison_suppression_trace.json',
+      route_variance_trace: 'comparison_traces/route_variance_trace.json',
+    },
+    canonical_manifest_storage_key: '',
+    canonical_metrics_storage_key: '',
+    canonical_comparison_root: '',
+    identity_status: 'comparison_reconciliation_manifest_identity_mismatch',
+    blocker_code: 'comparison_reconciliation_manifest_identity_mismatch',
+  });
+  if (!takeIdRaw) return safeMismatch();
+  try { assertSafeSegment(takeIdRaw, 'take_id'); } catch { return safeMismatch(); }
+  if (compared.length > 0 && !compared.includes(takeIdRaw)) return safeMismatch();
+  const takeRunMatch = /^take-(.+)$/.exec(sourceRunId);
+  if (takeRunMatch && takeRunMatch[1] !== takeIdRaw) return safeMismatch();
+  if (sourceRunId && !takeRunMatch && sourceRunId !== `take-${takeIdRaw}` && !isUuidLike(sourceRunId)) {
+    try { assertSafeSegment(sourceRunId, 'run_id'); } catch { return safeMismatch(); }
+  }
+  const canonicalQaRunId = `take-${takeIdRaw}`;
+  const canonicalAnalysisRunId = canonicalQaRunId;
+  const analysisInput = (input.analysis_run_id ?? '').trim();
+  if (analysisInput && analysisInput !== canonicalAnalysisRunId) return safeMismatch();
+  const canonicalComparisonRoot = `takes/take-${takeIdRaw}/analysis-${canonicalAnalysisRunId}`;
+  const manifestRelativePath = 'manifest.json' as const;
+  const metricsRelativePath = 'qa/acceptance_metrics.json' as const;
+  return {
+    source_run_id: sourceRunId,
+    canonical_qa_run_id: canonicalQaRunId,
+    canonical_take_id: takeIdRaw,
+    canonical_analysis_run_id: canonicalAnalysisRunId,
+    manifest_relative_path: manifestRelativePath,
+    metrics_relative_path: metricsRelativePath,
+    comparison_relative_paths: {
+      comparison_raw: 'comparison/comparison.raw.json',
+      comparison_report_internal: 'comparison/comparison.report.internal.json',
+      same_video_repeatability_trace: 'comparison_traces/same_video_repeatability_trace.json',
+      comparison_suppression_trace: 'comparison_traces/comparison_suppression_trace.json',
+      route_variance_trace: 'comparison_traces/route_variance_trace.json',
+    },
+    canonical_manifest_storage_key: `${canonicalQaRunId}/analysis-${canonicalAnalysisRunId}/${manifestRelativePath}`,
+    canonical_metrics_storage_key: `${canonicalQaRunId}/analysis-${canonicalAnalysisRunId}/${metricsRelativePath}`,
+    canonical_comparison_root: canonicalComparisonRoot,
+    identity_status: 'resolved',
+  };
+}
+
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
@@ -280,6 +441,20 @@ function computeDeterministicComparisonRunId(comparedTakeIds: string[], compared
   const base = [...comparedTakeIds.map((s) => s.trim()), ...comparedAnalysisRunIds.map((s) => s.trim())].filter(Boolean).sort().join('-').toLowerCase().replace(/[^a-z0-9-]/g, '-');
   return `comparison-${base.slice(0, 48) || 'unknown'}`;
 }
+function stripTakePrefix(value: string): string {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return '';
+  if (!trimmed.startsWith('take-')) return trimmed;
+  const core = trimmed.slice(5);
+  if (!core || core.startsWith('take-')) return '';
+  return core;
+}
+function toCanonicalTakeRunId(value: string): string {
+  const core = stripTakePrefix(value);
+  if (!core) return '';
+  assertSafeSegment(core, 'take_id');
+  return `take-${core}`;
+}
 export async function runInternalComparisonOperatorTrigger(
   input: InternalComparisonOperatorTriggerInput,
   resolveCompletedTakeAnalysis: (takeId: string) => Promise<CompletedTakeComparisonSource | null>,
@@ -287,17 +462,21 @@ export async function runInternalComparisonOperatorTrigger(
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
     return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'internal_qa_emit_disabled', blocker_codes: ['qa_flags_disabled'] };
   }
+  const rootTakeIdCore = stripTakePrefix(input.root_take_id);
+  try { assertSafeSegment(rootTakeIdCore, 'root_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_root_take_id', blocker_codes: ['unsafe_root_take_id'] }; }
+  const canonicalRootTakeRunId = toCanonicalTakeRunId(rootTakeIdCore);
   const rawIds = (input.compared_take_ids ?? []).map((id) => typeof id === 'string' ? id.trim() : '').filter(Boolean);
   const ids: string[] = [];
   const seenInputTakeIds = new Set<string>();
   for (const id of rawIds) {
-    try { assertSafeSegment(id, 'compared_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_compared_take_id', blocker_codes: ['unsafe_compared_take_id'] }; }
-    if (seenInputTakeIds.has(id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_compared_take_id', blocker_codes: ['duplicate_compared_take_id'] };
-    seenInputTakeIds.add(id);
-    ids.push(id);
+    const core = stripTakePrefix(id);
+    try { assertSafeSegment(core, 'compared_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_compared_take_id', blocker_codes: ['unsafe_compared_take_id'] }; }
+    if (seenInputTakeIds.has(core)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: rawIds, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_compared_take_id', blocker_codes: ['duplicate_compared_take_id'] };
+    seenInputTakeIds.add(core);
+    ids.push(core);
   }
   if (ids.length < 2) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'comparison_requires_two_or_more_takes', blocker_codes: ['insufficient_compared_takes'] };
-  if (!ids.includes(input.root_take_id)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'root_take_id_must_be_in_compared_take_ids', blocker_codes: ['root_take_missing'] };
+  if (!ids.includes(rootTakeIdCore)) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'root_take_id_must_be_in_compared_take_ids', blocker_codes: ['root_take_missing'] };
   if (input.compared_analysis_run_ids && input.compared_analysis_run_ids.length !== ids.length) {
     return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'compared_analysis_run_ids_length_mismatch', blocker_codes: ['analysis_run_id_cardinality_mismatch'] };
   }
@@ -308,10 +487,10 @@ export async function runInternalComparisonOperatorTrigger(
   }
   const resolvedRows: CompletedTakeComparisonSource[] = [];
   const seenResolvedTakeIds = new Set<string>();
-  for (const requestedTakeId of ids) {
+  for (const requestedTakeIdCore of ids) {
     let resolved: CompletedTakeComparisonSource | null = null;
     try {
-      resolved = await resolveCompletedTakeAnalysis(requestedTakeId);
+      resolved = await resolveCompletedTakeAnalysis(requestedTakeIdCore);
     } catch {
       return {
         ok: false,
@@ -327,14 +506,15 @@ export async function runInternalComparisonOperatorTrigger(
       };
     }
     if (!resolved) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
-    if (typeof resolved.take_id !== 'string' || !resolved.take_id.trim() || resolved.take_id !== requestedTakeId) {
+    const resolvedTakeCore = stripTakePrefix(resolved.take_id);
+    if (typeof resolved.take_id !== 'string' || !resolved.take_id.trim() || resolvedTakeCore !== requestedTakeIdCore) {
       return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'resolver_take_id_mismatch', blocker_codes: ['resolver_take_id_mismatch'] };
     }
-    if (seenResolvedTakeIds.has(resolved.take_id)) {
+    if (seenResolvedTakeIds.has(resolvedTakeCore)) {
       return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'duplicate_resolved_take_id', blocker_codes: ['duplicate_resolved_take_id'] };
     }
-    seenResolvedTakeIds.add(resolved.take_id);
-    resolvedRows.push(resolved);
+    seenResolvedTakeIds.add(resolvedTakeCore);
+    resolvedRows.push({ ...resolved, take_id: resolvedTakeCore });
   }
   const byTake = new Map(resolvedRows.map((row) => [row.take_id, row]));
   const compared_takes: InternalComparisonTakeInput[] = [];
@@ -358,13 +538,14 @@ export async function runInternalComparisonOperatorTrigger(
     if (explicit && explicit !== row.analysis_run_id) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'explicit_analysis_run_id_mismatch', blocker_codes: ['analysis_run_id_mismatch'] };
     compared_takes.push({ ...row, take_id: row.take_id, analysis_run_id: row.analysis_run_id });
   }
-  const root = byTake.get(input.root_take_id);
+  const root = byTake.get(rootTakeIdCore);
   if (!root) return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: ids, compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'take_not_resolved', blocker_codes: ['take_not_resolved'] };
   const out = await runInternalComparisonForTakes({
-    run_id: input.root_take_id,
-    root_take_id: input.root_take_id,
+    run_id: canonicalRootTakeRunId,
+    root_take_id: rootTakeIdCore,
     root_analysis_run_id: root.analysis_run_id,
     compared_takes,
+    manifest_reconciliation_mode: 'required',
     comparison_run_id: input.comparison_run_id,
     source_module: input.source_module,
     source_stage: input.source_stage,
@@ -447,6 +628,9 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
   const route_variance_trace = {
     route_variance_status: routeVarianceDetected ? 'detected' : 'not_detected', compared_run_routes: routes, route_mismatch_detected: routeVarianceDetected, route_variance_detected: routeVarianceDetected, route_variance_risk: routeVarianceDetected, route_variance_mitigation_status: routeVarianceDetected ? 'unresolved_blocked' : 'not_required', route_variance_trace_summary: { route_variance_detected: routeVarianceDetected },
   };
+  if (input.manifest_reconciliation_mode === 'required') {
+    return emitComparisonRuntimeArtifactsWithManifestReconciliation({ run_id: input.run_id, root_take_id: input.root_take_id, take_id: input.root_take_id, analysis_run_id: `take-${input.root_take_id}`, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
+  }
   return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: rootAnalysisRunId, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
 }
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
@@ -1149,6 +1333,72 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   }
   const emitted_blocked_artefact_ids: string[] = [];
   return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
+}
+
+export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(input: ComparisonRuntimeArtifactsInput & { root_take_id?: string | null }) {
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const sourceRunId = input.run_id;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const comparedTakeIds = input.compared_take_ids ?? (input.comparison_raw_data?.compared_take_ids as string[] | undefined) ?? [];
+  const identity = resolveCanonicalComparisonReconciliationIdentity({
+    run_id: sourceRunId,
+    take_id: input.take_id ?? null,
+    root_take_id: input.root_take_id ?? input.take_id ?? null,
+    analysis_run_id: analysisRunId,
+    compared_take_ids: comparedTakeIds,
+  });
+  const baseResult = {
+    source_run_id: sourceRunId,
+    canonical_qa_run_id: identity.canonical_qa_run_id,
+    canonical_take_id: identity.canonical_take_id,
+    canonical_analysis_run_id: identity.canonical_analysis_run_id,
+    reconciliation_identity_status: identity.identity_status,
+    manifest_preflight_read_path: identity.canonical_manifest_storage_key,
+    manifest_rewrite_path: identity.canonical_manifest_storage_key,
+    metrics_rewrite_path: identity.canonical_metrics_storage_key,
+    comparison_artefact_write_root: identity.canonical_comparison_root,
+  };
+  if (identity.identity_status !== 'resolved') {
+    return { written: false as const, emitted_artefact_ids: [] as string[], emitted_blocked_artefact_ids: [] as string[], ...baseResult, read_write_root_match: false, comparison_artefact_root_match: false, reconciliation_written: false, comparison_artefacts_written: false, blocker_codes: ['comparison_reconciliation_manifest_identity_mismatch'] };
+  }
+  const preflight = await readQAArtifactText({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.manifest_relative_path });
+  if (preflight.status !== 'ok') {
+    return { written: false as const, emitted_artefact_ids: [] as string[], emitted_blocked_artefact_ids: [] as string[], ...baseResult, read_write_root_match: false, comparison_artefact_root_match: false, reconciliation_written: false, comparison_artefacts_written: false, blocker_codes: [preflight.warning ?? 'comparison_reconciliation_failed'], manifest_preflight_read_status: preflight.status };
+  }
+  let manifestObj: Record<string, any> | null = null;
+  try { manifestObj = JSON.parse(preflight.text ?? ''); } catch { manifestObj = null; }
+  if (!manifestObj || typeof manifestObj !== 'object' || Array.isArray(manifestObj)) {
+    return { written: false as const, emitted_artefact_ids: [] as string[], emitted_blocked_artefact_ids: [] as string[], ...baseResult, read_write_root_match: false, comparison_artefact_root_match: false, reconciliation_written: false, comparison_artefacts_written: false, blocker_codes: ['comparison_reconciliation_manifest_unreadable'] };
+  }
+  const emitOut = await emitComparisonRuntimeArtifacts({ ...input, run_id: identity.canonical_qa_run_id, take_id: identity.canonical_take_id, analysis_run_id: identity.canonical_analysis_run_id });
+  const emittedIds = emitOut.emitted_artefact_ids ?? [];
+  const reconciledManifest = reconcileComparisonManifestState({
+    manifest: manifestObj,
+    comparison_write_success_by_id: {
+      comparison_raw: emittedIds.includes('comparison_raw'),
+      comparison_report_internal: emittedIds.includes('comparison_report_internal'),
+      same_video_repeatability_trace: emittedIds.includes('same_video_repeatability_trace'),
+      comparison_suppression_trace: emittedIds.includes('comparison_suppression_trace'),
+      route_variance_trace: emittedIds.includes('route_variance_trace'),
+    },
+  });
+  const mw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.manifest_relative_path, payload: reconciledManifest, artefact_id: 'manifest' });
+  const metrics = { ...buildQAAcceptanceMetrics(reconciledManifest), ...resolveQADeploymentProvenance() };
+  const qw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.metrics_relative_path, payload: metrics, artefact_id: 'qa_acceptance_metrics' });
+  const reconciliation_written = Boolean(mw.written && qw.written);
+  const comparison_artefacts_written = emittedIds.length > 0;
+  const comparison_artefact_root_match = Boolean(identity.canonical_comparison_root === `takes/take-${identity.canonical_take_id}/analysis-${identity.canonical_analysis_run_id}`);
+  const read_write_root_match = Boolean(identity.canonical_manifest_storage_key.startsWith(`${identity.canonical_qa_run_id}/`) && identity.canonical_metrics_storage_key.startsWith(`${identity.canonical_qa_run_id}/`));
+  return {
+    ...emitOut,
+    ...baseResult,
+    written: Boolean(emitOut.written && reconciliation_written),
+    reconciliation_written,
+    comparison_artefacts_written,
+    comparison_artefact_root_match,
+    read_write_root_match,
+    blocker_codes: emitOut.written && reconciliation_written ? [] : ['comparison_reconciliation_failed'],
+  };
 }
 
 export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmitterInput) {

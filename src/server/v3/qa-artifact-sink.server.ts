@@ -40,6 +40,66 @@ function emitLog(input: { sink_mode: QAArtifactSinkMode; sink_write_status: 'wri
   console.info(`${LOG_PREFIX}${JSON.stringify(line)}`);
 }
 
+
+export interface QAArtifactReadResult {
+  status: 'ok' | 'missing' | 'unreadable' | 'unsupported';
+  text?: string;
+  warning?: 'comparison_reconciliation_manifest_missing' | 'comparison_reconciliation_manifest_unreadable' | 'comparison_reconciliation_manifest_read_unsupported';
+  sink_mode: QAArtifactSinkMode;
+  storage_path?: string;
+  path?: string;
+}
+
+function looksLikeObjectNotFound(message: string): boolean {
+  const m = message.toLowerCase();
+  return m.includes('404') || m.includes('not found') || m.includes('object not found') || m.includes('no such key') || m.includes('enoent') || m.includes('no such file');
+}
+
+export async function readQAArtifactText(input: { run_id: string; relative_path: string; root_dir?: string; env?: NodeJS.ProcessEnv }): Promise<QAArtifactReadResult> {
+  const env = input.env ?? process.env;
+  const mode = resolveMode(env);
+  const root = input.root_dir ?? 'qa-artifacts';
+  let rel = input.relative_path;
+  try {
+    assertSafeSegment(input.run_id, 'run_id');
+    rel = validateRelativePath(input.relative_path);
+  } catch {
+    return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode };
+  }
+  const storage_bucket = env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
+  const storage_path = toCanonicalStoragePath(input.run_id, rel);
+  if (mode === 'console_jsonl') {
+    return { status: 'unsupported', warning: 'comparison_reconciliation_manifest_read_unsupported', sink_mode: mode, storage_path };
+  }
+  if (mode === 'file') {
+    const abs = path.join(root, input.run_id, rel);
+    const prefix = path.resolve(path.join(root, input.run_id)) + path.sep;
+    if (!path.resolve(abs).startsWith(prefix)) return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode };
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const text = await readFile(abs, 'utf8');
+      return { status: 'ok', text, sink_mode: mode, path: abs };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'unknown';
+      if (looksLikeObjectNotFound(msg)) return { status: 'missing', warning: 'comparison_reconciliation_manifest_missing', sink_mode: mode, path: abs };
+      return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode, path: abs };
+    }
+  }
+  try {
+    const storageClient = supabaseAdmin.storage.from(storage_bucket);
+    const { data, error } = await storageClient.download(storage_path);
+    if (error) {
+      if (looksLikeObjectNotFound(error.message ?? '')) return { status: 'missing', warning: 'comparison_reconciliation_manifest_missing', sink_mode: mode, storage_path };
+      return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode, storage_path };
+    }
+    if (!data) return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode, storage_path };
+    const text = await data.text();
+    return { status: 'ok', text, sink_mode: mode, storage_path };
+  } catch {
+    return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode, storage_path };
+  }
+}
+
 export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAArtifactWriteResult> {
   assertSafeSegment(input.run_id, 'run_id');
   const mode = resolveMode();
