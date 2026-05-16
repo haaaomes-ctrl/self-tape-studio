@@ -69,7 +69,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
       root_dir: root,
       internal_qa_emit: true,
       manifest_reconciliation_mode: 'required',
-      compared_takes: [{ take_id: 'take-a', analysis_run_id: 'analysis-a' }, { take_id: 'take-b', analysis_run_id: 'analysis-b' }],
+      compared_takes: [{ take_id: 'a', analysis_run_id: 'analysis-a' }, { take_id: 'b', analysis_run_id: 'analysis-b' }],
     });
     expect(out.written).toBe(true);
     await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-a', 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
@@ -107,6 +107,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
     });
     expect(out.written).toBe(false);
     expect(out.emitted_artefact_ids).toEqual([]);
+    await expect(readFile(path.join(root, 'take-a', 'takes', 'take-a', 'analysis-take-', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
   });
 
   it('suppresses decision for same video duplicate input and keeps public winner blocked', async () => {
