@@ -111,7 +111,9 @@ export interface ModelRunTraceEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
-export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
+interface ComparisonReconciliationResult { written: boolean; warning?: string | null; }
+type ComparisonReconciliationEmitter = (metadata: QARuntimeMetadata) => Promise<ComparisonReconciliationResult>;
+export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; reconciliation_emitter_override?: ComparisonReconciliationEmitter; }
 export interface InternalComparisonTakeInput {
   take_id: string;
   analysis_run_id: string;
@@ -1126,6 +1128,9 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs: R
 export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput) {
   const emitted_artefact_ids: string[] = [];
   let hadFailure = false;
+  let reconciliation_written = false;
+  let reconciliation_warning: string | null = null;
+  let comparison_artefacts_written = false;
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids };
   const root = input.root_dir ?? DEFAULT_ROOT;
   const comparisonRunId = input.comparison_run_id
@@ -1177,6 +1182,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   }
   const emitted_blocked_artefact_ids: string[] = [];
   const takeScopedManifestRewrite = emitted_artefact_ids.length > 0;
+  comparison_artefacts_written = emitted_artefact_ids.length > 0;
   if (takeScopedManifestRewrite && input.take_id) {
     const existing = loadExistingManifestState(root, input.run_id, takeId, analysisRunId);
     const emittedAll = [...new Set([...existing.emitted, ...emitted_artefact_ids])];
@@ -1195,7 +1201,8 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       ...(emitted_artefact_ids.includes('comparison_suppression_trace') ? { comparison_suppression_trace_summary: input.suppression_trace?.comparison_suppression_trace_summary ?? null } : {}),
       ...(emitted_artefact_ids.includes('route_variance_trace') ? { route_variance_trace_summary: input.route_variance_trace?.route_variance_trace_summary ?? null } : {}),
     };
-    await emitQAManifestForAnalysisRun({
+    const reconciliationEmitter = input.reconciliation_emitter_override ?? emitQAManifestForAnalysisRun;
+    const reconciliation = await reconciliationEmitter({
       run_id: input.run_id,
       analysis_run_id: analysisRunId,
       take_id: takeId,
@@ -1210,8 +1217,25 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
       internal_qa_emit: input.internal_qa_emit,
       ...summaryPatch,
     } as QARuntimeMetadata & Record<string, unknown>);
+    reconciliation_written = Boolean(reconciliation?.written);
+    reconciliation_warning = typeof reconciliation?.warning === 'string' ? reconciliation.warning : null;
+    if (!reconciliation_written) hadFailure = true;
   }
-  return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
+  const reconciliationFailed = takeScopedManifestRewrite && input.take_id ? !reconciliation_written : false;
+  const warning = reconciliationFailed
+    ? mergeQAWarnings(reconciliation_warning, 'comparison_manifest_metrics_reconciliation_failed')
+    : reconciliation_warning;
+  const blocker_codes = reconciliationFailed ? ['comparison_reconciliation_failed'] : [];
+  return {
+    written: !hadFailure,
+    comparison_run_id: comparisonRunId,
+    emitted_artefact_ids,
+    emitted_blocked_artefact_ids,
+    comparison_artefacts_written,
+    reconciliation_written,
+    warning,
+    blocker_codes,
+  };
 }
 
 export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmitterInput) {
