@@ -568,7 +568,13 @@ export async function runInternalComparisonOperatorTrigger(
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.root_take_id, 'root_take_id');
-  const rootTake = input.compared_takes.find((t) => t.take_id === input.root_take_id);
+  const rootTake = input.manifest_reconciliation_mode === 'required'
+    ? (() => {
+        const canonicalInputRootCore = stripTakePrefix(input.root_take_id);
+        if (!canonicalInputRootCore) return null;
+        return input.compared_takes.find((t) => stripTakePrefix(t.take_id) === canonicalInputRootCore) ?? null;
+      })()
+    : (input.compared_takes.find((t) => t.take_id === input.root_take_id) ?? null);
   if (!rootTake) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const rootAnalysisRunId = input.root_analysis_run_id ?? rootTake.analysis_run_id;
   if (!rootAnalysisRunId) return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -633,7 +639,9 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
       const canonicalRootTakeCore = stripTakePrefix(input.root_take_id);
       assertSafeSegment(canonicalRootTakeCore, 'root_take_id');
       const canonicalRootRunId = toCanonicalTakeRunId(canonicalRootTakeCore);
-      const canonicalComparedTakeIds = comparedTakeIds.map((id) => stripTakePrefix(id)).filter(Boolean);
+      if (!canonicalRootRunId) return { written: false as const, emitted_artefact_ids: [] as string[] };
+      const canonicalComparedTakeIds = comparedTakeIds.map((id) => stripTakePrefix(id));
+      if (canonicalComparedTakeIds.some((id) => !id)) return { written: false as const, emitted_artefact_ids: [] as string[] };
       canonicalComparedTakeIds.forEach((id) => assertSafeSegment(id, 'compared_take_id'));
       return emitComparisonRuntimeArtifactsWithManifestReconciliation({ run_id: canonicalRootRunId, root_take_id: canonicalRootTakeCore, take_id: canonicalRootTakeCore, analysis_run_id: canonicalRootRunId, comparison_run_id, compared_take_ids: canonicalComparedTakeIds, comparison_raw_data, same_video_repeatability_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
     } catch {
