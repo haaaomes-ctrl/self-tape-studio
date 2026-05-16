@@ -9,21 +9,24 @@
 
 ## 0. Executive summary
 
-TapeCoach evaluates whether a performer’s self-tape is ready to submit for the selected performer level, audition type and optional casting brief.
+TapeCoach evaluates whether a performer’s self-tape is ready to submit for the selected performer level, audition type and optional casting brief / task.
 
-The central product question is:
+The central product questions are:
 
-> Is this tape good enough to submit for this performer’s selected level and task, and if not, what should they fix first?
+> Is this tape good enough to submit for this performer’s selected level, audition type and brief / task?  
+> Has the performer achieved the brief?  
+> If not, what should the performer fix, prioritise or focus on?
 
 Every report must help the performer understand:
 
 1. whether the tape is ready to submit at the selected level;
-2. why that verdict was reached;
-3. what to fix first;
-4. what is already working and should be preserved;
-5. what the gap is to the selected level;
-6. what to do in the next take;
-7. what could not be assessed reliably.
+2. whether the supplied brief / task has been achieved and, if not, how much has been achieved;
+3. why that verdict was reached;
+4. what to fix, prioritise or focus on;
+5. what is already working and should be preserved;
+6. what the gap is to the selected level;
+7. what to do in the next take;
+8. what could not be assessed reliably.
 
 The judgement should combine UK casting-director, agent, acting coach, vocal / singing coach, movement / dance coach and commercial / screen-task perspectives.
 
@@ -98,6 +101,22 @@ These emitted first-pass traces remain legacy/report-snapshot derived for curren
 
 `ScoreTrace.json` is emitted from explicit score/calibration fields only; it must not be treated as public overall-readiness score approval.
 
+### Current QA environment configuration
+
+Expected deployed QA configuration is:
+
+```text
+INTERNAL_COMPARISON_TRIGGER_ENABLED=true
+QA_ARTIFACT_SINK=storage
+QA_ARTIFACT_STORAGE_BUCKET=qa-artifacts
+QA_ARTIFACT_LOG_FALLBACK=true
+V3_QA_ARTIFACTS_ENABLED=true
+INTERNAL_QA_EMIT=true
+TWO_STEP_ANALYSIS_ENABLED=true
+```
+
+Do not print or expose secret values. If a source/Codex agent cannot inspect deployed environment variables directly, it should report `operator-verification-required` rather than blocking implementation.
+
 ### Current public scoring decision
 
 Overall readiness score exposure remains blocked from public scoring output unless separately approved.
@@ -150,6 +169,11 @@ TapeCoach must:
 - allow every non-Professional level to achieve 90+ for excellent work relative to that level;
 - explain high scores with sharper marginal detail, not less feedback;
 - identify the highest-impact next corrections through `priority_fixes[]`;
+- translate supplied briefs into itemised, actionable requirements;
+- classify each brief requirement as mandatory, preferred, optional, style-context, material instruction, technical/setup, admin/process or ambiguous;
+- judge how well each assessable brief requirement has been achieved;
+- reflect missing or partially achieved mandatory brief requirements in readiness, brief adherence, priority fixes and action plan;
+- distinguish not achieved from not assessable;
 - provide meaningful strengths, improvements and action steps without arbitrary item caps;
 - provide duration-scaled timestamped evidence without invented or padded timestamps;
 - explain category and component judgements with discipline-specific rationale;
@@ -166,6 +190,9 @@ TapeCoach must not:
 - penalise modest rooms, phones, domestic capture or simple equipment unless they materially limit assessability;
 - infer protected traits, appearance, body type, class, disability, access need, gender, race, age or marketability;
 - invent timestamps, brief requirements, material context, style claims or technique labels;
+- treat a supplied brief requirement as achieved unless the tape evidence supports it;
+- treat every brief phrase as a hard requirement without obligation classification;
+- mark down performance for a requirement that could not be assessed because of capture, framing, audio, edit or missing material;
 - truncate useful feedback to meet arbitrary item counts.
 
 ---
@@ -184,11 +211,13 @@ The redesigned public-facing report should use the following core sections:
 8. Component breakdown
 9. Timestamped evidence
 10. Assessability and limitations
-11. Brief / task fit where supplied
+11. Brief achievement and task fit where supplied
 12. Technical / setup signals where relevant
-13. Comparison summary where evidence supports it
+13. Technique / skill feedback where evidence supports it
+14. Repertoire / show / number context where evidence and source gates support it
+15. Comparison summary where evidence supports it
 
-The most important decision and highest-impact fix should appear before detailed evidence, technical notes or secondary refinements.
+The most important decision, brief-achievement status and highest-impact priorities should appear before detailed evidence, technical notes or secondary refinements.
 
 ### 2.1 Public report data shape
 
@@ -200,6 +229,8 @@ type PublicReport = {
   selected_level: PerformerLevel;
   audition_type: AuditionType;
   brief_context?: BriefContextSummary;
+  brief_achievement?: BriefAchievementSummary;
+  brief_requirements?: BriefRequirement[];
   feedback_reliability: "high" | "medium" | "low";
   why_this_verdict: VerdictRationale;
   priority_fixes: PriorityFix[];
@@ -212,6 +243,8 @@ type PublicReport = {
   timestamped_notes: TimestampedNote[];
   assessability_notes: AssessabilityNote[];
   technical_setup_signals?: TechnicalSetupSignal[];
+  technique_skill_feedback?: TechniqueSkillFeedback[];
+  repertoire_context_feedback?: RepertoireContextFeedback[];
   comparison_summary?: ComparisonSummary;
   safety_public_notes?: string[];
 };
@@ -235,8 +268,119 @@ Use these public labels consistently:
 | `component_breakdown[]` | Component breakdown |
 | `timestamped_notes[]` | Timestamped evidence |
 | `assessability_notes[]` | Assessability and limitations |
+| `brief_achievement` | Brief achievement |
+| `technique_skill_feedback[]` | Technique / skill feedback |
+| `repertoire_context_feedback[]` | Repertoire / show / number context |
 
 Use `Action plan` as the canonical public label.
+
+### 2.3 Brief achievement and requirement itemisation
+
+Where a brief, casting note, audition instruction, task, show / number reference, material requirement or technical instruction is supplied, TapeCoach must assess whether the performer has achieved it.
+
+The system must translate the brief into itemised, actionable requirements and classify each item before judging performance against it.
+
+```ts
+type BriefRequirement = {
+  requirement_id: string;
+  source_text: string;
+
+  category:
+    | "mandatory"
+    | "preferred"
+    | "optional"
+    | "style_context"
+    | "material_instruction"
+    | "technical_setup"
+    | "admin_process"
+    | "ambiguous";
+
+  requirement_type:
+    | "technique"
+    | "skill"
+    | "song"
+    | "dance"
+    | "scene"
+    | "monologue"
+    | "copy"
+    | "role_context"
+    | "show_number"
+    | "format"
+    | "duration"
+    | "framing"
+    | "submission_process";
+
+  mapped_technique_ids?: string[];
+  mapped_repertoire_ids?: string[];
+  selected_level_standard?: string;
+
+  achievement_status:
+    | "achieved"
+    | "mostly_achieved"
+    | "partially_achieved"
+    | "not_achieved"
+    | "not_assessable"
+    | "not_applicable";
+
+  achievement_score_band?: "high" | "medium" | "low" | "blocked";
+  evidence_anchor_ids: string[];
+  assessability_limits: string[];
+
+  readiness_impact:
+    | "supports_submission"
+    | "minor_gap"
+    | "material_gap"
+    | "retake_recommended"
+    | "submission_blocker"
+    | "not_assessable";
+};
+```
+
+Brief-achievement rules:
+
+- If a mandatory brief requirement is assessable and not achieved, readiness must be reduced.
+- If a mandatory brief requirement cannot be assessed because of framing, audio, edit, visibility or missing material, the system must record an assessability limitation before treating it as a performance failure.
+- A supplied brief may authorise referencing the requested technique, skill, show, number, task or material requirement as brief context.
+- A supplied brief does not automatically authorise claiming that the technique, skill or requirement was demonstrated, scored highly or publicly named as observed.
+- Not achieved and not assessable are different states and must not be collapsed.
+
+Example:
+
+```text
+Brief requirement:
+“Perform a grand battement during the dance section.”
+
+System should:
+1. map “grand battement” to the technique library;
+2. check whether the tape shows it;
+3. check whether it is assessable;
+4. judge execution against selected level;
+5. mark brief achievement;
+6. reflect that in readiness, priority fixes and action plan.
+```
+
+If mandatory and assessable but absent:
+
+```text
+Brief achievement: not achieved.
+Readiness impact: material gap or submission blocker.
+```
+
+If mandatory but not visible due to framing:
+
+```text
+Brief achievement: not assessable.
+Readiness impact: assessability blocker.
+Next-take action: reframe full body / relevant technique pathway.
+```
+
+If present but weak for selected level:
+
+```text
+Brief achievement: partially achieved.
+Readiness impact: material gap.
+Priority fix: improve the specific technique characteristic.
+```
 
 ---
 
@@ -346,6 +490,7 @@ The readiness statement must combine:
 - selected performer level;
 - audition type;
 - supplied brief or task;
+- itemised brief achievement;
 - essential component coverage;
 - observable performance quality;
 - assessability;
@@ -1077,6 +1222,316 @@ Public naming requires:
 8. expert review where required;
 9. display eligibility.
 
+### 16.1 Internal Technique Standards Library
+
+The Technique Standards Library is an internal standards system, not a public glossary.
+
+TapeCoach may identify and name techniques internally when evidence supports them. Public technique naming remains separately gated.
+
+Internal technique detection does not automatically authorise:
+
+- public naming;
+- public scoring;
+- public technique authority;
+- production-safe status.
+
+Technique detection may return:
+
+- none detected;
+- one technique;
+- multiple techniques;
+- possible but uncertain;
+- requested but not present;
+- not assessable.
+
+Each technique or skill-family entry should define:
+
+| Area | Requirement |
+|---|---|
+| Definition | What the technique is. |
+| Purpose | Why it matters in the discipline/task. |
+| Characteristics | What strong, developing or weak execution looks/sounds like. |
+| Level standards | How expectations differ by selected performer level. |
+| Evidence requirements | What must be visible/audible/supplied to assess it. |
+| Common faults | What mistakes are observable. |
+| Assessability limits | When the system must not judge it. |
+| Scoring implications | Which categories/components it can affect. |
+| Recommendation rules | When to preserve, improve, suggest drills or stay silent. |
+| Public authority | Whether the name can be public, descriptor-only, limitation-only, internal shadow or blocked. |
+
+```ts
+type TechniqueStandard = {
+  technique_id: string;
+  discipline:
+    | "musical_theatre"
+    | "dance"
+    | "acting"
+    | "voice_singing"
+    | "commercial";
+
+  component: string;
+  technique_family: string;
+
+  names: {
+    canonical: string;
+    aliases: string[];
+    plain_language_descriptors: string[];
+  };
+
+  definition: string;
+  purpose: string;
+
+  characteristics: {
+    core: string[];
+    strong_execution: string[];
+    developing_execution: string[];
+    common_faults: string[];
+    unsafe_or_unfair_inferences: string[];
+  };
+
+  level_standards: {
+    learning_school: TechniqueLevelStandard;
+    amateur_community: TechniqueLevelStandard;
+    emerging_training: TechniqueLevelStandard;
+    professional: TechniqueLevelStandard;
+  };
+
+  evidence_requirements: {
+    required_modalities: ("video" | "audio" | "brief" | "material" | "timestamp")[];
+    required_visibility_or_audibility: string[];
+    timestamp_preferred: boolean;
+    cannot_assess_if: string[];
+  };
+
+  scoring_implications: {
+    categories_supported: string[];
+    component_scores_supported: string[];
+    readiness_relevance: string;
+  };
+
+  recommendation_rules: {
+    when_to_recommend: string[];
+    when_not_to_recommend: string[];
+    safe_drills: string[];
+    caution_drills: string[];
+    blocked_advice: string[];
+  };
+
+  public_authority: {
+    status:
+      | "public_named_technique"
+      | "public_safe_descriptor"
+      | "limitation_only"
+      | "internal_shadow"
+      | "blocked";
+    benchmark_status: "not_started" | "in_progress" | "passed";
+    expert_review_required: boolean;
+    public_wording_approved: boolean;
+  };
+};
+```
+
+Example:
+
+```text
+Grand battement:
+The system should define it, identify whether it appears, identify characteristics such as brush through tendu, height, turnout, pelvis/torso control, controlled descent and clean return, judge those characteristics by selected level, and recommend improvements only where useful.
+```
+
+### 16.2 Brief-requested technique and skill handling
+
+If a supplied brief requests a named technique, skill, style, number, movement quality, vocal style, accent, copy task or material requirement, TapeCoach must:
+
+1. extract the requirement;
+2. map it to the internal technique / repertoire library where possible;
+3. determine whether it is mandatory, preferred, optional or style-context;
+4. check whether it appears in the tape;
+5. determine whether it is assessable;
+6. judge quality against the selected performer level;
+7. reflect the result in brief achievement, readiness, priority fixes and action plan.
+
+A supplied brief may authorise referencing the requested technique as a brief requirement. It does not automatically authorise claiming the technique was demonstrated, scored highly or publicly named as observed.
+
+### 16.3 Repertoire, show and number intelligence
+
+Where a brief supplies show, role, number, cut, style or material context, TapeCoach should resolve that context and use it to guide analysis where evidence supports it.
+
+The system should be able to map show / number context to:
+
+- likely discipline focus;
+- technique families;
+- style demands;
+- component requirements;
+- selected-level standards;
+- assessability needs;
+- common risks;
+- safe feedback patterns.
+
+The system must not invent show, number, role, production or choreography context where the brief does not supply it and the knowledge base / controlled research cannot support it.
+
+Repertoire public claims must be governed separately from internal repertoire understanding. A supplied brief can authorise referencing the show or number as task context, but it does not automatically prove that the submitted tape demonstrated the number-specific standard.
+
+### 16.4 Knowledge and research access policy
+
+The project has all required agreements, lawful access and permissions for the knowledge, research and reference materials used to develop TapeCoach’s technique library, repertoire library, show / number understanding, performance standards, benchmark examples and specialist evaluation logic.
+
+Rights, licensing and lawful-access management are handled outside the TapeCoach system.
+
+The TapeCoach system is not required to enforce or reason about rights or licensing.
+
+TapeCoach may use all project-approved information sources for internal knowledge development, including:
+
+- licensed materials;
+- official audition packs;
+- show / number references;
+- performance footage where available to the project;
+- syllabus and technique materials;
+- expert review;
+- internal benchmark clips;
+- controlled public research;
+- production-specific material supplied in the brief;
+- historical and current repertoire sources;
+- discipline-specific training and performance references.
+
+TapeCoach is not:
+
+- streaming;
+- reselling;
+- pirating;
+- republishing protected material;
+- distributing scripts, choreography, videos or lyrics;
+- reusing source material as a public substitute for the original material.
+
+TapeCoach is using project-approved information to build an internal knowledge base capable of recognising known techniques, styles, skills, repertoire, numbers, performance standards and self-tape expectations, then producing original, evidence-led, safe feedback.
+
+Inside the system, knowledge sources should be tracked for quality and release control:
+
+- source type;
+- authority tier;
+- confidence;
+- freshness;
+- review status;
+- benchmark status;
+- public-claim status.
+
+Use source metadata for quality and release control, not legal-rights enforcement.
+
+```ts
+type KnowledgeSource = {
+  source_id: string;
+
+  source_type:
+    | "licensed_or_project_approved_material"
+    | "official_audition_pack"
+    | "supplied_brief"
+    | "official_show_page"
+    | "production_material"
+    | "syllabus_or_training_material"
+    | "expert_review"
+    | "benchmark_fixture"
+    | "controlled_public_research"
+    | "internal_reference";
+
+  knowledge_use:
+    | "technique_standard"
+    | "repertoire_standard"
+    | "show_number_context"
+    | "brief_mapping"
+    | "benchmarking"
+    | "validator_rule"
+    | "public_wording_candidate";
+
+  authority_tier: 1 | 2 | 3 | 4 | 5;
+  provenance_confidence: "high" | "medium" | "low";
+
+  freshness_status:
+    | "current"
+    | "review_due"
+    | "stale"
+    | "unknown";
+
+  review_status:
+    | "unreviewed"
+    | "system_reviewed"
+    | "human_reviewed"
+    | "expert_reviewed"
+    | "blocked";
+
+  public_claim_status:
+    | "accepted_public_claim_allowed"
+    | "safe_descriptor_only"
+    | "internal_only"
+    | "blocked";
+
+  notes?: string[];
+};
+```
+
+Do not add or use system-level legal-rights enforcement gates in TapeCoach. The project’s lawful access, agreements and permissions are handled outside the system.
+
+### 16.5 Controlled research and research-augmented specificity
+
+TapeCoach should not rely only on a static repertoire library. Where accepted library coverage is missing, stale or ambiguous, controlled research may identify likely techniques, styles, task demands and repertoire context.
+
+Research-supported knowledge must be classified as:
+
+- `accepted_library`;
+- `research_supported_provisional`;
+- `research_discovered`;
+- `stale_requires_refresh`;
+- `conflicting_sources`;
+- `missing`;
+- `not_applicable`.
+
+Research can support evaluation focus before it supports public authority.
+
+Research-supported provisional feedback may be more specific than generic discipline feedback, but must use cautious wording and must not claim definitive repertoire authority.
+
+Allowed wording pattern:
+
+```text
+The brief and available repertoire context point towards [technique/style demand]. In the tape, [observable evidence]. For the selected level, [specific feedback].
+```
+
+Blocked wording pattern:
+
+```text
+This number definitively requires X.
+This is exactly how the production expects it.
+You have mastered this technique.
+The choreography should be done this way.
+```
+
+### 16.6 Active learning and library maturation
+
+The system should mature the technique, repertoire and benchmark libraries automatically where possible. Human review should be used through controlled, high-value review tasks rather than broad manual authoring.
+
+The active-learning loop is:
+
+1. system analyses tapes / fixtures;
+2. system detects uncertain technique, style, repertoire or brief-achievement cases;
+3. system proposes candidate examples;
+4. system groups candidates into review tasks;
+5. human reviewer performs small, controlled decisions;
+6. system updates benchmark sets, standards, thresholds or validators;
+7. updated behaviour is tested before release.
+
+Review tasks may include:
+
+- pairwise comparison;
+- presence / absence labelling;
+- characteristic labelling;
+- level calibration;
+- brief achievement review;
+- repertoire mapping;
+- public wording review.
+
+Example review task:
+
+```text
+Which clip better demonstrates grand battement for Amateur / Community level?
+```
+
 ---
 
 ## 17. Comparison requirements
@@ -1168,6 +1623,34 @@ type ArtefactEvidenceStatus =
 
 Do not count not-executed placeholders as successful runtime evidence.
 
+### 18.1 Additional maturity artefact families
+
+The following artefact families support the roadmap maturity layers. They do not all need to be Level 2 blockers immediately; each must be classified by required maturity level.
+
+```text
+BriefRequirementTrace.json
+BriefAchievementTrace.json
+TechniqueStandardsTrace.json
+TechniqueDetectionTrace.json
+KnowledgeSourceTrace.json
+RepertoireResolutionTrace.json
+RepertoireResearchTrace.json
+ResearchAugmentedSpecificityTrace.json
+ActiveLearningCandidateTrace.json
+ReviewTaskTrace.json
+KnowledgeCoverageSummary.json
+```
+
+Each maturity artefact should be classified as one of:
+
+```text
+required_for_L2
+required_for_specialist_feedback
+required_for_repertoire_feedback
+required_for_public_authority
+internal_maturity_only
+```
+
 ---
 
 ## 19. Testing and acceptance policy
@@ -1189,6 +1672,20 @@ The required evidence levels are:
 | Level 4 — Controlled website QA | Locked-down user-facing-site QA with complete artefact bundles and P0 gates passing. |
 
 Level 4 does not automatically authorise customer-facing release unless release-candidate gates also pass.
+
+### 19.1 Level 2 sub-gates
+
+Level 2 should be decomposed so parallel teams can close evidence families without confusing analysis proof, render proof, comparison proof and export proof.
+
+| Sub-gate | Meaning | Required evidence |
+|---|---|---|
+| `L2-A-ANALYSIS-RUN-QA` | The analysis run is auditable. | Input record, resolver output, TruthStateMap, EvidenceAnchors, PublicClaimTrace, TechniqueObservationTrace where relevant, ScoreTrace, ModelRunTrace, ValidatorTrace, GateTrace. |
+| `L2-B-RENDER-PARITY-QA` | The rendered report matches validated internal data. | Render payload, rendered report artefact, report parity result. |
+| `L2-C-COMPARISON-RUN-QA` | Comparison artefacts exist where comparison is invoked. | Comparison raw JSON, comparison render payload, duplicate detection, evidence-delta trace, suppression trace. |
+| `L2-D-EXPORT-NO-EXPORT-QA` | Export is either parity-proven or proven absent. | Export manifest and export parity, or no-export source/config/UI/log proof. |
+| `L2-E-GATE-VALIDATOR-QA` | Safety, wording, UK English, public/private boundary and production gates are recorded. | ValidatorTrace, GateTrace, redaction trace, UK English result, public/private leakage result. |
+
+For single-take analysis runs, comparison artefacts should not automatically be treated as failed analysis proof. They should be `missing`, `deferred`, `not_applicable` or `emitted_blocked` according to whether comparison was invoked and what the run was supposed to prove.
 
 ---
 
@@ -1214,6 +1711,17 @@ Validation must fail or normalise if:
 - generic phrases appear without anchors;
 - role fit, marketability, bookability or casting fit is inferred without a supplied brief;
 - comparison forces a winner without evidence delta;
+- a mandatory brief requirement is assessable and missing, but readiness is not reduced;
+- a brief requirement is marked achieved without evidence;
+- every brief phrase is treated as mandatory without obligation classification;
+- a requested technique is claimed as demonstrated without evidence;
+- a requested technique is absent but the report ignores it;
+- a not-assessable brief requirement is treated as a performance weakness;
+- research-supported provisional knowledge is presented as accepted-library authority;
+- stale or conflicting repertoire knowledge produces definitive public claims;
+- technique / repertoire / action-plan content is padded;
+- a public technique name appears before public technique authority passes;
+- a public repertoire claim appears before repertoire public-claim gates pass;
 - private traces, hidden reasoning or raw evidence leak into public output.
 
 ---
@@ -1296,22 +1804,141 @@ Validation must fail or normalise if:
 - Same-confidence masking is blocked.
 - Component split instability triggers warning or suppression.
 
+### 21.9 Brief achievement tests
+
+- A mandatory brief requirement that is assessable and absent reduces readiness.
+- A mandatory brief requirement that is cropped, masked or inaudible is marked `not_assessable`, not `not_achieved`.
+- Every meaningful supplied brief item is classified by obligation type before being judged.
+- A supplied brief may be referenced as a requirement without claiming successful execution.
+- Brief achievement appears in readiness rationale, priority fixes and action plan where relevant.
+
+### 21.10 Brief-requested technique tests
+
+- A brief-requested named technique is extracted and mapped to a known technique ID or safe unresolved state.
+- A requested technique can be identified as present, possible, absent or not assessable.
+- A requested technique is judged against the selected performer level.
+- A requested technique that is absent but mandatory affects readiness where assessable.
+- Public naming of a requested technique remains gated by evidence and public technique authority.
+
+### 21.11 Technique standards tests
+
+- Technique detection can return no detected techniques without padding comments.
+- Technique entries include definition, purpose, characteristics, level standards, evidence requirements, common faults, assessability limits, scoring implications and recommendation rules.
+- A technique such as grand battement can be assessed for observable characteristics such as pathway, turnout, torso/pelvis control, descent and return where visible.
+- Technique improvement suggestions are omitted when not useful or not evidence-supported.
+
+### 21.12 Repertoire / show / number tests
+
+- A supplied show / number / role / cut is resolved where confidence is high enough.
+- Ambiguous show or number context is recorded and public number-specific claims are blocked or caveated.
+- Repertoire context maps to relevant technique families and selected-level standards where supported.
+- Repertoire-informed feedback is omitted or downgraded when tape evidence is insufficient.
+
+### 21.13 Research-augmented specificity tests
+
+- Research-supported provisional repertoire context may guide cautious feedback but cannot become definitive public authority.
+- Stale repertoire knowledge triggers a refresh or caveat state.
+- Conflicting sources block definitive public claims.
+- Research-supported demands are cross-referenced with brief, selected level, technique standards and tape evidence before informing feedback.
+
+### 21.14 Active-learning tests
+
+- The system can propose candidate review examples for uncertain technique, style, repertoire or brief-achievement cases.
+- Pairwise review tasks can ask which clip better demonstrates a technique at a selected level.
+- Human review updates benchmark candidates without automatically changing public authority.
+- Library maturation updates are versioned and tested before release.
+
+### 21.15 Knowledge-source provenance tests
+
+- Knowledge claims include source type, authority tier, confidence, freshness, review status and public-claim status.
+- The system does not require rights/licensing fields for knowledge-source governance.
+- Project-approved source provenance is used for quality and release control, not legal-rights enforcement.
+
+### 21.16 Public claim authority tests
+
+- Public technique names do not appear before public technique authority gates pass.
+- Public repertoire claims do not appear before repertoire public-claim gates pass.
+- Safe descriptors can be used where public naming is blocked but the observation is evidence-supported.
+- Private/internal technique and repertoire traces do not leak into public output.
+
+### 21.17 Product usefulness tests
+
+- Approved testers can identify the readiness verdict, brief achievement, highest-priority focus areas, strengths to preserve, selected-level gap, action plan and limitations.
+- Reports are judged for clarity, actionability, specificity and safety, not only schema validity.
+- No-padding rules are enforced across technique, repertoire, action-plan and timestamp content.
+
 ---
 
-## 22. Implementation priorities
+## 22. Implementation priorities and incremental release train
 
-The implementation order should prioritise proof, evidence and report usefulness:
+The implementation order should support parallel team delivery while keeping release gates explicit.
 
-1. Input context, selected level, audition type, brief / no-brief mode and truth-state handling.
-2. Evidence anchors, component detection, assessability and public-claim traceability.
-3. Level-relative private scoring, including the rule that non-Professional levels can achieve 90+ for excellent work at their selected level.
-4. Public report model with readiness, prioritised fixes, strengths, improvements, gap to selected level, action plan, component breakdown and timestamped evidence.
-5. Category rationale and high-score marginal feedback.
-6. Discipline-specific validators for Musical Theatre, Dance, Acting, Voice / Singing and Commercial.
-7. Generic phrase suppression and safe public wording.
-8. Variance-aware comparison.
-9. QA artefact emission, parity checks and website QA.
-10. Release approval only after P0 gates pass.
+### 22.1 Implementation priorities
+
+1. Runtime proof spine and Level 2 sub-gates.
+2. Brief requirement itemisation and brief achievement.
+3. Technique Standards Library.
+4. Active-learning review loop.
+5. Brief-requested technique handling.
+6. Project-approved knowledge source provenance.
+7. Repertoire / show / number standards.
+8. Controlled research and research-augmented specificity.
+9. ValidatorTrace, GateTrace and ModelRunTrace.
+10. Render, parity, redaction, UK English, leakage and export/no-export proof.
+11. PublicReportV3-A: readiness and brief-first structure.
+12. Specialist descriptors.
+13. Public scoring / public technique / public repertoire claim governance.
+14. Comparison runtime.
+15. GF-01 / RT-15.
+16. Level 3 repeatability.
+17. Level 4 locked-down website QA.
+18. Release candidate.
+19. Legacy-adapter sunset.
+
+### 22.2 Incremental release train
+
+Incremental releases may be shipped into the locked-down live product for the development team and approved testers, but customer-facing release remains blocked until release-candidate gates pass.
+
+| Release | Scope | Gates | Benefit | User-facing change |
+|---|---|---|---|---|
+| R0 — Current S9 baseline | Current S9 internal bundle emission. | `S9-BUNDLE-EMISSION`, `QA-METRICS-GATE` | Runtime proof bundle exists. | No public change. |
+| R1 — Level 2 sub-gate decomposition | Split Level 2 into analysis QA, render/parity QA, validator/gate QA, export/no-export QA and comparison QA. | `L2-A`, `L2-B`, `L2-C`, `L2-D`, `L2-E` | Teams can close gates in parallel. | None. |
+| R2 — Brief achievement engine | Parse brief into itemised requirements, classify obligation and evaluate achievement. | `BRIEF-REQUIREMENT-ITEMISATION-GATE`, `BRIEF-OBLIGATION-CLASSIFICATION-GATE`, `BRIEF-ACHIEVEMENT-GATE` | TapeCoach can answer whether the performer achieved the brief. | Locked-down testers may see brief achievement summary once validated. |
+| R3 — Technique standards and active-learning foundation | Technique library schema, seed packs, source provenance and active-learning candidate queues. | `TECHNIQUE-STANDARDS-LIBRARY-GATE`, `ACTIVE-LEARNING-CANDIDATE-GATE`, `PAIRWISE-REVIEW-GATE` | Starts automated maturation of specialist knowledge. | None initially. |
+| R4 — Brief-requested technique handling | Extract required techniques, map to library, detect in tape and judge by selected level. | `BRIEF-TECHNIQUE-MAPPING-GATE`, `BRIEF-TECHNIQUE-ADHERENCE-GATE`, `TECHNIQUE-LEVEL-CALIBRATION-GATE` | Required techniques affect readiness and brief adherence. | Yes, if evidence-backed and validator-approved. |
+| R5 — Project-approved knowledge ingestion and provenance | Use all project-approved knowledge and research sources to build technique, repertoire, show / number and benchmark knowledge; track source provenance, authority tier, confidence, freshness, review state and public-claim status. | `KNOWLEDGE-SOURCE-PROVENANCE-GATE`, `CONTROLLED-RESEARCH-GATE`, `RESEARCH-TO-LIBRARY-GATE` | Library development uses the full approved knowledge base while keeping public claims evidence-linked, reviewed and safe. | None directly. |
+| R6 — Controlled research and research-augmented specificity | Use controlled research when library coverage is missing, stale or ambiguous. | `CONTROLLED-RESEARCH-GATE`, `RESEARCH-AUGMENTED-SPECIFICITY-GATE`, `RESEARCH-TO-LIBRARY-GATE` | Feedback does not become generic just because curated library coverage is incomplete. | Cautious, evidence-led wording only. |
+| R7 — Repertoire / show / number intelligence | Build show, number, role, style and task standards; map to techniques and selected level. | `REPERTOIRE-STANDARDS-LIBRARY-GATE`, `REPERTOIRE-SOURCE-PROVENANCE-GATE`, `REPERTOIRE-TECHNIQUE-MAPPING-GATE` | TapeCoach can understand material-specific expectations. | Locked-down, gated, cautious. |
+| R8 — Level 2 trace closure | ValidatorTrace, GateTrace, ModelRunTrace, redaction, UK English and leakage. | `VALIDATOR-TRACE-GATE`, `GATE-TRACE-GATE`, `MODEL-RUN-TRACE-GATE`, `REDACTION-GATE`, `UK-ENGLISH-GATE` | A specific run becomes much more auditable. | None unless report gate allows. |
+| R9 — Render, parity and no-export proof | Render payload, rendered report artefact, report parity and export/no-export proof. | `RENDER-PAYLOAD-GATE`, `RENDERED-REPORT-GATE`, `REPORT-PARITY-GATE`, `NO-EXPORT-GATE` | Proves visible report matches validated internal data. | Enables safer report improvements. |
+| R10 — PublicReportV3-A | Public report structure: readiness, brief achievement, why, priorities, strengths, gap, action plan and limitations. | `PUBLIC-REPORT-V3-GATE`, `STRATEGIC-REPORT-OUTCOME-GATE`, `PUBLIC-PRIVATE-LEAKAGE-GATE` | Testers see a report that reflects TapeCoach’s actual product purpose. | Yes, locked-down live product. |
+| R11 — Specialist feedback descriptors | Technique-informed safe descriptors and level-calibrated feedback. | `TECHNIQUE-CHARACTERISTICS-GATE`, `TECHNIQUE-RECOMMENDATION-GATE`, `PUBLIC-CLAIM-GATE` | Feedback becomes specialist without unsafe public naming. | Yes, descriptor mode only unless authority passes. |
+| R12 — Public technique and repertoire authority candidates | Promote selected terms/claims to public authority where benchmarks, evidence and review pass. | `PUBLIC-TECHNIQUE-AUTHORITY-GATE`, `REPERTOIRE-PUBLIC-CLAIM-GATE`, `EXPERT-REVIEW-GATE` | Carefully approved specialist language enters reports. | Limited and gated. |
+| R13 — Comparison runtime | Comparison raw JSON, internal report, evidence delta, duplicate detection and no-material-difference. | `COMPARISON-RAW-GATE`, `EVIDENCE-DELTA-GATE`, `DUPLICATE-DETECTION-GATE` | Comparison becomes auditable. | No public winner until GF-01 / RT-15 pass. |
+| R14 — GF-01 / RT-15 comparison safety | Same-video suppression, route variance and repeatability traces. | `GF-01`, `RT-15`, `SUPPRESSION-GATE`, `ROUTE-VARIANCE-GATE`, `L3-REPEATABILITY` | Prevents false take winners. | Safe comparison guidance only after gates pass. |
+| R15 — Level 4 locked-down website QA | Full live website test with complete artefact bundles and P0 gates passing. | `L4-CONTROLLED-WEBSITE-QA`, `PUBLIC-PRIVATE-LEAKAGE-GATE`, `PRODUCTION-SAFE-GATE` | Proves real product behaviour. | Locked-down approved testers only. |
+| R16 — Release candidate | P0 clear, production-safe decision, public scoring decision, public technique/repertoire decision, rollback and sign-off. | `CUSTOMER-RELEASE-GATE`, `PRODUCTION-SAFE-GATE`, `PUBLIC-SCORING-GATE`, `PUBLIC-TECHNIQUE-AUTHORITY-GATE` | Customer-facing release can be considered. | Only after RC passes. |
+
+### 22.3 Non-negotiable release-control rules
+
+| Rule | Meaning |
+|---|---|
+| S9 is not Level 2 | S9 bundle emission is useful but does not equal specific-run artefact QA acceptance. |
+| Legacy-derived traces do not satisfy v3 gates | `legacy_adapter` artefacts are internal QA/debug only. |
+| Public scoring remains blocked | Internal scores do not authorise public score exposure. |
+| Public technique authority remains blocked | Internal technique detection does not authorise public naming. |
+| Brief achievement is central | The report must answer whether the brief was achieved and how much of it was achieved. |
+| Brief request does not equal demonstrated technique | A brief can authorise referencing the requirement, not claiming successful execution. |
+| Missing mandatory brief requirement affects readiness | If assessable and absent, readiness must be marked down. |
+| Not assessable is not the same as not achieved | If the tape does not show enough, use assessability limitation before performance criticism. |
+| Research support does not equal accepted authority | Research may guide focus and cautious feedback, but does not automatically authorise definitive public claims. |
+| Project-approved knowledge may be used for library development | The project has required agreements and lawful access outside the system. TapeCoach is not required to enforce rights or licensing. |
+| Conflicting or stale repertoire knowledge must be blocked or caveated | Do not force show/number-specific claims where source confidence is weak. |
+| Comparison cannot force a winner without evidence delta | Same/near-identical videos require suppression, tie or variance warning unless decisive evidence exists. |
+| Level 4 is not release | Controlled website QA does not automatically authorise customer-facing release. |
+| QA artefacts stay private | Internal traces, scores, validators and safety gates must not leak publicly. |
+| Runtime artefacts are not GitHub artefacts | Storage/log fallback are runtime sinks, not GitHub. |
+| No padding | Do not invent technique comments, repertoire claims, fixes, drills or timestamps to fill space. |
 
 ---
 
@@ -1319,7 +1946,33 @@ The implementation order should prioritise proof, evidence and report usefulness
 
 This README is the controlling replacement for the redesigned TapeCoach requirements.
 
-The target system is not a score-first report and not a fixed-cap feedback generator. It is a level-relative, evidence-led, discipline-aware self-tape evaluation system that tells the performer whether the tape is ready to submit, why, what to preserve, what to fix first, what to do next and what could not be assessed.
+The target system is not a score-first report and not a fixed-cap feedback generator. It is a level-relative, evidence-led, discipline-aware and brief-aware self-tape evaluation system that tells the performer whether the tape is ready to submit, whether the brief has been achieved, why, what to preserve, what to fix, prioritise or focus on, what to do next and what could not be assessed.
+
+Final strategic position:
+
+```text
+TapeCoach should use a governed research-augmented knowledge model.
+
+Curated library knowledge is the authority for accepted public claims.
+Project-approved knowledge sources build the internal standards library.
+Controlled research keeps the system current and specific.
+Evidence anchors prove what is actually in the tape.
+Brief achievement determines whether the submission task was met.
+Validators decide what can be said.
+Release gates decide what can go public.
+```
+
+The practical product outcome is:
+
+```text
+The brief asked for this.
+The tape shows this much of it.
+This technique or skill is present / absent / not assessable.
+This is how well it meets the selected-level standard.
+This is what should be preserved.
+This is what should be prioritised next.
+This is whether the tape is ready to submit.
+```
 
 The scoring theme must remain consistent throughout the system:
 
