@@ -9,7 +9,7 @@ const protectedPatterns = [
 ];
 
 function git(args) {
-  return execFileSync('git', args, { encoding: 'utf8' }).trim();
+  return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
 function changedFiles() {
@@ -20,6 +20,23 @@ function changedFiles() {
       return git(['diff', '--name-only', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
     } catch {}
   }
+
+  const fallbackRefs = [];
+
+  try {
+    const originHeadTarget = git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+    if (originHeadTarget) fallbackRefs.push(originHeadTarget);
+  } catch {}
+
+  fallbackRefs.push('origin/main', 'origin/master', 'main', 'master');
+
+  for (const ref of fallbackRefs) {
+    try {
+      const mergeBase = git(['merge-base', 'HEAD', ref]);
+      return git(['diff', '--name-only', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
+    } catch {}
+  }
+
   try {
     return git(['diff', '--name-only', 'HEAD']).split('\n').filter(Boolean);
   } catch {
