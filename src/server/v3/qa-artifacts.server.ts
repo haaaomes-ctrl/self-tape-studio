@@ -38,7 +38,7 @@ export interface QAArtifactEmitterOptions {
   emitted_artefact_ids?: string[];
   emitted_blocked_artefact_ids?: string[];
   analysis_run_id?: string;
-  comparison_run_id?: string;
+  comparison_run_id?: string | null;
   submission_id?: string;
   take_id?: string;
   compared_take_ids?: string[];
@@ -535,7 +535,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   };
 }
 
-export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterOptions) {
+export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterOptions): Promise<any> {
   const internal_qa_emit = options.internal_qa_emit ?? false;
   if (!internal_qa_emit) return { written: false };
   const root = options.root_dir ?? DEFAULT_ROOT;

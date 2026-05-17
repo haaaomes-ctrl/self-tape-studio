@@ -87,7 +87,7 @@ export function reconcileComparisonManifestState(input: {
     artefact_level2_spine_satisfaction_by_id: l2ById,
   };
 }
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -178,8 +178,8 @@ export interface InternalComparisonRuntimeSourceInput {
 }
 export interface InternalComparisonOperatorTriggerInput {
   root_take_id: string;
-  compared_take_ids: string[];
-  compared_analysis_run_ids?: string[];
+  compared_take_ids: readonly string[];
+  compared_analysis_run_ids?: readonly string[];
   comparison_run_id?: string;
   source_module: string;
   source_stage: string;
@@ -463,10 +463,10 @@ export async function runInternalComparisonOperatorTrigger(
   resolveCompletedTakeAnalysis: (takeId: string) => Promise<CompletedTakeComparisonSource | null>,
 ): Promise<InternalComparisonOperatorTriggerResult> {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
-    return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'internal_qa_emit_disabled', blocker_codes: ['qa_flags_disabled'] };
+    return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: [...(input.compared_take_ids ?? [])], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'internal_qa_emit_disabled', blocker_codes: ['qa_flags_disabled'] };
   }
   const rootTakeIdCore = stripTakePrefix(input.root_take_id);
-  try { assertSafeSegment(rootTakeIdCore, 'root_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: input.compared_take_ids ?? [], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_root_take_id', blocker_codes: ['unsafe_root_take_id'] }; }
+  try { assertSafeSegment(rootTakeIdCore, 'root_take_id'); } catch { return { ok: false, written: false, comparison_run_id: null, root_take_id: input.root_take_id, root_analysis_run_id: null, compared_take_ids: [...(input.compared_take_ids ?? [])], compared_analysis_run_ids: [], emitted_artefact_ids: [], warning: 'unsafe_root_take_id', blocker_codes: ['unsafe_root_take_id'] }; }
   const canonicalRootTakeRunId = toCanonicalTakeRunId(rootTakeIdCore);
   const rawIds = (input.compared_take_ids ?? []).map((id) => typeof id === 'string' ? id.trim() : '').filter(Boolean);
   const ids: string[] = [];
@@ -568,7 +568,7 @@ export async function runInternalComparisonOperatorTrigger(
     blocker_codes: out.written ? [] : ['comparison_not_emitted'],
   };
 }
-export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput) {
+export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput): Promise<any> {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.root_take_id, 'root_take_id');
   const rootTake = input.manifest_reconciliation_mode === 'required'
@@ -1299,7 +1299,7 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs: R
   if (ids.length === 4) { const b = await writeInternalJson(root, input.run_id, 'export_or_no_export/no_export_proof.json', { bundle: true }, 'no_export_proof'); if (b.written) ids.push('no_export_proof'); else hadFailure = true; }
   return { written: !hadFailure, emitted_artefact_ids: ids };
 }
-export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput) {
+export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput): Promise<any> {
   const emitted_artefact_ids: string[] = [];
   let hadFailure = false;
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids };
@@ -1355,7 +1355,7 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   return { written: !hadFailure, comparison_run_id: comparisonRunId, emitted_artefact_ids, emitted_blocked_artefact_ids };
 }
 
-export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(input: ComparisonRuntimeArtifactsInput & { root_take_id?: string | null }) {
+export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(input: ComparisonRuntimeArtifactsInput & { root_take_id?: string | null }): Promise<any> {
   const root = input.root_dir ?? DEFAULT_ROOT;
   const sourceRunId = input.run_id;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
