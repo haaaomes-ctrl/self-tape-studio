@@ -74,6 +74,7 @@ describe('protected-area matchers', () => {
       'src/routes/new.tsx',
       'src/server/mux-upload.ts',
       'src/server/upload-errors.ts',
+      'src/lib/upload-errors.ts',
       'src/server-fns/process-take.functions.ts',
       'src/server-fns/upload.functions.ts',
       'src/server-fns/direct-upload.functions.ts',
@@ -91,6 +92,8 @@ describe('protected-area matchers', () => {
 
   it('does not flag upload docs/tests/fixtures/contracts and take-only files', () => {
     const unprotectedPaths = [
+      'src/lib/helper.ts',
+      'src/lib/video-client.ts',
       'src/server/__tests__/upload-utils.test.ts',
       'src/server/__tests__/upload-utils.spec.ts',
       'src/server/__tests__/fixtures/upload-payload.fixture.json',
