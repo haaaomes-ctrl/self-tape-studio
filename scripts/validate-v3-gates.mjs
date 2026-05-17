@@ -70,18 +70,25 @@ function commandContainsNoOpGuard(command) {
     || /\|\s*\w+/i.test(command);
 }
 
+function normalizeCommandContinuations(command) {
+  return String(command).replace(/&&\s*\\?\s*\r?\n\s*/g, ' && ');
+}
+
 function containsNonPropagatingSeparator(command) {
-  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command) || /(^|[^&])&(?!&)/.test(command) || /(^|[^\&])\n(?!\s*&&)/.test(command);
+  const normalized = normalizeCommandContinuations(command);
+  return /(^|[^|]);/.test(normalized) || /\|\s*\w+/.test(normalized) || /(^|[^&])&(?!&)/.test(normalized) || /\r?\n/.test(normalized);
 }
 
 function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
-  return expandedCommand
+  const normalized = normalizeCommandContinuations(expandedCommand);
+  return normalized
     .split(/&&/)
     .some((segment) => validatorRegex.test(segment) && !commandContainsNoOpGuard(segment) && !containsNonPropagatingSeparator(segment));
 }
 
 function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
-  return expandedCommand
+  const normalized = normalizeCommandContinuations(expandedCommand);
+  return normalized
     .split(/&&/)
     .some((segment) => validatorRegex.test(segment) && (commandContainsNoOpGuard(segment) || containsNonPropagatingSeparator(segment)));
 }
@@ -229,12 +236,21 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
   if (scripts['test:contracts']) {
     const { expanded: expandedTest } = collectScriptExpansion(scripts, 'test:contracts');
     if (hasNoOpOnly(expandedTest)) failures.push('test:contracts appears to be a no-op');
-    if (!/vitest|test:contracts|v3-contracts\.test\.ts/i.test(expandedTest)) failures.push('test:contracts missing contract test execution coverage');
+    const normalizedTest = normalizeCommandContinuations(expandedTest);
+    const hasExecutableCoverage = normalizedTest.split(/&&/).some((segment) => {
+      const s = segment.trim();
+      if (!s) return false;
+      if (/^\s*(echo|printf)\b/i.test(s)) return false;
+      if (/^\s*node\s+-e\b/i.test(s)) return false;
+      return /(^|\s)vitest\s+run\b/.test(s) && /v3-contracts\.test\.ts/.test(s);
+    });
+    if (!hasExecutableCoverage) failures.push('test:contracts missing contract test execution coverage');
   }
 
   if (scripts['gate:release']) {
     const rawGateRelease = scripts['gate:release'];
     const { expanded: expandedRelease, missingTargets } = collectScriptExpansion(scripts, 'gate:release');
+    const normalizedRelease = normalizeCommandContinuations(expandedRelease);
     if (hasNoOpOnly(expandedRelease)) failures.push('gate:release appears to be a no-op');
     for (const missingTarget of missingTargets) {
       failures.push(`gate:release references missing npm script: ${missingTarget}`);
@@ -243,17 +259,25 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     const storageMatcher = /(^|[;&|\n]\s*|\s)node\s+scripts\/validate-storage-bundle\.mjs(\s|$)/i;
     const v3Matcher = /(^|[;&|\n]\s*|\s)node\s+scripts\/validate-v3-gates\.mjs(\s|$)/i;
 
-    if (!hasFailurePropagatingValidator(expandedRelease, protectedMatcher)) failures.push('gate:release missing protected-area validation coverage');
-    if (!hasFailurePropagatingValidator(expandedRelease, storageMatcher)) failures.push('gate:release missing Storage bundle validation coverage');
-    if (!hasFailurePropagatingValidator(expandedRelease, v3Matcher)) failures.push('gate:release missing v3 gate validation coverage');
+    if (!hasFailurePropagatingValidator(normalizedRelease, protectedMatcher)) failures.push('gate:release missing protected-area validation coverage');
+    if (!hasFailurePropagatingValidator(normalizedRelease, storageMatcher)) failures.push('gate:release missing Storage bundle validation coverage');
+    if (!hasFailurePropagatingValidator(normalizedRelease, v3Matcher)) failures.push('gate:release missing v3 gate validation coverage');
 
-    if (hasFailureSwallowedValidator(expandedRelease, protectedMatcher)) failures.push(expandedRelease.includes('\n') ? 'gate:release protected-area validator is present but failure is swallowed by newline chaining' : 'gate:release protected-area validator is present but failure is swallowed');
-    if (hasFailureSwallowedValidator(expandedRelease, storageMatcher)) failures.push(expandedRelease.includes('\n') ? 'gate:release Storage bundle validator is present but failure is swallowed by newline chaining' : 'gate:release Storage bundle validator is present but failure is swallowed');
-    if (hasFailureSwallowedValidator(expandedRelease, v3Matcher)) failures.push(expandedRelease.includes('\n') ? 'gate:release v3 gate validator is present but failure is swallowed by newline chaining' : 'gate:release v3 gate validator is present but failure is swallowed');
-    if (/\n/.test(rawGateRelease) && /(validate-protected-areas\.mjs|validate-storage-bundle\.mjs|validate-v3-gates\.mjs|npm\s+run(\-script)?\s+.*gate:)/i.test(rawGateRelease)) {
-      if (/validate-protected-areas\.mjs|gate:protected/i.test(rawGateRelease)) failures.push('gate:release protected-area validator is present but failure is swallowed by newline chaining');
-      if (/validate-storage-bundle\.mjs|gate:storage/i.test(rawGateRelease)) failures.push('gate:release Storage bundle validator is present but failure is swallowed by newline chaining');
-      if (/validate-v3-gates\.mjs|gate:v3/i.test(rawGateRelease)) failures.push('gate:release v3 gate validator is present but failure is swallowed by newline chaining');
+    if (hasFailureSwallowedValidator(normalizedRelease, protectedMatcher)) failures.push(normalizedRelease.includes('\n') ? 'gate:release protected-area validator is present but failure is swallowed by newline chaining' : 'gate:release protected-area validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(normalizedRelease, storageMatcher)) failures.push(normalizedRelease.includes('\n') ? 'gate:release Storage bundle validator is present but failure is swallowed by newline chaining' : 'gate:release Storage bundle validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(normalizedRelease, v3Matcher)) failures.push(normalizedRelease.includes('\n') ? 'gate:release v3 gate validator is present but failure is swallowed by newline chaining' : 'gate:release v3 gate validator is present but failure is swallowed');
+    if (/\bnpm\s+run(\-script)?\s+\S+\s*\n\s*npm\s+run(\-script)?\s+\S+/i.test(rawGateRelease)) {
+      failures.push('gate:release protected-area validator is present but failure is swallowed by newline chaining');
+      failures.push('gate:release Storage bundle validator is present but failure is swallowed by newline chaining');
+      failures.push('gate:release v3 gate validator is present but failure is swallowed by newline chaining');
+    }
+    if (/\bnpm\s+run(\-script)?\s+\S+\s*\|\|\s*true/i.test(rawGateRelease)
+      || /!\s*npm\s+run(\-script)?\s+\S+/i.test(rawGateRelease)
+      || /\bnpm\s+run(\-script)?\s+\S+\s*\|\s*\w+/i.test(rawGateRelease)
+      || /\bnpm\s+run(\-script)?\s+\S+\s*&\s*\w+/i.test(rawGateRelease)) {
+      failures.push('gate:release protected-area validator is present but failure is swallowed');
+      failures.push('gate:release Storage bundle validator is present but failure is swallowed');
+      failures.push('gate:release v3 gate validator is present but failure is swallowed');
     }
     if (/npm\s+run(\-script)?\s+.*gate:protected.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release protected-area validator is present but failure is swallowed');
     if (/npm\s+run(\-script)?\s+.*gate:storage.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release Storage bundle validator is present but failure is swallowed');

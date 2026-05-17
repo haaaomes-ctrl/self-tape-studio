@@ -263,6 +263,37 @@ describe('protected-area matchers', () => {
     expect(violations).toHaveLength(0);
   });
 
+  it('does not flag contracts/docs/tests for runtime-only mux status terms', () => {
+    const violations = findProtectedViolations(
+      [
+        'src/server/v3/contracts/release-gates.ts',
+        'docs/mux-status.md',
+        'src/server/__tests__/mux-status.test.ts',
+      ],
+      {
+        contentByPath: {
+          'src/server/v3/contracts/release-gates.ts': 'export const policy = { mux_asset_id: "policy-only", mux_status: "blocked" };',
+          'docs/mux-status.md': 'mux_asset_id and mux_status are shown for docs only',
+          'src/server/__tests__/mux-status.test.ts': 'expect(record.mux_asset_id).toBeDefined()',
+        },
+      },
+    );
+    expect(violations).toHaveLength(0);
+  });
+
+  it('flags runtime code with mux runtime state terms', () => {
+    const violations = findProtectedViolations(
+      ['src/server-fns/process-take.functions.ts'],
+      {
+        contentByPath: {
+          'src/server-fns/process-take.functions.ts': 'const x = { mux_asset_id: "a1", mux_status: "ready" }',
+        },
+      },
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0].categories).toContain('Mux');
+  });
+
   it('flags mux secret env/config names when content-sensitive detection applies', () => {
     const violations = findProtectedViolations(
       ['src/server-fns/delete.functions.ts'],

@@ -226,6 +226,8 @@ function isProtectedReportPath(filePath, options = {}) {
 
 function isProtectedMuxPath(filePath, options = {}) {
   if (isTestOrFixturePath(filePath)) return false;
+  if (filePath.startsWith('docs/')) return false;
+  if (filePath.includes('/contracts/')) return false;
 
   if (explicitMuxProtectedFiles.has(filePath)) return true;
   if (!isCodeFile(filePath)) return false;

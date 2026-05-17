@@ -242,6 +242,33 @@ describe('validate-v3-gates script integrity', () => {
     expect(output).toContain('newline chaining');
   });
 
+  it('passes when validators are line-broken with &&', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-protected-areas.mjs &&\nnode scripts/validate-storage-bundle.mjs &&\nnode scripts/validate-v3-gates.mjs',
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('passes when validators are line-broken with escaped continuation', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-protected-areas.mjs && \\\nnode scripts/validate-storage-bundle.mjs && \\\nnode scripts/validate-v3-gates.mjs',
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('passes when npm validators are line-broken with &&', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:protected &&\nnpm run gate:storage &&\nnpm run gate:v3',
+      'gate:protected': 'node scripts/validate-protected-areas.mjs',
+      'gate:storage': 'node scripts/validate-storage-bundle.mjs',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures).toEqual([]);
+  });
+
   it('reports structured failure when README.md is missing', () => {
     const temp = mkdtempSync(path.join(tmpdir(), 'v3-gates-missing-readme-'));
     writeFileSync(path.join(temp, 'package.json'), JSON.stringify({ scripts: {} }));
@@ -371,6 +398,33 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('failure is swallowed');
   });
 
+  it('fails when parent npm script is swallowed with || true', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:full || true',
+      'gate:full': 'node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('failure is swallowed');
+  });
+
+  it('fails when parent npm script is piped', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:full | cat',
+      'gate:full': 'node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('failure is swallowed');
+  });
+
+  it('fails when parent npm script uses single ampersand', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:full & echo ok',
+      'gate:full': 'node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('failure is swallowed');
+  });
+
   it('fails when validators are guarded with non-trivial || chains', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
@@ -403,6 +457,33 @@ describe('validate-v3-gates script integrity', () => {
       workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: npm run gate:release || true\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: '- run: npm run test:contracts', build: '- run: npm run build' },
     });
     expect(failures.join('\n')).toContain('failure-swallowing');
+  });
+
+  it('fails closed on multiline gatekeeper run blocks', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: |\n          npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: '- run: npm run test:contracts', build: '- run: npm run build' },
+    });
+    expect(failures.join('\n')).toContain('unsupported multiline run format');
+  });
+
+  it('fails closed on multiline contracts workflow run blocks', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: 'jobs:\n  contracts:\n    steps:\n      - run: |\n          npm run test:contracts', build: '- run: npm run build' },
+    });
+    expect(failures.join('\n')).toContain('contracts workflow uses unsupported multiline run format');
+  });
+
+  it('fails closed on multiline build workflow run blocks', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: '- run: npm run test:contracts', build: 'jobs:\n  build:\n    steps:\n      - run: |\n          npm run build' },
+    });
+    expect(failures.join('\n')).toContain('build workflow uses unsupported multiline run format');
   });
 
   it('passes repeated sibling script references', () => {
