@@ -226,15 +226,24 @@ function workflowHasCheckoutFetchDepthZero(workflowText) {
   return steps.some((s) => /actions\/checkout@/i.test(s.uses) && String(s.with?.['fetch-depth'] ?? '').trim() === '0');
 }
 
-function workflowContainsForbiddenProtectedExceptionEnv(workflowText) {
-  const stripped = workflowText
+function stripWorkflowComments(workflowText) {
+  return workflowText
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*#.*$/, ''))
     .join('\n');
-  const forbiddenKey = /(^|\n)\s*(PROTECTED_AREA_EXCEPTIONS_FILE|PROTECTED_AREA_EXCEPTIONS_JSON)\s*:/m;
+}
+
+function isAllowedProtectedExceptionsExpression(value) {
+  const normalized = String(value ?? '').trim();
+  return normalized === '${{ vars.PROTECTED_AREA_EXCEPTIONS_JSON }}'
+    || normalized === '${{ secrets.PROTECTED_AREA_EXCEPTIONS_JSON }}';
+}
+
+function workflowContainsProtectedExceptionRunInjection(workflowText) {
+  const stripped = stripWorkflowComments(workflowText);
   const writesGithubEnv = /(echo|printf)\s+["'][^"']*PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=.*\$GITHUB_ENV/i;
   const exportsVar = /\bexport\s+PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=/i;
-  return forbiddenKey.test(stripped) || writesGithubEnv.test(stripped) || exportsVar.test(stripped);
+  return writesGithubEnv.test(stripped) || exportsVar.test(stripped);
 }
 
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {
@@ -368,9 +377,21 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     if (!workflowHasCheckoutFetchDepthZero(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing checkout fetch-depth: 0');
     const gateStep = steps.find((s) => /npm run gate:release/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!gateStep || (!('GITHUB_PR_NUMBER' in gateStep.env) && !('PR_NUMBER' in gateStep.env))) failures.push('gatekeeper workflow missing PR number env for gate:release');
-    if (workflowContainsForbiddenProtectedExceptionEnv(gatekeeperWorkflow) || (gateStep && ('PROTECTED_AREA_EXCEPTIONS_FILE' in gateStep.env || 'PROTECTED_AREA_EXCEPTIONS_JSON' in gateStep.env))) {
-      failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+    const strippedGatekeeperWorkflow = stripWorkflowComments(gatekeeperWorkflow);
+    if (workflowContainsProtectedExceptionRunInjection(gatekeeperWorkflow)) failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+    if (/(^|\n)\s*PROTECTED_AREA_EXCEPTIONS_FILE\s*:/m.test(strippedGatekeeperWorkflow)) failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+    if (/(^|\n)\s*env:\s*(?:\n\s+[^\n]*)*?\n\s*PROTECTED_AREA_EXCEPTIONS_JSON\s*:/m.test(strippedGatekeeperWorkflow)
+      && !steps.some((s) => Object.prototype.hasOwnProperty.call(s.env, 'PROTECTED_AREA_EXCEPTIONS_JSON'))) failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+    for (const step of steps) {
+      if (!Object.prototype.hasOwnProperty.call(step.env, 'PROTECTED_AREA_EXCEPTIONS_JSON')) continue;
+      const isGateReleaseStep = /npm run gate:release/.test(step.run) && !/^\s*echo\b/i.test(step.run);
+      if (!isGateReleaseStep || !isAllowedProtectedExceptionsExpression(step.env.PROTECTED_AREA_EXCEPTIONS_JSON)) {
+        failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+        break;
+      }
     }
+    if (gateStep && Object.prototype.hasOwnProperty.call(gateStep.env, 'PROTECTED_AREA_EXCEPTIONS_JSON')
+      && !isAllowedProtectedExceptionsExpression(gateStep.env.PROTECTED_AREA_EXCEPTIONS_JSON)) failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
     if (gateStep && !isFailurePropagatingRun(gateStep.run)) failures.push('gatekeeper workflow gate:release run step is failure-swallowing');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('gatekeeper workflow uses unsupported multiline run format');
     if (gateStep && /^(true|True|TRUE)$/.test(String(gateStep.continueOnError).trim())) failures.push('gatekeeper workflow gate:release step must not use continue-on-error: true');
