@@ -9,7 +9,11 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:contracts": "vitest run src/server/__tests__/contracts",
+    "gate:v3": "node scripts/check-blocked-states.mjs",
+    "gate:storage": "node scripts/validate-storage-contract.mjs",
+    "gate:release": "node scripts/gate-release.mjs"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

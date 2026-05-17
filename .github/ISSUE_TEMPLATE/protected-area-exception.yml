@@ -1,0 +1,40 @@
+name: Protected area exception request
+about: Request explicit operator review for protected-area changes.
+title: "[protected-area-exception]: "
+labels: ["protected-area", "operator-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form requests operator review only. It does not grant release approval.
+  - type: checkboxes
+    id: source_hierarchy
+    attributes:
+      label: Source hierarchy checked
+      options:
+        - label: README.md and orchestrator setup docs were checked before requesting exception.
+          required: true
+  - type: textarea
+    id: exception_scope
+    attributes:
+      label: Protected area touched and reason
+    validations:
+      required: true
+  - type: textarea
+    id: safety_status
+    attributes:
+      label: Tests/build/gate status and blocked-state status
+    validations:
+      required: true
+  - type: textarea
+    id: impacts
+    attributes:
+      label: Public output and upload/Mux/webhook impact
+    validations:
+      required: true
+  - type: textarea
+    id: operator_decision
+    attributes:
+      label: operator-verification-required decision notes
+    validations:
+      required: true

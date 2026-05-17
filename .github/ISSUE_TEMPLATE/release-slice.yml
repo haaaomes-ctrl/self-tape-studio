@@ -1,0 +1,67 @@
+name: Release slice request
+about: Track setup/product/release-slice work with required safety declarations.
+title: "[release-slice]: "
+labels: ["release-slice"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        GitHub checks and Codex completion are verification inputs only and do not approve release.
+  - type: checkboxes
+    id: source_hierarchy
+    attributes:
+      label: Source hierarchy checked
+      options:
+        - label: README.md and Task 0/Task 1 orchestrator sources were followed.
+          required: true
+  - type: input
+    id: target_scope
+    attributes:
+      label: Target setup task or release slice
+    validations:
+      required: true
+  - type: textarea
+    id: protected_areas
+    attributes:
+      label: Protected areas touched (or explicitly not touched)
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Tests run, build result, gate result (where applicable)
+      placeholder: "tests..., build..., gate..."
+    validations:
+      required: true
+  - type: textarea
+    id: impacts
+    attributes:
+      label: Public output impact and upload/Mux/webhook impact
+    validations:
+      required: true
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work classification
+      options: ["Setup", "Product Sprint 0 / R0-R4", "Release slice"]
+    validations:
+      required: true
+  - type: dropdown
+    id: scope_lanes
+    attributes:
+      label: Lovable or Storage-download QA in scope?
+      options: ["Neither", "Lovable", "Storage-download QA", "Both"]
+    validations:
+      required: true
+  - type: textarea
+    id: blocked_states
+    attributes:
+      label: Level 2 / production_safe / public_scoring / public_technique_authority / comparison winner status
+    validations:
+      required: true
+  - type: textarea
+    id: operator_items
+    attributes:
+      label: operator-verification-required items and deferred P2 items
+    validations:
+      required: true
