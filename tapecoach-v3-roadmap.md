@@ -10339,3 +10339,10 @@
 \
 \
 }
+
+## S9-12 reconciliation status note
+
+- S9-12 comparison reconciliation architecture was validated.
+- Lessons are captured in `docs/tapecoach/v3/engineering-lessons-and-guardrails.md`.
+- Comparison reconciliation does not equal Level 2 acceptance.
+- Parity/no-export blockers remain for S9-13.

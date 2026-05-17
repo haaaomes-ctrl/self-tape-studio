@@ -27,6 +27,22 @@ When implementation agents work on a task, they should use:
 Do not load unrelated roadmap sections into implementation tasks unless they are
 needed for dependency or gate reasoning.
 
+
+## Development guardrails and common pitfalls
+
+Mandatory pre-read for implementation agents and Codex before changing source: `docs/tapecoach/v3/engineering-lessons-and-guardrails.md`.
+
+- Codex completion is not acceptance.
+- `README.md` wins over roadmap/delivery docs.
+- Low-level artefact emission and high-level reconciliation must stay separate.
+- Low-level comparison emitters must not claim reconciliation unless required mode ran.
+- Operator/internal comparison paths must use canonical take-root identity and reconcile manifest + metrics.
+- Canonical run identity is `take-[raw_core]`; `take-take-*` is invalid.
+- Level 2/public/production gates remain blocked unless separately accepted.
+- Classify the first failing test gate before patching.
+- Clean generated artefact churn before commit.
+
+
 ---
 
 ## 0. Executive summary

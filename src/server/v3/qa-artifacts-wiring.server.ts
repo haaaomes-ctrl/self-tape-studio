@@ -573,6 +573,7 @@ export async function runInternalComparisonOperatorTrigger(
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput): Promise<any> {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.root_take_id, 'root_take_id');
+  // Low-level/default mode stays preflight-free; required mode is operator/internal reconciliation.
   const rootTake = input.manifest_reconciliation_mode === 'required'
     ? (() => {
         const canonicalInputRootCore = stripTakePrefix(input.root_take_id);
@@ -639,6 +640,7 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
   const route_variance_trace = {
     route_variance_status: routeVarianceDetected ? 'detected' : 'not_detected', compared_run_routes: routes, route_mismatch_detected: routeVarianceDetected, route_variance_detected: routeVarianceDetected, route_variance_risk: routeVarianceDetected, route_variance_mitigation_status: routeVarianceDetected ? 'unresolved_blocked' : 'not_required', route_variance_trace_summary: { route_variance_detected: routeVarianceDetected },
   };
+  // Required mode must keep preflight, comparison writes, manifest rewrite and metrics rewrite on the same root.
   if (input.manifest_reconciliation_mode === 'required') {
     try {
       const canonicalRootTakeCore = stripTakePrefix(input.root_take_id);

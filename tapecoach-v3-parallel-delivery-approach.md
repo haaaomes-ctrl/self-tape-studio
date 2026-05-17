@@ -3209,3 +3209,14 @@
 \f4\fs18\fsmilli9333 \cf0 \strokec2 Level 2 not accepted until full specific-run proof exists.\uc0\u8232 GF-01 / RT-15 blocked until comparison evidence exists.\u8232 Public scoring blocked until explicitly approved.\u8232 Public technique authority blocked until evidence / benchmark / review passes.\u8232 Customer-facing release blocked until Level 2, Level 3, Level 4 and RC gates pass.
 \f3\fs24 \
 }
+
+## High-risk integration and reconciliation work
+
+- Use small Codex chunks.
+- Classify first-gate failures before patching.
+- Prefer thin wrappers/adapters over low-level rewrites.
+- Commit only after targeted tests pass.
+- Require final repo audit before merge.
+- Require live artefact validation where runtime reconciliation is involved.
+- Update `docs/tapecoach/v3/engineering-lessons-and-guardrails.md` after repeated P1/P2 churn.
+- This section does not override `README.md`.
