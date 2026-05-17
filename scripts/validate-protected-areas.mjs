@@ -182,6 +182,12 @@ const muxSensitiveTerms = [
   'mux_webhook_secret',
   'mux-player',
   'mux.com',
+  'mux_asset_id',
+  'mux_upload_id',
+  'mux_playback_id',
+  'mux_status',
+  'mux_processing',
+  'mux_metadata',
 ];
 
 function containsMuxSensitiveContent(filePath, options = {}) {
@@ -244,6 +250,7 @@ const explicitUploadProtectedFiles = new Set([
   'src/routes/new.tsx',
   'src/server/mux-upload.ts',
   'src/server/upload-errors.ts',
+  'src/lib/upload-errors.ts',
   'src/server-fns/process-take.functions.ts',
   'src/server-fns/upload.functions.ts',
   'src/server-fns/direct-upload.functions.ts',
@@ -328,6 +335,7 @@ function parseProtectedAreaExceptions() {
 
 function validateExceptionConfig(config) {
   const failures = [];
+  const allowedCategories = new Set(['public output/report rendering', 'upload', 'Mux', 'webhook', '*']);
   if (!config || typeof config !== 'object') failures.push('missing protected-area exception config object');
   if (config?.schema_version !== EXCEPTIONS_SCHEMA_VERSION) failures.push(`unsupported schema_version: expected ${EXCEPTIONS_SCHEMA_VERSION}`);
   if (!config?.approval_source) failures.push('protected-area exception missing approval_source');
@@ -339,19 +347,25 @@ function validateExceptionConfig(config) {
   if (!Array.isArray(config?.exceptions)) failures.push('protected-area exception missing exceptions[]');
   if (Array.isArray(config?.exceptions)) {
     for (const ex of config.exceptions) {
+      if (!ex?.file || typeof ex.file !== 'string' || !ex.file.trim()) failures.push('protected-area exception entry missing file');
+      if (!Array.isArray(ex?.categories) || ex.categories.length === 0 || !ex.categories.every((c) => typeof c === 'string' && c.trim())) failures.push('protected-area exception entry missing categories');
+      if (Array.isArray(ex?.categories) && !ex.categories.every((c) => allowedCategories.has(c))) failures.push('protected-area exception entry has invalid category');
       if (!ex?.reason || !String(ex.reason).trim()) failures.push('protected-area exception entry missing reason');
     }
   }
   if (config?.approved_at && Number.isNaN(Date.parse(config.approved_at))) failures.push('protected-area exception approved_at is invalid');
+  if (config?.approved_at && !Number.isNaN(Date.parse(config.approved_at)) && Date.parse(config.approved_at) > Date.now()) failures.push('protected-area exception approved_at must not be in the future');
   if (config?.expires_at) {
     const exp = Date.parse(config.expires_at);
     if (Number.isNaN(exp)) failures.push('protected-area exception expires_at is invalid');
     else if (exp <= Date.now()) failures.push('protected-area exception is expired');
   }
   const prNumber = process.env.PR_NUMBER ?? process.env.GITHUB_PR_NUMBER;
+  if (!config?.pr_number) failures.push('protected-area exception missing pr_number');
   if (prNumber) {
-    if (!config?.pr_number) failures.push('protected-area exception missing pr_number for current PR');
-    else if (String(config.pr_number) !== String(prNumber)) failures.push('protected-area exception pr_number does not match current PR');
+    if (String(config.pr_number) !== String(prNumber)) failures.push('protected-area exception pr_number does not match current PR');
+  } else {
+    failures.push('protected-area exception requires PR_NUMBER/GITHUB_PR_NUMBER operator-verification-required');
   }
   return failures;
 }
@@ -459,7 +473,14 @@ export function findProtectedViolations(files, options = {}) {
 }
 
 function run() {
-  const changed = changedFiles();
+  let changed = [];
+  try {
+    changed = changedFiles();
+  } catch (error) {
+    console.error('Protected-area gate failed:');
+    console.error(`- ${error.message}`);
+    process.exit(1);
+  }
   const violations = findProtectedViolations(changed);
   const parsed = parseProtectedAreaExceptions();
 

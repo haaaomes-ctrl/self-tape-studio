@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const expectedFiles = [
   'inputs/input_record.json',
@@ -19,7 +20,6 @@ const expectedFiles = [
 
 const bundleRoot = process.argv[2];
 const strictS9Mode = process.env.STORAGE_BUNDLE_MODE !== 'future_expanded';
-const failures = [];
 
 function listFilesRecursively(root, current = '') {
   const target = path.join(root, current);
@@ -48,20 +48,24 @@ function readJson(filePath) {
   }
 }
 
-if (!bundleRoot) {
-  const contractPath = path.join(process.cwd(), 'src/server/v3/contracts/storage-bundle.ts');
+export function validateStorageBundle({ cwd = process.cwd(), bundleRootArg = bundleRoot, strictMode = strictS9Mode } = {}) {
+const failures = [];
+if (!bundleRootArg) {
+  const contractPath = path.join(cwd, 'src/server/v3/contracts/storage-bundle.ts');
   if (!existsSync(contractPath)) {
     failures.push('missing required storage contract: src/server/v3/contracts/storage-bundle.ts');
   }
-  const contractText = existsSync(contractPath) ? readFileSync(contractPath, 'utf8') : '';
-  for (const expectedFile of expectedFiles) {
-    if (!contractText.includes(`'${expectedFile}'`)) failures.push(`contract missing ${expectedFile}`);
-  }
-  if (!contractText.includes('expected_file_count_when_technique_and_score_sources_exist: 12')) {
-    failures.push('contract missing 12-file target');
+  if (existsSync(contractPath)) {
+    const contractText = readFileSync(contractPath, 'utf8');
+    for (const expectedFile of expectedFiles) {
+      if (!contractText.includes(`'${expectedFile}'`)) failures.push(`contract missing ${expectedFile}`);
+    }
+    if (!contractText.includes('expected_file_count_when_technique_and_score_sources_exist: 12')) {
+      failures.push('contract missing 12-file target');
+    }
   }
 } else {
-  const resolvedRoot = path.resolve(bundleRoot);
+  const resolvedRoot = path.resolve(cwd, bundleRootArg);
   let observedFiles = [];
   if (existsSync(resolvedRoot)) observedFiles = listFilesRecursively(resolvedRoot);
 
@@ -70,7 +74,7 @@ if (!bundleRoot) {
     if (!existsSync(candidate)) failures.push(`missing bundle file: ${expectedFile}`);
   }
 
-  if (strictS9Mode) {
+  if (strictMode) {
     const expectedSet = new Set(expectedFiles);
     const unexpectedFiles = observedFiles.filter((file) => !expectedSet.has(file));
 
@@ -102,10 +106,21 @@ if (!bundleRoot) {
   }
 }
 
-if (failures.length) {
-  console.error('Storage validation failed:');
-  for (const failure of failures) console.error(`- ${failure}`);
-  process.exit(1);
+  return failures;
 }
 
-console.log(bundleRoot ? 'Storage validation passed' : 'Storage contract validation passed');
+function isDirectCliInvocation() {
+  const modulePath = path.resolve(fileURLToPath(import.meta.url));
+  const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+  return Boolean(invokedPath) && modulePath === invokedPath;
+}
+
+if (isDirectCliInvocation()) {
+  const failures = validateStorageBundle();
+  if (failures.length) {
+    console.error('Storage validation failed:');
+    for (const failure of failures) console.error(`- ${failure}`);
+    process.exit(1);
+  }
+  console.log(bundleRoot ? 'Storage validation passed' : 'Storage contract validation passed');
+}

@@ -9,6 +9,7 @@ const baseException = {
   approved_at: '2026-05-17T12:00:00.000Z',
   expires_at: '2099-01-01T00:00:00.000Z',
   reason: 'approved',
+  pr_number: '49',
   exceptions: [
     { file: 'src/server/webhook-handler.ts', categories: ['webhook'], reason: 'ok' },
   ],
@@ -77,8 +78,11 @@ describe('protected-area exception validation', () => {
   });
 
   it('controlled evaluation: exact file/category approval passes', () => {
+    const prior = process.env.PR_NUMBER;
+    process.env.PR_NUMBER = '49';
     const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], baseException as any);
     expect(result.unapproved).toHaveLength(0);
+    process.env.PR_NUMBER = prior;
   });
 
   it('controlled evaluation: wrong category fails', () => {
@@ -88,10 +92,13 @@ describe('protected-area exception validation', () => {
   });
 
   it('controlled evaluation: mux-webhook needs both categories', () => {
+    const prior = process.env.PR_NUMBER;
+    process.env.PR_NUMBER = '49';
     const one = { ...baseException, exceptions: [{ file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'partial' }] };
     const both = { ...baseException, exceptions: [{ file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux','webhook'], reason: 'full' }] };
     expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], one as any).unapproved.length).toBeGreaterThan(0);
     expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], both as any).unapproved).toHaveLength(0);
+    process.env.PR_NUMBER = prior;
   });
 
 });

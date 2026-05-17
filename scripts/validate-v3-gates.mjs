@@ -17,12 +17,12 @@ function hasNoOpOnly(command) {
   return segments.every((segment) => NO_OP_PATTERNS.some((p) => p.test(segment)));
 }
 
-const SEPARATORS = new Set(['&&', '||', ';', '|']);
+const SEPARATORS = new Set(['&&', '||', ';', '|', '&']);
 const RUN_FLAGS_WITH_VALUE = new Set(['--workspace', '-w']);
 
 function tokenizeCommand(command) {
   return command
-    .replace(/([;|])/g, ' $1 ')
+    .replace(/([;|&])/g, ' $1 ')
     .replace(/&&/g, ' && ')
     .replace(/\|\|/g, ' || ')
     .trim()
@@ -71,7 +71,7 @@ function commandContainsNoOpGuard(command) {
 }
 
 function containsNonPropagatingSeparator(command) {
-  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command) || /\n/.test(command);
+  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command) || /(^|[^&])&(?!&)/.test(command) || /\n/.test(command);
 }
 
 function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
@@ -109,7 +109,32 @@ export function collectScriptExpansion(scripts, start, state = {}) {
   return { expanded, missingTargets, visited };
 }
 
-export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {}) {
+
+function extractRunSteps(workflowText) {
+  const lines = workflowText.split(/\r?\n/);
+  const steps = [];
+  let current = null;
+  for (const line of lines) {
+    const runMatch = line.match(/^\s*-?\s*run:\s*(.+)\s*$/);
+    if (runMatch) {
+      current = { run: runMatch[1], env: {} };
+      steps.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const envMatch = line.match(/^\s+([A-Z0-9_]+):\s*(.+)\s*$/);
+    if (envMatch && /\senv:\s*$/.test(lines[Math.max(0, lines.indexOf(line)-1)]||'')) {
+      current.env[envMatch[1]] = envMatch[2];
+    }
+  }
+  return steps;
+}
+
+function hasExecutableRunStep(steps, commandRegex) {
+  return steps.some((s) => commandRegex.test(s.run) && !/^\s*echo\b/i.test(s.run));
+}
+
+export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {
   const root = cwd;
   const failures = [];
   const file = (relativePath) => path.join(root, relativePath);
@@ -133,9 +158,9 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
 
   const releaseGates = existsSync(file(releaseGatesPath)) ? read(releaseGatesPath) : '';
   const storageContract = existsSync(file(storageContractPath)) ? read(storageContractPath) : '';
-  const gatekeeperWorkflow = existsSync(file('.github/workflows/gatekeeper.yml')) ? read('.github/workflows/gatekeeper.yml') : '';
-  const contractsWorkflow = existsSync(file('.github/workflows/contracts.yml')) ? read('.github/workflows/contracts.yml') : '';
-  const buildWorkflow = existsSync(file('.github/workflows/build.yml')) ? read('.github/workflows/build.yml') : '';
+  const gatekeeperWorkflow = workflowOverride?.gatekeeper ?? (existsSync(file('.github/workflows/gatekeeper.yml')) ? read('.github/workflows/gatekeeper.yml') : '');
+  const contractsWorkflow = workflowOverride?.contracts ?? (existsSync(file('.github/workflows/contracts.yml')) ? read('.github/workflows/contracts.yml') : '');
+  const buildWorkflow = workflowOverride?.build ?? (existsSync(file('.github/workflows/build.yml')) ? read('.github/workflows/build.yml') : '');
   let packageJson = packageJsonOverride ?? null;
   if (!packageJson) {
     if (existsSync(file('package.json'))) {
@@ -206,12 +231,20 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
   }
 
   if (gatekeeperWorkflow) {
-    if (!/npm run gate:release/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing npm run gate:release');
+    const steps = extractRunSteps(gatekeeperWorkflow);
+    if (!hasExecutableRunStep(steps, /npm run gate:release/)) failures.push('gatekeeper workflow missing npm run gate:release');
     if (!/fetch-depth:\s*0/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing fetch-depth: 0');
-    if (!/(GITHUB_PR_NUMBER|PR_NUMBER)/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing PR number env for gate:release');
+    const gateStep = steps.find((s) => /npm run gate:release/.test(s.run) && !/^\s*echo\b/i.test(s.run));
+    if (!gateStep || (!('GITHUB_PR_NUMBER' in gateStep.env) && !('PR_NUMBER' in gateStep.env))) failures.push('gatekeeper workflow missing PR number env for gate:release');
   }
-  if (contractsWorkflow && !/npm run test:contracts/.test(contractsWorkflow)) failures.push('contracts workflow missing npm run test:contracts');
-  if (buildWorkflow && !/npm run build/.test(buildWorkflow)) failures.push('build workflow missing npm run build');
+  if (contractsWorkflow) {
+    const steps = extractRunSteps(contractsWorkflow);
+    if (!hasExecutableRunStep(steps, /npm run test:contracts/)) failures.push('contracts workflow missing npm run test:contracts');
+  }
+  if (buildWorkflow) {
+    const steps = extractRunSteps(buildWorkflow);
+    if (!hasExecutableRunStep(steps, /npm run build/)) failures.push('build workflow missing npm run build');
+  }
 
   for (const phrase of ['Level 2 remains `not_accepted`', 'production-safe, public-scoring and public-technique-authority gates remain blocked']) {
     if (!readme.includes(phrase)) failures.push(`README controlling phrase not found: ${phrase}`);
