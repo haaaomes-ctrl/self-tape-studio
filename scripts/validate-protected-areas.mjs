@@ -17,6 +17,8 @@ const reportFilenameHints = [
   'report-render',
   'report-builder',
   'report-output',
+  'report-schema',
+  'report-renderer',
   'report-quality',
   'report-polish',
   'report-enforcement',
@@ -46,6 +48,40 @@ function isTestOrFixturePath(filePath) {
 
   const baseName = getBaseName(filePath);
   return /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(baseName);
+}
+
+const reportSensitiveAreaPrefixes = [
+  'src/server/',
+  'src/lib/',
+  'src/utils/',
+  'src/routes/',
+  'app/',
+  'api/',
+];
+
+const reportSensitiveTerms = [
+  'readreportschemaversion',
+  'publicreportv3',
+  'report renderer',
+  'render payload',
+  'rendered report',
+  'report parity',
+  'public report',
+];
+
+function containsReportSensitiveContent(filePath, options = {}) {
+  const contentByPath = normalizeContentMap(options.contentByPath);
+  if (contentByPath.has(filePath)) {
+    const lowered = String(contentByPath.get(filePath)).toLowerCase();
+    return reportSensitiveTerms.some((term) => lowered.includes(term));
+  }
+  if (!existsSync(filePath)) return false;
+  try {
+    const lowered = readFileSync(filePath, 'utf8').toLowerCase();
+    return reportSensitiveTerms.some((term) => lowered.includes(term));
+  } catch {
+    return false;
+  }
 }
 
 function isCodeFile(filePath) {
@@ -118,20 +154,20 @@ function containsMuxSensitiveContent(filePath, options = {}) {
   }
 }
 
-function isProtectedReportPath(filePath) {
+function isProtectedReportPath(filePath, options = {}) {
   if (filePath.startsWith('src/components/report/')) return true;
   if (explicitReportServerFiles.has(filePath)) return true;
   if (reportRoutePattern.test(filePath)) return true;
+  if (isTestOrFixturePath(filePath)) return false;
+  if (filePath.includes('/contracts/')) return false;
 
-  if (filePath.startsWith('src/server/') && isTypeScriptPath(filePath)) {
-    if (isTestOrFixturePath(filePath)) return false;
-    if (filePath.includes('/contracts/')) return false;
+  const inReportArea = reportSensitiveAreaPrefixes.some((prefix) => filePath.startsWith(prefix));
+  if (!inReportArea || !isTypeScriptPath(filePath)) return false;
 
-    const baseName = getBaseName(filePath);
-    return reportFilenameHints.some((hint) => baseName.includes(hint));
-  }
+  const baseName = getBaseName(filePath);
+  if (reportFilenameHints.some((hint) => baseName.includes(hint))) return true;
 
-  return false;
+  return containsReportSensitiveContent(filePath, options);
 }
 
 function isProtectedMuxPath(filePath, options = {}) {

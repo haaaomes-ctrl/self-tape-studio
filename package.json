@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:contracts": "vitest run src/server/__tests__/v3-contracts.test.ts src/server/__tests__/protected-areas-matcher.test.ts src/server/__tests__/storage-bundle-validator.test.ts && node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs",
+    "test:contracts": "vitest run src/server/__tests__/v3-contracts.test.ts src/server/__tests__/protected-areas-matcher.test.ts src/server/__tests__/storage-bundle-validator.test.ts src/server/__tests__/validate-v3-gates-integrity.test.ts && node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs",
     "gate:protected": "node scripts/validate-protected-areas.mjs",
     "gate:release": "node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs",
     "format": "prettier --write ."
