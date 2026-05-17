@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const NO_OP_PATTERNS = [
   /(^|\s)true(\s|$)/i,
@@ -80,7 +81,7 @@ function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
     .some((segment) => validatorRegex.test(segment) && commandContainsNoOpGuard(segment));
 }
 
-function collectScriptExpansion(scripts, start, visited = new Set()) {
+export function collectScriptExpansion(scripts, start, visited = new Set()) {
   if (!scripts[start] || visited.has(start)) return '';
   visited.add(start);
 
@@ -113,8 +114,11 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
     if (!existsSync(file(rf))) failures.push(`missing required file: ${rf}`);
   }
 
-  const releaseGates = read('src/server/v3/contracts/release-gates.ts');
-  const storageContract = read('src/server/v3/contracts/storage-bundle.ts');
+  const releaseGatesPath = 'src/server/v3/contracts/release-gates.ts';
+  const storageContractPath = 'src/server/v3/contracts/storage-bundle.ts';
+
+  const releaseGates = existsSync(file(releaseGatesPath)) ? read(releaseGatesPath) : '';
+  const storageContract = existsSync(file(storageContractPath)) ? read(storageContractPath) : '';
   const packageJson = packageJsonOverride ?? JSON.parse(read('package.json'));
   const scripts = packageJson.scripts ?? {};
   const readme = read('README.md');
@@ -124,9 +128,13 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
     "public_technique_authority_status: 'blocked'", 'public_output_unchanged_required: true',
     'upload_changes_allowed: false', 'mux_changes_allowed: false', 'webhook_changes_allowed: false',
   ];
-  for (const lit of requiredGateLiterals) if (!releaseGates.includes(lit)) failures.push(`release gate contract missing ${lit}`);
-  for (const req of ['manifest.json', 'qa/acceptance_metrics.json']) if (!storageContract.includes(`'${req}'`)) failures.push(`storage contract missing ${req}`);
-  if (!storageContract.includes('expected_file_count_when_technique_and_score_sources_exist: 12')) failures.push('storage contract must keep the current 12-file validation target');
+  if (releaseGates) {
+    for (const lit of requiredGateLiterals) if (!releaseGates.includes(lit)) failures.push(`release gate contract missing ${lit}`);
+  }
+  if (storageContract) {
+    for (const req of ['manifest.json', 'qa/acceptance_metrics.json']) if (!storageContract.includes(`'${req}'`)) failures.push(`storage contract missing ${req}`);
+    if (!storageContract.includes('expected_file_count_when_technique_and_score_sources_exist: 12')) failures.push('storage contract must keep the current 12-file validation target');
+  }
 
   if (!scripts['test:contracts']) failures.push('package.json missing test:contracts script');
   if (!scripts['gate:release']) failures.push('package.json missing gate:release script');
@@ -160,10 +168,22 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
   return failures;
 }
 
-const failures = validateV3Gates();
-if (failures.length) {
-  console.error('v3 gate validation failed:');
-  for (const failure of failures) console.error(`- ${failure}`);
-  process.exit(1);
+function isDirectCliInvocation() {
+  const modulePath = path.resolve(fileURLToPath(import.meta.url));
+  const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+  return Boolean(invokedPath) && modulePath === invokedPath;
 }
-console.log('v3 gate validation passed');
+
+function runCli() {
+  const failures = validateV3Gates();
+  if (failures.length) {
+    console.error('v3 gate validation failed:');
+    for (const failure of failures) console.error(`- ${failure}`);
+    process.exit(1);
+  }
+  console.log('v3 gate validation passed');
+}
+
+if (isDirectCliInvocation()) {
+  runCli();
+}

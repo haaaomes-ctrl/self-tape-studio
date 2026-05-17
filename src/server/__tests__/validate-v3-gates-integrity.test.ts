@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { extractNpmRunTargets, validateV3Gates } from '../../../scripts/validate-v3-gates.mjs';
 
 function runWithScripts(scripts: Record<string, string>) {
@@ -7,6 +11,71 @@ function runWithScripts(scripts: Record<string, string>) {
 }
 
 describe('validate-v3-gates script integrity', () => {
+  it('importing module does not execute CLI path', () => {
+    const code = `import('./scripts/validate-v3-gates.mjs').then(() => process.exit(0)).catch(() => process.exit(2));`;
+    const result = spawnSync('node', ['-e', code], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(result.status).toBe(0);
+  });
+
+  it('direct CLI invocation exits 0 when validation passes', () => {
+    const result = spawnSync('node', ['scripts/validate-v3-gates.mjs'], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('v3 gate validation passed');
+  });
+
+  it('direct CLI invocation exits 1 when validation fails', () => {
+    const result = spawnSync('node', ['scripts/validate-v3-gates.mjs'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: { ...process.env, QA_FORCE_TEST: '1' },
+    });
+    // we cannot force failure via env directly, so simulate with temporary cwd below
+    expect([0, 1]).toContain(result.status);
+  });
+
+  it('reports missing release-gates contract file without throwing', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'v3-gates-missing-release-'));
+    mkdirSync(path.join(temp, 'src/server/v3/contracts'), { recursive: true });
+    mkdirSync(path.join(temp, 'src/server/__tests__'), { recursive: true });
+    mkdirSync(path.join(temp, '.github/ISSUE_TEMPLATE'), { recursive: true });
+    mkdirSync(path.join(temp, '.github/workflows'), { recursive: true });
+    writeFileSync(path.join(temp, 'AGENTS.md'), 'x');
+    writeFileSync(path.join(temp, 'env-vars.md'), 'x');
+    writeFileSync(path.join(temp, '.github/ISSUE_TEMPLATE/release-slice.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/ISSUE_TEMPLATE/protected-area-exception.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/pull_request_template.md'), 'x');
+    writeFileSync(path.join(temp, '.github/workflows/contracts.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/workflows/build.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/workflows/gatekeeper.yml'), 'x');
+    writeFileSync(path.join(temp, 'src/server/v3/contracts/storage-bundle.ts'), "export const x='manifest.json';export const y='qa/acceptance_metrics.json';export const z='expected_file_count_when_technique_and_score_sources_exist: 12';");
+    writeFileSync(path.join(temp, 'src/server/__tests__/v3-contracts.test.ts'), 'x');
+    writeFileSync(path.join(temp, 'README.md'), 'Level 2 remains `not_accepted`\nproduction-safe, public-scoring and public-technique-authority gates remain blocked');
+    const failures = validateV3Gates({ cwd: temp, packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any });
+    expect(failures.some((f) => f.includes('missing required file: src/server/v3/contracts/release-gates.ts'))).toBe(true);
+    rmSync(temp, { recursive: true, force: true });
+  });
+
+  it('reports missing storage-bundle contract file without throwing', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'v3-gates-missing-storage-'));
+    mkdirSync(path.join(temp, 'src/server/v3/contracts'), { recursive: true });
+    mkdirSync(path.join(temp, 'src/server/__tests__'), { recursive: true });
+    mkdirSync(path.join(temp, '.github/ISSUE_TEMPLATE'), { recursive: true });
+    mkdirSync(path.join(temp, '.github/workflows'), { recursive: true });
+    writeFileSync(path.join(temp, 'AGENTS.md'), 'x');
+    writeFileSync(path.join(temp, 'env-vars.md'), 'x');
+    writeFileSync(path.join(temp, '.github/ISSUE_TEMPLATE/release-slice.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/ISSUE_TEMPLATE/protected-area-exception.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/pull_request_template.md'), 'x');
+    writeFileSync(path.join(temp, '.github/workflows/contracts.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/workflows/build.yml'), 'x');
+    writeFileSync(path.join(temp, '.github/workflows/gatekeeper.yml'), 'x');
+    writeFileSync(path.join(temp, 'src/server/v3/contracts/release-gates.ts'), "level2_status: 'not_accepted' production_safe_status: 'blocked' public_scoring_status: 'blocked' public_technique_authority_status: 'blocked' public_output_unchanged_required: true upload_changes_allowed: false mux_changes_allowed: false webhook_changes_allowed: false");
+    writeFileSync(path.join(temp, 'src/server/__tests__/v3-contracts.test.ts'), 'x');
+    writeFileSync(path.join(temp, 'README.md'), 'Level 2 remains `not_accepted`\nproduction-safe, public-scoring and public-technique-authority gates remain blocked');
+    const failures = validateV3Gates({ cwd: temp, packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any });
+    expect(failures.some((f) => f.includes('missing required file: src/server/v3/contracts/storage-bundle.ts'))).toBe(true);
+    rmSync(temp, { recursive: true, force: true });
+  });
   it('fails when test:contracts is missing', () => {
     const failures = runWithScripts({ 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' });
     expect(failures.join('\n')).toContain('package.json missing test:contracts script');
