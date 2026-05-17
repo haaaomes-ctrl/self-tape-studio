@@ -78,8 +78,42 @@ describe('protected-area matchers', () => {
   });
 
   it('flags client-only mux basename when file content is mux-sensitive', () => {
-    const violations = findProtectedViolations(['src/components/demo-mux-sensitive.tsx']);
+    const violations = findProtectedViolations(
+      ['src/components/demo-mux-sensitive.tsx'],
+      {
+        contentByPath: {
+          'src/components/demo-mux-sensitive.tsx': "export const demo = { provider: '@mux/video', widget: 'MuxUploader' };",
+        },
+      },
+    );
     expect(violations).toHaveLength(1);
     expect(violations[0].categories).toContain('Mux');
+  });
+
+  it('flags backend/function path without mux basename when mux-sensitive content is present', () => {
+    const violations = findProtectedViolations(
+      ['src/server-fns/delete.functions.ts'],
+      {
+        contentByPath: {
+          'src/server-fns/delete.functions.ts': "import { getMux } from './mux'; const client = Mux.Video;",
+        },
+      },
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].categories).toContain('Mux');
+  });
+
+  it('does not flag backend/function path without mux basename or sensitive content', () => {
+    const violations = findProtectedViolations(
+      ['src/server-fns/delete.functions.ts'],
+      {
+        contentByPath: {
+          'src/server-fns/delete.functions.ts': 'export const prune = () => true;',
+        },
+      },
+    );
+
+    expect(violations).toHaveLength(0);
   });
 });

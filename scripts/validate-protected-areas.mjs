@@ -42,6 +42,14 @@ function isCodeFile(filePath) {
   return /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath);
 }
 
+function normalizeContentMap(contentByPath = {}) {
+  const normalized = new Map();
+  for (const [filePath, content] of Object.entries(contentByPath)) {
+    normalized.set(normalizePath(filePath), content);
+  }
+  return normalized;
+}
+
 const explicitMuxProtectedFiles = new Set([
   'src/routes/api/public/mux-webhook.ts',
   'src/routes/api/public/diag-mux-probe.ts',
@@ -73,11 +81,20 @@ const muxSensitiveTerms = [
   'assetid',
   '@mux/',
   'muxuploader',
+  'getmux',
+  'mux.video',
   'mux-player',
   'mux.com',
 ];
 
-function containsMuxSensitiveContent(filePath) {
+function containsMuxSensitiveContent(filePath, options = {}) {
+  const contentByPath = normalizeContentMap(options.contentByPath);
+  if (contentByPath.has(filePath)) {
+    const content = String(contentByPath.get(filePath));
+    const lowered = content.toLowerCase();
+    return muxSensitiveTerms.some((term) => lowered.includes(term.toLowerCase()));
+  }
+
   if (!existsSync(filePath)) return false;
   try {
     const content = readFileSync(filePath, 'utf8');
@@ -106,16 +123,22 @@ function isProtectedReportPath(filePath) {
   return false;
 }
 
-function isProtectedMuxPath(filePath) {
+function isProtectedMuxPath(filePath, options = {}) {
+  if (filePath.includes('/__tests__/')) return false;
+  if (filePath.includes('/fixtures/')) return false;
+
   if (explicitMuxProtectedFiles.has(filePath)) return true;
   if (!isCodeFile(filePath)) return false;
 
   const baseName = getBaseName(filePath);
-  if (!baseName.includes('mux')) return false;
+  const hasMuxBaseName = baseName.includes('mux');
 
-  if (muxSensitiveAreaPrefixes.some((prefix) => filePath.startsWith(prefix))) return true;
+  const hasSensitiveContent = containsMuxSensitiveContent(filePath, options);
 
-  return containsMuxSensitiveContent(filePath);
+  const inMuxSensitiveArea = muxSensitiveAreaPrefixes.some((prefix) => filePath.startsWith(prefix));
+  if (inMuxSensitiveArea && (hasMuxBaseName || hasSensitiveContent)) return true;
+
+  return hasSensitiveContent && filePath.startsWith('src/components/');
 }
 
 const protectedMatchers = [
@@ -161,13 +184,13 @@ function changedFiles() {
   }
 }
 
-export function findProtectedViolations(files) {
+export function findProtectedViolations(files, options = {}) {
   const violationsByFile = new Map();
 
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
     for (const protectedMatcher of protectedMatchers) {
-      if (protectedMatcher.matches(file)) {
+      if (protectedMatcher.matches(file, options)) {
         if (!violationsByFile.has(file)) {
           violationsByFile.set(file, new Set());
         }
