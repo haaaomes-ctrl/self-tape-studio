@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const expectedFiles = [
@@ -18,7 +18,26 @@ const expectedFiles = [
 ];
 
 const bundleRoot = process.argv[2];
+const strictS9Mode = process.env.STORAGE_BUNDLE_MODE !== 'future_expanded';
 const failures = [];
+
+function listFilesRecursively(root, current = '') {
+  const target = path.join(root, current);
+  const entries = readdirSync(target, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const rel = current ? `${current}/${entry.name}` : entry.name;
+    const full = path.join(root, rel);
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursively(root, rel));
+    } else if (entry.isFile() || statSync(full).isFile()) {
+      files.push(rel.replace(/\\/g, '/'));
+    }
+  }
+
+  return files;
+}
 
 function readJson(filePath) {
   try {
@@ -39,9 +58,24 @@ if (!bundleRoot) {
   }
 } else {
   const resolvedRoot = path.resolve(bundleRoot);
+  let observedFiles = [];
+  if (existsSync(resolvedRoot)) observedFiles = listFilesRecursively(resolvedRoot);
+
   for (const expectedFile of expectedFiles) {
     const candidate = path.join(resolvedRoot, expectedFile);
     if (!existsSync(candidate)) failures.push(`missing bundle file: ${expectedFile}`);
+  }
+
+  if (strictS9Mode) {
+    const expectedSet = new Set(expectedFiles);
+    const unexpectedFiles = observedFiles.filter((file) => !expectedSet.has(file));
+
+    if (observedFiles.length !== expectedFiles.length) {
+      failures.push(`expected exactly ${expectedFiles.length} files in current_s9_analysis_bundle_strict mode, found ${observedFiles.length}`);
+    }
+    if (unexpectedFiles.length) {
+      failures.push(`unexpected bundle files: ${unexpectedFiles.sort().join(', ')}`);
+    }
   }
 
   const manifestPath = path.join(resolvedRoot, 'manifest.json');

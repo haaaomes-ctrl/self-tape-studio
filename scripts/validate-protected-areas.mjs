@@ -15,6 +15,10 @@ const reportFilenameHints = [
   'report-render',
   'report-builder',
   'report-output',
+  'report-quality',
+  'report-polish',
+  'report-enforcement',
+  'report-parity',
   'public-report',
   'internal-renderer',
   'render-payload',
@@ -90,7 +94,12 @@ function isProtectedReportPath(filePath) {
   if (reportRoutePattern.test(filePath)) return true;
 
   if (filePath.startsWith('src/server/') && isTypeScriptPath(filePath)) {
+    if (filePath.includes('/__tests__/')) return false;
+    if (filePath.includes('/contracts/')) return false;
+    if (filePath.includes('/fixtures/')) return false;
+
     const baseName = getBaseName(filePath);
+    if (/\.(test|spec)\.(ts|tsx)$/i.test(baseName)) return false;
     return reportFilenameHints.some((hint) => baseName.includes(hint));
   }
 

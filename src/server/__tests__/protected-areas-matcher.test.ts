@@ -18,6 +18,8 @@ describe('protected-area matchers', () => {
       'src/server/v3/report-v3-render.server.ts',
       'src/server/v2-report-builder.server.ts',
       'src/server/report-output-enforcement.server.ts',
+      'src/server/report-polish.server.ts',
+      'src/server/report-quality.server.ts',
       'src/routes/index.tsx',
       'src/routes/about.tsx',
       'src/routes/dashboard.tsx',
@@ -59,6 +61,8 @@ describe('protected-area matchers', () => {
       'src/server-fns/brief.functions.ts',
       'src/lib/video-client.ts',
       'src/components/demo-mux-label.tsx',
+      'src/server/v3/contracts/report-v3-contracts.ts',
+      'src/server/__tests__/v3-r10-public-report-v3a.test.ts',
     ];
 
     for (const path of unrelatedPaths) {
