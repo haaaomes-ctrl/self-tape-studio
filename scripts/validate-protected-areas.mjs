@@ -33,6 +33,10 @@ function isTypeScriptPath(filePath) {
   return /\.(ts|tsx)$/i.test(filePath);
 }
 
+function isCodeFile(filePath) {
+  return /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath);
+}
+
 function isProtectedReportPath(filePath) {
   if (filePath.startsWith('src/components/report/')) return true;
   if (explicitReportServerFiles.has(filePath)) return true;
@@ -48,13 +52,8 @@ function isProtectedReportPath(filePath) {
 
 function isProtectedMuxPath(filePath) {
   if (/^src\/routes\/api\/public\/(mux-webhook|diag-mux-probe)\.ts$/i.test(filePath)) return true;
-  if (!isTypeScriptPath(filePath)) return false;
-
-  if (filePath.startsWith('src/routes/') || filePath.startsWith('src/server/')) {
-    return getBaseName(filePath).includes('mux');
-  }
-
-  return false;
+  if (!isCodeFile(filePath)) return false;
+  return getBaseName(filePath).includes('mux');
 }
 
 const protectedMatchers = [

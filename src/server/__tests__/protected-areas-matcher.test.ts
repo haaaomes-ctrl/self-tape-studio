@@ -32,6 +32,9 @@ describe('protected-area matchers', () => {
       'src/routes/api/public/diag-mux-probe.ts',
       'src/server/mux-upload.ts',
       'src/server/some-mux-helper.ts',
+      'src/server-fns/mux.functions.ts',
+      'src/lib/mux-client.ts',
+      'src/utils/video-mux-helper.ts',
     ];
 
     for (const path of protectedPaths) {
@@ -43,8 +46,8 @@ describe('protected-area matchers', () => {
     const unrelatedPaths = [
       'src/server/v3/brief-achievement.server.ts',
       'src/server/v3/technique-standards.server.ts',
-      'src/server/v3/contracts/brief-contracts.ts',
-      'src/server/v3/contracts/technique-contracts.ts',
+      'src/server-fns/brief.functions.ts',
+      'src/lib/video-client.ts',
     ];
 
     for (const path of unrelatedPaths) {
