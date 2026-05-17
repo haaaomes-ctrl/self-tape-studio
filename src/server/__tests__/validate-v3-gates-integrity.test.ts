@@ -388,8 +388,32 @@ describe('validate-v3-gates script integrity', () => {
   });
 
   it('fails when gatekeeper workflow is missing gate:release command', () => {
-    const failures = validateV3Gates({ cwd: process.cwd(), packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any });
-    expect(failures).not.toContain('gatekeeper workflow missing npm run gate:release');
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: npm ci', contracts: '- run: npm run test:contracts', build: '- run: npm run build' },
+    });
+    expect(failures.join('\n')).toContain('gatekeeper workflow missing npm run gate:release');
+  });
+
+  it('fails when gatekeeper run swallows failures', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: npm run gate:release || true\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: '- run: npm run test:contracts', build: '- run: npm run build' },
+    });
+    expect(failures.join('\n')).toContain('failure-swallowing');
+  });
+
+  it('passes repeated sibling script references', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:a && npm run gate:b',
+      'gate:a': 'npm run gate:core',
+      'gate:b': 'npm run gate:core',
+      'gate:core': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs',
+    });
+    expect(failures).toEqual([]);
   });
 
 });

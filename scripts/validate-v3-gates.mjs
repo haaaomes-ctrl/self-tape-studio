@@ -88,13 +88,18 @@ function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
 
 export function collectScriptExpansion(scripts, start, state = {}) {
   const visited = state.visited ?? new Set();
+  const stack = state.stack ?? new Set();
+  const cache = state.cache ?? new Map();
   const missingTargets = state.missingTargets ?? new Set();
 
+  if (cache.has(start)) return { expanded: cache.get(start), missingTargets, visited, stack, cache };
   if (!scripts[start]) {
     missingTargets.add(start);
-    return { expanded: '', missingTargets, visited };
+    return { expanded: '', missingTargets, visited, stack, cache };
   }
-  if (visited.has(start)) return { expanded: '', missingTargets, visited };
+  if (stack.has(start)) return { expanded: '', missingTargets, visited, stack, cache };
+  if (visited.has(start)) return { expanded: cache.get(start) ?? '', missingTargets, visited, stack, cache };
+  stack.add(start);
   visited.add(start);
 
   const command = scripts[start];
@@ -102,11 +107,13 @@ export function collectScriptExpansion(scripts, start, state = {}) {
   const runRefs = extractNpmRunTargets(command);
 
   for (const ref of runRefs) {
-    const child = collectScriptExpansion(scripts, ref, { visited, missingTargets });
+    const child = collectScriptExpansion(scripts, ref, { visited, missingTargets, stack, cache });
     if (child.expanded) expanded += ` && ${child.expanded}`;
   }
+  stack.delete(start);
+  cache.set(start, expanded);
 
-  return { expanded, missingTargets, visited };
+  return { expanded, missingTargets, visited, stack, cache };
 }
 
 
@@ -114,16 +121,35 @@ function extractRunSteps(workflowText) {
   const lines = workflowText.split(/\r?\n/);
   const steps = [];
   let current = null;
-  for (const line of lines) {
+  let inEnvBlock = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*#/.test(line)) continue;
     const runMatch = line.match(/^\s*-?\s*run:\s*(.+)\s*$/);
     if (runMatch) {
+      if (/[>|]-?\s*$/.test(runMatch[1])) {
+        steps.push({ run: '__UNSUPPORTED_MULTILINE__', env: {} });
+        current = null;
+        inEnvBlock = false;
+        continue;
+      }
       current = { run: runMatch[1], env: {} };
       steps.push(current);
+      inEnvBlock = false;
+      continue;
+    }
+    if (current && /^\s*env:\s*$/.test(line)) {
+      inEnvBlock = true;
       continue;
     }
     if (!current) continue;
+    if (/^\s*-\s/.test(line)) {
+      current = null;
+      inEnvBlock = false;
+      continue;
+    }
     const envMatch = line.match(/^\s+([A-Z0-9_]+):\s*(.+)\s*$/);
-    if (envMatch && /\senv:\s*$/.test(lines[Math.max(0, lines.indexOf(line)-1)]||'')) {
+    if (envMatch && inEnvBlock) {
       current.env[envMatch[1]] = envMatch[2];
     }
   }
@@ -131,7 +157,14 @@ function extractRunSteps(workflowText) {
 }
 
 function hasExecutableRunStep(steps, commandRegex) {
-  return steps.some((s) => commandRegex.test(s.run) && !/^\s*echo\b/i.test(s.run));
+  return steps.some((s) => commandRegex.test(s.run) && !/^\s*echo\b/i.test(s.run) && !/(__UNSUPPORTED_MULTILINE__)/.test(s.run));
+}
+
+function isFailurePropagatingRun(run) {
+  if (/^\s*echo\b/i.test(run)) return false;
+  if (/^\s*!\s*/.test(run)) return false;
+  if (/(\|\||;|\||(^|[^&])&(?!&)|\n)/.test(run)) return false;
+  return true;
 }
 
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {
@@ -236,14 +269,22 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     if (!/fetch-depth:\s*0/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing fetch-depth: 0');
     const gateStep = steps.find((s) => /npm run gate:release/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!gateStep || (!('GITHUB_PR_NUMBER' in gateStep.env) && !('PR_NUMBER' in gateStep.env))) failures.push('gatekeeper workflow missing PR number env for gate:release');
+    if (gateStep && !isFailurePropagatingRun(gateStep.run)) failures.push('gatekeeper workflow gate:release run step is failure-swallowing');
+    if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('gatekeeper workflow uses unsupported multiline run format');
   }
   if (contractsWorkflow) {
     const steps = extractRunSteps(contractsWorkflow);
-    if (!hasExecutableRunStep(steps, /npm run test:contracts/)) failures.push('contracts workflow missing npm run test:contracts');
+    const step = steps.find((s) => /npm run test:contracts/.test(s.run) && !/^\s*echo\b/i.test(s.run));
+    if (!step) failures.push('contracts workflow missing npm run test:contracts');
+    else if (!isFailurePropagatingRun(step.run)) failures.push('contracts workflow test:contracts run step is failure-swallowing');
+    if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('contracts workflow uses unsupported multiline run format');
   }
   if (buildWorkflow) {
     const steps = extractRunSteps(buildWorkflow);
-    if (!hasExecutableRunStep(steps, /npm run build/)) failures.push('build workflow missing npm run build');
+    const step = steps.find((s) => /npm run build/.test(s.run) && !/^\s*echo\b/i.test(s.run));
+    if (!step) failures.push('build workflow missing npm run build');
+    else if (!isFailurePropagatingRun(step.run)) failures.push('build workflow build run step is failure-swallowing');
+    if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('build workflow uses unsupported multiline run format');
   }
 
   for (const phrase of ['Level 2 remains `not_accepted`', 'production-safe, public-scoring and public-technique-authority gates remain blocked']) {

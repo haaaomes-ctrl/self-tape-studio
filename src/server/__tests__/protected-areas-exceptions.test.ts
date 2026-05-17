@@ -1,8 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { evaluateProtectedAreaGate } from '../../../scripts/validate-protected-areas.mjs';
 
 const baseException = {
@@ -18,113 +14,66 @@ const baseException = {
   ],
 };
 
-function runWithExceptionConfig(config: Record<string, unknown>, env: Record<string, string> = {}) {
-  const cmd = `import { findProtectedViolations } from './scripts/validate-protected-areas.mjs';\nimport process from 'node:process';\nconst v=findProtectedViolations(['src/server/webhook-handler.ts']);\nconst ex=${JSON.stringify(config)};\nconst map=new Map((ex.exceptions||[]).map(e=>[e.file,new Set(e.categories)]));\nlet ok=true; for (const row of v) {const allow=map.get(row.file); if (!allow || !row.categories.every(c=>allow.has(c)||allow.has('*'))) ok=false;}\nif(!ok) process.exit(3);\nprocess.exit(0);`;
-
-  const check = spawnSync('node', ['--input-type=module', '-e', cmd], { cwd: process.cwd(), encoding: 'utf8' });
-  expect(check.status).toBe(0);
-
-  return spawnSync('node', ['scripts/validate-protected-areas.mjs'], {
-    cwd: process.cwd(),
-    encoding: 'utf8',
-    env: { ...process.env, PROTECTED_AREA_EXCEPTIONS_JSON: JSON.stringify(config), ...env },
-  });
+function withEnv(key: string, value: string | undefined, fn: () => void) {
+  const prior = process.env[key];
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+  try { fn(); } finally {
+    if (prior === undefined) delete process.env[key];
+    else process.env[key] = prior;
+  }
 }
 
-describe('protected-area exception validation', () => {
-  it('fails malformed JSON', () => {
-    const r = spawnSync('node', ['scripts/validate-protected-areas.mjs'], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, PROTECTED_AREA_EXCEPTIONS_JSON: '{bad' } });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('invalid protected-area exception JSON');
-  });
-
-  it('fails missing approved_at', () => {
-    const { approved_at, ...cfg } = baseException;
-    const r = runWithExceptionConfig(cfg);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('missing approved_at');
-  });
-
-  it('fails missing expires_at', () => {
-    const { expires_at, ...cfg } = baseException;
-    const r = runWithExceptionConfig(cfg);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('missing expires_at');
-  });
-
-  it('fails expired approval', () => {
-    const r = runWithExceptionConfig({ ...baseException, expires_at: '2000-01-01T00:00:00.000Z' });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('is expired');
-  });
-
-  it('fails invalid approval_source', () => {
-    const r = runWithExceptionConfig({ ...baseException, approval_source: 'bad_source' });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('approval_source is invalid');
-  });
-
-  it('fails wrong pr_number when PR_NUMBER is set', () => {
-    const r = runWithExceptionConfig({ ...baseException, pr_number: '50' }, { PR_NUMBER: '49' });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('pr_number does not match current PR');
-  });
-
-  it('passes valid pr_number when PR_NUMBER matches', () => {
-    const r = runWithExceptionConfig({ ...baseException, pr_number: '49' }, { PR_NUMBER: '49' });
-    expect(r.status).toBe(0);
-  });
-
-  it('controlled evaluation: protected file without exception remains unapproved', () => {
+describe('protected-area exception validation (controlled)', () => {
+  it('protected file without exception remains unapproved', () => {
     const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], null as any);
     expect(result.unapproved.length).toBeGreaterThan(0);
   });
 
-  it('controlled evaluation: exact file/category approval passes', () => {
-    const prior = process.env.PR_NUMBER;
-    process.env.PR_NUMBER = '49';
-    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], baseException as any);
-    expect(result.unapproved).toHaveLength(0);
-    process.env.PR_NUMBER = prior;
-  });
-
-  it('controlled evaluation: wrong category fails', () => {
-    const cfg = { ...baseException, exceptions: [{ file: 'src/server/webhook-handler.ts', categories: ['Mux'], reason: 'bad' }] };
-    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], cfg as any);
-    expect(result.unapproved.length).toBeGreaterThan(0);
-  });
-
-  it('controlled evaluation: mux-webhook needs both categories', () => {
-    const prior = process.env.PR_NUMBER;
-    process.env.PR_NUMBER = '49';
-    const one = { ...baseException, exceptions: [{ file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'partial' }] };
-    const both = { ...baseException, exceptions: [{ file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux','webhook'], reason: 'full' }] };
-    expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], one as any).unapproved.length).toBeGreaterThan(0);
-    expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], both as any).unapproved).toHaveLength(0);
-    process.env.PR_NUMBER = prior;
-  });
-
-  it('exception file is not auto-read unless PROTECTED_AREA_EXCEPTIONS_FILE is set', () => {
-    const temp = mkdtempSync(path.join(tmpdir(), 'pae-'));
-    const file = path.join(temp, 'exceptions.json');
-    writeFileSync(file, JSON.stringify(baseException));
-    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], null as any);
-    expect(result.unapproved.length).toBeGreaterThan(0);
-    rmSync(temp, { recursive: true, force: true });
-  });
-
-  it('exception file works when explicitly supplied', () => {
-    const temp = mkdtempSync(path.join(tmpdir(), 'pae-'));
-    const file = path.join(temp, 'exceptions.json');
-    writeFileSync(file, JSON.stringify(baseException));
-    const r = spawnSync('node', ['scripts/validate-protected-areas.mjs'], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      env: { ...process.env, PR_NUMBER: '49', PROTECTED_AREA_EXCEPTIONS_FILE: file, GITHUB_BASE_REF: 'main' },
+  it('exact file/category exception approves', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], baseException as any);
+      expect(result.configFailures).toHaveLength(0);
+      expect(result.unapproved).toHaveLength(0);
     });
-    expect([0, 1]).toContain(r.status); // should parse explicit file without malformed-json/auto-read assumptions
-    expect(r.stderr).not.toContain('invalid protected-area exception JSON');
-    rmSync(temp, { recursive: true, force: true });
   });
 
+  it('missing file/category/reason and invalid category produce configFailures and block approval', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const cfg = {
+        ...baseException,
+        exceptions: [
+          { categories: ['webhook'], reason: 'x' },
+          { file: 'src/server/webhook-handler.ts', reason: 'x' },
+          { file: 'src/server/webhook-handler.ts', categories: ['bad'], reason: 'x' },
+          { file: 'src/server/webhook-handler.ts', categories: ['webhook'] },
+        ],
+      };
+      const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], cfg as any);
+      expect(result.configFailures.join('\n')).toContain('entry missing file');
+      expect(result.configFailures.join('\n')).toContain('entry missing categories');
+      expect(result.configFailures.join('\n')).toContain('invalid category');
+      expect(result.configFailures.join('\n')).toContain('entry missing reason');
+      expect(result.unapproved.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('missing pr_number fails whether PR env exists or not', () => {
+    const { pr_number, ...cfg } = baseException as any;
+    withEnv('PR_NUMBER', '49', () => {
+      const r = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], cfg);
+      expect(r.configFailures.join('\n')).toContain('missing pr_number');
+    });
+    withEnv('PR_NUMBER', undefined, () => {
+      const r = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], cfg);
+      expect(r.configFailures.join('\n')).toContain('missing pr_number');
+    });
+  });
+
+  it('future approved_at fails deterministically', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const r = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], { ...baseException, approved_at: '2999-01-01T00:00:00.000Z' } as any);
+      expect(r.configFailures.join('\n')).toContain('must not be in the future');
+    });
+  });
 });

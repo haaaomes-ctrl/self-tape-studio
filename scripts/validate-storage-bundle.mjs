@@ -39,7 +39,7 @@ function listFilesRecursively(root, current = '') {
   return files;
 }
 
-function readJson(filePath) {
+function readJson(filePath, failures) {
   try {
     return JSON.parse(readFileSync(filePath, 'utf8'));
   } catch (error) {
@@ -49,25 +49,25 @@ function readJson(filePath) {
 }
 
 export function validateStorageBundle({ cwd = process.cwd(), bundleRootArg = bundleRoot, strictMode = strictS9Mode } = {}) {
-const failures = [];
-if (!bundleRootArg) {
-  const contractPath = path.join(cwd, 'src/server/v3/contracts/storage-bundle.ts');
-  if (!existsSync(contractPath)) {
-    failures.push('missing required storage contract: src/server/v3/contracts/storage-bundle.ts');
-  }
-  if (existsSync(contractPath)) {
-    const contractText = readFileSync(contractPath, 'utf8');
-    for (const expectedFile of expectedFiles) {
-      if (!contractText.includes(`'${expectedFile}'`)) failures.push(`contract missing ${expectedFile}`);
+  const failures = [];
+  if (!bundleRootArg) {
+    const contractPath = path.join(cwd, 'src/server/v3/contracts/storage-bundle.ts');
+    if (!existsSync(contractPath)) {
+      failures.push('missing required storage contract: src/server/v3/contracts/storage-bundle.ts');
     }
-    if (!contractText.includes('expected_file_count_when_technique_and_score_sources_exist: 12')) {
-      failures.push('contract missing 12-file target');
+    if (existsSync(contractPath)) {
+      const contractText = readFileSync(contractPath, 'utf8');
+      for (const expectedFile of expectedFiles) {
+        if (!contractText.includes(`'${expectedFile}'`)) failures.push(`contract missing ${expectedFile}`);
+      }
+      if (!contractText.includes('expected_file_count_when_technique_and_score_sources_exist: 12')) {
+        failures.push('contract missing 12-file target');
+      }
     }
-  }
-} else {
-  const resolvedRoot = path.resolve(cwd, bundleRootArg);
-  let observedFiles = [];
-  if (existsSync(resolvedRoot)) observedFiles = listFilesRecursively(resolvedRoot);
+  } else {
+    const resolvedRoot = path.resolve(cwd, bundleRootArg);
+    let observedFiles = [];
+    if (existsSync(resolvedRoot)) observedFiles = listFilesRecursively(resolvedRoot);
 
   for (const expectedFile of expectedFiles) {
     const candidate = path.join(resolvedRoot, expectedFile);
@@ -88,8 +88,8 @@ if (!bundleRootArg) {
 
   const manifestPath = path.join(resolvedRoot, 'manifest.json');
   const metricsPath = path.join(resolvedRoot, 'qa/acceptance_metrics.json');
-  const manifest = existsSync(manifestPath) ? readJson(manifestPath) : null;
-  const metrics = existsSync(metricsPath) ? readJson(metricsPath) : null;
+    const manifest = existsSync(manifestPath) ? readJson(manifestPath, failures) : null;
+    const metrics = existsSync(metricsPath) ? readJson(metricsPath, failures) : null;
 
   if (manifest) {
     if (manifest.level2_qa_acceptance !== 'not_accepted') failures.push('manifest.level2_qa_acceptance must remain not_accepted');
@@ -104,7 +104,7 @@ if (!bundleRootArg) {
     if (metrics.public_scoring_status !== 'blocked') failures.push('metrics.public_scoring_status must remain blocked');
     if (metrics.public_technique_authority_status !== 'blocked') failures.push('metrics.public_technique_authority_status must remain blocked');
   }
-}
+  }
 
   return failures;
 }
