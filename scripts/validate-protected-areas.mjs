@@ -185,6 +185,11 @@ function changedFiles() {
   }
 
   try {
+    const previousHead = git(['rev-parse', 'HEAD~1']);
+    return git(['diff', '--name-only', `${previousHead}...HEAD`]).split('\n').filter(Boolean);
+  } catch {}
+
+  try {
     return git(['diff', '--name-only', 'HEAD']).split('\n').filter(Boolean);
   } catch {
     return [];
