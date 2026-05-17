@@ -284,6 +284,16 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
 
   if (!scripts['test:contracts']) failures.push('package.json missing test:contracts script');
   if (!scripts['gate:release']) failures.push('package.json missing gate:release script');
+  const canonicalScripts = {
+    'gate:protected': 'node scripts/validate-protected-areas.mjs',
+    'gate:storage': 'node scripts/validate-storage-bundle.mjs',
+    'gate:v3': 'node scripts/validate-v3-gates.mjs',
+    'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs',
+  };
+  for (const [name, expected] of Object.entries(canonicalScripts)) {
+    if (!scripts[name]) failures.push(`package.json missing ${name} script`);
+    else if (String(scripts[name]).trim() !== expected) failures.push(`${name} must match canonical Task 1A command`);
+  }
 
   if (scripts['test:contracts']) {
     const { expanded: expandedTest } = collectScriptExpansion(scripts, 'test:contracts');
@@ -303,6 +313,7 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     const rawGateRelease = stripShellComments(scripts['gate:release']);
     const { expanded: expandedRelease, missingTargets } = collectScriptExpansion(scripts, 'gate:release');
     const normalizedRelease = normalizeCommandContinuations(expandedRelease);
+    if (/\bnpm\s+run(\-script)?\b/i.test(rawGateRelease)) failures.push('gate:release must not use npm run indirection for Task 1A canonical closure');
     if (hasNoOpOnly(expandedRelease)) failures.push('gate:release appears to be a no-op');
     for (const missingTarget of missingTargets) {
       failures.push(`gate:release references missing npm script: ${missingTarget}`);

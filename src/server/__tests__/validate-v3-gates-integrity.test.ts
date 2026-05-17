@@ -126,7 +126,7 @@ describe('validate-v3-gates script integrity', () => {
     expect(output).toContain('gate:release references missing npm script: gate:v3');
   });
 
-  it('passes when gate:release uses --if-present and referenced scripts exist', () => {
+  it('fails when gate:release uses --if-present and referenced scripts exist (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'npm run --if-present gate:protected && npm run --if-present gate:storage && npm run --if-present gate:v3',
@@ -134,10 +134,10 @@ describe('validate-v3-gates script integrity', () => {
       'gate:storage': 'node scripts/validate-storage-bundle.mjs',
       'gate:v3': 'node scripts/validate-v3-gates.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must match canonical Task 1A command');
   });
 
-  it('passes when gate:release expands through npm run references', () => {
+  it('fails when gate:release expands through npm run references (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'npm run contracts:core',
       'contracts:core': 'vitest run src/server/__tests__/v3-contracts.test.ts',
@@ -147,7 +147,7 @@ describe('validate-v3-gates script integrity', () => {
       'gate:storage': 'node scripts/validate-storage-bundle.mjs',
       'gate:protected': 'node scripts/validate-protected-areas.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must not use npm run indirection');
   });
 
   it('extracts npm run target when --if-present appears before script name', () => {
@@ -177,22 +177,22 @@ describe('validate-v3-gates script integrity', () => {
       .toEqual(['gate:protected', 'gate:storage', 'gate:v3']);
   });
 
-  it('passes validation for gate:release using npm run --if-present', () => {
+  it('fails validation for gate:release using npm run --if-present (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'npm run --if-present gate:v3',
       'gate:v3': 'node scripts/validate-v3-gates.mjs && node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must not use npm run indirection');
   });
 
-  it('passes validation for gate:release using npm run-script --if-present', () => {
+  it('fails validation for gate:release using npm run-script --if-present (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'npm run-script --if-present gate:v3',
       'gate:v3': 'node scripts/validate-v3-gates.mjs && node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must not use npm run indirection');
   });
 
   it('fails when expanded flagged npm run target is a no-op', () => {
@@ -266,23 +266,23 @@ describe('validate-v3-gates script integrity', () => {
     expect(output).toContain('newline chaining');
   });
 
-  it('passes when validators are line-broken with &&', () => {
+  it('fails when validators are line-broken with && (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'node scripts/validate-protected-areas.mjs &&\nnode scripts/validate-storage-bundle.mjs &&\nnode scripts/validate-v3-gates.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must match canonical Task 1A command');
   });
 
-  it('passes when validators are line-broken with escaped continuation', () => {
+  it('fails when validators are line-broken with escaped continuation (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'node scripts/validate-protected-areas.mjs && \\\nnode scripts/validate-storage-bundle.mjs && \\\nnode scripts/validate-v3-gates.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must match canonical Task 1A command');
   });
 
-  it('passes when npm validators are line-broken with &&', () => {
+  it('fails when npm validators are line-broken with && (Task 1A canonical)', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'npm run gate:protected &&\nnpm run gate:storage &&\nnpm run gate:v3',
@@ -290,7 +290,7 @@ describe('validate-v3-gates script integrity', () => {
       'gate:storage': 'node scripts/validate-storage-bundle.mjs',
       'gate:v3': 'node scripts/validate-v3-gates.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must not use npm run indirection');
   });
 
   it('reports structured failure when README.md is missing', () => {
@@ -393,14 +393,14 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('gate:release protected-area validator is present but failure is swallowed');
   });
 
-  it('does not infinite loop with recursive npm run references', () => {
+  it('fails recursive npm run references under Task 1A canonical rules', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'npm run gate:a',
       'gate:a': 'npm run gate:b',
       'gate:b': 'npm run gate:a && node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must not use npm run indirection');
   });
 
   it('fails when direct validator is shell-negated', () => {
@@ -477,7 +477,7 @@ describe('validate-v3-gates script integrity', () => {
   it('passes named gatekeeper run step with env and checkout fetch-depth', () => {
     const failures = validateV3Gates({
       cwd: process.cwd(),
-      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:protected': 'node scripts/validate-protected-areas.mjs', 'gate:storage': 'node scripts/validate-storage-bundle.mjs', 'gate:v3': 'node scripts/validate-v3-gates.mjs', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
       workflowOverride: {
         gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - name: Run release gate\n        run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}',
         contracts: 'on:\n  pull_request:\njobs:\n  contracts:\n    steps:\n      - name: Run contract tests\n        run: npm run test:contracts',
@@ -578,7 +578,7 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('build workflow uses unsupported multiline run format');
   });
 
-  it('passes repeated sibling script references', () => {
+  it('fails repeated sibling script references under Task 1A canonical rules', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
       'gate:release': 'npm run gate:a && npm run gate:b',
@@ -586,7 +586,7 @@ describe('validate-v3-gates script integrity', () => {
       'gate:b': 'npm run gate:core',
       'gate:core': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs',
     });
-    expect(failures).toEqual([]);
+    expect(failures.join('\n')).toContain('gate:release must not use npm run indirection');
   });
 
 });
