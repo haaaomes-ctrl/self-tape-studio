@@ -47,7 +47,7 @@ function isTestOrFixturePath(filePath) {
   if (filePath.includes('/fixtures/')) return true;
 
   const baseName = getBaseName(filePath);
-  return /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(baseName);
+  return /\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(baseName);
 }
 
 const reportSensitiveAreaPrefixes = [
@@ -88,12 +88,26 @@ function isCodeFile(filePath) {
   return /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath);
 }
 
-function isWebhookRuntimePath(filePath) {
+function isWebhookRuntimePath(filePath, options = {}) {
   const normalized = normalizePath(filePath);
   if (!isCodeFile(normalized)) return false;
   if (isTestOrFixturePath(normalized)) return false;
   if (normalized.includes('/contracts/')) return false;
-  if (!/webhook/i.test(normalized)) return false;
+  const webhookSensitiveTerms = [
+    'webhook',
+    'verifywebhook',
+    'webhook signature',
+    'signature header',
+    'mux_webhook_secret',
+    'stripe_webhook_secret',
+    'x-signature',
+    'x-mux-signature',
+    'constructevent',
+    'webhooksecret',
+  ];
+  const hasWebhookPath = /webhook/i.test(normalized);
+  const hasSensitiveContent = containsWebhookSensitiveContent(normalized, options);
+  if (!hasWebhookPath && !hasSensitiveContent) return false;
 
   return (
     normalized.startsWith('src/routes/') ||
@@ -103,6 +117,23 @@ function isWebhookRuntimePath(filePath) {
     normalized.startsWith('api/') ||
     normalized.startsWith('app/')
   );
+}
+
+function containsWebhookSensitiveContent(filePath, options = {}) {
+  const contentByPath = normalizeContentMap(options.contentByPath);
+  if (contentByPath.has(filePath)) {
+    const lowered = String(contentByPath.get(filePath)).toLowerCase();
+    return ['webhook', 'verifywebhook', 'webhook signature', 'signature header', 'mux_webhook_secret', 'stripe_webhook_secret', 'x-signature', 'x-mux-signature', 'constructevent', 'webhooksecret']
+      .some((term) => lowered.includes(term));
+  }
+  if (!existsSync(filePath)) return false;
+  try {
+    const lowered = readFileSync(filePath, 'utf8').toLowerCase();
+    return ['webhook', 'verifywebhook', 'webhook signature', 'signature header', 'mux_webhook_secret', 'stripe_webhook_secret', 'x-signature', 'x-mux-signature', 'constructevent', 'webhooksecret']
+      .some((term) => lowered.includes(term));
+  } catch {
+    return false;
+  }
 }
 
 function normalizeContentMap(contentByPath = {}) {
@@ -204,8 +235,8 @@ function isProtectedMuxPath(filePath, options = {}) {
   return hasSensitiveContent && filePath.startsWith('src/components/');
 }
 
-function isProtectedWebhookPath(filePath) {
-  return isWebhookRuntimePath(filePath);
+function isProtectedWebhookPath(filePath, options = {}) {
+  return isWebhookRuntimePath(filePath, options);
 }
 
 
@@ -306,6 +337,11 @@ function validateExceptionConfig(config) {
   if (!config?.expires_at) failures.push('protected-area exception missing expires_at');
   if (!config?.reason) failures.push('protected-area exception missing reason');
   if (!Array.isArray(config?.exceptions)) failures.push('protected-area exception missing exceptions[]');
+  if (Array.isArray(config?.exceptions)) {
+    for (const ex of config.exceptions) {
+      if (!ex?.reason || !String(ex.reason).trim()) failures.push('protected-area exception entry missing reason');
+    }
+  }
   if (config?.approved_at && Number.isNaN(Date.parse(config.approved_at))) failures.push('protected-area exception approved_at is invalid');
   if (config?.expires_at) {
     const exp = Date.parse(config.expires_at);
@@ -318,6 +354,15 @@ function validateExceptionConfig(config) {
     else if (String(config.pr_number) !== String(prNumber)) failures.push('protected-area exception pr_number does not match current PR');
   }
   return failures;
+}
+
+export function evaluateProtectedAreaGate(files, exceptionConfig = null, options = {}) {
+  const violations = findProtectedViolations(files, options);
+  const configFailures = exceptionConfig ? validateExceptionConfig(exceptionConfig) : [];
+  const { approved, unapproved } = exceptionConfig && !configFailures.length
+    ? applyExceptions(violations, exceptionConfig)
+    : { approved: [], unapproved: violations };
+  return { violations, approved, unapproved, configFailures };
 }
 
 function applyExceptions(violations, config) {

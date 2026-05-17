@@ -112,6 +112,33 @@ describe('protected-area matchers', () => {
     }
   });
 
+
+
+  it('flags webhook-sensitive runtime content in neutral filenames', () => {
+    const violations = findProtectedViolations(['src/server/event-handler.ts', 'src/server-fns/process-event.functions.ts'], {
+      contentByPath: {
+        'src/server/event-handler.ts': 'const sig = req.headers["x-signature"]; verifyWebhook(sig);',
+        'src/server-fns/process-event.functions.ts': 'const secret = process.env.MUX_WEBHOOK_SECRET;'
+      }
+    });
+    expect(violations.find((v) => v.file === 'src/server/event-handler.ts')?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file === 'src/server-fns/process-event.functions.ts')?.categories).toContain('webhook');
+  });
+
+  it('keeps webhook docs/tests/contracts exempt including mjs/cjs tests', () => {
+    const paths = [
+      'docs/webhook-migration.md',
+      'src/server/__tests__/webhook-utils.test.ts',
+      'src/server/__tests__/webhook-utils.test.mjs',
+      'src/server/__tests__/webhook-utils.spec.cjs',
+      'src/server/v3/contracts/webhook-policy-contracts.ts',
+      'src/server/__tests__/upload-utils.test.mjs',
+      'src/server/__tests__/report-renderer.spec.cjs',
+    ];
+    for (const path of paths) {
+      expect(findProtectedViolations([path]), path).toHaveLength(0);
+    }
+  });
   it('does not flag unrelated files by report/mux matchers alone', () => {
     const unrelatedPaths = [
       'src/server/v3/brief-achievement.server.ts',

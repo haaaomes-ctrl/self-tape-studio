@@ -19,3 +19,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run gate:release
+        env:
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}

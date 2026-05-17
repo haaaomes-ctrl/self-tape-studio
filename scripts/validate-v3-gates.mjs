@@ -62,7 +62,10 @@ export function extractNpmRunTargets(command) {
 }
 
 function commandContainsNoOpGuard(command) {
-  return /\|\|\s*(true|:|echo\b|exit\s+0|node\s+-e\s+['\"]\s*process\.exit\(0\)\s*['\"])/i.test(command)
+  return /^\s*(echo\b|true\b|exit\s+0\b|node\s+-e\s+['\"]\s*process\.exit\(0\)\s*['\"])/i.test(command)
+    || /(^|\s)!\s*(node\s+scripts\/validate-|npm\s+run(\-script)?\s+.*gate:)/i.test(command)
+    || /\|\|/i.test(command)
+    || /\|\|\s*(true|:|echo\b|exit\s+0|node\s+-e\s+['\"]\s*process\.exit\(0\)\s*['\"])/i.test(command)
     || /;\s*(true|echo\b|exit\s+0)/i.test(command)
     || /\|\s*\w+/i.test(command);
 }
@@ -130,6 +133,9 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
 
   const releaseGates = existsSync(file(releaseGatesPath)) ? read(releaseGatesPath) : '';
   const storageContract = existsSync(file(storageContractPath)) ? read(storageContractPath) : '';
+  const gatekeeperWorkflow = existsSync(file('.github/workflows/gatekeeper.yml')) ? read('.github/workflows/gatekeeper.yml') : '';
+  const contractsWorkflow = existsSync(file('.github/workflows/contracts.yml')) ? read('.github/workflows/contracts.yml') : '';
+  const buildWorkflow = existsSync(file('.github/workflows/build.yml')) ? read('.github/workflows/build.yml') : '';
   let packageJson = packageJsonOverride ?? null;
   if (!packageJson) {
     if (existsSync(file('package.json'))) {
@@ -194,7 +200,18 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
     if (/npm\s+run(\-script)?\s+.*gate:protected.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release protected-area validator is present but failure is swallowed');
     if (/npm\s+run(\-script)?\s+.*gate:storage.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release Storage bundle validator is present but failure is swallowed');
     if (/npm\s+run(\-script)?\s+.*gate:v3.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release v3 gate validator is present but failure is swallowed');
+    if (/!\s*npm\s+run(\-script)?\s+.*gate:protected/i.test(rawGateRelease)) failures.push('gate:release protected-area validator is present but failure is swallowed');
+    if (/!\s*npm\s+run(\-script)?\s+.*gate:storage/i.test(rawGateRelease)) failures.push('gate:release Storage bundle validator is present but failure is swallowed');
+    if (/!\s*npm\s+run(\-script)?\s+.*gate:v3/i.test(rawGateRelease)) failures.push('gate:release v3 gate validator is present but failure is swallowed');
   }
+
+  if (gatekeeperWorkflow) {
+    if (!/npm run gate:release/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing npm run gate:release');
+    if (!/fetch-depth:\s*0/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing fetch-depth: 0');
+    if (!/(GITHUB_PR_NUMBER|PR_NUMBER)/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing PR number env for gate:release');
+  }
+  if (contractsWorkflow && !/npm run test:contracts/.test(contractsWorkflow)) failures.push('contracts workflow missing npm run test:contracts');
+  if (buildWorkflow && !/npm run build/.test(buildWorkflow)) failures.push('build workflow missing npm run build');
 
   for (const phrase of ['Level 2 remains `not_accepted`', 'production-safe, public-scoring and public-technique-authority gates remain blocked']) {
     if (!readme.includes(phrase)) failures.push(`README controlling phrase not found: ${phrase}`);

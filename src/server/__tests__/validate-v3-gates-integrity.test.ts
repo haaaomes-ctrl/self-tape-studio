@@ -351,4 +351,45 @@ describe('validate-v3-gates script integrity', () => {
     });
     expect(failures).toEqual([]);
   });
+
+  it('fails when direct validator is shell-negated', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': '! node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('failure is swallowed');
+  });
+
+  it('fails when npm validator is shell-negated', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': '! npm run gate:protected && npm run gate:storage && npm run gate:v3',
+      'gate:protected': 'node scripts/validate-protected-areas.mjs',
+      'gate:storage': 'node scripts/validate-storage-bundle.mjs',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('failure is swallowed');
+  });
+
+  it('fails when validators are guarded with non-trivial || chains', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-protected-areas.mjs || npm run gate:storage && node scripts/validate-storage-bundle.mjs || node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('failure is swallowed');
+  });
+
+  it('fails when one validator is echoed but others are real', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'echo "node scripts/validate-protected-areas.mjs" && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('missing protected-area validation coverage');
+  });
+
+  it('fails when gatekeeper workflow is missing gate:release command', () => {
+    const failures = validateV3Gates({ cwd: process.cwd(), packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any });
+    expect(failures).not.toContain('gatekeeper workflow missing npm run gate:release');
+  });
+
 });

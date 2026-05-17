@@ -61,6 +61,16 @@ afterEach(() => {
 });
 
 describe('storage bundle strict validator', () => {
+  it('fails with structured error when storage contract file is missing in no-bundle mode', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'storage-contract-missing-'));
+    createdDirs.push(temp);
+    const result = spawnSync('node', [path.join(process.cwd(), 'scripts/validate-storage-bundle.mjs')], {
+      cwd: temp,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('missing required storage contract');
+  });
   it('passes exact current s9 12-file bundle', () => {
     const bundle = createBundle();
     const result = runValidator(bundle);

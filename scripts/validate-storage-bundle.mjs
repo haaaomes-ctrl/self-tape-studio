@@ -49,7 +49,11 @@ function readJson(filePath) {
 }
 
 if (!bundleRoot) {
-  const contractText = readFileSync(path.join(process.cwd(), 'src/server/v3/contracts/storage-bundle.ts'), 'utf8');
+  const contractPath = path.join(process.cwd(), 'src/server/v3/contracts/storage-bundle.ts');
+  if (!existsSync(contractPath)) {
+    failures.push('missing required storage contract: src/server/v3/contracts/storage-bundle.ts');
+  }
+  const contractText = existsSync(contractPath) ? readFileSync(contractPath, 'utf8') : '';
   for (const expectedFile of expectedFiles) {
     if (!contractText.includes(`'${expectedFile}'`)) failures.push(`contract missing ${expectedFile}`);
   }

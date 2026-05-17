@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { evaluateProtectedAreaGate } from '../../../scripts/validate-protected-areas.mjs';
 
 const baseException = {
   schema_version: 'tapecoach_protected_area_exceptions_v1',
@@ -74,4 +75,23 @@ describe('protected-area exception validation', () => {
     const r = spawnSync('node', ['scripts/validate-protected-areas.mjs'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(r.status).toBe(0);
   });
+
+  it('controlled evaluation: exact file/category approval passes', () => {
+    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], baseException as any);
+    expect(result.unapproved).toHaveLength(0);
+  });
+
+  it('controlled evaluation: wrong category fails', () => {
+    const cfg = { ...baseException, exceptions: [{ file: 'src/server/webhook-handler.ts', categories: ['Mux'], reason: 'bad' }] };
+    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], cfg as any);
+    expect(result.unapproved.length).toBeGreaterThan(0);
+  });
+
+  it('controlled evaluation: mux-webhook needs both categories', () => {
+    const one = { ...baseException, exceptions: [{ file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'partial' }] };
+    const both = { ...baseException, exceptions: [{ file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux','webhook'], reason: 'full' }] };
+    expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], one as any).unapproved.length).toBeGreaterThan(0);
+    expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], both as any).unapproved).toHaveLength(0);
+  });
+
 });
