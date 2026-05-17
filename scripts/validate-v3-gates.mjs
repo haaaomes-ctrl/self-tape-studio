@@ -135,38 +135,69 @@ function extractRunSteps(workflowText) {
   const lines = workflowText.split(/\r?\n/);
   const steps = [];
   let current = null;
+  let stepIndent = 0;
   let inEnvBlock = false;
+  let inWithBlock = false;
+  let blockIndent = 0;
+  const flush = () => {
+    if (current) steps.push(current);
+    current = null;
+    inEnvBlock = false;
+    inWithBlock = false;
+    blockIndent = 0;
+  };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (/^\s*#/.test(line)) continue;
-    const runMatch = line.match(/^\s*-\s*run:\s*(.+)\s*$/);
-    if (runMatch) {
-      if (/[>|]-?\s*$/.test(runMatch[1])) {
-        steps.push({ run: '__UNSUPPORTED_MULTILINE__', env: {} });
-        current = null;
-        inEnvBlock = false;
-        continue;
-      }
-      current = { run: runMatch[1], env: {} };
-      steps.push(current);
-      inEnvBlock = false;
-      continue;
-    }
-    if (current && /^\s*env:\s*$/.test(line)) {
-      inEnvBlock = true;
+    const lineIndent = (line.match(/^\s*/) ?? [''])[0].length;
+    const stepStart = line.match(/^(\s*)-\s+(.*)$/);
+    if (stepStart) {
+      flush();
+      current = { name: '', run: '', uses: '', env: {}, with: {}, if: '', continueOnError: '' };
+      stepIndent = stepStart[1].length;
+      const rest = stepStart[2].trim();
+      if (!rest) continue;
+      const keyVal = rest.match(/^([a-zA-Z_-]+):\s*(.*)$/);
+      if (!keyVal) continue;
+      const [, key, value] = keyVal;
+      if (key === 'name') current.name = value;
+      else if (key === 'uses') current.uses = value;
+      else if (key === 'run') current.run = /[>|]-?\s*$/.test(value) ? '__UNSUPPORTED_MULTILINE__' : value;
+      else if (key === 'if') current.if = value;
+      else if (key === 'continue-on-error') current.continueOnError = value;
+      else if (key === 'env') { inEnvBlock = true; blockIndent = stepIndent; }
+      else if (key === 'with') { inWithBlock = true; blockIndent = stepIndent; }
       continue;
     }
     if (!current) continue;
-    if (/^\s*-\s/.test(line)) {
-      current = null;
-      inEnvBlock = false;
+    if (lineIndent <= stepIndent) {
+      flush();
       continue;
     }
-    const envMatch = line.match(/^\s+([A-Z0-9_]+):\s*(.+)\s*$/);
-    if (envMatch && inEnvBlock) {
-      current.env[envMatch[1]] = envMatch[2];
+    const keyVal = line.match(/^\s*([a-zA-Z_-]+):\s*(.*)$/);
+    if (keyVal && lineIndent <= stepIndent + 2) {
+      const [, key, value] = keyVal;
+      inEnvBlock = false;
+      inWithBlock = false;
+      if (key === 'name') current.name = value;
+      else if (key === 'run') current.run = /[>|]-?\s*$/.test(value) ? '__UNSUPPORTED_MULTILINE__' : value;
+      else if (key === 'uses') current.uses = value;
+      else if (key === 'if') current.if = value;
+      else if (key === 'continue-on-error') current.continueOnError = value;
+      else if (key === 'env') { inEnvBlock = true; blockIndent = lineIndent; }
+      else if (key === 'with') { inWithBlock = true; blockIndent = lineIndent; }
+      continue;
+    }
+    const nested = line.match(/^\s+([A-Za-z0-9_.-]+):\s*(.+)\s*$/);
+    if (nested && inEnvBlock && lineIndent > blockIndent) {
+      current.env[nested[1]] = nested[2];
+      continue;
+    }
+    if (nested && inWithBlock && lineIndent > blockIndent) {
+      current.with[nested[1]] = nested[2];
     }
   }
+  flush();
   return steps;
 }
 
@@ -191,20 +222,8 @@ function workflowHasPullRequestTrigger(workflowText) {
 }
 
 function workflowHasCheckoutFetchDepthZero(workflowText) {
-  const lines = workflowText.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    if (/^\s*#/.test(line)) continue;
-    if (/uses:\s*actions\/checkout@/i.test(line)) {
-      for (let j = i + 1; j < lines.length; j += 1) {
-        if (/^\s*#/.test(lines[j])) continue;
-        if (/^\s*-\s+/.test(lines[j])) break;
-        if (/^\s*uses:\s*/.test(lines[j])) break;
-        if (/^\s*fetch-depth:\s*0\s*$/.test(lines[j])) return true;
-      }
-    }
-  }
-  return false;
+  const steps = extractRunSteps(workflowText);
+  return steps.some((s) => /actions\/checkout@/i.test(s.uses) && String(s.with?.['fetch-depth'] ?? '').trim() === '0');
 }
 
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {
@@ -332,8 +351,8 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     }
     if (gateStep && !isFailurePropagatingRun(gateStep.run)) failures.push('gatekeeper workflow gate:release run step is failure-swallowing');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('gatekeeper workflow uses unsupported multiline run format');
-    if (/continue-on-error:\s*true/i.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow gate:release step must not use continue-on-error: true');
-    if (/if:\s*(false|\$\{\{\s*false\s*\}\})/i.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow gate:release step must not be disabled by if:false');
+    if (gateStep && /^(true|True|TRUE)$/.test(String(gateStep.continueOnError).trim())) failures.push('gatekeeper workflow gate:release step must not use continue-on-error: true');
+    if (gateStep && /^(false|\$\{\{\s*false\s*\}\})$/i.test(String(gateStep.if).trim())) failures.push('gatekeeper workflow gate:release step must not be disabled by if:false');
   }
   if (contractsWorkflow) {
     const steps = extractRunSteps(contractsWorkflow);
@@ -341,8 +360,8 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     const step = steps.find((s) => /npm run test:contracts/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!step) failures.push('contracts workflow missing npm run test:contracts');
     else if (!isFailurePropagatingRun(step.run)) failures.push('contracts workflow test:contracts run step is failure-swallowing');
-    if (/continue-on-error:\s*true/i.test(contractsWorkflow)) failures.push('contracts workflow critical steps must not use continue-on-error: true');
-    if (/if:\s*(false|\$\{\{\s*false\s*\}\})/i.test(contractsWorkflow)) failures.push('contracts workflow critical steps must not be disabled by if:false');
+    if (step && /^(true|True|TRUE)$/.test(String(step.continueOnError).trim())) failures.push('contracts workflow critical steps must not use continue-on-error: true');
+    if (step && /^(false|\$\{\{\s*false\s*\}\})$/i.test(String(step.if).trim())) failures.push('contracts workflow critical steps must not be disabled by if:false');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('contracts workflow uses unsupported multiline run format');
   }
   if (buildWorkflow) {
@@ -351,8 +370,8 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     const step = steps.find((s) => /npm run build/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!step) failures.push('build workflow missing npm run build');
     else if (!isFailurePropagatingRun(step.run)) failures.push('build workflow build run step is failure-swallowing');
-    if (/continue-on-error:\s*true/i.test(buildWorkflow)) failures.push('build workflow critical steps must not use continue-on-error: true');
-    if (/if:\s*(false|\$\{\{\s*false\s*\}\})/i.test(buildWorkflow)) failures.push('build workflow critical steps must not be disabled by if:false');
+    if (step && /^(true|True|TRUE)$/.test(String(step.continueOnError).trim())) failures.push('build workflow critical steps must not use continue-on-error: true');
+    if (step && /^(false|\$\{\{\s*false\s*\}\})$/i.test(String(step.if).trim())) failures.push('build workflow critical steps must not be disabled by if:false');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('build workflow uses unsupported multiline run format');
   }
 

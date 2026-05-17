@@ -474,6 +474,45 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('gatekeeper workflow missing npm run gate:release');
   });
 
+  it('passes named gatekeeper run step with env and checkout fetch-depth', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: {
+        gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - name: Run release gate\n        run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}',
+        contracts: 'on:\n  pull_request:\njobs:\n  contracts:\n    steps:\n      - name: Run contract tests\n        run: npm run test:contracts',
+        build: 'on:\n  pull_request:\njobs:\n  build:\n    steps:\n      - name: Build\n        run: npm run build',
+      },
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('fails when PR number env is not on the gate:release step', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: {
+        gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - name: Env only\n        run: echo ok\n        env:\n          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}\n      - name: Run release gate\n        run: npm run gate:release',
+        contracts: 'on:\n  pull_request:',
+        build: 'on:\n  pull_request:',
+      },
+    });
+    expect(failures.join('\n')).toContain('gatekeeper workflow missing PR number env for gate:release');
+  });
+
+  it('fails when fetch-depth is on non-checkout step only', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: {
+        gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - name: Not checkout\n        run: echo ok\n        with:\n          fetch-depth: 0\n      - run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49',
+        contracts: 'on:\n  pull_request:\n- run: npm run test:contracts',
+        build: 'on:\n  pull_request:\n- run: npm run build',
+      },
+    });
+    expect(failures.join('\n')).toContain('gatekeeper workflow missing checkout fetch-depth: 0');
+  });
+
   it('fails when gatekeeper run swallows failures', () => {
     const failures = validateV3Gates({
       cwd: process.cwd(),
