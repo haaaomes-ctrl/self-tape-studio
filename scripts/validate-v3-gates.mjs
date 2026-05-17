@@ -226,6 +226,17 @@ function workflowHasCheckoutFetchDepthZero(workflowText) {
   return steps.some((s) => /actions\/checkout@/i.test(s.uses) && String(s.with?.['fetch-depth'] ?? '').trim() === '0');
 }
 
+function workflowContainsForbiddenProtectedExceptionEnv(workflowText) {
+  const stripped = workflowText
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*#.*$/, ''))
+    .join('\n');
+  const forbiddenKey = /(^|\n)\s*(PROTECTED_AREA_EXCEPTIONS_FILE|PROTECTED_AREA_EXCEPTIONS_JSON)\s*:/m;
+  const writesGithubEnv = /(echo|printf)\s+["'][^"']*PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=.*\$GITHUB_ENV/i;
+  const exportsVar = /\bexport\s+PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=/i;
+  return forbiddenKey.test(stripped) || writesGithubEnv.test(stripped) || exportsVar.test(stripped);
+}
+
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {
   const root = cwd;
   const failures = [];
@@ -357,7 +368,7 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     if (!workflowHasCheckoutFetchDepthZero(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing checkout fetch-depth: 0');
     const gateStep = steps.find((s) => /npm run gate:release/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!gateStep || (!('GITHUB_PR_NUMBER' in gateStep.env) && !('PR_NUMBER' in gateStep.env))) failures.push('gatekeeper workflow missing PR number env for gate:release');
-    if (gateStep && ('PROTECTED_AREA_EXCEPTIONS_FILE' in gateStep.env || 'PROTECTED_AREA_EXCEPTIONS_JSON' in gateStep.env)) {
+    if (workflowContainsForbiddenProtectedExceptionEnv(gatekeeperWorkflow) || (gateStep && ('PROTECTED_AREA_EXCEPTIONS_FILE' in gateStep.env || 'PROTECTED_AREA_EXCEPTIONS_JSON' in gateStep.env))) {
       failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
     }
     if (gateStep && !isFailurePropagatingRun(gateStep.run)) failures.push('gatekeeper workflow gate:release run step is failure-swallowing');
