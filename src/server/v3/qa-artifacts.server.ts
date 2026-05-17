@@ -38,7 +38,7 @@ export interface QAArtifactEmitterOptions {
   emitted_artefact_ids?: string[];
   emitted_blocked_artefact_ids?: string[];
   analysis_run_id?: string;
-  comparison_run_id?: string;
+  comparison_run_id?: string | null;
   submission_id?: string;
   take_id?: string;
   compared_take_ids?: string[];
