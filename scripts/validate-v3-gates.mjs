@@ -217,8 +217,10 @@ function isFailurePropagatingRun(run) {
 
 function workflowHasPullRequestTrigger(workflowText) {
   return /(?:^|\n)\s*on:\s*(?:\n[^\n]*)*?\n\s*pull_request\s*:/m.test(workflowText)
+    || /(?:^|\n)\s*on:\s*(?:\n[^\n]*)*?\n\s*pull_request_target\s*:/m.test(workflowText)
     || /(?:^|\n)\s*on:\s*\[[^\]]*\bpull_request\b[^\]]*\]/m.test(workflowText)
-    || /(?:^|\n)\s*on:\s*['"]?pull_request['"]?\s*$/m.test(workflowText);
+    || /(?:^|\n)\s*on:\s*\[[^\]]*\bpull_request_target\b[^\]]*\]/m.test(workflowText)
+    || /(?:^|\n)\s*on:\s*['"]?(pull_request|pull_request_target)['"]?\s*$/m.test(workflowText);
 }
 
 function workflowHasCheckoutFetchDepthZero(workflowText) {
@@ -231,12 +233,6 @@ function stripWorkflowComments(workflowText) {
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*#.*$/, ''))
     .join('\n');
-}
-
-function isAllowedProtectedExceptionsExpression(value) {
-  const normalized = String(value ?? '').trim();
-  return normalized === '${{ vars.PROTECTED_AREA_EXCEPTIONS_JSON }}'
-    || normalized === '${{ secrets.PROTECTED_AREA_EXCEPTIONS_JSON }}';
 }
 
 function workflowContainsProtectedExceptionRunInjection(workflowText) {
@@ -390,17 +386,16 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     for (const step of steps) {
       if (!Object.prototype.hasOwnProperty.call(step.env, 'PROTECTED_AREA_EXCEPTIONS_JSON')) continue;
       const isGateReleaseStep = /npm run gate:release/.test(step.run) && !/^\s*echo\b/i.test(step.run);
-      if (!isGateReleaseStep || !isAllowedProtectedExceptionsExpression(step.env.PROTECTED_AREA_EXCEPTIONS_JSON)) {
+      if (!isGateReleaseStep) {
         failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
         break;
       }
     }
-    if (gateStep && Object.prototype.hasOwnProperty.call(gateStep.env, 'PROTECTED_AREA_EXCEPTIONS_JSON')
-      && !isAllowedProtectedExceptionsExpression(gateStep.env.PROTECTED_AREA_EXCEPTIONS_JSON)) failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+    if (gateStep && Object.prototype.hasOwnProperty.call(gateStep.env, 'PROTECTED_AREA_EXCEPTIONS_JSON')) failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
     if (gateStep && !isFailurePropagatingRun(gateStep.run)) failures.push('gatekeeper workflow gate:release run step is failure-swallowing');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('gatekeeper workflow uses unsupported multiline run format');
-    if (gateStep && /^(true|True|TRUE)$/.test(String(gateStep.continueOnError).trim())) failures.push('gatekeeper workflow gate:release step must not use continue-on-error: true');
-    if (gateStep && /^(false|\$\{\{\s*false\s*\}\})$/i.test(String(gateStep.if).trim())) failures.push('gatekeeper workflow gate:release step must not be disabled by if:false');
+    if (gateStep && String(gateStep.continueOnError).trim()) failures.push('gatekeeper workflow gate:release step must not define continue-on-error');
+    if (gateStep && String(gateStep.if).trim()) failures.push('gatekeeper workflow gate:release step must not define if');
   }
   if (contractsWorkflow) {
     const steps = extractRunSteps(contractsWorkflow);
@@ -408,8 +403,8 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     const step = steps.find((s) => /npm run test:contracts/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!step) failures.push('contracts workflow missing npm run test:contracts');
     else if (!isFailurePropagatingRun(step.run)) failures.push('contracts workflow test:contracts run step is failure-swallowing');
-    if (step && /^(true|True|TRUE)$/.test(String(step.continueOnError).trim())) failures.push('contracts workflow critical steps must not use continue-on-error: true');
-    if (step && /^(false|\$\{\{\s*false\s*\}\})$/i.test(String(step.if).trim())) failures.push('contracts workflow critical steps must not be disabled by if:false');
+    if (step && String(step.continueOnError).trim()) failures.push('contracts workflow critical steps must not define continue-on-error');
+    if (step && String(step.if).trim()) failures.push('contracts workflow critical steps must not define if');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('contracts workflow uses unsupported multiline run format');
   }
   if (buildWorkflow) {
@@ -418,8 +413,8 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     const step = steps.find((s) => /npm run build/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!step) failures.push('build workflow missing npm run build');
     else if (!isFailurePropagatingRun(step.run)) failures.push('build workflow build run step is failure-swallowing');
-    if (step && /^(true|True|TRUE)$/.test(String(step.continueOnError).trim())) failures.push('build workflow critical steps must not use continue-on-error: true');
-    if (step && /^(false|\$\{\{\s*false\s*\}\})$/i.test(String(step.if).trim())) failures.push('build workflow critical steps must not be disabled by if:false');
+    if (step && String(step.continueOnError).trim()) failures.push('build workflow critical steps must not define continue-on-error');
+    if (step && String(step.if).trim()) failures.push('build workflow critical steps must not define if');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('build workflow uses unsupported multiline run format');
   }
 

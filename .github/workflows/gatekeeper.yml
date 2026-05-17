@@ -21,4 +21,3 @@ jobs:
       - run: npm run gate:release
         env:
           GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
-          PROTECTED_AREA_EXCEPTIONS_JSON: ${{ vars.PROTECTED_AREA_EXCEPTIONS_JSON }}
