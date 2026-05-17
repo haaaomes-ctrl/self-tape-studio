@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 
 const reportRoutePattern = /^src\/routes\/(index|about|dashboard|audition\.\$auditionId|new)\.tsx$/;
 const explicitReportServerFiles = new Set([
@@ -37,6 +38,52 @@ function isCodeFile(filePath) {
   return /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath);
 }
 
+const explicitMuxProtectedFiles = new Set([
+  'src/routes/api/public/mux-webhook.ts',
+  'src/routes/api/public/diag-mux-probe.ts',
+  'src/server/mux-upload.ts',
+  'src/server/some-mux-helper.ts',
+  'src/server-fns/mux.functions.ts',
+]);
+
+const muxSensitiveAreaPrefixes = [
+  'src/routes/',
+  'src/server/',
+  'src/server-fns/',
+  'src/functions/',
+  'src/lib/',
+  'src/utils/',
+  'api/',
+  'app/',
+];
+
+const muxSensitiveTerms = [
+  'MUX_TOKEN',
+  'MUX_WEBHOOK',
+  'MUX_WEBHOOK_SECRET',
+  'mux-webhook',
+  'mux upload',
+  'createupload',
+  'direct upload',
+  'playbackid',
+  'assetid',
+  '@mux/',
+  'muxuploader',
+  'mux-player',
+  'mux.com',
+];
+
+function containsMuxSensitiveContent(filePath) {
+  if (!existsSync(filePath)) return false;
+  try {
+    const content = readFileSync(filePath, 'utf8');
+    const lowered = content.toLowerCase();
+    return muxSensitiveTerms.some((term) => lowered.includes(term.toLowerCase()));
+  } catch {
+    return false;
+  }
+}
+
 function isProtectedReportPath(filePath) {
   if (filePath.startsWith('src/components/report/')) return true;
   if (explicitReportServerFiles.has(filePath)) return true;
@@ -51,9 +98,15 @@ function isProtectedReportPath(filePath) {
 }
 
 function isProtectedMuxPath(filePath) {
-  if (/^src\/routes\/api\/public\/(mux-webhook|diag-mux-probe)\.ts$/i.test(filePath)) return true;
+  if (explicitMuxProtectedFiles.has(filePath)) return true;
   if (!isCodeFile(filePath)) return false;
-  return getBaseName(filePath).includes('mux');
+
+  const baseName = getBaseName(filePath);
+  if (!baseName.includes('mux')) return false;
+
+  if (muxSensitiveAreaPrefixes.some((prefix) => filePath.startsWith(prefix))) return true;
+
+  return containsMuxSensitiveContent(filePath);
 }
 
 const protectedMatchers = [
@@ -100,28 +153,36 @@ function changedFiles() {
 }
 
 export function findProtectedViolations(files) {
-  const violations = [];
+  const violationsByFile = new Map();
 
   for (const rawFile of files) {
     const file = normalizePath(rawFile);
     for (const protectedMatcher of protectedMatchers) {
       if (protectedMatcher.matches(file)) {
-        violations.push(`${file} (${protectedMatcher.label})`);
+        if (!violationsByFile.has(file)) {
+          violationsByFile.set(file, new Set());
+        }
+        violationsByFile.get(file).add(protectedMatcher.label);
       }
     }
   }
 
-  return violations;
+  return Array.from(violationsByFile.entries()).map(([file, labels]) => ({
+    file,
+    categories: Array.from(labels),
+    labels: Array.from(labels),
+  }));
 }
 
 function run() {
   const changed = changedFiles();
-  const violations = [];
-  violations.push(...findProtectedViolations(changed));
+  const violations = findProtectedViolations(changed);
 
   if (violations.length) {
     console.error('Protected-area gate failed. Operator approval is required for:');
-    for (const violation of violations) console.error(`- ${violation}`);
+    for (const violation of violations) {
+      console.error(`- ${JSON.stringify(violation)}`);
+    }
     process.exit(1);
   }
 

@@ -5,6 +5,10 @@ function isFlagged(path: string) {
   return findProtectedViolations([path]).length > 0;
 }
 
+function categoriesFor(path: string) {
+  return findProtectedViolations([path])[0]?.categories ?? [];
+}
+
 describe('protected-area matchers', () => {
   it('flags report/public output protected paths', () => {
     const protectedPaths = [
@@ -35,6 +39,12 @@ describe('protected-area matchers', () => {
       'src/server-fns/mux.functions.ts',
       'src/lib/mux-client.ts',
       'src/utils/video-mux-helper.ts',
+      'src/server-fns/mux.functions.js',
+      'src/server-fns/mux.functions.jsx',
+      'src/server-fns/mux.functions.mjs',
+      'src/server-fns/mux.functions.cjs',
+      'src\\server-fns\\mux.functions.ts',
+      'src\\routes\\api\\public\\diag-mux-probe.ts',
     ];
 
     for (const path of protectedPaths) {
@@ -48,10 +58,24 @@ describe('protected-area matchers', () => {
       'src/server/v3/technique-standards.server.ts',
       'src/server-fns/brief.functions.ts',
       'src/lib/video-client.ts',
+      'src/components/demo-mux-label.tsx',
     ];
 
     for (const path of unrelatedPaths) {
       expect(isFlagged(path), path).toBe(false);
     }
+  });
+
+  it('deduplicates rows and keeps multiple categories on one file entry', () => {
+    const violations = findProtectedViolations(['src/routes/api/public/mux-webhook.ts']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].file).toBe('src/routes/api/public/mux-webhook.ts');
+    expect(new Set(categoriesFor('src/routes/api/public/mux-webhook.ts'))).toEqual(new Set(['Mux', 'webhook']));
+  });
+
+  it('flags client-only mux basename when file content is mux-sensitive', () => {
+    const violations = findProtectedViolations(['src/components/demo-mux-sensitive.tsx']);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].categories).toContain('Mux');
   });
 });
