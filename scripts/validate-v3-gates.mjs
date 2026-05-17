@@ -62,6 +62,24 @@ export function extractNpmRunTargets(command) {
   return targets;
 }
 
+function commandContainsNoOpGuard(command) {
+  return /\|\|\s*(true|:|echo\b|exit\s+0|node\s+-e\s+['\"]\s*process\.exit\(0\)\s*['\"])/i.test(command)
+    || /;\s*(true|echo\b|exit\s+0)/i.test(command)
+    || /\|\s*\w+/i.test(command);
+}
+
+function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
+  return expandedCommand
+    .split(/&&/)
+    .some((segment) => validatorRegex.test(segment) && !commandContainsNoOpGuard(segment));
+}
+
+function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
+  return expandedCommand
+    .split(/&&/)
+    .some((segment) => validatorRegex.test(segment) && commandContainsNoOpGuard(segment));
+}
+
 function collectScriptExpansion(scripts, start, visited = new Set()) {
   if (!scripts[start] || visited.has(start)) return '';
   visited.add(start);
@@ -122,9 +140,17 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
   if (scripts['gate:release']) {
     const expandedRelease = collectScriptExpansion(scripts, 'gate:release');
     if (hasNoOpOnly(expandedRelease)) failures.push('gate:release appears to be a no-op');
-    if (!/validate-protected-areas\.mjs|gate:protected/i.test(expandedRelease)) failures.push('gate:release missing protected-area validation coverage');
-    if (!/validate-storage-bundle\.mjs/i.test(expandedRelease)) failures.push('gate:release missing Storage bundle validation coverage');
-    if (!/validate-v3-gates\.mjs/i.test(expandedRelease)) failures.push('gate:release missing v3 gate validation coverage');
+    const protectedMatcher = /validate-protected-areas\.mjs|gate:protected/i;
+    const storageMatcher = /validate-storage-bundle\.mjs|gate:storage/i;
+    const v3Matcher = /validate-v3-gates\.mjs|gate:v3/i;
+
+    if (!hasFailurePropagatingValidator(expandedRelease, protectedMatcher)) failures.push('gate:release missing protected-area validation coverage');
+    if (!hasFailurePropagatingValidator(expandedRelease, storageMatcher)) failures.push('gate:release missing Storage bundle validation coverage');
+    if (!hasFailurePropagatingValidator(expandedRelease, v3Matcher)) failures.push('gate:release missing v3 gate validation coverage');
+
+    if (hasFailureSwallowedValidator(expandedRelease, protectedMatcher)) failures.push('gate:release protected-area validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(expandedRelease, storageMatcher)) failures.push('gate:release Storage bundle validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(expandedRelease, v3Matcher)) failures.push('gate:release v3 gate validator is present but failure is swallowed');
   }
 
   for (const phrase of ['Level 2 remains `not_accepted`', 'production-safe, public-scoring and public-technique-authority gates remain blocked']) {
