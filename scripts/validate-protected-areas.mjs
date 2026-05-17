@@ -413,12 +413,11 @@ function git(args) {
   return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-function changedFiles() {
+function resolveMergeBaseRef() {
   const baseRef = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : '';
   if (baseRef) {
     try {
-      const mergeBase = git(['merge-base', 'HEAD', baseRef]);
-      return git(['diff', '--name-only', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
+      return git(['merge-base', 'HEAD', baseRef]);
     } catch {}
   }
 
@@ -433,21 +432,49 @@ function changedFiles() {
 
   for (const ref of fallbackRefs) {
     try {
-      const mergeBase = git(['merge-base', 'HEAD', ref]);
-      return git(['diff', '--name-only', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
+      return git(['merge-base', 'HEAD', ref]);
     } catch {}
   }
-
   try {
-    const previousHead = git(['rev-parse', 'HEAD~1']);
-    return git(['diff', '--name-only', `${previousHead}...HEAD`]).split('\n').filter(Boolean);
+    return git(['rev-parse', 'HEAD~1']);
   } catch {}
+  throw new Error('protected-area gate cannot determine changed-file base; operator verification required');
+}
 
+function loadGitBlob(ref, filePath) {
   try {
-    return git(['diff', '--name-only', 'HEAD']).split('\n').filter(Boolean);
+    return git(['show', `${ref}:${filePath}`]);
   } catch {
-    return [];
+    return null;
   }
+}
+
+export function changedEntriesFromGit() {
+  const mergeBase = resolveMergeBaseRef();
+  const lines = git(['diff', '--name-status', '-M', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
+  const entries = [];
+  for (const line of lines) {
+    const parts = line.split('\t');
+    const statusRaw = parts[0] ?? '';
+    const statusCode = statusRaw[0];
+    if (statusCode === 'R') {
+      const previousPath = normalizePath(parts[1] ?? '');
+      const path = normalizePath(parts[2] ?? '');
+      const oldContent = loadGitBlob(mergeBase, previousPath);
+      const newContent = existsSync(path) ? readFileSync(path, 'utf8') : null;
+      if (!oldContent && !newContent) throw new Error(`protected-area gate cannot load renamed file content for ${previousPath} -> ${path}; operator verification required`);
+      entries.push({ status: 'renamed', previousPath, path, oldContent, newContent });
+    } else if (statusCode === 'D') {
+      const path = normalizePath(parts[1] ?? '');
+      const oldContent = loadGitBlob(mergeBase, path);
+      if (!oldContent) throw new Error(`protected-area gate cannot load deleted file content for ${path}; operator verification required`);
+      entries.push({ status: 'deleted', path, previousPath: path, oldContent, newContent: null });
+    } else {
+      const path = normalizePath(parts[1] ?? '');
+      entries.push({ status: statusCode === 'A' ? 'added' : 'modified', path, newContent: existsSync(path) ? readFileSync(path, 'utf8') : null });
+    }
+  }
+  return entries;
 }
 
 export function findProtectedViolations(files, options = {}) {
@@ -472,16 +499,35 @@ export function findProtectedViolations(files, options = {}) {
   }));
 }
 
+export function findProtectedViolationsFromEntries(entries) {
+  const violationsByFile = new Map();
+  const addMatch = (path, content) => {
+    if (!path) return;
+    const contentByPath = content == null ? {} : { [path]: content };
+    for (const matcher of protectedMatchers) {
+      if (matcher.matches(path, { contentByPath })) {
+        if (!violationsByFile.has(path)) violationsByFile.set(path, new Set());
+        violationsByFile.get(path).add(matcher.label);
+      }
+    }
+  };
+  for (const entry of entries) {
+    addMatch(entry.path, entry.newContent ?? entry.oldContent ?? null);
+    if (entry.previousPath && entry.previousPath !== entry.path) addMatch(entry.previousPath, entry.oldContent ?? null);
+  }
+  return Array.from(violationsByFile.entries()).map(([file, labels]) => ({ file, categories: Array.from(labels), labels: Array.from(labels) }));
+}
+
 function run() {
-  let changed = [];
+  let changedEntries = [];
   try {
-    changed = changedFiles();
+    changedEntries = changedEntriesFromGit();
   } catch (error) {
     console.error('Protected-area gate failed:');
     console.error(`- ${error.message}`);
     process.exit(1);
   }
-  const violations = findProtectedViolations(changed);
+  const violations = findProtectedViolationsFromEntries(changedEntries);
   const parsed = parseProtectedAreaExceptions();
 
   if (parsed.error) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findProtectedViolations } from '../../../scripts/validate-protected-areas.mjs';
+import { findProtectedViolations, findProtectedViolationsFromEntries } from '../../../scripts/validate-protected-areas.mjs';
 
 function isFlagged(path: string) {
   return findProtectedViolations([path]).length > 0;
@@ -141,6 +141,23 @@ describe('protected-area matchers', () => {
     for (const path of paths) {
       expect(findProtectedViolations([path]), path).toHaveLength(0);
     }
+  });
+
+  it('classifies deleted/renamed protected content from old blobs', () => {
+    const violations = findProtectedViolationsFromEntries([
+      { status: 'deleted', path: 'src/server-fns/event-handler.functions.ts', oldContent: 'const s = process.env.MUX_WEBHOOK_SECRET; constructEvent();' },
+      { status: 'deleted', path: 'src/server-fns/process-video.functions.ts', oldContent: 'const x = getMux(); Mux.Video.Assets.list();' },
+      { status: 'deleted', path: 'src/server-fns/start-upload.functions.ts', oldContent: 'await createUpload(); // direct upload' },
+      { status: 'deleted', path: 'src/lib/schema-version-helper.ts', oldContent: 'readReportSchemaVersion(); PublicReportV3.render();' },
+      { status: 'deleted', path: 'src/lib/plain-helper.ts', oldContent: 'export const ok = true;' },
+      { status: 'renamed', previousPath: 'src/server/webhook-handler.ts', path: 'src/server/event-handler.ts', oldContent: 'verifyWebhook(req); webhook signature;' },
+    ] as any);
+    expect(violations.find((v) => v.file.includes('event-handler.functions.ts'))?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file.includes('process-video.functions.ts'))?.categories).toContain('Mux');
+    expect(violations.find((v) => v.file.includes('start-upload.functions.ts'))?.categories).toContain('upload');
+    expect(violations.find((v) => v.file.includes('schema-version-helper.ts'))?.categories).toContain('public output/report rendering');
+    expect(violations.find((v) => v.file.includes('plain-helper.ts'))).toBeUndefined();
+    expect(violations.find((v) => v.file === 'src/server/webhook-handler.ts' || v.file === 'src/server/event-handler.ts')?.categories).toContain('webhook');
   });
   it('does not flag unrelated files by report/mux matchers alone', () => {
     const unrelatedPaths = [

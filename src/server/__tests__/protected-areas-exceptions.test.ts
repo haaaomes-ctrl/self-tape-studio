@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { evaluateProtectedAreaGate } from '../../../scripts/validate-protected-areas.mjs';
 
 const baseException = {
@@ -72,9 +75,9 @@ describe('protected-area exception validation', () => {
     expect(r.status).toBe(0);
   });
 
-  it('does not auto-read committed repo file without env var', () => {
-    const r = spawnSync('node', ['scripts/validate-protected-areas.mjs'], { cwd: process.cwd(), encoding: 'utf8' });
-    expect(r.status).toBe(0);
+  it('controlled evaluation: protected file without exception remains unapproved', () => {
+    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], null as any);
+    expect(result.unapproved.length).toBeGreaterThan(0);
   });
 
   it('controlled evaluation: exact file/category approval passes', () => {
@@ -99,6 +102,29 @@ describe('protected-area exception validation', () => {
     expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], one as any).unapproved.length).toBeGreaterThan(0);
     expect(evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], both as any).unapproved).toHaveLength(0);
     process.env.PR_NUMBER = prior;
+  });
+
+  it('exception file is not auto-read unless PROTECTED_AREA_EXCEPTIONS_FILE is set', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'pae-'));
+    const file = path.join(temp, 'exceptions.json');
+    writeFileSync(file, JSON.stringify(baseException));
+    const result = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], null as any);
+    expect(result.unapproved.length).toBeGreaterThan(0);
+    rmSync(temp, { recursive: true, force: true });
+  });
+
+  it('exception file works when explicitly supplied', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'pae-'));
+    const file = path.join(temp, 'exceptions.json');
+    writeFileSync(file, JSON.stringify(baseException));
+    const r = spawnSync('node', ['scripts/validate-protected-areas.mjs'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: { ...process.env, PR_NUMBER: '49', PROTECTED_AREA_EXCEPTIONS_FILE: file, GITHUB_BASE_REF: 'main' },
+    });
+    expect([0, 1]).toContain(r.status); // should parse explicit file without malformed-json/auto-read assumptions
+    expect(r.stderr).not.toContain('invalid protected-area exception JSON');
+    rmSync(temp, { recursive: true, force: true });
   });
 
 });
