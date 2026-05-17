@@ -1,0 +1,49 @@
+name: TapeCoach v3 release slice
+description: Contract-led Codex implementation task for a v3 release slice.
+title: "TapeCoach v3: "
+labels: ["tapecoach-v3", "release-slice"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `README.md` controls product behaviour, report requirements, scoring rules, QA artefacts, public/private boundaries and release decisions.
+        `tapecoach-v3-parallel-delivery-approach.md` controls sequencing only.
+  - type: textarea
+    id: slice
+    attributes:
+      label: Release slice
+      description: Name the release slice, owner/team, and intended outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance gates
+      description: List required tests, build, QA artefacts, manifest/metrics evidence and live validation if scoped.
+      value: |
+        - npm run test:contracts
+        - npm run build
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Protected boundary confirmation
+      options:
+        - label: No public output/report rendering changes are requested.
+          required: true
+        - label: No upload changes are requested.
+          required: true
+        - label: No Mux changes are requested.
+          required: true
+        - label: No webhook changes are requested.
+          required: true
+        - label: Level 2 remains not_accepted.
+          required: true
+        - label: production_safe, public scoring and public technique authority remain blocked.
+          required: true
+  - type: textarea
+    id: ambiguity
+    attributes:
+      label: Ambiguity or contradictions
+      description: Record anything Codex must escalate before implementation.

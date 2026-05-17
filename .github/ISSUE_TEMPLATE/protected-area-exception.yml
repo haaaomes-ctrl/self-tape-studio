@@ -1,0 +1,26 @@
+name: Protected-area exception
+description: Operator-approved exception for public output, upload, Mux, webhook or release-authority changes.
+title: "Protected exception: "
+labels: ["protected-area", "operator-review-required"]
+body:
+  - type: textarea
+    id: exception
+    attributes:
+      label: Requested exception
+      description: Name the protected area and explain why the exception is required.
+    validations:
+      required: true
+  - type: textarea
+    id: authority
+    attributes:
+      label: Operator approval
+      description: Link or quote the release/public-authority decision. Do not include secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: gates
+    attributes:
+      label: Additional gates
+      description: List extra tests, live QA, rollback or artefact evidence required by this exception.
+    validations:
+      required: true
