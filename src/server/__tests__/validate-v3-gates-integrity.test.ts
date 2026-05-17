@@ -686,6 +686,15 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('must not set protected-area exception env vars');
   });
 
+  it('fails when gatekeeper sets protected-area exceptions via env command assignment', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - run: env PROTECTED_AREA_EXCEPTIONS_JSON=\"{}\" npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}', contracts: 'on:\n  pull_request:', build: 'on:\n  pull_request:' },
+    });
+    expect(failures.join('\n')).toContain('must not set protected-area exception env vars');
+  });
+
   it('fails when gatekeeper uses deprecated set-env protected-area exception injection', () => {
     const failures = validateV3Gates({
       cwd: process.cwd(),

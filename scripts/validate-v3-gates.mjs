@@ -240,10 +240,12 @@ function workflowContainsProtectedExceptionRunInjection(workflowText) {
   const writesGithubEnv = /\b(?:echo|printf)\b[\s\S]*?\bPROTECTED_AREA_EXCEPTIONS_(?:FILE|JSON)\s*=.*?>>\s*(?:"?\$GITHUB_ENV"?|'?\$GITHUB_ENV'?|\$\{GITHUB_ENV\}|'?\$\{GITHUB_ENV\}'?)/i;
   const exportsVar = /\bexport\s+PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=/i;
   const inlineAssignmentRun = /\bPROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s]+)\s+(?:npm|node|pnpm|yarn)\b/i;
+  const envCommandAssignment = /\benv\s+PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s]+)\s+(?:npm|node|pnpm|yarn)\b/i;
   const deprecatedSetEnv = /::set-env\s+name=PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)::/i;
   return writesGithubEnv.test(stripped)
     || exportsVar.test(stripped)
     || inlineAssignmentRun.test(stripped)
+    || envCommandAssignment.test(stripped)
     || deprecatedSetEnv.test(stripped);
 }
 

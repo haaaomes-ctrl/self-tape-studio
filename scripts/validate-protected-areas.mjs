@@ -461,15 +461,14 @@ function loadGitBlob(ref, filePath) {
 
 export function changedEntriesFromGit() {
   const mergeBase = resolveMergeBaseRef();
-  const lines = git(['diff', '--name-status', '-M', '-C', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
+  const tokens = git(['diff', '--name-status', '-z', '-M', '-C', `${mergeBase}...HEAD`]).split('\0').filter((token) => token.length > 0);
   const entries = [];
-  for (const line of lines) {
-    const parts = line.split('\t');
-    const statusRaw = parts[0] ?? '';
+  for (let i = 0; i < tokens.length;) {
+    const statusRaw = tokens[i++] ?? '';
     const statusCode = statusRaw[0];
     if (statusCode === 'R' || statusCode === 'C') {
-      const previousPath = normalizePath(parts[1] ?? '');
-      const path = normalizePath(parts[2] ?? '');
+      const previousPath = normalizePath(tokens[i++] ?? '');
+      const path = normalizePath(tokens[i++] ?? '');
       const oldContent = loadGitBlob(mergeBase, previousPath);
       const newContent = existsSync(path) ? readFileSync(path, 'utf8') : null;
       if ((oldContent === null || oldContent === undefined) && (newContent === null || newContent === undefined)) {
@@ -477,12 +476,12 @@ export function changedEntriesFromGit() {
       }
       entries.push({ status: statusCode === 'C' ? 'copied' : 'renamed', previousPath, path, oldContent, newContent });
     } else if (statusCode === 'D') {
-      const path = normalizePath(parts[1] ?? '');
+      const path = normalizePath(tokens[i++] ?? '');
       const oldContent = loadGitBlob(mergeBase, path);
       if (oldContent === null || oldContent === undefined) throw new Error(`protected-area gate cannot load deleted file content for ${path}; operator verification required`);
       entries.push({ status: 'deleted', path, previousPath: path, oldContent, newContent: null });
     } else {
-      const path = normalizePath(parts[1] ?? '');
+      const path = normalizePath(tokens[i++] ?? '');
       const oldContent = statusCode === 'M' ? loadGitBlob(mergeBase, path) : null;
       const newContent = existsSync(path) ? readFileSync(path, 'utf8') : null;
       entries.push({ status: statusCode === 'A' ? 'added' : 'modified', path, oldContent, newContent });

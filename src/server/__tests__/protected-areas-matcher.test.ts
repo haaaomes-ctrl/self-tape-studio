@@ -222,6 +222,24 @@ describe('protected-area matchers', () => {
     expect(violations.find((v) => v.file === 'src/server/event-handler.ts')?.categories).toContain('webhook');
     expect(violations.find((v) => v.file === 'src/server/event-copy.ts')).toBeUndefined();
   });
+
+  it('handles unusual tabbed paths in modified/deleted/renamed/copied entries', () => {
+    const tabPath = 'src/server/webhook\tgate.ts';
+    const renamedFrom = 'src/server/old\\webhook\tgate.ts';
+    const renamedTo = 'src/server/new\\webhook\tgate.ts';
+    const copyTo = 'src/server/copy\\webhook\tgate.ts';
+
+    const violations = findProtectedViolationsFromEntries([
+      { status: 'modified', path: tabPath, oldContent: 'verifyWebhook(sig)', newContent: 'verifyWebhook(sig)' },
+      { status: 'deleted', path: tabPath, oldContent: 'verifyWebhook(sig)', newContent: null },
+      { status: 'renamed', previousPath: renamedFrom, path: renamedTo, oldContent: 'verifyWebhook(sig)', newContent: 'verifyWebhook(sig)' },
+      { status: 'copied', previousPath: renamedFrom, path: copyTo, oldContent: 'verifyWebhook(sig)', newContent: 'verifyWebhook(sig)' },
+    ] as any);
+
+    expect(violations.find((v) => v.file === tabPath)?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file === renamedTo)?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file === copyTo)?.categories).toContain('webhook');
+  });
   it('does not flag unrelated files by report/mux matchers alone', () => {
     const unrelatedPaths = [
       'src/server/v3/brief-achievement.server.ts',
