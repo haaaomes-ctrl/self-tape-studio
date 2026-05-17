@@ -8,8 +8,8 @@
 - Source-contract validators added for blocked states and S9 Storage contract.
 
 ## Gate behaviour clarity
-- `npm run gate:v3` validates the Setup Task 1 blocked-state **source contract** only.
-- `npm run gate:storage` validates the Setup Task 1 S9 Storage **source contract** by default.
+- `npm run gate:v3` validates the Setup Task 1 blocked-state **exported source contract** only.
+- `npm run gate:storage` validates the Setup Task 1 S9 Storage **exported source contract** by default.
 - `scripts/validate-storage-contract.mjs <bundlePath>` performs optional local emitted-bundle checks when an explicit bundle path is supplied.
 - Source-contract checks are bootstrap assertions and are **not live runtime proof**.
 - Live Storage-download QA remains deferred to Setup Task 4.

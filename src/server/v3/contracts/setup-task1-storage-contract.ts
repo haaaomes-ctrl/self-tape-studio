@@ -1,4 +1,4 @@
-export const setupTask1S9StorageContract = {
+export const setupTask1StorageContract = {
   expected_file_count_when_technique_and_score_sources_exist: 12,
   required_files: [
     'inputs/input_record.json',

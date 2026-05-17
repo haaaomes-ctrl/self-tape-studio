@@ -10,8 +10,8 @@
 - Full Sprint 0 / R0-R4 product contract package.
 
 ## Clarifications for current bootstrap validators
-- `gate:v3` is source-contract validation only; it is not live runtime proof.
-- `gate:storage` validates source-contract shape by default; optional local bundle validation requires explicit path input.
+- `gate:v3` is exported source-contract validation only; it is not live runtime proof.
+- `gate:storage` validates exported source-contract shape by default; optional local bundle validation requires explicit path input.
 - `gate:release` remains intentionally fail-closed while trusted-base gatekeeper is deferred.
 
 ## P2 deferred items
