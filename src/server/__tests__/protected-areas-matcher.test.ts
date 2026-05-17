@@ -104,12 +104,39 @@ describe('protected-area matchers', () => {
     expect(violations[0].categories).toContain('Mux');
   });
 
-  it('flags backend/function path without mux basename when mux_ state fields are present', () => {
+  it('flags backend/function path without mux basename when Mux.Video usage is present', () => {
     const violations = findProtectedViolations(
-      ['src/server-fns/process-take.functions.ts'],
+      ['src/server-fns/delete.functions.ts'],
       {
         contentByPath: {
-          'src/server-fns/process-take.functions.ts': 'const next = { mux_status: "ready", mux_asset_id: "a1" };',
+          'src/server-fns/delete.functions.ts': 'const result = Mux.Video.Assets.del("asset_123");',
+        },
+      },
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].categories).toContain('Mux');
+  });
+
+  it('does not flag contract policy files with non-runtime mux policy keys alone', () => {
+    const violations = findProtectedViolations(
+      ['src/server/v3/contracts/release-gates.ts'],
+      {
+        contentByPath: {
+          'src/server/v3/contracts/release-gates.ts': 'export const releasePolicy = { mux_changes_allowed: false };',
+        },
+      },
+    );
+
+    expect(violations).toHaveLength(0);
+  });
+
+  it('flags mux secret env/config names when content-sensitive detection applies', () => {
+    const violations = findProtectedViolations(
+      ['src/server-fns/delete.functions.ts'],
+      {
+        contentByPath: {
+          'src/server-fns/delete.functions.ts': 'const c = { id: process.env.MUX_TOKEN_ID, secret: process.env.MUX_TOKEN_SECRET, hook: process.env.MUX_WEBHOOK_SECRET };',
         },
       },
     );
