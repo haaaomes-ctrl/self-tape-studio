@@ -176,6 +176,52 @@ describe('protected-area matchers', () => {
     expect(violations.find((v) => v.file.includes('plain-helper-copy.ts'))).toBeUndefined();
     expect(violations.find((v) => v.file === 'src/server/webhook-handler.ts' || v.file === 'src/server/event-handler.ts')?.categories).toContain('webhook');
   });
+
+  it('pairs rename/copy path-content correctly without phantom previousPath violations', () => {
+    const violations = findProtectedViolationsFromEntries([
+      {
+        status: 'renamed',
+        previousPath: 'src/server/event-handler.ts',
+        path: 'src/server/webhook-handler.ts',
+        oldContent: 'export const handler = () => null;',
+        newContent: 'const secret = process.env.MUX_WEBHOOK_SECRET; verifyWebhook(secret);',
+      },
+      {
+        status: 'renamed',
+        previousPath: 'src/server/webhook-handler.ts',
+        path: 'src/server/event-handler.ts',
+        oldContent: 'const secret = process.env.MUX_WEBHOOK_SECRET; verifyWebhook(secret);',
+        newContent: 'export const handler = () => null;',
+      },
+      {
+        status: 'modified',
+        path: 'src/server/event-handler.ts',
+        oldContent: 'const secret = process.env.MUX_WEBHOOK_SECRET; verifyWebhook(secret);',
+        newContent: 'export const handler = () => null;',
+      },
+      {
+        status: 'copied',
+        previousPath: 'src/server/webhook-handler.ts',
+        path: 'src/server/event-handler.ts',
+        oldContent: 'const secret = process.env.MUX_WEBHOOK_SECRET; verifyWebhook(secret);',
+        newContent: 'const secret = process.env.MUX_WEBHOOK_SECRET; verifyWebhook(secret);',
+      },
+      {
+        status: 'copied',
+        previousPath: 'src/lib/plain-helper.ts',
+        path: 'src/server/event-copy.ts',
+        oldContent: 'export const ok = true;',
+        newContent: 'export const ok = true;',
+      },
+      { status: 'deleted', path: 'src/server/empty-deleted.ts', oldContent: '' },
+      { status: 'renamed', previousPath: 'src/server/empty-old.ts', path: 'src/server/empty-new.ts', oldContent: '', newContent: '' },
+      { status: 'copied', previousPath: 'src/server/empty-source.ts', path: 'src/server/empty-copy.ts', oldContent: '', newContent: '' },
+    ] as any);
+
+    expect(violations.find((v) => v.file === 'src/server/webhook-handler.ts')?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file === 'src/server/event-handler.ts')?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file === 'src/server/event-copy.ts')).toBeUndefined();
+  });
   it('does not flag unrelated files by report/mux matchers alone', () => {
     const unrelatedPaths = [
       'src/server/v3/brief-achievement.server.ts',

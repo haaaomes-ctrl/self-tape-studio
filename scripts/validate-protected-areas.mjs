@@ -388,7 +388,13 @@ function applyExceptions(violations, config) {
   const exceptionMap = new Map();
   for (const ex of config.exceptions ?? []) {
     if (!ex?.file || !Array.isArray(ex?.categories)) continue;
-    exceptionMap.set(normalizePath(ex.file), new Set(ex.categories));
+    const key = normalizePath(ex.file);
+    let categorySet = exceptionMap.get(key);
+    if (!categorySet) {
+      categorySet = new Set();
+      exceptionMap.set(key, categorySet);
+    }
+    for (const category of ex.categories) categorySet.add(category);
   }
 
   const approved = [];
@@ -520,12 +526,28 @@ export function findProtectedViolationsFromEntries(entries) {
     }
   };
   for (const entry of entries) {
+    const status = String(entry.status ?? '').toLowerCase();
+    if (status === 'modified') {
+      addMatch(entry.path, entry.newContent ?? null);
+      if (entry.oldContent !== null && entry.oldContent !== undefined) addMatch(entry.path, entry.oldContent);
+      continue;
+    }
+    if (status === 'deleted') {
+      addMatch(entry.path, entry.oldContent ?? null);
+      continue;
+    }
+    if (status === 'renamed') {
+      addMatch(entry.path, entry.newContent ?? null);
+      if (entry.previousPath && entry.previousPath !== entry.path) addMatch(entry.previousPath, entry.oldContent ?? null);
+      continue;
+    }
+    if (status === 'copied') {
+      if (entry.newContent !== null && entry.newContent !== undefined) addMatch(entry.path, entry.newContent);
+      else addMatch(entry.path, entry.oldContent ?? null);
+      continue;
+    }
     addMatch(entry.path, entry.newContent ?? null);
     if (entry.oldContent !== null && entry.oldContent !== undefined) addMatch(entry.path, entry.oldContent);
-    if (entry.previousPath && entry.previousPath !== entry.path) {
-      addMatch(entry.previousPath, entry.oldContent ?? null);
-      addMatch(entry.previousPath, entry.newContent ?? null);
-    }
   }
   return Array.from(violationsByFile.entries()).map(([file, labels]) => ({ file, categories: Array.from(labels), labels: Array.from(labels) }));
 }

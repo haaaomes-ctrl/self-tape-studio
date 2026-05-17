@@ -76,4 +76,62 @@ describe('protected-area exception validation (controlled)', () => {
       expect(r.configFailures.join('\n')).toContain('must not be in the future');
     });
   });
+
+  it('merges duplicate exception file entries across categories', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const cfg = {
+        ...baseException,
+        exceptions: [
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'approved mux' },
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['webhook'], reason: 'approved webhook' },
+        ],
+      };
+      const r = evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], cfg as any);
+      expect(r.configFailures).toHaveLength(0);
+      expect(r.unapproved).toHaveLength(0);
+    });
+  });
+
+  it('duplicate entries without full category coverage remain unapproved', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const cfg = {
+        ...baseException,
+        exceptions: [
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'approved mux 1' },
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'approved mux 2' },
+        ],
+      };
+      const r = evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], cfg as any);
+      expect(r.unapproved.length).toBeGreaterThan(0);
+      expect(r.unapproved[0].categories).toContain('webhook');
+    });
+  });
+
+  it('duplicate entries with wildcard approve all categories', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const cfg = {
+        ...baseException,
+        exceptions: [
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['*'], reason: 'approved all' },
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['Mux'], reason: 'approved mux too' },
+        ],
+      };
+      const r = evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], cfg as any);
+      expect(r.unapproved).toHaveLength(0);
+    });
+  });
+
+  it('merges duplicate entries with windows-style and posix path forms', () => {
+    withEnv('PR_NUMBER', '49', () => {
+      const cfg = {
+        ...baseException,
+        exceptions: [
+          { file: 'src\\routes\\api\\public\\mux-webhook.ts', categories: ['Mux'], reason: 'approved mux' },
+          { file: 'src/routes/api/public/mux-webhook.ts', categories: ['webhook'], reason: 'approved webhook' },
+        ],
+      };
+      const r = evaluateProtectedAreaGate(['src/routes/api/public/mux-webhook.ts'], cfg as any);
+      expect(r.unapproved).toHaveLength(0);
+    });
+  });
 });
