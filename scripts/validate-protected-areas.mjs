@@ -40,6 +40,14 @@ function isTypeScriptPath(filePath) {
   return /\.(ts|tsx)$/i.test(filePath);
 }
 
+function isTestOrFixturePath(filePath) {
+  if (filePath.includes('/__tests__/')) return true;
+  if (filePath.includes('/fixtures/')) return true;
+
+  const baseName = getBaseName(filePath);
+  return /\.(test|spec)\.(ts|tsx|js|jsx)$/i.test(baseName);
+}
+
 function isCodeFile(filePath) {
   return /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath);
 }
@@ -116,12 +124,10 @@ function isProtectedReportPath(filePath) {
   if (reportRoutePattern.test(filePath)) return true;
 
   if (filePath.startsWith('src/server/') && isTypeScriptPath(filePath)) {
-    if (filePath.includes('/__tests__/')) return false;
+    if (isTestOrFixturePath(filePath)) return false;
     if (filePath.includes('/contracts/')) return false;
-    if (filePath.includes('/fixtures/')) return false;
 
     const baseName = getBaseName(filePath);
-    if (/\.(test|spec)\.(ts|tsx)$/i.test(baseName)) return false;
     return reportFilenameHints.some((hint) => baseName.includes(hint));
   }
 
@@ -129,8 +135,7 @@ function isProtectedReportPath(filePath) {
 }
 
 function isProtectedMuxPath(filePath, options = {}) {
-  if (filePath.includes('/__tests__/')) return false;
-  if (filePath.includes('/fixtures/')) return false;
+  if (isTestOrFixturePath(filePath)) return false;
 
   if (explicitMuxProtectedFiles.has(filePath)) return true;
   if (!isCodeFile(filePath)) return false;
@@ -146,11 +151,17 @@ function isProtectedMuxPath(filePath, options = {}) {
   return hasSensitiveContent && filePath.startsWith('src/components/');
 }
 
+function isProtectedWebhookPath(filePath) {
+  if (isTestOrFixturePath(filePath)) return false;
+  if (filePath.includes('/contracts/')) return false;
+  return /webhook/i.test(filePath);
+}
+
 const protectedMatchers = [
   { label: 'public output/report rendering', matches: isProtectedReportPath },
   { label: 'upload', matches: (filePath) => /(^|\/)(mux-upload|upload-errors)\.ts$/i.test(filePath) || filePath === 'src/routes/new.tsx' },
   { label: 'Mux', matches: isProtectedMuxPath },
-  { label: 'webhook', matches: (filePath) => /webhook/i.test(filePath) },
+  { label: 'webhook', matches: isProtectedWebhookPath },
 ];
 
 function git(args) {

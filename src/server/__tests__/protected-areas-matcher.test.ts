@@ -47,6 +47,14 @@ describe('protected-area matchers', () => {
       'src/server-fns/mux.functions.cjs',
       'src\\server-fns\\mux.functions.ts',
       'src\\routes\\api\\public\\diag-mux-probe.ts',
+      'src/routes/api/public/stripe-webhook.ts',
+      'src/routes/api/public/webhook.ts',
+      'src/server/webhook-handler.ts',
+      'src/server/webhook-utils.ts',
+      'src/server-fns/webhook.functions.ts',
+      'api/webhook.ts',
+      'app/routes/webhook.ts',
+      'src\\server\\webhook-utils.ts',
     ];
 
     for (const path of protectedPaths) {
@@ -63,6 +71,11 @@ describe('protected-area matchers', () => {
       'src/components/demo-mux-label.tsx',
       'src/server/v3/contracts/report-v3-contracts.ts',
       'src/server/__tests__/v3-r10-public-report-v3a.test.ts',
+      'src/server/__tests__/webhook-utils.test.ts',
+      'src/server/__tests__/webhook-utils.spec.ts',
+      'src/server/__tests__/fixtures/webhook-payload.fixture.json',
+      'src\\server\\__tests__\\webhook-utils.test.ts',
+      'src/server/v3/contracts/webhook-policy-contracts.ts',
     ];
 
     for (const path of unrelatedPaths) {
