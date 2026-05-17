@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
+import { pathToFileURL } from 'node:url';
 
 const expectedFiles = [
   'inputs/input_record.json',
@@ -61,6 +62,28 @@ afterEach(() => {
 });
 
 describe('storage bundle strict validator', () => {
+  it('validateStorageBundle helper ignores unrelated process.argv by default', async () => {
+    const originalArgv = [...process.argv];
+    try {
+      process.argv = ['node', 'test-runner', '--unrelated-flag'];
+      const moduleUrl = `${pathToFileURL(path.join(process.cwd(), 'scripts/validate-storage-bundle.mjs')).href}?t=${Date.now()}`;
+      const mod = await import(moduleUrl);
+      const failures = mod.validateStorageBundle({ cwd: process.cwd() });
+      expect(Array.isArray(failures)).toBe(true);
+      expect(failures.join('\n')).not.toContain('missing bundle file:');
+      expect(failures.join('\n')).not.toContain('expected exactly 12 files');
+    } finally {
+      process.argv = originalArgv;
+    }
+  });
+
+  it('validateStorageBundle helper validates explicit bundleRootArg in bundle mode', async () => {
+    const bundle = createBundle([], ['traces/ScoreTrace.json']);
+    const mod = await import(`${pathToFileURL(path.join(process.cwd(), 'scripts/validate-storage-bundle.mjs')).href}?t=${Date.now()}`);
+    const failures = mod.validateStorageBundle({ cwd: process.cwd(), bundleRootArg: bundle });
+    expect(failures.join('\n')).toContain('missing bundle file: traces/ScoreTrace.json');
+  });
+
   it('fails with structured error when storage contract file is missing in no-bundle mode', () => {
     const temp = mkdtempSync(path.join(tmpdir(), 'storage-contract-missing-'));
     createdDirs.push(temp);

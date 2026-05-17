@@ -241,9 +241,14 @@ function isAllowedProtectedExceptionsExpression(value) {
 
 function workflowContainsProtectedExceptionRunInjection(workflowText) {
   const stripped = stripWorkflowComments(workflowText);
-  const writesGithubEnv = /(echo|printf)\s+["'][^"']*PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=.*\$GITHUB_ENV/i;
+  const writesGithubEnv = /\b(?:echo|printf)\b[\s\S]*?\bPROTECTED_AREA_EXCEPTIONS_(?:FILE|JSON)\s*=.*?>>\s*(?:"?\$GITHUB_ENV"?|'?\$GITHUB_ENV'?|\$\{GITHUB_ENV\}|'?\$\{GITHUB_ENV\}'?)/i;
   const exportsVar = /\bexport\s+PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=/i;
-  return writesGithubEnv.test(stripped) || exportsVar.test(stripped);
+  const inlineAssignmentRun = /\bPROTECTED_AREA_EXCEPTIONS_(FILE|JSON)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s]+)\s+(?:npm|node|pnpm|yarn)\b/i;
+  const deprecatedSetEnv = /::set-env\s+name=PROTECTED_AREA_EXCEPTIONS_(FILE|JSON)::/i;
+  return writesGithubEnv.test(stripped)
+    || exportsVar.test(stripped)
+    || inlineAssignmentRun.test(stripped)
+    || deprecatedSetEnv.test(stripped);
 }
 
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {

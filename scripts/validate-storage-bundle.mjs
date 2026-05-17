@@ -18,7 +18,6 @@ const expectedFiles = [
   'qa/acceptance_metrics.json',
 ];
 
-const bundleRoot = process.argv[2];
 const strictS9Mode = process.env.STORAGE_BUNDLE_MODE !== 'future_expanded';
 
 function listFilesRecursively(root, current = '') {
@@ -48,7 +47,7 @@ function readJson(filePath, failures) {
   }
 }
 
-export function validateStorageBundle({ cwd = process.cwd(), bundleRootArg = bundleRoot, strictMode = strictS9Mode } = {}) {
+export function validateStorageBundle({ cwd = process.cwd(), bundleRootArg = undefined, strictMode = strictS9Mode } = {}) {
   const failures = [];
   if (!bundleRootArg) {
     const contractPath = path.join(cwd, 'src/server/v3/contracts/storage-bundle.ts');
@@ -116,11 +115,12 @@ function isDirectCliInvocation() {
 }
 
 if (isDirectCliInvocation()) {
-  const failures = validateStorageBundle();
+  const cliBundleRoot = process.argv[2];
+  const failures = validateStorageBundle({ bundleRootArg: cliBundleRoot });
   if (failures.length) {
     console.error('Storage validation failed:');
     for (const failure of failures) console.error(`- ${failure}`);
     process.exit(1);
   }
-  console.log(bundleRoot ? 'Storage validation passed' : 'Storage contract validation passed');
+  console.log(cliBundleRoot ? 'Storage validation passed' : 'Storage contract validation passed');
 }
