@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateV3Gates } from '../../../scripts/validate-v3-gates.mjs';
+import { extractNpmRunTargets, validateV3Gates } from '../../../scripts/validate-v3-gates.mjs';
 
 function runWithScripts(scripts: Record<string, string>) {
   const failures = validateV3Gates({ packageJsonOverride: { scripts } as any });
@@ -53,6 +53,71 @@ describe('validate-v3-gates script integrity', () => {
       'gate:protected': 'node scripts/validate-protected-areas.mjs',
     });
     expect(failures).toEqual([]);
+  });
+
+  it('extracts npm run target when --if-present appears before script name', () => {
+    expect(extractNpmRunTargets('npm run --if-present gate:v3')).toEqual(['gate:v3']);
+  });
+
+  it('extracts npm run-script target when --if-present appears before script name', () => {
+    expect(extractNpmRunTargets('npm run-script --if-present gate:v3')).toEqual(['gate:v3']);
+  });
+
+  it('extracts npm run target with --silent and -s flags', () => {
+    expect(extractNpmRunTargets('npm run --silent gate:v3')).toEqual(['gate:v3']);
+    expect(extractNpmRunTargets('npm run -s gate:v3')).toEqual(['gate:v3']);
+  });
+
+  it('extracts npm run target with workspace flags and skips workspace value', () => {
+    expect(extractNpmRunTargets('npm run --workspace app gate:v3')).toEqual(['gate:v3']);
+    expect(extractNpmRunTargets('npm run -w app gate:v3')).toEqual(['gate:v3']);
+  });
+
+  it('extracts npm run target with post-script args', () => {
+    expect(extractNpmRunTargets('npm run gate:v3 -- --strict')).toEqual(['gate:v3']);
+  });
+
+  it('extracts multiple npm run targets in one command', () => {
+    expect(extractNpmRunTargets('npm run --if-present gate:protected && npm run --if-present gate:storage && npm run --if-present gate:v3'))
+      .toEqual(['gate:protected', 'gate:storage', 'gate:v3']);
+  });
+
+  it('passes validation for gate:release using npm run --if-present', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run --if-present gate:v3',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs && node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs',
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('passes validation for gate:release using npm run-script --if-present', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run-script --if-present gate:v3',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs && node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs',
+    });
+    expect(failures).toEqual([]);
+  });
+
+  it('fails when expanded flagged npm run target is a no-op', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run --if-present gate:v3',
+      'gate:v3': 'echo ok',
+    });
+    expect(failures.join('\n')).toContain('gate:release missing protected-area validation coverage');
+    expect(failures.join('\n')).toContain('gate:release missing Storage bundle validation coverage');
+    expect(failures.join('\n')).toContain('gate:release missing v3 gate validation coverage');
+  });
+
+  it('fails when expanded flagged npm run target misses storage coverage', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run --if-present gate:v3',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs && node scripts/validate-protected-areas.mjs',
+    });
+    expect(failures.join('\n')).toContain('gate:release missing Storage bundle validation coverage');
   });
 
   it('does not infinite loop with recursive npm run references', () => {

@@ -18,13 +18,57 @@ function hasNoOpOnly(command) {
   return false;
 }
 
+const SEPARATORS = new Set(['&&', '||', ';', '|']);
+const RUN_FLAGS_WITH_VALUE = new Set(['--workspace', '-w']);
+
+function tokenizeCommand(command) {
+  return command
+    .replace(/([;|])/g, ' $1 ')
+    .replace(/&&/g, ' && ')
+    .replace(/\|\|/g, ' || ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+export function extractNpmRunTargets(command) {
+  const tokens = tokenizeCommand(command);
+  const targets = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] !== 'npm') continue;
+    const runner = tokens[i + 1];
+    if (runner !== 'run' && runner !== 'run-script') continue;
+
+    let j = i + 2;
+    while (j < tokens.length) {
+      const tok = tokens[j];
+      if (SEPARATORS.has(tok)) break;
+      if (tok === '--') break;
+      if (tok.startsWith('-')) {
+        if (RUN_FLAGS_WITH_VALUE.has(tok) && j + 1 < tokens.length && !SEPARATORS.has(tokens[j + 1])) {
+          j += 2;
+          continue;
+        }
+        j += 1;
+        continue;
+      }
+
+      targets.push(tok);
+      break;
+    }
+  }
+
+  return targets;
+}
+
 function collectScriptExpansion(scripts, start, visited = new Set()) {
   if (!scripts[start] || visited.has(start)) return '';
   visited.add(start);
 
   const command = scripts[start];
   let expanded = command;
-  const runRefs = [...command.matchAll(/npm\s+run\s+([\w:-]+)/g)].map((m) => m[1]);
+  const runRefs = extractNpmRunTargets(command);
 
   for (const ref of runRefs) {
     expanded += ` ; ${collectScriptExpansion(scripts, ref, visited)}`;
