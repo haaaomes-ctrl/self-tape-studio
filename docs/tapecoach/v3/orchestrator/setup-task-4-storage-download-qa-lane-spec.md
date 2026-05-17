@@ -2,18 +2,21 @@
 
 Admin URL: `https://tapecoach.co.uk/admin/storage-downloads`
 
-## Parameterised local download directory
-- Storage-download jobs must use an operator-configured absolute local download directory.
-- The directory is supplied through `TAPECOACH_AGENT_DOWNLOAD_DIR`.
-- Current operator-approved value (Beth Willars Mac example/default): `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent`.
-- This Beth Willars value is an example/default, not a universal required path.
-- Future operators may set a different absolute local path.
-- Implementations must read the env var and must not hardcode the Beth Willars path.
+## Parameterised local download directory contract
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` is required at runtime.
+- Storage-download jobs must use an operator-configured absolute local download directory supplied through `TAPECOACH_AGENT_DOWNLOAD_DIR`.
+- For Beth Willars’ self-hosted Mac runner, the expected/default configured value is `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent`.
+- That Beth Willars path is the current operator-approved default configuration value for Beth Willars’ Mac runner.
+- That Beth Willars path is not a universal operator path.
+- That Beth Willars path is not a hidden runtime fallback.
+- Implementations must read `TAPECOACH_AGENT_DOWNLOAD_DIR`.
+- Implementations must not silently hardcode the Beth path.
+- Implementations must not silently fall back to the Beth path when `TAPECOACH_AGENT_DOWNLOAD_DIR` is missing.
 
 Runner labels: `self-hosted`, `macOS`, `tapecoach-agent`, `storage-download`.
 
 ## Controls
-- If `TAPECOACH_AGENT_DOWNLOAD_DIR` is missing, empty, not absolute, not writable, points inside the repository, or cannot be accessed by the self-hosted runner, the lane must produce `operator-verification-required`.
+- If `TAPECOACH_AGENT_DOWNLOAD_DIR` is missing, empty, not absolute, inaccessible, not writable, points inside the repository, or cannot be used by the self-hosted runner, the lane must produce `operator-verification-required`.
 - Downloaded artefacts must not be committed.
 - Private runtime artefacts must not be uploaded to GitHub by default.
 - Admin credentials must never be printed.

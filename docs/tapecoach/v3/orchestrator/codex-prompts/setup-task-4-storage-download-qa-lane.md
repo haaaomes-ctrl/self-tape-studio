@@ -10,11 +10,12 @@ Implementation task (not design-only) for future setup execution; this Task 0 PR
 No public output changes unless scoped. No upload/Mux/webhook implementation changes unless scoped. Level 2 remains not_accepted. production_safe/public_scoring/public_technique_authority remain blocked.
 
 ## Storage-download path requirements
-- Read `TAPECOACH_AGENT_DOWNLOAD_DIR` for the download directory.
-- Do not hardcode `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent` in implementation.
-- Keep `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent` only as the current operator example/default (Beth Willars Mac configuration).
+- Read `TAPECOACH_AGENT_DOWNLOAD_DIR`.
+- For Beth Willars’ runner, the expected/default configured env value is `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent`.
+- Do not silently hardcode `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent` in implementation.
+- Do not silently fall back to the Beth path when env var is missing.
 - Validate the path before download.
-- Fail with `operator-verification-required` when path is missing, empty, non-absolute, non-writable, inside repository, or inaccessible by runner.
+- Fail with `operator-verification-required` when path is missing, empty, non-absolute, inaccessible, non-writable, inside repository, or unusable by runner.
 - Do not commit downloaded artefacts.
 - Do not upload private runtime artefacts to GitHub by default.
 

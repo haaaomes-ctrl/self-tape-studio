@@ -18,16 +18,19 @@ Cover no self-approval, PR-scoped approval, stale/wrong PR approval, duplicate e
 Cover operator publish requirement, no bypass of GitHub checks/README/public-private gates, post-publish tests, failed publish QA loop, and no release approval from Lovable alone.
 
 ## Storage-download QA
-Cover local runner labels, parameterised local path controls, no artefact commits, no secret printing, and review summary limits.
+Cover local runner labels, required env-var-based path controls, no artefact commits, no secret printing, and review summary limits.
 
 Required cases:
+- Expected/default configured value for Beth Willars’ Mac runner is `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent` via `TAPECOACH_AGENT_DOWNLOAD_DIR`.
 - `TAPECOACH_AGENT_DOWNLOAD_DIR` missing.
 - `TAPECOACH_AGENT_DOWNLOAD_DIR` empty.
 - `TAPECOACH_AGENT_DOWNLOAD_DIR` not absolute.
 - `TAPECOACH_AGENT_DOWNLOAD_DIR` points inside the repository.
 - `TAPECOACH_AGENT_DOWNLOAD_DIR` path does not exist.
 - `TAPECOACH_AGENT_DOWNLOAD_DIR` exists but is not writable.
-- Path is valid on one operator machine but invalid on another.
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` path differs on another operator machine.
+- Implementation silently hardcodes Beth path instead of reading env var.
+- Implementation silently falls back to Beth path when env var is missing.
 - Private downloads are accidentally committed.
 - Only summaries are exposed unless explicitly approved.
 - `operator-verification-required` on auth/path/env failure.

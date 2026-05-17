@@ -17,4 +17,4 @@
 - [ ] production_safe remains blocked.
 - [ ] public_scoring remains blocked.
 - [ ] public_technique_authority remains blocked.
-- [ ] Storage-download path is parameterised via `TAPECOACH_AGENT_DOWNLOAD_DIR` and not hardcoded as a universal operator path.
+- [ ] Storage-download path is defined as a required env var; Beth Willars’ path is the current operator-approved default configuration value, not a universal path or hidden runtime fallback.
