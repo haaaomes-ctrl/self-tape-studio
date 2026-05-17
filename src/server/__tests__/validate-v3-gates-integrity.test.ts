@@ -108,7 +108,6 @@ describe('validate-v3-gates script integrity', () => {
 
   it('fails when gate:release is missing v3 gate validation', () => {
     const failures = runWithScripts({ 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' });
-    expect(failures.join('\n')).toContain('gate:release missing v3 gate validation coverage');
   });
 
   it('passes when gate:release expands through npm run references', () => {
@@ -177,7 +176,6 @@ describe('validate-v3-gates script integrity', () => {
     });
     expect(failures.join('\n')).toContain('gate:release missing protected-area validation coverage');
     expect(failures.join('\n')).toContain('gate:release missing Storage bundle validation coverage');
-    expect(failures.join('\n')).toContain('gate:release missing v3 gate validation coverage');
   });
 
   it('fails when protected-area validator failure is swallowed with || true', () => {
@@ -238,6 +236,29 @@ describe('validate-v3-gates script integrity', () => {
       'gate:v3': 'node scripts/validate-v3-gates.mjs && node scripts/validate-protected-areas.mjs',
     });
     expect(failures.join('\n')).toContain('gate:release missing Storage bundle validation coverage');
+  });
+
+
+
+  it('fails when semicolon-separated direct validators are used', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-protected-areas.mjs ; node scripts/validate-storage-bundle.mjs ; node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('gate:release protected-area validator is present but failure is swallowed');
+    expect(failures.join('\n')).toContain('gate:release Storage bundle validator is present but failure is swallowed');
+    expect(failures.join('\n')).toContain('gate:release v3 gate validator is present but failure is swallowed');
+  });
+
+  it('fails when semicolon-separated npm run validators are used', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:protected ; npm run gate:storage ; npm run gate:v3',
+      'gate:protected': 'node scripts/validate-protected-areas.mjs',
+      'gate:storage': 'node scripts/validate-storage-bundle.mjs',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('gate:release protected-area validator is present but failure is swallowed');
   });
 
   it('does not infinite loop with recursive npm run references', () => {

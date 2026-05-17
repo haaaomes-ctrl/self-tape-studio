@@ -69,16 +69,20 @@ function commandContainsNoOpGuard(command) {
     || /\|\s*\w+/i.test(command);
 }
 
+function containsNonPropagatingSeparator(command) {
+  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command);
+}
+
 function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
   return expandedCommand
     .split(/&&/)
-    .some((segment) => validatorRegex.test(segment) && !commandContainsNoOpGuard(segment));
+    .some((segment) => validatorRegex.test(segment) && !commandContainsNoOpGuard(segment) && !containsNonPropagatingSeparator(segment));
 }
 
 function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
   return expandedCommand
     .split(/&&/)
-    .some((segment) => validatorRegex.test(segment) && commandContainsNoOpGuard(segment));
+    .some((segment) => validatorRegex.test(segment) && (commandContainsNoOpGuard(segment) || containsNonPropagatingSeparator(segment)));
 }
 
 export function collectScriptExpansion(scripts, start, visited = new Set()) {
@@ -90,7 +94,8 @@ export function collectScriptExpansion(scripts, start, visited = new Set()) {
   const runRefs = extractNpmRunTargets(command);
 
   for (const ref of runRefs) {
-    expanded += ` ; ${collectScriptExpansion(scripts, ref, visited)}`;
+    expanded += `
+${collectScriptExpansion(scripts, ref, visited)}`;
   }
 
   return expanded;
