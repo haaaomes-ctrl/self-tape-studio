@@ -519,7 +519,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     acceptance_reasons: [
       'missing required Level 2 artefacts',
       'raw_report is legacy_adapter where applicable',
-      'comparison evidence missing',
+      comparisonEvidenceStatus === 'missing'
+        ? 'comparison evidence missing'
+        : 'comparison evidence emitted but insufficient for Level 2',
       'GF-01 / RT-15 blocked',
       'production/public authority gates blocked',
       'qa_acceptance_metrics emitted but does not satisfy evidence gates',
