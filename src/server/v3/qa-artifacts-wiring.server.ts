@@ -42,6 +42,7 @@ export function reconcileComparisonManifestState(input: {
   manifest: Record<string, any>;
   comparison_write_success_by_id: Partial<Record<ComparisonArtefactId, boolean>>;
   comparison_run_id?: string | null;
+  compared_take_ids?: string[];
 }) {
   const manifest = JSON.parse(JSON.stringify(input.manifest ?? {}));
   const succ = input.comparison_write_success_by_id ?? {};
@@ -76,6 +77,7 @@ export function reconcileComparisonManifestState(input: {
   return {
     ...manifest,
     comparison_run_id: emittedComparisonArtefact ? (input.comparison_run_id ?? manifest.comparison_run_id ?? null) : (manifest.comparison_run_id ?? null),
+    compared_take_ids: emittedComparisonArtefact ? (input.compared_take_ids ?? manifest.compared_take_ids ?? []) : (manifest.compared_take_ids ?? []),
     required_artifacts: req,
     emitted_artifacts: [...emittedSet],
     missing_artifacts: [...missingSet],
@@ -1395,6 +1397,7 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
   const reconciledManifest = reconcileComparisonManifestState({
     manifest: manifestObj,
     comparison_run_id: emitOut.comparison_run_id ?? input.comparison_run_id ?? null,
+    compared_take_ids: comparedTakeIds,
     comparison_write_success_by_id: {
       comparison_raw: emittedIds.includes('comparison_raw'),
       comparison_report_internal: emittedIds.includes('comparison_report_internal'),

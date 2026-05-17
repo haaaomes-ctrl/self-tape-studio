@@ -66,7 +66,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       take_id: 'root3',
       analysis_run_id: 'take-root3',
       comparison_run_id: null,
-      compared_take_ids: ['root3', 'root4'],
+      compared_take_ids: ['root3'],
       root_dir: root,
       internal_qa_emit: true,
       emitted_artefact_ids: [],
@@ -90,8 +90,11 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
     const manifest = JSON.parse(await readFile(path.join(root, 'take-root3', 'manifest.json'), 'utf8'));
     expect(manifest.comparison_run_id).toBe('cmp-root3');
+    expect(manifest.compared_take_ids).toEqual(['root3', 'root4']);
     const metrics = JSON.parse(await readFile(path.join(root, 'take-root3', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(metrics.comparison_run_id).toBe('cmp-root3');
+    expect(metrics.compared_take_ids).toEqual(['root3', 'root4']);
+    expect(metrics.comparison_runtime_artifact_count).toBe(5);
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
