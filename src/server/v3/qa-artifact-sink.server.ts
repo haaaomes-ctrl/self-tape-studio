@@ -50,6 +50,7 @@ export interface QAArtifactReadResult {
   path?: string;
 }
 
+// Missing vs unreadable sink classification matters for reconciliation diagnostics.
 function looksLikeObjectNotFound(message: string): boolean {
   const m = message.toLowerCase();
   return m.includes('404') || m.includes('not found') || m.includes('object not found') || m.includes('no such key') || m.includes('enoent') || m.includes('no such file');
