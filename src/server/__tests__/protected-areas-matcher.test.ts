@@ -104,6 +104,20 @@ describe('protected-area matchers', () => {
     expect(violations[0].categories).toContain('Mux');
   });
 
+  it('flags backend/function path without mux basename when mux_ state fields are present', () => {
+    const violations = findProtectedViolations(
+      ['src/server-fns/process-take.functions.ts'],
+      {
+        contentByPath: {
+          'src/server-fns/process-take.functions.ts': 'const next = { mux_status: "ready", mux_asset_id: "a1" };',
+        },
+      },
+    );
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0].categories).toContain('Mux');
+  });
+
   it('does not flag backend/function path without mux basename or sensitive content', () => {
     const violations = findProtectedViolations(
       ['src/server-fns/delete.functions.ts'],

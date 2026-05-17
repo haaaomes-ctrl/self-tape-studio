@@ -85,6 +85,11 @@ const muxSensitiveTerms = [
   'muxuploader',
   'getmux',
   'mux.video',
+  'mux_',
+  'muxstate',
+  'muxstatus',
+  'muxasset',
+  'muxplayback',
   'mux-player',
   'mux.com',
 ];
