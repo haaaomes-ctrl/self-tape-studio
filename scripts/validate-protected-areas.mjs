@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 
 const reportRoutePattern = /^src\/routes\/(index|about|dashboard|audition\.\$auditionId|new)\.tsx$/;
 const explicitReportServerFiles = new Set([
@@ -221,6 +223,9 @@ function run() {
   console.log('Protected-area gate passed');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const executedFilePath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+const moduleFilePath = fileURLToPath(import.meta.url);
+
+if (executedFilePath && moduleFilePath === executedFilePath) {
   run();
 }
