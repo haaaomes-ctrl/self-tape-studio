@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emitComparisonRuntimeArtifacts, emitQAManifestForAnalysisRun, resolveCanonicalComparisonReconciliationIdentity, reconcileComparisonManifestState } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitComparisonRuntimeArtifacts, emitComparisonRuntimeArtifactsWithManifestReconciliation, emitQAManifestForAnalysisRun, resolveCanonicalComparisonReconciliationIdentity, reconcileComparisonManifestState } from '@/server/v3/qa-artifacts-wiring.server';
 import { readQAArtifactText } from '@/server/v3/qa-artifact-sink.server';
 import { supabaseAdmin } from '@/integrations/supabase/client.server';
 
@@ -57,6 +57,45 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     const out = await emitComparisonRuntimeArtifacts({ run_id: 'take-only1', take_id: 'only1', analysis_run_id: 'ar-2', root_dir: await mkdtemp(path.join(os.tmpdir(), 'qa-s911-')), internal_qa_emit: true, comparison_run_id: 'cmp-2', compared_take_ids: ['only1'], comparison_raw_data: { comparison_run_executed: false } });
     expect(out.written).toBe(false);
     expect(out.emitted_artefact_ids).toEqual([]);
+  });
+
+  it('persists comparison_run_id to manifest and qa acceptance metrics when comparison artefacts are emitted', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'take-root3',
+      take_id: 'root3',
+      analysis_run_id: 'take-root3',
+      comparison_run_id: null,
+      compared_take_ids: ['root3', 'root4'],
+      root_dir: root,
+      internal_qa_emit: true,
+      emitted_artefact_ids: [],
+    });
+    const out = await emitComparisonRuntimeArtifactsWithManifestReconciliation({
+      run_id: 'take-root3',
+      take_id: 'root3',
+      root_take_id: 'root3',
+      analysis_run_id: 'take-root3',
+      comparison_run_id: 'cmp-root3',
+      compared_take_ids: ['root3', 'root4'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'root3' } },
+      suppression_trace: { suppression_decision: 'allowed' },
+      same_video_repeatability_trace: { same_video_detected: false },
+      route_variance_trace: { route_variance_detected: false },
+    });
+    expect(out.written).toBe(true);
+    expect(out.comparison_run_id).toBe('cmp-root3');
+    expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    const manifest = JSON.parse(await readFile(path.join(root, 'take-root3', 'manifest.json'), 'utf8'));
+    expect(manifest.comparison_run_id).toBe('cmp-root3');
+    const metrics = JSON.parse(await readFile(path.join(root, 'take-root3', 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(metrics.comparison_run_id).toBe('cmp-root3');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 });
 
