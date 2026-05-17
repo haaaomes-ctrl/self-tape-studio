@@ -221,6 +221,30 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('gate:release appears to be a no-op');
   });
 
+  it('does not count validator text in shell comments', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-v3-gates.mjs # node scripts/validate-protected-areas.mjs\nnode scripts/validate-storage-bundle.mjs',
+    });
+    expect(failures.join('\n')).toContain('missing protected-area validation coverage');
+  });
+
+  it('does not count printf validator-looking text as executable coverage', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-protected-areas.mjs && printf \"node scripts/validate-storage-bundle.mjs\" && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('missing Storage bundle validation coverage');
+  });
+
+  it('does not count node -e output as test:contracts coverage', () => {
+    const failures = runWithScripts({
+      'test:contracts': "node -e \"console.log('vitest run src/server/__tests__/v3-contracts.test.ts')\"",
+      'gate:release': 'node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('test:contracts missing contract test execution coverage');
+  });
+
   it('fails when newline-separated direct validators are used', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
@@ -457,6 +481,35 @@ describe('validate-v3-gates script integrity', () => {
       workflowOverride: { gatekeeper: 'jobs:\n  gatekeeper:\n    steps:\n      - run: npm run gate:release || true\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: '- run: npm run test:contracts', build: '- run: npm run build' },
     });
     expect(failures.join('\n')).toContain('failure-swallowing');
+  });
+
+  it('fails when gatekeeper workflow is missing pull_request trigger', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'on:\n  push:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: 'on:\n  pull_request:', build: 'on:\n  pull_request:' },
+    });
+    expect(failures.join('\n')).toContain('gatekeeper workflow missing pull_request trigger');
+  });
+
+  it('fails when contracts/build workflows are missing pull_request trigger', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49', contracts: 'on:\n  push:', build: 'on:\n  workflow_dispatch:' },
+    });
+    const output = failures.join('\n');
+    expect(output).toContain('contracts workflow missing pull_request trigger');
+    expect(output).toContain('build workflow missing pull_request trigger');
+  });
+
+  it('fails when gatekeeper sets protected-area exceptions from workflow env', () => {
+    const failures = validateV3Gates({
+      cwd: process.cwd(),
+      packageJsonOverride: { scripts: { 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-v3-gates.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' } } as any,
+      workflowOverride: { gatekeeper: 'on:\n  pull_request:\njobs:\n  gatekeeper:\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n      - run: npm run gate:release\n        env:\n          GITHUB_PR_NUMBER: 49\n          PROTECTED_AREA_EXCEPTIONS_FILE: ./repo-file.json', contracts: 'on:\n  pull_request:', build: 'on:\n  pull_request:' },
+    });
+    expect(failures.join('\n')).toContain('must not set protected-area exception env vars');
   });
 
   it('fails closed on multiline gatekeeper run blocks', () => {

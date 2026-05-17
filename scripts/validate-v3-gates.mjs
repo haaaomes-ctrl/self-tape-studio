@@ -74,20 +74,27 @@ function normalizeCommandContinuations(command) {
   return String(command).replace(/&&\s*\\?\s*\r?\n\s*/g, ' && ');
 }
 
+function stripShellComments(command) {
+  return String(command)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+#.*$/, ''))
+    .join('\n');
+}
+
 function containsNonPropagatingSeparator(command) {
   const normalized = normalizeCommandContinuations(command);
   return /(^|[^|]);/.test(normalized) || /\|\s*\w+/.test(normalized) || /(^|[^&])&(?!&)/.test(normalized) || /\r?\n/.test(normalized);
 }
 
 function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
-  const normalized = normalizeCommandContinuations(expandedCommand);
+  const normalized = normalizeCommandContinuations(stripShellComments(expandedCommand));
   return normalized
     .split(/&&/)
     .some((segment) => validatorRegex.test(segment) && !commandContainsNoOpGuard(segment) && !containsNonPropagatingSeparator(segment));
 }
 
 function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
-  const normalized = normalizeCommandContinuations(expandedCommand);
+  const normalized = normalizeCommandContinuations(stripShellComments(expandedCommand));
   return normalized
     .split(/&&/)
     .some((segment) => validatorRegex.test(segment) && (commandContainsNoOpGuard(segment) || containsNonPropagatingSeparator(segment)));
@@ -168,10 +175,36 @@ function hasExecutableRunStep(steps, commandRegex) {
 }
 
 function isFailurePropagatingRun(run) {
-  if (/^\s*echo\b/i.test(run)) return false;
+  const stripped = stripShellComments(run).trim();
+  if (/^\s*echo\b/i.test(stripped)) return false;
+  if (/^\s*printf\b/i.test(stripped)) return false;
+  if (/^\s*node\s+-e\b/i.test(stripped)) return false;
   if (/^\s*!\s*/.test(run)) return false;
-  if (/(\|\||;|\||(^|[^&])&(?!&)|(^|[^\&])\n(?!\s*&&))/m.test(run)) return false;
+  if (/(\|\||;|\||(^|[^&])&(?!&)|(^|[^\&])\n(?!\s*&&))/m.test(stripped)) return false;
   return true;
+}
+
+function workflowHasPullRequestTrigger(workflowText) {
+  return /(?:^|\n)\s*on:\s*(?:\n[^\n]*)*?\n\s*pull_request\s*:/m.test(workflowText)
+    || /(?:^|\n)\s*on:\s*\[[^\]]*\bpull_request\b[^\]]*\]/m.test(workflowText)
+    || /(?:^|\n)\s*on:\s*['"]?pull_request['"]?\s*$/m.test(workflowText);
+}
+
+function workflowHasCheckoutFetchDepthZero(workflowText) {
+  const lines = workflowText.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*#/.test(line)) continue;
+    if (/uses:\s*actions\/checkout@/i.test(line)) {
+      for (let j = i + 1; j < lines.length; j += 1) {
+        if (/^\s*#/.test(lines[j])) continue;
+        if (/^\s*-\s+/.test(lines[j])) break;
+        if (/^\s*uses:\s*/.test(lines[j])) break;
+        if (/^\s*fetch-depth:\s*0\s*$/.test(lines[j])) return true;
+      }
+    }
+  }
+  return false;
 }
 
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, workflowOverride } = {}) {
@@ -236,7 +269,7 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
   if (scripts['test:contracts']) {
     const { expanded: expandedTest } = collectScriptExpansion(scripts, 'test:contracts');
     if (hasNoOpOnly(expandedTest)) failures.push('test:contracts appears to be a no-op');
-    const normalizedTest = normalizeCommandContinuations(expandedTest);
+    const normalizedTest = normalizeCommandContinuations(stripShellComments(expandedTest));
     const hasExecutableCoverage = normalizedTest.split(/&&/).some((segment) => {
       const s = segment.trim();
       if (!s) return false;
@@ -248,7 +281,7 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
   }
 
   if (scripts['gate:release']) {
-    const rawGateRelease = scripts['gate:release'];
+    const rawGateRelease = stripShellComments(scripts['gate:release']);
     const { expanded: expandedRelease, missingTargets } = collectScriptExpansion(scripts, 'gate:release');
     const normalizedRelease = normalizeCommandContinuations(expandedRelease);
     if (hasNoOpOnly(expandedRelease)) failures.push('gate:release appears to be a no-op');
@@ -289,25 +322,37 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
 
   if (gatekeeperWorkflow) {
     const steps = extractRunSteps(gatekeeperWorkflow);
+    if (!workflowHasPullRequestTrigger(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing pull_request trigger');
     if (!hasExecutableRunStep(steps, /npm run gate:release/)) failures.push('gatekeeper workflow missing npm run gate:release');
-    if (!/fetch-depth:\s*0/.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing fetch-depth: 0');
+    if (!workflowHasCheckoutFetchDepthZero(gatekeeperWorkflow)) failures.push('gatekeeper workflow missing checkout fetch-depth: 0');
     const gateStep = steps.find((s) => /npm run gate:release/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!gateStep || (!('GITHUB_PR_NUMBER' in gateStep.env) && !('PR_NUMBER' in gateStep.env))) failures.push('gatekeeper workflow missing PR number env for gate:release');
+    if (gateStep && ('PROTECTED_AREA_EXCEPTIONS_FILE' in gateStep.env || 'PROTECTED_AREA_EXCEPTIONS_JSON' in gateStep.env)) {
+      failures.push('gatekeeper workflow must not set protected-area exception env vars from PR-controlled workflow text');
+    }
     if (gateStep && !isFailurePropagatingRun(gateStep.run)) failures.push('gatekeeper workflow gate:release run step is failure-swallowing');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('gatekeeper workflow uses unsupported multiline run format');
+    if (/continue-on-error:\s*true/i.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow gate:release step must not use continue-on-error: true');
+    if (/if:\s*(false|\$\{\{\s*false\s*\}\})/i.test(gatekeeperWorkflow)) failures.push('gatekeeper workflow gate:release step must not be disabled by if:false');
   }
   if (contractsWorkflow) {
     const steps = extractRunSteps(contractsWorkflow);
+    if (!workflowHasPullRequestTrigger(contractsWorkflow)) failures.push('contracts workflow missing pull_request trigger');
     const step = steps.find((s) => /npm run test:contracts/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!step) failures.push('contracts workflow missing npm run test:contracts');
     else if (!isFailurePropagatingRun(step.run)) failures.push('contracts workflow test:contracts run step is failure-swallowing');
+    if (/continue-on-error:\s*true/i.test(contractsWorkflow)) failures.push('contracts workflow critical steps must not use continue-on-error: true');
+    if (/if:\s*(false|\$\{\{\s*false\s*\}\})/i.test(contractsWorkflow)) failures.push('contracts workflow critical steps must not be disabled by if:false');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('contracts workflow uses unsupported multiline run format');
   }
   if (buildWorkflow) {
     const steps = extractRunSteps(buildWorkflow);
+    if (!workflowHasPullRequestTrigger(buildWorkflow)) failures.push('build workflow missing pull_request trigger');
     const step = steps.find((s) => /npm run build/.test(s.run) && !/^\s*echo\b/i.test(s.run));
     if (!step) failures.push('build workflow missing npm run build');
     else if (!isFailurePropagatingRun(step.run)) failures.push('build workflow build run step is failure-swallowing');
+    if (/continue-on-error:\s*true/i.test(buildWorkflow)) failures.push('build workflow critical steps must not use continue-on-error: true');
+    if (/if:\s*(false|\$\{\{\s*false\s*\}\})/i.test(buildWorkflow)) failures.push('build workflow critical steps must not be disabled by if:false');
     if (steps.some((s) => s.run === '__UNSUPPORTED_MULTILINE__')) failures.push('build workflow uses unsupported multiline run format');
   }
 
