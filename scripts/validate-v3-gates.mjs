@@ -85,8 +85,15 @@ function hasFailureSwallowedValidator(expandedCommand, validatorRegex) {
     .some((segment) => validatorRegex.test(segment) && (commandContainsNoOpGuard(segment) || containsNonPropagatingSeparator(segment)));
 }
 
-export function collectScriptExpansion(scripts, start, visited = new Set()) {
-  if (!scripts[start] || visited.has(start)) return '';
+export function collectScriptExpansion(scripts, start, state = {}) {
+  const visited = state.visited ?? new Set();
+  const missingTargets = state.missingTargets ?? new Set();
+
+  if (!scripts[start]) {
+    missingTargets.add(start);
+    return { expanded: '', missingTargets, visited };
+  }
+  if (visited.has(start)) return { expanded: '', missingTargets, visited };
   visited.add(start);
 
   const command = scripts[start];
@@ -94,11 +101,11 @@ export function collectScriptExpansion(scripts, start, visited = new Set()) {
   const runRefs = extractNpmRunTargets(command);
 
   for (const ref of runRefs) {
-    expanded += `
-${collectScriptExpansion(scripts, ref, visited)}`;
+    const child = collectScriptExpansion(scripts, ref, { visited, missingTargets });
+    if (child.expanded) expanded += `\n${child.expanded}`;
   }
 
-  return expanded;
+  return { expanded, missingTargets, visited };
 }
 
 export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {}) {
@@ -145,14 +152,17 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
   if (!scripts['gate:release']) failures.push('package.json missing gate:release script');
 
   if (scripts['test:contracts']) {
-    const expandedTest = collectScriptExpansion(scripts, 'test:contracts');
+    const { expanded: expandedTest } = collectScriptExpansion(scripts, 'test:contracts');
     if (hasNoOpOnly(expandedTest)) failures.push('test:contracts appears to be a no-op');
     if (!/vitest|test:contracts|v3-contracts\.test\.ts/i.test(expandedTest)) failures.push('test:contracts missing contract test execution coverage');
   }
 
   if (scripts['gate:release']) {
-    const expandedRelease = collectScriptExpansion(scripts, 'gate:release');
+    const { expanded: expandedRelease, missingTargets } = collectScriptExpansion(scripts, 'gate:release');
     if (hasNoOpOnly(expandedRelease)) failures.push('gate:release appears to be a no-op');
+    for (const missingTarget of missingTargets) {
+      failures.push(`gate:release references missing npm script: ${missingTarget}`);
+    }
     const protectedMatcher = /validate-protected-areas\.mjs|gate:protected/i;
     const storageMatcher = /validate-storage-bundle\.mjs|gate:storage/i;
     const v3Matcher = /validate-v3-gates\.mjs|gate:v3/i;

@@ -24,13 +24,17 @@ describe('validate-v3-gates script integrity', () => {
   });
 
   it('direct CLI invocation exits 1 when validation fails', () => {
-    const result = spawnSync('node', ['scripts/validate-v3-gates.mjs'], {
-      cwd: process.cwd(),
+    const temp = mkdtempSync(path.join(tmpdir(), 'v3-gates-cli-fail-'));
+    writeFileSync(path.join(temp, 'package.json'), JSON.stringify({ name: 'tmp', scripts: {} }, null, 2));
+    writeFileSync(path.join(temp, 'README.md'), 'stub');
+    const result = spawnSync('node', [path.join(process.cwd(), 'scripts/validate-v3-gates.mjs')], {
+      cwd: temp,
       encoding: 'utf8',
-      env: { ...process.env, QA_FORCE_TEST: '1' },
     });
-    // we cannot force failure via env directly, so simulate with temporary cwd below
-    expect([0, 1]).toContain(result.status);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('v3 gate validation failed');
+    expect(result.stderr).toContain('missing required file: AGENTS.md');
+    rmSync(temp, { recursive: true, force: true });
   });
 
   it('reports missing release-gates contract file without throwing', () => {
@@ -108,6 +112,29 @@ describe('validate-v3-gates script integrity', () => {
 
   it('fails when gate:release is missing v3 gate validation', () => {
     const failures = runWithScripts({ 'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts', 'gate:release': 'node scripts/validate-storage-bundle.mjs && node scripts/validate-protected-areas.mjs' });
+    expect(failures.join('\n')).toContain('gate:release missing v3 gate validation coverage');
+  });
+
+  it('fails when gate:release references missing npm run targets', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run --if-present gate:protected && npm run --if-present gate:storage && npm run --if-present gate:v3',
+    });
+    const output = failures.join('\n');
+    expect(output).toContain('gate:release references missing npm script: gate:protected');
+    expect(output).toContain('gate:release references missing npm script: gate:storage');
+    expect(output).toContain('gate:release references missing npm script: gate:v3');
+  });
+
+  it('passes when gate:release uses --if-present and referenced scripts exist', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run --if-present gate:protected && npm run --if-present gate:storage && npm run --if-present gate:v3',
+      'gate:protected': 'node scripts/validate-protected-areas.mjs',
+      'gate:storage': 'node scripts/validate-storage-bundle.mjs',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures).toEqual([]);
   });
 
   it('passes when gate:release expands through npm run references', () => {

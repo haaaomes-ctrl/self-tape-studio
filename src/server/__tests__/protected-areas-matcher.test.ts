@@ -67,6 +67,49 @@ describe('protected-area matchers', () => {
     }
   });
 
+  it('flags upload protected runtime paths', () => {
+    const protectedPaths = [
+      'src/routes/new.tsx',
+      'src/server/mux-upload.ts',
+      'src/server/upload-errors.ts',
+      'src/server-fns/process-take.functions.ts',
+      'src/server-fns/upload.functions.ts',
+      'src/server-fns/direct-upload.functions.ts',
+      'src/server/upload-handler.ts',
+      'src/routes/api/public/upload.ts',
+      'api/upload.ts',
+      'app/routes/upload.ts',
+      'src\\server-fns\\process-take.functions.ts',
+    ];
+
+    for (const path of protectedPaths) {
+      expect(isFlagged(path), path).toBe(true);
+    }
+  });
+
+  it('does not flag upload docs/tests/fixtures/contracts and take-only files', () => {
+    const unprotectedPaths = [
+      'src/server/__tests__/upload-utils.test.ts',
+      'src/server/__tests__/upload-utils.spec.ts',
+      'src/server/__tests__/fixtures/upload-payload.fixture.json',
+      'src/server/v3/contracts/upload-policy-contracts.ts',
+      'docs/upload-migration.md',
+      'docs/tapecoach/v3/upload-policy.md',
+      'src/server/v3/contracts/release-gates.ts',
+      'src/server/v3/contracts/take-contracts.ts',
+      'src/server/__tests__/take-contracts.test.ts',
+      'docs/take-notes.md',
+    ];
+    const contentByPath = {
+      'src/server/v3/contracts/release-gates.ts': 'export const releasePolicy = { upload_changes_allowed: false, upload_policy: "locked", upload_gate: "on" };',
+    };
+
+    for (const path of unprotectedPaths) {
+      const violations = findProtectedViolations([path], { contentByPath });
+      expect(violations, path).toHaveLength(0);
+    }
+  });
+
   it('does not flag unrelated files by report/mux matchers alone', () => {
     const unrelatedPaths = [
       'src/server/v3/brief-achievement.server.ts',

@@ -208,6 +208,76 @@ function isProtectedWebhookPath(filePath) {
   return isWebhookRuntimePath(filePath);
 }
 
+
+const explicitUploadProtectedFiles = new Set([
+  'src/routes/new.tsx',
+  'src/server/mux-upload.ts',
+  'src/server/upload-errors.ts',
+  'src/server-fns/process-take.functions.ts',
+  'src/server-fns/upload.functions.ts',
+  'src/server-fns/direct-upload.functions.ts',
+  'src/server/upload-handler.ts',
+  'src/routes/api/public/upload.ts',
+  'api/upload.ts',
+  'app/routes/upload.ts',
+]);
+
+const uploadRuntimePrefixes = [
+  'src/server/',
+  'src/server-fns/',
+  'src/routes/',
+  'api/',
+  'app/',
+];
+
+const uploadSensitiveTerms = [
+  'createupload',
+  'direct upload',
+  'upload url',
+  'uploadurl',
+  'upload_id',
+  'uploadid',
+  'signed upload',
+  'multipart upload',
+  'file upload',
+  'submit take',
+  'process take upload',
+  'storage upload',
+];
+
+function containsUploadSensitiveContent(filePath, options = {}) {
+  const contentByPath = normalizeContentMap(options.contentByPath);
+  if (contentByPath.has(filePath)) {
+    const lowered = String(contentByPath.get(filePath)).toLowerCase();
+    return uploadSensitiveTerms.some((term) => lowered.includes(term));
+  }
+  if (!existsSync(filePath)) return false;
+  try {
+    const lowered = readFileSync(filePath, 'utf8').toLowerCase();
+    return uploadSensitiveTerms.some((term) => lowered.includes(term));
+  } catch {
+    return false;
+  }
+}
+
+function isProtectedUploadPath(filePath, options = {}) {
+  const normalized = normalizePath(filePath);
+  if (isTestOrFixturePath(normalized)) return false;
+  if (normalized.includes('/contracts/')) return false;
+  if (normalized.startsWith('docs/')) return false;
+
+  if (explicitUploadProtectedFiles.has(normalized)) return true;
+  if (!isCodeFile(normalized)) return false;
+
+  const inRuntimePath = uploadRuntimePrefixes.some((prefix) => normalized.startsWith(prefix));
+  if (!inRuntimePath) return false;
+
+  const baseName = getBaseName(normalized);
+  if (baseName.includes('upload')) return true;
+
+  return containsUploadSensitiveContent(normalized, options);
+}
+
 const EXCEPTIONS_SCHEMA_VERSION = 'tapecoach_protected_area_exceptions_v1';
 
 function parseProtectedAreaExceptions() {
@@ -264,7 +334,7 @@ function applyExceptions(violations, config) {
 
 const protectedMatchers = [
   { label: 'public output/report rendering', matches: isProtectedReportPath },
-  { label: 'upload', matches: (filePath) => /(^|\/)(mux-upload|upload-errors)\.ts$/i.test(filePath) || filePath === 'src/routes/new.tsx' },
+  { label: 'upload', matches: isProtectedUploadPath },
   { label: 'Mux', matches: isProtectedMuxPath },
   { label: 'webhook', matches: isProtectedWebhookPath },
 ];
