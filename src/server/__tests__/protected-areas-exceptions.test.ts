@@ -72,7 +72,7 @@ describe('protected-area exception validation (controlled)', () => {
 
   it('future approved_at fails deterministically', () => {
     withEnv('PR_NUMBER', '49', () => {
-      const r = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], { ...baseException, approved_at: '2999-01-01T00:00:00.000Z' } as any);
+      const r = evaluateProtectedAreaGate(['src/server/webhook-handler.ts'], { ...baseException, approved_at: '2999-01-01T00:00:00.000Z' } as any, { nowMs: Date.parse('2026-05-17T00:00:00.000Z') });
       expect(r.configFailures.join('\n')).toContain('must not be in the future');
     });
   });

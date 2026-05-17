@@ -251,6 +251,7 @@ const explicitUploadProtectedFiles = new Set([
   'src/server/mux-upload.ts',
   'src/server/upload-errors.ts',
   'src/lib/upload-errors.ts',
+  'src/lib/mux-upload.ts',
   'src/server-fns/process-take.functions.ts',
   'src/server-fns/upload.functions.ts',
   'src/server-fns/direct-upload.functions.ts',
@@ -333,7 +334,8 @@ function parseProtectedAreaExceptions() {
   }
 }
 
-function validateExceptionConfig(config) {
+function validateExceptionConfig(config, options = {}) {
+  const nowMs = options.nowMs ?? Date.now();
   const failures = [];
   const allowedCategories = new Set(['public output/report rendering', 'upload', 'Mux', 'webhook', '*']);
   if (!config || typeof config !== 'object') failures.push('missing protected-area exception config object');
@@ -354,11 +356,11 @@ function validateExceptionConfig(config) {
     }
   }
   if (config?.approved_at && Number.isNaN(Date.parse(config.approved_at))) failures.push('protected-area exception approved_at is invalid');
-  if (config?.approved_at && !Number.isNaN(Date.parse(config.approved_at)) && Date.parse(config.approved_at) > Date.now()) failures.push('protected-area exception approved_at must not be in the future');
+  if (config?.approved_at && !Number.isNaN(Date.parse(config.approved_at)) && Date.parse(config.approved_at) > nowMs) failures.push('protected-area exception approved_at must not be in the future');
   if (config?.expires_at) {
     const exp = Date.parse(config.expires_at);
     if (Number.isNaN(exp)) failures.push('protected-area exception expires_at is invalid');
-    else if (exp <= Date.now()) failures.push('protected-area exception is expired');
+    else if (exp <= nowMs) failures.push('protected-area exception is expired');
   }
   const prNumber = process.env.PR_NUMBER ?? process.env.GITHUB_PR_NUMBER;
   if (!config?.pr_number) failures.push('protected-area exception missing pr_number');
@@ -372,7 +374,7 @@ function validateExceptionConfig(config) {
 
 export function evaluateProtectedAreaGate(files, exceptionConfig = null, options = {}) {
   const violations = findProtectedViolations(files, options);
-  const configFailures = exceptionConfig ? validateExceptionConfig(exceptionConfig) : [];
+  const configFailures = exceptionConfig ? validateExceptionConfig(exceptionConfig, options) : [];
   const { approved, unapproved } = exceptionConfig && !configFailures.length
     ? applyExceptions(violations, exceptionConfig)
     : { approved: [], unapproved: violations };
@@ -414,8 +416,11 @@ function git(args) {
 }
 
 function resolveMergeBaseRef() {
-  const baseRef = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : '';
+  const baseRef = process.env.GITHUB_BASE_REF;
   if (baseRef) {
+    try {
+      return git(['merge-base', 'HEAD', `origin/${baseRef}`]);
+    } catch {}
     try {
       return git(['merge-base', 'HEAD', baseRef]);
     } catch {}
@@ -435,9 +440,6 @@ function resolveMergeBaseRef() {
       return git(['merge-base', 'HEAD', ref]);
     } catch {}
   }
-  try {
-    return git(['rev-parse', 'HEAD~1']);
-  } catch {}
   throw new Error('protected-area gate cannot determine changed-file base; operator verification required');
 }
 
@@ -451,27 +453,31 @@ function loadGitBlob(ref, filePath) {
 
 export function changedEntriesFromGit() {
   const mergeBase = resolveMergeBaseRef();
-  const lines = git(['diff', '--name-status', '-M', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
+  const lines = git(['diff', '--name-status', '-M', '-C', `${mergeBase}...HEAD`]).split('\n').filter(Boolean);
   const entries = [];
   for (const line of lines) {
     const parts = line.split('\t');
     const statusRaw = parts[0] ?? '';
     const statusCode = statusRaw[0];
-    if (statusCode === 'R') {
+    if (statusCode === 'R' || statusCode === 'C') {
       const previousPath = normalizePath(parts[1] ?? '');
       const path = normalizePath(parts[2] ?? '');
       const oldContent = loadGitBlob(mergeBase, previousPath);
       const newContent = existsSync(path) ? readFileSync(path, 'utf8') : null;
-      if (!oldContent && !newContent) throw new Error(`protected-area gate cannot load renamed file content for ${previousPath} -> ${path}; operator verification required`);
-      entries.push({ status: 'renamed', previousPath, path, oldContent, newContent });
+      if ((oldContent === null || oldContent === undefined) && (newContent === null || newContent === undefined)) {
+        throw new Error(`protected-area gate cannot load ${statusCode === 'C' ? 'copied' : 'renamed'} file content for ${previousPath} -> ${path}; operator verification required`);
+      }
+      entries.push({ status: statusCode === 'C' ? 'copied' : 'renamed', previousPath, path, oldContent, newContent });
     } else if (statusCode === 'D') {
       const path = normalizePath(parts[1] ?? '');
       const oldContent = loadGitBlob(mergeBase, path);
-      if (!oldContent) throw new Error(`protected-area gate cannot load deleted file content for ${path}; operator verification required`);
+      if (oldContent === null || oldContent === undefined) throw new Error(`protected-area gate cannot load deleted file content for ${path}; operator verification required`);
       entries.push({ status: 'deleted', path, previousPath: path, oldContent, newContent: null });
     } else {
       const path = normalizePath(parts[1] ?? '');
-      entries.push({ status: statusCode === 'A' ? 'added' : 'modified', path, newContent: existsSync(path) ? readFileSync(path, 'utf8') : null });
+      const oldContent = statusCode === 'M' ? loadGitBlob(mergeBase, path) : null;
+      const newContent = existsSync(path) ? readFileSync(path, 'utf8') : null;
+      entries.push({ status: statusCode === 'A' ? 'added' : 'modified', path, oldContent, newContent });
     }
   }
   return entries;
@@ -512,8 +518,12 @@ export function findProtectedViolationsFromEntries(entries) {
     }
   };
   for (const entry of entries) {
-    addMatch(entry.path, entry.newContent ?? entry.oldContent ?? null);
-    if (entry.previousPath && entry.previousPath !== entry.path) addMatch(entry.previousPath, entry.oldContent ?? null);
+    addMatch(entry.path, entry.newContent ?? null);
+    if (entry.oldContent !== null && entry.oldContent !== undefined) addMatch(entry.path, entry.oldContent);
+    if (entry.previousPath && entry.previousPath !== entry.path) {
+      addMatch(entry.previousPath, entry.oldContent ?? null);
+      addMatch(entry.previousPath, entry.newContent ?? null);
+    }
   }
   return Array.from(violationsByFile.entries()).map(([file, labels]) => ({ file, categories: Array.from(labels), labels: Array.from(labels) }));
 }

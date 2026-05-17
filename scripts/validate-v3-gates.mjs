@@ -71,7 +71,7 @@ function commandContainsNoOpGuard(command) {
 }
 
 function containsNonPropagatingSeparator(command) {
-  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command) || /(^|[^&])&(?!&)/.test(command) || /\n/.test(command);
+  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command) || /(^|[^&])&(?!&)/.test(command) || /(^|[^\&])\n(?!\s*&&)/.test(command);
 }
 
 function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
@@ -125,7 +125,7 @@ function extractRunSteps(workflowText) {
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
     if (/^\s*#/.test(line)) continue;
-    const runMatch = line.match(/^\s*-?\s*run:\s*(.+)\s*$/);
+    const runMatch = line.match(/^\s*-\s*run:\s*(.+)\s*$/);
     if (runMatch) {
       if (/[>|]-?\s*$/.test(runMatch[1])) {
         steps.push({ run: '__UNSUPPORTED_MULTILINE__', env: {} });
@@ -163,7 +163,7 @@ function hasExecutableRunStep(steps, commandRegex) {
 function isFailurePropagatingRun(run) {
   if (/^\s*echo\b/i.test(run)) return false;
   if (/^\s*!\s*/.test(run)) return false;
-  if (/(\|\||;|\||(^|[^&])&(?!&)|\n)/.test(run)) return false;
+  if (/(\|\||;|\||(^|[^&])&(?!&)|(^|[^\&])\n(?!\s*&&))/m.test(run)) return false;
   return true;
 }
 
@@ -239,9 +239,9 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride, work
     for (const missingTarget of missingTargets) {
       failures.push(`gate:release references missing npm script: ${missingTarget}`);
     }
-    const protectedMatcher = /validate-protected-areas\.mjs/i;
-    const storageMatcher = /validate-storage-bundle\.mjs/i;
-    const v3Matcher = /validate-v3-gates\.mjs/i;
+    const protectedMatcher = /(^|[;&|\n]\s*|\s)node\s+scripts\/validate-protected-areas\.mjs(\s|$)/i;
+    const storageMatcher = /(^|[;&|\n]\s*|\s)node\s+scripts\/validate-storage-bundle\.mjs(\s|$)/i;
+    const v3Matcher = /(^|[;&|\n]\s*|\s)node\s+scripts\/validate-v3-gates\.mjs(\s|$)/i;
 
     if (!hasFailurePropagatingValidator(expandedRelease, protectedMatcher)) failures.push('gate:release missing protected-area validation coverage');
     if (!hasFailurePropagatingValidator(expandedRelease, storageMatcher)) failures.push('gate:release missing Storage bundle validation coverage');

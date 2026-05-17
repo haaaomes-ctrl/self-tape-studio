@@ -75,6 +75,7 @@ describe('protected-area matchers', () => {
       'src/server/mux-upload.ts',
       'src/server/upload-errors.ts',
       'src/lib/upload-errors.ts',
+      'src/lib/mux-upload.ts',
       'src/server-fns/process-take.functions.ts',
       'src/server-fns/upload.functions.ts',
       'src/server-fns/direct-upload.functions.ts',
@@ -150,13 +151,29 @@ describe('protected-area matchers', () => {
       { status: 'deleted', path: 'src/server-fns/start-upload.functions.ts', oldContent: 'await createUpload(); // direct upload' },
       { status: 'deleted', path: 'src/lib/schema-version-helper.ts', oldContent: 'readReportSchemaVersion(); PublicReportV3.render();' },
       { status: 'deleted', path: 'src/lib/plain-helper.ts', oldContent: 'export const ok = true;' },
+      { status: 'modified', path: 'src/server-fns/neutral-webhook.functions.ts', oldContent: 'const s = process.env.MUX_WEBHOOK_SECRET; verifyWebhook(req);', newContent: 'export const noop=true;' },
+      { status: 'modified', path: 'src/server-fns/neutral-mux.functions.ts', oldContent: 'getMux(); Mux.Video.Assets.list();', newContent: 'export const noop=true;' },
+      { status: 'modified', path: 'src/server-fns/neutral-upload.functions.ts', oldContent: 'await createUpload(); // direct upload', newContent: 'export const noop=true;' },
+      { status: 'modified', path: 'src/lib/neutral-report-helper.ts', oldContent: 'readreportschemaversion(); publicreportv3.render();', newContent: 'export const noop=true;' },
+      { status: 'modified', path: 'src/lib/neutral-clean.ts', oldContent: 'export const a=1;', newContent: 'export const b=2;' },
       { status: 'renamed', previousPath: 'src/server/webhook-handler.ts', path: 'src/server/event-handler.ts', oldContent: 'verifyWebhook(req); webhook signature;' },
+      { status: 'deleted', path: 'src/server/empty-file.ts', oldContent: '' },
+      { status: 'renamed', previousPath: 'src/server/old-empty.ts', path: 'src/server/new-empty.ts', oldContent: '', newContent: '' },
+      { status: 'copied', previousPath: 'src/server/webhook-handler.ts', path: 'src/server/event-copy.ts', oldContent: 'verifyWebhook(req); webhook signature;', newContent: 'verifyWebhook(req); webhook signature;' },
+      { status: 'copied', previousPath: 'src/lib/plain-helper.ts', path: 'src/lib/plain-helper-copy.ts', oldContent: 'export const ok = true;', newContent: 'export const ok = true;' },
     ] as any);
     expect(violations.find((v) => v.file.includes('event-handler.functions.ts'))?.categories).toContain('webhook');
     expect(violations.find((v) => v.file.includes('process-video.functions.ts'))?.categories).toContain('Mux');
     expect(violations.find((v) => v.file.includes('start-upload.functions.ts'))?.categories).toContain('upload');
     expect(violations.find((v) => v.file.includes('schema-version-helper.ts'))?.categories).toContain('public output/report rendering');
     expect(violations.find((v) => v.file.includes('plain-helper.ts'))).toBeUndefined();
+    expect(violations.find((v) => v.file.includes('neutral-clean.ts'))).toBeUndefined();
+    expect(violations.find((v) => v.file.includes('neutral-webhook.functions.ts'))?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file.includes('neutral-mux.functions.ts'))?.categories).toContain('Mux');
+    expect(violations.find((v) => v.file.includes('neutral-upload.functions.ts'))?.categories).toContain('upload');
+    expect(violations.find((v) => v.file.includes('neutral-report-helper.ts'))?.categories).toContain('public output/report rendering');
+    expect(violations.find((v) => v.file.includes('event-copy.ts'))?.categories).toContain('webhook');
+    expect(violations.find((v) => v.file.includes('plain-helper-copy.ts'))).toBeUndefined();
     expect(violations.find((v) => v.file === 'src/server/webhook-handler.ts' || v.file === 'src/server/event-handler.ts')?.categories).toContain('webhook');
   });
   it('does not flag unrelated files by report/mux matchers alone', () => {

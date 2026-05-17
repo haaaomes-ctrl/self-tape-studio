@@ -39,6 +39,7 @@ This document is the single cumulative, source-controlled lessons document for T
 - Preserve non-comparison manifest state.
 - Prove Level 2 remains `not_accepted` and public/production gates remain blocked.
 - Full wildcard failures must be classified even if not used as merge gate.
+- Run `npm run test:contracts` and `npm run build` as default local gates unless a narrower issue gate is documented.
 
 ## Codex prompt design guardrails
 - Avoid broad all-in-one prompts for high-risk architecture changes.
