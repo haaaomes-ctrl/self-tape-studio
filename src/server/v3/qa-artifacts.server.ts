@@ -535,7 +535,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   };
 }
 
-export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterOptions) {
+export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterOptions): Promise<any> {
   const internal_qa_emit = options.internal_qa_emit ?? false;
   if (!internal_qa_emit) return { written: false };
   const root = options.root_dir ?? DEFAULT_ROOT;
