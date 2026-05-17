@@ -1,0 +1,23 @@
+export const setupTask1S9StorageContract = {
+  expected_file_count_when_technique_and_score_sources_exist: 12,
+  required_files: [
+    'inputs/input_record.json',
+    'inputs/submission.json',
+    'inputs/take.json',
+    'reports/raw_report.json',
+    'resolver/resolver_output.json',
+    'resolver/TruthStateMap.json',
+    'traces/EvidenceAnchors.json',
+    'traces/PublicClaimTrace.json',
+    'traces/TechniqueObservationTrace.json',
+    'traces/ScoreTrace.json',
+    'manifest.json',
+    'qa/acceptance_metrics.json',
+  ],
+  manifest_required: true,
+  acceptance_metrics_required: true,
+  contract_scope: 'setup_task1_bootstrap_source_contract_only',
+  runtime_artifacts_validated_by_default: false,
+  not_live_storage_proof: true,
+  current_s9_bundle_emission_not_level2_acceptance: true,
+} as const;
