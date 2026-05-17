@@ -2,13 +2,18 @@
 
 Admin URL: `https://tapecoach.co.uk/admin/storage-downloads`
 
-Local path: `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent`
-
-Env var: `TAPECOACH_AGENT_DOWNLOAD_DIR="/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent"`
+## Parameterised local download directory
+- Storage-download jobs must use an operator-configured absolute local download directory.
+- The directory is supplied through `TAPECOACH_AGENT_DOWNLOAD_DIR`.
+- Current operator-approved value (Beth Willars Mac example/default): `/Users/bethwillars/Documents/AI/Apps/Tape Coach/Agent`.
+- This Beth Willars value is an example/default, not a universal required path.
+- Future operators may set a different absolute local path.
+- Implementations must read the env var and must not hardcode the Beth Willars path.
 
 Runner labels: `self-hosted`, `macOS`, `tapecoach-agent`, `storage-download`.
 
 ## Controls
+- If `TAPECOACH_AGENT_DOWNLOAD_DIR` is missing, empty, not absolute, not writable, points inside the repository, or cannot be accessed by the self-hosted runner, the lane must produce `operator-verification-required`.
 - Downloaded artefacts must not be committed.
 - Private runtime artefacts must not be uploaded to GitHub by default.
 - Admin credentials must never be printed.
@@ -20,7 +25,7 @@ Storage-download review does not auto-pass Level 2/3/4, `production_safe`, publi
 
 ## Lane definition
 - Download: scoped storage artefacts required for QA review.
-- Store: local operator-controlled directory above.
+- Store: operator-configured local directory from `TAPECOACH_AGENT_DOWNLOAD_DIR`.
 - Cleanup/retention: local policy record (retain only as needed for QA traceability).
 - Summary generation: sanitized local summary (counts/findings/outcomes), no private payload upload.
 - Never commit: downloaded assets, credentials, private runtime traces.

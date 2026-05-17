@@ -18,7 +18,19 @@ Cover no self-approval, PR-scoped approval, stale/wrong PR approval, duplicate e
 Cover operator publish requirement, no bypass of GitHub checks/README/public-private gates, post-publish tests, failed publish QA loop, and no release approval from Lovable alone.
 
 ## Storage-download QA
-Cover local runner labels/path, no artefact commits, no secret printing, `operator-verification-required` on auth/path/env failure, private artefact handling, review summary limits.
+Cover local runner labels, parameterised local path controls, no artefact commits, no secret printing, and review summary limits.
+
+Required cases:
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` missing.
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` empty.
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` not absolute.
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` points inside the repository.
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` path does not exist.
+- `TAPECOACH_AGENT_DOWNLOAD_DIR` exists but is not writable.
+- Path is valid on one operator machine but invalid on another.
+- Private downloads are accidentally committed.
+- Only summaries are exposed unless explicitly approved.
+- `operator-verification-required` on auth/path/env failure.
 
 ## Release state invariants
 Always enforce: Level 2 `not_accepted`, `production_safe` blocked, `public_scoring` blocked, `public_technique_authority` blocked, no public output change unless scoped, no upload/Mux/webhook implementation change unless scoped.

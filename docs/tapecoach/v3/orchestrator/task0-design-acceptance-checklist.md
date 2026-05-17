@@ -17,3 +17,4 @@
 - [ ] production_safe remains blocked.
 - [ ] public_scoring remains blocked.
 - [ ] public_technique_authority remains blocked.
+- [ ] Storage-download path is parameterised via `TAPECOACH_AGENT_DOWNLOAD_DIR` and not hardcoded as a universal operator path.
