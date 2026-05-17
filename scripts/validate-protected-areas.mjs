@@ -179,7 +179,7 @@ function isProtectedReportPath(filePath, options = {}) {
   if (filePath.includes('/contracts/')) return false;
 
   const inReportArea = reportSensitiveAreaPrefixes.some((prefix) => filePath.startsWith(prefix));
-  if (!inReportArea || !isTypeScriptPath(filePath)) return false;
+  if (!inReportArea || !isCodeFile(filePath)) return false;
 
   const baseName = getBaseName(filePath);
   if (reportFilenameHints.some((hint) => baseName.includes(hint))) return true;
@@ -279,6 +279,7 @@ function isProtectedUploadPath(filePath, options = {}) {
 }
 
 const EXCEPTIONS_SCHEMA_VERSION = 'tapecoach_protected_area_exceptions_v1';
+const ALLOWED_APPROVAL_SOURCES = new Set(['operator', 'github_environment', 'gate_approval_issue', 'manual_ci_input']);
 
 function parseProtectedAreaExceptions() {
   const rawJson = process.env.PROTECTED_AREA_EXCEPTIONS_JSON;
@@ -299,12 +300,22 @@ function validateExceptionConfig(config) {
   if (!config || typeof config !== 'object') failures.push('missing protected-area exception config object');
   if (config?.schema_version !== EXCEPTIONS_SCHEMA_VERSION) failures.push(`unsupported schema_version: expected ${EXCEPTIONS_SCHEMA_VERSION}`);
   if (!config?.approval_source) failures.push('protected-area exception missing approval_source');
+  if (config?.approval_source && !ALLOWED_APPROVAL_SOURCES.has(config.approval_source)) failures.push('protected-area exception approval_source is invalid');
   if (!config?.approved_by) failures.push('protected-area exception missing approved_by');
+  if (!config?.approved_at) failures.push('protected-area exception missing approved_at');
+  if (!config?.expires_at) failures.push('protected-area exception missing expires_at');
   if (!config?.reason) failures.push('protected-area exception missing reason');
   if (!Array.isArray(config?.exceptions)) failures.push('protected-area exception missing exceptions[]');
+  if (config?.approved_at && Number.isNaN(Date.parse(config.approved_at))) failures.push('protected-area exception approved_at is invalid');
   if (config?.expires_at) {
     const exp = Date.parse(config.expires_at);
-    if (Number.isNaN(exp) || exp <= Date.now()) failures.push('protected-area exception is expired');
+    if (Number.isNaN(exp)) failures.push('protected-area exception expires_at is invalid');
+    else if (exp <= Date.now()) failures.push('protected-area exception is expired');
+  }
+  const prNumber = process.env.PR_NUMBER ?? process.env.GITHUB_PR_NUMBER;
+  if (prNumber) {
+    if (!config?.pr_number) failures.push('protected-area exception missing pr_number for current PR');
+    else if (String(config.pr_number) !== String(prNumber)) failures.push('protected-area exception pr_number does not match current PR');
   }
   return failures;
 }

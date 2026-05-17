@@ -205,6 +205,59 @@ describe('validate-v3-gates script integrity', () => {
     expect(failures.join('\n')).toContain('gate:release missing Storage bundle validation coverage');
   });
 
+  it('fails when test:contracts is echo with vitest-looking text', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'echo "vitest run src/server/__tests__/v3-contracts.test.ts"',
+      'gate:release': 'node scripts/validate-protected-areas.mjs && node scripts/validate-storage-bundle.mjs && node scripts/validate-v3-gates.mjs',
+    });
+    expect(failures.join('\n')).toContain('test:contracts appears to be a no-op');
+  });
+
+  it('fails when gate:release uses echo wrappers for validator-looking text', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'echo "node scripts/validate-protected-areas.mjs" && echo "node scripts/validate-storage-bundle.mjs" && echo "node scripts/validate-v3-gates.mjs"',
+    });
+    expect(failures.join('\n')).toContain('gate:release appears to be a no-op');
+  });
+
+  it('fails when newline-separated direct validators are used', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'node scripts/validate-protected-areas.mjs\nnode scripts/validate-storage-bundle.mjs\nnode scripts/validate-v3-gates.mjs',
+    });
+    const output = failures.join('\n');
+    expect(output).toContain('newline chaining');
+  });
+
+  it('fails when newline-separated npm-run validators are used', () => {
+    const failures = runWithScripts({
+      'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
+      'gate:release': 'npm run gate:protected\nnpm run gate:storage\nnpm run gate:v3',
+      'gate:protected': 'node scripts/validate-protected-areas.mjs',
+      'gate:storage': 'node scripts/validate-storage-bundle.mjs',
+      'gate:v3': 'node scripts/validate-v3-gates.mjs',
+    });
+    const output = failures.join('\n');
+    expect(output).toContain('newline chaining');
+  });
+
+  it('reports structured failure when README.md is missing', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'v3-gates-missing-readme-'));
+    writeFileSync(path.join(temp, 'package.json'), JSON.stringify({ scripts: {} }));
+    const failures = validateV3Gates({ cwd: temp });
+    expect(failures.join('\n')).toContain('missing required file: README.md');
+    rmSync(temp, { recursive: true, force: true });
+  });
+
+  it('reports structured failure when package.json is missing', () => {
+    const temp = mkdtempSync(path.join(tmpdir(), 'v3-gates-missing-pkg-'));
+    writeFileSync(path.join(temp, 'README.md'), 'stub');
+    const failures = validateV3Gates({ cwd: temp });
+    expect(failures.join('\n')).toContain('missing required file: package.json');
+    rmSync(temp, { recursive: true, force: true });
+  });
+
   it('fails when protected-area validator failure is swallowed with || true', () => {
     const failures = runWithScripts({
       'test:contracts': 'vitest run src/server/__tests__/v3-contracts.test.ts',
@@ -221,7 +274,8 @@ describe('validate-v3-gates script integrity', () => {
       'gate:storage': 'node scripts/validate-storage-bundle.mjs',
       'gate:v3': 'node scripts/validate-v3-gates.mjs',
     });
-    expect(failures.join('\n')).toContain('gate:release protected-area validator is present but failure is swallowed');
+    const output = failures.join('\n');
+    expect(output).toContain('gate:release protected-area validator is present but failure is swallowed');
   });
 
   it('fails when storage validator is swallowed by || echo ok', () => {

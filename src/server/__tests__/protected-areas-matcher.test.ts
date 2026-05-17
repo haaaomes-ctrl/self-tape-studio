@@ -22,6 +22,8 @@ describe('protected-area matchers', () => {
       'src/server/report-quality.server.ts',
       'src/lib/report-schema.ts',
       'src/lib/report-renderer.ts',
+      'src/lib/report-renderer.js',
+      'src/lib/report-renderer.mjs',
       'src/lib/report-output.ts',
       'src/lib/public-report-schema.ts',
       'src/utils/report-schema.ts',

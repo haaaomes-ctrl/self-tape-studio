@@ -13,10 +13,8 @@ const NO_OP_PATTERNS = [
 function hasNoOpOnly(command) {
   const trimmed = command.trim();
   if (!trimmed) return true;
-  if (NO_OP_PATTERNS.some((p) => p.test(trimmed)) && !/validate-|vitest|node\s+scripts\//i.test(trimmed)) {
-    return true;
-  }
-  return false;
+  const segments = trimmed.split(/&&/).map((s) => s.trim()).filter(Boolean);
+  return segments.every((segment) => NO_OP_PATTERNS.some((p) => p.test(segment)));
 }
 
 const SEPARATORS = new Set(['&&', '||', ';', '|']);
@@ -70,7 +68,7 @@ function commandContainsNoOpGuard(command) {
 }
 
 function containsNonPropagatingSeparator(command) {
-  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command);
+  return /(^|[^|]);/.test(command) || /\|\s*\w+/.test(command) || /\n/.test(command);
 }
 
 function hasFailurePropagatingValidator(expandedCommand, validatorRegex) {
@@ -102,7 +100,7 @@ export function collectScriptExpansion(scripts, start, state = {}) {
 
   for (const ref of runRefs) {
     const child = collectScriptExpansion(scripts, ref, { visited, missingTargets });
-    if (child.expanded) expanded += `\n${child.expanded}`;
+    if (child.expanded) expanded += ` && ${child.expanded}`;
   }
 
   return { expanded, missingTargets, visited };
@@ -115,6 +113,7 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
   const read = (relativePath) => readFileSync(file(relativePath), 'utf8');
 
   const requiredFiles = [
+    'README.md', 'package.json',
     'AGENTS.md', 'env-vars.md', '.github/ISSUE_TEMPLATE/release-slice.yml',
     '.github/ISSUE_TEMPLATE/protected-area-exception.yml', '.github/pull_request_template.md',
     '.github/workflows/contracts.yml', '.github/workflows/build.yml', '.github/workflows/gatekeeper.yml',
@@ -131,9 +130,21 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
 
   const releaseGates = existsSync(file(releaseGatesPath)) ? read(releaseGatesPath) : '';
   const storageContract = existsSync(file(storageContractPath)) ? read(storageContractPath) : '';
-  const packageJson = packageJsonOverride ?? JSON.parse(read('package.json'));
+  let packageJson = packageJsonOverride ?? null;
+  if (!packageJson) {
+    if (existsSync(file('package.json'))) {
+      try {
+        packageJson = JSON.parse(read('package.json'));
+      } catch (error) {
+        failures.push(`invalid package.json: ${error.message}`);
+        packageJson = {};
+      }
+    } else {
+      packageJson = {};
+    }
+  }
   const scripts = packageJson.scripts ?? {};
-  const readme = read('README.md');
+  const readme = existsSync(file('README.md')) ? read('README.md') : '';
 
   const requiredGateLiterals = [
     "level2_status: 'not_accepted'", "production_safe_status: 'blocked'", "public_scoring_status: 'blocked'",
@@ -158,22 +169,31 @@ export function validateV3Gates({ cwd = process.cwd(), packageJsonOverride } = {
   }
 
   if (scripts['gate:release']) {
+    const rawGateRelease = scripts['gate:release'];
     const { expanded: expandedRelease, missingTargets } = collectScriptExpansion(scripts, 'gate:release');
     if (hasNoOpOnly(expandedRelease)) failures.push('gate:release appears to be a no-op');
     for (const missingTarget of missingTargets) {
       failures.push(`gate:release references missing npm script: ${missingTarget}`);
     }
-    const protectedMatcher = /validate-protected-areas\.mjs|gate:protected/i;
-    const storageMatcher = /validate-storage-bundle\.mjs|gate:storage/i;
-    const v3Matcher = /validate-v3-gates\.mjs|gate:v3/i;
+    const protectedMatcher = /validate-protected-areas\.mjs/i;
+    const storageMatcher = /validate-storage-bundle\.mjs/i;
+    const v3Matcher = /validate-v3-gates\.mjs/i;
 
     if (!hasFailurePropagatingValidator(expandedRelease, protectedMatcher)) failures.push('gate:release missing protected-area validation coverage');
     if (!hasFailurePropagatingValidator(expandedRelease, storageMatcher)) failures.push('gate:release missing Storage bundle validation coverage');
     if (!hasFailurePropagatingValidator(expandedRelease, v3Matcher)) failures.push('gate:release missing v3 gate validation coverage');
 
-    if (hasFailureSwallowedValidator(expandedRelease, protectedMatcher)) failures.push('gate:release protected-area validator is present but failure is swallowed');
-    if (hasFailureSwallowedValidator(expandedRelease, storageMatcher)) failures.push('gate:release Storage bundle validator is present but failure is swallowed');
-    if (hasFailureSwallowedValidator(expandedRelease, v3Matcher)) failures.push('gate:release v3 gate validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(expandedRelease, protectedMatcher)) failures.push(expandedRelease.includes('\n') ? 'gate:release protected-area validator is present but failure is swallowed by newline chaining' : 'gate:release protected-area validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(expandedRelease, storageMatcher)) failures.push(expandedRelease.includes('\n') ? 'gate:release Storage bundle validator is present but failure is swallowed by newline chaining' : 'gate:release Storage bundle validator is present but failure is swallowed');
+    if (hasFailureSwallowedValidator(expandedRelease, v3Matcher)) failures.push(expandedRelease.includes('\n') ? 'gate:release v3 gate validator is present but failure is swallowed by newline chaining' : 'gate:release v3 gate validator is present but failure is swallowed');
+    if (/\n/.test(rawGateRelease) && /(validate-protected-areas\.mjs|validate-storage-bundle\.mjs|validate-v3-gates\.mjs|npm\s+run(\-script)?\s+.*gate:)/i.test(rawGateRelease)) {
+      if (/validate-protected-areas\.mjs|gate:protected/i.test(rawGateRelease)) failures.push('gate:release protected-area validator is present but failure is swallowed by newline chaining');
+      if (/validate-storage-bundle\.mjs|gate:storage/i.test(rawGateRelease)) failures.push('gate:release Storage bundle validator is present but failure is swallowed by newline chaining');
+      if (/validate-v3-gates\.mjs|gate:v3/i.test(rawGateRelease)) failures.push('gate:release v3 gate validator is present but failure is swallowed by newline chaining');
+    }
+    if (/npm\s+run(\-script)?\s+.*gate:protected.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release protected-area validator is present but failure is swallowed');
+    if (/npm\s+run(\-script)?\s+.*gate:storage.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release Storage bundle validator is present but failure is swallowed');
+    if (/npm\s+run(\-script)?\s+.*gate:v3.*(\|\||;|\|)/i.test(rawGateRelease)) failures.push('gate:release v3 gate validator is present but failure is swallowed');
   }
 
   for (const phrase of ['Level 2 remains `not_accepted`', 'production-safe, public-scoring and public-technique-authority gates remain blocked']) {
