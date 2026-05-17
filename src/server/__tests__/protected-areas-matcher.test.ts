@@ -84,6 +84,8 @@ describe('protected-area matchers', () => {
       'src/server/__tests__/fixtures/webhook-payload.fixture.json',
       'src\\server\\__tests__\\webhook-utils.test.ts',
       'src/server/v3/contracts/webhook-policy-contracts.ts',
+      'docs/webhook-migration.md',
+      'docs/tapecoach/v3/webhook-policy.md',
     ];
 
     for (const path of unrelatedPaths) {

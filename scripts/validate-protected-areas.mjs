@@ -88,6 +88,23 @@ function isCodeFile(filePath) {
   return /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(filePath);
 }
 
+function isWebhookRuntimePath(filePath) {
+  const normalized = normalizePath(filePath);
+  if (!isCodeFile(normalized)) return false;
+  if (isTestOrFixturePath(normalized)) return false;
+  if (normalized.includes('/contracts/')) return false;
+  if (!/webhook/i.test(normalized)) return false;
+
+  return (
+    normalized.startsWith('src/routes/') ||
+    normalized.startsWith('src/server/') ||
+    normalized.startsWith('src/server-fns/') ||
+    normalized.startsWith('src/functions/') ||
+    normalized.startsWith('api/') ||
+    normalized.startsWith('app/')
+  );
+}
+
 function normalizeContentMap(contentByPath = {}) {
   const normalized = new Map();
   for (const [filePath, content] of Object.entries(contentByPath)) {
@@ -188,9 +205,61 @@ function isProtectedMuxPath(filePath, options = {}) {
 }
 
 function isProtectedWebhookPath(filePath) {
-  if (isTestOrFixturePath(filePath)) return false;
-  if (filePath.includes('/contracts/')) return false;
-  return /webhook/i.test(filePath);
+  return isWebhookRuntimePath(filePath);
+}
+
+const EXCEPTIONS_SCHEMA_VERSION = 'tapecoach_protected_area_exceptions_v1';
+
+function parseProtectedAreaExceptions() {
+  const rawJson = process.env.PROTECTED_AREA_EXCEPTIONS_JSON;
+  const filePath = process.env.PROTECTED_AREA_EXCEPTIONS_FILE;
+  if (!rawJson && !filePath) return { config: null, error: null };
+
+  try {
+    const source = rawJson ? rawJson : readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(source);
+    return { config: parsed, error: null };
+  } catch (error) {
+    return { config: null, error: `invalid protected-area exception JSON: ${error.message}` };
+  }
+}
+
+function validateExceptionConfig(config) {
+  const failures = [];
+  if (!config || typeof config !== 'object') failures.push('missing protected-area exception config object');
+  if (config?.schema_version !== EXCEPTIONS_SCHEMA_VERSION) failures.push(`unsupported schema_version: expected ${EXCEPTIONS_SCHEMA_VERSION}`);
+  if (!config?.approval_source) failures.push('protected-area exception missing approval_source');
+  if (!config?.approved_by) failures.push('protected-area exception missing approved_by');
+  if (!config?.reason) failures.push('protected-area exception missing reason');
+  if (!Array.isArray(config?.exceptions)) failures.push('protected-area exception missing exceptions[]');
+  if (config?.expires_at) {
+    const exp = Date.parse(config.expires_at);
+    if (Number.isNaN(exp) || exp <= Date.now()) failures.push('protected-area exception is expired');
+  }
+  return failures;
+}
+
+function applyExceptions(violations, config) {
+  if (!config) return { approved: [], unapproved: violations };
+  const exceptionMap = new Map();
+  for (const ex of config.exceptions ?? []) {
+    if (!ex?.file || !Array.isArray(ex?.categories)) continue;
+    exceptionMap.set(normalizePath(ex.file), new Set(ex.categories));
+  }
+
+  const approved = [];
+  const unapproved = [];
+  for (const violation of violations) {
+    const allowed = exceptionMap.get(violation.file);
+    if (!allowed) {
+      unapproved.push(violation);
+      continue;
+    }
+    const allCategoriesAllowed = violation.categories.every((c) => allowed.has('*') || allowed.has(c));
+    if (allCategoriesAllowed) approved.push(violation);
+    else unapproved.push(violation);
+  }
+  return { approved, unapproved };
 }
 
 const protectedMatchers = [
@@ -266,13 +335,42 @@ export function findProtectedViolations(files, options = {}) {
 function run() {
   const changed = changedFiles();
   const violations = findProtectedViolations(changed);
+  const parsed = parseProtectedAreaExceptions();
 
-  if (violations.length) {
+  if (parsed.error) {
+    console.error('Protected-area gate failed:');
+    console.error(`- ${parsed.error}`);
+    process.exit(1);
+  }
+
+  let approved = [];
+  let unapproved = violations;
+  if (parsed.config) {
+    const configFailures = validateExceptionConfig(parsed.config);
+    if (configFailures.length) {
+      console.error('Protected-area gate failed:');
+      for (const failure of configFailures) console.error(`- ${failure}`);
+      process.exit(1);
+    }
+    ({ approved, unapproved } = applyExceptions(violations, parsed.config));
+  }
+
+  if (unapproved.length) {
     console.error('Protected-area gate failed. Operator approval is required for:');
-    for (const violation of violations) {
+    for (const violation of unapproved) {
       console.error(`- ${JSON.stringify(violation)}`);
     }
+    if (approved.length) {
+      console.error('Approved protected-area exceptions:');
+      for (const violation of approved) console.error(`- ${JSON.stringify(violation)}`);
+    }
     process.exit(1);
+  }
+
+  if (approved.length) {
+    console.log('Protected-area gate passed with approved exceptions.');
+    console.log(JSON.stringify({ decision: 'passed', operator_required: false, approved_exceptions: approved, unapproved_violations: [] }));
+    return;
   }
 
   console.log('Protected-area gate passed');
