@@ -4,6 +4,7 @@
 **Purpose:** define the requirements that ChatGPT / implementation agents must follow when analysing self-tapes, calibrating scores, producing reports, generating comparisons and validating output quality.  
 **Supersedes:** the current README and any earlier report design notes.  
 **Language:** UK English.
+**Architecture review update:** repo-aligned requirements hardening, 18 May 2026.
 
 ## Source hierarchy and delivery documents
 
@@ -74,6 +75,128 @@ This document defines the target redesigned behaviour.
 
 ---
 
+
+## 0A. Architecture, repo alignment and current implementation boundary
+
+This README is both the product requirements source and the engineering contract for the next implementation slices. It must therefore distinguish:
+
+- **target requirements**: what TapeCoach must eventually do;
+- **current repo implementation**: what the current `main` branch can already emit or enforce;
+- **first-pass internal artefacts**: useful QA/debug output that is not yet Level 2 proof;
+- **accepted release evidence**: runtime proof that can satisfy a named gate.
+
+### 0A.1 Current repo facts this README must preserve
+
+The current repository contains a dark-mode internal QA artefact spine. It is useful and should not be regressed, but it is not release acceptance.
+
+Current source-level facts:
+
+- `src/server/process-take.server.ts` is a server-only processing module and imports the v3 QA artefact wiring. Public or client-callable surfaces must access it only through thin authenticated wrappers with ownership checks.
+- The current process pipeline still contains legacy report-tool fields such as `casting_headline`, `casting_insight`, `fix_first`, `overall_score`, category scores and legacy report snapshots. These fields are allowed internally only as legacy/runtime data to be scrubbed, traced or migrated. They must not become the public v3 contract.
+- `src/server/report-output-enforcement.server.ts` already performs deterministic public-output scrubbing for castability/bookability overclaims, generic unanchored language, presentation-polish merit claims and unsafe framing advice. The README must keep those rules as product requirements rather than weakening them.
+- `src/server/v3/qa-artifact-sink.server.ts` supports `file`, `storage` and `console_jsonl` sinks, uses Storage upload upsert, records `sink_write_status`, and can emit fallback JSONL logs when `QA_ARTIFACT_LOG_FALLBACK=true`.
+- `src/server/v3/qa-artifacts.server.ts` currently treats emitted, emitted-blocked, missing, deferred and not-applicable artefacts as manifest states. `failed_emission` is a target evidence state and must be mapped from failed sink writes or added to the manifest contract before Level 2 closure.
+- `src/server/v3/qa-artifacts-wiring.server.ts` contains the current canonical take/comparison identity handling. Do not reintroduce `take-take-*` identities or nested duplicated take roots.
+- `src/server-fns/internal-comparison-trigger.functions.ts` exposes an internal admin comparison trigger guarded by authentication, admin authorisation and `INTERNAL_COMPARISON_TRIGGER_ENABLED=true`. It is not a customer-facing comparison flow.
+- `docs/tapecoach/v3/engineering-lessons-and-guardrails.md` is a mandatory engineering pre-read but does not override this README.
+- Older repo notes, including QA-emitter notes that mention earlier object-key shapes such as `v3/<run_id>/<relative_path>`, are historical unless repeated in this README.
+
+### 0A.2 Target-vs-current status language
+
+Use the following language consistently in implementation notes, PRs, manifests and release-board entries:
+
+| Term | Meaning | Release effect |
+|---|---|---|
+| `target_requirement` | Required by this README but not necessarily implemented. | Drives contracts and tickets; not proof. |
+| `source_scaffold` | Source code or tests exist, but no accepted runtime bundle proves behaviour. | Does not satisfy runtime gates. |
+| `first_pass_internal` | Artefact emits from legacy/snapshot or incomplete runtime data. | Useful for QA/debug only. |
+| `real_runtime_v3` | Artefact is produced from the v3 runtime evidence spine and can be linked through resolver/truth/evidence/public-claim/gate traces. | Can satisfy a gate only if validators pass. |
+| `accepted_gate_evidence` | Runtime artefacts and validators prove a named gate. | Can support dependent release decisions. |
+| `operator_verification_required` | Source/Codex cannot inspect deployed state directly. | Requires Team G / release-governance confirmation. |
+
+Do not treat a source scaffold, helper test, patch file, local file sink artefact, screenshot, manual PDF, or first-pass internal trace as accepted runtime evidence.
+
+---
+
+## 0B. Canonical runtime pipeline and engineering contracts
+
+### 0B.1 Ordered pipeline
+
+TapeCoach must use an ordered evidence-before-judgement pipeline. Later stages must not invent, repair or infer missing facts that should have been produced by earlier stages.
+
+| Stage | Purpose | Required persisted outputs before next dependent stage |
+|---|---|---|
+| Media readiness | Confirm the uploaded media is playable and duration is known or truthfully unavailable. | `inputs/take.json`, media readiness fields, duration diagnostic. |
+| Input capture | Record supplied take, submission, selected level, audition type, brief/material presence and safe media refs. | `inputs/input_record.json`, `inputs/submission.json`, `inputs/take.json`. |
+| Resolver | Separate user-supplied, brief-supplied, observed, inferred, unavailable, conflicting and blocked context. | `resolver/resolver_output.json`, `resolver/TruthStateMap.json`. |
+| Analysis Step 1 — evidence mapping | Extract observable video/audio/material evidence without producing final readiness judgement. | `analysis/AnalysisEvidenceState.json`, evidence anchors, component evidence, assessability limits and candidate technique/brief evidence. |
+| Analysis Step 2 — judgement | Produce level-relative readiness, brief achievement, scores/bands, priorities and report data using only persisted evidence from Step 1 plus resolver/truth artefacts. | `reports/raw_report.json`, `traces/ScoreTrace.json`, `traces/TechniqueObservationTrace.json` where relevant. |
+| Claim tracing | Link public/report claims back to evidence and truth-state entries. | `traces/PublicClaimTrace.json`, updated `traces/EvidenceAnchors.json` where needed. |
+| Validation and gates | Validate schema, evidence linkage, wording, safety, UK English, public/private boundary, parity and release permissions. | `traces/ValidatorTrace.json`, `traces/GateTrace.json`, redaction/leakage/UK English results. |
+| Render | Render only the public payload permitted by `GateTrace.public_output_permissions`. | `reports/render_payload.json`, rendered report artefact, parity result. |
+| Manifest and acceptance metrics | Classify the bundle and summarise gate state. | `manifest.json`, `qa/acceptance_metrics.json`. |
+| Comparison runtime | Run only when explicitly invoked and only from persisted take-level evidence. | `comparison/comparison_invocation_record.json`, comparison raw/render/evidence-delta/suppression traces. |
+
+### 0B.2 Stage atomicity and retry policy
+
+Each stage has a commit boundary:
+
+- A stage is `complete` only when all required outputs for that stage have been written and included in the manifest or have been truthfully classified as `not_applicable`, `deferred`, `emitted_blocked` or `failed_emission`.
+- Downstream stages may not consume partially written stage output.
+- Step 2 must not run if `analysis/AnalysisEvidenceState.json` is absent, unreadable, failed, or not linked to the same `run_id`, `take_id`, `analysis_run_id` and `TruthStateMap` as the current run.
+- If Step 1 writes partial evidence anchors but fails before `AnalysisEvidenceState.json`, those partial anchors must either be deleted on retry or left classified as `failed_emission`/`orphaned_partial_step1_output`. They must not be consumed by Step 2.
+- Retried artefact emission should overwrite the same canonical object key. Appending retry-suffixed artefacts is not allowed unless the manifest declares one authoritative version.
+- Storage write retries should be bounded. If repeated writes fail within a run, the run should trip a circuit breaker, classify remaining required artefacts as `failed_emission`, emit fallback logs where configured, and stop downstream processing.
+
+### 0B.3 Media readiness and duration detection
+
+Timestamp depth, extended-run handling and some assessability rules depend on media duration. Duration must be resolved before Step 1 evidence mapping.
+
+Preferred duration sources, in order:
+
+1. trusted processed media metadata from the upload/Mux pipeline;
+2. file/container metadata from the prepared media asset;
+3. direct playable-duration probe;
+4. user-supplied duration only as low-confidence fallback.
+
+If duration cannot be resolved, the system must record `media_duration_seconds: null`, `duration_confidence: "unknown"` and apply conservative timestamp expectations without padding. A tape over 10 minutes is an `extended_run`; this is not automatically a failure, but timing exceptions and evidence-depth expectations must be recorded in `qa/acceptance_metrics.json`.
+
+### 0B.4 Schema versioning
+
+All runtime artefacts must include `schema_version` using semver-compatible project schema identifiers, for example `tapecoach_v3_manifest@1.1.0` or an equivalent stable string that can be mapped to semver.
+
+Rules:
+
+- `manifest.json` must record the schema version for every artefact family in the run bundle.
+- During active v3 delivery, validators must support N-1 schema compatibility unless a release gate explicitly declares a breaking migration.
+- Mixed-version bundles are allowed only when every artefact version is recognised and the manifest marks compatibility status.
+- Deprecated schema versions must remain readable for historical QA and rollback until the retention period expires.
+
+### 0B.5 Canonical ID convention
+
+Use structured IDs for cross-artefact references:
+
+```text
+{run_id}:{artefact_type}:{sequence_or_local_id}
+```
+
+Examples:
+
+```text
+take-abc123:evidence_anchor:0007
+take-abc123:truth_state:brief_001
+take-abc123:public_claim:priority_fix_01
+technique.1.3.0:grand_battement
+```
+
+Rules:
+
+- Runtime artefact IDs must be resolvable within the same canonical run root unless explicitly declared as a versioned library snapshot ID.
+- Cross-run references are allowed only for comparison runs and must include both take/run IDs.
+- Validators must run referential-integrity checks before any dependent gate can pass.
+
+---
+
 ## Current internal QA / S9 implementation state
 
 The current S9 internal QA Storage validation state is:
@@ -112,8 +235,9 @@ A run that emits only the first eight files without `manifest.json` and `qa/acce
 - Ordinary single-take runs may show comparison artefacts as `missing`, `deferred`, `not_applicable` or `emitted_blocked` depending on run purpose and invoked flow.
 - Absence of comparison artefacts in ordinary single-take runs must not automatically fail ordinary analysis proof.
 - When internal comparison is explicitly invoked (operator/internal trigger path), comparison artefacts, `manifest.json` and `qa/acceptance_metrics.json` must be reconciled together.
-- Canonical comparison reconciliation root is the root take path: `take-[id]/takes/take-[id]/analysis-take-[id]/...` (with manifest/metrics under `take-[id]/`).
-- Low-level comparison emitters must not claim reconciliation unless the reconciliation-enabled path was executed.
+- Canonical comparison reconciliation uses the root take identity, not an independent comparison-only identity. In Storage mode, comparison relative paths may originate as `takes/take-[core]/analysis-take-[core]/comparison/...` and must normalise to flat object keys under `take-[core]/analysis-take-[core]/comparison/...`; manifest and metrics remain under `take-[core]/analysis-take-[core]/`.
+- In local file sink mode, diagnostic paths may include `<root>/<run_id>/takes/take-[core]/analysis-take-[core]/...`. That local diagnostic shape is not the canonical Storage object key root.
+- Low-level comparison emitters must not claim reconciliation unless the reconciliation-enabled path was executed and manifest + metrics were rewritten against the same canonical take root.
 - Level 2 acceptance and public/production gates remain blocked unless separately satisfied by full required evidence/proof gates.
 
 Current S9 metrics may correctly show:
@@ -175,13 +299,47 @@ Discipline, category or attribute scores are governed separately from overall re
 
 ### Current Storage root and provenance decisions
 
+Canonical take/run identity must follow these rules:
+
+```text
+raw take core: [core]                 # database/storage take id without a take- prefix
+canonical run_id: take-[core]
+canonical analysis_run_id: take-[core] unless explicitly and safely overridden
+invalid: take-take-*
+```
+
 Canonical Storage object keys use the flat analysis-run root:
 
 ```text
-take-[id]/analysis-take-[id]/
+take-[core]/analysis-[analysis_run_id]/
 ```
 
-QA artefact root metadata should use this flat root shape. The older descriptive shape `qa-artifacts/takes/...` must not be treated as the canonical Storage object key root.
+For the common analysis run where `run_id = analysis_run_id = take-[core]`, this becomes:
+
+```text
+take-[core]/analysis-take-[core]/
+```
+
+The current repo sink normalises expanded relative paths such as:
+
+```text
+takes/take-[core]/analysis-[analysis_run_id]/traces/EvidenceAnchors.json
+```
+
+to Storage object keys such as:
+
+```text
+take-[core]/analysis-[analysis_run_id]/traces/EvidenceAnchors.json
+```
+
+`manifest.json` and `qa/acceptance_metrics.json` for a `take-[core]` run must resolve to:
+
+```text
+take-[core]/analysis-take-[core]/manifest.json
+take-[core]/analysis-take-[core]/qa/acceptance_metrics.json
+```
+
+Local file sink paths may include `qa-artifacts/<run_id>/takes/take-[core]/analysis-[analysis_run_id]/...`. Those paths are diagnostic file-mode paths only. Historical shapes such as `qa-artifacts/takes/...`, `v3/<run_id>/<relative_path>` or duplicated `take-[core]/takes/take-[core]/...` must not be treated as canonical Storage object keys.
 
 Deployment provenance should use safe non-secret build or deployment environment variables where available. If safe provenance is unavailable, fields such as `build_commit_sha` and `deployment_revision` may remain `unknown`; that must not block artefact emission.
 
@@ -189,11 +347,10 @@ Deployment provenance should use safe non-secret build or deployment environment
 
 ### Current Level 2 blockers
 
-Level 2 remains blocked while any required Level 2 artefacts or proof gates are missing. Current known missing / blocked families include:
+Level 2 remains blocked while any required Level 2 artefacts or proof gates are missing. Current known missing, first-pass-only, insufficient or blocked families include:
 
-- `validator_trace`;
-- `gate_trace`;
-- `ModelRunTrace`;
+- `validator_trace` and `gate_trace` as independent runtime gate proof;
+- `ModelRunTrace` as independent per-stage model-run proof;
 - comparison runtime artefacts;
 - same-video repeatability, comparison suppression and route-variance traces;
 - real runtime technique-observation evidence linkage (TechniqueObservationTrace currently emitted but insufficient for gate satisfaction);
@@ -299,6 +456,232 @@ type PublicReport = {
 ```
 
 Do not create a separate single-item fix field. `priority_fixes[]` is the sole prioritised-fix structure.
+
+Shared evidence-bearing public report types:
+
+```ts
+type EvidenceRefSource =
+  | "observed_video"
+  | "observed_audio"
+  | "supplied_brief"
+  | "supplied_material"
+  | "component_evidence"
+  | "category_rationale"
+  | "assessability_limit";
+
+type EvidenceRef = {
+  evidence_ref_id: string;
+  source: EvidenceRefSource;
+  evidence_anchor_ids: string[];
+  truth_state_entry_ids: string[];
+  timestamp_refs?: string[];
+  component_ids?: string[];
+  confidence: "high" | "medium" | "low";
+  limitation_only?: boolean;
+};
+
+type ReadinessSummary = {
+  state:
+    | "not_assessable"
+    | "not_ready_yet"
+    | "another_take_recommended"
+    | "borderline_exposed"
+    | "submit_ready"
+    | "strong_for_selected_level"
+    | "exceptional_for_selected_level"
+    | "standout_for_selected_level"
+    | "benchmark_level_evidence";
+  public_statement: string;
+  selected_level_standard: string;
+  brief_achievement_summary?: string;
+  main_risks: string[];
+  evidence_refs: EvidenceRef[];
+};
+
+type VerdictRationale = {
+  summary: string;
+  main_reasons: string[];
+  readiness_drivers: string[];
+  readiness_risks: string[];
+  evidence_refs: EvidenceRef[];
+};
+
+type Strength = {
+  title: string;
+  what_is_working: string;
+  why_it_matters: string;
+  preserve_in_next_take: boolean;
+  linked_components?: string[];
+  linked_categories?: string[];
+  evidence_refs: EvidenceRef[];
+};
+
+type Improvement = {
+  title: string;
+  what_to_change: string;
+  why_it_matters: string;
+  how_to_change: string;
+  urgency: "retake_critical" | "quick_win" | "craft_refinement" | "setup_refinement";
+  linked_components?: string[];
+  linked_categories?: string[];
+  evidence_refs: EvidenceRef[];
+};
+
+type LevelGapSummary = {
+  selected_level: PerformerLevel;
+  current_gap: string;
+  closest_next_standard: string;
+  standout_delta?: string;
+  evidence_refs: EvidenceRef[];
+};
+
+type ActionPlanItem = {
+  action_id: string;
+  action: string;
+  reason: string;
+  source_priority_rank?: number;
+  rehearsal_only: boolean;
+  recorded_take_change: boolean;
+  linked_improvement_ids?: string[];
+  evidence_refs: EvidenceRef[];
+};
+
+type ComponentBreakdown = {
+  component_id: string;
+  component_label: string;
+  component_type:
+    | "acting_scene"
+    | "monologue"
+    | "song"
+    | "dance"
+    | "commercial"
+    | "slate"
+    | "transition"
+    | "hybrid_link"
+    | "other";
+  component_purpose: string;
+  criticality: "essential" | "supporting" | "optional" | "administrative" | "unknown";
+  assessability_status: "sufficient" | "partial" | "not_assessable" | "not_present" | "not_relevant";
+  key_strengths: string[];
+  key_gaps: string[];
+  judgement_summary: string;
+  relation_to_brief?: string;
+  relation_to_categories?: string[];
+  evidence_refs: EvidenceRef[];
+};
+
+type CategoryRationale = {
+  category_id: string;
+  category_label: string;
+  score_band?: string;
+  what_works: string;
+  why_not_full_score?: string;
+  close_gap: string;
+  standout_delta?: string;
+  limitation_type: "performance" | "assessability" | "mixed" | "not_applicable";
+  evidence_refs: EvidenceRef[];
+};
+
+type TimestampedNote = {
+  timestamp: string;
+  end_timestamp?: string;
+  note: string;
+  note_type: "strength" | "improvement" | "priority_fix" | "assessability" | "brief_achievement" | "component_evidence";
+  linked_components?: string[];
+  linked_categories?: string[];
+  evidence_anchor_ids: string[];
+};
+
+type AssessabilityNote = {
+  note_id: string;
+  area: "video" | "audio" | "framing" | "continuity" | "material" | "brief" | "component" | "technique";
+  limitation: string;
+  effect_on_feedback: string;
+  public_wording: string;
+  evidence_refs: EvidenceRef[];
+};
+
+type TechnicalSetupSignal = {
+  signal_id: string;
+  area: "audio" | "lighting" | "framing" | "camera" | "upload" | "reader" | "accompaniment";
+  signal: string;
+  impact: "none" | "minor" | "material" | "blocks_assessment";
+  action?: string;
+  evidence_refs: EvidenceRef[];
+};
+
+type TechniqueSkillFeedback = {
+  feedback_id: string;
+  technique_or_skill: string;
+  public_authority_status:
+    | "public_named_technique"
+    | "public_safe_descriptor"
+    | "limitation_only"
+    | "internal_shadow"
+    | "blocked";
+  detection_status: "present" | "possible" | "absent" | "not_assessable" | "not_applicable";
+  selected_level_judgement?: string;
+  preserve?: string;
+  improve?: string;
+  evidence_refs: EvidenceRef[];
+};
+
+type RepertoireContextFeedback = {
+  feedback_id: string;
+  repertoire_context: string;
+  knowledge_state:
+    | "accepted_library"
+    | "research_supported_provisional"
+    | "research_discovered"
+    | "stale_requires_refresh"
+    | "conflicting_sources"
+    | "missing"
+    | "not_applicable";
+  safe_public_summary: string;
+  public_claim_allowed: boolean;
+  evidence_refs: EvidenceRef[];
+};
+
+type ComparisonSummary = {
+  comparison_state:
+    | "duplicate_near_duplicate_detected"
+    | "no_reliable_material_difference"
+    | "analysis_variance_warning"
+    | "marginal_preference"
+    | "clear_winner"
+    | "recommendation_suppressed";
+  public_summary: string;
+  recommended_take_id?: string;
+  recommendation_allowed: boolean;
+  evidence_delta_ids: string[];
+  suppression_reason?: string;
+  evidence_refs: EvidenceRef[];
+};
+
+type BriefContextSummary = {
+  brief_present: boolean;
+  supplied_context_summary: string;
+  no_brief_mode: boolean;
+  unresolved_or_ambiguous_items: string[];
+};
+
+type BriefAchievementSummary = {
+  overall_status:
+    | "achieved"
+    | "mostly_achieved"
+    | "partially_achieved"
+    | "not_achieved"
+    | "not_assessable"
+    | "not_applicable";
+  summary: string;
+  mandatory_requirements_status: string;
+  readiness_impact: BriefRequirement["readiness_impact"];
+  evidence_refs: EvidenceRef[];
+};
+```
+
+`EvidenceRef.truth_state_entry_ids` is required for every non-limitation source. It may be empty only when `source = "assessability_limit"` and `limitation_only = true`; in that case the referenced limitation must still appear in `assessability_notes[]` or `TruthStateMap`.
+
 
 ### 2.2 Public section labels
 
@@ -528,6 +911,22 @@ This is a Professional-standard tape because it scored 90 at Amateur / Community
 This is objectively a 92-quality performance in all contexts.
 This is perfect because the score is high.
 ```
+
+### 3.7 Public scoring unblock criteria
+
+`PUBLIC-SCORING-GATE` remains blocked by default. It may pass only when all of the following are true:
+
+1. `ScoreTrace.json` is emitted from real runtime v3 scoring logic, not legacy report snapshots.
+2. Score evidence links to selected level, audition type, brief achievement and component evidence.
+3. Public score wording makes the selected-level standard explicit.
+4. Repeated same-video and route-variance fixtures do not produce materially unstable public scores.
+5. The score is not used to force a comparison winner without evidence delta.
+6. Public/private leakage tests prove internal calibration metadata and raw scoring traces are not exposed.
+7. Approved testers understand the score as level-relative and do not read it as a booking, recall or marketability prediction.
+8. Product owner / release governance explicitly records approval in `GateTrace` and the release-risk register.
+
+Until those conditions pass, raw overall readiness scores may be used only internally for calibration, QA, traces and comparison safety diagnostics.
+
 
 ---
 
@@ -1379,6 +1778,22 @@ type TechniqueStandard = {
 };
 ```
 
+```ts
+type TechniqueLevelStandard = {
+  standard_summary: string;
+  expected_characteristics: string[];
+  developing_characteristics: string[];
+  insufficient_characteristics: string[];
+  standout_delta: string[];
+  common_level_specific_faults: string[];
+  assessability_limits: string[];
+  safe_recommendations: string[];
+  blocked_recommendations: string[];
+};
+```
+
+`TechniqueStandard.evidence_requirements.cannot_assess_if[]` applies universally. `TechniqueLevelStandard.assessability_limits[]` may add level-specific limits, but must not weaken or override the parent `cannot_assess_if[]` list.
+
 Example:
 
 ```text
@@ -1515,6 +1930,17 @@ type KnowledgeSource = {
 };
 ```
 
+
+Authority tiers:
+
+| Tier | Meaning | Public-use posture |
+|---|---|---|
+| 1 | Supplied brief, official audition pack, production-provided material, official show/licensing page or project-approved source material. | Strongest for task context, subject to tape evidence and validators. |
+| 2 | Expert-reviewed internal standard, teacher/choreographer/vocal/acting review, benchmark fixture. | Strong for “what good looks like”; may support public claims if gates pass. |
+| 3 | Reputable theatre/dance/music scholarship, programme notes, interviews or project-approved contextual research. | Useful context; normally needs review before scoring or public authority. |
+| 4 | Public videos, social clips, blogs or informal commentary. | Discovery only; not sufficient for public authority alone. |
+| 5 | Unattributed, conflicting, stale or low-quality material. | Blocked or internal gap signal only. |
+
 Do not add or use system-level legal-rights enforcement gates in TapeCoach. The project’s lawful access, agreements and permissions are handled outside the system.
 
 ### 16.5 Controlled research and research-augmented specificity
@@ -1530,6 +1956,26 @@ Research-supported knowledge must be classified as:
 - `conflicting_sources`;
 - `missing`;
 - `not_applicable`.
+
+
+
+```ts
+type KnowledgeCoverageDecision = {
+  coverage_state:
+    | "accepted_coverage_sufficient"
+    | "accepted_coverage_partial"
+    | "library_missing"
+    | "library_stale"
+    | "sources_conflict"
+    | "brief_ambiguous"
+    | "research_not_needed";
+  invoke_controlled_research: boolean;
+  reason: string;
+  public_authority_allowed_before_review: false;
+};
+```
+
+Controlled research should be invoked when accepted library coverage is missing, stale, conflicting or too thin for the supplied brief/material. It should be suppressed when the accepted library is sufficient, the run is no-brief baseline with no repertoire context, or the proposed research would not change an evidence-led recommendation.
 
 Research can support evaluation focus before it supports public authority.
 
@@ -1580,6 +2026,16 @@ Example review task:
 Which clip better demonstrates grand battement for Amateur / Community level?
 ```
 
+Active-learning governance:
+
+- Candidate examples are isolated from accepted technique/repertoire standards until human or expert review promotes them.
+- Candidate queues must be private/internal and must not alter public output directly.
+- Library snapshots use immutable IDs such as `technique.1.3.0` or `repertoire.0.4.0`.
+- A promoted snapshot must pass fixture regression tests before release.
+- Rollback must restore the previous accepted snapshot and suppress any public wording introduced by the failed snapshot.
+- Library-level P0 regressions require immediate rollback. P0 includes unsafe public wording, protected-characteristic inference, public authority leakage, same-video false winner, or unsupported definitive repertoire/technique claims.
+- Library-level P1 regressions block the public release slice. P1 includes measurable benchmark degradation, mandatory-brief mapping failures, or a rise in false public technique/repertoire claims across the fixture set.
+
 ---
 
 ## 17. Comparison requirements
@@ -1608,6 +2064,74 @@ For the same video submitted repeatedly to the same audition with the same brief
 
 A comparison that recommends “Submit Take X” on the same video without decisive evidence delta is a P0 failure.
 
+### 17.1 Comparison invocation contract
+
+Comparison must be explicitly invoked. Ordinary single-take analysis must not run comparison by default.
+
+Allowed initiator classes:
+
+| Initiator | Allowed use | Conditions |
+|---|---|---|
+| `user_flow` | Future user-facing comparison. | Disabled until public comparison gates pass. |
+| `approved_tester` | Locked-down QA comparison. | Named fixture/test plan and Team G validation. |
+| `operator_internal` | Admin/operator validation. | Authenticated admin/operator path, feature flag enabled, completed take resolution, manifest + metrics reconciliation. |
+| `system_internal` | Automated QA/regression only. | Named test plan, fixture set, feature flag, release-gate purpose and no public output. |
+
+The first comparison artefact must be:
+
+```text
+comparison/comparison_invocation_record.json
+```
+
+```ts
+type ComparisonInvocationRecord = {
+  schema_version: string;
+  invocation_id: string;
+  run_id: string;
+  comparison_run_id: string;
+  root_take_id: string;
+  compared_take_ids: string[];
+  compared_analysis_run_ids: string[];
+  initiator_class: "user_flow" | "approved_tester" | "operator_internal" | "system_internal";
+  comparison_reason:
+    | "operator_validation"
+    | "qa_validation"
+    | "same_video_check"
+    | "route_variance_check"
+    | "release_gate_fixture"
+    | "user_requested_comparison";
+  public_comparison_output_allowed: boolean;
+  manifest_reconciliation_mode: "none" | "required";
+  feature_flags: Record<string, boolean>;
+  created_at: string;
+};
+```
+
+No comparison raw JSON, evidence delta or rendered comparison may be emitted before this invocation record exists.
+
+### 17.2 GF-01 and RT-15
+
+`GF-01` is the same-video false-winner gate. It passes only when identical or near-identical inputs produce duplicate/no-material-difference/suppressed states unless a decisive evidence delta is independently proven.
+
+Required GF-01 evidence:
+
+- duplicate or near-duplicate detection trace;
+- evidence-delta trace showing no forced score-rank winner;
+- comparison suppression trace where no reliable material difference exists;
+- public comparison output permission set to false unless the gate passes.
+
+`RT-15` is the repeatability and route-variance gate. It passes only when repeated runs or route variants on identical/near-identical inputs are stable, or when instability is classified as analysis/validator variance and public recommendation is suppressed.
+
+Required RT-15 evidence:
+
+- same-video repeatability trace;
+- route-variance trace;
+- model-run trace for each model-invoked stage;
+- validator trace with validator model version where model-assisted checks are used;
+- clear suppression or no-material-difference output when variance prevents a reliable recommendation.
+
+GF-01 or RT-15 failure is P0 for public comparison.
+
 ---
 
 ## 18. QA artefacts and runtime evidence
@@ -1618,38 +2142,43 @@ Artefacts are internal-only and must not leak into public output.
 
 The current S9 live Storage validation target is the 12-file analysis-run bundle (when TechniqueObservationTrace and ScoreTrace source data exists) listed in `Current internal QA / S9 implementation state`. That passing bundle is not the full Level 2 artefact target.
 
-Minimum analysis-run artefacts:
+Minimum target analysis-run artefacts, using canonical relative paths under the analysis root:
 
 - `manifest.json`
 - `qa/acceptance_metrics.json`
-- `input_record.json`
-- `resolver_output.json`
-- `TruthStateMap.json`
-- `raw_report.json`
-- `render_payload.json`
+- `inputs/input_record.json`
+- `inputs/submission.json`
+- `inputs/take.json`
+- `resolver/resolver_output.json`
+- `resolver/TruthStateMap.json`
+- `analysis/AnalysisEvidenceState.json`
+- `reports/raw_report.json`
+- `reports/render_payload.json`
 - rendered report artefact
-- `EvidenceAnchors.json`
-- `PublicClaimTrace.json`
-- `TechniqueObservationTrace.json` where relevant
-- `ScoreTrace.json`
-- `GateTrace.json`
-- `ModelRunTrace.json`
-- `validator_trace.json`
-- `redaction_trace.json`
-- `UKEnglishGateResult.json`
-- `public_private_leakage_result.json`
+- `traces/EvidenceAnchors.json`
+- `traces/PublicClaimTrace.json`
+- `traces/TechniqueObservationTrace.json` where relevant
+- `traces/ScoreTrace.json`
+- `traces/ModelRunTrace.json` plus per-stage `traces/model-runs/{stage}.json` where invoked
+- `traces/ValidatorTrace.json`
+- `traces/GateTrace.json`
+- `traces/redaction_trace.json`
+- `traces/UKEnglishGateResult.json`
+- `traces/public_private_leakage_result.json`
+- `parity/report_parity_result.json`
 
-Minimum comparison-run artefacts:
+Minimum comparison-run artefacts, when comparison is explicitly invoked:
 
-- `comparison.raw.json`
-- `comparison.render_payload.json`
+- `comparison/comparison_invocation_record.json`
+- `comparison/comparison.raw.json`
+- `comparison/comparison.render_payload.json`
 - rendered comparison artefact
-- `duplicate_detection_trace.json`
-- `no_material_difference_trace.json`
-- `evidence_delta_trace.json`
-- `comparison_suppression_trace.json`
-- `same_video_repeatability_trace.json`
-- `route_variance_trace.json`
+- `comparison_traces/duplicate_detection_trace.json`
+- `comparison_traces/no_material_difference_trace.json`
+- `comparison_traces/evidence_delta_trace.json`
+- `comparison_traces/comparison_suppression_trace.json`
+- `comparison_traces/same_video_repeatability_trace.json`
+- `comparison_traces/route_variance_trace.json`
 
 Export handling:
 
@@ -1662,6 +2191,7 @@ Blocked or not-executed artefacts must be clearly marked:
 ```ts
 type ArtefactEvidenceStatus =
   | "emitted"
+  | "emitted_blocked"
   | "missing"
   | "deferred"
   | "not_executed"
@@ -1699,6 +2229,372 @@ required_for_public_authority
 internal_maturity_only
 ```
 
+Assignment table:
+
+| Artefact | Classification |
+|---|---|
+| `BriefRequirementTrace.json` | `required_for_L2` once brief engine is in scope. |
+| `BriefAchievementTrace.json` | `required_for_L2` once brief engine is in scope. |
+| `TechniqueStandardsTrace.json` | `required_for_specialist_feedback`. |
+| `TechniqueDetectionTrace.json` | `required_for_specialist_feedback`; required for public technique authority where public technique feedback is rendered. |
+| `KnowledgeSourceTrace.json` | `required_for_public_authority` for specialist/repertoire claims. |
+| `RepertoireResolutionTrace.json` | `required_for_repertoire_feedback`. |
+| `RepertoireResearchTrace.json` | `required_for_repertoire_feedback` when controlled research is invoked. |
+| `ResearchAugmentedSpecificityTrace.json` | `required_for_repertoire_feedback` when provisional research informs output. |
+| `ActiveLearningCandidateTrace.json` | `internal_maturity_only`. |
+| `ReviewTaskTrace.json` | `internal_maturity_only`. |
+| `KnowledgeCoverageSummary.json` | `required_for_specialist_feedback` and `required_for_repertoire_feedback` where coverage state affects output. |
+
+### 18.2 Canonical artefact path register
+
+All relative paths below are relative to the canonical analysis root `take-[core]/analysis-[analysis_run_id]/` in Storage mode.
+
+| Artefact | Canonical relative path | Notes |
+|---|---|---|
+| Input record | `inputs/input_record.json` | S9 member. |
+| Submission | `inputs/submission.json` | S9 member. |
+| Take | `inputs/take.json` | S9 member. |
+| Raw report | `reports/raw_report.json` | Current first-pass may be legacy snapshot. |
+| Resolver output | `resolver/resolver_output.json` | S9 member. |
+| TruthStateMap | `resolver/TruthStateMap.json` | S9 member. |
+| Analysis evidence state | `analysis/AnalysisEvidenceState.json` | Required persisted Step 1 handoff target. |
+| Evidence anchors | `traces/EvidenceAnchors.json` | First-pass may be legacy-derived. |
+| Public claim trace | `traces/PublicClaimTrace.json` | First-pass may be legacy-derived. |
+| Technique observation trace | `traces/TechniqueObservationTrace.json` | Emits only where source data exists. |
+| Score trace | `traces/ScoreTrace.json` | Internal calibration only unless public score gate passes. |
+| Model run trace index | `traces/ModelRunTrace.json` | May aggregate per-stage traces. |
+| Per-stage model run trace | `traces/model-runs/{stage}.json` | Required target for each model-invoked stage. |
+| Validator trace | `traces/ValidatorTrace.json` | Target independent validation proof. |
+| Gate trace | `traces/GateTrace.json` | Target release/gate proof. |
+| Render payload | `reports/render_payload.json` | Required before render parity. |
+| Rendered report | `reports/rendered_report.*` | Format may vary; internal proof only. |
+| Report parity | `parity/report_parity_result.json` | Required for L2-B. |
+| Redaction trace | `traces/redaction_trace.json` | Required for L2-E. |
+| UK English result | `traces/UKEnglishGateResult.json` | Required for L2-E. |
+| Public/private leakage result | `traces/public_private_leakage_result.json` | Required for L2-E. |
+| Manifest | `manifest.json` | Required bundle classifier. |
+| Acceptance metrics | `qa/acceptance_metrics.json` | Required bundle summary. |
+
+Comparison artefacts, when invoked, use these canonical relative paths under the same root take analysis identity unless a future comparison-specific root is approved in this README:
+
+| Artefact | Canonical relative path |
+|---|---|
+| Invocation record | `comparison/comparison_invocation_record.json` |
+| Comparison raw | `comparison/comparison.raw.json` |
+| Comparison render payload | `comparison/comparison.render_payload.json` |
+| Rendered comparison | `comparison/comparison.rendered.*` |
+| Duplicate detection | `comparison_traces/duplicate_detection_trace.json` |
+| No material difference | `comparison_traces/no_material_difference_trace.json` |
+| Evidence delta | `comparison_traces/evidence_delta_trace.json` |
+| Suppression trace | `comparison_traces/comparison_suppression_trace.json` |
+| Same-video repeatability | `comparison_traces/same_video_repeatability_trace.json` |
+| Route variance | `comparison_traces/route_variance_trace.json` |
+
+### 18.3 Truth, evidence and trace schemas
+
+```ts
+type TruthState =
+  | "user_supplied"
+  | "brief_supplied"
+  | "material_supplied"
+  | "observed_video"
+  | "observed_audio"
+  | "accepted_library"
+  | "research_supported_provisional"
+  | "professional_standard"
+  | "inferred_low_confidence"
+  | "unknown"
+  | "unavailable"
+  | "conflicting"
+  | "blocked";
+
+type TruthStateEntry = {
+  truth_state_entry_id: string;
+  key: string;
+  state: TruthState;
+  value_summary?: string;
+  confidence: "high" | "medium" | "low";
+  source_artifact_ids: string[];
+  evidence_anchor_ids: string[];
+  public_claim_allowed: boolean;
+  public_claim_limit?: "direct" | "cautious" | "limitation_only" | "blocked";
+};
+
+type TruthStateMap = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  take_id: string;
+  entries: TruthStateEntry[];
+  unresolved_inputs: string[];
+  conflicts: string[];
+  blocked_inferences: string[];
+};
+
+type ResolverOutput = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  take_id: string;
+  selected_level?: PerformerLevel;
+  audition_type?: AuditionType;
+  brief_presence: "supplied" | "absent" | "unknown";
+  material_presence: "supplied" | "absent" | "unknown";
+  no_brief_mode: boolean;
+  public_safe_context_summary?: string;
+  public_safe_context_summary_classification: "internal_only" | "public_claim_trace_required";
+  truth_state_map_id: string;
+};
+
+type AnalysisEvidenceState = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  take_id: string;
+  analysis_run_id: string;
+  resolver_artifact_id: string;
+  truth_state_map_id: string;
+  media_duration_seconds?: number | null;
+  evidence_anchor_ids: string[];
+  component_evidence_ids: string[];
+  assessability_limit_ids: string[];
+  brief_requirement_ids: string[];
+  technique_candidate_ids: string[];
+  status: "complete" | "partial_failed" | "failed_emission";
+};
+
+type EvidenceAnchor = {
+  evidence_anchor_id: string;
+  run_id: string;
+  take_id: string;
+  source_classification:
+    | "real_runtime_v3"
+    | "legacy_adapter"
+    | "report_snapshot"
+    | "input_artifact"
+    | "resolver_truth_state"
+    | "manual_operator_evidence";
+  modality: "video" | "audio" | "brief" | "material" | "metadata" | "professional_standard";
+  timestamp?: string;
+  end_timestamp?: string;
+  evidence_text: string;
+  truth_state_entry_ids: string[];
+  component_ids?: string[];
+  confidence: "high" | "medium" | "low";
+  assessability_status: "sufficient" | "partial" | "not_assessable" | "not_present" | "not_relevant";
+  cannot_satisfy_v3_gate: boolean;
+};
+
+type PublicClaimTrace = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  take_id: string;
+  claims: Array<{
+    claim_id: string;
+    public_section: string;
+    claim_text: string;
+    claim_status: "supported" | "unsupported" | "overclaim" | "unsafe" | "rewrite_required" | "suppressed";
+    evidence_anchor_ids: string[];
+    truth_state_entry_ids: string[];
+    validator_rule_ids: string[];
+    final_public_text?: string;
+  }>;
+};
+```
+
+Manual operator evidence may support L0/L1 diagnosis or release-governance notes, but it must not satisfy L2-A real-runtime evidence gates, public-claim gates, public technique authority or comparison safety gates by itself.
+
+### 18.4 ModelRunTrace, ValidatorTrace and GateTrace
+
+`ModelRunTrace` is required once per model-invoked stage. `traces/ModelRunTrace.json` may be an index, but the target contract also requires stage-addressable records such as `traces/model-runs/analysis_step_1.json`, `traces/model-runs/analysis_step_2.json`, `traces/model-runs/validator.json` and `traces/model-runs/comparison.json` where invoked.
+
+```ts
+type ModelRunTrace = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  take_id?: string;
+  stage:
+    | "analysis_step_1"
+    | "analysis_step_2"
+    | "validator"
+    | "render"
+    | "comparison"
+    | "brief_extraction"
+    | "research";
+  model_provider?: string;
+  model_name?: string;
+  model_version?: string;
+  prompt_version?: string;
+  started_at: string;
+  completed_at?: string;
+  duration_ms?: number;
+  timeout_ms?: number;
+  request_status: "completed" | "failed" | "timed_out" | "skipped" | "unknown";
+  retry_count: number;
+  fallback_used: boolean;
+  safe_error_category?: string;
+  raw_prompt_or_response_stored: false;
+};
+
+type ValidatorTrace = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  validator_version: string;
+  validator_model_version?: string;
+  deterministic_checks_version: string;
+  referential_integrity_status: "pass" | "fail" | "not_run";
+  results: ValidatorResult[];
+  override?: ValidatorOverride;
+};
+
+type ValidatorResult = {
+  rule_id: string;
+  rule_version: string;
+  status: "pass" | "fail" | "warning" | "not_applicable";
+  severity: "P0" | "P1" | "P2" | "P3";
+  response: "fail_run" | "rewrite" | "suppress" | "flag_for_review" | "record_only";
+  affected_claim_ids?: string[];
+  affected_gate_ids?: string[];
+  message: string;
+};
+
+type ValidatorOverride = {
+  requested_by_role: "product_owner" | "release_governance";
+  authorised_by: string;
+  audit_record_id: string;
+  audit_record_target: "release_risk_register" | "governance_log" | "issue_tracker";
+  reason: string;
+  affected_gate_ids: string[];
+  affected_validator_rule_ids: string[];
+  retention_until: string;
+};
+
+type GateTrace = {
+  schema_version: string;
+  artefact_id: string;
+  run_id: string;
+  gate_registry_version: string;
+  gate_decisions: Array<{
+    gate_id: string;
+    status: "passed" | "blocked" | "not_accepted" | "missing" | "deferred" | "not_applicable";
+    reason: string;
+    evidence_artefact_ids: string[];
+    validator_rule_ids: string[];
+    decided_by: "validator" | "release_governance" | "product_owner";
+    decision_record_id?: string;
+  }>;
+  public_output_permissions: {
+    show_overall_score: boolean;
+    show_public_technique_names: boolean;
+    show_repertoire_claims: boolean;
+    show_comparison_recommendation: boolean;
+    show_public_report: boolean;
+  };
+};
+```
+
+The render layer must read and enforce `GateTrace.public_output_permissions`. It must not render public output for any permission set to `false`, even if the render payload contains the relevant content.
+
+Human gate decisions must be recorded through a signed/authorised governance mechanism, such as a release-risk register entry or governance log, and imported into `GateTrace` with a resolvable `decision_record_id`. They must not be hand-edited into runtime artefacts without audit metadata.
+
+### 18.5 Manifest and acceptance metrics contracts
+
+```ts
+type Manifest = {
+  schema_version: string;
+  run_id: string;
+  analysis_run_id: string;
+  take_id: string | null;
+  comparison_run_id?: string | null;
+  generated_at: string;
+  qa_artifact_root: string;
+  storage_bucket?: string | null;
+  storage_key_root?: string | null;
+  required_artifacts: Array<{
+    artefact_id: string;
+    expected_path: string;
+    category: "analysis_run" | "comparison_run" | "export_no_export" | "qa_summary";
+    status: ArtefactEvidenceStatus;
+    blocker_code?: string;
+    reason?: string;
+    schema_version?: string;
+  }>;
+  emitted_artifacts: string[];
+  emitted_blocked_artefact_ids: string[];
+  missing_artifacts: string[];
+  deferred_artifact_ids: string[];
+  not_applicable_artifact_ids: string[];
+  failed_emission_artifact_ids: string[];
+  artefact_status_by_id: Record<string, ArtefactEvidenceStatus>;
+  artefact_source_classification_by_id: Record<string, string>;
+  artefact_level2_spine_satisfaction_by_id: Record<string, boolean>;
+  legacy_adapter_artefact_ids: string[];
+  real_v3_spine_artefact_ids: string[];
+  blocker_codes: string[];
+};
+
+type AcceptanceMetrics = {
+  schema_version: string;
+  artefact_type: "qa_acceptance_metrics";
+  run_id: string;
+  take_id: string | null;
+  comparison_run_id?: string | null;
+  bundle_completeness: "complete" | "partial" | "failed";
+  level2_status: "passed" | "not_accepted" | "blocked";
+  level3_status: "passed" | "blocked" | "not_accepted";
+  level4_status: "passed" | "blocked" | "not_accepted";
+  extended_run: boolean;
+  gate_summary: Record<string, "passed" | "blocked" | "not_accepted" | "missing" | "deferred" | "not_applicable">;
+  legacy_adapter_count: number;
+  failed_emission_count: number;
+  artefact_statuses: Record<string, ArtefactEvidenceStatus>;
+  public_scoring_status: "blocked" | "approved";
+  public_technique_authority_status: "blocked" | "approved";
+  production_safe_status: "blocked" | "approved";
+};
+```
+
+The manifest is a classifier. It must never turn a missing, failed, legacy, first-pass or blocked artefact into passing gate evidence.
+
+### 18.6 Artefact dependency graph
+
+| Artefact | Depends on |
+|---|---|
+| `inputs/*` | user upload/submission/take records |
+| `resolver/resolver_output.json` | `inputs/*` |
+| `resolver/TruthStateMap.json` | `inputs/*`, resolver output |
+| `analysis/AnalysisEvidenceState.json` | resolver output, TruthStateMap, media readiness |
+| `traces/EvidenceAnchors.json` | AnalysisEvidenceState, media evidence, TruthStateMap |
+| `traces/TechniqueObservationTrace.json` | EvidenceAnchors, TechniqueStandards where relevant |
+| `traces/ScoreTrace.json` | AnalysisEvidenceState, component evidence, selected-level standards |
+| `reports/raw_report.json` | AnalysisEvidenceState, ScoreTrace, brief achievement where relevant |
+| `traces/PublicClaimTrace.json` | raw report, EvidenceAnchors, TruthStateMap |
+| `traces/ValidatorTrace.json` | all applicable upstream artefacts and referential-integrity pre-check |
+| `traces/GateTrace.json` | ValidatorTrace, manifest classifications, release governance inputs |
+| `reports/render_payload.json` | GateTrace public-output permissions and validated report data |
+| rendered report | render payload |
+| parity result | render payload and rendered report |
+| `manifest.json` | emitted artefacts and sink statuses |
+| `qa/acceptance_metrics.json` | manifest and gate summaries |
+| comparison invocation record | explicit comparison trigger |
+| comparison raw/evidence delta/suppression traces | invocation record and persisted take evidence |
+
+### 18.7 Validator rule registry
+
+Validator rule IDs must be stable and resolvable in a named rule registry. Suggested format:
+
+```text
+DOMAIN_SUBTYPE_NNN
+GENERIC_PHRASE_ANCHOR_003
+BRIEF_ACHIEVEMENT_MANDATORY_001
+PUBLIC_PRIVATE_LEAKAGE_001
+```
+
+Deprecated rules must be marked inactive rather than deleted so historical traces remain legible. Overrides must reference active or historically known rule IDs.
+
 ---
 
 ## 19. Testing and acceptance policy
@@ -1721,6 +2617,36 @@ The required evidence levels are:
 
 Level 4 does not automatically authorise customer-facing release unless release-candidate gates also pass.
 
+### 19.0 Approved tester and fixture registry requirements
+
+Approved tester criteria:
+
+- tester role and relevant expertise are recorded;
+- conflict of interest is declared;
+- tester is approved for the discipline/audition type being reviewed;
+- tester uses a structured rubric for clarity, actionability, specificity, safety, brief achievement and selected-level calibration;
+- tester feedback is linked to fixture ID, run ID, artefact root and release gate.
+
+A fixture registry is required before automated acceptance can be treated as repeatable evidence.
+
+```ts
+type FixtureRegistryEntry = {
+  fixture_id: string;
+  fixture_description: string;
+  discipline: "musical_theatre" | "dance" | "acting" | "voice_singing" | "commercial" | "hybrid";
+  performer_level: PerformerLevel;
+  tape_duration_seconds: number;
+  brief_present: boolean;
+  media_file_reference: string;
+  expected_readiness_state?: string;
+  expected_timestamp_count_range?: [number, number];
+  release_gating_tests: string[];
+  privacy_classification: "internal_private" | "approved_test_fixture";
+};
+```
+
+Acceptance tests that mention fixture characteristics, such as “45-second Dance tape” or “4-minute Musical Theatre tape”, must eventually reference named fixture IDs.
+
 ### 19.1 Level 2 sub-gates
 
 Level 2 should be decomposed so parallel teams can close evidence families without confusing analysis proof, render proof, comparison proof and export proof.
@@ -1737,7 +2663,17 @@ For single-take analysis runs, comparison artefacts should not automatically be 
 
 ---
 
-## 20. Validation rules
+## 20. Validation architecture and rules
+
+Validation is a hybrid system:
+
+- deterministic schema, path, referential-integrity, status, privacy and gate checks;
+- deterministic public-output phrase and leakage checks where possible;
+- model- or prompt-assisted judgement checks only where rule-based validation cannot reliably judge specificity or actionability.
+
+Model-assisted validation must record `validator_model_version` and should run deterministically for RT-15 fixtures. If repeated identical inputs produce different validator outcomes due to validator-model variance, that must be recorded as validator variance in `route_variance_trace.json` and must not be misclassified as performer evidence delta.
+
+Referential-integrity validation is a pre-condition. If IDs cannot be resolved across `TruthStateMap`, `EvidenceAnchors`, `PublicClaimTrace`, report payload and gate traces, the validator must record a P0 or P1 failure and dependent gates must not pass.
 
 Validation must fail or normalise if:
 
@@ -1915,6 +2851,51 @@ Validation must fail or normalise if:
 - Reports are judged for clarity, actionability, specificity and safety, not only schema validity.
 - No-padding rules are enforced across technique, repertoire, action-plan and timestamp content.
 
+### 21.18 Runtime proof and path tests
+
+- Storage-mode object keys normalise expanded `takes/take-[core]/analysis-[analysis_run_id]/...` paths to flat `take-[core]/analysis-[analysis_run_id]/...` keys.
+- `take-take-*` identities never appear in run IDs, manifest paths, metrics paths or comparison roots.
+- Manifest and acceptance metrics refer to the same run, take, analysis run and comparison run IDs.
+- `emitted_blocked`, `not_executed`, `deferred`, `not_applicable` and `failed_emission` never count as successful runtime evidence.
+- First-pass legacy/report-snapshot traces remain insufficient for Level 2.
+
+### 21.19 Schema and referential-integrity tests
+
+- Every artefact records a recognised schema version.
+- The manifest records schema versions per artefact family.
+- N-1 schema compatibility works during active v3 delivery.
+- EvidenceRef non-limitation sources include resolvable `truth_state_entry_ids`.
+- PublicClaimTrace claim IDs resolve to evidence anchors and truth-state entries.
+- Validator rule IDs resolve to the rule registry.
+
+### 21.20 Two-step and atomicity tests
+
+- Step 2 does not run when `AnalysisEvidenceState.json` is missing, failed, unreadable or belongs to a different run.
+- Partial Step 1 outputs are not consumed after Step 1 failure.
+- Stage retries overwrite canonical artefact keys or record one authoritative version in manifest.
+- Storage circuit-breaker conditions prevent long retry cascades.
+
+### 21.21 Gate and render-permission tests
+
+- Render reads and enforces `GateTrace.public_output_permissions`.
+- Public scores, public technique names, repertoire claims and comparison recommendations are suppressed when the corresponding permission is false.
+- Human gate decisions require a governance/audit record.
+- Validator overrides cannot override P0 public/private leakage, protected-characteristic inference, same-video false winner or public raw-score leakage.
+
+### 21.22 Comparison invocation tests
+
+- No comparison artefact other than an explicit not-applicable/deferred status appears in ordinary single-take analysis runs.
+- `comparison_invocation_record.json` is emitted before comparison raw/evidence-delta traces.
+- Operator/internal comparison requires feature flag, authorised trigger, completed takes and manifest/metrics reconciliation.
+- `system_internal` comparison runs only for named QA/regression/release-gate fixtures.
+
+### 21.23 Operational readiness tests
+
+- Storage/log fallback behaviour is monitored and alertable.
+- Artefact retention and deletion policies are defined before Level 4.
+- Queue/concurrency behaviour is defined before customer-facing release.
+- Media readiness failure and corrupt media paths produce truthful blocked/not-assessable states, not invented performance feedback.
+
 ---
 
 ## 22. Implementation priorities and incremental release train
@@ -1942,6 +2923,16 @@ The implementation order should support parallel team delivery while keeping rel
 17. Level 4 locked-down website QA.
 18. Release candidate.
 19. Legacy-adapter sunset.
+
+Before R1 deep implementation starts, close these engineering contract items:
+
+- canonical schema-version policy;
+- manifest and `qa/acceptance_metrics.json` schemas;
+- full artefact path register;
+- `AnalysisEvidenceState` persistence and failure handling;
+- stage atomicity, retry idempotency and storage circuit-breaker policy;
+- fixture registry minimum contract;
+- validator rule registry convention.
 
 ### 22.2 Incremental release train
 
@@ -1987,6 +2978,35 @@ Incremental releases may be shipped into the locked-down live product for the de
 | QA artefacts stay private | Internal traces, scores, validators and safety gates must not leak publicly. |
 | Runtime artefacts are not GitHub artefacts | Storage/log fallback are runtime sinks, not GitHub. |
 | No padding | Do not invent technique comments, repertoire claims, fixes, drills or timestamps to fill space. |
+
+### 22.4 Legacy-adapter sunset criteria
+
+`LEGACY-ADAPTER-SUNSET-GATE` may pass only when:
+
+1. readiness, scoring, claims and public report payloads are generated from the v3 evidence spine rather than legacy report snapshots;
+2. `EvidenceAnchors`, `PublicClaimTrace`, `TechniqueObservationTrace` and `ScoreTrace` needed for public output are `real_runtime_v3` or equivalent accepted runtime linkage;
+3. manifest and acceptance metrics show zero required Level 2 artefacts relying on `legacy_adapter` for N consecutive accepted locked-down runs across agreed fixtures;
+4. validators prove no public output depends on legacy-only fields such as `fix_first`, `casting_insight`, raw overall score snapshots or untraced category prose;
+5. fallback to legacy report output is feature-flagged off or classified as emergency rollback only;
+6. release governance records rollback and re-enable conditions;
+7. product owner accepts the sunset in the release-risk register.
+
+### 22.5 Release rollback and production-readiness policy
+
+Rollback must be available for every public-output or gate-affecting release slice.
+
+Immediate rollback / flag-off is required for:
+
+- P0 public/private leakage;
+- same-video false winner or unsafe comparison recommendation;
+- public raw score exposure while `PUBLIC-SCORING-GATE` is blocked;
+- public named technique/repertoire claim while authority gates are blocked;
+- protected-characteristic, appearance, marketability, bookability or health-diagnosis inference;
+- rendered report materially diverging from validated internal payload.
+
+Before Level 4, the system must define minimum observability: run counts, stage latency, artefact write success/failure, gate pass/fail counts, P0 alerts, storage failure alerts and log aggregation separate from QA artefact fallback.
+
+Before customer-facing release, retention, user deletion handling, queueing, rate limiting and concurrency policies must be defined and tested.
 
 ---
 
