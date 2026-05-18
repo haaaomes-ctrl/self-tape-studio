@@ -58,11 +58,11 @@ Use this process for one task, one Codex branch, one PR and one merge decision.
 15. Pull latest `main` locally after the manual squash merge.
 16. Start the next task.
 
-Record each step in `current-task-state-template.md` or the equivalent JSON shape described by `task-state.schema.json`. The operator remains responsible for PR creation, review requests, manual squash merge and any deployed environment checks Codex cannot inspect.
+Record each step in `current-task-state-template.md` or the equivalent JSON example shape in `task-state.example.json`. The operator remains responsible for PR creation, review requests, manual squash merge and any deployed environment checks Codex cannot inspect.
 
-## Manual task-state validation
+## Manual task-state review
 
-This MVP task intentionally does not add validation scripts. Validate the task state manually before asking ChatGPT for a merge decision:
+This MVP task intentionally does not add validation scripts, schema validators or gate checks. Review the task state manually before asking ChatGPT for a merge decision:
 
 1. Confirm `task_id`, `task_name`, `branch`, source hierarchy checked, ChatGPT prompt, Codex status, Codex summary, ChatGPT decision, PR status, GitHub checks, deferred items, operator-verification-required items, merge status and next task recommendation are recorded.
 2. Confirm PR review cycles are recorded only after review has begun through a review request, review finding or check result.

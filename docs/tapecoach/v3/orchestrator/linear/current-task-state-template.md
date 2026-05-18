@@ -2,7 +2,7 @@
 
 Codex completion is not acceptance. GitHub checks alone are not release approval.
 
-Use this template to record one linear ChatGPT/Codex/GitHub task at a time. The state may be copied into `task-state.example.json` shape for local validation.
+Use this template to record one linear ChatGPT/Codex/GitHub task at a time. The state may be copied into the `task-state.example.json` shape for manual review.
 
 ## Task Identity
 
