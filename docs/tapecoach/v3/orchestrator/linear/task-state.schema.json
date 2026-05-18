@@ -19,6 +19,7 @@
     "deferred_items",
     "operator_verification_required_items",
     "merge_recommendation",
+    "merge_recommendation_source",
     "merge_status",
     "next_task_recommendation",
     "blocked_states"
@@ -62,6 +63,9 @@
       "items": { "type": "string" }
     },
     "merge_recommendation": { "type": "boolean" },
+    "merge_recommendation_source": {
+      "enum": ["ChatGPT", "none"]
+    },
     "merge_status": {
       "enum": ["not_started", "operator_required", "manually_squash_merged", "blocked"]
     },

@@ -31,6 +31,7 @@
   ],
   "operator_verification_required_items": [],
   "merge_recommendation": false,
+  "merge_recommendation_source": "none",
   "merge_status": "not_started",
   "next_task_recommendation": "Start the next accepted linear setup task only after manual squash merge and local pull of latest main.",
   "blocked_states": {

@@ -48,6 +48,13 @@ Codex completion is not acceptance. ChatGPT must decide fix, create PR or stop a
 - Deployed environment or secret names needing operator check:
 - Live Storage, Lovable or production state needing operator check:
 
+## Review Findings
+
+- P0 findings:
+- P1 findings:
+- Deferred P2 follow-up items:
+- Unresolved findings:
+
 ## ChatGPT Decision Needed
 
 - Fix:
