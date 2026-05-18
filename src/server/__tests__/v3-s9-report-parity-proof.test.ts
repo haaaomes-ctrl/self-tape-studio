@@ -255,6 +255,67 @@ describe('v3-s9 report parity proof', () => {
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
+  it('deferred required artefacts preserve blocker codes and propagate to metrics', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-deferred-blockers-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-deferred',
+      analysis_run_id: 'run-deferred',
+      take_id: 'td',
+      compared_take_ids: ['td', 'te'],
+      comparison_run_id: 'cmp-deferred',
+      submission_id: 's1',
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ['raw_report'],
+      deferred_artefact_ids: ['parity_report', 'parity_comparison', 'no_export_proof'],
+    });
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-deferred', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'run-deferred', 'qa', 'acceptance_metrics.json'), 'utf8'));
+
+    const parityReport = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_report');
+    const parityComparison = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison');
+    const noExport = manifest.required_artifacts.find((a:any)=>a.artefact_id==='no_export_proof');
+    expect(parityReport?.status).toBe('deferred');
+    expect(parityReport?.blocker_code).toBe('parity_artefacts_missing');
+    expect(parityComparison?.status).toBe('deferred');
+    expect(parityComparison?.blocker_code).toBe('parity_artefacts_missing');
+    expect(noExport?.status).toBe('deferred');
+    expect(noExport?.blocker_code).toBe('no_export_proof_missing');
+    expect(manifest.missing_artifacts).not.toContain('parity_comparison');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(manifest.blocker_codes).toContain('no_export_proof_missing');
+    expect(metrics.blocker_codes).toEqual(manifest.blocker_codes);
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('emitted suppresses blocker_code and emitted_blocked behaviour remains unchanged', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-emitted-suppress-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-emitted',
+      analysis_run_id: 'run-emitted',
+      take_id: 'te',
+      compared_take_ids: ['te'],
+      comparison_run_id: null,
+      submission_id: 's1',
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ['raw_report', 'parity_report'],
+      emitted_blocked_artefact_ids: ['comparison_raw'],
+    });
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-emitted', 'manifest.json'), 'utf8'));
+    const parityReport = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_report');
+    const parityComparison = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison');
+    const comparisonRaw = manifest.required_artifacts.find((a:any)=>a.artefact_id==='comparison_raw');
+    expect(parityReport?.status).toBe('emitted');
+    expect(parityReport?.blocker_code).toBeUndefined();
+    expect(parityComparison?.status).toBe('missing');
+    expect(parityComparison?.blocker_code).toBe('parity_artefacts_missing');
+    expect(comparisonRaw?.status).toBe('emitted_blocked');
+  });
+
   it('O/P/Q: manifest flow emits parity in file/log sinks when report_parity_input exists, and stays missing when absent', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-opq-'));
     const prevSink = process.env.QA_ARTIFACT_SINK;
