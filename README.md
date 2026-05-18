@@ -3,7 +3,7 @@
 **Document status:** controlling replacement README for the redesigned TapeCoach evaluation and report system.  
 **Purpose:** define the requirements that ChatGPT / implementation agents must follow when analysing self-tapes, calibrating scores, producing reports, generating comparisons and validating output quality.  
 **Supersedes:** the current README and any earlier report design notes.  
-**Language:** UK English.
+**Language:** UK English.  
 **Architecture review update:** repo-aligned requirements hardening, 18 May 2026.
 
 ## Source hierarchy and delivery documents
