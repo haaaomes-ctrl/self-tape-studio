@@ -1293,14 +1293,78 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
   const result = await writeInternalJson(root, input.run_id, `takes/take-${takeId}/analysis-${analysisRunId}/traces/ModelRunTrace.json`, payload, 'model_run_trace');
   return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], model_run_trace_summary: result.written ? summary : undefined };
 }
-export async function emitNoExportProofBundle(input: { run_id: string; proofs: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean }) {
+export async function emitNoExportProofBundle(input: { run_id: string; proofs?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string }) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const root = input.root_dir ?? DEFAULT_ROOT;
   const ids: string[] = [];
   let hadFailure = false;
-  const entries: Array<[string, string]> = [['no_export_source_proof', 'export_or_no_export/no_export_source_proof.json'], ['no_export_config_proof', 'export_or_no_export/no_export_config_proof.json'], ['no_export_ui_proof', 'export_or_no_export/no_export_ui_proof.json'], ['no_export_log_proof', 'export_or_no_export/no_export_log_proof.json']];
-  for (const [id, rel] of entries) { if (input.proofs[id]) { const w = await writeInternalJson(root, input.run_id, rel, input.proofs[id], id); if (w.written) ids.push(id); else hadFailure = true; } }
-  if (ids.length === 4) { const b = await writeInternalJson(root, input.run_id, 'export_or_no_export/no_export_proof.json', { bundle: true }, 'no_export_proof'); if (b.written) ids.push('no_export_proof'); else hadFailure = true; }
+  const sourceModule = input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts';
+  const sourceStage = input.source_stage ?? 'emitNoExportProofBundle';
+  const providedProofs = input.proofs ?? {};
+  const entries: Array<[string, string]> = [
+    ['no_export_source_proof', 'export_or_no_export/no_export_source_proof.json'],
+    ['no_export_config_proof', 'export_or_no_export/no_export_config_proof.json'],
+    ['no_export_ui_proof', 'export_or_no_export/no_export_ui_proof.json'],
+    ['no_export_log_proof', 'export_or_no_export/no_export_log_proof.json'],
+  ];
+  const builtPayloadById: Record<string, unknown> = {};
+  for (const [id, rel] of entries) {
+    if (!providedProofs[id]) continue;
+    const basePayload = isRecord(providedProofs[id]) ? providedProofs[id] as Record<string, unknown> : { provided_payload: providedProofs[id] };
+    const payload = {
+      schema_version: 'tapecoach_v3_no_export_proof_v1',
+      artefact_type: id,
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      run_id: input.run_id,
+      generated_at: new Date().toISOString(),
+      source_module: sourceModule,
+      source_stage: sourceStage,
+      public_output_unchanged: true,
+      production_safe_status: 'blocked',
+      public_scoring_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      level2_satisfaction: 'insufficient',
+      evidence_details: basePayload,
+      ...resolveQADeploymentProvenance(),
+    };
+    const w = await writeInternalJson(root, input.run_id, rel, payload, id);
+    if (w.written) {
+      ids.push(id);
+      builtPayloadById[id] = payload;
+    } else {
+      hadFailure = true;
+    }
+  }
+  const hasCore = ids.includes('no_export_source_proof') && ids.includes('no_export_config_proof') && ids.includes('no_export_log_proof');
+  if (hasCore) {
+    const hasUi = ids.includes('no_export_ui_proof');
+    const b = await writeInternalJson(root, input.run_id, 'export_or_no_export/no_export_proof.json', {
+      schema_version: 'tapecoach_v3_no_export_proof_bundle_v1',
+      artefact_type: 'no_export_proof',
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      run_id: input.run_id,
+      generated_at: new Date().toISOString(),
+      source_module: sourceModule,
+      source_stage: sourceStage,
+      proof_refs: ids.map((id) => `export_or_no_export/${id}.json`),
+      source_proof_emitted: ids.includes('no_export_source_proof'),
+      config_proof_emitted: ids.includes('no_export_config_proof'),
+      ui_proof_emitted: hasUi,
+      log_proof_emitted: ids.includes('no_export_log_proof'),
+      proof_family_status: hasUi ? 'complete' : 'partial_ui_proof_missing',
+      level2_satisfaction: 'insufficient',
+      level2_unsatisfied_reasons: hasUi ? [] : ['no_export_ui_proof_missing'],
+      must_not_unblock_public_or_production_gates: true,
+      public_output_unchanged: true,
+      production_safe_status: 'blocked',
+      public_scoring_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      ...resolveQADeploymentProvenance(),
+    }, 'no_export_proof');
+    if (b.written) ids.push('no_export_proof'); else hadFailure = true;
+  }
   return { written: !hadFailure, emitted_artefact_ids: ids };
 }
 export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArtifactsInput): Promise<any> {
