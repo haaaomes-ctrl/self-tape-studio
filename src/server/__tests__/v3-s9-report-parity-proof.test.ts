@@ -197,6 +197,68 @@ describe('v3-s9 report parity proof', () => {
     const fn = function demoFn(){};
     await expect(emitReportParityProof({ run_id: 'run-m1', analysis_run_id: 'run-m1', take_id: 't12', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn, s: Symbol('x') }, public_report_payload: { f: fn, s: Symbol('x') }, allowed_public_fields: ['f', 's'] })).resolves.toBeTruthy();
   });
+
+  it('typed equality guards against sentinel collisions and preserves identity semantics', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-typed-eq-'));
+
+    await emitReportParityProof({ run_id: 'run-te-1', analysis_run_id: 'run-te-1', take_id: 'tte1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: undefined }, public_report_payload: { summary: '__undefined__' }, allowed_public_fields: ['summary'] });
+    const te1 = await readParity(root, 'run-te-1', 'tte1');
+    expect(te1.parity_status).toBe('failed');
+    expect(te1.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch' && m.field==='summary')).toBe(true);
+
+    await emitReportParityProof({ run_id: 'run-te-2', analysis_run_id: 'run-te-2', take_id: 'tte2', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: '__undefined__' }, public_report_payload: { summary: '__undefined__' }, allowed_public_fields: ['summary'] });
+    const te2 = await readParity(root, 'run-te-2', 'tte2');
+    expect(te2.parity_status).toBe('passed');
+
+    await emitReportParityProof({ run_id: 'run-te-3', analysis_run_id: 'run-te-3', take_id: 'tte3', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: null }, public_report_payload: { summary: 'null' }, allowed_public_fields: ['summary'] });
+    const te3 = await readParity(root, 'run-te-3', 'tte3');
+    expect(te3.parity_status).toBe('failed');
+
+    await emitReportParityProof({ run_id: 'run-te-4', analysis_run_id: 'run-te-4', take_id: 'tte4', internal_qa_emit: true, root_dir: root, raw_report_data: { s: Symbol('x') }, public_report_payload: { s: '__symbol__:x' }, allowed_public_fields: ['s'] });
+    const te4 = await readParity(root, 'run-te-4', 'tte4');
+    expect(te4.parity_status).toBe('failed');
+
+    const symA = Symbol('x');
+    const symB = Symbol('x');
+    await emitReportParityProof({ run_id: 'run-te-5', analysis_run_id: 'run-te-5', take_id: 'tte5', internal_qa_emit: true, root_dir: root, raw_report_data: { s: symA }, public_report_payload: { s: symB }, allowed_public_fields: ['s'] });
+    const te5 = await readParity(root, 'run-te-5', 'tte5');
+    expect(te5.parity_status).toBe('failed');
+
+    await emitReportParityProof({ run_id: 'run-te-6', analysis_run_id: 'run-te-6', take_id: 'tte6', internal_qa_emit: true, root_dir: root, raw_report_data: { s: symA }, public_report_payload: { s: symA }, allowed_public_fields: ['s'] });
+    const te6 = await readParity(root, 'run-te-6', 'tte6');
+    expect(te6.parity_status).toBe('passed');
+
+    const fn1 = function demoFn(){};
+    const fn2 = function demoFn(){};
+    await emitReportParityProof({ run_id: 'run-te-7', analysis_run_id: 'run-te-7', take_id: 'tte7', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn1 }, public_report_payload: { f: fn2 }, allowed_public_fields: ['f'] });
+    const te7 = await readParity(root, 'run-te-7', 'tte7');
+    expect(te7.parity_status).toBe('failed');
+
+    await emitReportParityProof({ run_id: 'run-te-8', analysis_run_id: 'run-te-8', take_id: 'tte8', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn1 }, public_report_payload: { f: fn1 }, allowed_public_fields: ['f'] });
+    const te8 = await readParity(root, 'run-te-8', 'tte8');
+    expect(te8.parity_status).toBe('passed');
+
+    await emitReportParityProof({ run_id: 'run-te-9', analysis_run_id: 'run-te-9', take_id: 'tte9', internal_qa_emit: true, root_dir: root, raw_report_data: { b: 10n }, public_report_payload: { b: 10n }, allowed_public_fields: ['b'] });
+    const te9 = await readParity(root, 'run-te-9', 'tte9');
+    expect(te9.parity_status).toBe('passed');
+
+    await emitReportParityProof({ run_id: 'run-te-10', analysis_run_id: 'run-te-10', take_id: 'tte10', internal_qa_emit: true, root_dir: root, raw_report_data: { b: 10n }, public_report_payload: { b: 11n }, allowed_public_fields: ['b'] });
+    const te10 = await readParity(root, 'run-te-10', 'tte10');
+    expect(te10.parity_status).toBe('failed');
+
+    const circA: any = { tag: 'x' };
+    circA.self = circA;
+    const circB: any = { tag: 'x' };
+    circB.self = circB;
+    await expect(emitReportParityProof({ run_id: 'run-te-11', analysis_run_id: 'run-te-11', take_id: 'tte11', internal_qa_emit: true, root_dir: root, raw_report_data: { c: circA }, public_report_payload: { c: circB }, allowed_public_fields: ['c'] })).resolves.toBeTruthy();
+    const te11 = await readParity(root, 'run-te-11', 'tte11');
+    expect(['passed', 'failed', 'insufficient']).toContain(te11.parity_status);
+
+    const undefinedSummary = te1.mismatches.find((m:any)=>m.field==='summary' && m.surface==='public_report_payload')?.value_diagnostic?.raw_value_summary;
+    const stringSummary = te1.mismatches.find((m:any)=>m.field==='summary' && m.surface==='public_report_payload')?.value_diagnostic?.surface_value_summary;
+    expect(undefinedSummary?.stable_hash_sha256).not.toBe(stringSummary?.stable_hash_sha256);
+  });
+
   it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jl-'));
     await emitReportParityProof({ run_id: 'run-j', analysis_run_id: 'run-j', take_id: 't7', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, render_payload: { summary: 'ok' }, public_report_payload: { summary: 'ok' }, allowed_public_fields: ['summary'] });

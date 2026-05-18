@@ -266,14 +266,60 @@ function toStableJson(value: unknown, seen: WeakSet<object> = new WeakSet()): st
   return stableObj;
 }
 
-function valuesDeepEqual(a: unknown, b: unknown): boolean {
-  return toStableJson(a) === toStableJson(b);
+function valuesDeepEqual(a: unknown, b: unknown, seenPairs: WeakMap<object, WeakSet<object>> = new WeakMap()): boolean {
+  if (Object.is(a, b)) return true;
+
+  const typeA = typeof a;
+  const typeB = typeof b;
+  if (typeA !== typeB) return false;
+
+  if (a === null || b === null) return false;
+
+  if (typeA === 'bigint') return (a as bigint) === (b as bigint);
+  if (typeA === 'symbol' || typeA === 'function') return false;
+
+  if (typeA !== 'object') return false;
+
+  const objA = a as object;
+  const objB = b as object;
+  const seenForA = seenPairs.get(objA);
+  if (seenForA?.has(objB)) return true;
+  if (seenForA) {
+    seenForA.add(objB);
+  } else {
+    seenPairs.set(objA, new WeakSet([objB]));
+  }
+
+  const arrA = Array.isArray(a);
+  const arrB = Array.isArray(b);
+  if (arrA !== arrB) return false;
+
+  if (arrA && arrB) {
+    const aItems = a as unknown[];
+    const bItems = b as unknown[];
+    if (aItems.length !== bItems.length) return false;
+    for (let i = 0; i < aItems.length; i += 1) {
+      if (!valuesDeepEqual(aItems[i], bItems[i], seenPairs)) return false;
+    }
+    return true;
+  }
+
+  const recA = a as Record<string, unknown>;
+  const recB = b as Record<string, unknown>;
+  const keysA = Object.keys(recA).sort();
+  const keysB = Object.keys(recB).sort();
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i += 1) {
+    if (keysA[i] !== keysB[i]) return false;
+    if (!valuesDeepEqual(recA[keysA[i]], recB[keysA[i]], seenPairs)) return false;
+  }
+  return true;
 }
 
 function summariseValueForParity(value: unknown): Record<string, unknown> {
   const stable = toStableJson(value);
   const type = Array.isArray(value) ? 'array' : (value === null ? 'null' : typeof value);
-  const hash = createHash('sha256').update(stable).digest('hex');
+  const hash = createHash('sha256').update(`${type}:${stable}`).digest('hex');
   return { type, stable_hash_sha256: hash, length: stable.length };
 }
 
@@ -388,8 +434,12 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const checkSurface = (surfaceName: 'render_payload'|'public_report_payload', surface: unknown) => {
     const foundPaths = new Set<string>();
     const candidates = new Set<string>();
+    const visited = new WeakSet<object>();
     const collectPaths = (value: unknown, currentPath = '') => {
       if (!value || typeof value !== 'object') return;
+      const obj = value as object;
+      if (visited.has(obj)) return;
+      visited.add(obj);
       if (Array.isArray(value)) {
         value.forEach((item, idx) => {
           const next = `${currentPath}[${idx}]`;
