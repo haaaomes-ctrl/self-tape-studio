@@ -101,6 +101,82 @@ describe('v3-s9 report parity proof', () => {
   });
 
   
+
+  it('supports bracket-indexed allowed_public_fields for pass/drift/presence/out-of-range/malformed mixes without crashing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-bracket-'));
+
+    await emitReportParityProof({
+      run_id: 'run-bracket-pass', analysis_run_id: 'run-bracket-pass', take_id: 'tb1', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'A', metrics: [{ label: 'x' }, { label: 'y' }] }] },
+      public_report_payload: { sections: [{ summary: 'A', metrics: [{ label: 'x' }, { label: 'y' }] }] },
+      render_payload: { sections: [{ summary: 'A', metrics: [{ label: 'x' }, { label: 'y' }] }] },
+      allowed_public_fields: ['sections[0].summary', 'sections[0].metrics[1].label'],
+    });
+    const pass = await readParity(root, 'run-bracket-pass', 'tb1');
+    expect(pass.parity_status).toBe('passed');
+    expect(pass.mismatches.some((m:any)=>m.mismatch_type==='presence_mismatch')).toBe(false);
+    expect(pass.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch')).toBe(false);
+
+    await emitReportParityProof({
+      run_id: 'run-bracket-public-drift', analysis_run_id: 'run-bracket-public-drift', take_id: 'tb2', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'A' }] },
+      public_report_payload: { sections: [{ summary: 'B' }] },
+      allowed_public_fields: ['sections[0].summary'],
+    });
+    const publicDrift = await readParity(root, 'run-bracket-public-drift', 'tb2');
+    expect(publicDrift.parity_status).toBe('failed');
+    expect(publicDrift.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch' && m.surface==='public_report_payload' && m.field==='sections[0].summary')).toBe(true);
+
+    await emitReportParityProof({
+      run_id: 'run-bracket-render-drift', analysis_run_id: 'run-bracket-render-drift', take_id: 'tb3', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'A' }] },
+      public_report_payload: { sections: [{ summary: 'A' }] },
+      render_payload: { sections: [{ summary: 'B' }] },
+      allowed_public_fields: ['sections[0].summary'],
+    });
+    const renderDrift = await readParity(root, 'run-bracket-render-drift', 'tb3');
+    expect(renderDrift.parity_status).toBe('failed');
+    expect(renderDrift.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch' && m.surface==='render_payload' && m.field==='sections[0].summary')).toBe(true);
+
+    await emitReportParityProof({
+      run_id: 'run-bracket-presence', analysis_run_id: 'run-bracket-presence', take_id: 'tb4', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'a0' }, { summary: 'a1' }] },
+      public_report_payload: { sections: [{ summary: 'a0' }] },
+      allowed_public_fields: ['sections[1].summary'],
+    });
+    const presence = await readParity(root, 'run-bracket-presence', 'tb4');
+    expect(presence.parity_status).toBe('failed');
+    expect(presence.mismatches.some((m:any)=>m.mismatch_type==='presence_mismatch' && m.field==='sections[1].summary')).toBe(true);
+
+    await expect(emitReportParityProof({
+      run_id: 'run-bracket-oob', analysis_run_id: 'run-bracket-oob', take_id: 'tb5', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'A' }] },
+      public_report_payload: { sections: [{ summary: 'A' }] },
+      allowed_public_fields: ['sections[99].summary'],
+    })).resolves.toBeTruthy();
+    const oob = await readParity(root, 'run-bracket-oob', 'tb5');
+    expect(['passed','failed','insufficient']).toContain(oob.parity_status);
+
+    await expect(emitReportParityProof({
+      run_id: 'run-bracket-malformed', analysis_run_id: 'run-bracket-malformed', take_id: 'tb6', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'A' }] },
+      public_report_payload: { sections: [{ summary: 'A' }] },
+      allowed_public_fields: ['sections[x].summary', 'sections[-1].summary', 'sections[].summary'] as any,
+    })).resolves.toBeTruthy();
+    const malformed = await readParity(root, 'run-bracket-malformed', 'tb6');
+    expect(malformed.parity_status).toBe('insufficient');
+
+    await emitReportParityProof({
+      run_id: 'run-bracket-mixed', analysis_run_id: 'run-bracket-mixed', take_id: 'tb7', internal_qa_emit: true, root_dir: root,
+      raw_report_data: { sections: [{ summary: 'A' }] },
+      public_report_payload: { sections: [{ summary: 'A' }] },
+      allowed_public_fields: [' sections[0].summary ', 'bad[x].value', null as any, 123 as any] as any,
+    });
+    const mixed = await readParity(root, 'run-bracket-mixed', 'tb7');
+    expect(mixed.parity_status).toBe('passed');
+    expect(mixed.checked_public_fields).toEqual(['sections[0].summary']);
+  });
+
   it('J/K/L/M: undefined/function/symbol hashing is stable and does not throw', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jklm-'));
 

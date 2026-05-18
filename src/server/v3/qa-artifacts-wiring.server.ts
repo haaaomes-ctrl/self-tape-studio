@@ -175,16 +175,53 @@ export interface ReportParityProofEmitterInput {
   internal_qa_emit?: boolean;
 }
 
+function tokenizePath(path: string): Array<string | number> | null {
+  const tokens: Array<string | number> = [];
+  let i = 0;
+  const n = path.length;
+  while (i < n) {
+    const ch = path[i];
+    if (ch === '.') {
+      i += 1;
+      continue;
+    }
+    if (ch === '[') {
+      const end = path.indexOf(']', i + 1);
+      if (end === -1) return null;
+      const indexRaw = path.slice(i + 1, end).trim();
+      if (!/^\d+$/.test(indexRaw)) return null;
+      const index = Number(indexRaw);
+      if (!Number.isInteger(index) || index < 0) return null;
+      tokens.push(index);
+      i = end + 1;
+      continue;
+    }
+    let j = i;
+    while (j < n && path[j] !== '.' && path[j] !== '[' && path[j] !== ']') j += 1;
+    const segment = path.slice(i, j).trim();
+    if (!segment) return null;
+    tokens.push(segment);
+    i = j;
+  }
+  return tokens.length > 0 ? tokens : null;
+}
+
 function getPathValue(obj: unknown, path: unknown): { present: boolean; value: unknown } {
   if (!obj || typeof obj !== 'object') return { present: false, value: undefined };
   if (typeof path !== 'string') return { present: false, value: undefined };
   const trimmedPath = path.trim();
   if (!trimmedPath) return { present: false, value: undefined };
-  const parts = trimmedPath.split('.');
+  const tokens = tokenizePath(trimmedPath);
+  if (!tokens) return { present: false, value: undefined };
   let cur: any = obj;
-  for (const part of parts) {
-    if (!cur || typeof cur !== 'object' || !(part in cur)) return { present: false, value: undefined };
-    cur = cur[part];
+  for (const token of tokens) {
+    if (typeof token === 'number') {
+      if (!Array.isArray(cur) || token < 0 || token >= cur.length) return { present: false, value: undefined };
+      cur = cur[token];
+      continue;
+    }
+    if (!cur || typeof cur !== 'object' || !(token in cur)) return { present: false, value: undefined };
+    cur = cur[token];
   }
   return { present: true, value: cur };
 }
@@ -197,6 +234,7 @@ function normaliseParityPathList(value: unknown): string[] {
     if (typeof entry !== 'string') continue;
     const trimmed = entry.trim();
     if (!trimmed || seen.has(trimmed)) continue;
+    if (!tokenizePath(trimmed)) continue;
     seen.add(trimmed);
     out.push(trimmed);
   }
