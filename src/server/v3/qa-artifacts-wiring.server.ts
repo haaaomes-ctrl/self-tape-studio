@@ -221,6 +221,19 @@ function summariseValueForParity(value: unknown): Record<string, unknown> {
   return { type, stable_hash_sha256: hash, length: stable.length };
 }
 
+
+function normaliseBlockedPath(path: string): string {
+  return String(path).trim().toLowerCase();
+}
+
+function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): boolean {
+  const defaults = [
+    'score','scores','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_readiness','report_data.overall_readiness_score','report_data.category_scores','report_data.score_entries','report_data.score_value'
+  ];
+  const blockedSet = new Set([...defaults, ...(blockedScorePaths ?? [])].map(normaliseBlockedPath));
+  return blockedSet.has(normaliseBlockedPath(path));
+}
+
 export async function emitReportParityProof(input: ReportParityProofEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
@@ -299,7 +312,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     checked_public_fields: checked,
     blocked_internal_fields_absent: forbiddenAbsent,
     forbidden_fields_absent: forbiddenAbsent,
-    blocked_score_fields_absent: !forbiddenFindings.some((p)=>/score/i.test(String(p.field))),
+    blocked_score_fields_absent: !forbiddenFindings.some((finding)=>isBlockedScoreFieldPath(String(finding.field), input.blocked_field_paths)),
     blocked_comparison_fields_absent: !forbiddenFindings.some((p)=>/comparison|winner|recommendation/i.test(String(p.field))),
     blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>/technique_authority/i.test(String(p.field))),
     unsafe_castability_or_marketability_fields_absent: !forbiddenFindings.some((p)=>/castability|bookability|marketability/i.test(String(p.field))),
