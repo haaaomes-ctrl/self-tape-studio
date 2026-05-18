@@ -37,6 +37,29 @@ GitHub runs checks and captures PR review state. GitHub checks alone are not rel
 13. Operator squash-merges.
 14. Next task starts.
 
+## Running one MVP linear task
+
+Use this process for one task, one Codex branch, one PR and one merge decision.
+
+1. Ask ChatGPT for the Codex prompt.
+2. Copy the prompt into Codex.
+3. Run Codex.
+4. Copy Codex summary into ChatGPT.
+5. Follow ChatGPT decision: fix, create PR or stop.
+6. Create the PR manually if ChatGPT instructs the operator to create PR.
+7. Ask for Codex PR review manually.
+8. Copy review findings to ChatGPT.
+9. Run the fix loop until no P0/P1 findings remain.
+10. Request another Codex/GitHub review after each fix.
+11. Continue review/fix loop until GitHub/Codex review finds no P0/P1.
+12. Wait for GitHub checks.
+13. Ask ChatGPT for the merge decision.
+14. Squash-merge manually only if ChatGPT approves merge.
+15. Pull latest `main` locally after the manual squash merge.
+16. Start the next task.
+
+Record each step in `current-task-state-template.md` or the equivalent JSON shape validated by `task-state.schema.json`. The operator remains responsible for PR creation, review requests, manual squash merge and any deployed environment checks Codex cannot inspect.
+
 ## Minimum Evidence Per Loop
 
 Each Codex summary must include files changed, tests run, build result, public output impact, upload/Mux/webhook impact, release-state impact, deferred P2 items and `operator-verification-required` items.

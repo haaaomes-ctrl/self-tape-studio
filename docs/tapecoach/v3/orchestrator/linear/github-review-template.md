@@ -1,17 +1,26 @@
 # GitHub Review Template
 
-GitHub checks alone are not release approval.
+GitHub checks alone are not release approval. Review findings must be classified by ChatGPT before fix, defer or merge consideration.
 
 ## PR
 
-- Link:
+- PR link:
 - Branch:
-- Target setup task or release slice:
+- Review round number:
+- Review focus:
+
+## Expected Scope
+
+- Expected changed files:
+- Forbidden changed files:
+- Public output impact expected: none unless explicitly scoped
+- Upload/Mux/webhook implementation impact expected: none unless explicitly scoped
+- `src/routeTree.gen.ts` expected unchanged: yes
 
 ## Review Inputs
 
-- Changed files:
 - GitHub checks:
+- Codex review findings:
 - Inline comments:
 - Review comments:
 - Requested changes:
@@ -22,20 +31,25 @@ GitHub checks alone are not release approval.
 - P1 findings:
 - P2 findings:
 - Non-issues:
+- Source evidence:
 
-## Boundary Checks
+## Triage
 
-- Public output impact:
-- Upload/Mux/webhook impact:
-- `src/routeTree.gen.ts` unchanged:
-- No `scripts/**` changes:
-- No gatekeeper workflow:
-- No gate scripts:
+- Fix now:
+- Defer:
+- Stop:
+- Deferred owner and next step:
+- Another review round required: true/false
+- Merge can be considered: true/false
 
-## Decision
+## Merge Consideration Guardrails
 
-- Fix required before PR:
-- Fix required before merge:
-- Deferred items:
-- `operator-verification-required` items:
-- ChatGPT next prompt needed:
+Merge can be considered only when:
+
+- No open P0 findings remain.
+- No open P1 findings remain.
+- GitHub checks pass.
+- Required build passes.
+- Blocked states remain blocked.
+- ChatGPT recommends merge.
+- The operator will merge manually.

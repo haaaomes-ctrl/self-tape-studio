@@ -2,30 +2,49 @@
 
 Use this template when review bugs or check failures must be sent back through ChatGPT and Codex.
 
-## Inputs From Review
+## Bug Summary
 
-- PR:
-- Failed checks:
-- Review comments:
-- P0 findings:
-- P1 findings:
-- P2 findings:
+- Bug summary:
+- Severity: P0 | P1 | P2
+- Source evidence:
+- Review round that found it:
+- Affected files:
 
-## ChatGPT Fix Decision
+## ChatGPT Decision
 
 - Fix now:
 - Defer:
 - Stop:
 - Reason:
+- Deferred owner and next step if P2:
 
 ## Codex Fix Prompt
 
 - Source hierarchy:
-- Files allowed:
-- Files forbidden:
+- Codex fix prompt:
+- Expected files allowed:
+- Forbidden files:
 - Exact findings to fix:
-- Checks to run:
-- Summary required:
+- Tests to run:
+- Build command:
+- Completion line required:
+
+## Completion Line
+
+Use this completion line in the Codex fix summary:
+
+`FIX-ROUND-[N] complete: no automatic merge, no automatic deploy, blocked states unchanged.`
+
+## Review After Fix
+
+- Codex fix summary:
+- Tests run:
+- Build result:
+- GitHub checks after fix:
+- Public output impact:
+- Upload/Mux/webhook implementation impact:
+- Blocked states unchanged:
+- Next review round required: true/false
 
 ## Exit Criteria
 

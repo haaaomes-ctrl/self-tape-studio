@@ -1,9 +1,10 @@
 # Codex Summary Template
 
-Codex completion is not acceptance.
+Codex completion is not acceptance. ChatGPT must decide fix, create PR or stop after reading this summary.
 
 ## Scope
 
+- Codex task ID if available:
 - Task:
 - Branch:
 - Source hierarchy checked:
@@ -12,20 +13,28 @@ Codex completion is not acceptance.
 ## Changes
 
 - Files changed:
-- No public output/upload/Mux/webhook changes unless explicitly scoped:
-- No product runtime changes unless explicitly scoped:
+- Product runtime changes: none unless explicitly scoped
+- Public output changes: none unless explicitly scoped
+- Upload/Mux/webhook implementation changes: none unless explicitly scoped
 
 ## Verification
 
 - Tests run:
 - Build result:
-- GitHub checks:
-- Review evidence:
+- GitHub checks if available:
+- Review evidence supplied:
+- Codex claims:
+- Evidence supplied for each claim:
 
-## Impact
+## Protected Impact
 
 - Public output impact:
 - Upload/Mux/webhook implementation impact:
+- `src/routeTree.gen.ts` changed: yes/no
+- Forbidden files changed: yes/no
+
+## Blocked States
+
 - Level 2 status: `not_accepted`
 - `production_safe` status: `blocked`
 - `public_scoring` status: `blocked`
@@ -33,10 +42,16 @@ Codex completion is not acceptance.
 - Comparison/public winner status: `blocked`
 - Customer-facing release status: `blocked`
 
-## Follow-Up
+## Operator Verification
 
-- P0 findings:
-- P1 findings:
-- Deferred P2 items:
 - `operator-verification-required` items:
-- Next recommended task:
+- Deployed environment or secret names needing operator check:
+- Live Storage, Lovable or production state needing operator check:
+
+## ChatGPT Decision Needed
+
+- Fix:
+- Create PR:
+- Stop:
+- Reason:
+- Next Codex prompt if fixing:

@@ -1,0 +1,44 @@
+{
+  "task_id": "XOPS-V3-SETUP-TASK-2-LINEAR-CHATGPT-CODEX-ORCHESTRATOR-UK",
+  "task_name": "Setup Task 2 MVP linear ChatGPT/Codex orchestrator loop",
+  "branch": "xops/v3-setup-task-2-linear-chatgpt-codex-orchestrator",
+  "pr_link": "",
+  "source_hierarchy_checked": [
+    "README.md",
+    "AGENTS.md",
+    "docs/tapecoach/v3/orchestrator/linear/**",
+    "env-vars.md",
+    "tapecoach-v3-parallel-delivery-approach.md",
+    "tapecoach-v3-roadmap.md"
+  ],
+  "chatgpt_prompt_issued_to_codex": "Paste the ChatGPT-generated Codex prompt here.",
+  "operator_manual_codex_run_required": true,
+  "codex_task_status": "not_started",
+  "codex_summary": "",
+  "chatgpt_decision_after_summary": "pending",
+  "pr_creation_status": "not_started",
+  "pr_review_has_begun": false,
+  "review_cycles": [],
+  "github_checks_status": "not_started",
+  "deferred_items": [
+    "trusted-base gatekeeper",
+    "protected-area validator",
+    "Storage-download QA lane",
+    "Lovable publish lane",
+    "automatic PR creation",
+    "automatic merge",
+    "automatic deployment"
+  ],
+  "operator_verification_required_items": [],
+  "merge_recommendation": false,
+  "merge_status": "not_started",
+  "next_task_recommendation": "Start the next accepted linear setup task only after manual squash merge and local pull of latest main.",
+  "blocked_states": {
+    "level_2": "not_accepted",
+    "production_safe": "blocked",
+    "public_scoring": "blocked",
+    "public_technique_authority": "blocked",
+    "comparison_public_winner": "blocked",
+    "customer_facing_release": "blocked"
+  }
+}

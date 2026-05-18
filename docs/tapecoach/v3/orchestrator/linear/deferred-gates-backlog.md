@@ -2,6 +2,8 @@
 
 These items are intentionally deferred from Setup Task 1. Setup Task 1 creates the MVP linear orchestrator foundation only.
 
+Setup Task 2 keeps these items deferred. The MVP loop records review/fix/merge decisions locally and must not turn any deferred item into automation, enforcement or release approval.
+
 ## Trusted-Base Gatekeeper
 
 - Why deferred: a gatekeeper workflow is outside the linear MVP and would expand this task into enforcement infrastructure.
@@ -55,3 +57,27 @@ These items are intentionally deferred from Setup Task 1. Setup Task 1 creates t
 - Why deferred: Level 2 remains `not_accepted`; sub-gates require proof artefacts and product/runtime evidence outside this task.
 - Before it starts: required artefacts, proof standards and runtime evidence sources must be accepted.
 - Owner: future product proof and Level 2 acceptance tasks.
+
+## External API-Driven Orchestrator
+
+- Why deferred: this MVP is manual-first and local. It must not call OpenAI, Codex, GitHub, Lovable or Storage APIs.
+- Before it starts: API boundaries, credentials handling, audit output and operator override rules must be accepted.
+- Owner: future orchestrator automation task.
+
+## Automatic PR Creation
+
+- Why deferred: the operator creates PRs manually in the MVP loop.
+- Before it starts: PR body requirements, branch ownership and review request rules must be accepted.
+- Owner: future orchestrator automation task.
+
+## Automatic Merge
+
+- Why deferred: merge remains a manual operator action after ChatGPT approval.
+- Before it starts: merge authority, rollback criteria and protected-branch rules must be accepted.
+- Owner: future release governance task.
+
+## Automatic Deployment
+
+- Why deferred: deployment is outside the MVP linear orchestrator and customer-facing release remains blocked.
+- Before it starts: deployment lane, environment promotion and release approval criteria must be accepted.
+- Owner: future deployment governance task.
