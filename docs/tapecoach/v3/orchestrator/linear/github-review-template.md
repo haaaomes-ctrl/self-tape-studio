@@ -16,6 +16,12 @@ GitHub checks alone are not release approval. Review findings must be classified
 - Public output impact expected: none unless explicitly scoped
 - Upload/Mux/webhook implementation impact expected: none unless explicitly scoped
 - `src/routeTree.gen.ts` expected unchanged: yes
+- Gatekeeper workflow introduced: no
+- Gate scripts introduced: no
+- Protected-area validator introduced: no
+- External API-driven orchestrator introduced: no
+- Lovable automation introduced: no
+- Storage-download automation introduced: no
 
 ## Review Inputs
 

@@ -23,6 +23,7 @@
   "deferred_items": [
     "trusted-base gatekeeper",
     "protected-area validator",
+    "external API-driven orchestrator",
     "Storage-download QA lane",
     "Lovable publish lane",
     "automatic PR creation",
