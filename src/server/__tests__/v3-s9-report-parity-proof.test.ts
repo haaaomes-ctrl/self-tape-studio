@@ -149,6 +149,8 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
       ['score_value', { score_value: 77 }, 'public_report_payload', true],
       ['category_scores', { category_scores: { acting: 90 } }, 'public_report_payload', true],
       ['comparison', { comparison: { winner: 't2' } }, 'public_report_payload', false],
+      ['winner', { winner: 't2' }, 'public_report_payload', false],
+      ['recommendation', { recommendation: 'choose take 2' }, 'public_report_payload', false],
     ];
     for (const [field, patch, surface, shouldBeScoreLeak] of cases) {
       const run = `run-${field.replace(/\W/g,'-')}-${surface}`;
@@ -166,11 +168,24 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
       expect(out.level2_satisfaction).toBe('insufficient');
     }
 
-    await emitReportParityProof({ run_id:'run-custom-score', analysis_run_id:'run-custom-score', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', custom_readiness_metric:73 }, allowed_public_fields:['summary'], blocked_field_paths:['custom_readiness_metric'] });
+    await emitReportParityProof({ run_id:'run-custom-private', analysis_run_id:'run-custom-private', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', internal_notes:'private' }, allowed_public_fields:['summary'], blocked_field_paths:['internal_notes'] });
+    const customPrivate = await readParity(root, 'run-custom-private', 'ts');
+    expect(customPrivate.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='internal_notes')).toBe(true);
+    expect(customPrivate.forbidden_fields_absent).toBe(false);
+    expect(customPrivate.blocked_internal_fields_absent).toBe(false);
+    expect(customPrivate.blocked_score_fields_absent).toBe(true);
+    expect(customPrivate.parity_status).toBe('failed');
+
+    await emitReportParityProof({ run_id:'run-custom-score', analysis_run_id:'run-custom-score', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', custom_readiness_metric:73 }, allowed_public_fields:['summary'], blocked_field_paths:['custom_readiness_metric'], blocked_score_field_paths:['custom_readiness_metric'] });
     const customScore = await readParity(root, 'run-custom-score', 'ts');
     expect(customScore.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='custom_readiness_metric')).toBe(true);
     expect(customScore.blocked_score_fields_absent).toBe(false);
 
+    await emitReportParityProof({ run_id:'run-custom-additive', analysis_run_id:'run-custom-additive', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', overall_score:99, internal_notes:'private' }, allowed_public_fields:['summary'], blocked_field_paths:['internal_notes'] });
+    const customAdditive = await readParity(root, 'run-custom-additive', 'ts');
+    expect(customAdditive.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='overall_score')).toBe(true);
+    expect(customAdditive.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='internal_notes')).toBe(true);
+    expect(customAdditive.blocked_score_fields_absent).toBe(false);
 
   });
 
