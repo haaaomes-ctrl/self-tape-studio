@@ -174,11 +174,23 @@ describe('v3-s9 report parity proof', () => {
 
   it('K: manifest + metrics align and parity blockers remain when parity fails', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-k-'));
-    const out = await emitReportParityProof({ run_id: 'run-k', analysis_run_id: 'run-k', take_id: 't8', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'B' }, allowed_public_fields: ['summary'] });
-    await emitQAManifestForAnalysisRun({ run_id: 'run-k', analysis_run_id: 'run-k', take_id: 't8', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report', ...out.emitted_artefact_ids], artefact_source_classification_by_id: { parity_report: 'internal_report_parity_proof' }, artefact_level2_spine_satisfaction_by_id: { parity_report: false } });
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-k',
+      analysis_run_id: 'run-k',
+      take_id: 't8',
+      submission_id: 's1',
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ['raw_report'],
+      report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'B' }, allowed_public_fields: ['summary'] },
+    });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-k', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-k', 'qa', 'acceptance_metrics.json'), 'utf8'));
-    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
+    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted_blocked');
+    expect(manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_report')?.blocker_code).toBe('parity_artefacts_missing');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.parity_report).toBe(false);
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
@@ -328,7 +340,8 @@ describe('v3-s9 report parity proof', () => {
     process.env.QA_ARTIFACT_SINK = 'log';
     await emitQAManifestForAnalysisRun({ run_id: 'run-p', analysis_run_id: 'run-p', take_id: 'tp', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'B' }, allowed_public_fields: ['summary'] } });
     const manifestP = JSON.parse(await readFile(path.join(root, 'run-p', 'manifest.json'), 'utf8'));
-    expect(manifestP.artefact_status_by_id.parity_report).toBe('emitted');
+    expect(manifestP.artefact_status_by_id.parity_report).toBe('emitted_blocked');
+    expect(manifestP.blocker_codes).toContain('parity_artefacts_missing');
 
     await emitQAManifestForAnalysisRun({ run_id: 'run-q', analysis_run_id: 'run-q', take_id: 'tq', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'] });
     const manifestQ = JSON.parse(await readFile(path.join(root, 'run-q', 'manifest.json'), 'utf8'));

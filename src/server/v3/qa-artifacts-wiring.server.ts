@@ -976,6 +976,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     const preFinalMetrics = { ...buildQAAcceptanceMetrics(preFinalManifest), ...resolveQADeploymentProvenance() };
     const intendedSameFinalisationArtefactIds = ['validator_trace', 'gate_trace'];
     let emittedWithInternalTraces = [...new Set(initialEmitted)];
+    let emittedBlockedWithInternalTraces = [...new Set(metadata.emitted_blocked_artefact_ids ?? [])];
     let artefactSourceClassificationById = { ...(metadata.artefact_source_classification_by_id ?? {}) };
     let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
     const noExportSourceById: Record<string, string> = {
@@ -1045,9 +1046,15 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         internal_qa_emit: true,
       });
       if (parityWrite.written) {
-        emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'parity_report'])];
         artefactSourceClassificationById.parity_report = 'internal_report_parity_proof';
         artefactLevel2ById.parity_report = parityWrite.parity_status === 'passed';
+        if (parityWrite.parity_status === 'passed') {
+          emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'parity_report'])];
+          emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_report');
+        } else {
+          emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_report');
+          emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_report'])];
+        }
       }
     }
 
@@ -1062,7 +1069,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     });
     console.info('[internal-qa] acceptance_metrics_write_result', { event: 'acceptance_metrics_write_result', written: Boolean(qaWrite.written), warning: getQAWriteWarning(qaWrite), sink_warning: (qaWrite as any)?.sink_warning ?? null, resolved_storage_path: qaWrite.storage_path ?? qaWrite.path ?? null });
     if (qaWrite.written) {
-      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
+      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces, runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
       let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
       if (finalOut.written && 'manifest' in (finalOut as any)) {
         const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };
