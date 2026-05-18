@@ -1,0 +1,130 @@
+name: TapeCoach release slice
+description: Track a scoped TapeCoach setup task or release slice.
+title: "[TapeCoach] "
+labels:
+  - tapecoach
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Codex completion is not acceptance.
+        GitHub checks alone are not release approval.
+        Lovable publish is not release approval.
+        Storage-download review is not release approval.
+  - type: input
+    id: target
+    attributes:
+      label: Target setup task or release slice
+      description: Name the exact setup task or release slice this issue controls.
+    validations:
+      required: true
+  - type: checkboxes
+    id: source_hierarchy
+    attributes:
+      label: Source hierarchy checked
+      options:
+        - label: README.md checked as controlling product source
+          required: true
+        - label: Relevant orchestrator docs checked where present
+          required: true
+        - label: Delivery approach used for sequencing only
+          required: true
+        - label: Roadmap used as planning/reference only
+          required: true
+  - type: textarea
+    id: changed
+    attributes:
+      label: What changed
+      description: Summarise the intended repository changes.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests run
+      description: Include command names and outcomes.
+    validations:
+      required: true
+  - type: textarea
+    id: build
+    attributes:
+      label: Build result
+      description: Include command name and outcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: public_output
+    attributes:
+      label: Public output impact
+      options:
+        - none
+        - changed
+        - operator-verification-required
+    validations:
+      required: true
+  - type: dropdown
+    id: mux_webhook
+    attributes:
+      label: Upload/Mux/webhook impact
+      options:
+        - none
+        - changed
+        - operator-verification-required
+    validations:
+      required: true
+  - type: input
+    id: level2
+    attributes:
+      label: Level 2 status
+      placeholder: not_accepted
+    validations:
+      required: true
+  - type: input
+    id: production_safe
+    attributes:
+      label: production_safe status
+      placeholder: blocked
+    validations:
+      required: true
+  - type: input
+    id: public_scoring
+    attributes:
+      label: public_scoring status
+      placeholder: blocked
+    validations:
+      required: true
+  - type: input
+    id: public_technique_authority
+    attributes:
+      label: public_technique_authority status
+      placeholder: blocked
+    validations:
+      required: true
+  - type: input
+    id: comparison_public_winner
+    attributes:
+      label: Comparison/public winner status
+      placeholder: blocked
+    validations:
+      required: true
+  - type: textarea
+    id: operator_verification
+    attributes:
+      label: operator-verification-required items
+      description: List any environment, deployment, Storage, Lovable or live checks requiring operator confirmation.
+    validations:
+      required: true
+  - type: textarea
+    id: deferred_p2
+    attributes:
+      label: Deferred P2 items
+      description: List non-blocking P2 findings and proposed owner.
+    validations:
+      required: true
+  - type: textarea
+    id: next_task
+    attributes:
+      label: Next task recommendation
+      description: State the recommended next setup task or release slice.
+    validations:
+      required: true
