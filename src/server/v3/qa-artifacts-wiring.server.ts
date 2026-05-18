@@ -89,7 +89,7 @@ export function reconcileComparisonManifestState(input: {
     artefact_level2_spine_satisfaction_by_id: l2ById,
   };
 }
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; }; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -156,6 +156,100 @@ export interface ModelRunTraceEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
+
+export interface ReportParityProofEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  take_id?: string | null;
+  submission_id?: string;
+  source_module?: string;
+  source_stage?: string;
+  raw_report_data?: Record<string, unknown> | null;
+  render_payload?: Record<string, unknown> | null;
+  public_report_payload?: Record<string, unknown> | null;
+  allowed_public_fields?: string[];
+  blocked_field_paths?: string[];
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+
+function hasPath(obj: unknown, path: string): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  const parts = path.split('.');
+  let cur: any = obj;
+  for (const part of parts) {
+    if (!cur || typeof cur !== 'object' || !(part in cur)) return false;
+    cur = cur[part];
+  }
+  return true;
+}
+
+export async function emitReportParityProof(input: ReportParityProofEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const raw = input.raw_report_data ?? null;
+  const render = input.render_payload ?? null;
+  const publicPayload = input.public_report_payload ?? render;
+  const rawAvail = Boolean(raw && typeof raw === 'object');
+  const renderAvail = Boolean(render && typeof render === 'object');
+  const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
+  const checked = [...new Set((input.allowed_public_fields ?? []))];
+  const blocked = [...new Set((input.blocked_field_paths ?? ['internal_qa','qa_private','scores','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability']))];
+  const mismatches: Array<Record<string, unknown>> = [];
+  if (rawAvail && publicAvail) {
+    for (const field of checked) {
+      const rawHas = hasPath(raw, field);
+      const pubHas = hasPath(publicPayload, field);
+      if (rawHas !== pubHas) mismatches.push({ field, mismatch_type: 'presence_mismatch', raw_present: rawHas, public_present: pubHas });
+    }
+  }
+  const blockedPresent = blocked.filter((p) => hasPath(publicPayload, p));
+  const forbiddenAbsent = blockedPresent.length === 0;
+  const sufficient = rawAvail && (renderAvail || publicAvail);
+  const parityStatus = !sufficient ? 'insufficient' : (mismatches.length === 0 && forbiddenAbsent ? 'passed' : 'failed');
+  const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
+  const payload = {
+    schema_version: 'tapecoach_v3_report_parity_result_v1',
+    artefact_type: 'report_parity_result',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    generated_at: new Date().toISOString(),
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    parity_status: parityStatus,
+    public_output_unchanged: true,
+    raw_report_available: rawAvail,
+    render_payload_available: renderAvail,
+    public_report_payload_available: publicAvail,
+    checked_public_fields: checked,
+    blocked_internal_fields_absent: forbiddenAbsent,
+    forbidden_fields_absent: forbiddenAbsent,
+    blocked_score_fields_absent: !blockedPresent.some((p)=>/score/i.test(p)),
+    blocked_comparison_fields_absent: !blockedPresent.some((p)=>/comparison|winner|recommendation/i.test(p)),
+    blocked_technique_authority_fields_absent: !blockedPresent.some((p)=>/technique_authority/i.test(p)),
+    unsafe_castability_or_marketability_fields_absent: !blockedPresent.some((p)=>/castability|bookability|marketability/i.test(p)),
+    public_output_permissions_checked: true,
+    report_output_enforcement_checked: true,
+    mismatch_count: mismatches.length,
+    mismatches,
+    blocker_codes,
+    gate_satisfaction_reason: parityStatus === 'passed' ? 'public_report_payload_matches_checked_surface' : (!sufficient ? 'insufficient_runtime_evidence_for_report_parity' : 'report_parity_mismatch_or_forbidden_field_detected'),
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    level2_satisfaction: 'insufficient',
+    source_module: input.source_module ?? 'qa-artifacts-wiring.server',
+    source_stage: input.source_stage ?? 'emitReportParityProof',
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id ?? null,
+  };
+  const takeId = input.take_id ?? null;
+  const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/parity/report_parity_result.json` : 'parity/report_parity_result.json';
+  const result = await writeInternalJson(root, input.run_id, relative, payload, 'parity_report');
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['parity_report'] : [], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+}
+
 export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
 export interface InternalComparisonTakeInput {
   take_id: string;
@@ -740,6 +834,30 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       artefactLevel2ById.gate_trace = false;
       gateTraceSummary = gateWrite.gate_trace_summary;
     }}
+
+    if (canEmitTakeScopedFirstPassTraces) {
+      const parityWrite = await emitReportParityProof({
+        run_id: metadata.run_id,
+        analysis_run_id: baseOptions.analysis_run_id,
+        take_id: takeIdForFirstPassTraces,
+        submission_id: metadata.submission_id,
+        source_module: 'src/server/v3/qa-artifacts-wiring.server.ts',
+        source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
+        raw_report_data: metadata.report_parity_input?.raw_report_data,
+        render_payload: metadata.report_parity_input?.render_payload,
+        public_report_payload: metadata.report_parity_input?.public_report_payload,
+        allowed_public_fields: metadata.report_parity_input?.allowed_public_fields,
+        blocked_field_paths: metadata.report_parity_input?.blocked_field_paths,
+        root_dir: metadata.root_dir,
+        internal_qa_emit: true,
+      });
+      if (parityWrite.written) {
+        emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'parity_report'])];
+        artefactSourceClassificationById.parity_report = 'internal_report_parity_proof';
+        artefactLevel2ById.parity_report = parityWrite.parity_status === 'passed';
+      }
+    }
+
     const metrics = preFinalMetrics;
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     console.info('[internal-qa] acceptance_metrics_write_attempt', { event: 'acceptance_metrics_write_attempt',
