@@ -51,26 +51,35 @@ describe('v3-s9 comparison parity proof', () => {
     expect(parity.public_output_unchanged).toBe(true);
   });
 
-  it('C-G missing each required evidence keeps parity blocker', async () => {
+  it('C-G missing each required evidence emits insufficient proof and keeps parity blocker', async () => {
     for (const missing of evidenceIds){
       const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-m-${missing}-`));
       const emitted = evidenceIds.filter((x)=>x!==missing);
-      const { manifest, metrics } = await emitCase(root,`run-${missing}`,{ emitted:[...emitted] });
-      expect(manifest.artefact_status_by_id.parity_comparison).toBe('missing');
+      const { manifest, metrics, parity } = await emitCase(root,`run-${missing}`,{ emitted:[...emitted] });
+      expect(parity.parity_status).toBe('insufficient');
+      expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+      expect(parity[`${missing}_available` as keyof typeof parity]).toBe(false);
       expect(manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison')?.blocker_code).toBe('parity_artefacts_missing');
       expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
       expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
     }
   });
 
-  it('H/I/J/K/L/M/N failed-risk states are emitted_blocked and written', async () => {
+  it('H internal winner/recommendation-like keys do not fail when no public leakage', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-h-'));
+    const { parity } = await emitCase(root,'run-h',{ payloads: { comparison_result_summary: { winner: 'internal' }, internal_recommendation_note: 'internal', selected_take_id_internal_only: 'ta' } });
+    expect(parity.parity_status).toBe('passed');
+    expect(parity.forbidden_public_comparison_fields_absent).toBe(true);
+  });
+
+  it('I/J/K/L/M/N failed-risk states are emitted_blocked and written', async () => {
     const cases: Array<[string,Record<string,unknown>]> = [
-      ['winner',{ winner:'take-a' }],
-      ['recommendation',{ recommendation:'take-a' }],
+      ['winner',{ public_comparison_payload: { winner:'take-a' } }],
+      ['recommendation',{ public_output: { recommendation:'take-a' } }],
       ['forced',{ forced_winner_risk:true }],
       ['false',{ false_winner_risk:true }],
       ['route',{ route_variance_risk:true }],
-      ['same-video',{ same_video_detected:true }],
+      ['same-video',{ same_video_unresolved_risk:true }],
     ];
     for (const [suffix,payloads] of cases){
       const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-f-${suffix}-`));

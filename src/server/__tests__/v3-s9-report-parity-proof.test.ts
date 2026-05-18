@@ -398,8 +398,8 @@ describe('v3-s9 report parity proof', () => {
     });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-comp', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-comp', 'qa', 'acceptance_metrics.json'), 'utf8'));
-    expect(manifest.artefact_status_by_id.parity_comparison).toBe('missing');
-    expect(manifest.missing_artifacts).toContain('parity_comparison');
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+    expect(manifest.missing_artifacts).not.toContain('parity_comparison');
     expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
     expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
     expect(metrics.level2_status).toBe('not_accepted');
@@ -461,7 +461,7 @@ describe('v3-s9 report parity proof', () => {
     const comparisonRaw = manifest.required_artifacts.find((a:any)=>a.artefact_id==='comparison_raw');
     expect(parityReport?.status).toBe('emitted');
     expect(parityReport?.blocker_code).toBeUndefined();
-    expect(parityComparison?.status).toBe('missing');
+    expect(parityComparison?.status).toBe('emitted_blocked');
     expect(parityComparison?.blocker_code).toBe('parity_artefacts_missing');
     expect(comparisonRaw?.status).toBe('emitted_blocked');
   });
