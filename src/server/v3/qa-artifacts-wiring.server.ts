@@ -232,7 +232,8 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const renderAvail = Boolean(render && typeof render === 'object');
   const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
   const checked = [...new Set((input.allowed_public_fields ?? []))];
-  const blocked = [...new Set((input.blocked_field_paths ?? ['internal_qa','qa_private','scores','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability']))];
+  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_readiness','report_data.overall_readiness_score','report_data.category_scores','report_data.score_entries','report_data.score_value','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability'];
+  const blocked = [...new Set([...defaultBlockedFieldPaths, ...(input.blocked_field_paths ?? [])])];
   const checkedSurfaces = [
     ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
     ...(publicAvail ? [{ name: 'public_report_payload' as const, value: publicPayload }] : []),
