@@ -908,7 +908,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       gateTraceSummary = gateWrite.gate_trace_summary;
     }}
 
-    if (canEmitTakeScopedFirstPassTraces) {
+    if (metadata.report_parity_input && takeIdForFirstPassTraces) {
       const parityWrite = await emitReportParityProof({
         run_id: metadata.run_id,
         analysis_run_id: baseOptions.analysis_run_id,

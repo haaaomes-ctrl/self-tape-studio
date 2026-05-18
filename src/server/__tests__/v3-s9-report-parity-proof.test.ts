@@ -103,4 +103,26 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
+
+  it('O/P/Q: manifest flow emits parity in file/log sinks when report_parity_input exists, and stays missing when absent', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-opq-'));
+    const prevSink = process.env.QA_ARTIFACT_SINK;
+
+    process.env.QA_ARTIFACT_SINK = 'file';
+    await emitQAManifestForAnalysisRun({ run_id: 'run-o', analysis_run_id: 'run-o', take_id: 'to', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } });
+    const manifestO = JSON.parse(await readFile(path.join(root, 'run-o', 'manifest.json'), 'utf8'));
+    expect(manifestO.artefact_status_by_id.parity_report).toBe('emitted');
+
+    process.env.QA_ARTIFACT_SINK = 'log';
+    await emitQAManifestForAnalysisRun({ run_id: 'run-p', analysis_run_id: 'run-p', take_id: 'tp', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'B' }, allowed_public_fields: ['summary'] } });
+    const manifestP = JSON.parse(await readFile(path.join(root, 'run-p', 'manifest.json'), 'utf8'));
+    expect(manifestP.artefact_status_by_id.parity_report).toBe('emitted');
+
+    await emitQAManifestForAnalysisRun({ run_id: 'run-q', analysis_run_id: 'run-q', take_id: 'tq', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'] });
+    const manifestQ = JSON.parse(await readFile(path.join(root, 'run-q', 'manifest.json'), 'utf8'));
+    expect(manifestQ.artefact_status_by_id.parity_report).toBe('missing');
+
+    process.env.QA_ARTIFACT_SINK = prevSink;
+  });
+
 });
