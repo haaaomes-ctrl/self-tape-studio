@@ -1325,7 +1325,7 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs?: 
       public_scoring_status: 'blocked',
       public_technique_authority_status: 'blocked',
       level2_satisfaction: 'insufficient',
-      ...basePayload,
+      evidence_details: basePayload,
       ...resolveQADeploymentProvenance(),
     };
     const w = await writeInternalJson(root, input.run_id, rel, payload, id);
@@ -1354,7 +1354,7 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs?: 
       ui_proof_emitted: hasUi,
       log_proof_emitted: ids.includes('no_export_log_proof'),
       proof_family_status: hasUi ? 'complete' : 'partial_ui_proof_missing',
-      level2_satisfaction: hasUi ? 'candidate_pending_other_gates' : 'insufficient',
+      level2_satisfaction: 'insufficient',
       level2_unsatisfied_reasons: hasUi ? [] : ['no_export_ui_proof_missing'],
       must_not_unblock_public_or_production_gates: true,
       public_output_unchanged: true,

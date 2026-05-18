@@ -52,6 +52,58 @@ describe('v3 s9 no-export source/config/log proof emission', () => {
     expect(bundle.proof_family_status).toBe('partial_ui_proof_missing');
   });
 
+  it('enforces canonical metadata even when caller payload attempts overrides', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s913a-override-'));
+    const run = 'run-s913a-override';
+    await emitNoExportProofBundle({
+      run_id: run,
+      root_dir: root,
+      internal_qa_emit: true,
+      proofs: {
+        no_export_source_proof: {
+          internal_only: false,
+          privacy_classification: 'public',
+          public_scoring_status: 'accepted',
+          public_technique_authority_status: 'accepted',
+          production_safe_status: 'accepted',
+          level2_satisfaction: 'accepted',
+          schema_version: 'bogus',
+        },
+        no_export_config_proof: {
+          internal_only: false,
+          privacy_classification: 'public',
+          schema_version: 'bogus',
+          public_scoring_status: 'accepted',
+          level2_satisfaction: 'accepted',
+        },
+        no_export_log_proof: {
+          internal_only: false,
+          privacy_classification: 'public',
+          schema_version: 'bogus',
+          production_safe_status: 'accepted',
+          level2_satisfaction: 'accepted',
+        },
+      },
+    });
+    const src = await parse(path.join(root, run, 'export_or_no_export', 'no_export_source_proof.json'));
+    const cfg = await parse(path.join(root, run, 'export_or_no_export', 'no_export_config_proof.json'));
+    const log = await parse(path.join(root, run, 'export_or_no_export', 'no_export_log_proof.json'));
+    const bundle = await parse(path.join(root, run, 'export_or_no_export', 'no_export_proof.json'));
+    for (const payload of [src, cfg, log, bundle]) {
+      expect(payload.internal_only).toBe(true);
+      expect(payload.privacy_classification).toBe('internal_private');
+      expect(payload.public_scoring_status).toBe('blocked');
+      expect(payload.public_technique_authority_status).toBe('blocked');
+      expect(payload.production_safe_status).toBe('blocked');
+      expect(payload.level2_satisfaction).toBe('insufficient');
+    }
+    for (const payload of [src, cfg, log]) {
+      expect(payload.schema_version).toBe('tapecoach_v3_no_export_proof_v1');
+      expect(payload.evidence_details.schema_version).toBe('bogus');
+    }
+    expect(bundle.schema_version).toBe('tapecoach_v3_no_export_proof_bundle_v1');
+  });
+
   it('does not emit no_export_proof bundle when source/config/log trio is incomplete', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s913a-missing-'));
     const out = await emitNoExportProofBundle({ run_id: 'run-s913a-missing', root_dir: root, internal_qa_emit: true, proofs: { no_export_source_proof: { ok: true }, no_export_config_proof: { ok: true } } });
