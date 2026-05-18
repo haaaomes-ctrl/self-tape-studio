@@ -175,15 +175,32 @@ export interface ReportParityProofEmitterInput {
   internal_qa_emit?: boolean;
 }
 
-function getPathValue(obj: unknown, path: string): { present: boolean; value: unknown } {
+function getPathValue(obj: unknown, path: unknown): { present: boolean; value: unknown } {
   if (!obj || typeof obj !== 'object') return { present: false, value: undefined };
-  const parts = path.split('.');
+  if (typeof path !== 'string') return { present: false, value: undefined };
+  const trimmedPath = path.trim();
+  if (!trimmedPath) return { present: false, value: undefined };
+  const parts = trimmedPath.split('.');
   let cur: any = obj;
   for (const part of parts) {
     if (!cur || typeof cur !== 'object' || !(part in cur)) return { present: false, value: undefined };
     cur = cur[part];
   }
   return { present: true, value: cur };
+}
+
+function normaliseParityPathList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 function toStableJson(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
@@ -288,9 +305,16 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const rawAvail = Boolean(raw && typeof raw === 'object');
   const renderAvail = Boolean(render && typeof render === 'object');
   const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
-  const checked = [...new Set((input.allowed_public_fields ?? []))];
+  const allowedFieldsInput = input.allowed_public_fields;
+  const checked = normaliseParityPathList(allowedFieldsInput);
+  const allowedInputCount = Array.isArray(allowedFieldsInput) ? allowedFieldsInput.length : 0;
+  const invalidAllowedPublicFieldCount = Array.isArray(allowedFieldsInput)
+    ? allowedFieldsInput.filter((entry) => typeof entry !== 'string').length
+    : 0;
+  const droppedAllowedPublicFieldCount = Math.max(0, allowedInputCount - checked.length);
   const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*','comparison','winner','recommendation','technique_authority','technique_authority.*','public_technique_authority','public_technique_authority.*','report_data.technique_authority','report_data.technique_authority.*','report_data.public_technique_authority','report_data.public_technique_authority.*','castability','bookability','marketability'];
-  const blocked = [...new Set([...defaultBlockedFieldPaths, ...(input.blocked_field_paths ?? [])])];
+  const blocked = [...new Set([...defaultBlockedFieldPaths, ...normaliseParityPathList(input.blocked_field_paths)])];
+  const blockedScorePaths = normaliseParityPathList(input.blocked_score_field_paths);
   const checkedSurfaces = [
     ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
     ...(publicAvail ? [{ name: 'public_report_payload' as const, value: publicPayload }] : []),
@@ -379,13 +403,15 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     checked_public_fields: checked,
     blocked_internal_fields_absent: forbiddenAbsent,
     forbidden_fields_absent: forbiddenAbsent,
-    blocked_score_fields_absent: !forbiddenFindings.some((finding)=>isBlockedScoreFieldPath(String(finding.field), input.blocked_score_field_paths)),
+    blocked_score_fields_absent: !forbiddenFindings.some((finding)=>isBlockedScoreFieldPath(String(finding.field), blockedScorePaths)),
     blocked_comparison_fields_absent: !forbiddenFindings.some((p)=>/comparison|winner|recommendation/i.test(String(p.field))),
     blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>['technique_authority', 'public_technique_authority', 'report_data.technique_authority', 'report_data.public_technique_authority'].some((blockedPath) => matchesBlockedPath(String(p.field), blockedPath))),
     unsafe_castability_or_marketability_fields_absent: !forbiddenFindings.some((p)=>/castability|bookability|marketability/i.test(String(p.field))),
     public_output_permissions_checked: checkedSurfaces.length > 0,
     report_output_enforcement_checked: checkedSurfaces.length > 0,
     mismatch_count: mismatches.length,
+    invalid_allowed_public_field_count: invalidAllowedPublicFieldCount,
+    dropped_allowed_public_field_count: droppedAllowedPublicFieldCount,
     mismatches,
     blocker_codes,
     gate_satisfaction_reason: parityStatus === 'passed' ? 'public_report_payload_matches_checked_surface' : (!hasAllowedFields ? 'allowed_public_fields_missing' : (!sufficient ? 'insufficient_runtime_evidence_for_report_parity' : 'report_parity_mismatch_or_forbidden_field_detected')),

@@ -56,6 +56,50 @@ describe('v3-s9 report parity proof', () => {
     expect(i.mismatches.some((m:any)=>m.mismatch_type==='allowed_public_fields_missing')).toBe(true);
   });
 
+  it('normalises malformed/blank allowed_public_fields and never throws', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-allowed-norm-'));
+    const cases: Array<[string, any[]]> = [
+      ['null', [null]],
+      ['number', [123]],
+      ['object-array', [{ path: 'summary' }, ['summary']]],
+      ['blank', ['   ']],
+    ];
+    for (const [suffix, allowed] of cases) {
+      const run = `run-allowed-${suffix}`;
+      await expect(emitReportParityProof({ run_id: run, analysis_run_id: run, take_id: 'tn', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: allowed as any })).resolves.toBeTruthy();
+      const p = await readParity(root, run, 'tn');
+      expect(p.parity_status).toBe('insufficient');
+      expect(p.level2_satisfaction).toBe('insufficient');
+      expect(p.mismatches.some((m:any)=>m.mismatch_type==='allowed_public_fields_missing')).toBe(true);
+      expect(p.invalid_allowed_public_field_count).toBeGreaterThanOrEqual(0);
+      expect(p.dropped_allowed_public_field_count).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('normalises mixed allowed/blocked path inputs and still enforces drift + forbidden checks', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-mixed-paths-'));
+
+    await emitReportParityProof({ run_id: 'run-mixed-allowed-pass', analysis_run_id: 'run-mixed-allowed-pass', take_id: 'tm1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: [' summary ', null as any, '', 'summary', 123 as any] as any });
+    const mixedPass = await readParity(root, 'run-mixed-allowed-pass', 'tm1');
+    expect(mixedPass.checked_public_fields).toEqual(['summary']);
+    expect(mixedPass.parity_status).toBe('passed');
+
+    await emitReportParityProof({ run_id: 'run-mixed-allowed-drift', analysis_run_id: 'run-mixed-allowed-drift', take_id: 'tm2', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'B' }, allowed_public_fields: ['   ', 'summary'] as any });
+    const mixedDrift = await readParity(root, 'run-mixed-allowed-drift', 'tm2');
+    expect(mixedDrift.parity_status).toBe('failed');
+    expect(mixedDrift.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch' && m.field==='summary')).toBe(true);
+
+    await emitReportParityProof({ run_id: 'run-invalid-blocked', analysis_run_id: 'run-invalid-blocked', take_id: 'tm3', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A', internal_notes: 'private' }, allowed_public_fields: ['summary'], blocked_field_paths: [null as any, 123 as any, ' internal_notes '] as any });
+    const invalidBlocked = await readParity(root, 'run-invalid-blocked', 'tm3');
+    expect(invalidBlocked.parity_status).toBe('failed');
+    expect(invalidBlocked.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='internal_notes')).toBe(true);
+
+    await emitReportParityProof({ run_id: 'run-invalid-score-blocked', analysis_run_id: 'run-invalid-score-blocked', take_id: 'tm4', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A', custom_score: 77 }, allowed_public_fields: ['summary'], blocked_field_paths: [' custom_score '], blocked_score_field_paths: [null as any, 123 as any, ' custom_score '] as any });
+    const invalidScoreBlocked = await readParity(root, 'run-invalid-score-blocked', 'tm4');
+    expect(invalidScoreBlocked.parity_status).toBe('failed');
+    expect(invalidScoreBlocked.blocked_score_fields_absent).toBe(false);
+  });
+
   
   it('J/K/L/M: undefined/function/symbol hashing is stable and does not throw', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jklm-'));
