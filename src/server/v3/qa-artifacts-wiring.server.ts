@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
 import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
@@ -89,7 +90,7 @@ export function reconcileComparisonManifestState(input: {
     artefact_level2_spine_satisfaction_by_id: l2ById,
   };
 }
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -156,6 +157,379 @@ export interface ModelRunTraceEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
+
+export interface ReportParityProofEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  take_id?: string | null;
+  submission_id?: string;
+  source_module?: string;
+  source_stage?: string;
+  raw_report_data?: Record<string, unknown> | null;
+  render_payload?: Record<string, unknown> | null;
+  public_report_payload?: Record<string, unknown> | null;
+  allowed_public_fields?: string[];
+  blocked_field_paths?: string[];
+  blocked_score_field_paths?: string[];
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+
+function tokenizePath(path: string): Array<string | number> | null {
+  const tokens: Array<string | number> = [];
+  let i = 0;
+  const n = path.length;
+  while (i < n) {
+    const ch = path[i];
+    if (ch === '.') {
+      i += 1;
+      continue;
+    }
+    if (ch === '[') {
+      const end = path.indexOf(']', i + 1);
+      if (end === -1) return null;
+      const indexRaw = path.slice(i + 1, end).trim();
+      if (!/^\d+$/.test(indexRaw)) return null;
+      const index = Number(indexRaw);
+      if (!Number.isInteger(index) || index < 0) return null;
+      tokens.push(index);
+      i = end + 1;
+      continue;
+    }
+    let j = i;
+    while (j < n && path[j] !== '.' && path[j] !== '[' && path[j] !== ']') j += 1;
+    const segment = path.slice(i, j).trim();
+    if (!segment) return null;
+    tokens.push(segment);
+    i = j;
+  }
+  return tokens.length > 0 ? tokens : null;
+}
+
+function getPathValue(obj: unknown, path: unknown): { present: boolean; value: unknown } {
+  if (!obj || typeof obj !== 'object') return { present: false, value: undefined };
+  if (typeof path !== 'string') return { present: false, value: undefined };
+  const trimmedPath = path.trim();
+  if (!trimmedPath) return { present: false, value: undefined };
+  const tokens = tokenizePath(trimmedPath);
+  if (!tokens) return { present: false, value: undefined };
+  let cur: any = obj;
+  for (const token of tokens) {
+    if (typeof token === 'number') {
+      if (!Array.isArray(cur) || token < 0 || token >= cur.length) return { present: false, value: undefined };
+      cur = cur[token];
+      continue;
+    }
+    if (!cur || typeof cur !== 'object' || !(token in cur)) return { present: false, value: undefined };
+    cur = cur[token];
+  }
+  return { present: true, value: cur };
+}
+
+function normaliseParityPathList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    if (!tokenizePath(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function toStableJson(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
+  const type = typeof value;
+  if (value === undefined) return '"__undefined__"';
+  if (value === null) return 'null';
+  if (type === 'string') return JSON.stringify(value);
+  if (type === 'number') return Number.isFinite(value as number) ? String(value) : '"__non_finite_number__"';
+  if (type === 'boolean') return value ? 'true' : 'false';
+  if (type === 'bigint') return `"__bigint__:${String(value)}"`;
+  if (type === 'symbol') return `"__symbol__:${String((value as symbol).description ?? '')}"`;
+  if (type === 'function') return `"__function__:${String((value as Function).name || 'anonymous')}"`;
+  if (type !== 'object') return `"__unknown_type__:${type}"`;
+  const obj = value as object;
+  if (seen.has(obj)) return '"__circular__"';
+  seen.add(obj);
+  if (Array.isArray(value)) {
+    const arr = `[${value.map((item) => toStableJson(item, seen)).join(',')}]`;
+    seen.delete(obj);
+    return arr;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  const stableObj = `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${toStableJson(v, seen)}`).join(',')}}`;
+  seen.delete(obj);
+  return stableObj;
+}
+
+function valuesDeepEqual(a: unknown, b: unknown, seenPairs: WeakMap<object, WeakSet<object>> = new WeakMap()): boolean {
+  if (Object.is(a, b)) return true;
+
+  const typeA = typeof a;
+  const typeB = typeof b;
+  if (typeA !== typeB) return false;
+
+  if (a === null || b === null) return false;
+
+  if (typeA === 'bigint') return (a as bigint) === (b as bigint);
+  if (typeA === 'symbol' || typeA === 'function') return false;
+
+  if (typeA !== 'object') return false;
+
+  const objA = a as object;
+  const objB = b as object;
+  const seenForA = seenPairs.get(objA);
+  if (seenForA?.has(objB)) return true;
+  if (seenForA) {
+    seenForA.add(objB);
+  } else {
+    seenPairs.set(objA, new WeakSet([objB]));
+  }
+
+  const arrA = Array.isArray(a);
+  const arrB = Array.isArray(b);
+  if (arrA !== arrB) return false;
+
+  if (arrA && arrB) {
+    const aItems = a as unknown[];
+    const bItems = b as unknown[];
+    if (aItems.length !== bItems.length) return false;
+    for (let i = 0; i < aItems.length; i += 1) {
+      if (!valuesDeepEqual(aItems[i], bItems[i], seenPairs)) return false;
+    }
+    return true;
+  }
+
+  const recA = a as Record<string, unknown>;
+  const recB = b as Record<string, unknown>;
+  const keysA = Object.keys(recA).sort();
+  const keysB = Object.keys(recB).sort();
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i += 1) {
+    if (keysA[i] !== keysB[i]) return false;
+    if (!valuesDeepEqual(recA[keysA[i]], recB[keysA[i]], seenPairs)) return false;
+  }
+  return true;
+}
+
+function summariseValueForParity(value: unknown): Record<string, unknown> {
+  const stable = toStableJson(value);
+  const type = Array.isArray(value) ? 'array' : (value === null ? 'null' : typeof value);
+  const hash = createHash('sha256').update(`${type}:${stable}`).digest('hex');
+  return { type, stable_hash_sha256: hash, length: stable.length };
+}
+
+
+function normaliseBlockedPath(path: string): string {
+  return String(path).trim().toLowerCase();
+}
+
+function normaliseIndexedPath(path: string): string {
+  return normaliseBlockedPath(path).replace(/\[\d+\]/g, '');
+}
+
+function normaliseIndexedWildcardPath(path: string): string {
+  return normaliseBlockedPath(path).replace(/\[\d+\]/g, '[]');
+}
+
+const defaultBlockedScoreFieldPaths = [
+  'score','scores','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*'
+];
+
+
+function matchesBlockedPath(fieldPath: string, blockedPath: string): boolean {
+  const field = normaliseBlockedPath(fieldPath);
+  const fieldIndexless = normaliseIndexedPath(fieldPath);
+  const fieldIndexedWildcard = normaliseIndexedWildcardPath(fieldPath);
+  const blocked = normaliseBlockedPath(blockedPath);
+  if (!field || !blocked) return false;
+  if (blocked.endsWith('.*')) {
+    const base = blocked.slice(0, -2);
+    const baseIndexless = normaliseIndexedPath(base);
+    const baseIndexedWildcard = normaliseIndexedWildcardPath(base);
+    return (
+      field === base || field.startsWith(`${base}.`) || field.startsWith(`${base}[`)
+      || fieldIndexless === baseIndexless || fieldIndexless.startsWith(`${baseIndexless}.`)
+      || fieldIndexedWildcard === baseIndexedWildcard || fieldIndexedWildcard.startsWith(`${baseIndexedWildcard}.`)
+    );
+  }
+  const blockedIndexless = normaliseIndexedPath(blocked);
+  const blockedIndexedWildcard = normaliseIndexedWildcardPath(blocked);
+  return (
+    field === blocked || field.startsWith(`${blocked}.`) || field.startsWith(`${blocked}[`)
+    || fieldIndexless === blockedIndexless || fieldIndexless.startsWith(`${blockedIndexless}.`)
+    || fieldIndexedWildcard === blockedIndexedWildcard || fieldIndexedWildcard.startsWith(`${blockedIndexedWildcard}.`)
+  );
+}
+
+function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): boolean {
+  const allBlockedPaths = [...defaultBlockedScoreFieldPaths, ...(blockedScorePaths ?? [])];
+  return allBlockedPaths.some((blockedPath) => matchesBlockedPath(path, blockedPath));
+}
+
+function isSafeTakeIdSegment(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/[\\/]/.test(trimmed)) return false;
+  if (trimmed.includes('..')) return false;
+  return true;
+}
+
+export async function emitReportParityProof(input: ReportParityProofEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const raw = input.raw_report_data ?? null;
+  const render = input.render_payload ?? null;
+  const publicPayload = input.public_report_payload ?? null;
+  const rawAvail = Boolean(raw && typeof raw === 'object');
+  const renderAvail = Boolean(render && typeof render === 'object');
+  const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
+  const allowedFieldsInput = input.allowed_public_fields;
+  const checked = normaliseParityPathList(allowedFieldsInput);
+  const allowedInputCount = Array.isArray(allowedFieldsInput) ? allowedFieldsInput.length : 0;
+  const invalidAllowedPublicFieldCount = Array.isArray(allowedFieldsInput)
+    ? allowedFieldsInput.filter((entry) => typeof entry !== 'string').length
+    : 0;
+  const droppedAllowedPublicFieldCount = Math.max(0, allowedInputCount - checked.length);
+  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*','comparison','winner','recommendation','technique_authority','technique_authority.*','public_technique_authority','public_technique_authority.*','report_data.technique_authority','report_data.technique_authority.*','report_data.public_technique_authority','report_data.public_technique_authority.*','castability','bookability','marketability'];
+  const blocked = [...new Set([...defaultBlockedFieldPaths, ...normaliseParityPathList(input.blocked_field_paths)])];
+  const blockedScorePaths = normaliseParityPathList(input.blocked_score_field_paths);
+  const checkedSurfaces = [
+    ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
+    ...(publicAvail ? [{ name: 'public_report_payload' as const, value: publicPayload }] : []),
+  ];
+  const checkedSurfaceNames = checkedSurfaces.map((s) => s.name);
+  const mismatches: Array<Record<string, unknown>> = [];
+
+  if (rawAvail) {
+    for (const field of checked) {
+      const rawField = getPathValue(raw, field);
+      for (const surface of checkedSurfaces) {
+        const surfaceField = getPathValue(surface.value, field);
+        if (rawField.present !== surfaceField.present) {
+          mismatches.push({ field, surface: surface.name, mismatch_type: 'presence_mismatch', raw_present: rawField.present, surface_present: surfaceField.present });
+          continue;
+        }
+        if (rawField.present && surfaceField.present && !valuesDeepEqual(rawField.value, surfaceField.value)) {
+          mismatches.push({
+            field,
+            surface: surface.name,
+            mismatch_type: 'value_mismatch',
+            value_diagnostic: {
+              raw_value_summary: summariseValueForParity(rawField.value),
+              surface_value_summary: summariseValueForParity(surfaceField.value),
+            },
+          });
+        }
+      }
+    }
+  }
+
+  const forbiddenFindings: Array<Record<string, unknown>> = [];
+  const checkSurface = (surfaceName: 'render_payload'|'public_report_payload', surface: unknown) => {
+    const foundPaths = new Set<string>();
+    const candidates = new Set<string>();
+    const visited = new WeakSet<object>();
+    const collectPaths = (value: unknown, currentPath = '') => {
+      if (!value || typeof value !== 'object') return;
+      const obj = value as object;
+      if (visited.has(obj)) return;
+      visited.add(obj);
+      if (Array.isArray(value)) {
+        value.forEach((item, idx) => {
+          const next = `${currentPath}[${idx}]`;
+          candidates.add(next);
+          collectPaths(item, next);
+        });
+        return;
+      }
+      for (const key of Object.keys(value as Record<string, unknown>)) {
+        const next = currentPath ? `${currentPath}.${key}` : key;
+        candidates.add(next);
+        collectPaths((value as Record<string, unknown>)[key], next);
+      }
+    };
+    collectPaths(surface);
+    for (const candidate of candidates) {
+      const blockedMatch = blocked.find((blockedPath) => matchesBlockedPath(candidate, blockedPath));
+      if (!blockedMatch) continue;
+      const label = candidate === blockedMatch ? blockedMatch : candidate;
+      if (foundPaths.has(label)) continue;
+      foundPaths.add(label);
+      const found = getPathValue(surface, candidate.replace(/\[(\d+)\]/g, '.$1'));
+      forbiddenFindings.push({ field: label, mismatch_type: 'forbidden_field_present', surface: surfaceName, value_summary: summariseValueForParity(found.value) });
+    }
+  };
+  for (const surface of checkedSurfaces) checkSurface(surface.name, surface.value);
+  mismatches.push(...forbiddenFindings);
+
+  const forbiddenAbsent = forbiddenFindings.length === 0;
+  const hasAllowedFields = checked.length > 0;
+  const sufficient = rawAvail && publicAvail && hasAllowedFields;
+  const parityStatus =
+    forbiddenFindings.length > 0
+      ? 'failed'
+      : (!sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed'));
+  const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
+  if (!hasAllowedFields) mismatches.push({ mismatch_type: 'allowed_public_fields_missing', detail: 'no_allowed_public_fields_configured' });
+  const payload = {
+    schema_version: 'tapecoach_v3_report_parity_result_v1',
+    artefact_type: 'report_parity_result',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    generated_at: new Date().toISOString(),
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    parity_status: parityStatus,
+    public_output_unchanged: true,
+    raw_report_available: rawAvail,
+    render_payload_available: renderAvail,
+    public_report_payload_available: publicAvail,
+    checked_surfaces: checkedSurfaceNames,
+    checked_public_fields: checked,
+    blocked_internal_fields_absent: forbiddenAbsent,
+    forbidden_fields_absent: forbiddenAbsent,
+    blocked_score_fields_absent: !forbiddenFindings.some((finding)=>isBlockedScoreFieldPath(String(finding.field), blockedScorePaths)),
+    blocked_comparison_fields_absent: !forbiddenFindings.some((p)=>/comparison|winner|recommendation/i.test(String(p.field))),
+    blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>['technique_authority', 'public_technique_authority', 'report_data.technique_authority', 'report_data.public_technique_authority'].some((blockedPath) => matchesBlockedPath(String(p.field), blockedPath))),
+    unsafe_castability_or_marketability_fields_absent: !forbiddenFindings.some((p)=>/castability|bookability|marketability/i.test(String(p.field))),
+    render_payload_checked: checkedSurfaceNames.includes('render_payload'),
+    public_output_permissions_checked: checkedSurfaceNames.includes('public_report_payload'),
+    report_output_enforcement_checked: checkedSurfaces.length > 0,
+    mismatch_count: mismatches.length,
+    invalid_allowed_public_field_count: invalidAllowedPublicFieldCount,
+    dropped_allowed_public_field_count: droppedAllowedPublicFieldCount,
+    mismatches,
+    blocker_codes,
+    gate_satisfaction_reason: parityStatus === 'passed' ? 'public_report_payload_matches_checked_surface' : (!hasAllowedFields ? 'allowed_public_fields_missing' : (!sufficient ? 'insufficient_runtime_evidence_for_report_parity' : 'report_parity_mismatch_or_forbidden_field_detected')),
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient',
+    source_module: input.source_module ?? 'qa-artifacts-wiring.server',
+    source_stage: input.source_stage ?? 'emitReportParityProof',
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id ?? null,
+  };
+  const takeId = input.take_id ?? null;
+  if (takeId !== null) {
+    try { assertSafeSegment(takeId, 'take_id'); } catch {
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+    }
+    if (!isSafeTakeIdSegment(takeId)) {
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+    }
+  }
+  const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/parity/report_parity_result.json` : 'parity/report_parity_result.json';
+  const result = await writeInternalJson(root, input.run_id, relative, payload, 'parity_report');
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['parity_report'] : [], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+}
+
 export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
 export interface InternalComparisonTakeInput {
   take_id: string;
@@ -690,6 +1064,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     const preFinalMetrics = { ...buildQAAcceptanceMetrics(preFinalManifest), ...resolveQADeploymentProvenance() };
     const intendedSameFinalisationArtefactIds = ['validator_trace', 'gate_trace'];
     let emittedWithInternalTraces = [...new Set(initialEmitted)];
+    let emittedBlockedWithInternalTraces = [...new Set(metadata.emitted_blocked_artefact_ids ?? [])];
     let artefactSourceClassificationById = { ...(metadata.artefact_source_classification_by_id ?? {}) };
     let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
     const noExportSourceById: Record<string, string> = {
@@ -714,7 +1089,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     const canEmitTakeScopedFirstPassTraces = shouldUseExpandedManifestPaths() && takeIdForFirstPassTraces !== null;
     if (canEmitTakeScopedFirstPassTraces) {
     const validatorWrite = await emitValidatorTraceFirstPass({
-      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces,
+      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces ?? undefined,
       source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
       manifest_snapshot: preFinalManifest, acceptance_metrics_snapshot: preFinalMetrics, emitted_artefact_ids: emittedWithInternalTraces,
       artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
@@ -728,7 +1103,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       validatorTraceSummary = validatorWrite.validator_trace_summary;
     }
     const gateWrite = await emitGateTraceFirstPass({
-      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces,
+      run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces ?? undefined,
       source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
       manifest_snapshot: preFinalManifest, acceptance_metrics_snapshot: preFinalMetrics, emitted_artefact_ids: emittedWithInternalTraces,
       missing_artefact_ids: (preFinalManifest?.missing_artifacts ?? []) as string[], blocker_codes: (preFinalManifest?.blocker_codes ?? []) as string[],
@@ -740,6 +1115,37 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       artefactLevel2ById.gate_trace = false;
       gateTraceSummary = gateWrite.gate_trace_summary;
     }}
+
+    if (metadata.report_parity_input) {
+      const parityWrite = await emitReportParityProof({
+        run_id: metadata.run_id,
+        analysis_run_id: baseOptions.analysis_run_id,
+        take_id: takeIdForFirstPassTraces ?? undefined,
+        submission_id: metadata.submission_id,
+        source_module: 'src/server/v3/qa-artifacts-wiring.server.ts',
+        source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
+        raw_report_data: metadata.report_parity_input?.raw_report_data,
+        render_payload: metadata.report_parity_input?.render_payload,
+        public_report_payload: metadata.report_parity_input?.public_report_payload,
+        allowed_public_fields: metadata.report_parity_input?.allowed_public_fields,
+        blocked_field_paths: metadata.report_parity_input?.blocked_field_paths,
+        blocked_score_field_paths: metadata.report_parity_input?.blocked_score_field_paths,
+        root_dir: metadata.root_dir,
+        internal_qa_emit: true,
+      });
+      if (parityWrite.written) {
+        artefactSourceClassificationById.parity_report = 'internal_report_parity_proof';
+        artefactLevel2ById.parity_report = parityWrite.parity_status === 'passed';
+        if (parityWrite.parity_status === 'passed') {
+          emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'parity_report'])];
+          emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_report');
+        } else {
+          emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_report');
+          emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_report'])];
+        }
+      }
+    }
+
     const metrics = preFinalMetrics;
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     console.info('[internal-qa] acceptance_metrics_write_attempt', { event: 'acceptance_metrics_write_attempt',
@@ -751,7 +1157,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     });
     console.info('[internal-qa] acceptance_metrics_write_result', { event: 'acceptance_metrics_write_result', written: Boolean(qaWrite.written), warning: getQAWriteWarning(qaWrite), sink_warning: (qaWrite as any)?.sink_warning ?? null, resolved_storage_path: qaWrite.storage_path ?? qaWrite.path ?? null });
     if (qaWrite.written) {
-      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
+      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces, runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
       let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
       if (finalOut.written && 'manifest' in (finalOut as any)) {
         const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };

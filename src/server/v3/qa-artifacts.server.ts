@@ -551,13 +551,22 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const emittedBlockedIds = new Set(options.emitted_blocked_artefact_ids ?? []);
   const deferredIds = new Set(options.deferred_artefact_ids ?? []);
   const notApplicableIds = new Set(options.not_applicable_artefact_ids ?? []);
+  const comparedTakeIds = options.compared_take_ids ?? [];
+  const comparisonRuntimeEvidenceCount = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']
+    .filter((id) => emittedIds.has(id) || emittedBlockedIds.has(id))
+    .length;
+  const comparisonInvoked =
+    Boolean(options.comparison_run_id) ||
+    comparedTakeIds.length > 1 ||
+    comparisonRuntimeEvidenceCount > 0;
   const required_artifacts: QARequiredArtefact[] = REQUIRED.map((r) => {
     const emitted = emittedIds.has(r.artefact_id);
     const emittedBlocked = emittedBlockedIds.has(r.artefact_id);
     const deferred = deferredIds.has(r.artefact_id);
-    const notApplicable = notApplicableIds.has(r.artefact_id);
+    const notApplicable = notApplicableIds.has(r.artefact_id) || (r.artefact_id === 'parity_comparison' && !comparisonInvoked);
     const status: ArtefactStatus = emitted ? 'emitted' : (emittedBlocked ? 'emitted_blocked' : (deferred ? 'deferred' : (notApplicable ? 'not_applicable' : 'missing')));
-    return { ...r, status, blocker_code: emitted ? undefined : BLOCKERS[r.artefact_id], reason: emitted ? 'Emitted in current run' : (emittedBlocked ? 'Emitted with blocked/not_executed runtime evidence' : (deferred ? 'Intentionally deferred' : (notApplicable ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'))) };
+    const blocker_code = (emitted || notApplicable) ? undefined : BLOCKERS[r.artefact_id];
+    return { ...r, status, blocker_code, reason: emitted ? 'Emitted in current run' : (emittedBlocked ? 'Emitted with blocked/not_executed runtime evidence' : (deferred ? 'Intentionally deferred' : (notApplicable ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'))) };
   });
   const missing_artifacts = required_artifacts.filter((a) => a.status === 'missing').map((a) => a.artefact_id);
   const emitted_artifacts = required_artifacts.filter((a) => a.status === 'emitted').map((a) => a.artefact_id);
