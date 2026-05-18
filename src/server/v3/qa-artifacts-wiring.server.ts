@@ -270,6 +270,14 @@ function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): bo
   return allBlockedPaths.some((blockedPath) => matchesBlockedPath(path, blockedPath));
 }
 
+function isSafeTakeIdSegment(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/[\\/]/.test(trimmed)) return false;
+  if (trimmed.includes('..')) return false;
+  return true;
+}
+
 export async function emitReportParityProof(input: ReportParityProofEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
@@ -281,7 +289,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const renderAvail = Boolean(render && typeof render === 'object');
   const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
   const checked = [...new Set((input.allowed_public_fields ?? []))];
-  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability'];
+  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*','comparison','winner','recommendation','technique_authority','technique_authority.*','public_technique_authority','public_technique_authority.*','report_data.technique_authority','report_data.technique_authority.*','report_data.public_technique_authority','report_data.public_technique_authority.*','castability','bookability','marketability'];
   const blocked = [...new Set([...defaultBlockedFieldPaths, ...(input.blocked_field_paths ?? [])])];
   const checkedSurfaces = [
     ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
@@ -373,7 +381,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     forbidden_fields_absent: forbiddenAbsent,
     blocked_score_fields_absent: !forbiddenFindings.some((finding)=>isBlockedScoreFieldPath(String(finding.field), input.blocked_score_field_paths)),
     blocked_comparison_fields_absent: !forbiddenFindings.some((p)=>/comparison|winner|recommendation/i.test(String(p.field))),
-    blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>/technique_authority/i.test(String(p.field))),
+    blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>['technique_authority', 'public_technique_authority', 'report_data.technique_authority', 'report_data.public_technique_authority'].some((blockedPath) => matchesBlockedPath(String(p.field), blockedPath))),
     unsafe_castability_or_marketability_fields_absent: !forbiddenFindings.some((p)=>/castability|bookability|marketability/i.test(String(p.field))),
     public_output_permissions_checked: checkedSurfaces.length > 0,
     report_output_enforcement_checked: checkedSurfaces.length > 0,
@@ -391,6 +399,14 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     take_id: input.take_id ?? null,
   };
   const takeId = input.take_id ?? null;
+  if (takeId !== null) {
+    try { assertSafeSegment(takeId, 'take_id'); } catch {
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+    }
+    if (!isSafeTakeIdSegment(takeId)) {
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+    }
+  }
   const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/parity/report_parity_result.json` : 'parity/report_parity_result.json';
   const result = await writeInternalJson(root, input.run_id, relative, payload, 'parity_report');
   return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['parity_report'] : [], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };

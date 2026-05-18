@@ -215,6 +215,28 @@ describe('v3-s9 report parity proof', () => {
     const readinessNoteSafe = await readParity(root, 'run-readiness-note-safe', 'ts');
     expect(readinessNoteSafe.parity_status).toBe('passed');
 
+    await emitReportParityProof({ run_id:'run-tech-auth-public', analysis_run_id:'run-tech-auth-public', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', technique_authority:{ score: 1 } }, allowed_public_fields:['summary'] });
+    const techAuthPublic = await readParity(root, 'run-tech-auth-public', 'ts');
+    expect(techAuthPublic.parity_status).toBe('failed');
+    expect(techAuthPublic.blocked_technique_authority_fields_absent).toBe(false);
+    expect(techAuthPublic.public_technique_authority_status).toBe('blocked');
+
+    await emitReportParityProof({ run_id:'run-tech-auth-render', analysis_run_id:'run-tech-auth-render', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, render_payload:{ summary:'ok', technique_authority: { leaked: true } }, allowed_public_fields:['summary'] });
+    const techAuthRender = await readParity(root, 'run-tech-auth-render', 'ts');
+    expect(techAuthRender.parity_status).toBe('failed');
+    expect(techAuthRender.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.surface==='render_payload' && String(m.field).startsWith('technique_authority'))).toBe(true);
+    expect(techAuthRender.blocked_technique_authority_fields_absent).toBe(false);
+
+    await emitReportParityProof({ run_id:'run-tech-auth-report-data', analysis_run_id:'run-tech-auth-report-data', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', report_data: { technique_authority: { details: 'x' } } }, allowed_public_fields:['summary'] });
+    const techAuthReportData = await readParity(root, 'run-tech-auth-report-data', 'ts');
+    expect(techAuthReportData.parity_status).toBe('failed');
+    expect(techAuthReportData.blocked_technique_authority_fields_absent).toBe(false);
+
+    await emitReportParityProof({ run_id:'run-public-tech-auth', analysis_run_id:'run-public-tech-auth', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', public_technique_authority: { details: true } }, allowed_public_fields:['summary'] });
+    const publicTechAuth = await readParity(root, 'run-public-tech-auth', 'ts');
+    expect(publicTechAuth.parity_status).toBe('failed');
+    expect(publicTechAuth.blocked_technique_authority_fields_absent).toBe(false);
+
     await emitReportParityProof({ run_id:'run-array-generic', analysis_run_id:'run-array-generic', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', items:[{ secret:'leak' }] }, allowed_public_fields:['summary'], blocked_field_paths:['items.secret'] });
     const arrayGeneric = await readParity(root, 'run-array-generic', 'ts');
     expect(arrayGeneric.parity_status).toBe('failed');
@@ -235,6 +257,24 @@ describe('v3-s9 report parity proof', () => {
     const configNestedScoreArray = await readParity(root, 'run-config-nested-score-array', 'ts');
     expect(configNestedScoreArray.parity_status).toBe('failed');
     expect(configNestedScoreArray.blocked_score_fields_absent).toBe(false);
+
+    const safeTakeRoot = await mkdtemp(path.join(os.tmpdir(), 's9-13c-safe-take-'));
+    const safeTakeOut = await emitReportParityProof({ run_id:'run-safe-take', analysis_run_id:'run-safe-take', take_id:'safe-take-1', internal_qa_emit:true, root_dir: safeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(safeTakeOut.written).toBe(true);
+    await expect(readFile(path.join(safeTakeRoot, 'run-safe-take', 'takes', 'take-safe-take-1', 'analysis-run-safe-take', 'parity', 'report_parity_result.json'), 'utf8')).resolves.toBeTruthy();
+
+    const runScopedRoot = await mkdtemp(path.join(os.tmpdir(), 's9-13c-runscoped-2-'));
+    const runScopedOut = await emitReportParityProof({ run_id:'run-no-take', analysis_run_id:'run-no-take', take_id:null, internal_qa_emit:true, root_dir: runScopedRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(runScopedOut.written).toBe(true);
+    await expect(readFile(path.join(runScopedRoot, 'run-no-take', 'parity', 'report_parity_result.json'), 'utf8')).resolves.toBeTruthy();
+
+    const unsafeTakeRoot = await mkdtemp(path.join(os.tmpdir(), 's9-13c-unsafe-take-'));
+    const unsafeSlash = await emitReportParityProof({ run_id:'run-unsafe-slash', analysis_run_id:'run-unsafe-slash', take_id:'bad/take', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(unsafeSlash.written).toBe(false);
+    const unsafeBackslash = await emitReportParityProof({ run_id:'run-unsafe-backslash', analysis_run_id:'run-unsafe-backslash', take_id:'bad\\take', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(unsafeBackslash.written).toBe(false);
+    const unsafeEmpty = await emitReportParityProof({ run_id:'run-unsafe-empty', analysis_run_id:'run-unsafe-empty', take_id:'', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(unsafeEmpty.written).toBe(false);
 
   });
 
