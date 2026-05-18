@@ -58,7 +58,19 @@ Use this process for one task, one Codex branch, one PR and one merge decision.
 15. Pull latest `main` locally after the manual squash merge.
 16. Start the next task.
 
-Record each step in `current-task-state-template.md` or the equivalent JSON shape validated by `task-state.schema.json`. The operator remains responsible for PR creation, review requests, manual squash merge and any deployed environment checks Codex cannot inspect.
+Record each step in `current-task-state-template.md` or the equivalent JSON shape described by `task-state.schema.json`. The operator remains responsible for PR creation, review requests, manual squash merge and any deployed environment checks Codex cannot inspect.
+
+## Manual task-state validation
+
+This MVP task intentionally does not add validation scripts. Validate the task state manually before asking ChatGPT for a merge decision:
+
+1. Confirm `task_id`, `task_name`, `branch`, source hierarchy checked, ChatGPT prompt, Codex status, Codex summary, ChatGPT decision, PR status, GitHub checks, deferred items, operator-verification-required items, merge status and next task recommendation are recorded.
+2. Confirm PR review cycles are recorded only after review has begun through a review request, review finding or check result.
+3. For merge consideration, evaluate unresolved P0/P1 findings from the latest review cycle. Historical P0/P1 findings may remain in earlier rounds as audit history after later fix rounds clear them.
+4. Confirm the latest review cycle does not require another review.
+5. Confirm GitHub checks are passed.
+6. Confirm blocked states are explicitly recorded as unchanged: Level 2 `not_accepted`; `production_safe`, `public_scoring`, `public_technique_authority`, comparison/public winner and customer-facing release all `blocked`.
+7. Confirm no automatic merge, automatic deploy, Lovable publish, Storage-download QA automation, gatekeeper workflow, gate script or protected-area validator has been added.
 
 ## Minimum Evidence Per Loop
 
