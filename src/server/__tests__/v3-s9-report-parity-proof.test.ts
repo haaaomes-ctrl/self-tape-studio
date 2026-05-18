@@ -154,7 +154,6 @@ describe('v3-s9 report parity proof', () => {
     const manifest = JSON.parse(await readFile(path.join(root, 'run-k', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-k', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
-    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
@@ -177,7 +176,9 @@ describe('v3-s9 report parity proof', () => {
     const metrics = JSON.parse(await readFile(path.join(root, 'run-ordinary', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('not_applicable');
+    expect(manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison')?.status).toBe('not_applicable');
     expect(manifest.missing_artifacts).not.toContain('parity_comparison');
+    expect(manifest.blocker_codes).not.toContain('parity_artefacts_missing');
     const parityMissingInputs = ['parity_report', 'parity_comparison'].filter((id) => manifest.missing_artifacts.includes(id));
     expect(parityMissingInputs).toEqual([]);
     expect(metrics.level2_status).toBe('not_accepted');

@@ -565,7 +565,8 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     const deferred = deferredIds.has(r.artefact_id);
     const notApplicable = notApplicableIds.has(r.artefact_id) || (r.artefact_id === 'parity_comparison' && !comparisonInvoked);
     const status: ArtefactStatus = emitted ? 'emitted' : (emittedBlocked ? 'emitted_blocked' : (deferred ? 'deferred' : (notApplicable ? 'not_applicable' : 'missing')));
-    return { ...r, status, blocker_code: emitted ? undefined : BLOCKERS[r.artefact_id], reason: emitted ? 'Emitted in current run' : (emittedBlocked ? 'Emitted with blocked/not_executed runtime evidence' : (deferred ? 'Intentionally deferred' : (notApplicable ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'))) };
+    const blocker_code = (emitted || notApplicable || deferred) ? undefined : BLOCKERS[r.artefact_id];
+    return { ...r, status, blocker_code, reason: emitted ? 'Emitted in current run' : (emittedBlocked ? 'Emitted with blocked/not_executed runtime evidence' : (deferred ? 'Intentionally deferred' : (notApplicable ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'))) };
   });
   const missing_artifacts = required_artifacts.filter((a) => a.status === 'missing').map((a) => a.artefact_id);
   const emitted_artifacts = required_artifacts.filter((a) => a.status === 'emitted').map((a) => a.artefact_id);
