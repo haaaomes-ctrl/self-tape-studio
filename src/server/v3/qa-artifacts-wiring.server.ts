@@ -227,6 +227,14 @@ function normaliseBlockedPath(path: string): string {
   return String(path).trim().toLowerCase();
 }
 
+function normaliseIndexedPath(path: string): string {
+  return normaliseBlockedPath(path).replace(/\[\d+\]/g, '');
+}
+
+function normaliseIndexedWildcardPath(path: string): string {
+  return normaliseBlockedPath(path).replace(/\[\d+\]/g, '[]');
+}
+
 const defaultBlockedScoreFieldPaths = [
   'score','scores','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*'
 ];
@@ -234,13 +242,27 @@ const defaultBlockedScoreFieldPaths = [
 
 function matchesBlockedPath(fieldPath: string, blockedPath: string): boolean {
   const field = normaliseBlockedPath(fieldPath);
+  const fieldIndexless = normaliseIndexedPath(fieldPath);
+  const fieldIndexedWildcard = normaliseIndexedWildcardPath(fieldPath);
   const blocked = normaliseBlockedPath(blockedPath);
   if (!field || !blocked) return false;
   if (blocked.endsWith('.*')) {
     const base = blocked.slice(0, -2);
-    return field === base || field.startsWith(`${base}.`) || field.startsWith(`${base}[`);
+    const baseIndexless = normaliseIndexedPath(base);
+    const baseIndexedWildcard = normaliseIndexedWildcardPath(base);
+    return (
+      field === base || field.startsWith(`${base}.`) || field.startsWith(`${base}[`)
+      || fieldIndexless === baseIndexless || fieldIndexless.startsWith(`${baseIndexless}.`)
+      || fieldIndexedWildcard === baseIndexedWildcard || fieldIndexedWildcard.startsWith(`${baseIndexedWildcard}.`)
+    );
   }
-  return field === blocked || field.startsWith(`${blocked}.`) || field.startsWith(`${blocked}[`);
+  const blockedIndexless = normaliseIndexedPath(blocked);
+  const blockedIndexedWildcard = normaliseIndexedWildcardPath(blocked);
+  return (
+    field === blocked || field.startsWith(`${blocked}.`) || field.startsWith(`${blocked}[`)
+    || fieldIndexless === blockedIndexless || fieldIndexless.startsWith(`${blockedIndexless}.`)
+    || fieldIndexedWildcard === blockedIndexedWildcard || fieldIndexedWildcard.startsWith(`${blockedIndexedWildcard}.`)
+  );
 }
 
 function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): boolean {
@@ -295,7 +317,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const forbiddenFindings: Array<Record<string, unknown>> = [];
   const checkSurface = (surfaceName: 'render_payload'|'public_report_payload', surface: unknown) => {
     const foundPaths = new Set<string>();
-    const candidates = new Set<string>(blocked);
+    const candidates = new Set<string>();
     const collectPaths = (value: unknown, currentPath = '') => {
       if (!value || typeof value !== 'object') return;
       if (Array.isArray(value)) {
@@ -314,13 +336,12 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     };
     collectPaths(surface);
     for (const candidate of candidates) {
-      const found = getPathValue(surface, candidate.replace(/\[\d+\]/g, ''));
-      if (!found.present) continue;
       const blockedMatch = blocked.find((blockedPath) => matchesBlockedPath(candidate, blockedPath));
       if (!blockedMatch) continue;
       const label = candidate === blockedMatch ? blockedMatch : candidate;
       if (foundPaths.has(label)) continue;
       foundPaths.add(label);
+      const found = getPathValue(surface, candidate.replace(/\[(\d+)\]/g, '.$1'));
       forbiddenFindings.push({ field: label, mismatch_type: 'forbidden_field_present', surface: surfaceName, value_summary: summariseValueForParity(found.value) });
     }
   };
@@ -329,7 +350,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
 
   const forbiddenAbsent = forbiddenFindings.length === 0;
   const hasAllowedFields = checked.length > 0;
-  const sufficient = rawAvail && checkedSurfaces.length > 0 && hasAllowedFields;
+  const sufficient = rawAvail && publicAvail && hasAllowedFields;
   const parityStatus = !sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed');
   const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
   if (!hasAllowedFields) mismatches.push({ mismatch_type: 'allowed_public_fields_missing', detail: 'no_allowed_public_fields_configured' });

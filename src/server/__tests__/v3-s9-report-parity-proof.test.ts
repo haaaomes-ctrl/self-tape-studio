@@ -77,7 +77,7 @@ describe('v3-s9 report parity proof', () => {
     const fn = function demoFn(){};
     await expect(emitReportParityProof({ run_id: 'run-m1', analysis_run_id: 'run-m1', take_id: 't12', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn, s: Symbol('x') }, public_report_payload: { f: fn, s: Symbol('x') }, allowed_public_fields: ['f', 's'] })).resolves.toBeTruthy();
   });
-it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
+  it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jl-'));
     await emitReportParityProof({ run_id: 'run-j', analysis_run_id: 'run-j', take_id: 't7', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, render_payload: { summary: 'ok' }, public_report_payload: { summary: 'ok' }, allowed_public_fields: ['summary'] });
     const p = await readParity(root, 'run-j', 't7');
@@ -90,6 +90,17 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     expect(p.production_safe_status).toBe('blocked');
     expect(p.public_scoring_status).toBe('blocked');
     expect(p.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('public_report_payload is required for pass even when render_payload matches', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-public-required-'));
+    const out = await emitReportParityProof({ run_id: 'run-pr', analysis_run_id: 'run-pr', take_id: 'tpr', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, render_payload: { summary: 'ok' }, allowed_public_fields: ['summary'] });
+    const p = await readParity(root, 'run-pr', 'tpr');
+    expect(out.parity_status).toBe('insufficient');
+    expect(p.parity_status).toBe('insufficient');
+    expect(p.level2_satisfaction).toBe('insufficient');
+    expect(p.public_report_payload_available).toBe(false);
+    expect(p.blocker_codes).toContain('parity_artefacts_missing');
   });
 
   it('K: manifest + metrics align and parity blockers remain when parity fails', async () => {
@@ -154,13 +165,14 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
       ['report_data.score_summary.overall', { report_data: { score_summary: { overall: 90 } } }, 'render_payload', true],
       ['report_data.score_breakdown.category_scores', { report_data: { score_breakdown: { category_scores: { acting: 88 } } } }, 'public_report_payload', true],
       ['report_data.readiness_score', { report_data: { readiness_score: 84 } }, 'public_report_payload', true],
+      ['report_data.scores[0].value', { report_data: { scores: [{ value: 91 }] } }, 'public_report_payload', true],
       ['comparison', { comparison: { winner: 't2' } }, 'public_report_payload', false],
       ['winner', { winner: 't2' }, 'public_report_payload', false],
       ['recommendation', { recommendation: 'choose take 2' }, 'public_report_payload', false],
     ];
     for (const [field, patch, surface, shouldBeScoreLeak] of cases) {
       const run = `run-${field.replace(/\W/g,'-')}-${surface}`;
-      const input: any = { run_id: run, analysis_run_id: run, take_id: 'ts', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, allowed_public_fields: ['summary'] };
+      const input: any = { run_id: run, analysis_run_id: run, take_id: 'ts', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, public_report_payload: { summary: 'ok' }, allowed_public_fields: ['summary'] };
       if (surface === 'render_payload') input.render_payload = { summary: 'ok', ...patch };
       else input.public_report_payload = { summary: 'ok', ...patch };
       await emitReportParityProof(input);
@@ -202,6 +214,27 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     await emitReportParityProof({ run_id:'run-readiness-note-safe', analysis_run_id:'run-readiness-note-safe', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', readiness_note:'narrative only' }, allowed_public_fields:['summary'] });
     const readinessNoteSafe = await readParity(root, 'run-readiness-note-safe', 'ts');
     expect(readinessNoteSafe.parity_status).toBe('passed');
+
+    await emitReportParityProof({ run_id:'run-array-generic', analysis_run_id:'run-array-generic', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', items:[{ secret:'leak' }] }, allowed_public_fields:['summary'], blocked_field_paths:['items.secret'] });
+    const arrayGeneric = await readParity(root, 'run-array-generic', 'ts');
+    expect(arrayGeneric.parity_status).toBe('failed');
+    expect(arrayGeneric.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && String(m.field).includes('items[0].secret'))).toBe(true);
+    expect(arrayGeneric.blocked_score_fields_absent).toBe(true);
+
+    await emitReportParityProof({ run_id:'run-array-container', analysis_run_id:'run-array-container', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', items:[{ nested:{ secret:'leak' } }] }, allowed_public_fields:['summary'], blocked_field_paths:['items'] });
+    const arrayContainer = await readParity(root, 'run-array-container', 'ts');
+    expect(arrayContainer.parity_status).toBe('failed');
+    expect(arrayContainer.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && String(m.field).startsWith('items['))).toBe(true);
+
+    await emitReportParityProof({ run_id:'run-render-array-leak', analysis_run_id:'run-render-array-leak', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, render_payload:{ summary:'ok', items:[{ secret:'leak' }] }, allowed_public_fields:['summary'], blocked_field_paths:['items.secret'] });
+    const renderArrayLeak = await readParity(root, 'run-render-array-leak', 'ts');
+    expect(renderArrayLeak.parity_status).toBe('failed');
+    expect(renderArrayLeak.mismatches.some((m:any)=>m.surface==='render_payload' && String(m.field).includes('items[0].secret'))).toBe(true);
+
+    await emitReportParityProof({ run_id:'run-config-nested-score-array', analysis_run_id:'run-config-nested-score-array', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', sections:[{ metrics:[{ score_value: 91 }] }] }, allowed_public_fields:['summary'], blocked_field_paths:['sections.metrics.score_value'], blocked_score_field_paths:['sections.metrics.score_value'] });
+    const configNestedScoreArray = await readParity(root, 'run-config-nested-score-array', 'ts');
+    expect(configNestedScoreArray.parity_status).toBe('failed');
+    expect(configNestedScoreArray.blocked_score_fields_absent).toBe(false);
 
   });
 
