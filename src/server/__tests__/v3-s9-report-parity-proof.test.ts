@@ -148,6 +148,12 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
       ['overall_score_final', { overall_score_final: 89 }, 'public_report_payload', true],
       ['score_value', { score_value: 77 }, 'public_report_payload', true],
       ['category_scores', { category_scores: { acting: 90 } }, 'public_report_payload', true],
+      ['report_data.scores', { report_data: { scores: { overall: 91 } } }, 'public_report_payload', true],
+      ['report_data.scores.overall', { report_data: { scores: { overall: 91 } } }, 'public_report_payload', true],
+      ['report_data.overall_score_model', { report_data: { overall_score_model: 90 } }, 'render_payload', true],
+      ['report_data.score_summary.overall', { report_data: { score_summary: { overall: 90 } } }, 'render_payload', true],
+      ['report_data.score_breakdown.category_scores', { report_data: { score_breakdown: { category_scores: { acting: 88 } } } }, 'public_report_payload', true],
+      ['report_data.readiness_score', { report_data: { readiness_score: 84 } }, 'public_report_payload', true],
       ['comparison', { comparison: { winner: 't2' } }, 'public_report_payload', false],
       ['winner', { winner: 't2' }, 'public_report_payload', false],
       ['recommendation', { recommendation: 'choose take 2' }, 'public_report_payload', false],
@@ -160,7 +166,7 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
       await emitReportParityProof(input);
       const out = await readParity(root, run, 'ts');
       expect(out.parity_status).toBe('failed');
-      expect(out.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field===field)).toBe(true);
+      expect(out.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && (m.field===field || String(m.field).startsWith(`${field}.`) || String(m.field).startsWith(`${field}[`)))).toBe(true);
       expect(out.blocked_score_fields_absent).toBe(!shouldBeScoreLeak);
       expect(out.public_scoring_status).toBe('blocked');
       expect(out.production_safe_status).toBe('blocked');
@@ -186,6 +192,16 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     expect(customAdditive.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='overall_score')).toBe(true);
     expect(customAdditive.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='internal_notes')).toBe(true);
     expect(customAdditive.blocked_score_fields_absent).toBe(false);
+
+
+    await emitReportParityProof({ run_id:'run-allowed-cannot-override-score', analysis_run_id:'run-allowed-cannot-override-score', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', report_data:{ scores:{ overall:99 } } }, allowed_public_fields:['summary'] });
+    const allowCantOverride = await readParity(root, 'run-allowed-cannot-override-score', 'ts');
+    expect(allowCantOverride.parity_status).toBe('failed');
+    expect(allowCantOverride.blocked_score_fields_absent).toBe(false);
+
+    await emitReportParityProof({ run_id:'run-readiness-note-safe', analysis_run_id:'run-readiness-note-safe', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', readiness_note:'narrative only' }, allowed_public_fields:['summary'] });
+    const readinessNoteSafe = await readParity(root, 'run-readiness-note-safe', 'ts');
+    expect(readinessNoteSafe.parity_status).toBe('passed');
 
   });
 

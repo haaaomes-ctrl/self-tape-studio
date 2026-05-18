@@ -228,12 +228,24 @@ function normaliseBlockedPath(path: string): string {
 }
 
 const defaultBlockedScoreFieldPaths = [
-  'score','scores','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_readiness','report_data.overall_readiness_score','report_data.category_scores','report_data.score_entries','report_data.score_value'
+  'score','scores','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*'
 ];
 
+
+function matchesBlockedPath(fieldPath: string, blockedPath: string): boolean {
+  const field = normaliseBlockedPath(fieldPath);
+  const blocked = normaliseBlockedPath(blockedPath);
+  if (!field || !blocked) return false;
+  if (blocked.endsWith('.*')) {
+    const base = blocked.slice(0, -2);
+    return field === base || field.startsWith(`${base}.`) || field.startsWith(`${base}[`);
+  }
+  return field === blocked || field.startsWith(`${blocked}.`) || field.startsWith(`${blocked}[`);
+}
+
 function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): boolean {
-  const blockedSet = new Set([...defaultBlockedScoreFieldPaths, ...(blockedScorePaths ?? [])].map(normaliseBlockedPath));
-  return blockedSet.has(normaliseBlockedPath(path));
+  const allBlockedPaths = [...defaultBlockedScoreFieldPaths, ...(blockedScorePaths ?? [])];
+  return allBlockedPaths.some((blockedPath) => matchesBlockedPath(path, blockedPath));
 }
 
 export async function emitReportParityProof(input: ReportParityProofEmitterInput) {
@@ -247,7 +259,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const renderAvail = Boolean(render && typeof render === 'object');
   const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
   const checked = [...new Set((input.allowed_public_fields ?? []))];
-  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_readiness','report_data.overall_readiness_score','report_data.category_scores','report_data.score_entries','report_data.score_value','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability'];
+  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability'];
   const blocked = [...new Set([...defaultBlockedFieldPaths, ...(input.blocked_field_paths ?? [])])];
   const checkedSurfaces = [
     ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
@@ -282,10 +294,34 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
 
   const forbiddenFindings: Array<Record<string, unknown>> = [];
   const checkSurface = (surfaceName: 'render_payload'|'public_report_payload', surface: unknown) => {
-    for (const path of blocked) {
-      const found = getPathValue(surface, path);
+    const foundPaths = new Set<string>();
+    const candidates = new Set<string>(blocked);
+    const collectPaths = (value: unknown, currentPath = '') => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        value.forEach((item, idx) => {
+          const next = `${currentPath}[${idx}]`;
+          candidates.add(next);
+          collectPaths(item, next);
+        });
+        return;
+      }
+      for (const key of Object.keys(value as Record<string, unknown>)) {
+        const next = currentPath ? `${currentPath}.${key}` : key;
+        candidates.add(next);
+        collectPaths((value as Record<string, unknown>)[key], next);
+      }
+    };
+    collectPaths(surface);
+    for (const candidate of candidates) {
+      const found = getPathValue(surface, candidate.replace(/\[\d+\]/g, ''));
       if (!found.present) continue;
-      forbiddenFindings.push({ field: path, mismatch_type: 'forbidden_field_present', surface: surfaceName, value_summary: summariseValueForParity(found.value) });
+      const blockedMatch = blocked.find((blockedPath) => matchesBlockedPath(candidate, blockedPath));
+      if (!blockedMatch) continue;
+      const label = candidate === blockedMatch ? blockedMatch : candidate;
+      if (foundPaths.has(label)) continue;
+      foundPaths.add(label);
+      forbiddenFindings.push({ field: label, mismatch_type: 'forbidden_field_present', surface: surfaceName, value_summary: summariseValueForParity(found.value) });
     }
   };
   for (const surface of checkedSurfaces) checkSurface(surface.name, surface.value);
