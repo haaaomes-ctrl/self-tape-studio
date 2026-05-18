@@ -216,27 +216,32 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const checked = [...new Set((input.allowed_public_fields ?? []))];
   const blocked = [...new Set((input.blocked_field_paths ?? ['internal_qa','qa_private','scores','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability']))];
   const checkedSurfaces = [
-    ...(renderAvail ? ['render_payload'] : []),
-    ...(publicAvail ? ['public_report_payload'] : []),
-  ] as Array<'render_payload'|'public_report_payload'>;
-  const primarySurface = publicAvail ? publicPayload : (renderAvail ? render : null);
+    ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
+    ...(publicAvail ? [{ name: 'public_report_payload' as const, value: publicPayload }] : []),
+  ];
+  const checkedSurfaceNames = checkedSurfaces.map((s) => s.name);
   const mismatches: Array<Record<string, unknown>> = [];
 
-  if (rawAvail && primarySurface) {
+  if (rawAvail) {
     for (const field of checked) {
       const rawField = getPathValue(raw, field);
-      const publicField = getPathValue(primarySurface, field);
-      if (rawField.present !== publicField.present) {
-        mismatches.push({ field, mismatch_type: 'presence_mismatch', raw_present: rawField.present, public_present: publicField.present });
-        continue;
-      }
-      if (rawField.present && publicField.present && !valuesDeepEqual(rawField.value, publicField.value)) {
-        mismatches.push({
-          field,
-          mismatch_type: 'value_mismatch',
-          raw_value_summary: summariseValueForParity(rawField.value),
-          public_value_summary: summariseValueForParity(publicField.value),
-        });
+      for (const surface of checkedSurfaces) {
+        const surfaceField = getPathValue(surface.value, field);
+        if (rawField.present !== surfaceField.present) {
+          mismatches.push({ field, surface: surface.name, mismatch_type: 'presence_mismatch', raw_present: rawField.present, surface_present: surfaceField.present });
+          continue;
+        }
+        if (rawField.present && surfaceField.present && !valuesDeepEqual(rawField.value, surfaceField.value)) {
+          mismatches.push({
+            field,
+            surface: surface.name,
+            mismatch_type: 'value_mismatch',
+            value_diagnostic: {
+              raw_value_summary: summariseValueForParity(rawField.value),
+              surface_value_summary: summariseValueForParity(surfaceField.value),
+            },
+          });
+        }
       }
     }
   }
@@ -249,14 +254,15 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
       forbiddenFindings.push({ field: path, mismatch_type: 'forbidden_field_present', surface: surfaceName, value_summary: summariseValueForParity(found.value) });
     }
   };
-  if (renderAvail) checkSurface('render_payload', render);
-  if (publicAvail) checkSurface('public_report_payload', publicPayload);
+  for (const surface of checkedSurfaces) checkSurface(surface.name, surface.value);
   mismatches.push(...forbiddenFindings);
 
   const forbiddenAbsent = forbiddenFindings.length === 0;
-  const sufficient = rawAvail && checkedSurfaces.length > 0;
+  const hasAllowedFields = checked.length > 0;
+  const sufficient = rawAvail && checkedSurfaces.length > 0 && hasAllowedFields;
   const parityStatus = !sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed');
   const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
+  if (!hasAllowedFields) mismatches.push({ mismatch_type: 'allowed_public_fields_missing', detail: 'no_allowed_public_fields_configured' });
   const payload = {
     schema_version: 'tapecoach_v3_report_parity_result_v1',
     artefact_type: 'report_parity_result',
@@ -270,7 +276,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     raw_report_available: rawAvail,
     render_payload_available: renderAvail,
     public_report_payload_available: publicAvail,
-    checked_surfaces: checkedSurfaces,
+    checked_surfaces: checkedSurfaceNames,
     checked_public_fields: checked,
     blocked_internal_fields_absent: forbiddenAbsent,
     forbidden_fields_absent: forbiddenAbsent,
@@ -283,7 +289,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     mismatch_count: mismatches.length,
     mismatches,
     blocker_codes,
-    gate_satisfaction_reason: parityStatus === 'passed' ? 'public_report_payload_matches_checked_surface' : (!sufficient ? 'insufficient_runtime_evidence_for_report_parity' : 'report_parity_mismatch_or_forbidden_field_detected'),
+    gate_satisfaction_reason: parityStatus === 'passed' ? 'public_report_payload_matches_checked_surface' : (!hasAllowedFields ? 'allowed_public_fields_missing' : (!sufficient ? 'insufficient_runtime_evidence_for_report_parity' : 'report_parity_mismatch_or_forbidden_field_detected')),
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',
