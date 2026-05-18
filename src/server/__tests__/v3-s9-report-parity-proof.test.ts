@@ -125,4 +125,17 @@ it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     process.env.QA_ARTIFACT_SINK = prevSink;
   });
 
+  it('B/D/E/F: emits run-scoped parity when take id is unavailable; handles unsafe identity without crash', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-runscoped-'));
+    process.env.QA_ARTIFACT_SINK = 'file';
+    await emitQAManifestForAnalysisRun({ run_id: 'run-rs', analysis_run_id: 'run-rs', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } });
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-rs', 'manifest.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
+    const parity = JSON.parse(await readFile(path.join(root, 'run-rs', 'parity', 'report_parity_result.json'), 'utf8'));
+    expect(parity.parity_status).toBe('passed');
+
+    const bad = await emitQAManifestForAnalysisRun({ run_id: '../bad', analysis_run_id: '../bad', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } } as any);
+    expect(bad.written).toBe(false);
+  });
+
 });
