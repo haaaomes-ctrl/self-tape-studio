@@ -70,7 +70,7 @@ This MVP task intentionally does not add validation scripts, schema validators o
 4. Confirm the latest review cycle does not require another review.
 5. Confirm GitHub checks are passed.
 6. Confirm blocked states are explicitly recorded as unchanged: Level 2 `not_accepted`; `production_safe`, `public_scoring`, `public_technique_authority`, comparison/public winner and customer-facing release all `blocked`.
-7. Confirm no automatic merge, automatic deploy, Lovable publish, Storage-download QA automation, gatekeeper workflow, gate script or protected-area validator has been added.
+7. Confirm no automatic merge, automatic deploy, external API-driven orchestrator, Lovable publish, Storage-download QA automation, gatekeeper workflow, gate script or protected-area validator has been added.
 
 ## Minimum Evidence Per Loop
 

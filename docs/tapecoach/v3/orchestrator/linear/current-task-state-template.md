@@ -13,7 +13,7 @@ Use this template to record one linear ChatGPT/Codex/GitHub task at a time. The 
 - `source_hierarchy_checked`:
   - `README.md`:
   - `AGENTS.md`:
-  - `docs/tapecoach/v3/orchestrator/linear/**`:
+  - `docs/tapecoach/v3/orchestrator/**`:
   - `env-vars.md`:
   - `tapecoach-v3-parallel-delivery-approach.md`:
   - `tapecoach-v3-roadmap.md`:
