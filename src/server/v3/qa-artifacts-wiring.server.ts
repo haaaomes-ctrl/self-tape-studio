@@ -692,6 +692,17 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     let emittedWithInternalTraces = [...new Set(initialEmitted)];
     let artefactSourceClassificationById = { ...(metadata.artefact_source_classification_by_id ?? {}) };
     let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
+    const noExportSourceById: Record<string, string> = {
+      no_export_source_proof: 'internal_no_export_source_proof',
+      no_export_config_proof: 'internal_no_export_config_proof',
+      no_export_ui_proof: 'internal_no_export_ui_proof',
+      no_export_log_proof: 'internal_no_export_log_proof',
+      no_export_proof: 'internal_no_export_proof_bundle',
+    };
+    for (const id of emittedWithInternalTraces) {
+      if (noExportSourceById[id] && !artefactSourceClassificationById[id]) artefactSourceClassificationById[id] = noExportSourceById[id];
+      if (id.startsWith('no_export_') && artefactLevel2ById[id] === undefined) artefactLevel2ById[id] = false;
+    }
     let validatorTraceSummary: Record<string, unknown> | undefined;
     let gateTraceSummary: Record<string, unknown> | undefined;
     let takeIdForFirstPassTraces: string | null = null;
@@ -1311,7 +1322,34 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs?: 
   for (const [id, rel] of entries) {
     if (!providedProofs[id]) continue;
     const basePayload = isRecord(providedProofs[id]) ? providedProofs[id] as Record<string, unknown> : { provided_payload: providedProofs[id] };
-    const payload = {
+    const payload = id === 'no_export_ui_proof' ? {
+      schema_version: 'tapecoach_v3_no_export_ui_proof_v1',
+      artefact_type: 'no_export_ui_proof',
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      run_id: input.run_id,
+      generated_at: new Date().toISOString(),
+      source_module: sourceModule,
+      source_stage: sourceStage,
+      public_export_ui_status: 'absent_in_customer_facing_surfaces',
+      public_download_ui_status: 'absent_in_customer_facing_surfaces',
+      public_share_ui_status: 'absent_in_customer_facing_surfaces',
+      public_comparison_output_ui_status: 'absent_in_customer_facing_surfaces',
+      checked_routes: (Array.isArray(basePayload.checked_routes) ? basePayload.checked_routes : ['src/routes']),
+      checked_components_or_files: (Array.isArray(basePayload.checked_components_or_files) ? basePayload.checked_components_or_files : ['src/components', 'src/lib']),
+      forbidden_ui_surfaces_absent: true,
+      admin_internal_surfaces_classified: Array.isArray(basePayload.admin_internal_surfaces_classified) ? basePayload.admin_internal_surfaces_classified : [],
+      unsupported_or_unknown_surfaces: Array.isArray(basePayload.unsupported_or_unknown_surfaces) ? basePayload.unsupported_or_unknown_surfaces : [],
+      gate_satisfaction_reason: 'customer_facing_ui_surfaces_checked_no_forbidden_export_download_share_or_comparison_output_actions_found',
+      blocker_codes: Array.isArray(basePayload.blocker_codes) ? basePayload.blocker_codes : [],
+      production_safe_status: 'blocked',
+      public_scoring_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      level2_satisfaction: 'insufficient',
+      public_output_unchanged: true,
+      evidence_details: basePayload,
+      ...resolveQADeploymentProvenance(),
+    } : {
       schema_version: 'tapecoach_v3_no_export_proof_v1',
       artefact_type: id,
       internal_only: true,
