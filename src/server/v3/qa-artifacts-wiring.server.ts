@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
 import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
@@ -173,15 +174,33 @@ export interface ReportParityProofEmitterInput {
   internal_qa_emit?: boolean;
 }
 
-function hasPath(obj: unknown, path: string): boolean {
-  if (!obj || typeof obj !== 'object') return false;
+function getPathValue(obj: unknown, path: string): { present: boolean; value: unknown } {
+  if (!obj || typeof obj !== 'object') return { present: false, value: undefined };
   const parts = path.split('.');
   let cur: any = obj;
   for (const part of parts) {
-    if (!cur || typeof cur !== 'object' || !(part in cur)) return false;
+    if (!cur || typeof cur !== 'object' || !(part in cur)) return { present: false, value: undefined };
     cur = cur[part];
   }
-  return true;
+  return { present: true, value: cur };
+}
+
+function toStableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => toStableJson(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${toStableJson(v)}`).join(',')}}`;
+}
+
+function valuesDeepEqual(a: unknown, b: unknown): boolean {
+  return toStableJson(a) === toStableJson(b);
+}
+
+function summariseValueForParity(value: unknown): Record<string, unknown> {
+  const stable = toStableJson(value);
+  const type = Array.isArray(value) ? 'array' : (value === null ? 'null' : typeof value);
+  const hash = createHash('sha256').update(stable).digest('hex');
+  return { type, stable_hash_sha256: hash, length: stable.length };
 }
 
 export async function emitReportParityProof(input: ReportParityProofEmitterInput) {
@@ -190,24 +209,53 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const root = input.root_dir ?? DEFAULT_ROOT;
   const raw = input.raw_report_data ?? null;
   const render = input.render_payload ?? null;
-  const publicPayload = input.public_report_payload ?? render;
+  const publicPayload = input.public_report_payload ?? null;
   const rawAvail = Boolean(raw && typeof raw === 'object');
   const renderAvail = Boolean(render && typeof render === 'object');
   const publicAvail = Boolean(publicPayload && typeof publicPayload === 'object');
   const checked = [...new Set((input.allowed_public_fields ?? []))];
   const blocked = [...new Set((input.blocked_field_paths ?? ['internal_qa','qa_private','scores','comparison','winner','recommendation','public_technique_authority','castability','bookability','marketability']))];
+  const checkedSurfaces = [
+    ...(renderAvail ? ['render_payload'] : []),
+    ...(publicAvail ? ['public_report_payload'] : []),
+  ] as Array<'render_payload'|'public_report_payload'>;
+  const primarySurface = publicAvail ? publicPayload : (renderAvail ? render : null);
   const mismatches: Array<Record<string, unknown>> = [];
-  if (rawAvail && publicAvail) {
+
+  if (rawAvail && primarySurface) {
     for (const field of checked) {
-      const rawHas = hasPath(raw, field);
-      const pubHas = hasPath(publicPayload, field);
-      if (rawHas !== pubHas) mismatches.push({ field, mismatch_type: 'presence_mismatch', raw_present: rawHas, public_present: pubHas });
+      const rawField = getPathValue(raw, field);
+      const publicField = getPathValue(primarySurface, field);
+      if (rawField.present !== publicField.present) {
+        mismatches.push({ field, mismatch_type: 'presence_mismatch', raw_present: rawField.present, public_present: publicField.present });
+        continue;
+      }
+      if (rawField.present && publicField.present && !valuesDeepEqual(rawField.value, publicField.value)) {
+        mismatches.push({
+          field,
+          mismatch_type: 'value_mismatch',
+          raw_value_summary: summariseValueForParity(rawField.value),
+          public_value_summary: summariseValueForParity(publicField.value),
+        });
+      }
     }
   }
-  const blockedPresent = blocked.filter((p) => hasPath(publicPayload, p));
-  const forbiddenAbsent = blockedPresent.length === 0;
-  const sufficient = rawAvail && (renderAvail || publicAvail);
-  const parityStatus = !sufficient ? 'insufficient' : (mismatches.length === 0 && forbiddenAbsent ? 'passed' : 'failed');
+
+  const forbiddenFindings: Array<Record<string, unknown>> = [];
+  const checkSurface = (surfaceName: 'render_payload'|'public_report_payload', surface: unknown) => {
+    for (const path of blocked) {
+      const found = getPathValue(surface, path);
+      if (!found.present) continue;
+      forbiddenFindings.push({ field: path, mismatch_type: 'forbidden_field_present', surface: surfaceName, value_summary: summariseValueForParity(found.value) });
+    }
+  };
+  if (renderAvail) checkSurface('render_payload', render);
+  if (publicAvail) checkSurface('public_report_payload', publicPayload);
+  mismatches.push(...forbiddenFindings);
+
+  const forbiddenAbsent = forbiddenFindings.length === 0;
+  const sufficient = rawAvail && checkedSurfaces.length > 0;
+  const parityStatus = !sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed');
   const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
   const payload = {
     schema_version: 'tapecoach_v3_report_parity_result_v1',
@@ -222,15 +270,16 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     raw_report_available: rawAvail,
     render_payload_available: renderAvail,
     public_report_payload_available: publicAvail,
+    checked_surfaces: checkedSurfaces,
     checked_public_fields: checked,
     blocked_internal_fields_absent: forbiddenAbsent,
     forbidden_fields_absent: forbiddenAbsent,
-    blocked_score_fields_absent: !blockedPresent.some((p)=>/score/i.test(p)),
-    blocked_comparison_fields_absent: !blockedPresent.some((p)=>/comparison|winner|recommendation/i.test(p)),
-    blocked_technique_authority_fields_absent: !blockedPresent.some((p)=>/technique_authority/i.test(p)),
-    unsafe_castability_or_marketability_fields_absent: !blockedPresent.some((p)=>/castability|bookability|marketability/i.test(p)),
-    public_output_permissions_checked: true,
-    report_output_enforcement_checked: true,
+    blocked_score_fields_absent: !forbiddenFindings.some((p)=>/score/i.test(String(p.field))),
+    blocked_comparison_fields_absent: !forbiddenFindings.some((p)=>/comparison|winner|recommendation/i.test(String(p.field))),
+    blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>/technique_authority/i.test(String(p.field))),
+    unsafe_castability_or_marketability_fields_absent: !forbiddenFindings.some((p)=>/castability|bookability|marketability/i.test(String(p.field))),
+    public_output_permissions_checked: checkedSurfaces.length > 0,
+    report_output_enforcement_checked: checkedSurfaces.length > 0,
     mismatch_count: mismatches.length,
     mismatches,
     blocker_codes,
