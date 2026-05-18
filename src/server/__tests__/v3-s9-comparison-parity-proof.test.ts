@@ -16,7 +16,7 @@ async function emitCase(root:string, run:string, opts:{emitted?:string[]; compar
     comparison_run_id: opts.comparisonRunId ?? 'cmp-x',
     compared_take_ids: opts.compared ?? ['ta','tb'],
     emitted_artefact_ids: ['raw_report', ...(opts.emitted ?? [...evidenceIds])],
-    comparison_parity_input: { comparison_payloads: opts.payloads ?? {} },
+    ...(opts.payloads === undefined ? {} : { comparison_parity_input: { comparison_payloads: opts.payloads } }),
   });
   const manifest = await readManifest(root,run);
   const metrics = await readMetrics(root,run);
@@ -41,7 +41,7 @@ describe('v3-s9 comparison parity proof', () => {
 
   it('B/T/U complete safe evidence passes; public gates remain blocked', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-b-'));
-    const { manifest, parity } = await emitCase(root,'run-b',{ payloads: { safe:true } });
+    const { manifest, parity } = await emitCase(root,'run-b',{ payloads: { public_comparison_payload: { summary: 'safe' } } });
     expect(parity.parity_status).toBe('passed');
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.parity_comparison).toBe(true);
@@ -67,7 +67,7 @@ describe('v3-s9 comparison parity proof', () => {
 
   it('H internal winner/recommendation-like keys do not fail when no public leakage', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-h-'));
-    const { parity } = await emitCase(root,'run-h',{ payloads: { comparison_result_summary: { winner: 'internal' }, internal_recommendation_note: 'internal', selected_take_id_internal_only: 'ta' } });
+    const { parity } = await emitCase(root,'run-h',{ payloads: { public_comparison_payload: { note: 'safe' }, comparison_result_summary: { winner: 'internal' }, internal_recommendation_note: 'internal', selected_take_id_internal_only: 'ta' } });
     expect(parity.parity_status).toBe('passed');
     expect(parity.forbidden_public_comparison_fields_absent).toBe(true);
   });
@@ -101,12 +101,27 @@ describe('v3-s9 comparison parity proof', () => {
 
   it('P manifest and metrics blocker code align for pass and non-pass', async () => {
     const rootPass = await mkdtemp(path.join(os.tmpdir(),'s9-13d-p1-'));
-    const pass = await emitCase(rootPass,'run-p-pass',{ payloads:{} });
+    const pass = await emitCase(rootPass,'run-p-pass',{ payloads:{ public_comparison_payload: { note: 'safe' } } });
     expect(pass.manifest.blocker_codes.includes('parity_artefacts_missing')).toBe(pass.metrics.blocker_codes.includes('parity_artefacts_missing'));
 
     const rootFail = await mkdtemp(path.join(os.tmpdir(),'s9-13d-p2-'));
     const fail = await emitCase(rootFail,'run-p-fail',{ payloads:{ winner:'x' } });
     expect(fail.manifest.blocker_codes.includes('parity_artefacts_missing')).toBe(true);
     expect(fail.metrics.blocker_codes.includes('parity_artefacts_missing')).toBe(true);
+  });
+
+  it('C/D invoked with missing or empty payloads is insufficient', async () => {
+    const rootMissing = await mkdtemp(path.join(os.tmpdir(),'s9-13d-payload-missing-'));
+    const miss = await emitCase(rootMissing,'run-payload-missing',{ payloads: undefined });
+    expect(miss.parity.parity_status).toBe('insufficient');
+    expect(miss.parity.comparison_payloads_available).toBe(false);
+    expect(miss.manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+
+    const rootEmpty = await mkdtemp(path.join(os.tmpdir(),'s9-13d-payload-empty-'));
+    const empty = await emitCase(rootEmpty,'run-payload-empty',{ payloads: {} });
+    expect(empty.parity.parity_status).toBe('insufficient');
+    expect(empty.parity.comparison_payloads_available).toBe(false);
+    expect(empty.manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(empty.metrics.blocker_codes).toContain('parity_artefacts_missing');
   });
 });
