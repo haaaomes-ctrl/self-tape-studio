@@ -383,7 +383,10 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const forbiddenAbsent = forbiddenFindings.length === 0;
   const hasAllowedFields = checked.length > 0;
   const sufficient = rawAvail && publicAvail && hasAllowedFields;
-  const parityStatus = !sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed');
+  const parityStatus =
+    forbiddenFindings.length > 0
+      ? 'failed'
+      : (!sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed'));
   const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
   if (!hasAllowedFields) mismatches.push({ mismatch_type: 'allowed_public_fields_missing', detail: 'no_allowed_public_fields_configured' });
   const payload = {
@@ -407,7 +410,8 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     blocked_comparison_fields_absent: !forbiddenFindings.some((p)=>/comparison|winner|recommendation/i.test(String(p.field))),
     blocked_technique_authority_fields_absent: !forbiddenFindings.some((p)=>['technique_authority', 'public_technique_authority', 'report_data.technique_authority', 'report_data.public_technique_authority'].some((blockedPath) => matchesBlockedPath(String(p.field), blockedPath))),
     unsafe_castability_or_marketability_fields_absent: !forbiddenFindings.some((p)=>/castability|bookability|marketability/i.test(String(p.field))),
-    public_output_permissions_checked: checkedSurfaces.length > 0,
+    render_payload_checked: checkedSurfaceNames.includes('render_payload'),
+    public_output_permissions_checked: checkedSurfaceNames.includes('public_report_payload'),
     report_output_enforcement_checked: checkedSurfaces.length > 0,
     mismatch_count: mismatches.length,
     invalid_allowed_public_field_count: invalidAllowedPublicFieldCount,
@@ -418,7 +422,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',
-    level2_satisfaction: 'insufficient',
+    level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient',
     source_module: input.source_module ?? 'qa-artifacts-wiring.server',
     source_stage: input.source_stage ?? 'emitReportParityProof',
     submission_id: input.submission_id ?? null,

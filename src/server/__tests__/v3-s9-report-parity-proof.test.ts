@@ -134,6 +134,9 @@ describe('v3-s9 report parity proof', () => {
     expect(p.production_safe_status).toBe('blocked');
     expect(p.public_scoring_status).toBe('blocked');
     expect(p.public_technique_authority_status).toBe('blocked');
+    expect(p.level2_satisfaction).toBe('satisfied');
+    expect(p.public_output_permissions_checked).toBe(true);
+    expect(p.render_payload_checked).toBe(true);
   });
 
   it('public_report_payload is required for pass even when render_payload matches', async () => {
@@ -144,7 +147,29 @@ describe('v3-s9 report parity proof', () => {
     expect(p.parity_status).toBe('insufficient');
     expect(p.level2_satisfaction).toBe('insufficient');
     expect(p.public_report_payload_available).toBe(false);
+    expect(p.public_output_permissions_checked).toBe(false);
+    expect(p.render_payload_checked).toBe(true);
+    expect(p.checked_surfaces).toContain('render_payload');
     expect(p.blocker_codes).toContain('parity_artefacts_missing');
+  });
+
+  it('forbidden leak precedence: missing raw_report_data still fails when forbidden fields leak', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-forbidden-precedence-'));
+    await emitReportParityProof({
+      run_id: 'run-forbidden-precedence',
+      analysis_run_id: 'run-forbidden-precedence',
+      take_id: 'tf',
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: null,
+      public_report_payload: { summary: 'ok', winner: 'take-1' },
+      allowed_public_fields: ['summary'],
+      blocked_field_paths: ['winner'],
+    });
+    const p = await readParity(root, 'run-forbidden-precedence', 'tf');
+    expect(p.parity_status).toBe('failed');
+    expect(p.level2_satisfaction).toBe('insufficient');
+    expect(p.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='winner')).toBe(true);
   });
 
   it('K: manifest + metrics align and parity blockers remain when parity fails', async () => {
