@@ -60,7 +60,7 @@ Setup Task 2 keeps these items deferred. The MVP loop records review/fix/merge d
 
 ## External API-Driven Orchestrator
 
-- Why deferred: this MVP is manual-first and local. It must not call OpenAI, Codex, GitHub, Lovable or Storage APIs.
+- Why deferred: this MVP is manual-first and local. It must not include automated/orchestrator calls to OpenAI, Codex, GitHub, Lovable or Storage APIs; manual operator use of Codex/GitHub tooling remains allowed in the review loop.
 - Before it starts: API boundaries, credentials handling, audit output and operator override rules must be accepted.
 - Owner: future orchestrator automation task.
 
