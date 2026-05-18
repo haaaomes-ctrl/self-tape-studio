@@ -56,7 +56,28 @@ describe('v3-s9 report parity proof', () => {
     expect(i.mismatches.some((m:any)=>m.mismatch_type==='allowed_public_fields_missing')).toBe(true);
   });
 
-  it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
+  
+  it('J/K/L/M: undefined/function/symbol hashing is stable and does not throw', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jklm-'));
+
+    await expect(emitReportParityProof({ run_id: 'run-j1', analysis_run_id: 'run-j1', take_id: 't9', internal_qa_emit: true, root_dir: root, raw_report_data: { weird: undefined }, public_report_payload: { weird: undefined }, allowed_public_fields: ['weird'] })).resolves.toBeTruthy();
+    const j = await readParity(root, 'run-j1', 't9');
+    expect(j.parity_status).toBe('passed');
+
+    await expect(emitReportParityProof({ run_id: 'run-k1', analysis_run_id: 'run-k1', take_id: 't10', internal_qa_emit: true, root_dir: root, raw_report_data: { weird: undefined }, public_report_payload: { weird: null }, allowed_public_fields: ['weird'] })).resolves.toBeTruthy();
+    const k = await readParity(root, 'run-k1', 't10');
+    expect(k.parity_status).toBe('failed');
+    expect(k.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch' && m.field==='weird')).toBe(true);
+
+    await expect(emitReportParityProof({ run_id: 'run-l1', analysis_run_id: 'run-l1', take_id: 't11', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, public_report_payload: { summary: 'ok', forbidden: undefined }, allowed_public_fields: ['summary'], blocked_field_paths: ['forbidden'] })).resolves.toBeTruthy();
+    const l = await readParity(root, 'run-l1', 't11');
+    expect(l.parity_status).toBe('failed');
+    expect(l.mismatches.some((m:any)=>m.mismatch_type==='forbidden_field_present' && m.field==='forbidden')).toBe(true);
+
+    const fn = function demoFn(){};
+    await expect(emitReportParityProof({ run_id: 'run-m1', analysis_run_id: 'run-m1', take_id: 't12', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn, s: Symbol('x') }, public_report_payload: { f: fn, s: Symbol('x') }, allowed_public_fields: ['f', 's'] })).resolves.toBeTruthy();
+  });
+it('J/L: clean surfaces pass; canonical metadata preserved', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jl-'));
     await emitReportParityProof({ run_id: 'run-j', analysis_run_id: 'run-j', take_id: 't7', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, render_payload: { summary: 'ok' }, public_report_payload: { summary: 'ok' }, allowed_public_fields: ['summary'] });
     const p = await readParity(root, 'run-j', 't7');

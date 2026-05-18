@@ -185,11 +185,29 @@ function getPathValue(obj: unknown, path: string): { present: boolean; value: un
   return { present: true, value: cur };
 }
 
-function toStableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => toStableJson(item)).join(',')}]`;
+function toStableJson(value: unknown, seen: WeakSet<object> = new WeakSet()): string {
+  const type = typeof value;
+  if (value === undefined) return '"__undefined__"';
+  if (value === null) return 'null';
+  if (type === 'string') return JSON.stringify(value);
+  if (type === 'number') return Number.isFinite(value as number) ? String(value) : '"__non_finite_number__"';
+  if (type === 'boolean') return value ? 'true' : 'false';
+  if (type === 'bigint') return `"__bigint__:${String(value)}"`;
+  if (type === 'symbol') return `"__symbol__:${String((value as symbol).description ?? '')}"`;
+  if (type === 'function') return `"__function__:${String((value as Function).name || 'anonymous')}"`;
+  if (type !== 'object') return `"__unknown_type__:${type}"`;
+  const obj = value as object;
+  if (seen.has(obj)) return '"__circular__"';
+  seen.add(obj);
+  if (Array.isArray(value)) {
+    const arr = `[${value.map((item) => toStableJson(item, seen)).join(',')}]`;
+    seen.delete(obj);
+    return arr;
+  }
   const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${toStableJson(v)}`).join(',')}}`;
+  const stableObj = `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${toStableJson(v, seen)}`).join(',')}}`;
+  seen.delete(obj);
+  return stableObj;
 }
 
 function valuesDeepEqual(a: unknown, b: unknown): boolean {
