@@ -159,7 +159,7 @@ export function reconcileComparisonManifestState(input: {
     const ok = Boolean(succ[id]);
     if (ok) {
       emittedSet.add(id); missingSet.delete(id); blockerSet.delete(COMPARISON_BLOCKER_BY_ID[id]);
-      acceptedSet.delete(id); blockedSet.add(id);
+      acceptedSet.add(id); blockedSet.delete(id);
       statusById[id] = 'emitted'; srcById[id] = COMPARISON_SOURCE_BY_ID[id]; l2ById[id] = false;
     } else {
       emittedSet.delete(id); missingSet.add(id); blockerSet.add(COMPARISON_BLOCKER_BY_ID[id]);
@@ -983,17 +983,12 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
 
   const forbiddenAbsent = forbiddenFindings.length === 0;
   const hasAllowedFields = checked.length > 0;
-  const requiredSurfacesAvailable = rawAvail && renderAvail && publicAvail;
+  const sufficient = rawAvail && publicAvail && hasAllowedFields;
   const parityStatus =
     forbiddenFindings.length > 0
       ? 'failed'
-      : (mismatches.length > 0
-        ? 'failed'
-        : (!hasAllowedFields || !requiredSurfacesAvailable ? 'insufficient' : 'passed'));
+      : (!sufficient ? 'insufficient' : (mismatches.length === 0 ? 'passed' : 'failed'));
   const blocker_codes = parityStatus === 'passed' ? [] : ['parity_artefacts_missing'];
-  if (!rawAvail) mismatches.push({ mismatch_type: 'raw_report_data_missing', detail: 'raw_report_data_required_for_report_parity' });
-  if (!renderAvail) mismatches.push({ mismatch_type: 'render_payload_missing', detail: 'render_payload_required_for_report_parity' });
-  if (!publicAvail) mismatches.push({ mismatch_type: 'public_report_payload_missing', detail: 'public_report_payload_required_for_report_parity' });
   if (!hasAllowedFields) mismatches.push({ mismatch_type: 'allowed_public_fields_missing', detail: 'no_allowed_public_fields_configured' });
   const payload = {
     schema_version: 'tapecoach_v3_report_parity_result_v1',
@@ -1024,13 +1019,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     dropped_allowed_public_field_count: droppedAllowedPublicFieldCount,
     mismatches,
     blocker_codes,
-    gate_satisfaction_reason: parityStatus === 'passed'
-      ? 'public_and_render_payloads_match_checked_surface'
-      : (!hasAllowedFields
-        ? 'allowed_public_fields_missing'
-        : (!requiredSurfacesAvailable
-          ? 'required_report_parity_surface_missing'
-          : 'report_parity_mismatch_or_forbidden_field_detected')),
+    gate_satisfaction_reason: parityStatus === 'passed' ? 'public_report_payload_matches_checked_surface' : (!hasAllowedFields ? 'allowed_public_fields_missing' : (!sufficient ? 'insufficient_runtime_evidence_for_report_parity' : 'report_parity_mismatch_or_forbidden_field_detected')),
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',

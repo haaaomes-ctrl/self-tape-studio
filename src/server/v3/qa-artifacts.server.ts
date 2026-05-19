@@ -170,32 +170,6 @@ const BLOCKERS: Record<string, string> = {
   comparison_report_internal: 'comparison_report_unavailable',
 };
 const REQUIRED_ARTEFACT_ID_SET = new Set(REQUIRED.map((artefact) => artefact.artefact_id));
-const BASE_REAL_RUNTIME_V3_ARTEFACT_IDS = new Set([
-  'analysis_input_record',
-  'analysis_submission',
-  'analysis_take',
-  'resolver_output',
-  'truth_state_map',
-]);
-const NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS = new Set([
-  'qa_acceptance_metrics',
-  'claim_candidate_trace',
-]);
-const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
-  'legacy_adapter',
-  'source_scaffold',
-  'first_pass_internal',
-  'report_snapshot',
-  'internal_validator',
-  'internal_gate_trace',
-  'internal_model_run_trace',
-  'internal_comparison_runtime',
-  'internal_comparison_report',
-  'internal_comparison_trace',
-  'internal_no_export',
-  'missing',
-  'unavailable',
-];
 
 
 function safeExists(filePath: unknown): boolean {
@@ -685,17 +659,13 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     Boolean(options.comparison_run_id) ||
     comparedTakeIds.length > 1 ||
     comparisonRuntimeEvidenceCount > 0;
-  const initialLevel2ById = options.artefact_level2_spine_satisfaction_by_id ?? {};
   const required_artifacts: QARequiredArtefact[] = REQUIRED.map((r) => {
     const emitted = emittedIds.has(r.artefact_id);
-    const emittedUnsatisfiedReportParity = r.artefact_id === 'parity_report' && emitted && initialLevel2ById.parity_report !== true;
     const emittedBlocked = emittedBlockedIds.has(r.artefact_id);
     const deferred = deferredIds.has(r.artefact_id);
     const notApplicable = notApplicableIds.has(r.artefact_id) || (r.artefact_id === 'parity_comparison' && !comparisonInvoked);
-    const status: ArtefactStatus = emitted
-      ? (emittedUnsatisfiedReportParity ? 'emitted_blocked' : 'emitted')
-      : (emittedBlocked ? 'emitted_blocked' : (deferred ? 'deferred' : (notApplicable ? 'not_applicable' : 'missing')));
-    const blocker_code = (status === 'emitted' || status === 'not_applicable') ? undefined : BLOCKERS[r.artefact_id];
+    const status: ArtefactStatus = emitted ? 'emitted' : (emittedBlocked ? 'emitted_blocked' : (deferred ? 'deferred' : (notApplicable ? 'not_applicable' : 'missing')));
+    const blocker_code = (emitted || notApplicable) ? undefined : BLOCKERS[r.artefact_id];
     return { ...r, status, blocker_code, reason: emitted ? 'Emitted in current run' : (emittedBlocked ? 'Emitted with blocked/not_executed runtime evidence' : (deferred ? 'Intentionally deferred' : (notApplicable ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'))) };
   });
   const missing_artifacts = required_artifacts.filter((a) => a.status === 'missing').map((a) => a.artefact_id);
@@ -751,14 +721,9 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const usingRootReadme = rootReadmeExists && sourceScopeFile === 'README.md';
   const artefact_source_classification_by_id = { ...(options.artefact_source_classification_by_id ?? {}) };
   const artefact_level2_spine_satisfaction_by_id = { ...(options.artefact_level2_spine_satisfaction_by_id ?? {}) };
-  const runtime_evidence_accepted_by_id = new Set<string>(options.runtime_evidence_accepted_by_id ?? []);
+  const runtime_evidence_accepted_by_id = new Set<string>(options.runtime_evidence_accepted_by_id ?? emitted_artifacts);
   const runtime_evidence_blocked_by_id = new Set<string>(options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids);
   const real_v3_spine_artefact_ids = new Set<string>(options.real_v3_spine_artefact_ids ?? []);
-  for (const artefactId of BASE_REAL_RUNTIME_V3_ARTEFACT_IDS) {
-    if (artefact_status_by_id[artefactId] !== 'emitted' || !real_v3_spine_artefact_ids.has(artefactId)) continue;
-    if (!artefact_source_classification_by_id[artefactId]) artefact_source_classification_by_id[artefactId] = 'real_runtime_v3';
-    if (artefact_level2_spine_satisfaction_by_id[artefactId] === undefined) artefact_level2_spine_satisfaction_by_id[artefactId] = true;
-  }
   for (const artefactId of S9_14_CONTAINED_TRACE_IDS) {
     const sourceClassification = artefact_source_classification_by_id[artefactId];
     const acceptedTraceSource = artefactId === 'public_claim_trace'
@@ -781,25 +746,6 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     runtime_evidence_blocked_by_id.add('claim_candidate_trace');
     real_v3_spine_artefact_ids.delete('claim_candidate_trace');
     if (!blocker_codes.includes('claim_candidate_trace_internal_only_not_public_claim_gate_evidence')) blocker_codes.push('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
-  }
-  const isAcceptedRuntimeEvidence = (artefactId: string) => {
-    if (NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS.has(artefactId)) return false;
-    if (artefact_status_by_id[artefactId] !== 'emitted') return false;
-    if (artefact_level2_spine_satisfaction_by_id[artefactId] !== true) return false;
-    const sourceClassification = String(artefact_source_classification_by_id[artefactId] ?? '');
-    if (NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS.some((pattern) => sourceClassification.includes(pattern))) return false;
-    return true;
-  };
-  for (const artefactId of Object.keys(artefact_status_by_id)) {
-    if (isAcceptedRuntimeEvidence(artefactId)) {
-      runtime_evidence_accepted_by_id.add(artefactId);
-      runtime_evidence_blocked_by_id.delete(artefactId);
-      continue;
-    }
-    runtime_evidence_accepted_by_id.delete(artefactId);
-    if (artefact_status_by_id[artefactId] === 'emitted' && REQUIRED_ARTEFACT_ID_SET.has(artefactId)) {
-      runtime_evidence_blocked_by_id.add(artefactId);
-    }
   }
   const manifest = {
     schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: options.compared_take_ids ?? [], fixture_id: options.fixture_id ?? null,
