@@ -1591,6 +1591,74 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(metrics.production_safe_status).toBe('blocked');
   });
 
+  it('blocks Step 2 when AnalysisEvidenceState belongs to a different take', () => {
+    const dependency = evaluateStep1EvidenceForStep2({
+      analysisEvidenceState: {
+        written: true,
+        payload: {
+          run_id: 'take-current',
+          analysis_run_id: 'take-current',
+          take_id: 'other-take',
+          evidence_state_status: 'complete',
+          step2_dependency_status: { status: 'ready', can_run_step2: true, blocker_codes: [] },
+        },
+      },
+      expectedRunId: 'take-current',
+      expectedAnalysisRunId: 'take-current',
+      takeId: 'current',
+      internalQaEmit: true,
+    });
+
+    expect(dependency.step1EvidenceValidForStep2).toBe(false);
+    expect(dependency.step2DependencyBlocked).toBe(true);
+    expect(dependency.blockerCodes).toContain('AnalysisEvidenceState_take_id_mismatch');
+  });
+
+  it('allows Step 2 when AnalysisEvidenceState run, analysis and take identity all match', () => {
+    const dependency = evaluateStep1EvidenceForStep2({
+      analysisEvidenceState: {
+        written: true,
+        payload: {
+          run_id: 'take-current',
+          analysis_run_id: 'take-current',
+          take_id: 'current',
+          evidence_state_status: 'complete',
+          step2_dependency_status: { status: 'ready', can_run_step2: true, blocker_codes: [] },
+        },
+      },
+      expectedRunId: 'take-current',
+      expectedAnalysisRunId: 'take-current',
+      takeId: 'current',
+      internalQaEmit: true,
+    });
+
+    expect(dependency.step1EvidenceValidForStep2).toBe(true);
+    expect(dependency.step2DependencyBlocked).toBe(false);
+    expect(dependency.blockerCodes).not.toContain('AnalysisEvidenceState_take_id_mismatch');
+  });
+
+  it('blocks Step 2 when AnalysisEvidenceState take identity is missing', () => {
+    const dependency = evaluateStep1EvidenceForStep2({
+      analysisEvidenceState: {
+        written: true,
+        payload: {
+          run_id: 'take-current',
+          analysis_run_id: 'take-current',
+          evidence_state_status: 'complete',
+          step2_dependency_status: { status: 'ready', can_run_step2: true, blocker_codes: [] },
+        },
+      },
+      expectedRunId: 'take-current',
+      expectedAnalysisRunId: 'take-current',
+      takeId: 'current',
+      internalQaEmit: true,
+    });
+
+    expect(dependency.step1EvidenceValidForStep2).toBe(false);
+    expect(dependency.step2DependencyBlocked).toBe(true);
+    expect(dependency.blockerCodes).toContain('AnalysisEvidenceState_take_id_missing');
+  });
+
   it('blocks Step 2 when Step 1 evidence is invalid even if a result object exists', async () => {
     const run = 'take-step2-invalid';
     const dependency = evaluateStep1EvidenceForStep2({

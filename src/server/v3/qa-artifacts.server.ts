@@ -406,8 +406,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claim_candidate_gate_status: claimCandidateGateStatus,
     claim_candidate_gate_reason: claimCandidateStatus === 'missing' ? 'trace_not_emitted' : 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
   };
+  const fallbackAnalysisEvidenceStateStatus = (() => {
+    if (analysisEvidenceStateStatus === 'missing') return 'unavailable';
+    if (analysisEvidenceStateStatus === 'emitted_blocked') return 'blocked';
+    if (analysisEvidenceStateStatus === 'failed_emission') return 'failed';
+    if (analysisEvidenceStateStatus === 'emitted') return 'partial';
+    return 'unavailable';
+  })();
   const analysisEvidenceStateSummary = manifest.analysis_evidence_state_summary ?? {
-    evidence_state_status: analysisEvidenceStateStatus === 'missing' ? 'unavailable' : 'unavailable',
+    evidence_state_status: fallbackAnalysisEvidenceStateStatus,
     source_classification: sourceClassById.analysis_evidence_state ?? 'missing',
     observable_evidence_item_count: 0,
     unsupported_or_unavailable_evidence_count: analysisEvidenceStateStatus === 'missing' ? 1 : 0,

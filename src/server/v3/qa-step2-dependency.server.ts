@@ -77,6 +77,8 @@ export function evaluateStep1EvidenceForStep2(input: {
     ...(!payload ? ['AnalysisEvidenceState_payload_missing'] : []),
     ...(payload && payload.run_id !== input.expectedRunId ? ['AnalysisEvidenceState_run_id_mismatch'] : []),
     ...(payload && payload.analysis_run_id !== input.expectedAnalysisRunId ? ['AnalysisEvidenceState_analysis_run_id_mismatch'] : []),
+    ...(payload && !getNonBlankString(payload.take_id) ? ['AnalysisEvidenceState_take_id_missing'] : []),
+    ...(payload && getNonBlankString(payload.take_id) && getNonBlankString(payload.take_id) !== input.takeId ? ['AnalysisEvidenceState_take_id_mismatch'] : []),
     ...(payload && !step2Dependency ? ['analysis_evidence_state_step2_dependency_status_missing'] : []),
     ...(payload && ['failed', 'blocked'].includes(evidenceStateStatus) ? ['analysis_evidence_state_invalid_for_step2'] : []),
     ...(step2Dependency && step2Dependency.can_run_step2 === false ? ['analysis_evidence_state_step2_dependency_blocked'] : []),
