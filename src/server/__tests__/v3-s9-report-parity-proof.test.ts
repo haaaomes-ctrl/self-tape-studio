@@ -79,7 +79,7 @@ describe('v3-s9 report parity proof', () => {
   it('normalises mixed allowed/blocked path inputs and still enforces drift + forbidden checks', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-mixed-paths-'));
 
-    await emitReportParityProof({ run_id: 'run-mixed-allowed-pass', analysis_run_id: 'run-mixed-allowed-pass', take_id: 'tm1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: [' summary ', null as any, '', 'summary', 123 as any] as any });
+    await emitReportParityProof({ run_id: 'run-mixed-allowed-pass', analysis_run_id: 'run-mixed-allowed-pass', take_id: 'tm1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, render_payload: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: [' summary ', null as any, '', 'summary', 123 as any] as any });
     const mixedPass = await readParity(root, 'run-mixed-allowed-pass', 'tm1');
     expect(mixedPass.checked_public_fields).toEqual(['summary']);
     expect(mixedPass.parity_status).toBe('passed');
@@ -169,6 +169,7 @@ describe('v3-s9 report parity proof', () => {
     await emitReportParityProof({
       run_id: 'run-bracket-mixed', analysis_run_id: 'run-bracket-mixed', take_id: 'tb7', internal_qa_emit: true, root_dir: root,
       raw_report_data: { sections: [{ summary: 'A' }] },
+      render_payload: { sections: [{ summary: 'A' }] },
       public_report_payload: { sections: [{ summary: 'A' }] },
       allowed_public_fields: [' sections[0].summary ', 'bad[x].value', null as any, 123 as any] as any,
     });
@@ -180,7 +181,7 @@ describe('v3-s9 report parity proof', () => {
   it('J/K/L/M: undefined/function/symbol hashing is stable and does not throw', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-jklm-'));
 
-    await expect(emitReportParityProof({ run_id: 'run-j1', analysis_run_id: 'run-j1', take_id: 't9', internal_qa_emit: true, root_dir: root, raw_report_data: { weird: undefined }, public_report_payload: { weird: undefined }, allowed_public_fields: ['weird'] })).resolves.toBeTruthy();
+    await expect(emitReportParityProof({ run_id: 'run-j1', analysis_run_id: 'run-j1', take_id: 't9', internal_qa_emit: true, root_dir: root, raw_report_data: { weird: undefined }, render_payload: { weird: undefined }, public_report_payload: { weird: undefined }, allowed_public_fields: ['weird'] })).resolves.toBeTruthy();
     const j = await readParity(root, 'run-j1', 't9');
     expect(j.parity_status).toBe('passed');
 
@@ -206,7 +207,7 @@ describe('v3-s9 report parity proof', () => {
     expect(te1.parity_status).toBe('failed');
     expect(te1.mismatches.some((m:any)=>m.mismatch_type==='value_mismatch' && m.field==='summary')).toBe(true);
 
-    await emitReportParityProof({ run_id: 'run-te-2', analysis_run_id: 'run-te-2', take_id: 'tte2', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: '__undefined__' }, public_report_payload: { summary: '__undefined__' }, allowed_public_fields: ['summary'] });
+    await emitReportParityProof({ run_id: 'run-te-2', analysis_run_id: 'run-te-2', take_id: 'tte2', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: '__undefined__' }, render_payload: { summary: '__undefined__' }, public_report_payload: { summary: '__undefined__' }, allowed_public_fields: ['summary'] });
     const te2 = await readParity(root, 'run-te-2', 'tte2');
     expect(te2.parity_status).toBe('passed');
 
@@ -224,7 +225,7 @@ describe('v3-s9 report parity proof', () => {
     const te5 = await readParity(root, 'run-te-5', 'tte5');
     expect(te5.parity_status).toBe('failed');
 
-    await emitReportParityProof({ run_id: 'run-te-6', analysis_run_id: 'run-te-6', take_id: 'tte6', internal_qa_emit: true, root_dir: root, raw_report_data: { s: symA }, public_report_payload: { s: symA }, allowed_public_fields: ['s'] });
+    await emitReportParityProof({ run_id: 'run-te-6', analysis_run_id: 'run-te-6', take_id: 'tte6', internal_qa_emit: true, root_dir: root, raw_report_data: { s: symA }, render_payload: { s: symA }, public_report_payload: { s: symA }, allowed_public_fields: ['s'] });
     const te6 = await readParity(root, 'run-te-6', 'tte6');
     expect(te6.parity_status).toBe('passed');
 
@@ -234,11 +235,11 @@ describe('v3-s9 report parity proof', () => {
     const te7 = await readParity(root, 'run-te-7', 'tte7');
     expect(te7.parity_status).toBe('failed');
 
-    await emitReportParityProof({ run_id: 'run-te-8', analysis_run_id: 'run-te-8', take_id: 'tte8', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn1 }, public_report_payload: { f: fn1 }, allowed_public_fields: ['f'] });
+    await emitReportParityProof({ run_id: 'run-te-8', analysis_run_id: 'run-te-8', take_id: 'tte8', internal_qa_emit: true, root_dir: root, raw_report_data: { f: fn1 }, render_payload: { f: fn1 }, public_report_payload: { f: fn1 }, allowed_public_fields: ['f'] });
     const te8 = await readParity(root, 'run-te-8', 'tte8');
     expect(te8.parity_status).toBe('passed');
 
-    await emitReportParityProof({ run_id: 'run-te-9', analysis_run_id: 'run-te-9', take_id: 'tte9', internal_qa_emit: true, root_dir: root, raw_report_data: { b: 10n }, public_report_payload: { b: 10n }, allowed_public_fields: ['b'] });
+    await emitReportParityProof({ run_id: 'run-te-9', analysis_run_id: 'run-te-9', take_id: 'tte9', internal_qa_emit: true, root_dir: root, raw_report_data: { b: 10n }, render_payload: { b: 10n }, public_report_payload: { b: 10n }, allowed_public_fields: ['b'] });
     const te9 = await readParity(root, 'run-te-9', 'tte9');
     expect(te9.parity_status).toBe('passed');
 
@@ -291,6 +292,21 @@ describe('v3-s9 report parity proof', () => {
     expect(p.blocker_codes).toContain('parity_artefacts_missing');
   });
 
+  it('render_payload is required for pass even when public_report_payload matches', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-render-required-'));
+    const out = await emitReportParityProof({ run_id: 'run-render-required', analysis_run_id: 'run-render-required', take_id: 'trr', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'ok' }, public_report_payload: { summary: 'ok' }, allowed_public_fields: ['summary'] });
+    const p = await readParity(root, 'run-render-required', 'trr');
+    expect(out.parity_status).toBe('insufficient');
+    expect(p.parity_status).toBe('insufficient');
+    expect(p.level2_satisfaction).toBe('insufficient');
+    expect(p.render_payload_available).toBe(false);
+    expect(p.render_payload_checked).toBe(false);
+    expect(p.public_output_permissions_checked).toBe(true);
+    expect(p.mismatches.some((m:any)=>m.mismatch_type==='render_payload_missing')).toBe(true);
+    expect(p.blocker_codes).toContain('parity_artefacts_missing');
+  });
+
+
   it('forbidden leak precedence: missing raw_report_data still fails when forbidden fields leak', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-forbidden-precedence-'));
     await emitReportParityProof({
@@ -335,7 +351,7 @@ describe('v3-s9 report parity proof', () => {
 
   it('comparison parity requiredness: ordinary runs mark parity_comparison not_applicable and do not block solely for it', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-ordinary-'));
-    const out = await emitReportParityProof({ run_id: 'run-ordinary', analysis_run_id: 'run-ordinary', take_id: 't1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] });
+    const out = await emitReportParityProof({ run_id: 'run-ordinary', analysis_run_id: 'run-ordinary', take_id: 't1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, render_payload: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] });
     await emitQAManifestForAnalysisRun({
       run_id: 'run-ordinary',
       analysis_run_id: 'run-ordinary',
@@ -346,6 +362,7 @@ describe('v3-s9 report parity proof', () => {
       internal_qa_emit: true,
       root_dir: root,
       emitted_artefact_ids: ['raw_report', ...out.emitted_artefact_ids],
+      artefact_level2_spine_satisfaction_by_id: { parity_report: out.parity_status === 'passed' },
     });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-ordinary', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-ordinary', 'qa', 'acceptance_metrics.json'), 'utf8'));
@@ -384,7 +401,7 @@ describe('v3-s9 report parity proof', () => {
 
   it('comparison parity requiredness: comparison-invoked runs still require parity_comparison', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-comparison-'));
-    const out = await emitReportParityProof({ run_id: 'run-comp', analysis_run_id: 'run-comp', take_id: 'ta', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] });
+    const out = await emitReportParityProof({ run_id: 'run-comp', analysis_run_id: 'run-comp', take_id: 'ta', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, render_payload: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] });
     await emitQAManifestForAnalysisRun({
       run_id: 'run-comp',
       analysis_run_id: 'run-comp',
@@ -395,6 +412,7 @@ describe('v3-s9 report parity proof', () => {
       internal_qa_emit: true,
       root_dir: root,
       emitted_artefact_ids: ['raw_report', 'comparison_raw', ...out.emitted_artefact_ids],
+      artefact_level2_spine_satisfaction_by_id: { parity_report: out.parity_status === 'passed' },
     });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-comp', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-comp', 'qa', 'acceptance_metrics.json'), 'utf8'));
@@ -441,7 +459,7 @@ describe('v3-s9 report parity proof', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
-  it('emitted suppresses blocker_code and emitted_blocked behaviour remains unchanged', async () => {
+  it('unsatisfied emitted parity keeps blocker_code and emitted_blocked behaviour remains unchanged', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-emitted-suppress-'));
     await emitQAManifestForAnalysisRun({
       run_id: 'run-emitted',
@@ -459,8 +477,8 @@ describe('v3-s9 report parity proof', () => {
     const parityReport = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_report');
     const parityComparison = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison');
     const comparisonRaw = manifest.required_artifacts.find((a:any)=>a.artefact_id==='comparison_raw');
-    expect(parityReport?.status).toBe('emitted');
-    expect(parityReport?.blocker_code).toBeUndefined();
+    expect(parityReport?.status).toBe('emitted_blocked');
+    expect(parityReport?.blocker_code).toBe('parity_artefacts_missing');
     expect(parityComparison?.status).toBe('emitted_blocked');
     expect(parityComparison?.blocker_code).toBe('parity_artefacts_missing');
     expect(comparisonRaw?.status).toBe('emitted_blocked');
@@ -471,7 +489,7 @@ describe('v3-s9 report parity proof', () => {
     const prevSink = process.env.QA_ARTIFACT_SINK;
 
     process.env.QA_ARTIFACT_SINK = 'file';
-    await emitQAManifestForAnalysisRun({ run_id: 'run-o', analysis_run_id: 'run-o', take_id: 'to', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } });
+    await emitQAManifestForAnalysisRun({ run_id: 'run-o', analysis_run_id: 'run-o', take_id: 'to', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, render_payload: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } });
     const manifestO = JSON.parse(await readFile(path.join(root, 'run-o', 'manifest.json'), 'utf8'));
     expect(manifestO.artefact_status_by_id.parity_report).toBe('emitted');
 
@@ -491,7 +509,7 @@ describe('v3-s9 report parity proof', () => {
   it('B/D/E/F: emits run-scoped parity when take id is unavailable; handles unsafe identity without crash', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-runscoped-'));
     process.env.QA_ARTIFACT_SINK = 'file';
-    await emitQAManifestForAnalysisRun({ run_id: 'run-rs', analysis_run_id: 'run-rs', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } });
+    await emitQAManifestForAnalysisRun({ run_id: 'run-rs', analysis_run_id: 'run-rs', submission_id: 's1', internal_qa_emit: true, root_dir: root, emitted_artefact_ids: ['raw_report'], report_parity_input: { raw_report_data: { summary: 'A' }, render_payload: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] } });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-rs', 'manifest.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
     const parity = JSON.parse(await readFile(path.join(root, 'run-rs', 'parity', 'report_parity_result.json'), 'utf8'));
@@ -563,7 +581,7 @@ describe('v3-s9 report parity proof', () => {
     expect(allowCantOverride.parity_status).toBe('failed');
     expect(allowCantOverride.blocked_score_fields_absent).toBe(false);
 
-    await emitReportParityProof({ run_id:'run-readiness-note-safe', analysis_run_id:'run-readiness-note-safe', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', readiness_note:'narrative only' }, allowed_public_fields:['summary'] });
+    await emitReportParityProof({ run_id:'run-readiness-note-safe', analysis_run_id:'run-readiness-note-safe', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, render_payload:{ summary:'ok' }, public_report_payload:{ summary:'ok', readiness_note:'narrative only' }, allowed_public_fields:['summary'] });
     const readinessNoteSafe = await readParity(root, 'run-readiness-note-safe', 'ts');
     expect(readinessNoteSafe.parity_status).toBe('passed');
 
