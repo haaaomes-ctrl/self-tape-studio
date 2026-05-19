@@ -72,6 +72,52 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(missing.next_required_engineering_tasks).toContain('ModelRunTrace');
   });
 
+  it('keeps fallback AnalysisEvidenceState summary truthful for emitted and blocked statuses', () => {
+    const base: any = {
+      run_id: 'r',
+      analysis_run_id: 'r',
+      submission_id: 's',
+      take_id: 't',
+      compared_take_ids: ['t'],
+      generated_at: new Date().toISOString(),
+      qa_artifact_root: 'x',
+      required_artifacts: [],
+      emitted_artifacts: [],
+      missing_artifacts: [],
+      emitted_blocked_artefact_ids: [],
+      deferred_artifact_ids: [],
+      not_applicable_artifact_ids: [],
+      runtime_evidence_accepted_by_id: [],
+      runtime_evidence_blocked_by_id: [],
+      blocker_codes: [],
+      artefact_source_classification_by_id: { analysis_evidence_state: 'real_runtime_v3_partial' },
+      artefact_level2_spine_satisfaction_by_id: { analysis_evidence_state: false },
+      legacy_adapter_artefact_ids: [],
+      real_v3_spine_artefact_ids: [],
+    };
+    const cases = [
+      ['emitted', 'partial', 'insufficient'],
+      ['emitted_blocked', 'blocked', 'insufficient'],
+      ['failed_emission', 'failed', 'insufficient'],
+      ['missing', 'unavailable', 'missing'],
+    ] as const;
+
+    for (const [artefactStatus, evidenceStateStatus, gateStatus] of cases) {
+      const metrics = qaArtifactsModule.buildQAAcceptanceMetrics({
+        ...base,
+        artefact_status_by_id: { analysis_evidence_state: artefactStatus },
+      });
+      expect(metrics.analysis_evidence_state_status).toBe(artefactStatus);
+      expect(metrics.analysis_evidence_state_summary.evidence_state_status).toBe(evidenceStateStatus);
+      expect(metrics.analysis_evidence_state_gate_status).toBe(gateStatus);
+      expect(metrics.level2_status).toBe('not_accepted');
+      expect(metrics.production_safe_status).toBe('blocked');
+      if (artefactStatus !== 'missing') {
+        expect(metrics.analysis_evidence_state_summary.evidence_state_status).not.toBe('unavailable');
+      }
+    }
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';

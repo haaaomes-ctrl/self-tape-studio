@@ -17,6 +17,7 @@ import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
 import {
   runEvidencePass,
+  filterRunEvidencePassForStep1,
   summariseEvidence,
   type EvidencePass,
 } from "./evidence-pass.server";
@@ -29,7 +30,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisEvidenceStatePrerequisite, emitAnalysisInputArtefacts, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -48,10 +49,24 @@ import {
   enforcePublicReportOutputQuality,
   detectFramingFixed,
 } from "./report-output-enforcement.server";
+import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
+import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from "./v3/qa-step2-dependency.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
   return process.env.TWO_STEP_ANALYSIS_ENABLED === "true";
+}
+
+function isRuntimeRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function runtimeRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => isRuntimeRecord(item)) : [];
+}
+
+function addUniqueId(ids: string[], id: string) {
+  if (!ids.includes(id)) ids.push(id);
 }
 
 // ---- Model routing (env-overridable) ----
@@ -1230,6 +1245,49 @@ export async function runProcessTake(
     let reportPolishDurationMs = 0;
     let twoStepFallbackUsed = false;
     let twoStepFallbackReason: string | null = null;
+    let preStep2InputArtefacts: Awaited<ReturnType<typeof emitAnalysisInputArtefacts>> | null = null;
+    let preStep2ResolverTruth: Awaited<ReturnType<typeof emitResolverOutputAndTruthStateMap>> | null = null;
+    let preStep2AnalysisEvidenceState: Awaited<ReturnType<typeof emitAnalysisEvidenceStatePrerequisite>> | null = null;
+
+    const hasMeaningfulBriefValue = (value: unknown): boolean => {
+      if (value == null) return false;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed || trimmed === 'null' || trimmed === '{}' || trimmed === '[]') return false;
+        try { return hasMeaningfulBriefValue(JSON.parse(trimmed)); } catch { return trimmed.length > 0; }
+      }
+      if (Array.isArray(value)) return value.some((item) => hasMeaningfulBriefValue(item));
+      if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some((v) => hasMeaningfulBriefValue(v));
+      return true;
+    };
+    const buildQaStep1RuntimeContext = () => {
+      const hasBrief = hasMeaningfulBriefValue(audition.brief);
+      const hasExtractedBrief = hasMeaningfulBriefValue(audition.extracted_brief);
+      const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
+      const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
+        hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
+      const takeCreatedAt = safeIsoTimestamp(take.created_at);
+      const takeUpdatedAt = safeIsoTimestamp(take.updated_at);
+      const timestampWarnings = timestampNormalisationWarnings({
+        take_created_at: take.created_at,
+        take_updated_at: take.updated_at,
+      });
+      const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
+      if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
+      if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
+      const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
+      const durationKnown = Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0;
+      return {
+        briefPresence,
+        briefPresenceSource,
+        takeCreatedAt,
+        takeUpdatedAt,
+        timestampWarnings,
+        unavailableInputFields,
+        takeDurationSeconds: durationKnown ? takeDurationSeconds : null,
+        durationConfidence: durationKnown ? 'known' as const : 'unknown' as const,
+      };
+    };
 
     if (isTwoStepEnabled()) {
       const twoStepStartedAt = Date.now();
@@ -1364,6 +1422,166 @@ export async function runProcessTake(
           });
         }
 
+        const qaStep1Context = buildQaStep1RuntimeContext();
+        const internalQaEmit = process.env.V3_QA_ARTIFACTS_ENABLED === 'true';
+        preStep2InputArtefacts = await emitAnalysisInputArtefacts({
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          submission_id: audition.id,
+          take_id: takeId,
+          compared_take_ids: [takeId],
+          source_stage: 'analysis_step_1_evidence_mapping',
+          source_module: 'process-take.server',
+          analysis_route: 'runProcessTake',
+          route_or_model_marker: 'runEvidencePass',
+          audition_type: twoStepEvidence.audition_type ?? null,
+          selected_level: audition.audition_level ?? null,
+          brief_presence: qaStep1Context.briefPresence,
+          brief_presence_source: qaStep1Context.briefPresenceSource,
+          material_presence: 'unknown',
+          mux_playback_id: take.mux_playback_id ?? null,
+          mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+          submission_created_at: null,
+          submission_updated_at: null,
+          take_created_at: qaStep1Context.takeCreatedAt,
+          take_updated_at: qaStep1Context.takeUpdatedAt,
+          take_index: null,
+          take_index_source: 'unavailable',
+          component_or_task_declaration: null,
+          component_or_task_declaration_status: 'unknown',
+          component_or_task_declaration_source: 'not_loaded',
+          media_readiness_state: take.status ?? null,
+          unavailable_fields: qaStep1Context.unavailableInputFields,
+          internal_qa_emit: internalQaEmit,
+        });
+        preStep2ResolverTruth = await emitResolverOutputAndTruthStateMap({
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          submission_id: audition.id,
+          take_id: takeId,
+          compared_take_ids: [takeId],
+          source_stage: 'analysis_step_1_evidence_mapping',
+          source_module: 'process-take.server',
+          analysis_route: 'runProcessTake',
+          route_or_model_marker: 'runEvidencePass',
+          audition_type: twoStepEvidence.audition_type ?? null,
+          selected_level: audition.audition_level ?? null,
+          brief_presence: qaStep1Context.briefPresence,
+          brief_presence_source: qaStep1Context.briefPresenceSource,
+          material_presence: 'unknown',
+          mux_playback_id: take.mux_playback_id ?? null,
+          mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+          take_created_at: qaStep1Context.takeCreatedAt,
+          take_updated_at: qaStep1Context.takeUpdatedAt,
+          take_index: null,
+          take_index_source: 'unavailable',
+          component_or_task_declaration: null,
+          component_or_task_declaration_status: 'unknown',
+          component_or_task_declaration_source: 'not_loaded',
+          media_readiness_state: take.status ?? null,
+          unavailable_fields: qaStep1Context.unavailableInputFields,
+          internal_qa_emit: internalQaEmit,
+        });
+        const preStep2ResolverTruthIdentity = {
+          expectedRunId: `take-${takeId}`,
+          expectedAnalysisRunId: `take-${takeId}`,
+          takeId,
+        };
+        const preStep2ResolverOutputPayload = (preStep2ResolverTruth as { resolver_output?: unknown }).resolver_output;
+        const preStep2TruthStateMapPayload = (preStep2ResolverTruth as { truth_state_map?: unknown }).truth_state_map;
+        const preStep2ResolverOutputAvailable = hasValidResolverOutputForStep2(preStep2ResolverOutputPayload, preStep2ResolverTruthIdentity);
+        const preStep2TruthStateMapAvailable = hasValidTruthStateMapForStep2(preStep2TruthStateMapPayload, preStep2ResolverTruthIdentity);
+        if (internalQaEmit && (preStep2ResolverOutputAvailable || preStep2TruthStateMapAvailable) && preStep2ResolverTruth.written === false) {
+          console.warn("[take-pipeline] resolver_truth_qa_persistence_failed_but_payload_valid", {
+            take_id: takeId,
+            resolver_output_available: preStep2ResolverOutputAvailable,
+            truth_state_map_available: preStep2TruthStateMapAvailable,
+          });
+          metric("resolver_truth_qa_persistence_failed_but_payload_valid", {
+            take_id: takeId,
+          });
+        }
+        const filteredStep1Evidence = filterRunEvidencePassForStep1(twoStepEvidence, {
+          model: evResult.model,
+          durationSeconds: take.mux_duration_seconds ?? null,
+        });
+        preStep2AnalysisEvidenceState = await emitAnalysisEvidenceStatePrerequisite({
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          submission_id: audition.id,
+          take_id: takeId,
+          compared_take_ids: [takeId],
+          source_stage: 'analysis_step_1_evidence_mapping',
+          source_module: 'process-take.server',
+          analysis_route: 'runProcessTake',
+          route_or_model_marker: 'runEvidencePass',
+          audition_type: twoStepEvidence.audition_type ?? null,
+          selected_level: audition.audition_level ?? null,
+          brief_presence: qaStep1Context.briefPresence,
+          brief_presence_source: qaStep1Context.briefPresenceSource,
+          material_presence: 'unknown',
+          mux_playback_id: take.mux_playback_id ?? null,
+          mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+          take_created_at: qaStep1Context.takeCreatedAt,
+          take_updated_at: qaStep1Context.takeUpdatedAt,
+          take_index: null,
+          take_index_source: 'unavailable',
+          component_or_task_declaration: null,
+          component_or_task_declaration_status: 'unknown',
+          component_or_task_declaration_source: 'not_loaded',
+          media_readiness_state: take.status ?? null,
+          media_duration_seconds: qaStep1Context.takeDurationSeconds,
+          duration_confidence: qaStep1Context.durationConfidence,
+          resolver_output_available: preStep2ResolverOutputAvailable,
+          truth_state_map_available: preStep2TruthStateMapAvailable,
+          filtered_run_evidence_pass_step1: filteredStep1Evidence,
+          timestamp_normalisation_warnings: qaStep1Context.timestampWarnings,
+          unavailable_fields: qaStep1Context.unavailableInputFields,
+          internal_qa_emit: internalQaEmit,
+        });
+        const step1Dependency = evaluateStep1EvidenceForStep2({
+          analysisEvidenceState: preStep2AnalysisEvidenceState,
+          expectedRunId: `take-${takeId}`,
+          expectedAnalysisRunId: `take-${takeId}`,
+          takeId,
+          internalQaEmit,
+        });
+        if (step1Dependency.step1EvidenceValidForStep2 && step1Dependency.step1QaPersistenceStatus === 'failed_emission') {
+          console.warn("[take-pipeline] qa_persistence_failed_but_step1_evidence_valid", {
+            take_id: takeId,
+            step2_dependency_status: step1Dependency.step2DependencyStatus,
+            qa_persistence_status: step1Dependency.step1QaPersistenceStatus,
+          });
+          metric("qa_persistence_failed_but_step1_evidence_valid", {
+            take_id: takeId,
+            artefact_id: 'analysis_evidence_state',
+          });
+        }
+        if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
+          console.warn("[take-pipeline] step2_blocked_by_analysis_evidence_state", {
+            take_id: takeId,
+            written: preStep2AnalysisEvidenceState.written,
+            step2_dependency_status: step1Dependency.step2DependencyStatus,
+            blocker_codes: step1Dependency.blockerCodes,
+          });
+          metric("report_polish_blocked", {
+            take_id: takeId,
+            reason: 'analysis_evidence_state_invalid_for_step2',
+          });
+          twoStepFallbackUsed = true;
+          twoStepFallbackReason = 'analysis_evidence_state_invalid_for_step2';
+        } else {
+        const step2Evidence = {
+          ...twoStepEvidence,
+          analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
+          analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
+          analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
+          analysis_evidence_state_status: preStep2AnalysisEvidenceState.payload?.evidence_state_status ?? 'missing',
+          analysis_evidence_state_step2_dependency_status: step1Dependency.step2DependencyStatus,
+          analysis_evidence_state_dependency_blocker_codes: step1Dependency.blockerCodes,
+          analysis_evidence_state_qa_warning_codes: step1Dependency.warningCodes,
+        } as EvidencePass & Record<string, unknown>;
+
         // ---- Step 2: text-only polish ----
         console.log("[take-pipeline] report_polish_started", baseLog);
         metric("report_polish_started", { take_id: takeId });
@@ -1375,7 +1593,7 @@ export async function runProcessTake(
         const polishResult = await runReportPolish({
           apiKey,
           signal: polishAc.signal,
-          evidence: twoStepEvidence,
+          evidence: step2Evidence,
           briefBlock,
           extractedBlock,
           signalsBlock,
@@ -1401,7 +1619,7 @@ export async function runProcessTake(
           twoStepFallbackReason = polishResult.error.slice(0, 120);
           reportPolishDurationMs = polishResult.durationMs;
           const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
-          twoStepReport = renderFallbackReport(twoStepEvidence, mode);
+          twoStepReport = renderFallbackReport(step2Evidence, mode);
           metric("two_step_fallback_used", {
             take_id: takeId,
             reason: twoStepFallbackReason,
@@ -1412,7 +1630,7 @@ export async function runProcessTake(
           // Force mode from server-known truth (not from the polish model).
           twoStepReport.mode = audition.brief ? "brief" : "baseline";
           // Locked-field enforcement (PRIMARY safeguard).
-          const locked = enforceLockedFields(twoStepReport, twoStepEvidence);
+          const locked = enforceLockedFields(twoStepReport, step2Evidence);
           twoStepEnforcement.locked_field_overwrites = locked.overwrites;
           if (locked.overwrites > 0) {
             console.log("[take-pipeline] report_polish_locked_field_overwritten", {
@@ -1421,7 +1639,7 @@ export async function runProcessTake(
             });
           }
           // Conservative unsupported-claim handling.
-          const claims = enforceUnsupportedClaims(twoStepReport, twoStepEvidence);
+          const claims = enforceUnsupportedClaims(twoStepReport, step2Evidence);
           twoStepEnforcement.unsupported_claims_removed = claims.removed;
           twoStepEnforcement.unsupported_claims_rewritten = claims.rewritten;
           for (const [field, count] of Object.entries(claims.per_field_removed)) {
@@ -1449,6 +1667,7 @@ export async function runProcessTake(
           });
         }
 
+        }
       }
 
       const totalAi = Date.now() - twoStepStartedAt;
@@ -3246,12 +3465,16 @@ export async function runProcessTake(
       const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
       const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
         hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
-      const takeCreatedAt = take.created_at ? new Date(take.created_at).toISOString() : null;
-      const takeUpdatedAt = take.updated_at ? new Date(take.updated_at).toISOString() : null;
+      const takeCreatedAt = safeIsoTimestamp(take.created_at);
+      const takeUpdatedAt = safeIsoTimestamp(take.updated_at);
+      const timestampWarnings = timestampNormalisationWarnings({
+        take_created_at: take.created_at,
+        take_updated_at: take.updated_at,
+      });
       const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
       if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
-      const inputArtefacts = await emitAnalysisInputArtefacts({
+      const inputArtefacts = preStep2InputArtefacts ?? await emitAnalysisInputArtefacts({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
@@ -3282,7 +3505,7 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       qaArtefactIds.push(...inputArtefacts.emitted_artefact_ids);
-      const resolverTruth = await emitResolverOutputAndTruthStateMap({
+      const resolverTruth = preStep2ResolverTruth ?? await emitResolverOutputAndTruthStateMap({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
@@ -3310,7 +3533,82 @@ export async function runProcessTake(
         unavailable_fields: unavailableInputFields,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
+      const qaBlockedArtefactIds: string[] = [];
       qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
+      const resolverTruthIdentity = {
+        expectedRunId: `take-${takeId}`,
+        expectedAnalysisRunId: `take-${takeId}`,
+        takeId,
+      };
+      const resolverOutputPayload = (resolverTruth as { resolver_output?: Record<string, unknown> }).resolver_output;
+      const truthStateMapPayload = (resolverTruth as { truth_state_map?: Record<string, unknown> }).truth_state_map;
+      const resolverOutputAvailable = hasValidResolverOutputForStep2(resolverOutputPayload, resolverTruthIdentity);
+      const truthStateMapAvailable = hasValidTruthStateMapForStep2(truthStateMapPayload, resolverTruthIdentity);
+      if (resolverOutputAvailable && !resolverTruth.emitted_artefact_ids.includes('resolver_output')) qaBlockedArtefactIds.push('resolver_output');
+      if (truthStateMapAvailable && !resolverTruth.emitted_artefact_ids.includes('truth_state_map')) qaBlockedArtefactIds.push('truth_state_map');
+      const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
+      const analysisEvidenceState = preStep2AnalysisEvidenceState ?? await emitAnalysisEvidenceStatePrerequisite({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        compared_take_ids: [takeId],
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: 'runProcessTake',
+        route_or_model_marker: 'runProcessTake',
+        audition_type: null,
+        selected_level: audition.audition_level ?? null,
+        brief_presence: briefPresence,
+        brief_presence_source: briefPresenceSource,
+        material_presence: 'unknown',
+        mux_playback_id: take.mux_playback_id ?? null,
+        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        take_created_at: takeCreatedAt,
+        take_updated_at: takeUpdatedAt,
+        take_index: null,
+        take_index_source: 'unavailable',
+        component_or_task_declaration: null,
+        component_or_task_declaration_status: 'unknown',
+        component_or_task_declaration_source: 'not_loaded',
+        media_readiness_state: take.status ?? null,
+        media_duration_seconds: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? takeDurationSeconds : null,
+        duration_confidence: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? 'known' : 'unknown',
+        resolver_output_available: resolverOutputAvailable,
+        truth_state_map_available: truthStateMapAvailable,
+        timestamp_normalisation_warnings: timestampWarnings,
+        unavailable_fields: unavailableInputFields,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      qaArtefactIds.push(...analysisEvidenceState.emitted_artefact_ids);
+      qaBlockedArtefactIds.push(...analysisEvidenceState.emitted_blocked_artefact_ids);
+      const runtimeIdentity = {
+        expectedRunId: `take-${takeId}`,
+        expectedAnalysisRunId: `take-${takeId}`,
+        takeId,
+      };
+      const analysisEvidenceStateRuntimeEvaluation = evaluateStep1EvidenceForStep2({
+        analysisEvidenceState,
+        ...runtimeIdentity,
+        internalQaEmit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      const analysisEvidenceStatePayloadAvailable = Boolean(analysisEvidenceState.payload);
+      const analysisEvidenceStatePayloadForRuntimeTraces = analysisEvidenceStateRuntimeEvaluation.step1EvidenceValidForStep2 && isRuntimeRecord(analysisEvidenceState.payload)
+        ? analysisEvidenceState.payload
+        : null;
+      if (!analysisEvidenceState.written && analysisEvidenceStatePayloadAvailable) {
+        addUniqueId(qaBlockedArtefactIds, 'analysis_evidence_state');
+      }
+      if (!analysisEvidenceState.written && analysisEvidenceStatePayloadForRuntimeTraces) {
+        console.warn('[take-pipeline] qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces', {
+          take_id: takeId,
+          step2_dependency_status: analysisEvidenceStateRuntimeEvaluation.step2DependencyStatus,
+        });
+        metric('qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces', {
+          take_id: takeId,
+          artefact_id: 'analysis_evidence_state',
+        });
+      }
 
       const rawReportPayload = rawReportEmit.written ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>) : (report as Record<string, unknown>);
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
@@ -3321,9 +3619,62 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
+        analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (evidenceAnchors.written) qaArtefactIds.push(...evidenceAnchors.emitted_artefact_ids);
+      const evidenceAnchorsRuntimeAnchors = runtimeRecordArray((evidenceAnchors as unknown as { anchors?: unknown }).anchors);
+      const evidenceAnchorsDataForRuntimeTraces = evidenceAnchorsRuntimeAnchors.length > 0
+        ? {
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          take_id: takeId,
+          anchors: evidenceAnchorsRuntimeAnchors,
+          source_classification: evidenceAnchors.source_classification,
+          evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status,
+          evidence_anchor_gate_reason: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_reason,
+          evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
+          evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary,
+          evidence_family_coverage: evidenceAnchors.evidence_family_coverage,
+          evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id,
+          unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence,
+          blocker_codes: evidenceAnchors.blocker_codes,
+          cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate,
+        }
+        : null;
+      if (!evidenceAnchors.written && evidenceAnchorsDataForRuntimeTraces) {
+        addUniqueId(qaBlockedArtefactIds, 'evidence_anchors');
+      }
+
+      const claimCandidateTrace = await emitClaimCandidateTrace({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        raw_report_data: rawReportPayload,
+        analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
+        evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
+        resolver_output_data: resolverOutputAvailable ? (resolverOutputPayload ?? null) : null,
+        truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      if (claimCandidateTrace.written) qaArtefactIds.push(...claimCandidateTrace.emitted_artefact_ids);
+      const claimCandidateTraceRuntimeCandidates = runtimeRecordArray((claimCandidateTrace as unknown as { claim_candidates?: unknown }).claim_candidates);
+      const claimCandidateTraceDataForRuntimeTraces = claimCandidateTraceRuntimeCandidates.length > 0
+        ? {
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          take_id: takeId,
+          source_classification: claimCandidateTrace.source_classification,
+          claim_candidate_source_summary: claimCandidateTrace.summary?.claim_candidate_source_summary,
+          claim_candidates: claimCandidateTraceRuntimeCandidates,
+        }
+        : null;
+      if (!claimCandidateTrace.written && claimCandidateTraceDataForRuntimeTraces) {
+        addUniqueId(qaBlockedArtefactIds, 'claim_candidate_trace');
+      }
 
       const publicClaimTrace = await emitPublicClaimTraceFirstPass({
         run_id: `take-${takeId}`,
@@ -3333,13 +3684,19 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
-        evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
-        truth_state_map_data: null,
+        claim_candidate_trace_data: claimCandidateTraceDataForRuntimeTraces,
+        evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
+        truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
-
-      const publicClaimTraceClaims = publicClaimTrace.written && Array.isArray(publicClaimTrace.claims) ? publicClaimTrace.claims : [];
+      const publicClaimTraceClaims = runtimeRecordArray((publicClaimTrace as unknown as { claims?: unknown }).claims);
+      const publicClaimTraceDataForRuntimeTraces = publicClaimTraceClaims.length > 0
+        ? { claims: publicClaimTraceClaims }
+        : null;
+      if (!publicClaimTrace.written && publicClaimTraceDataForRuntimeTraces) {
+        addUniqueId(qaBlockedArtefactIds, 'public_claim_trace');
+      }
 
       const techniqueObservationTrace = await emitTechniqueObservationTraceFirstPass({
         run_id: `take-${takeId}`,
@@ -3349,8 +3706,8 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
-        evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
-        public_claim_trace_data: publicClaimTrace.written ? { claims: publicClaimTraceClaims } : null,
+        evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
+        public_claim_trace_data: publicClaimTraceDataForRuntimeTraces,
         truth_state_map_data: null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
@@ -3364,8 +3721,8 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
-        public_claim_trace_data: publicClaimTrace.written ? { claims: publicClaimTraceClaims } : null,
-        evidence_anchors_data: evidenceAnchors.written ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] } : null,
+        public_claim_trace_data: publicClaimTraceDataForRuntimeTraces,
+        evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
         truth_state_map_data: null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
@@ -3409,8 +3766,10 @@ export async function runProcessTake(
         take_id: takeId,
         analysis_run_id: `take-${takeId}`,
         emitted_artefact_ids_before_manifest: qaArtefactIds,
-        includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors'),
-        includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace'),
+        emitted_blocked_artefact_ids_before_manifest: qaBlockedArtefactIds,
+        includes_analysis_evidence_state: qaArtefactIds.includes('analysis_evidence_state') || qaBlockedArtefactIds.includes('analysis_evidence_state'),
+        includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors') || qaBlockedArtefactIds.includes('evidence_anchors'),
+        includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace') || qaBlockedArtefactIds.includes('public_claim_trace'),
         includes_technique_observation_trace: qaArtefactIds.includes('technique_observation_trace'),
         includes_score_trace: qaArtefactIds.includes('score_trace'),
         includes_model_run_trace: qaArtefactIds.includes('model_run_trace'),
@@ -3425,34 +3784,45 @@ export async function runProcessTake(
         commit_sha: process.env.GIT_COMMIT_SHA,
         branch_name: process.env.GIT_BRANCH_NAME,
         emitted_artefact_ids: qaArtefactIds,
+        emitted_blocked_artefact_ids: qaBlockedArtefactIds,
         artefact_source_classification_by_id: {
           raw_report: 'legacy_adapter',
-          ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
-          ...(publicClaimTrace.written ? { public_claim_trace: 'legacy_adapter' } : {}),
+          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: analysisEvidenceState.source_classification } : {}),
+          ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
+          ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: claimCandidateTrace.source_classification } : {}),
+          ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.source_classification } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
           ...(modelRunTrace.written ? { model_run_trace: 'internal_model_run_trace' } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
-          ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.level2_satisfies } : {}),
-          ...(publicClaimTrace.written ? { public_claim_trace: false } : {}),
+          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: false } : {}),
+          ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.written ? evidenceAnchors.level2_satisfies : false } : {}),
+          ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: false } : {}),
+          ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.written ? publicClaimTrace.level2_satisfies === true : false } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
           ...(scoreTrace.written ? { score_trace: false } : {}),
           ...(modelRunTrace.written ? { model_run_trace: false } : {}),
         },
         legacy_adapter_artefact_ids: [
           'raw_report',
-          ...(evidenceAnchors.written ? ['evidence_anchors'] : []),
-          ...(publicClaimTrace.written ? ['public_claim_trace'] : []),
+          ...(evidenceAnchors.written && String(evidenceAnchors.source_classification).includes('legacy') ? ['evidence_anchors'] : []),
+          ...(publicClaimTrace.written && String(publicClaimTrace.source_classification).includes('legacy') ? ['public_claim_trace'] : []),
           ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
           ...(scoreTrace.written ? ['score_trace'] : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
+        claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
+        analysis_evidence_state_summary: analysisEvidenceStatePayloadAvailable ? {
+          ...analysisEvidenceState.summary,
+          qa_persistence_status: analysisEvidenceState.written ? 'written' : 'failed_emission',
+          qa_persistence_warning: analysisEvidenceState.warning ?? null,
+        } : undefined,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

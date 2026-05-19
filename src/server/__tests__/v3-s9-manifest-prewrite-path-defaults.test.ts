@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
 
 const upload = vi.fn();
 vi.mock('@/integrations/supabase/client.server', () => ({
@@ -39,19 +42,28 @@ describe('v3 s9 manifest prewrite path defaults', () => {
     expect(keys).toContain('take-a4f47a03-ee5d-4291-9142-40d3867d2441/analysis-take-a4f47a03-ee5d-4291-9142-40d3867d2441/qa/acceptance_metrics.json');
   });
 
-  it('does not throw when project-root resolution is undefined and still writes manifest', async () => {
-    const spy = vi.spyOn(qaArtifacts, 'resolveProjectRootForQAManifest').mockReturnValue(undefined as unknown as string);
-    const out = await qaArtifacts.emitInternalQAArtifactManifest({
-      run_id: 'take-tx1',
-      analysis_run_id: 'take-tx1',
-      take_id: 'tx1',
-      submission_id: 's1',
-      internal_qa_emit: true,
-      manifest_relative_path: 'takes/take-tx1/analysis-take-tx1/manifest.json',
-      emitted_artefact_ids: ['raw_report'],
-    });
-    spy.mockRestore();
+  it('does not claim root README provenance when the resolved project root has no README', async () => {
+    const previousQaRoot = process.env.QA_PROJECT_ROOT;
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), 'qa-root-without-readme-'));
+    process.env.QA_PROJECT_ROOT = projectRoot;
+    let out: Awaited<ReturnType<typeof qaArtifacts.emitInternalQAArtifactManifest>> | undefined;
+    try {
+      out = await qaArtifacts.emitInternalQAArtifactManifest({
+        run_id: 'take-tx1',
+        analysis_run_id: 'take-tx1',
+        take_id: 'tx1',
+        submission_id: 's1',
+        internal_qa_emit: true,
+        manifest_relative_path: 'takes/take-tx1/analysis-take-tx1/manifest.json',
+        emitted_artefact_ids: ['raw_report'],
+      });
+    } finally {
+      if (previousQaRoot == null) delete process.env.QA_PROJECT_ROOT;
+      else process.env.QA_PROJECT_ROOT = previousQaRoot;
+      await rm(projectRoot, { recursive: true, force: true });
+    }
 
+    if (!out) throw new Error('manifest_result_missing');
     expect(out.written).toBe(true);
     expect(out.manifest.source_scope_file).toBe('docs/tapecoach/v3/PROJECT_SCOPE_AND_QA_APPROACH.md');
     expect(out.manifest.controlling_requirements_status).toBe('operator_supplied_replacement_README');
