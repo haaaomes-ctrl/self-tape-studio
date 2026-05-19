@@ -489,6 +489,42 @@ describe('v3-s9 comparison parity proof', () => {
     expect(parity.parity_status).toBe('passed');
   });
 
+  it('collector diagnostics summarize risk values without exposing raw sensitive strings', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-diagnostic-redaction-'));
+    const sensitivePreventionStatus = 'private-token-status-123';
+    const sensitiveRouteStatus = 'signed-url:https://example.test/private?token=abc123';
+    const sensitiveSameVideoStatus = 'private note: actor availability';
+    const { parity } = await emitCase(root,'run-risk-diagnostic-redaction',{ payloads: {
+      ...safePublicPayload(),
+      comparison_suppression_trace: { false_winner_prevention_status: sensitivePreventionStatus },
+      route_variance_trace: { route_variance_status: sensitiveRouteStatus },
+      same_video_repeatability_trace: { same_video_repeatability_status: sensitiveSameVideoStatus },
+    }});
+    const emittedDiagnostics = JSON.stringify({
+      hits: parity.risk_trace_field_hits,
+      mismatches: parity.mismatches,
+      warnings: parity.risk_source_scan_warnings,
+    });
+    expect(emittedDiagnostics).not.toContain(sensitivePreventionStatus);
+    expect(emittedDiagnostics).not.toContain(sensitiveRouteStatus);
+    expect(emittedDiagnostics).not.toContain(sensitiveSameVideoStatus);
+    expect(emittedDiagnostics).not.toContain('example.test/private');
+    expect(parity.risk_trace_field_hits).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'comparison_suppression_trace',
+        field: 'false_winner_prevention_status',
+        path: 'comparison_suppression_trace.false_winner_prevention_status',
+        value_type: 'string',
+        value_summary: `string_length_${sensitivePreventionStatus.length}`,
+        value_hash: expect.stringMatching(/^fnv1a32:[0-9a-f]{8}$/),
+      }),
+    ]));
+    const rawValueHit = parity.risk_trace_field_hits.find(
+      (hit: { field: string }) => hit.field === 'false_winner_prevention_status',
+    );
+    expect(rawValueHit.value).toBeUndefined();
+  });
+
   it('collector records malformed, cyclic and over-depth risk source warnings without throwing', async () => {
     const rootCycle = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-cycle-'));
     const cyclicTrace: Record<string, unknown> = { same_video_detected: false };
