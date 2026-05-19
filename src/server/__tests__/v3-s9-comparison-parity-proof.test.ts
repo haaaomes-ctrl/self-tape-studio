@@ -157,6 +157,35 @@ describe('v3-s9 comparison parity proof', () => {
     expect(sameVideo.parity.parity_status).toBe('passed');
   });
 
+  it('collector diagnostics include top-level and nested risk sources/fields', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-collector-'));
+    const { parity } = await emitCase(root,'run-risk-collector',{ payloads: {
+      forced_winner_risk: true,
+      same_video_repeatability_trace: { same_video_detected: true, repeated_input_detected: true, forced_winner_risk: true, false_winner_risk: true },
+      route_variance_trace: { route_variance_risk: true, route_mismatch_detected: true, route_variance_detected: true, route_variance_mitigation_status: 'unresolved_blocked' },
+      comparison_suppression_trace: { same_video_suppression_status: 'not_required', route_variance_suppression_status: 'mitigated', false_winner_prevention_status: 'not_required' },
+      comparison_report_internal: { internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
+    }});
+    expect(parity.checked_risk_sources).toContain('comparison_payloads');
+    expect(parity.checked_risk_sources).toContain('same_video_repeatability_trace');
+    expect(parity.checked_risk_sources).toContain('route_variance_trace');
+    expect(parity.checked_risk_sources).toContain('comparison_suppression_trace');
+    expect(parity.risk_source_count).toBeGreaterThanOrEqual(4);
+    expect(parity.risk_trace_fields_checked).toContain('repeated_input_detected');
+    expect(parity.risk_trace_fields_checked).toContain('route_mismatch_detected');
+    expect(parity.risk_trace_fields_checked).toContain('route_variance_detected');
+  });
+
+  it('collector does not infer explicit risk from lookalike internal keys', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-lookalike-'));
+    const { parity } = await emitCase(root,'run-risk-lookalike',{ payloads: {
+      public_comparison_payload: { note: 'safe' },
+      comparison_report_internal: { internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
+    }});
+    expect(parity.checked_risk_sources).toEqual(['comparison_payloads']);
+    expect(parity.parity_status).toBe('passed');
+  });
+
   it('A-F forbidden non-winner public fields fail parity and keep winner/recommendation diagnostics true when applicable', async () => {
     const cases: Array<[string, Record<string, unknown>]> = [
       ['castability', { public_comparison_payload: { castability: 'x' } }],
