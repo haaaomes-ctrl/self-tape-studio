@@ -11,7 +11,16 @@ async function readParity(root:string, run:string,take='ta'){ return JSON.parse(
 const evidenceIds = ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace'] as const;
 
 function safePublicPayload(): Record<string, unknown> {
-  return { public_comparison_payload: { summary: 'safe' } };
+  return {
+    public_comparison_payload: { summary: 'safe' },
+    same_video_detected: false,
+    repeated_input_detected: false,
+    forced_winner_risk: false,
+    false_winner_risk: false,
+    route_variance_detected: false,
+    route_mismatch_detected: false,
+    route_variance_risk: false,
+  };
 }
 
 function safeNoPublicSurfacePayload(): Record<string, unknown> {
@@ -142,6 +151,18 @@ describe('v3-s9 comparison parity proof', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
+  it('B public-clean payload without risk context is insufficient', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-context-missing-'));
+    const out = await emitCase(root,'run-risk-context-missing',{ payloads: { public_comparison_payload: { summary: 'safe' } } });
+    expectInsufficientBlocked(out);
+    expect(out.parity.comparison_payloads_available).toBe(true);
+    expect(out.parity.public_surface_context_available).toBe(true);
+    expect(out.parity.comparison_risk_context_available).toBe(false);
+    expect(out.parity.mismatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mismatch_type: 'comparison_risk_context_missing' }),
+    ]));
+  });
+
   it('C-G missing each required evidence emits insufficient proof and keeps parity blocker', async () => {
     for (const missing of evidenceIds){
       const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-m-${missing}-`));
@@ -259,13 +280,13 @@ describe('v3-s9 comparison parity proof', () => {
   it('accepted-looking mitigation does not neutralise forced or false winner risk', async () => {
     const rootForced = await mkdtemp(path.join(os.tmpdir(), 's9-13d-forced-mitigation-'));
     const forced = await emitCase(rootForced, 'run-forced-mitigation', {
-      payloads: { forced_winner_risk: true, route_variance_mitigation_status: 'resolved', same_video_suppression_status: 'accepted', ...safePublicPayload() },
+      payloads: { ...safePublicPayload(), forced_winner_risk: true, route_variance_mitigation_status: 'resolved', same_video_suppression_status: 'accepted' },
     });
     expectFailedBlocked(forced);
 
     const rootFalse = await mkdtemp(path.join(os.tmpdir(), 's9-13d-false-not-required-'));
     const falseWinner = await emitCase(rootFalse, 'run-false-not-required', {
-      payloads: { false_winner_risk: true, false_winner_prevention_status: 'not_required', ...safePublicPayload() },
+      payloads: { ...safePublicPayload(), false_winner_risk: true, false_winner_prevention_status: 'not_required' },
     });
     expectFailedBlocked(falseWinner);
   });
@@ -355,8 +376,14 @@ describe('v3-s9 comparison parity proof', () => {
       ...safePublicPayload(),
       comparison_report_internal: { internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
     }});
-    expect(parity.checked_risk_sources).toEqual([]);
-    expect(parity.risk_trace_field_hits).toEqual([]);
+    expect(parity.checked_risk_sources).toEqual(['comparison_payloads']);
+    expect(parity.checked_risk_sources).not.toContain('comparison_report_internal');
+    expect(
+      parity.risk_trace_field_hits.some(
+        (hit: { path: string }) =>
+          hit.path.includes('internal_same_video_note') || hit.path.includes('internal_route_variance_note'),
+      ),
+    ).toBe(false);
     expect(parity.parity_status).toBe('passed');
   });
 
@@ -472,7 +499,7 @@ describe('v3-s9 comparison parity proof', () => {
 
   it('recursive public scanner does not false-fail internal-only or lookalike fields', async () => {
     const rootPublicLookalike = await mkdtemp(path.join(os.tmpdir(),'s9-13d-public-lookalike-'));
-    const publicLookalike = await emitCase(rootPublicLookalike,'run-public-lookalike',{ payloads: { public_comparison_payload: { internal_recommendation_note: 'internal note', recommendation_suppressed: true, comparison_result_summary: 'safe' } } });
+    const publicLookalike = await emitCase(rootPublicLookalike,'run-public-lookalike',{ payloads: { ...safePublicPayload(), public_comparison_payload: { internal_recommendation_note: 'internal note', recommendation_suppressed: true, comparison_result_summary: 'safe' } } });
     expect(publicLookalike.parity.parity_status).toBe('passed');
     expect(publicLookalike.parity.forbidden_public_comparison_fields_absent).toBe(true);
     expect(publicLookalike.parity.public_recommendation_absent).toBe(true);
