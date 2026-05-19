@@ -2297,6 +2297,8 @@ async function emitPublicClaimSupportBundle(options: {
   candidates?: Array<Record<string, unknown>>;
   anchors?: Array<Record<string, unknown>>;
   evidenceAnchorGateStatus?: 'sufficient' | 'insufficient';
+  evidenceAnchorsDataOverrides?: Record<string, unknown>;
+  claimCandidateTraceOverrides?: Record<string, unknown>;
   truthStateMap?: Record<string, unknown> | null;
   metadataOverrides?: Record<string, unknown>;
 } = {}) {
@@ -2308,6 +2310,9 @@ async function emitPublicClaimSupportBundle(options: {
   const evidenceAnchorsData = {
     schema_version: 'tapecoach_v3_evidence_anchors_runtime_v1',
     artefact_type: 'evidence_anchors',
+    run_id: run,
+    analysis_run_id: run,
+    take_id: take,
     source_classification: evidenceAnchorGateStatus === 'sufficient' ? 'real_runtime_v3' : 'real_runtime_v3_partial_non_satisfying',
     anchors,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
@@ -2345,11 +2350,15 @@ async function emitPublicClaimSupportBundle(options: {
         source_scaffold: anchors.filter((anchor) => anchor.source_family === 'source_scaffold').length,
       },
     },
+    ...(options.evidenceAnchorsDataOverrides ?? {}),
   };
   const candidates = options.candidates ?? [claimCandidate()];
   const claimCandidateTrace = {
     schema_version: 'tapecoach_v3_claim_candidate_trace_v1',
     artefact_type: 'claim_candidate_trace',
+    run_id: run,
+    analysis_run_id: run,
+    take_id: take,
     internal_only: true,
     privacy_classification: 'internal_private',
     source_classification: candidates.some((candidate) => candidate.source_family === 'legacy_adapter') ? 'mixed_real_runtime_v3_and_legacy_or_unsupported' : 'real_runtime_v3_candidate_source',
@@ -2361,6 +2370,7 @@ async function emitPublicClaimSupportBundle(options: {
       return acc;
     }, { real_runtime_v3: 0, legacy_adapter: 0, report_candidate_requires_support: 0, first_pass_internal: 0, blocked: 0 }),
     cannot_satisfy_public_claim_gate: true,
+    ...(options.claimCandidateTraceOverrides ?? {}),
   };
   const claimsOut = await emitPublicClaimTraceFirstPass({
     run_id: run,
@@ -2371,7 +2381,7 @@ async function emitPublicClaimSupportBundle(options: {
     source_stage: 'unit',
     claim_candidate_trace_data: claimCandidateTrace,
     evidence_anchors_data: evidenceAnchorsData,
-    truth_state_map_data: options.truthStateMap === undefined ? { truth_state_ids: ['truth-brief-presence'], known_truths: { 'truth-brief-presence': 'supplied' } } : options.truthStateMap,
+    truth_state_map_data: options.truthStateMap === undefined ? { run_id: run, analysis_run_id: run, take_id: take, truth_state_ids: ['truth-brief-presence'], known_truths: { 'truth-brief-presence': 'supplied' } } : options.truthStateMap,
     metadata_overrides: options.metadataOverrides,
     root_dir: root,
     internal_qa_emit: true,
@@ -2630,6 +2640,8 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
     expect(source).toContain('emitClaimCandidateTrace');
     expect(source).toContain('claim_candidate_trace_data: claimCandidateTrace.written');
+    expect(source).toContain('run_id: `take-${takeId}`');
+    expect(source).toContain('take_id: takeId');
     expect(source).toContain('evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status');
     expect(source).toContain('evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary');
     expect(source).toContain('evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary');
@@ -2646,6 +2658,60 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
     expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
     expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
+  });
+
+  it.each([
+    ['run_id', { run_id: 'take-other' }],
+    ['analysis_run_id', { analysis_run_id: 'take-other' }],
+    ['take_id', { take_id: 'other-take' }],
+  ])('rejects mismatched ClaimCandidateTrace %s before support classification', async (_field, overrides) => {
+    const { claims } = await emitPublicClaimSupportBundle({ claimCandidateTraceOverrides: overrides });
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(claims.blocker_codes).toContain('claim_candidate_trace_identity_mismatch');
+    expect(claims.claims[0].support_status).toBe('blocked');
+  });
+
+  it('rejects candidate-level identity conflicts and missing ClaimCandidateTrace identity', async () => {
+    const candidateConflict = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ source_take_id: 'other-take' })],
+    });
+    expect(candidateConflict.claims.public_claim_gate_status).toBe('insufficient');
+    expect(candidateConflict.claims.blocker_codes).toContain('claim_candidate_trace_candidate_identity_mismatch');
+    expect(candidateConflict.claims.claims[0].support_status).toBe('blocked');
+
+    const missingIdentity = await emitPublicClaimSupportBundle({
+      claimCandidateTraceOverrides: { run_id: undefined, analysis_run_id: undefined, take_id: undefined },
+    });
+    expect(missingIdentity.claims.public_claim_gate_status).toBe('insufficient');
+    expect(missingIdentity.claims.blocker_codes).toContain('claim_candidate_trace_identity_missing');
+    expect(missingIdentity.claims.claims[0].support_status).toBe('blocked');
+  });
+
+  it('allows matching ClaimCandidateTrace identity to reach controlled support classification', async () => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle();
+    expect(claims.blocker_codes).not.toContain('claim_candidate_trace_identity_mismatch');
+    expect(claims.blocker_codes).not.toContain('claim_candidate_trace_identity_missing');
+    expect(claims.claims[0].support_status).toBe('supported');
+    expect(claims.public_claim_gate_status).toBe('sufficient');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+  });
+
+  it('does not let stale EvidenceAnchors or TruthStateMap data support the current PublicClaimTrace', async () => {
+    const staleAnchors = await emitPublicClaimSupportBundle({
+      evidenceAnchorsDataOverrides: { run_id: 'take-other', analysis_run_id: 'take-other' },
+    });
+    expect(staleAnchors.claims.public_claim_gate_status).toBe('insufficient');
+    expect(staleAnchors.claims.claims[0].support_status).toBe('missing_evidence');
+    expect(staleAnchors.claims.blocker_codes).toContain('evidence_anchors_identity_mismatch');
+
+    const staleTruth = await emitPublicClaimSupportBundle({
+      truthStateMap: { run_id: 'take-other', analysis_run_id: 'take-other', take_id: 't1', truth_state_ids: ['truth-brief-presence'] },
+    });
+    expect(staleTruth.claims.public_claim_gate_status).toBe('insufficient');
+    expect(staleTruth.claims.claims[0].support_status).toBe('missing_truth_link');
+    expect(staleTruth.claims.blocker_codes).toContain('truth_state_map_identity_mismatch');
   });
 
   it('lets PublicClaimTrace see sufficient EvidenceAnchors aggregate support in controlled fixtures', async () => {
@@ -2674,9 +2740,9 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       take_id: 't1',
       source_module: 'test',
       source_stage: 'unit',
-      claim_candidate_trace_data: { claim_candidates: [claimCandidate()] },
-      evidence_anchors_data: { anchors: [runtimeAnchor()] },
-      truth_state_map_data: { truth_state_ids: ['truth-brief-presence'] },
+      claim_candidate_trace_data: { run_id: missingMetadataRun, analysis_run_id: missingMetadataRun, take_id: 't1', claim_candidates: [claimCandidate()] },
+      evidence_anchors_data: { run_id: missingMetadataRun, analysis_run_id: missingMetadataRun, take_id: 't1', anchors: [runtimeAnchor()] },
+      truth_state_map_data: { run_id: missingMetadataRun, analysis_run_id: missingMetadataRun, take_id: 't1', truth_state_ids: ['truth-brief-presence'] },
       root_dir: missingMetadataRoot,
       internal_qa_emit: true,
     });
@@ -2695,9 +2761,9 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       take_id: 't1',
       source_module: 'test',
       source_stage: 'unit',
-      claim_candidate_trace_data: { claim_candidates: [claimCandidate()] },
+      claim_candidate_trace_data: { run_id: run, analysis_run_id: run, take_id: 't1', claim_candidates: [claimCandidate()] },
       evidence_anchors_data: null,
-      truth_state_map_data: { truth_state_ids: ['truth-brief-presence'] },
+      truth_state_map_data: { run_id: run, analysis_run_id: run, take_id: 't1', truth_state_ids: ['truth-brief-presence'] },
       root_dir: root,
       internal_qa_emit: true,
     });

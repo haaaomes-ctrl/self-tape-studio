@@ -3560,7 +3560,11 @@ export async function runProcessTake(
       if (evidenceAnchors.written) qaArtefactIds.push(...evidenceAnchors.emitted_artefact_ids);
       const evidenceAnchorsData = evidenceAnchors.written
         ? {
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          take_id: takeId,
           anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [],
+          source_classification: evidenceAnchors.source_classification,
           evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status,
           evidence_anchor_gate_reason: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_reason,
           evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
@@ -3596,7 +3600,14 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
-        claim_candidate_trace_data: claimCandidateTrace.written ? { claim_candidates: claimCandidateTrace.claim_candidates ?? [] } : null,
+        claim_candidate_trace_data: claimCandidateTrace.written ? {
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          take_id: takeId,
+          source_classification: claimCandidateTrace.source_classification,
+          claim_candidate_source_summary: claimCandidateTrace.summary?.claim_candidate_source_summary,
+          claim_candidates: claimCandidateTrace.claim_candidates ?? [],
+        } : null,
         evidence_anchors_data: evidenceAnchorsData,
         truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',

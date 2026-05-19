@@ -2375,6 +2375,65 @@ function getTraceClaimCandidates(value: unknown): Array<Record<string, unknown>>
   return safeRecordArray(value.claim_candidates);
 }
 
+function getNonBlankString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function identityFieldMismatch(value: unknown, expected: string): boolean {
+  const actual = getNonBlankString(value);
+  return Boolean(actual && actual !== expected);
+}
+
+function validateTraceIdentityForCurrentRun(traceData: unknown, input: {
+  run_id: string;
+  analysis_run_id: string;
+  take_id: string;
+  artefact_type: 'claim_candidate_trace';
+}): { ok: boolean; blockerCodes: string[] } {
+  if (!isRecord(traceData)) return { ok: false, blockerCodes: [`${input.artefact_type}_identity_missing`] };
+  const blockerCodes: string[] = [];
+  const traceRunId = getNonBlankString(traceData.run_id);
+  const traceAnalysisRunId = getNonBlankString(traceData.analysis_run_id);
+  const traceTakeId = getNonBlankString(traceData.take_id);
+  if (!traceRunId || !traceAnalysisRunId) blockerCodes.push(`${input.artefact_type}_identity_missing`);
+  if (traceRunId && traceRunId !== input.run_id) blockerCodes.push(`${input.artefact_type}_identity_mismatch`);
+  if (traceAnalysisRunId && traceAnalysisRunId !== input.analysis_run_id) blockerCodes.push(`${input.artefact_type}_identity_mismatch`);
+  if (traceTakeId && traceTakeId !== input.take_id) blockerCodes.push(`${input.artefact_type}_identity_mismatch`);
+
+  const candidates = getTraceClaimCandidates(traceData);
+  const candidateHasMismatch = candidates.some((candidate) => {
+    return [
+      ['run_id', input.run_id],
+      ['source_run_id', input.run_id],
+      ['candidate_run_id', input.run_id],
+      ['analysis_run_id', input.analysis_run_id],
+      ['source_analysis_run_id', input.analysis_run_id],
+      ['candidate_analysis_run_id', input.analysis_run_id],
+      ['take_id', input.take_id],
+      ['source_take_id', input.take_id],
+      ['candidate_take_id', input.take_id],
+    ].some(([key, expected]) => identityFieldMismatch(candidate[key], expected));
+  });
+  if (candidateHasMismatch) blockerCodes.push(`${input.artefact_type}_candidate_identity_mismatch`);
+  const uniqueBlockers = dedupePreservingOrder(blockerCodes);
+  return { ok: uniqueBlockers.length === 0, blockerCodes: uniqueBlockers };
+}
+
+function validateSupportTraceIdentityForCurrentRun(value: unknown, input: {
+  run_id: string;
+  analysis_run_id: string;
+  take_id: string;
+  artefact_type: 'evidence_anchors' | 'truth_state_map';
+}): { ok: boolean; blockerCodes: string[] } {
+  if (!isRecord(value)) return { ok: true, blockerCodes: [] };
+  const blockerCodes: string[] = [];
+  if (identityFieldMismatch(value.run_id, input.run_id)) blockerCodes.push(`${input.artefact_type}_identity_mismatch`);
+  if (identityFieldMismatch(value.analysis_run_id, input.analysis_run_id)) blockerCodes.push(`${input.artefact_type}_identity_mismatch`);
+  if (identityFieldMismatch(value.take_id, input.take_id)) blockerCodes.push(`${input.artefact_type}_identity_mismatch`);
+  const uniqueBlockers = dedupePreservingOrder(blockerCodes);
+  return { ok: uniqueBlockers.length === 0, blockerCodes: uniqueBlockers };
+}
+
 function getStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
 }
@@ -2492,9 +2551,26 @@ function classifyPublicClaimSupportFromCandidates(input: {
   evidence_anchors_data?: EvidenceAnchorsSupportData | null;
   truth_state_map_data?: Record<string, unknown> | null;
 }) {
-  const anchors = safeRecordArray(input.evidence_anchors_data?.anchors);
+  const evidenceAnchorsIdentity = validateSupportTraceIdentityForCurrentRun(input.evidence_anchors_data, {
+    run_id: input.run_id,
+    analysis_run_id: input.analysis_run_id,
+    take_id: input.take_id,
+    artefact_type: 'evidence_anchors',
+  });
+  const truthStateMapIdentity = validateSupportTraceIdentityForCurrentRun(input.truth_state_map_data, {
+    run_id: input.run_id,
+    analysis_run_id: input.analysis_run_id,
+    take_id: input.take_id,
+    artefact_type: 'truth_state_map',
+  });
+  const supportIdentityBlockers = dedupePreservingOrder([
+    ...evidenceAnchorsIdentity.blockerCodes,
+    ...truthStateMapIdentity.blockerCodes,
+  ]);
+  const anchors = evidenceAnchorsIdentity.ok ? safeRecordArray(input.evidence_anchors_data?.anchors) : [];
+  const truthStateMapData = truthStateMapIdentity.ok ? input.truth_state_map_data : null;
   const anchorById = buildEvidenceAnchorSupportIndex(anchors);
-  const evidenceAnchorGateStatus = getEvidenceAnchorAggregateStatus(input.evidence_anchors_data);
+  const evidenceAnchorGateStatus = evidenceAnchorsIdentity.ok ? getEvidenceAnchorAggregateStatus(input.evidence_anchors_data) : 'insufficient';
   const claims = input.candidates.map((candidate, index) => {
     const candidateSummary = safeCandidateSummary(candidate.safe_candidate_summary ?? candidate.candidate_text ?? candidate.claim_text ?? candidate.summary) ?? '[redacted unsafe candidate summary]';
     const claimType = String(candidate.claim_type ?? 'unknown');
@@ -2512,11 +2588,12 @@ function classifyPublicClaimSupportFromCandidates(input: {
     const realLinkedAnchors = linkedAnchors.filter(isRealRuntimeEvidenceAnchor);
     const hasUnresolvedAnchor = linkedEvidenceAnchorIds.some((id) => !anchorById.has(id));
     const requiresTruth = publicClaimRequiresTruth(candidate);
-    const hasMissingTruth = requiresTruth && (linkedTruthStateIds.length === 0 || linkedTruthStateIds.some((id) => !truthStateIdResolves(input.truth_state_map_data, id)));
+    const hasMissingTruth = requiresTruth && (linkedTruthStateIds.length === 0 || linkedTruthStateIds.some((id) => !truthStateIdResolves(truthStateMapData, id)));
     const isLimitationClaim = isLimitationClaimFamily(claimFamily, claimType);
     const blockerCodes: string[] = [
       ...getStringArray(candidate.blocker_codes).filter((code) => code !== 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence' && code !== 'public_claim_trace_not_promoted'),
       ...safety.blocker_codes,
+      ...supportIdentityBlockers,
     ];
     let supportStatus: PublicClaimSupportStatus = 'supported';
     let publicSafetyStatus = candidateSafetyStatus;
@@ -2592,7 +2669,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       truth_support_summary: {
         required: requiresTruth,
         linked_truth_state_count: linkedTruthStateIds.length,
-        unresolved_truth_state_ids: requiresTruth ? linkedTruthStateIds.filter((id) => !truthStateIdResolves(input.truth_state_map_data, id)) : [],
+        unresolved_truth_state_ids: requiresTruth ? linkedTruthStateIds.filter((id) => !truthStateIdResolves(truthStateMapData, id)) : [],
       },
       public_display_status: 'not_rendered_internal_trace',
       cannot_satisfy_public_claim_gate: cannotSatisfy,
@@ -2615,6 +2692,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
   const blockerCodes = dedupePreservingOrder([
     ...(publicClaimGateStatus === 'sufficient' ? [] : ['public_claim_trace_support_incomplete']),
     ...(hasLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
+    ...supportIdentityBlockers,
     ...claims.flatMap((claim) => getStringArray(claim.blocker_codes)),
   ]);
   const reason = publicClaimGateStatus === 'sufficient'
@@ -2625,6 +2703,54 @@ function classifyPublicClaimSupportFromCandidates(input: {
         ? 'missing_truth_state_linkage'
         : (hasLegacy ? 'legacy_or_unsupported_claim_support_only' : 'public_claim_support_incomplete')));
   return { claims, sourceSummary, sourceClassification, publicClaimGateStatus, publicClaimGateReason: reason, blockerCodes };
+}
+
+function classifyPublicClaimTraceIdentityRejected(input: {
+  run_id: string;
+  analysis_run_id: string;
+  take_id: string;
+  candidates: Array<Record<string, unknown>>;
+  blockerCodes: string[];
+}) {
+  const blockers = dedupePreservingOrder(['public_claim_trace_support_incomplete', ...input.blockerCodes]);
+  const claims = input.candidates.map((candidate, index) => {
+    const candidateSummary = safeCandidateSummary(candidate.safe_candidate_summary ?? candidate.candidate_text ?? candidate.claim_text ?? candidate.summary) ?? '[redacted unsafe candidate summary]';
+    return {
+      claim_id: typeof candidate.claim_candidate_id === 'string' ? candidate.claim_candidate_id.replace(/^cc-/, 'pc-') : `pc-${input.take_id}-${index + 1}`,
+      safe_claim_summary: candidateSummary,
+      claim_text: candidateSummary,
+      claim_type: String(candidate.claim_type ?? 'unknown'),
+      claim_family: String(candidate.claim_family ?? candidate.claim_type ?? 'unknown'),
+      source_artefact_id: String(candidate.source_artefact_id ?? 'claim_candidate_trace'),
+      source_path: String(candidate.source_path ?? ''),
+      source_family: String(candidate.source_family ?? 'first_pass_internal'),
+      linked_evidence_anchor_ids: getStringArray(candidate.linked_evidence_anchor_ids),
+      linked_truth_state_ids: getStringArray(candidate.linked_truth_state_ids),
+      support_status: 'blocked' as PublicClaimSupportStatus,
+      public_safety_status: 'blocked',
+      rewrite_required: true,
+      score_scope: String(candidate.score_scope ?? 'not_score'),
+      blocked_claim_category: 'claim_candidate_trace_identity',
+      blocker_codes: blockers,
+      evidence_support_summary: { linked_real_runtime_v3_anchor_count: 0, evidence_anchor_gate_status: 'insufficient' },
+      truth_support_summary: { required: publicClaimRequiresTruth(candidate), linked_truth_state_count: getStringArray(candidate.linked_truth_state_ids).length, unresolved_truth_state_ids: getStringArray(candidate.linked_truth_state_ids) },
+      public_display_status: 'not_rendered_internal_trace',
+      cannot_satisfy_public_claim_gate: true,
+    };
+  });
+  const sourceSummary = claims.reduce<Record<string, number>>((acc, claim) => {
+    const key = String(claim.source_family ?? 'unknown');
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, { real_runtime_v3: 0, legacy_adapter: 0, legacy_or_unsupported: 0, report_candidate_requires_support: 0, first_pass_internal: 0 });
+  return {
+    claims,
+    sourceSummary,
+    sourceClassification: 'first_pass_internal',
+    publicClaimGateStatus: 'insufficient' as const,
+    publicClaimGateReason: input.blockerCodes.includes('claim_candidate_trace_identity_missing') ? 'claim_candidate_trace_identity_missing' : 'claim_candidate_trace_identity_mismatch',
+    blockerCodes: blockers,
+  };
 }
 
 export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterInput) {
@@ -2897,14 +3023,28 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   const root = input.root_dir ?? DEFAULT_ROOT;
   const claimCandidates = getTraceClaimCandidates(input.claim_candidate_trace_data);
   if (claimCandidates.length > 0) {
-    const classified = classifyPublicClaimSupportFromCandidates({
+    const identity = validateTraceIdentityForCurrentRun(input.claim_candidate_trace_data, {
       run_id: input.run_id,
       analysis_run_id: analysisRunId,
       take_id: input.take_id,
-      candidates: claimCandidates,
-      evidence_anchors_data: input.evidence_anchors_data,
-      truth_state_map_data: input.truth_state_map_data,
+      artefact_type: 'claim_candidate_trace',
     });
+    const classified = identity.ok
+      ? classifyPublicClaimSupportFromCandidates({
+        run_id: input.run_id,
+        analysis_run_id: analysisRunId,
+        take_id: input.take_id,
+        candidates: claimCandidates,
+        evidence_anchors_data: input.evidence_anchors_data,
+        truth_state_map_data: input.truth_state_map_data,
+      })
+      : classifyPublicClaimTraceIdentityRejected({
+        run_id: input.run_id,
+        analysis_run_id: analysisRunId,
+        take_id: input.take_id,
+        candidates: claimCandidates,
+        blockerCodes: identity.blockerCodes,
+      });
     const supportedClaimCount = classified.claims.filter((claim) => claim.support_status === 'supported').length;
     const missingEvidenceCount = classified.claims.filter((claim) => claim.support_status === 'missing_evidence').length;
     const missingTruthLinkCount = classified.claims.filter((claim) => claim.support_status === 'missing_truth_link').length;
