@@ -3523,7 +3523,13 @@ export async function runProcessTake(
       });
       if (evidenceAnchors.written) qaArtefactIds.push(...evidenceAnchors.emitted_artefact_ids);
       const evidenceAnchorsData = evidenceAnchors.written
-        ? { anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [] }
+        ? {
+          anchors: (evidenceAnchors as unknown as { anchors?: Array<Record<string, unknown>> }).anchors ?? [],
+          evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status,
+          evidence_anchor_gate_reason: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_reason,
+          evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
+          evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary,
+        }
         : null;
 
       const claimCandidateTrace = await emitClaimCandidateTrace({

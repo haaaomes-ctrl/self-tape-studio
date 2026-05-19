@@ -590,6 +590,13 @@ export interface EvidenceAnchorsEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
+type EvidenceAnchorsSupportData = {
+  anchors?: Array<Record<string, unknown>>;
+  evidence_anchor_gate_status?: string;
+  evidence_anchor_gate_reason?: string;
+  evidence_anchor_trace_summary?: Record<string, unknown>;
+  evidence_anchor_source_family_summary?: Record<string, unknown>;
+} & Record<string, unknown>;
 export interface PublicClaimTraceEmitterInput {
   run_id: string;
   analysis_run_id?: string;
@@ -600,7 +607,7 @@ export interface PublicClaimTraceEmitterInput {
   source_stage: string;
   raw_report_data?: Record<string, unknown> | null;
   claim_candidate_trace_data?: { claim_candidates?: Array<Record<string, unknown>> } | Record<string, unknown> | null;
-  evidence_anchors_data?: { anchors?: Array<Record<string, unknown>> } | null;
+  evidence_anchors_data?: EvidenceAnchorsSupportData | null;
   truth_state_map_data?: Record<string, unknown> | null;
   metadata_overrides?: Record<string, unknown>;
   root_dir?: string;
@@ -616,7 +623,7 @@ export interface ClaimCandidateTraceEmitterInput {
   source_stage: string;
   raw_report_data?: Record<string, unknown> | null;
   analysis_evidence_state_data?: Record<string, unknown> | null;
-  evidence_anchors_data?: { anchors?: Array<Record<string, unknown>> } | null;
+  evidence_anchors_data?: EvidenceAnchorsSupportData | null;
   resolver_output_data?: Record<string, unknown> | null;
   truth_state_map_data?: Record<string, unknown> | null;
   metadata_overrides?: Record<string, unknown>;
@@ -2378,20 +2385,60 @@ function getEvidenceAnchorAggregateStatus(evidenceAnchorsData: unknown): 'suffic
   return status === 'sufficient' ? 'sufficient' : 'insufficient';
 }
 
-function collectTruthStateTokens(value: unknown, out = new Set<string>(), parentKey = ''): Set<string> {
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    if (/(^id$|truth.*id|truth_state_ids?|known_truth_ids?|brief_truth_ids?|component_truth_ids?|comparison_truth_ids?)/i.test(parentKey)) out.add(String(value));
-    return out;
+function isScalarTruthToken(value: unknown): value is string | number {
+  return (typeof value === 'string' && value.trim().length > 0) || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function collectScalarTruthTokens(value: unknown, out: Set<string>) {
+  if (isScalarTruthToken(value)) {
+    out.add(String(value).trim());
+    return;
   }
   if (Array.isArray(value)) {
-    value.forEach((item) => collectTruthStateTokens(item, out, parentKey));
+    value.forEach((item) => {
+      if (isScalarTruthToken(item)) out.add(String(item).trim());
+    });
+  }
+}
+
+function isExplicitTruthIdField(key: string): boolean {
+  return /^(truth_state_id|truth_state_ids|canonical_truth_state_id|canonical_truth_state_ids|known_truth_ids|brief_truth_ids|component_truth_ids|comparison_truth_ids)$/i.test(key);
+}
+
+function isCanonicalTruthStateMapKey(key: string): boolean {
+  const trimmed = key.trim();
+  return /^[A-Za-z0-9._-]+:truth_state:[A-Za-z0-9._:-]+$/.test(trimmed) || /^truth-state-[A-Za-z0-9._:-]+$/.test(trimmed);
+}
+
+function isTruthStateRecord(value: Record<string, unknown>): boolean {
+  return [
+    'truth_state',
+    'truth_state_type',
+    'truth_state_family',
+    'truth_family',
+    'truth_value',
+    'truth_state_status',
+    'canonical_truth_state_id',
+    'canonical_truth_state_ids',
+    'truth_state_id',
+    'truth_state_ids',
+  ].some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function collectTruthStateTokens(value: unknown, out = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectTruthStateTokens(item, out));
     return out;
   }
-  if (isRecord(value)) {
-    for (const [key, item] of Object.entries(value)) {
-      out.add(key);
-      collectTruthStateTokens(item, out, key);
+  if (!isRecord(value)) return out;
+
+  const truthStateRecord = isTruthStateRecord(value);
+  for (const [key, item] of Object.entries(value)) {
+    if (isCanonicalTruthStateMapKey(key)) out.add(key.trim());
+    if (isExplicitTruthIdField(key) || (key === 'id' && truthStateRecord)) {
+      collectScalarTruthTokens(item, out);
     }
+    collectTruthStateTokens(item, out);
   }
   return out;
 }
@@ -2420,7 +2467,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
   analysis_run_id: string;
   take_id: string;
   candidates: Array<Record<string, unknown>>;
-  evidence_anchors_data?: { anchors?: Array<Record<string, unknown>> } | null;
+  evidence_anchors_data?: EvidenceAnchorsSupportData | null;
   truth_state_map_data?: Record<string, unknown> | null;
 }) {
   const anchors = safeRecordArray(input.evidence_anchors_data?.anchors);

@@ -2513,8 +2513,98 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
     expect(source).toContain('emitClaimCandidateTrace');
     expect(source).toContain('claim_candidate_trace_data: claimCandidateTrace.written');
+    expect(source).toContain('evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status');
+    expect(source).toContain('evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary');
+    expect(source).toContain('evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary');
     expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
     expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
     expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
+  });
+
+  it('lets PublicClaimTrace see sufficient EvidenceAnchors aggregate support in controlled fixtures', async () => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle();
+    expect(claims.claims[0].support_status).toBe('supported');
+    expect(claims.claims[0].evidence_support_summary.evidence_anchor_gate_status).toBe('sufficient');
+    expect(claims.public_claim_gate_status).toBe('sufficient');
+    expect(metrics.public_claim_gate_status).toBe('sufficient');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('keeps PublicClaimTrace insufficient when EvidenceAnchors aggregate data is partial or absent', async () => {
+    const partial = await emitPublicClaimSupportBundle({ evidenceAnchorGateStatus: 'insufficient' });
+    expect(partial.claims.claims[0].support_status).toBe('partially_supported');
+    expect(partial.claims.public_claim_gate_status).toBe('insufficient');
+
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914m-no-anchors-'));
+    const run = `run-s914m-${Math.random().toString(36).slice(2)}`;
+    const claimsOut = await emitPublicClaimTraceFirstPass({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      claim_candidate_trace_data: { claim_candidates: [claimCandidate()] },
+      evidence_anchors_data: null,
+      truth_state_map_data: { truth_state_ids: ['truth-brief-presence'] },
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    const claims = claimsOut.written
+      ? JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'PublicClaimTrace.json'), 'utf8'))
+      : null;
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+    expect(claims.claims[0].support_status).toBe('missing_evidence');
+  });
+
+  it('does not resolve linked truth IDs from structural TruthStateMap keys', async () => {
+    const structural = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ linked_truth_state_ids: ['known_truths'] })],
+      truthStateMap: { known_truths: { brief_presence: 'supplied' }, brief_truths: { status: 'known' } },
+    });
+    expect(structural.claims.claims[0].support_status).toBe('missing_truth_link');
+    expect(structural.claims.claims[0].truth_support_summary.unresolved_truth_state_ids).toEqual(['known_truths']);
+    expect(structural.claims.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('resolves explicit truth_state_id and truth_state_ids values only', async () => {
+    const explicitId = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ linked_truth_state_ids: ['take-x:truth_state:brief_001'] })],
+      truthStateMap: { known_truths: [{ truth_state_id: 'take-x:truth_state:brief_001', truth_state: 'known' }] },
+    });
+    expect(explicitId.claims.claims[0].support_status).toBe('supported');
+
+    const explicitIds = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ linked_truth_state_ids: ['take-x:truth_state:media_001'] })],
+      truthStateMap: { truth_state_ids: ['take-x:truth_state:media_001'] },
+    });
+    expect(explicitIds.claims.claims[0].support_status).toBe('supported');
+  });
+
+  it('resolves only canonical ID-keyed truth maps, not generic keyed maps', async () => {
+    const canonical = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ linked_truth_state_ids: ['take-x:truth_state:brief_002'] })],
+      truthStateMap: { truth_states: { 'take-x:truth_state:brief_002': { status: 'known' } } },
+    });
+    expect(canonical.claims.claims[0].support_status).toBe('supported');
+
+    const generic = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ linked_truth_state_ids: ['brief_presence'] })],
+      truthStateMap: { known_truths: { brief_presence: 'supplied' } },
+    });
+    expect(generic.claims.claims[0].support_status).toBe('missing_truth_link');
+    expect(generic.claims.claims[0].truth_support_summary.unresolved_truth_state_ids).toEqual(['brief_presence']);
+  });
+
+  it('keeps malformed TruthStateMap input non-satisfying without crashing', async () => {
+    const malformed = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ linked_truth_state_ids: ['take-x:truth_state:missing'] })],
+      truthStateMap: { truth_state_ids: [null, { bad: true }], known_truths: null } as any,
+    });
+    expect(malformed.claims.claims[0].support_status).toBe('missing_truth_link');
+    expect(malformed.claims.public_claim_gate_status).toBe('insufficient');
   });
 });
