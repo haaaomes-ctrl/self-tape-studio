@@ -88,13 +88,83 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(out.written).toBe(true);
     expect(out.comparison_run_id).toBe('cmp-root3');
     expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    expect(out.comparison_parity_written).toBe(true);
+    expect(out.comparison_parity_status).toBe('insufficient');
+    expect(out.emitted_blocked_artefact_ids).toContain('parity_comparison');
+    expect(out.blocker_codes).toContain('parity_artefacts_missing');
+    const parity = JSON.parse(await readFile(path.join(root, 'take-root3', 'takes', 'take-root3', 'analysis-take-root3', 'parity', 'comparison_parity.json'), 'utf8'));
+    expect(parity.parity_status).toBe('insufficient');
+    expect(parity.comparison_invoked).toBe(true);
     const manifest = JSON.parse(await readFile(path.join(root, 'take-root3', 'manifest.json'), 'utf8'));
     expect(manifest.comparison_run_id).toBe('cmp-root3');
     expect(manifest.compared_take_ids).toEqual(['root3', 'root4']);
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+    expect(manifest.emitted_blocked_artefact_ids).toContain('parity_comparison');
+    expect(manifest.not_applicable_artifact_ids).not.toContain('parity_comparison');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
     const metrics = JSON.parse(await readFile(path.join(root, 'take-root3', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(metrics.comparison_run_id).toBe('cmp-root3');
     expect(metrics.compared_take_ids).toEqual(['root3', 'root4']);
     expect(metrics.comparison_runtime_artifact_count).toBe(5);
+    expect(metrics.emitted_blocked_artefacts).toContain('parity_comparison');
+    expect(metrics.not_applicable_artefacts).not.toContain('parity_comparison');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('recomputes satisfying comparison parity during manifest reconciliation when risk context is complete', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'take-root5',
+      take_id: 'root5',
+      analysis_run_id: 'take-root5',
+      comparison_run_id: null,
+      compared_take_ids: ['root5'],
+      root_dir: root,
+      internal_qa_emit: true,
+      emitted_artefact_ids: [],
+    });
+    const out = await emitComparisonRuntimeArtifactsWithManifestReconciliation({
+      run_id: 'take-root5',
+      take_id: 'root5',
+      root_take_id: 'root5',
+      analysis_run_id: 'take-root5',
+      comparison_run_id: 'cmp-root5',
+      compared_take_ids: ['take-root5', 'take-root5', 'take-root6'],
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_raw_data: {
+        comparison_execution_status: 'executed',
+        comparison_result_summary: { selected_take_id_internal_only: 'root5' },
+        forced_winner_risk: false,
+        false_winner_risk: false,
+      },
+      suppression_trace: { false_winner_prevention_status: 'not_required' },
+      same_video_repeatability_trace: { same_video_detected: false, repeated_input_detected: false },
+      route_variance_trace: { route_variance_detected: false, route_mismatch_detected: false, route_variance_status: 'not_detected' },
+    });
+    expect(out.written).toBe(true);
+    expect(out.comparison_parity_written).toBe(true);
+    expect(out.comparison_parity_status).toBe('passed');
+    expect(out.emitted_artefact_ids).toContain('parity_comparison');
+    expect(out.emitted_blocked_artefact_ids).not.toContain('parity_comparison');
+    const manifest = JSON.parse(await readFile(path.join(root, 'take-root5', 'manifest.json'), 'utf8'));
+    expect(manifest.compared_take_ids).toEqual(['root5', 'root6']);
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted');
+    expect(manifest.emitted_artifacts).toContain('parity_comparison');
+    expect(manifest.emitted_blocked_artefact_ids).not.toContain('parity_comparison');
+    expect(manifest.runtime_evidence_accepted_by_id).toContain('parity_comparison');
+    expect(manifest.runtime_evidence_blocked_by_id).not.toContain('parity_comparison');
+    expect(manifest.required_artifacts.find((artefact: any) => artefact.artefact_id === 'parity_comparison')?.blocker_code).toBeUndefined();
+    const metrics = JSON.parse(await readFile(path.join(root, 'take-root5', 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(metrics.compared_take_ids).toEqual(['root5', 'root6']);
+    expect(metrics.emitted_artefacts).toContain('parity_comparison');
+    expect(metrics.emitted_blocked_artefacts).not.toContain('parity_comparison');
+    expect(metrics.runtime_evidence_accepted_by_id).toContain('parity_comparison');
+    expect(metrics.runtime_evidence_blocked_by_id).not.toContain('parity_comparison');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');

@@ -39,6 +39,106 @@ function isComparisonArtefactId(value: unknown): value is ComparisonArtefactId {
   return typeof value === 'string' && (COMPARISON_ARTEFACT_IDS as readonly string[]).includes(value);
 }
 
+type ComparisonParityStatus = 'not_applicable' | 'passed' | 'failed' | 'insufficient';
+
+function applyComparisonParityManifestState(input: {
+  manifest: Record<string, any>;
+  written: boolean;
+  parity_status: ComparisonParityStatus;
+}) {
+  const manifest = JSON.parse(JSON.stringify(input.manifest ?? {}));
+  const emittedSet = new Set<string>(manifest.emitted_artifacts ?? []);
+  const emittedBlockedSet = new Set<string>(manifest.emitted_blocked_artefact_ids ?? []);
+  const missingSet = new Set<string>(manifest.missing_artifacts ?? []);
+  const deferredSet = new Set<string>(manifest.deferred_artifact_ids ?? []);
+  const notApplicableSet = new Set<string>(manifest.not_applicable_artifact_ids ?? []);
+  const blockerSet = new Set<string>(manifest.blocker_codes ?? []);
+  const acceptedSet = new Set<string>(manifest.runtime_evidence_accepted_by_id ?? []);
+  const blockedSet = new Set<string>(manifest.runtime_evidence_blocked_by_id ?? []);
+  const statusById = { ...(manifest.artefact_status_by_id ?? {}) };
+  const srcById = { ...(manifest.artefact_source_classification_by_id ?? {}) };
+  const l2ById = { ...(manifest.artefact_level2_spine_satisfaction_by_id ?? {}) };
+  const hasOtherParityBlocker = Array.isArray(manifest.required_artifacts)
+    ? manifest.required_artifacts.some((artefact: any) => (
+      artefact?.artefact_id !== 'parity_comparison'
+      && artefact?.blocker_code === 'parity_artefacts_missing'
+      && artefact?.status !== 'emitted'
+      && artefact?.status !== 'not_applicable'
+    ))
+    : false;
+
+  emittedSet.delete('parity_comparison');
+  emittedBlockedSet.delete('parity_comparison');
+  missingSet.delete('parity_comparison');
+  deferredSet.delete('parity_comparison');
+  notApplicableSet.delete('parity_comparison');
+  acceptedSet.delete('parity_comparison');
+  blockedSet.delete('parity_comparison');
+
+  const status =
+    input.parity_status === 'not_applicable'
+      ? 'not_applicable'
+      : (input.written && input.parity_status === 'passed'
+        ? 'emitted'
+        : (input.written ? 'emitted_blocked' : 'missing'));
+
+  srcById.parity_comparison = 'internal_comparison_parity_proof';
+  l2ById.parity_comparison = status === 'emitted';
+  statusById.parity_comparison = status;
+
+  if (status === 'emitted') {
+    emittedSet.add('parity_comparison');
+    acceptedSet.add('parity_comparison');
+  } else if (status === 'emitted_blocked') {
+    emittedBlockedSet.add('parity_comparison');
+    blockedSet.add('parity_comparison');
+    blockerSet.add('parity_artefacts_missing');
+  } else if (status === 'missing') {
+    missingSet.add('parity_comparison');
+    blockedSet.add('parity_comparison');
+    blockerSet.add('parity_artefacts_missing');
+  } else {
+    notApplicableSet.add('parity_comparison');
+  }
+  if ((status === 'emitted' || status === 'not_applicable') && !hasOtherParityBlocker) {
+    blockerSet.delete('parity_artefacts_missing');
+  }
+
+  const reason =
+    status === 'emitted'
+      ? 'Emitted in current run'
+      : (status === 'emitted_blocked'
+        ? 'Emitted with blocked/not_executed runtime evidence'
+        : (status === 'not_applicable' ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'));
+  const required_artifacts = Array.isArray(manifest.required_artifacts)
+    ? manifest.required_artifacts.map((artefact: any) => {
+      if (artefact?.artefact_id !== 'parity_comparison') return artefact;
+      return {
+        ...artefact,
+        status,
+        blocker_code: status === 'emitted' || status === 'not_applicable' ? undefined : 'parity_artefacts_missing',
+        reason,
+      };
+    })
+    : manifest.required_artifacts;
+
+  return {
+    ...manifest,
+    required_artifacts,
+    emitted_artifacts: [...emittedSet],
+    emitted_blocked_artefact_ids: [...emittedBlockedSet],
+    missing_artifacts: [...missingSet],
+    deferred_artifact_ids: [...deferredSet],
+    not_applicable_artifact_ids: [...notApplicableSet],
+    blocker_codes: [...blockerSet],
+    runtime_evidence_accepted_by_id: [...acceptedSet],
+    runtime_evidence_blocked_by_id: [...blockedSet],
+    artefact_status_by_id: statusById,
+    artefact_source_classification_by_id: srcById,
+    artefact_level2_spine_satisfaction_by_id: l2ById,
+  };
+}
+
 export function reconcileComparisonManifestState(input: {
   manifest: Record<string, any>;
   comparison_write_success_by_id: Partial<Record<ComparisonArtefactId, boolean>>;
@@ -884,6 +984,8 @@ export interface InternalComparisonOperatorTriggerResult {
   compared_take_ids: string[];
   compared_analysis_run_ids: string[];
   emitted_artefact_ids: string[];
+  emitted_blocked_artefact_ids?: string[];
+  comparison_parity_status?: ComparisonParityStatus;
   warning?: string | null;
   blocker_codes?: string[];
 }
@@ -923,6 +1025,8 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
   const sourceRunId = String(input.run_id ?? '').trim();
   const takeIdRaw = (input.root_take_id ?? input.take_id ?? '').trim();
   const compared = (input.compared_take_ids ?? []).map((x) => String(x).trim()).filter(Boolean);
+  const takeCore = stripRepeatedTakePrefixes(takeIdRaw);
+  const comparedTakeCores = normaliseUniqueTakeCores(compared);
   const safeMismatch = (): CanonicalComparisonReconciliationIdentity => ({
     source_run_id: sourceRunId,
     canonical_qa_run_id: '',
@@ -943,25 +1047,25 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
     identity_status: 'comparison_reconciliation_manifest_identity_mismatch',
     blocker_code: 'comparison_reconciliation_manifest_identity_mismatch',
   });
-  if (!takeIdRaw) return safeMismatch();
-  try { assertSafeSegment(takeIdRaw, 'take_id'); } catch { return safeMismatch(); }
-  if (compared.length > 0 && !compared.includes(takeIdRaw)) return safeMismatch();
+  if (!takeCore) return safeMismatch();
+  try { assertSafeSegment(takeCore, 'take_id'); } catch { return safeMismatch(); }
+  if (compared.length > 0 && !comparedTakeCores.includes(takeCore)) return safeMismatch();
   const takeRunMatch = /^take-(.+)$/.exec(sourceRunId);
-  if (takeRunMatch && takeRunMatch[1] !== takeIdRaw) return safeMismatch();
-  if (sourceRunId && !takeRunMatch && sourceRunId !== `take-${takeIdRaw}` && !isUuidLike(sourceRunId)) {
+  if (takeRunMatch && stripRepeatedTakePrefixes(takeRunMatch[1]) !== takeCore) return safeMismatch();
+  if (sourceRunId && !takeRunMatch && sourceRunId !== `take-${takeCore}` && !isUuidLike(sourceRunId)) {
     try { assertSafeSegment(sourceRunId, 'run_id'); } catch { return safeMismatch(); }
   }
-  const canonicalQaRunId = `take-${takeIdRaw}`;
+  const canonicalQaRunId = `take-${takeCore}`;
   const canonicalAnalysisRunId = canonicalQaRunId;
   const analysisInput = (input.analysis_run_id ?? '').trim();
   if (analysisInput && analysisInput !== canonicalAnalysisRunId) return safeMismatch();
-  const canonicalComparisonRoot = `takes/take-${takeIdRaw}/analysis-${canonicalAnalysisRunId}`;
+  const canonicalComparisonRoot = `takes/take-${takeCore}/analysis-${canonicalAnalysisRunId}`;
   const manifestRelativePath = 'manifest.json' as const;
   const metricsRelativePath = 'qa/acceptance_metrics.json' as const;
   return {
     source_run_id: sourceRunId,
     canonical_qa_run_id: canonicalQaRunId,
-    canonical_take_id: takeIdRaw,
+    canonical_take_id: takeCore,
     canonical_analysis_run_id: canonicalAnalysisRunId,
     manifest_relative_path: manifestRelativePath,
     metrics_relative_path: metricsRelativePath,
@@ -1267,8 +1371,10 @@ export async function runInternalComparisonOperatorTrigger(
     compared_take_ids: ids,
     compared_analysis_run_ids: compared_takes.map((t) => t.analysis_run_id),
     emitted_artefact_ids: out.emitted_artefact_ids ?? [],
+    emitted_blocked_artefact_ids: out.emitted_blocked_artefact_ids ?? [],
+    comparison_parity_status: out.comparison_parity_status,
     warning: out.warning ?? null,
-    blocker_codes: out.written ? [] : ['comparison_not_emitted'],
+    blocker_codes: out.blocker_codes ?? (out.written ? [] : ['comparison_not_emitted']),
   };
 }
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput): Promise<any> {
@@ -2273,10 +2379,43 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
   }
   const emitOut = await emitComparisonRuntimeArtifacts({ ...input, run_id: identity.canonical_qa_run_id, take_id: identity.canonical_take_id, analysis_run_id: identity.canonical_analysis_run_id });
   const emittedIds = emitOut.emitted_artefact_ids ?? [];
-  const reconciledManifest = reconcileComparisonManifestState({
+  const emittedBlockedIds = emitOut.emitted_blocked_artefact_ids ?? [];
+  const normalisedComparedTakeIds = normaliseUniqueTakeCores(comparedTakeIds);
+  const comparisonRunId = emitOut.comparison_run_id ?? input.comparison_run_id ?? null;
+  const comparisonEvidenceStatus = {
+    comparison_raw: emittedIds.includes('comparison_raw'),
+    comparison_report_internal: emittedIds.includes('comparison_report_internal'),
+    same_video_repeatability_trace: emittedIds.includes('same_video_repeatability_trace'),
+    comparison_suppression_trace: emittedIds.includes('comparison_suppression_trace'),
+    route_variance_trace: emittedIds.includes('route_variance_trace'),
+  };
+  const comparisonInvoked = Boolean(comparisonRunId)
+    || normalisedComparedTakeIds.length > 1
+    || COMPARISON_ARTEFACT_IDS.some((id) => emittedIds.includes(id) || emittedBlockedIds.includes(id));
+  const comparisonParityPayloads = {
+    public_output_unchanged: true,
+    public_comparison_output_absent_or_unchanged: true,
+    ...(input.comparison_raw_data ? { comparison_raw: { ...input.comparison_raw_data, public_output_unchanged: true } } : {}),
+    ...(input.same_video_repeatability_trace ? { same_video_repeatability_trace: { ...input.same_video_repeatability_trace, public_output_unchanged: true } } : {}),
+    ...(input.suppression_trace ? { comparison_suppression_trace: { ...input.suppression_trace, public_output_unchanged: true } } : {}),
+    ...(input.route_variance_trace ? { route_variance_trace: { ...input.route_variance_trace, public_output_unchanged: true } } : {}),
+  };
+  const comparisonParityWrite = comparisonInvoked ? await emitComparisonParityProof({
+    run_id: identity.canonical_qa_run_id,
+    analysis_run_id: identity.canonical_analysis_run_id,
+    take_id: identity.canonical_take_id,
+    comparison_run_id: comparisonRunId,
+    compared_take_ids: normalisedComparedTakeIds,
+    root_dir: root,
+    internal_qa_emit: true,
+    comparison_invoked: comparisonInvoked,
+    comparison_evidence_status: comparisonEvidenceStatus,
+    comparison_payloads: comparisonParityPayloads,
+  }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes: [] as string[] };
+  const reconciledComparisonManifest = reconcileComparisonManifestState({
     manifest: manifestObj,
-    comparison_run_id: emitOut.comparison_run_id ?? input.comparison_run_id ?? null,
-    compared_take_ids: comparedTakeIds,
+    comparison_run_id: comparisonRunId,
+    compared_take_ids: normalisedComparedTakeIds,
     comparison_write_success_by_id: {
       comparison_raw: emittedIds.includes('comparison_raw'),
       comparison_report_internal: emittedIds.includes('comparison_report_internal'),
@@ -2285,22 +2424,42 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
       route_variance_trace: emittedIds.includes('route_variance_trace'),
     },
   });
+  const reconciledManifest = applyComparisonParityManifestState({
+    manifest: reconciledComparisonManifest,
+    written: Boolean(comparisonParityWrite.written),
+    parity_status: comparisonParityWrite.parity_status as ComparisonParityStatus,
+  });
   const mw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.manifest_relative_path, payload: reconciledManifest, artefact_id: 'manifest' });
   const metrics = { ...buildQAAcceptanceMetrics(reconciledManifest), ...resolveQADeploymentProvenance() };
   const qw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.metrics_relative_path, payload: metrics, artefact_id: 'qa_acceptance_metrics' });
   const reconciliation_written = Boolean(mw.written && qw.written);
+  const comparison_parity_write_satisfied = !comparisonInvoked || comparisonParityWrite.parity_status === 'not_applicable' || Boolean(comparisonParityWrite.written);
   const comparison_artefacts_written = emittedIds.length > 0;
   const comparison_artefact_root_match = Boolean(identity.canonical_comparison_root === `takes/take-${identity.canonical_take_id}/analysis-${identity.canonical_analysis_run_id}`);
   const read_write_root_match = Boolean(identity.canonical_manifest_storage_key.startsWith(`${identity.canonical_qa_run_id}/`) && identity.canonical_metrics_storage_key.startsWith(`${identity.canonical_qa_run_id}/`));
   return {
     ...emitOut,
     ...baseResult,
-    written: Boolean(emitOut.written && reconciliation_written),
+    emitted_artefact_ids: [...new Set([
+      ...emittedIds,
+      ...(comparisonParityWrite.written && comparisonParityWrite.parity_status === 'passed' ? ['parity_comparison'] : []),
+    ])],
+    emitted_blocked_artefact_ids: [...new Set([
+      ...emittedBlockedIds,
+      ...(comparisonParityWrite.written && comparisonParityWrite.parity_status !== 'passed' && comparisonParityWrite.parity_status !== 'not_applicable' ? ['parity_comparison'] : []),
+    ])],
+    written: Boolean(emitOut.written && reconciliation_written && comparison_parity_write_satisfied),
     reconciliation_written,
     comparison_artefacts_written,
+    comparison_parity_written: Boolean(comparisonParityWrite.written),
+    comparison_parity_status: comparisonParityWrite.parity_status,
     comparison_artefact_root_match,
     read_write_root_match,
-    blocker_codes: emitOut.written && reconciliation_written ? [] : ['comparison_reconciliation_failed'],
+    blocker_codes: [...new Set([
+      ...(emitOut.written && reconciliation_written ? [] : ['comparison_reconciliation_failed']),
+      ...(!comparison_parity_write_satisfied ? ['parity_artefacts_missing'] : []),
+      ...(comparisonParityWrite.blocker_codes ?? []),
+    ])],
   };
 }
 
