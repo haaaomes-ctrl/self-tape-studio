@@ -2438,6 +2438,36 @@ function getStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
 }
 
+function normaliseSafeLimitationItems(value: unknown): Array<{
+  safe_summary: string;
+  source_index: number;
+  source_kind: 'string' | 'record';
+  blocker_codes: string[];
+}> {
+  const items = Array.isArray(value) ? value : (value === null || value === undefined ? [] : [value]);
+  return items.flatMap((item, index) => {
+    if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
+      const summary = safeCandidateSummary(item);
+      if (!summary) return [];
+      return [{
+        safe_summary: summary,
+        source_index: index,
+        source_kind: 'string' as const,
+        blocker_codes: summary === '[redacted unsafe candidate summary]' ? ['unsafe_limitation_summary_redacted'] : [],
+      }];
+    }
+    if (!isRecord(item)) return [];
+    const summary = pickSafeRecordText(item);
+    if (!summary) return [];
+    return [{
+      safe_summary: summary,
+      source_index: index,
+      source_kind: 'record' as const,
+      blocker_codes: getStringArray(item.blocker_codes),
+    }];
+  });
+}
+
 function getEvidenceAnchorId(anchor: Record<string, unknown>): string | null {
   const id = anchor.evidence_anchor_id ?? anchor.anchor_id;
   return typeof id === 'string' && id.trim() ? id.trim() : null;
@@ -2776,6 +2806,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     requiredEvidenceAnchorFamily?: string;
     requiredTruthStateFamily?: string;
     supportStatus?: string;
+    extraBlockerCodes?: string[];
   }) => {
     const clean = safeCandidateSummary(args.summary);
     if (!clean) return;
@@ -2787,6 +2818,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       ...(isLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
       ...(args.sourceFamily === 'report_candidate_requires_support' ? ['report_candidate_requires_support'] : []),
       ...(!eligible && !isLegacy && safety.public_safety_status !== 'blocked' ? ['claim_candidate_not_eligible_for_support_check'] : []),
+      ...(args.extraBlockerCodes ?? []),
       'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
     ]);
     candidates.push({
@@ -2834,11 +2866,17 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
         requiredTruthStateFamily: linkedTruthStateIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact',
       });
     });
-    safeRecordArray(analysisEvidenceState.unsupported_or_unavailable_evidence).forEach((item, index) => {
-      const kind = safeCandidateSummary(item.evidence_kind) ?? `unavailable_evidence_family_${index + 1}`;
-      const reason = safeCandidateSummary(item.reason) ?? safeCandidateSummary(item.status) ?? 'not extracted';
+    const unsupportedItems = Array.isArray(analysisEvidenceState.unsupported_or_unavailable_evidence)
+      ? analysisEvidenceState.unsupported_or_unavailable_evidence
+      : (analysisEvidenceState.unsupported_or_unavailable_evidence === null || analysisEvidenceState.unsupported_or_unavailable_evidence === undefined ? [] : [analysisEvidenceState.unsupported_or_unavailable_evidence]);
+    unsupportedItems.forEach((item, index) => {
+      const recordItem = isRecord(item) ? item : null;
+      const summary = recordItem
+        ? `${safeCandidateSummary(recordItem.evidence_kind) ?? `unavailable_evidence_family_${index + 1}`}: ${safeCandidateSummary(recordItem.reason) ?? safeCandidateSummary(recordItem.status) ?? 'not extracted'}`
+        : safeCandidateSummary(item);
+      if (!summary) return;
       addCandidate({
-        summary: `${kind}: ${reason}`,
+        summary,
         claimType: 'assessability_limitation',
         claimFamily: 'assessability_limitation',
         sourceArtefactId: 'analysis_evidence_state',
@@ -2847,21 +2885,29 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
         sourceStage: 'analysis_step_1_evidence_mapping',
         requiredEvidenceAnchorFamily: 'assessability_limitation',
         requiredTruthStateFamily: 'not_required_for_limitation_candidate',
+        extraBlockerCodes: recordItem ? getStringArray(recordItem.blocker_codes) : (summary === '[redacted unsafe candidate summary]' ? ['unsafe_limitation_summary_redacted'] : []),
       });
     });
-    safeRecordArray(analysisEvidenceState.assessability_limitations).forEach((item, index) => {
-      const summary = pickSafeRecordText(item);
-      if (!summary) return;
-      addCandidate({
-        summary,
-        claimType: 'assessability_limitation',
-        claimFamily: 'assessability_limitation',
-        sourceArtefactId: 'analysis_evidence_state',
-        sourcePath: `assessability_limitations[${index}]`,
-        sourceFamily: 'real_runtime_v3',
-        sourceStage: 'analysis_step_1_evidence_mapping',
+    for (const [field, value] of [
+      ['assessability_limitations', analysisEvidenceState.assessability_limitations],
+      ['timestamp_normalisation_warnings', analysisEvidenceState.timestamp_normalisation_warnings],
+      ['extraction_limitations', analysisEvidenceState.extraction_limitations],
+    ] as const) {
+      normaliseSafeLimitationItems(value).forEach((item) => {
+        addCandidate({
+          summary: item.safe_summary,
+          claimType: 'assessability_limitation',
+          claimFamily: 'assessability_limitation',
+          sourceArtefactId: 'analysis_evidence_state',
+          sourcePath: `${field}[${item.source_index}]`,
+          sourceFamily: 'real_runtime_v3',
+          sourceStage: 'analysis_step_1_evidence_mapping',
+          requiredEvidenceAnchorFamily: 'assessability_limitation',
+          requiredTruthStateFamily: 'not_required_for_limitation_candidate',
+          extraBlockerCodes: item.blocker_codes,
+        });
       });
-    });
+    }
   }
 
   anchors.forEach((anchor, index) => {

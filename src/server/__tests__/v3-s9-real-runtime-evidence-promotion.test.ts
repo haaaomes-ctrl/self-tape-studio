@@ -1942,6 +1942,7 @@ async function emitClaimCandidateBundle(options: {
   includeAnalysis?: boolean;
   includeAnchors?: boolean;
   includePublicClaimTrace?: boolean;
+  analysisEvidenceOverrides?: Record<string, unknown>;
   metadataOverrides?: Record<string, unknown>;
 } = {}) {
   const includeAnalysis = options.includeAnalysis ?? true;
@@ -1954,9 +1955,12 @@ async function emitClaimCandidateBundle(options: {
       out: null,
       payload: null,
     };
+  const analysisEvidencePayload = base.payload && options.analysisEvidenceOverrides
+    ? { ...base.payload, ...options.analysisEvidenceOverrides }
+    : base.payload;
   let anchorsOut: any = null;
   let anchors: any = null;
-  if (options.includeAnchors && base.payload) {
+  if (options.includeAnchors && analysisEvidencePayload) {
     anchorsOut = await emitEvidenceAnchorsFirstPass({
       run_id: base.run,
       analysis_run_id: base.run,
@@ -1964,7 +1968,7 @@ async function emitClaimCandidateBundle(options: {
       take_id: base.take,
       source_module: 'test',
       source_stage: 'unit',
-      analysis_evidence_state_data: base.payload,
+      analysis_evidence_state_data: analysisEvidencePayload,
       root_dir: base.root,
       internal_qa_emit: true,
     });
@@ -1978,7 +1982,7 @@ async function emitClaimCandidateBundle(options: {
     take_id: base.take,
     source_module: 'test',
     source_stage: 'unit',
-    analysis_evidence_state_data: base.payload,
+    analysis_evidence_state_data: analysisEvidencePayload,
     evidence_anchors_data: anchors,
     raw_report_data: options.rawReport === undefined ? null : { report_data: options.rawReport },
     metadata_overrides: options.metadataOverrides,
@@ -2102,6 +2106,71 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     expect(limitation.source_artefact_id).toBe('analysis_evidence_state');
     expect(limitation.source_family).toBe('real_runtime_v3');
     expect(['safe_for_public_candidate', 'needs_rewrite']).toContain(limitation.public_safety_status);
+  });
+
+  it('creates limitation candidates from string record and mixed Step 1 assessability limitations', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      analysisEvidenceOverrides: {
+        unsupported_or_unavailable_evidence: [],
+        assessability_limitations: [
+          'timestamp_normalisation_warning: take.created_at invalid',
+          { reason: 'media readiness pending' },
+          '',
+          'audio assessability limited',
+        ],
+      },
+    });
+    const byPath = new Map(claimCandidateTrace.claim_candidates.map((candidate: any) => [candidate.source_path, candidate]));
+    expect(byPath.get('assessability_limitations[0]')).toMatchObject({
+      claim_family: 'assessability_limitation',
+      source_artefact_id: 'analysis_evidence_state',
+      safe_candidate_summary: 'timestamp_normalisation_warning: take.created_at invalid',
+    });
+    expect(byPath.get('assessability_limitations[1]')).toMatchObject({
+      claim_family: 'assessability_limitation',
+      safe_candidate_summary: 'media readiness pending',
+    });
+    expect(byPath.has('assessability_limitations[2]')).toBe(false);
+    expect(byPath.get('assessability_limitations[3]')).toMatchObject({
+      claim_family: 'assessability_limitation',
+      safe_candidate_summary: 'audio assessability limited',
+    });
+  });
+
+  it('redacts unsafe string limitations instead of leaking raw diagnostics', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      analysisEvidenceOverrides: {
+        unsupported_or_unavailable_evidence: [],
+        assessability_limitations: ['Use https://example.test/video?token=abc and signed_url=bad'],
+      },
+    });
+    const limitation = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.source_path === 'assessability_limitations[0]');
+    expect(limitation.safe_candidate_summary).toBe('[redacted unsafe candidate summary]');
+    expect(limitation.blocker_codes).toContain('unsafe_limitation_summary_redacted');
+    const serialized = JSON.stringify(claimCandidateTrace).toLowerCase();
+    expect(serialized).not.toContain('https://example.test');
+    expect(serialized).not.toContain('token=abc');
+    expect(serialized).not.toContain('signed_url=bad');
+  });
+
+  it('preserves string unavailable-evidence and timestamp-warning limitations as candidates', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      analysisEvidenceOverrides: {
+        unsupported_or_unavailable_evidence: ['video_observable_evidence_not_extracted'],
+        assessability_limitations: [],
+        timestamp_normalisation_warnings: ['take_created_at_invalid_timestamp'],
+      },
+    });
+    const unavailable = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.source_path === 'unsupported_or_unavailable_evidence[0]');
+    const timestampWarning = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.source_path === 'timestamp_normalisation_warnings[0]');
+    expect(unavailable).toMatchObject({
+      claim_family: 'assessability_limitation',
+      safe_candidate_summary: 'video_observable_evidence_not_extracted',
+    });
+    expect(timestampWarning).toMatchObject({
+      claim_family: 'assessability_limitation',
+      safe_candidate_summary: 'take_created_at_invalid_timestamp',
+    });
   });
 
   it('records raw_report submission verdict candidates as legacy_or_unsupported', async () => {
@@ -2856,5 +2925,12 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(out.payload.timestamp_normalisation_warnings).toEqual(['take_created_at_invalid_timestamp']);
     expect(out.payload.assessability_limitations).toContain('take_created_at_invalid_timestamp');
     expect(out.payload.media_readiness_summary.timestamp_source).toBe('unavailable');
+  });
+
+  it('uses mixed limitation normalisation for known string-array limitation fields', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/v3/qa-artifacts-wiring.server.ts'), 'utf8');
+    expect(source).toContain('normaliseSafeLimitationItems');
+    expect(source).not.toContain('safeRecordArray(analysisEvidenceState.assessability_limitations)');
+    expect(source).not.toContain('safeRecordArray(analysisEvidenceState.timestamp_normalisation_warnings)');
   });
 });
