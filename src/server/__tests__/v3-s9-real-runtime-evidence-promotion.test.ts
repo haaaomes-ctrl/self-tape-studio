@@ -2146,3 +2146,364 @@ function claimsOutSummary(claims: any) {
     rewrite_required_count: claims.rewrite_required_count,
   };
 }
+
+function runtimeAnchor(overrides: Record<string, unknown> = {}) {
+  const id = String(overrides.evidence_anchor_id ?? 'ea-brief-presence');
+  return {
+    schema_version: 'tapecoach_v3_evidence_anchors_runtime_v1',
+    artefact_type: 'evidence_anchors',
+    run_id: 'run-s914l',
+    analysis_run_id: 'run-s914l',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_classification: 'real_runtime_v3',
+    source_family: 'real_runtime_v3',
+    evidence_anchor_id: id,
+    source_stage: 'analysis_step_1_evidence_mapping',
+    source_artefact_id: 'analysis_evidence_state',
+    source_path: `observable_evidence_items.${id}`,
+    safe_evidence_summary: 'brief_presence: supplied',
+    evidence_text: 'brief_presence: supplied',
+    evidence_modality: 'submission_context',
+    timestamp_source: 'not_applicable',
+    linked_truth_state_ids: ['truth-brief-presence'],
+    blocker_codes: [],
+    cannot_satisfy_v3_gate: false,
+    public_display_status: 'internal_only',
+    ...overrides,
+  };
+}
+
+function claimCandidate(overrides: Record<string, unknown> = {}) {
+  return {
+    claim_candidate_id: 'cc-brief-presence',
+    safe_candidate_summary: 'brief supplied',
+    claim_type: 'factual_or_limitation_status',
+    claim_family: 'factual_status',
+    source_artefact_id: 'analysis_evidence_state',
+    source_path: 'observable_evidence_items[0]',
+    source_family: 'real_runtime_v3',
+    source_stage: 'analysis_step_1_evidence_mapping',
+    required_evidence_anchor_family: 'brief_presence',
+    required_truth_state_family: 'linked_truth_state_ids',
+    linked_evidence_anchor_ids: ['ea-brief-presence'],
+    linked_truth_state_ids: ['truth-brief-presence'],
+    candidate_support_precheck_status: 'eligible_for_support_check',
+    public_safety_status: 'safe_for_public_candidate',
+    rewrite_required: false,
+    score_scope: 'not_score',
+    blocked_claim_category: null,
+    blocker_codes: [],
+    public_display_status: 'not_rendered_internal_candidate',
+    cannot_satisfy_public_claim_gate: true,
+    eligible_for_public_claim_trace_support_check: true,
+    ...overrides,
+  };
+}
+
+async function emitPublicClaimSupportBundle(options: {
+  candidates?: Array<Record<string, unknown>>;
+  anchors?: Array<Record<string, unknown>>;
+  evidenceAnchorGateStatus?: 'sufficient' | 'insufficient';
+  truthStateMap?: Record<string, unknown> | null;
+  metadataOverrides?: Record<string, unknown>;
+} = {}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914l-'));
+  const run = `run-s914l-${Math.random().toString(36).slice(2)}`;
+  const take = 't1';
+  const anchors = options.anchors ?? [runtimeAnchor()];
+  const evidenceAnchorGateStatus = options.evidenceAnchorGateStatus ?? 'sufficient';
+  const evidenceAnchorsData = {
+    schema_version: 'tapecoach_v3_evidence_anchors_runtime_v1',
+    artefact_type: 'evidence_anchors',
+    source_classification: evidenceAnchorGateStatus === 'sufficient' ? 'real_runtime_v3' : 'real_runtime_v3_partial_non_satisfying',
+    anchors,
+    evidence_anchor_trace_summary: {
+      evidence_anchor_gate_status: evidenceAnchorGateStatus,
+      evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'sufficient' ? 'complete_controlled_fixture' : 'partial_step1_evidence_coverage',
+      source_family_summary: {
+        real_runtime_v3: anchors.filter((anchor) => anchor.source_family === 'real_runtime_v3' || anchor.source_classification === 'real_runtime_v3').length,
+        legacy_adapter: anchors.filter((anchor) => anchor.source_family === 'legacy_adapter').length,
+        report_snapshot: 0,
+        source_scaffold: anchors.filter((anchor) => anchor.source_family === 'source_scaffold').length,
+      },
+    },
+  };
+  const candidates = options.candidates ?? [claimCandidate()];
+  const claimCandidateTrace = {
+    schema_version: 'tapecoach_v3_claim_candidate_trace_v1',
+    artefact_type: 'claim_candidate_trace',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_classification: candidates.some((candidate) => candidate.source_family === 'legacy_adapter') ? 'mixed_real_runtime_v3_and_legacy_or_unsupported' : 'real_runtime_v3_candidate_source',
+    claim_candidate_count: candidates.length,
+    claim_candidates: candidates,
+    claim_candidate_source_summary: candidates.reduce<Record<string, number>>((acc, candidate) => {
+      const key = String(candidate.source_family ?? 'unknown');
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, { real_runtime_v3: 0, legacy_adapter: 0, report_candidate_requires_support: 0, first_pass_internal: 0, blocked: 0 }),
+    cannot_satisfy_public_claim_gate: true,
+  };
+  const claimsOut = await emitPublicClaimTraceFirstPass({
+    run_id: run,
+    analysis_run_id: run,
+    submission_id: 'sub1',
+    take_id: take,
+    source_module: 'test',
+    source_stage: 'unit',
+    claim_candidate_trace_data: claimCandidateTrace,
+    evidence_anchors_data: evidenceAnchorsData,
+    truth_state_map_data: options.truthStateMap === undefined ? { truth_state_ids: ['truth-brief-presence'], known_truths: { 'truth-brief-presence': 'supplied' } } : options.truthStateMap,
+    metadata_overrides: options.metadataOverrides,
+    root_dir: root,
+    internal_qa_emit: true,
+  });
+  const claimsPath = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'PublicClaimTrace.json');
+  const claims = claimsOut.written ? JSON.parse(await readFile(claimsPath, 'utf8')) : null;
+  await emitQAManifestForAnalysisRun({
+    run_id: run,
+    analysis_run_id: run,
+    take_id: take,
+    submission_id: 'sub1',
+    root_dir: root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: ['claim_candidate_trace', 'evidence_anchors', ...(claimsOut.written ? ['public_claim_trace'] : [])],
+    artefact_source_classification_by_id: {
+      claim_candidate_trace: claimCandidateTrace.source_classification,
+      evidence_anchors: evidenceAnchorsData.source_classification,
+      ...(claimsOut.written ? { public_claim_trace: claimsOut.source_classification } : {}),
+    },
+    artefact_level2_spine_satisfaction_by_id: {
+      claim_candidate_trace: false,
+      evidence_anchors: evidenceAnchorGateStatus === 'sufficient',
+      ...(claimsOut.written ? { public_claim_trace: Boolean(claimsOut.level2_satisfies) } : {}),
+    },
+    evidence_anchor_trace_summary: evidenceAnchorsData.evidence_anchor_trace_summary,
+    claim_candidate_trace_summary: {
+      claim_candidate_count: candidates.length,
+      source_classification: claimCandidateTrace.source_classification,
+      claim_candidate_source_summary: claimCandidateTrace.claim_candidate_source_summary,
+      claim_candidate_gate_status: 'insufficient',
+      claim_candidate_gate_reason: 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+    },
+    public_claim_trace_summary: claimsOut.summary as any,
+    blocker_codes: claimsOut.summary?.blocker_codes ?? [],
+    legacy_adapter_artefact_ids: claims?.source_classification === 'legacy_or_unsupported' ? ['public_claim_trace'] : [],
+    real_v3_spine_artefact_ids: claimsOut.level2_satisfies ? ['evidence_anchors', 'public_claim_trace'] : (evidenceAnchorGateStatus === 'sufficient' ? ['evidence_anchors'] : []),
+    runtime_evidence_accepted_by_id: claimsOut.level2_satisfies ? ['evidence_anchors', 'public_claim_trace'] : (evidenceAnchorGateStatus === 'sufficient' ? ['evidence_anchors'] : []),
+  } as any);
+  const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+  return { root, run, take, claimCandidateTrace, evidenceAnchorsData, claimsOut, claims, manifest, metrics };
+}
+
+describe('S9-14L PublicClaimTrace support classification', () => {
+  it('keeps legacy raw_report PublicClaimTrace non-satisfying', async () => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({
+        safe_candidate_summary: 'Submit this take',
+        claim_type: 'readiness_status',
+        claim_family: 'readiness_status',
+        source_artefact_id: 'raw_report',
+        source_path: 'report_data.submission_verdict.label',
+        source_family: 'legacy_adapter',
+        linked_evidence_anchor_ids: [],
+        linked_truth_state_ids: [],
+      })],
+      anchors: [],
+      evidenceAnchorGateStatus: 'insufficient',
+    });
+    expect(claims.source_classification).toBe('legacy_or_unsupported');
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(claims.claims[0].support_status).toBe('legacy_or_unsupported');
+    expect(metrics.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it.each([
+    ['submission verdict', claimCandidate({ safe_candidate_summary: 'Submit this take with a 95 score', claim_type: 'score_or_verdict', claim_family: 'readiness_status', source_artefact_id: 'raw_report', source_path: 'report_data.submission_verdict.label', source_family: 'legacy_adapter', linked_evidence_anchor_ids: [] }), 'legacy_or_unsupported'],
+    ['fix_first next_take', claimCandidate({ safe_candidate_summary: 'Fix first: make the next take sharper', claim_type: 'priority_fix', claim_family: 'priority_fix', source_artefact_id: 'raw_report', source_path: 'report_data.fix_first', source_family: 'legacy_adapter', linked_evidence_anchor_ids: [] }), 'legacy_or_unsupported'],
+    ['category notes strengths', claimCandidate({ safe_candidate_summary: 'Strong acting presence', claim_type: 'preserve_strength', claim_family: 'preserve_strength', source_artefact_id: 'raw_report', source_path: 'report_data.strengths[0]', source_family: 'legacy_adapter', linked_evidence_anchor_ids: [] }), 'legacy_or_unsupported'],
+  ])('keeps raw_report %s claims non-satisfying', async (_label, candidate, expectedStatus) => {
+    const { claims } = await emitPublicClaimSupportBundle({ candidates: [candidate], anchors: [], evidenceAnchorGateStatus: 'insufficient' });
+    expect(claims.claims[0].support_status).toBe(expectedStatus);
+    expect(claims.claims[0].cannot_satisfy_public_claim_gate).toBe(true);
+  });
+
+  it.each([
+    ['score', claimCandidate({ safe_candidate_summary: 'overall score: 94', claim_type: 'score_or_verdict', claim_family: 'score_or_verdict', blocked_claim_category: 'public_scoring', blocker_codes: ['public_scoring_blocked'] }), 'public_scoring', 'public_scoring_blocked'],
+    ['public technique authority', claimCandidate({ safe_candidate_summary: 'Meisner technique authority diagnosis', claim_type: 'technique_authority', claim_family: 'technique_authority', blocked_claim_category: 'public_technique_authority', blocker_codes: ['public_technique_authority_blocked'] }), 'public_technique_authority', 'public_technique_authority_blocked'],
+    ['castability bookability marketability', claimCandidate({ safe_candidate_summary: 'High castability and marketability', claim_type: 'castability_bookability_marketability', claim_family: 'castability_bookability_marketability', blocked_claim_category: 'castability_bookability_marketability', blocker_codes: ['castability_bookability_marketability_blocked'] }), 'castability_bookability_marketability', 'castability_bookability_marketability_blocked'],
+    ['public comparison winner', claimCandidate({ safe_candidate_summary: 'Take 2 is the winner and recommendation', claim_type: 'comparison_public_result', claim_family: 'comparison_public_result', blocked_claim_category: 'public_comparison_result', blocker_codes: ['public_comparison_result_blocked'] }), 'public_comparison_result', 'public_comparison_result_blocked'],
+  ])('blocks %s claims', async (_label, candidate, blockedCategory, blocker) => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle({ candidates: [candidate] });
+    expect(claims.claims[0]).toMatchObject({
+      support_status: 'blocked',
+      public_safety_status: 'blocked',
+      blocked_claim_category: blockedCategory,
+      rewrite_required: true,
+    });
+    expect(claims.claims[0].blocker_codes).toContain(blocker);
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('keeps unsupported role or brief-fit overclaims rewrite_required', async () => {
+    const { claims } = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({
+        safe_candidate_summary: 'Perfectly fits the brief and should be sent with confidence',
+        claim_family: 'role_or_brief_fit_overclaim',
+        public_safety_status: 'needs_rewrite',
+        rewrite_required: true,
+        blocked_claim_category: 'role_or_brief_fit_overclaim',
+        blocker_codes: ['unsupported_overclaim_requires_rewrite'],
+      })],
+    });
+    expect(claims.claims[0].support_status).toBe('unsupported_overclaim');
+    expect(claims.claims[0].public_safety_status).toBe('needs_rewrite');
+    expect(claims.claims[0].rewrite_required).toBe(true);
+  });
+
+  it('classifies missing evidence, unresolved truth and legacy-only anchor support as non-satisfying', async () => {
+    const missingEvidence = await emitPublicClaimSupportBundle({ candidates: [claimCandidate({ linked_evidence_anchor_ids: [] })] });
+    expect(missingEvidence.claims.claims[0].support_status).toBe('missing_evidence');
+    expect(missingEvidence.claims.claims[0].blocker_codes).toContain('missing_evidence_anchor_support');
+
+    const missingTruth = await emitPublicClaimSupportBundle({ truthStateMap: { truth_state_ids: [] } });
+    expect(missingTruth.claims.claims[0].support_status).toBe('missing_truth_link');
+    expect(missingTruth.claims.claims[0].blocker_codes).toContain('missing_truth_state_linkage');
+
+    const legacyAnchor = await emitPublicClaimSupportBundle({
+      anchors: [runtimeAnchor({ source_family: 'legacy_adapter', source_classification: 'legacy_adapter', cannot_satisfy_v3_gate: true })],
+    });
+    expect(legacyAnchor.claims.claims[0].support_status).toBe('missing_evidence');
+    expect(legacyAnchor.claims.claims[0].blocker_codes).toContain('legacy_anchor_cannot_support_public_claim_gate');
+  });
+
+  it('supports factual brief presence and media readiness limitation claims when linked to real anchors and truth', async () => {
+    const { claims } = await emitPublicClaimSupportBundle({
+      candidates: [
+        claimCandidate(),
+        claimCandidate({
+          claim_candidate_id: 'cc-media-limitation',
+          safe_candidate_summary: 'audio evidence family not extracted',
+          claim_type: 'assessability_limitation',
+          claim_family: 'assessability_limitation',
+          required_truth_state_family: 'not_required_for_limitation_candidate',
+          linked_evidence_anchor_ids: ['ea-media-limitation'],
+          linked_truth_state_ids: [],
+        }),
+      ],
+      anchors: [
+        runtimeAnchor(),
+        runtimeAnchor({ evidence_anchor_id: 'ea-media-limitation', safe_evidence_summary: 'audio evidence family not extracted', evidence_text: 'audio evidence family not extracted', linked_truth_state_ids: [], evidence_modality: 'audio' }),
+      ],
+    });
+    expect(claims.claims.map((claim: any) => claim.support_status)).toEqual(['supported', 'supported']);
+    expect(claims.claims[0].public_safety_status).toBe('safe_for_public_candidate');
+    expect(claims.claims[1].claim_family).toBe('assessability_limitation');
+  });
+
+  it('allows limitation claim support while broader EvidenceAnchors aggregate is partial, but keeps aggregate PublicClaimTrace insufficient when other claims are unsupported', async () => {
+    const { claims } = await emitPublicClaimSupportBundle({
+      evidenceAnchorGateStatus: 'insufficient',
+      candidates: [
+        claimCandidate({
+          claim_candidate_id: 'cc-limitation',
+          safe_candidate_summary: 'video evidence family not extracted',
+          claim_type: 'assessability_limitation',
+          claim_family: 'assessability_limitation',
+          required_truth_state_family: 'not_required_for_limitation_candidate',
+          linked_evidence_anchor_ids: ['ea-limitation'],
+          linked_truth_state_ids: [],
+        }),
+        claimCandidate({ claim_candidate_id: 'cc-strength', safe_candidate_summary: 'preserve the opening beat', claim_type: 'preserve_strength', claim_family: 'preserve_strength', linked_evidence_anchor_ids: ['ea-limitation'], linked_truth_state_ids: [], required_truth_state_family: 'not_required_for_runtime_fact' }),
+      ],
+      anchors: [runtimeAnchor({ evidence_anchor_id: 'ea-limitation', linked_truth_state_ids: [], safe_evidence_summary: 'video evidence family not extracted' })],
+    });
+    expect(claims.claims[0].support_status).toBe('supported');
+    expect(claims.claims[1].support_status).toBe('partially_supported');
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('keeps priority-fix v3 candidates non-satisfying without real support and does not render safe candidates', async () => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ claim_type: 'priority_fix', claim_family: 'priority_fix', safe_candidate_summary: 'adjust the eyeline', linked_evidence_anchor_ids: [] })],
+    });
+    expect(claims.claims[0].support_status).toBe('missing_evidence');
+    expect(claims.public_output_unchanged).toBe(true);
+    expect(claims.claims[0].public_display_status).toBe('not_rendered_internal_trace');
+    expect(metrics.public_output_unchanged).toBe(true);
+  });
+
+  it('can satisfy the PublicClaimTrace subgate in a complete controlled fixture without accepting global Level 2', async () => {
+    const { claims, manifest, metrics } = await emitPublicClaimSupportBundle();
+    expect(claims.public_claim_gate_status).toBe('sufficient');
+    expect(claims.source_classification).toBe('real_runtime_v3_claim_support');
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(false);
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.public_claim_trace).toBe(true);
+    expect(metrics.public_claim_gate_status).toBe('sufficient');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+  });
+
+  it('prevents full PublicClaimTrace satisfaction for non-limitation claims when EvidenceAnchors aggregate is insufficient', async () => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle({ evidenceAnchorGateStatus: 'insufficient' });
+    expect(claims.claims[0].support_status).toBe('partially_supported');
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+    expect(metrics.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('does not let caller metadata override canonical PublicClaimTrace fields', async () => {
+    const { claims } = await emitPublicClaimSupportBundle({
+      metadataOverrides: {
+        schema_version: 'attacker',
+        artefact_type: 'accepted_gate_evidence',
+        run_id: 'wrong',
+        analysis_run_id: 'wrong',
+        internal_only: false,
+        privacy_classification: 'public',
+        source_classification: 'accepted_gate_evidence',
+        cannot_satisfy_public_claim_gate: false,
+        blocker_codes: [],
+      },
+    });
+    expect(claims.schema_version).toBe('tapecoach_v3_public_claim_trace_support_v1');
+    expect(claims.artefact_type).toBe('public_claim_trace');
+    expect(claims.run_id).not.toBe('wrong');
+    expect(claims.analysis_run_id).not.toBe('wrong');
+    expect(claims.internal_only).toBe(true);
+    expect(claims.privacy_classification).toBe('internal_private');
+    expect(claims.source_classification).toBe('real_runtime_v3_claim_support');
+  });
+
+  it('redacts diagnostics and aligns manifest and qa_acceptance_metrics for insufficient and sufficient cases', async () => {
+    const insufficient = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({ safe_candidate_summary: 'Use https://example.test/video?token=abc', linked_evidence_anchor_ids: [] })],
+    });
+    const serialized = JSON.stringify(insufficient.claims).toLowerCase();
+    expect(serialized).toContain('[redacted unsafe candidate summary]');
+    expect(serialized).not.toContain('token=abc');
+    expect(insufficient.manifest.artefact_source_classification_by_id.public_claim_trace).toBe(insufficient.claims.source_classification);
+    expect(insufficient.metrics.public_claim_trace_summary.public_claim_gate_status).toBe('insufficient');
+
+    const sufficient = await emitPublicClaimSupportBundle();
+    expect(sufficient.manifest.artefact_source_classification_by_id.public_claim_trace).toBe('real_runtime_v3_claim_support');
+    expect(sufficient.metrics.public_claim_gate_status).toBe('sufficient');
+    expect(sufficient.metrics.public_claim_gate_reason).toBe('real_runtime_v3_claim_support_complete');
+  });
+
+  it('keeps global gates blocked and handles malformed ClaimCandidateTrace without crashing', async () => {
+    const { claims, metrics } = await emitPublicClaimSupportBundle({
+      candidates: [{ malformed: true, linked_evidence_anchor_ids: ['missing-anchor'], source_family: 'real_runtime_v3' }],
+      truthStateMap: null,
+    });
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+    expect(claims.claims[0].support_status).toBe('missing_evidence');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+});

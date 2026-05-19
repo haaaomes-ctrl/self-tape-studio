@@ -360,7 +360,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
   const claimCandidateStatus = manifest.artefact_status_by_id?.claim_candidate_trace ?? 'missing';
   const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true && sourceClassById.evidence_anchors === 'real_runtime_v3' ? 'sufficient' : 'insufficient');
-  const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true && sourceClassById.public_claim_trace === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
+  const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true && ['real_runtime_v3', 'real_runtime_v3_claim_support'].includes(String(sourceClassById.public_claim_trace)) ? 'sufficient' : 'insufficient');
   const claimCandidateGateStatus = claimCandidateStatus === 'missing' ? 'missing' : 'insufficient';
 
   const techniqueObservationStatus = manifest.artefact_status_by_id?.technique_observation_trace ?? 'missing';
@@ -462,7 +462,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
-    ...(tracesEmitted && (evidenceAnchorGateStatus !== 'sufficient' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
+    ...(tracesEmitted && (evidenceAnchorGateStatus !== 'sufficient' || publicClaimGateStatus !== 'sufficient') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
     ...(techniqueObservationStatus === 'missing' ? ['TechniqueObservationTrace'] : []),
     ...(techniqueObservationStatus !== 'missing' && techniqueObservationGateStatus !== 'satisfied' ? ['real runtime technique observation evidence linkage'] : []),
     ...(scoreTraceStatus === 'missing' ? ['ScoreTrace'] : []),
@@ -548,7 +548,11 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_claim_trace_status: publicClaimStatus,
     public_claim_gate_status: publicClaimGateStatus,
     public_claim_trace_summary: publicClaimSummary,
-    public_claim_gate_reason: publicClaimGateStatus === 'satisfied' ? 'real_runtime_v3_claim_support_present' : (publicClaimStatus === 'missing' ? 'trace_not_emitted' : 'legacy_or_unsupported_claim_support_only'),
+    public_claim_gate_reason: publicClaimGateStatus === 'sufficient'
+      ? String(publicClaimSummary.public_claim_gate_reason ?? 'real_runtime_v3_claim_support_present')
+      : (publicClaimStatus === 'missing'
+        ? 'trace_not_emitted'
+        : String(publicClaimSummary.public_claim_gate_reason ?? 'legacy_or_unsupported_claim_support_only')),
     claim_candidate_trace_status: claimCandidateStatus,
     claim_candidate_gate_status: claimCandidateGateStatus,
     claim_candidate_source_classification: sourceClassById.claim_candidate_trace ?? 'missing',
@@ -715,9 +719,13 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const runtime_evidence_blocked_by_id = new Set<string>(options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids);
   const real_v3_spine_artefact_ids = new Set<string>(options.real_v3_spine_artefact_ids ?? []);
   for (const artefactId of S9_14_CONTAINED_TRACE_IDS) {
+    const sourceClassification = artefact_source_classification_by_id[artefactId];
+    const acceptedTraceSource = artefactId === 'public_claim_trace'
+      ? ['real_runtime_v3', 'real_runtime_v3_claim_support'].includes(String(sourceClassification))
+      : sourceClassification === 'real_runtime_v3';
     const isCompleteRealRuntimeTrace =
       artefact_status_by_id[artefactId] === 'emitted'
-      && artefact_source_classification_by_id[artefactId] === 'real_runtime_v3'
+      && acceptedTraceSource
       && artefact_level2_spine_satisfaction_by_id[artefactId] === true;
     if (!isCompleteRealRuntimeTrace) {
       artefact_level2_spine_satisfaction_by_id[artefactId] = false;
