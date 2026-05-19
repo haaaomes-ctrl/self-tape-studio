@@ -209,6 +209,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 function isSafeComparisonParitySegment(value: unknown): value is string {
   if (typeof value !== 'string') return false;
   const trimmed = value.trim();
+  if (trimmed !== value) return false;
   if (!trimmed) return false;
   if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return false;
   if (trimmed.includes('..')) return false;

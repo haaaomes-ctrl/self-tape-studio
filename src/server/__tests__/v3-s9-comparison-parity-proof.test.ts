@@ -807,9 +807,13 @@ describe('v3-s9 comparison parity proof', () => {
   it('unsafe direct comparison parity identities do not write unintended paths', async () => {
     const cases: Array<[string, Partial<Parameters<typeof emitComparisonParityProof>[0]>]> = [
       ['run', { run_id: '../run' }],
+      ['run-space', { run_id: 'run-unsafe-run-space ' }],
       ['analysis', { analysis_run_id: '../analysis' }],
+      ['analysis-space', { analysis_run_id: 'run-unsafe-analysis-space ' }],
       ['take', { take_id: '../take' }],
+      ['take-space', { take_id: 'ta ' }],
       ['comparison', { comparison_run_id: '../comparison' }],
+      ['comparison-space', { comparison_run_id: 'cmp-safe ' }],
     ];
     for (const [suffix, override] of cases) {
       const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-unsafe-${suffix}-`));
