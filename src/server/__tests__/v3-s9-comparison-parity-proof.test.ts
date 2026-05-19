@@ -123,6 +123,40 @@ describe('v3-s9 comparison parity proof', () => {
     }
   });
 
+  it('nested trace risk flags fail/block and retained blockers', async () => {
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['nested-same-video-detected', { same_video_repeatability_trace: { same_video_detected: true } }],
+      ['nested-repeated-input', { same_video_repeatability_trace: { repeated_input_detected: true } }],
+      ['nested-forced-winner', { same_video_repeatability_trace: { forced_winner_risk: true } }],
+      ['nested-false-winner', { same_video_repeatability_trace: { false_winner_risk: true } }],
+      ['nested-route-risk', { route_variance_trace: { route_variance_risk: true } }],
+      ['nested-route-unresolved', { route_variance_trace: { route_variance_mitigation_status: 'unresolved_blocked' } }],
+      ['nested-route-detected-missing-mitigation', { route_variance_trace: { route_variance_detected: true } }],
+    ];
+    for (const [suffix, payloads] of cases) {
+      const root = await mkdtemp(path.join(os.tmpdir(), `s9-13d-nested-risk-${suffix}-`));
+      const { manifest, metrics, parity } = await emitCase(root, `run-${suffix}`, { payloads });
+      expect(['failed', 'insufficient']).toContain(parity.parity_status);
+      expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+      expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+      expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    }
+  });
+
+  it('accepted mitigation statuses neutralise nested risk when otherwise safe', async () => {
+    const rootRoute = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-mitigated-'));
+    const route = await emitCase(rootRoute, 'run-route-mitigated', {
+      payloads: { route_variance_trace: { route_variance_detected: true, route_variance_mitigation_status: 'mitigated' }, public_comparison_payload: { note: 'safe' } },
+    });
+    expect(route.parity.parity_status).toBe('passed');
+
+    const rootSameVideo = await mkdtemp(path.join(os.tmpdir(), 's9-13d-samevideo-mitigated-'));
+    const sameVideo = await emitCase(rootSameVideo, 'run-samevideo-mitigated', {
+      payloads: { same_video_repeatability_trace: { same_video_detected: true, same_video_mitigation_status: 'accepted' }, public_comparison_payload: { note: 'safe' } },
+    });
+    expect(sameVideo.parity.parity_status).toBe('passed');
+  });
+
   it('A-F forbidden non-winner public fields fail parity and keep winner/recommendation diagnostics true when applicable', async () => {
     const cases: Array<[string, Record<string, unknown>]> = [
       ['castability', { public_comparison_payload: { castability: 'x' } }],
