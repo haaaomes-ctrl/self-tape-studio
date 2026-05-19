@@ -2507,3 +2507,14 @@ describe('S9-14L PublicClaimTrace support classification', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 });
+
+describe('S9-14M final runtime evidence promotion audit guardrail', () => {
+  it('wires ClaimCandidateTrace into process-take PublicClaimTrace support classification', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
+    expect(source).toContain('emitClaimCandidateTrace');
+    expect(source).toContain('claim_candidate_trace_data: claimCandidateTrace.written');
+    expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
+    expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
+    expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
+  });
+});

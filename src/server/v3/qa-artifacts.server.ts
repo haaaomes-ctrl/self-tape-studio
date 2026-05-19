@@ -689,12 +689,11 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     else if (status === 'not_applicable') not_applicable_artifact_ids.push(artefactId);
   }
   const resolvedProjectRoot = resolveProjectRootForQAManifest();
-  let cwdFallback = '.';
-  try { cwdFallback = process.cwd(); } catch {}
   const projectRoot = typeof resolvedProjectRoot === 'string' && resolvedProjectRoot.trim().length > 0
     ? resolvedProjectRoot
-    : cwdFallback;
+    : null;
   const rootReadmeExists = (() => {
+    if (!projectRoot) return false;
     try {
       const readmePath = safeJoin(projectRoot, 'README.md');
       return safeExists(readmePath);
