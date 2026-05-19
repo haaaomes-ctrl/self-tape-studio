@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { emitQAManifestForAnalysisRun } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitComparisonParityProof, emitQAManifestForAnalysisRun } from '@/server/v3/qa-artifacts-wiring.server';
 import * as qaSinkModule from '@/server/v3/qa-artifact-sink.server';
 
 afterEach(() => {
@@ -12,6 +12,7 @@ afterEach(() => {
 async function readManifest(root:string, run:string){ return JSON.parse(await readFile(path.join(root, run, 'manifest.json'),'utf8')); }
 async function readMetrics(root:string, run:string){ return JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'),'utf8')); }
 async function readParity(root:string, run:string,take='ta'){ return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'parity', 'comparison_parity.json'),'utf8')); }
+async function readRootParity(root:string, run:string){ return JSON.parse(await readFile(path.join(root, run, 'parity', 'comparison_parity.json'),'utf8')); }
 
 const evidenceIds = ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace'] as const;
 
@@ -166,6 +167,37 @@ describe('v3-s9 comparison parity proof', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('canonical metadata cannot be overwritten by caller comparison payload', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-canonical-metadata-'));
+    const out = await emitCase(root,'run-canonical-metadata',{ payloads: {
+      ...safePublicPayload(),
+      schema_version: 'caller-bogus',
+      artefact_type: 'caller_bogus',
+      run_id: 'caller-run',
+      analysis_run_id: 'caller-analysis',
+      comparison_run_id: 'caller-comparison',
+      generated_at: '1900-01-01T00:00:00.000Z',
+      internal_only: false,
+      privacy_classification: 'public',
+      production_safe_status: 'accepted',
+      public_scoring_status: 'accepted',
+      public_technique_authority_status: 'accepted',
+      level2_satisfaction: 'accepted',
+    } });
+    expect(out.parity.schema_version).toBe('tapecoach_v3_comparison_parity_v1');
+    expect(out.parity.artefact_type).toBe('comparison_parity');
+    expect(out.parity.run_id).toBe('run-canonical-metadata');
+    expect(out.parity.analysis_run_id).toBe('run-canonical-metadata');
+    expect(out.parity.comparison_run_id).toBe('cmp-x');
+    expect(out.parity.generated_at).not.toBe('1900-01-01T00:00:00.000Z');
+    expect(out.parity.internal_only).toBe(true);
+    expect(out.parity.privacy_classification).toBe('internal_private');
+    expect(out.parity.production_safe_status).toBe('blocked');
+    expect(out.parity.public_scoring_status).toBe('blocked');
+    expect(out.parity.public_technique_authority_status).toBe('blocked');
+    expect(out.parity.level2_satisfaction).toBe('satisfied');
   });
 
   it('passed comparison parity does not satisfy L2 when the proof write fails', async () => {
@@ -678,6 +710,16 @@ describe('v3-s9 comparison parity proof', () => {
     }
   });
 
+  it('explicit public-output absence proof makes payload available but cannot pass without risk context', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-absence-only-'));
+    const out = await emitCase(root,'run-absence-only',{ payloads: { public_output_unchanged: true } });
+    expectInsufficientBlocked(out);
+    expect(out.parity.comparison_payloads_available).toBe(true);
+    expect(out.parity.public_surface_context_available).toBe(true);
+    expect(out.parity.public_output_absence_or_unchanged_evidence_available).toBe(true);
+    expect(out.parity.comparison_risk_context_available).toBe(false);
+  });
+
   it('no public surface without explicit absence or unchanged proof is insufficient', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-no-public-proof-missing-'));
     const out = await emitCase(root,'run-no-public-proof-missing',{ payloads: {
@@ -702,5 +744,55 @@ describe('v3-s9 comparison parity proof', () => {
     expect(out.manifest.artefact_status_by_id.parity_comparison).toBe('emitted');
     expectComparisonNotBlocking(out.manifest);
     expect(out.manifest.blocker_codes.includes('parity_artefacts_missing')).toBe(out.metrics.blocker_codes.includes('parity_artefacts_missing'));
+  });
+
+  it('unsafe take identity does not write comparison parity and keeps parity blocker', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-unsafe-take-'));
+    const run = 'run-unsafe-take';
+    await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      take_id: '../ta',
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_run_id: 'cmp-safe',
+      compared_take_ids: ['ta','tb'],
+      emitted_artefact_ids: ['raw_report', ...evidenceIds],
+      comparison_parity_input: { comparison_payloads: safePublicPayload() },
+    });
+    const manifest = await readManifest(root, run);
+    const metrics = await readMetrics(root, run);
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('missing');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    await expect(readRootParity(root, run)).rejects.toThrow();
+  });
+
+  it('unsafe direct comparison parity identities do not write unintended paths', async () => {
+    const cases: Array<[string, Partial<Parameters<typeof emitComparisonParityProof>[0]>]> = [
+      ['run', { run_id: '../run' }],
+      ['analysis', { analysis_run_id: '../analysis' }],
+      ['take', { take_id: '../take' }],
+      ['comparison', { comparison_run_id: '../comparison' }],
+    ];
+    for (const [suffix, override] of cases) {
+      const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-unsafe-${suffix}-`));
+      const out = await emitComparisonParityProof({
+        run_id: `run-unsafe-${suffix}`,
+        analysis_run_id: `run-unsafe-${suffix}`,
+        take_id: 'ta',
+        comparison_run_id: 'cmp-safe',
+        compared_take_ids: ['ta','tb'],
+        root_dir: root,
+        internal_qa_emit: true,
+        comparison_invoked: true,
+        comparison_evidence_status: Object.fromEntries(evidenceIds.map((id)=>[id,true])) as Record<string, boolean>,
+        comparison_payloads: safePublicPayload(),
+        ...override,
+      });
+      expect(out.written).toBe(false);
+      expect(out.parity_status).toBe('insufficient');
+      expect(out.blocker_codes).toContain('parity_artefacts_missing');
+    }
   });
 });
