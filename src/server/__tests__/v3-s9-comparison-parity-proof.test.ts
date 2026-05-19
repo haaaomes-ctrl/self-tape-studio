@@ -175,6 +175,26 @@ describe('v3-s9 comparison parity proof', () => {
     ]));
   });
 
+  it('B unsafe status-only risk context is insufficient', async () => {
+    const cases: Array<[string, Record<string, unknown>, string]> = [
+      ['false-winner-unknown', { false_winner_prevention_status: 'unknown', same_video_detected: false, route_variance_detected: false }, 'forced_false_winner'],
+      ['route-status-failed', { route_variance_status: 'failed', same_video_detected: false, forced_winner_risk: false, false_winner_risk: false }, 'route_variance'],
+      ['same-video-unknown', { same_video_repeatability_status: 'unknown', route_variance_detected: false, forced_winner_risk: false, false_winner_risk: false }, 'same_video'],
+    ];
+    for (const [name, payload, missingContext] of cases) {
+      const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-risk-status-${name}-`));
+      const out = await emitCase(root,`run-${name}`,{ payloads: { public_comparison_payload: { summary: 'safe' }, ...payload } });
+      expectInsufficientBlocked(out);
+      expect(out.parity.comparison_risk_context_available).toBe(false);
+      expect(out.parity.mismatches).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          mismatch_type: 'comparison_risk_context_missing',
+          missing_contexts: expect.arrayContaining([missingContext]),
+        }),
+      ]));
+    }
+  });
+
   it('C-G missing each required evidence emits insufficient proof and keeps parity blocker', async () => {
     for (const missing of evidenceIds){
       const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-m-${missing}-`));

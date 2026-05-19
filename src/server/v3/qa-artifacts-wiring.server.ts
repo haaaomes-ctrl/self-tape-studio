@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
+import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance, type QAArtifactEmitterOptions } from './qa-artifacts.server';
 import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
 function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
@@ -90,7 +90,8 @@ export function reconcileComparisonManifestState(input: {
     artefact_level2_spine_satisfaction_by_id: l2ById,
   };
 }
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count?: number; discipline_attribute_count?: number; component_score_count?: number; component_weight_count?: number; brief_adherence_subscore_count?: number; assessment_confidence_count?: number; calibration_modifier_count?: number; calibration_metadata_count?: number; source_family_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status?: 'blocked'; discipline_attribute_score_trace_status?: 'internal_trace_only'; score_trace_gate_status?: 'insufficient'; score_trace_gate_reason?: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -302,8 +303,16 @@ export async function emitComparisonParityProof(input: {
   const hasRiskHit = (field: string, expected: boolean | string): boolean => riskHitsFor(field).some((hit) => riskHitValueIs(hit, expected));
   const hasAcceptedRiskMitigation = (...fields: string[]): boolean => riskFieldHits.some((hit) => fields.includes(hit.field) && isAcceptedComparisonMitigation(hit.value));
   const hasUnmitigatedRiskHit = (flagField: string, mitigationFields: string[]): boolean => riskHitsFor(flagField).some((hit) => riskHitValueIs(hit, true) && !hasAcceptedRiskMitigation(...mitigationFields));
-  const riskContextValueInspectable = (hit: ComparisonRiskFieldHit): boolean =>
-    typeof hit.value === 'boolean' || (typeof hit.value === 'string' && hit.value.trim().length > 0);
+  const noRiskStatusFields = new Set(['same_video_repeatability_status', 'route_variance_status']);
+  const mitigationStatusFields = new Set(['same_video_suppression_status', 'route_variance_mitigation_status', 'route_variance_suppression_status', 'false_winner_prevention_status']);
+  const riskContextValueInspectable = (hit: ComparisonRiskFieldHit): boolean => {
+    if (typeof hit.value === 'boolean') return true;
+    const status = normaliseRiskStatus(hit.value);
+    if (!status) return false;
+    if (noRiskStatusFields.has(hit.field)) return status === 'not_detected';
+    if (mitigationStatusFields.has(hit.field)) return acceptedMitigationStatuses.has(status);
+    return false;
+  };
   const hasRiskContext = (...fields: string[]): boolean =>
     riskFieldHits.some((hit) => fields.includes(hit.field) && riskContextValueInspectable(hit));
   const sourceKeysForRiskHits = (predicate: (hit: ComparisonRiskFieldHit) => boolean): string[] => [...new Set(riskFieldHits.filter(predicate).map((hit) => hit.source))];
