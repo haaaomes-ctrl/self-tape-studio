@@ -100,6 +100,7 @@ const DEFAULT_EMITTER_VERSION = '0.2.0';
 const RELEASE_STATE = 'planning_dark_mode_internal_only';
 const BLOCKED_STATUS = 'blocked';
 const P0_CODE = 'same_video_false_winner_active_P0';
+const S9_14_CONTAINED_TRACE_IDS = new Set(['evidence_anchors', 'public_claim_trace']);
 
 const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[] = [
   { artefact_id: 'analysis_input_record', name: 'input record', expected_path: 'inputs/input_record.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
@@ -324,8 +325,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const spineById = manifest.artefact_level2_spine_satisfaction_by_id ?? {};
   const evidenceAnchorStatus = manifest.artefact_status_by_id?.evidence_anchors ?? 'missing';
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
-  const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true ? 'satisfied' : 'insufficient');
-  const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true ? 'satisfied' : 'insufficient');
+  const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true && sourceClassById.evidence_anchors === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
+  const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true && sourceClassById.public_claim_trace === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
 
   const techniqueObservationStatus = manifest.artefact_status_by_id?.technique_observation_trace ?? 'missing';
   const scoreTraceStatus = manifest.artefact_status_by_id?.score_trace ?? 'missing';
@@ -605,17 +606,34 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     ? fallbackScopeFile
     : (options.source_scope_file ?? (rootReadmeExists ? 'README.md' : fallbackScopeFile));
   const usingRootReadme = rootReadmeExists && sourceScopeFile === 'README.md';
+  const artefact_source_classification_by_id = { ...(options.artefact_source_classification_by_id ?? {}) };
+  const artefact_level2_spine_satisfaction_by_id = { ...(options.artefact_level2_spine_satisfaction_by_id ?? {}) };
+  const runtime_evidence_accepted_by_id = new Set<string>(options.runtime_evidence_accepted_by_id ?? emitted_artifacts);
+  const runtime_evidence_blocked_by_id = new Set<string>(options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids);
+  const real_v3_spine_artefact_ids = new Set<string>(options.real_v3_spine_artefact_ids ?? []);
+  for (const artefactId of S9_14_CONTAINED_TRACE_IDS) {
+    const isCompleteRealRuntimeTrace =
+      artefact_status_by_id[artefactId] === 'emitted'
+      && artefact_source_classification_by_id[artefactId] === 'real_runtime_v3'
+      && artefact_level2_spine_satisfaction_by_id[artefactId] === true;
+    if (!isCompleteRealRuntimeTrace) {
+      artefact_level2_spine_satisfaction_by_id[artefactId] = false;
+      runtime_evidence_accepted_by_id.delete(artefactId);
+      real_v3_spine_artefact_ids.delete(artefactId);
+      if (emittedIds.has(artefactId) || emittedBlockedIds.has(artefactId)) runtime_evidence_blocked_by_id.add(artefactId);
+    }
+  }
   const manifest = {
     schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: options.compared_take_ids ?? [], fixture_id: options.fixture_id ?? null,
     generated_at: options.generated_at ?? new Date().toISOString(), commit_sha: options.commit_sha ?? provenance.build_commit_sha, branch_name: options.branch_name ?? provenance.source_branch, release_state: RELEASE_STATE, internal_qa_emit,
     qa_artifact_root: (process.env.QA_ARTIFACT_SINK === 'storage' && storageRoot) ? storageRoot : runDir, storage_bucket: process.env.QA_ARTIFACT_SINK === 'storage' ? (process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts') : null, storage_key_root: process.env.QA_ARTIFACT_SINK === 'storage' ? storageRoot : null, requested_source_scope_file: requestedSourceScopeFile, source_scope_file: sourceScopeFile, controlling_source_file: sourceScopeFile, controlling_source_location_note: usingRootReadme ? 'Using repository root README.md as controlling requirements source' : (requestedReadmeButMissing ? 'Requested README.md was not present in runtime workspace; using fallback scope file' : 'Replacement README supplied externally; root README.md not present in resolved project root'), controlling_requirements_status: usingRootReadme ? 'root_readme_present' : 'operator_supplied_replacement_README', fixture_refs: options.fixture_refs ?? [], input_refs: options.input_refs ?? [], take_refs: options.take_refs ?? [], mux_playback_ids: options.mux_playback_ids ?? {}, public_output_unchanged: true, user_experience_unchanged: true,
     required_artifacts, emitted_artifacts, emitted_blocked_artefact_ids, missing_artifacts, deferred_artifact_ids, not_applicable_artifact_ids, artefact_status_by_id, blocker_codes,
-    runtime_evidence_accepted_by_id: options.runtime_evidence_accepted_by_id ?? emitted_artifacts,
-    runtime_evidence_blocked_by_id: options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids,
-    artefact_source_classification_by_id: options.artefact_source_classification_by_id ?? {},
-    artefact_level2_spine_satisfaction_by_id: options.artefact_level2_spine_satisfaction_by_id ?? {},
+    runtime_evidence_accepted_by_id: [...runtime_evidence_accepted_by_id],
+    runtime_evidence_blocked_by_id: [...runtime_evidence_blocked_by_id],
+    artefact_source_classification_by_id,
+    artefact_level2_spine_satisfaction_by_id,
     legacy_adapter_artefact_ids: options.legacy_adapter_artefact_ids ?? [],
-    real_v3_spine_artefact_ids: options.real_v3_spine_artefact_ids ?? [],
+    real_v3_spine_artefact_ids: [...real_v3_spine_artefact_ids],
     defect_risk_ids: options.defect_risk_ids ?? [],
     public_claim_trace_summary: options.public_claim_trace_summary ?? undefined,
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,

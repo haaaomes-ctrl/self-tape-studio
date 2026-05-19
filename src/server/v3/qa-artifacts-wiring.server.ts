@@ -1767,13 +1767,14 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
         timestamp: ts,
         timestamp_source: ts ? 'raw_report_timestamped_note' : 'unavailable',
         component_id: null,
+        linked_truth_state_ids: [],
         claim_supported: false,
         evidence_text: note,
         confidence_or_strength: null,
         assessability_limitations: ['legacy_report_snapshot_not_v3_multimodal'],
         public_safe: true,
         cannot_satisfy_v3_gate: true,
-        blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
+        blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate', 'missing_truth_state_linkage'],
       });
     });
   if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const, anchors: [] as Array<Record<string, unknown>> };
@@ -1798,7 +1799,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     timestamped_anchor_count: anchors.filter((a) => typeof a.timestamp === 'string' && a.timestamp.length > 0).length,
     cannot_satisfy_v3_evidence_anchor_gate: true,
     gate_satisfaction_reason: 'legacy_report_snapshot_only',
-    blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'],
+    blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate', 'missing_truth_state_linkage'],
     redaction_notes: ['Internal-only trace; no secrets/tokens/session credentials emitted'],
     ...resolveQADeploymentProvenance(),
   };
