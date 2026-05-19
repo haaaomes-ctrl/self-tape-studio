@@ -106,14 +106,20 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 type ComparisonRiskSource = { source: string; value: Record<string, unknown> };
-type ComparisonRiskFieldHit = { source: string; field: string; path: string };
+type ComparisonRiskFieldValue = string | number | boolean | null;
+type ComparisonRiskFieldHit = { source: string; field: string; path: string; value?: ComparisonRiskFieldValue };
 type ComparisonRiskSourceScanWarning = { source: string; path: string; warning: string };
+
+function comparisonRiskFieldValue(value: unknown): ComparisonRiskFieldValue | undefined {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
+  return undefined;
+}
 
 function collectDirectComparisonRiskFieldHits(source: string, value: Record<string, unknown>): ComparisonRiskFieldHit[] {
   return Object.keys(value)
     .map((key) => ({ original: key, normalised: key.trim().toLowerCase() }))
     .filter(({ normalised }) => COMPARISON_RISK_FIELD_SET.has(normalised))
-    .map(({ original, normalised }) => ({ source, field: normalised, path: `${source}.${original}` }));
+    .map(({ original, normalised }) => ({ source, field: normalised, path: `${source}.${original}`, value: comparisonRiskFieldValue(value[original]) }));
 }
 
 function scanComparisonRiskFieldHits(source: string, value: unknown): { hits: ComparisonRiskFieldHit[]; warnings: ComparisonRiskSourceScanWarning[] } {
@@ -151,7 +157,7 @@ function scanComparisonRiskFieldHits(source: string, value: unknown): { hits: Co
     for (const [key, child] of Object.entries(node)) {
       const nextPath = `${pathPrefix}.${key}`;
       const normalisedKey = key.trim().toLowerCase();
-      if (COMPARISON_RISK_FIELD_SET.has(normalisedKey)) hits.push({ source, field: normalisedKey, path: nextPath });
+      if (COMPARISON_RISK_FIELD_SET.has(normalisedKey)) hits.push({ source, field: normalisedKey, path: nextPath, value: comparisonRiskFieldValue(child) });
       walk(child, nextPath, depth + 1);
     }
     activeObjects.delete(node);
@@ -280,28 +286,38 @@ export async function emitComparisonParityProof(input: {
   const publicRecommendationAbsent = !forbiddenHits.some((x) => recommendationFields.has(x.field));
   const riskSourceCollection = collectComparisonRiskSources(payloadsObject);
   const riskSources = riskSourceCollection.sources;
+  const riskFieldHits = riskSourceCollection.fieldHits;
   const riskSourceScanSafe = riskSourceCollection.scanWarnings.length === 0;
   const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted']);
-  const isAcceptedComparisonMitigation = (v: unknown) => typeof v === 'string' && acceptedMitigationStatuses.has(v);
-  const hasTrueFlag = (field: string): boolean => riskSources.some((s) => s.value[field] === true);
-  const hasUnresolvedBlocked = (field: string): boolean => riskSources.some((s) => s.value[field] === 'unresolved_blocked');
-  const hasUnmitigatedDetected = (flagField: string, ...mitigationFields: string[]): boolean => riskSources.some((s) => {
-    if (s.value[flagField] !== true) return false;
-    return !mitigationFields.some((field) => isAcceptedComparisonMitigation(s.value[field]));
-  });
-  const forcedWinnerRiskAbsent = !hasTrueFlag('forced_winner_risk');
-  const falseWinnerRiskAbsent = !hasTrueFlag('false_winner_risk');
+  const normaliseRiskStatus = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : null);
+  const isAcceptedComparisonMitigation = (value: unknown) => {
+    const status = normaliseRiskStatus(value);
+    return Boolean(status && acceptedMitigationStatuses.has(status));
+  };
+  const riskHitsFor = (field: string) => riskFieldHits.filter((hit) => hit.field === field);
+  const riskHitValueIs = (hit: ComparisonRiskFieldHit, expected: boolean | string) => {
+    if (typeof expected === 'string') return normaliseRiskStatus(hit.value) === expected;
+    return hit.value === expected;
+  };
+  const hasRiskHit = (field: string, expected: boolean | string): boolean => riskHitsFor(field).some((hit) => riskHitValueIs(hit, expected));
+  const hasAcceptedRiskMitigation = (...fields: string[]): boolean => riskFieldHits.some((hit) => fields.includes(hit.field) && isAcceptedComparisonMitigation(hit.value));
+  const hasUnmitigatedRiskHit = (flagField: string, mitigationFields: string[]): boolean => riskHitsFor(flagField).some((hit) => riskHitValueIs(hit, true) && !hasAcceptedRiskMitigation(...mitigationFields));
+  const sourceKeysForRiskHits = (predicate: (hit: ComparisonRiskFieldHit) => boolean): string[] => [...new Set(riskFieldHits.filter(predicate).map((hit) => hit.source))];
+  const forcedWinnerRiskAbsent = !hasRiskHit('forced_winner_risk', true);
+  const falseWinnerRiskAbsent = !hasRiskHit('false_winner_risk', true);
+  const routeVarianceMitigationAccepted = hasAcceptedRiskMitigation('route_variance_mitigation_status', 'route_variance_suppression_status');
+  const sameVideoMitigationAccepted = hasAcceptedRiskMitigation('same_video_suppression_status');
   const routeVarianceRiskAbsent = !(
-    hasTrueFlag('route_variance_risk')
-    || hasUnresolvedBlocked('route_variance_mitigation_status')
-    || hasUnmitigatedDetected('route_mismatch_detected', 'route_variance_mitigation_status', 'route_variance_suppression_status')
-    || hasUnmitigatedDetected('route_variance_detected', 'route_variance_mitigation_status', 'route_variance_suppression_status')
+    hasRiskHit('route_variance_mitigation_status', 'unresolved_blocked')
+    || (hasRiskHit('route_variance_risk', true) && !routeVarianceMitigationAccepted)
+    || hasUnmitigatedRiskHit('route_mismatch_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
+    || hasUnmitigatedRiskHit('route_variance_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
   );
   const sameVideoRiskAbsent = !(
-    hasTrueFlag('same_video_unresolved_risk')
-    || hasUnmitigatedDetected('same_video_detected', 'same_video_mitigation_status', 'same_video_suppression_status')
-    || hasUnmitigatedDetected('repeated_input_detected', 'same_video_mitigation_status', 'same_video_suppression_status')
-    || riskSources.some((s) => s.value.no_material_difference === false)
+    hasRiskHit('same_video_unresolved_risk', true)
+    || (hasRiskHit('same_video_detected', true) && !sameVideoMitigationAccepted)
+    || (hasRiskHit('repeated_input_detected', true) && !sameVideoMitigationAccepted)
+    || (hasRiskHit('no_material_difference', false) && !sameVideoMitigationAccepted)
   );
   const comparisonPayloadsAvailable = Boolean(
     payloadsObject
@@ -322,10 +338,20 @@ export async function emitComparisonParityProof(input: {
       mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface: hit.surface, field: hit.field, path: hit.path });
     }
   }
-  if (!forcedWinnerRiskAbsent) mismatch.push({ mismatch_type: 'forced_winner_risk_detected', source_trace_keys: riskSources.filter((s) => s.value.forced_winner_risk === true).map((s) => s.source) });
-  if (!falseWinnerRiskAbsent) mismatch.push({ mismatch_type: 'false_winner_risk_detected', source_trace_keys: riskSources.filter((s) => s.value.false_winner_risk === true).map((s) => s.source) });
-  if (!routeVarianceRiskAbsent) mismatch.push({ mismatch_type: 'route_variance_unresolved', source_trace_keys: riskSources.filter((s) => s.value.route_variance_risk === true || s.value.route_variance_mitigation_status === 'unresolved_blocked' || s.value.route_mismatch_detected === true || s.value.route_variance_detected === true).map((s) => s.source) });
-  if (!sameVideoRiskAbsent) mismatch.push({ mismatch_type: 'same_video_unresolved_risk', source_trace_keys: riskSources.filter((s) => s.value.same_video_unresolved_risk === true || s.value.same_video_detected === true || s.value.repeated_input_detected === true || s.value.no_material_difference === false).map((s) => s.source) });
+  if (!forcedWinnerRiskAbsent) mismatch.push({ mismatch_type: 'forced_winner_risk_detected', source_trace_keys: sourceKeysForRiskHits((hit) => hit.field === 'forced_winner_risk' && riskHitValueIs(hit, true)) });
+  if (!falseWinnerRiskAbsent) mismatch.push({ mismatch_type: 'false_winner_risk_detected', source_trace_keys: sourceKeysForRiskHits((hit) => hit.field === 'false_winner_risk' && riskHitValueIs(hit, true)) });
+  if (!routeVarianceRiskAbsent) mismatch.push({ mismatch_type: 'route_variance_unresolved', source_trace_keys: sourceKeysForRiskHits((hit) => (
+    (hit.field === 'route_variance_risk' && riskHitValueIs(hit, true))
+    || (hit.field === 'route_variance_mitigation_status' && riskHitValueIs(hit, 'unresolved_blocked'))
+    || (hit.field === 'route_mismatch_detected' && riskHitValueIs(hit, true))
+    || (hit.field === 'route_variance_detected' && riskHitValueIs(hit, true))
+  )) });
+  if (!sameVideoRiskAbsent) mismatch.push({ mismatch_type: 'same_video_unresolved_risk', source_trace_keys: sourceKeysForRiskHits((hit) => (
+    (hit.field === 'same_video_unresolved_risk' && riskHitValueIs(hit, true))
+    || (hit.field === 'same_video_detected' && riskHitValueIs(hit, true))
+    || (hit.field === 'repeated_input_detected' && riskHitValueIs(hit, true))
+    || (hit.field === 'no_material_difference' && riskHitValueIs(hit, false))
+  )) });
   const parityStatus = !input.comparison_invoked
     ? 'not_applicable'
     : (

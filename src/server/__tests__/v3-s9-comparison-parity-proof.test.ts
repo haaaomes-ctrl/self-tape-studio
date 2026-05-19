@@ -171,7 +171,7 @@ describe('v3-s9 comparison parity proof', () => {
     for (const [suffix,payloads] of cases){
       const root = await mkdtemp(path.join(os.tmpdir(),`s9-13d-f-${suffix}-`));
       const { manifest, metrics, parity } = await emitCase(root,`run-f-${suffix}`,{ payloads });
-      expect(['failed','insufficient']).toContain(parity.parity_status);
+      expect(parity.parity_status).toBe('failed');
       expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
       expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
       expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
@@ -185,9 +185,14 @@ describe('v3-s9 comparison parity proof', () => {
       ['nested-repeated-input', { same_video_repeatability_trace: { repeated_input_detected: true } }],
       ['nested-forced-winner', { same_video_repeatability_trace: { forced_winner_risk: true } }],
       ['nested-false-winner', { same_video_repeatability_trace: { false_winner_risk: true } }],
+      ['nested-same-video-unresolved-benign-status', { same_video_repeatability_trace: { same_video_unresolved_risk: true, same_video_suppression_status: 'resolved' } }],
+      ['nested-no-material-difference-conflict', { same_video_repeatability_trace: { no_material_difference: false } }],
+      ['nested-same-video-summary-detected', { same_video_repeatability_trace: { same_video_repeatability_trace_summary: { same_video_detected: true } } }],
       ['nested-route-risk', { route_variance_trace: { route_variance_risk: true } }],
+      ['nested-route-mismatch', { route_variance_trace: { route_mismatch_detected: true } }],
       ['nested-route-unresolved', { route_variance_trace: { route_variance_mitigation_status: 'unresolved_blocked' } }],
       ['nested-route-detected-missing-mitigation', { route_variance_trace: { route_variance_detected: true } }],
+      ['nested-route-summary-detected', { route_variance_trace: { route_variance_trace_summary: { route_variance_detected: true } } }],
     ];
     for (const [suffix, payloads] of cases) {
       const root = await mkdtemp(path.join(os.tmpdir(), `s9-13d-nested-risk-${suffix}-`));
@@ -200,6 +205,12 @@ describe('v3-s9 comparison parity proof', () => {
   });
 
   it('accepted mitigation statuses neutralise nested risk when otherwise safe', async () => {
+    const rootRouteRisk = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-risk-mitigated-'));
+    const routeRisk = await emitCase(rootRouteRisk, 'run-route-risk-mitigated', {
+      payloads: { route_variance_trace: { route_variance_risk: true, route_variance_mitigation_status: 'resolved' }, ...safePublicPayload() },
+    });
+    expect(routeRisk.parity.parity_status).toBe('passed');
+
     const rootRoute = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-mitigated-'));
     const route = await emitCase(rootRoute, 'run-route-mitigated', {
       payloads: { route_variance_trace: { route_variance_detected: true, route_variance_mitigation_status: 'mitigated' }, ...safePublicPayload() },
@@ -223,9 +234,15 @@ describe('v3-s9 comparison parity proof', () => {
       payloads: { same_video_repeatability_trace: { repeated_input_detected: true, same_video_suppression_status: 'mitigated' }, ...safePublicPayload() },
     });
     expect(repeatedMitigated.parity.parity_status).toBe('passed');
+
+    const rootNoMaterialDifferenceMitigated = await mkdtemp(path.join(os.tmpdir(), 's9-13d-no-material-mitigated-'));
+    const noMaterialDifferenceMitigated = await emitCase(rootNoMaterialDifferenceMitigated, 'run-no-material-mitigated', {
+      payloads: { same_video_repeatability_trace: { no_material_difference: false, same_video_suppression_status: 'accepted' }, ...safePublicPayload() },
+    });
+    expect(noMaterialDifferenceMitigated.parity.parity_status).toBe('passed');
   });
 
-  it('top-level repeated_input_detected and route_mismatch_detected fail when unmitigated', async () => {
+  it('top-level repeated_input_detected and route variance detections fail when unmitigated', async () => {
     const rootRepeated = await mkdtemp(path.join(os.tmpdir(), 's9-13d-top-repeated-'));
     const repeated = await emitCase(rootRepeated, 'run-top-repeated', { payloads: { repeated_input_detected: true } });
     expect(repeated.parity.parity_status).toBe('failed');
@@ -233,6 +250,58 @@ describe('v3-s9 comparison parity proof', () => {
     const rootMismatch = await mkdtemp(path.join(os.tmpdir(), 's9-13d-top-route-mismatch-'));
     const mismatch = await emitCase(rootMismatch, 'run-top-route-mismatch', { payloads: { route_mismatch_detected: true } });
     expect(mismatch.parity.parity_status).toBe('failed');
+
+    const rootVariance = await mkdtemp(path.join(os.tmpdir(), 's9-13d-top-route-variance-'));
+    const variance = await emitCase(rootVariance, 'run-top-route-variance', { payloads: { route_variance_detected: true } });
+    expect(variance.parity.parity_status).toBe('failed');
+  });
+
+  it('accepted-looking mitigation does not neutralise forced or false winner risk', async () => {
+    const rootForced = await mkdtemp(path.join(os.tmpdir(), 's9-13d-forced-mitigation-'));
+    const forced = await emitCase(rootForced, 'run-forced-mitigation', {
+      payloads: { forced_winner_risk: true, route_variance_mitigation_status: 'resolved', same_video_suppression_status: 'accepted', ...safePublicPayload() },
+    });
+    expectFailedBlocked(forced);
+
+    const rootFalse = await mkdtemp(path.join(os.tmpdir(), 's9-13d-false-not-required-'));
+    const falseWinner = await emitCase(rootFalse, 'run-false-not-required', {
+      payloads: { false_winner_risk: true, false_winner_prevention_status: 'not_required', ...safePublicPayload() },
+    });
+    expectFailedBlocked(falseWinner);
+  });
+
+  it('not_applicable mitigation does not neutralise active detected risk', async () => {
+    const rootSameVideo = await mkdtemp(path.join(os.tmpdir(), 's9-13d-same-video-na-'));
+    const sameVideo = await emitCase(rootSameVideo, 'run-same-video-na', {
+      payloads: { same_video_repeatability_trace: { same_video_detected: true, same_video_suppression_status: 'not_applicable' }, ...safePublicPayload() },
+    });
+    expectFailedBlocked(sameVideo);
+
+    const rootRoute = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-na-'));
+    const route = await emitCase(rootRoute, 'run-route-na', {
+      payloads: { route_variance_trace: { route_variance_detected: true, route_variance_mitigation_status: 'not_applicable' }, ...safePublicPayload() },
+    });
+    expectFailedBlocked(route);
+  });
+
+  it('explicit no-risk statuses and prevention status do not fail when otherwise safe', async () => {
+    const rootRoute = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-not-detected-'));
+    const route = await emitCase(rootRoute, 'run-route-not-detected', {
+      payloads: { route_variance_trace: { route_variance_status: 'not_detected' }, ...safePublicPayload() },
+    });
+    expect(route.parity.parity_status).toBe('passed');
+
+    const rootSameVideo = await mkdtemp(path.join(os.tmpdir(), 's9-13d-same-video-false-'));
+    const sameVideo = await emitCase(rootSameVideo, 'run-same-video-false', {
+      payloads: { same_video_repeatability_trace: { same_video_detected: false, repeated_input_detected: false, same_video_repeatability_status: 'not_detected' }, ...safePublicPayload() },
+    });
+    expect(sameVideo.parity.parity_status).toBe('passed');
+
+    const rootPrevention = await mkdtemp(path.join(os.tmpdir(), 's9-13d-prevention-not-required-'));
+    const prevention = await emitCase(rootPrevention, 'run-prevention-not-required', {
+      payloads: { comparison_suppression_trace: { false_winner_prevention_status: 'not_required' }, ...safePublicPayload() },
+    });
+    expect(prevention.parity.parity_status).toBe('passed');
   });
 
   it('unresolved_blocked always fails even with benign suppression status', async () => {
