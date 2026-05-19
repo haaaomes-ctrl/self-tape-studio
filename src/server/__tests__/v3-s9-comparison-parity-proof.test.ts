@@ -27,13 +27,13 @@ function safeNoPublicSurfacePayload(): Record<string, unknown> {
   };
 }
 
-async function emitCase(root:string, run:string, opts:{emitted?:string[]; compared?:string[]; comparisonRunId?:string|null; payloads?:unknown}){
+async function emitCase(root:string, run:string, opts:{emitted?:string[]; compared?:string[]; comparisonRunId?:string|null; payloads?:unknown; publicSurfacePaths?: string[]}){
   await emitQAManifestForAnalysisRun({
     run_id:run, analysis_run_id:run, take_id:'ta', root_dir:root, internal_qa_emit:true,
     comparison_run_id: opts.comparisonRunId ?? 'cmp-x',
     compared_take_ids: opts.compared ?? ['ta','tb'],
     emitted_artefact_ids: ['raw_report', ...(opts.emitted ?? [...evidenceIds])],
-    ...(opts.payloads === undefined ? {} : { comparison_parity_input: { comparison_payloads: opts.payloads } }),
+    ...((opts.payloads === undefined && opts.publicSurfacePaths === undefined) ? {} : { comparison_parity_input: { comparison_payloads: opts.payloads, public_comparison_surface_paths: opts.publicSurfacePaths } }),
   });
   const manifest = await readManifest(root,run);
   const metrics = await readMetrics(root,run);
@@ -46,6 +46,14 @@ async function emitCase(root:string, run:string, opts:{emitted?:string[]; compar
 
 function expectInsufficientBlocked(out:{manifest:any; metrics:any; parity:any}) {
   expect(out.parity.parity_status).toBe('insufficient');
+  expect(out.manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+  expect(out.manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison')?.blocker_code).toBe('parity_artefacts_missing');
+  expect(out.manifest.blocker_codes).toContain('parity_artefacts_missing');
+  expect(out.metrics.blocker_codes).toContain('parity_artefacts_missing');
+}
+
+function expectFailedBlocked(out:{manifest:any; metrics:any; parity:any}) {
+  expect(out.parity.parity_status).toBe('failed');
   expect(out.manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
   expect(out.manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison')?.blocker_code).toBe('parity_artefacts_missing');
   expect(out.manifest.blocker_codes).toContain('parity_artefacts_missing');
@@ -307,6 +315,93 @@ describe('v3-s9 comparison parity proof', () => {
     const score = await emitCase(rootScore,'run-nested-score',{ payloads: { public_output: { comparison: { cards: [{ public_score: 98 }] } } } });
     expect(score.parity.parity_status).toBe('failed');
     expect(score.parity.mismatches.some((m:any)=>m.path === 'public_output.comparison.cards[0].public_score')).toBe(true);
+
+    const rootTechnique = await mkdtemp(path.join(os.tmpdir(),'s9-13d-nested-technique-'));
+    const technique = await emitCase(rootTechnique,'run-nested-technique',{ payloads: { public_comparison_payload: { panels: [{ detail: { technique_authority: 'public' } }] } } });
+    expect(technique.parity.parity_status).toBe('failed');
+    expect(technique.parity.mismatches.some((m:any)=>m.path === 'public_comparison_payload.panels[0].detail.technique_authority')).toBe(true);
+  });
+
+  it('recursive public scanner reports exact forbidden hits and diagnostic families', async () => {
+    const rootCastability = await mkdtemp(path.join(os.tmpdir(),'s9-13d-castability-diagnostics-'));
+    const castability = await emitCase(rootCastability,'run-castability-diagnostics',{ payloads: { public_comparison_payload: { profile: { castability: 'public' } } } });
+    expectFailedBlocked(castability);
+    expect(castability.parity.public_winner_absent).toBe(true);
+    expect(castability.parity.public_recommendation_absent).toBe(true);
+    expect(castability.parity.forbidden_public_comparison_fields_absent).toBe(false);
+
+    const rootMultiple = await mkdtemp(path.join(os.tmpdir(),'s9-13d-multiple-forbidden-'));
+    const multiple = await emitCase(rootMultiple,'run-multiple-forbidden',{ payloads: { public_comparison_payload: { cards: [{ winner: 'ta', recommendation: 'use ta', public_score: 99 }], marketability: 'public' } } });
+    expectFailedBlocked(multiple);
+    const forbiddenMismatches = multiple.parity.mismatches.filter((m:any)=>m.mismatch_type === 'forbidden_public_comparison_field_present');
+    expect(forbiddenMismatches.length).toBe(4);
+    expect(forbiddenMismatches.map((m:any)=>m.path)).toEqual(expect.arrayContaining([
+      'public_comparison_payload.cards[0].winner',
+      'public_comparison_payload.cards[0].recommendation',
+      'public_comparison_payload.cards[0].public_score',
+      'public_comparison_payload.marketability',
+    ]));
+  });
+
+  it('recursive public scanner does not false-fail internal-only or lookalike fields', async () => {
+    const rootPublicLookalike = await mkdtemp(path.join(os.tmpdir(),'s9-13d-public-lookalike-'));
+    const publicLookalike = await emitCase(rootPublicLookalike,'run-public-lookalike',{ payloads: { public_comparison_payload: { internal_recommendation_note: 'internal note', recommendation_suppressed: true, comparison_result_summary: 'safe' } } });
+    expect(publicLookalike.parity.parity_status).toBe('passed');
+    expect(publicLookalike.parity.forbidden_public_comparison_fields_absent).toBe(true);
+    expect(publicLookalike.parity.public_recommendation_absent).toBe(true);
+
+    const rootInternalOnly = await mkdtemp(path.join(os.tmpdir(),'s9-13d-internal-only-lookalike-'));
+    const internalOnly = await emitCase(rootInternalOnly,'run-internal-only-lookalike',{ payloads: {
+      ...safePublicPayload(),
+      comparison_suppression_trace: { recommendation_suppressed: true, suppression_reason: 'internal-only' },
+      comparison_report_internal: {
+        selected_take_id_internal_only: 'ta',
+        internal_recommendation_note: 'internal note',
+        internal_castability_diagnostic: 'internal-only',
+      },
+    }});
+    expect(internalOnly.parity.parity_status).toBe('passed');
+    expect(internalOnly.parity.forbidden_public_comparison_fields_absent).toBe(true);
+  });
+
+  it('recursive public scanner handles cyclic and over-depth public surfaces safely', async () => {
+    const rootCycle = await mkdtemp(path.join(os.tmpdir(),'s9-13d-public-cycle-'));
+    const cyclicPayload: Record<string, unknown> = { summary: 'safe' };
+    cyclicPayload.self = cyclicPayload;
+    const cycle = await emitCase(rootCycle,'run-public-cycle',{ payloads: { public_comparison_payload: cyclicPayload } });
+    expectInsufficientBlocked(cycle);
+    expect(cycle.parity.public_surface_scan_safe).toBe(false);
+    expect(cycle.parity.public_surface_scan_issues.some((x:any)=>x.issue === 'cycle_detected')).toBe(true);
+
+    const rootCycleWithHit = await mkdtemp(path.join(os.tmpdir(),'s9-13d-public-cycle-hit-'));
+    const cyclicHitPayload: Record<string, unknown> = { winner: 'ta' };
+    cyclicHitPayload.self = cyclicHitPayload;
+    const cycleWithHit = await emitCase(rootCycleWithHit,'run-public-cycle-hit',{ payloads: { public_comparison_payload: cyclicHitPayload } });
+    expectFailedBlocked(cycleWithHit);
+    expect(cycleWithHit.parity.mismatches.some((m:any)=>m.path === 'public_comparison_payload.winner')).toBe(true);
+
+    const rootDepth = await mkdtemp(path.join(os.tmpdir(),'s9-13d-public-depth-'));
+    const deepPayload: Record<string, unknown> = {};
+    let cursor = deepPayload;
+    for (let i = 0; i < 30; i += 1) {
+      cursor.next = {};
+      cursor = cursor.next as Record<string, unknown>;
+    }
+    const depth = await emitCase(rootDepth,'run-public-depth',{ payloads: { public_comparison_payload: deepPayload } });
+    expectInsufficientBlocked(depth);
+    expect(depth.parity.public_surface_scan_safe).toBe(false);
+    expect(depth.parity.public_surface_scan_issues.some((x:any)=>x.issue === 'depth_limit_exceeded')).toBe(true);
+  });
+
+  it('explicitly named public comparison surfaces are scanned without broad substring matching', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-named-public-surface-'));
+    const out = await emitCase(root,'run-named-public-surface',{
+      payloads: { custom_public: { cards: [{ selected_take_id_public: 'ta' }] } },
+      publicSurfacePaths: ['custom_public'],
+    });
+    expectFailedBlocked(out);
+    expect(out.parity.checked_comparison_surfaces).toContain('custom_public');
+    expect(out.parity.mismatches.some((m:any)=>m.path === 'custom_public.cards[0].selected_take_id_public')).toBe(true);
   });
 
   it('O unresolved_blocked route risk is failed and non-satisfying', async () => {

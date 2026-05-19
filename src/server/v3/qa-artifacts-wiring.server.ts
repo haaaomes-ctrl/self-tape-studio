@@ -90,7 +90,7 @@ export function reconcileComparisonManifestState(input: {
     artefact_level2_spine_satisfaction_by_id: l2ById,
   };
 }
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count?: number; discipline_attribute_count?: number; component_score_count?: number; component_weight_count?: number; brief_adherence_subscore_count?: number; assessment_confidence_count?: number; calibration_modifier_count?: number; calibration_metadata_count?: number; source_family_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status?: 'blocked'; discipline_attribute_score_trace_status?: 'internal_trace_only'; score_trace_gate_status?: 'insufficient'; score_trace_gate_reason?: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count?: number; discipline_attribute_count?: number; component_score_count?: number; component_weight_count?: number; brief_adherence_subscore_count?: number; assessment_confidence_count?: number; calibration_modifier_count?: number; calibration_metadata_count?: number; source_family_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status?: 'blocked'; discipline_attribute_score_trace_status?: 'internal_trace_only'; score_trace_gate_status?: 'insufficient'; score_trace_gate_reason?: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -125,7 +125,7 @@ function collectComparisonRiskSources(payloadsObject: Record<string, unknown> | 
 }
 
 export async function emitComparisonParityProof(input: {
-  run_id: string; analysis_run_id?: string; take_id?: string | null; submission_id?: string | null; comparison_run_id?: string | null; compared_take_ids?: string[]; root_dir?: string; internal_qa_emit?: boolean; comparison_invoked: boolean; comparison_evidence_status: Record<string, boolean>; comparison_payloads?: unknown;
+  run_id: string; analysis_run_id?: string; take_id?: string | null; submission_id?: string | null; comparison_run_id?: string | null; compared_take_ids?: string[]; root_dir?: string; internal_qa_emit?: boolean; comparison_invoked: boolean; comparison_evidence_status: Record<string, boolean>; comparison_payloads?: unknown; public_comparison_surface_paths?: string[];
 }) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
@@ -145,6 +145,7 @@ export async function emitComparisonParityProof(input: {
     { key: 'comparison_output_public', value: payloadsObject?.comparison_output_public },
     { key: 'render_payload.comparison', value: extract(payloadsObject, 'render_payload.comparison') },
     { key: 'public_report_payload.comparison', value: extract(payloadsObject, 'public_report_payload.comparison') },
+    ...((input.public_comparison_surface_paths ?? []).map((surfacePath) => ({ key: surfacePath, value: extract(payloadsObject, surfacePath) }))),
   ].filter((x) => isPlainRecord(x.value));
   const hasPublicOutputAbsenceEvidence = Boolean(
     payloadsObject?.public_comparison_output_absent_or_unchanged === true
@@ -156,19 +157,48 @@ export async function emitComparisonParityProof(input: {
   const winnerFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public']);
   const recommendationFields = new Set(['recommendation', 'public_recommendation', 'comparison_recommendation']);
   const forbiddenHits: Array<{ surface: string; field: string; path: string }> = [];
-  const walk = (value: unknown, pathPrefix: string, surface: string): void => {
+  const publicSurfaceScanIssues: Array<{ surface: string; path: string; issue: string }> = [];
+  const activePublicSurfacePathObjects = new WeakSet<object>();
+  const maxPublicSurfaceScanDepth = 24;
+  const markPublicScanIssue = (surface: string, path: string, issue: string) => {
+    publicSurfaceScanIssues.push({ surface, path, issue });
+  };
+  const walk = (value: unknown, pathPrefix: string, surface: string, depth = 0): void => {
+    if (depth > maxPublicSurfaceScanDepth) {
+      markPublicScanIssue(surface, pathPrefix, 'depth_limit_exceeded');
+      return;
+    }
     if (Array.isArray(value)) {
-      value.forEach((entry, idx) => walk(entry, `${pathPrefix}[${idx}]`, surface));
+      if (activePublicSurfacePathObjects.has(value)) {
+        markPublicScanIssue(surface, pathPrefix, 'cycle_detected');
+        return;
+      }
+      activePublicSurfacePathObjects.add(value);
+      value.forEach((entry, idx) => walk(entry, `${pathPrefix}[${idx}]`, surface, depth + 1));
+      activePublicSurfacePathObjects.delete(value);
       return;
     }
     if (!value || typeof value !== 'object') return;
+    if (activePublicSurfacePathObjects.has(value)) {
+      markPublicScanIssue(surface, pathPrefix, 'cycle_detected');
+      return;
+    }
+    activePublicSurfacePathObjects.add(value);
+    if (!isPlainRecord(value)) {
+      markPublicScanIssue(surface, pathPrefix, 'uninspectable_object');
+      activePublicSurfacePathObjects.delete(value);
+      return;
+    }
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       const nextPath = pathPrefix ? `${pathPrefix}.${k}` : k;
-      if (forbiddenPublicFields.has(k)) forbiddenHits.push({ surface, field: k, path: nextPath });
-      walk(v, nextPath, surface);
+      const normalisedKey = k.trim().toLowerCase();
+      if (forbiddenPublicFields.has(normalisedKey)) forbiddenHits.push({ surface, field: normalisedKey, path: nextPath });
+      walk(v, nextPath, surface, depth + 1);
     }
+    activePublicSurfacePathObjects.delete(value);
   };
   for (const surface of publicSurfaces) walk(surface.value, surface.key, surface.key);
+  const publicSurfaceScanSafe = publicSurfaceScanIssues.length === 0;
   const publicWinnerAbsent = !forbiddenHits.some((x) => winnerFields.has(x.field));
   const publicRecommendationAbsent = !forbiddenHits.some((x) => recommendationFields.has(x.field));
   const riskSources = collectComparisonRiskSources(payloadsObject);
@@ -209,6 +239,7 @@ export async function emitComparisonParityProof(input: {
   if (!requiredOk && input.comparison_invoked) mismatch.push({ mismatch_type: 'missing_required_comparison_evidence' });
   if (!comparisonPayloadsAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_parity_payload_missing' });
   if (!publicSurfaceContextAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_public_surface_context_missing' });
+  if (!publicSurfaceScanSafe && input.comparison_invoked) mismatch.push({ mismatch_type: 'public_comparison_surface_uninspectable', issues: publicSurfaceScanIssues });
   if (!forbiddenPublicComparisonFieldsAbsent) {
     for (const hit of forbiddenHits) {
       mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface: hit.surface, field: hit.field, path: hit.path });
@@ -223,13 +254,13 @@ export async function emitComparisonParityProof(input: {
     : (
       (!forbiddenPublicComparisonFieldsAbsent || !forcedWinnerRiskAbsent || !falseWinnerRiskAbsent || !routeVarianceRiskAbsent || !sameVideoRiskAbsent)
         ? 'failed'
-        : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable ? 'insufficient' : 'passed')
+        : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable || !publicSurfaceScanSafe ? 'insufficient' : 'passed')
     );
   const blocker_codes = (parityStatus === 'passed' || parityStatus === 'not_applicable') ? [] : ['parity_artefacts_missing'];
   if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
   const outPayload = {
     schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0, comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true,
-    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : 'comparison_evidence_missing_or_unresolved'))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
+    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : 'comparison_evidence_missing_or_unresolved')))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
   };
   const relative = input.take_id ? `takes/take-${input.take_id}/analysis-${analysisRunId}/parity/comparison_parity.json` : 'parity/comparison_parity.json';
   const result = await writeInternalJson(root, input.run_id, relative, outPayload, 'parity_comparison');
@@ -1325,6 +1356,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       comparison_invoked: comparisonInvoked,
       comparison_evidence_status: comparisonEvidenceStatus,
       comparison_payloads: metadata.comparison_parity_input?.comparison_payloads ?? undefined,
+      public_comparison_surface_paths: metadata.comparison_parity_input?.public_comparison_surface_paths ?? undefined,
     }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: (comparisonInvoked ? 'insufficient' : 'not_applicable') as 'insufficient'|'not_applicable' };
     artefactSourceClassificationById.parity_comparison = 'internal_comparison_parity_proof';
     artefactLevel2ById.parity_comparison = shouldEmitComparisonParity && comparisonParityWrite.parity_status === 'passed';
