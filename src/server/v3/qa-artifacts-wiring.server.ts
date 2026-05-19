@@ -106,10 +106,14 @@ export async function emitComparisonParityProof(input: {
     if (!acc || typeof acc !== 'object') return undefined;
     return (acc as Record<string, unknown>)[key];
   }, obj);
-  const publicSurfaceKeys = ['public_comparison_payload', 'comparison_public_payload', 'public_output', 'comparison_output_public', 'render_payload', 'public_report_payload'];
-  const publicSurfaces = publicSurfaceKeys
-    .map((k) => ({ key: k, value: payloadsObject?.[k] }))
-    .filter((x) => x.value && typeof x.value === 'object');
+  const publicSurfaces = [
+    { key: 'public_comparison_payload', value: payloadsObject?.public_comparison_payload },
+    { key: 'comparison_public_payload', value: payloadsObject?.comparison_public_payload },
+    { key: 'public_output', value: payloadsObject?.public_output },
+    { key: 'comparison_output_public', value: payloadsObject?.comparison_output_public },
+    { key: 'render_payload.comparison', value: extract(payloadsObject, 'render_payload.comparison') },
+    { key: 'public_report_payload.comparison', value: extract(payloadsObject, 'public_report_payload.comparison') },
+  ].filter((x) => x.value && typeof x.value === 'object');
   const forbiddenPublicFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public', 'recommendation', 'public_recommendation', 'comparison_recommendation', 'forced_winner', 'false_winner', 'castability', 'bookability', 'marketability', 'public_scoring', 'public_score', 'public_technique_authority', 'technique_authority']);
   const winnerFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public']);
   const recommendationFields = new Set(['recommendation', 'public_recommendation', 'comparison_recommendation']);
