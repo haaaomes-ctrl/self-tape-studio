@@ -123,6 +123,39 @@ describe('v3-s9 comparison parity proof', () => {
     }
   });
 
+  it('A-F forbidden non-winner public fields fail parity and keep winner/recommendation diagnostics true when applicable', async () => {
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['castability', { public_comparison_payload: { castability: 'x' } }],
+      ['bookability', { public_comparison_payload: { bookability: 'x' } }],
+      ['marketability', { public_comparison_payload: { marketability: 'x' } }],
+      ['public_score', { public_comparison_payload: { public_score: 90 } }],
+      ['technique_authority', { public_comparison_payload: { technique_authority: 'x' } }],
+      ['selected_take_id_public', { public_comparison_payload: { selected_take_id_public: 'ta' } }],
+    ];
+    for (const [suffix, payloads] of cases) {
+      const root = await mkdtemp(path.join(os.tmpdir(), `s9-13d-forbidden-${suffix}-`));
+      const { manifest, metrics, parity } = await emitCase(root, `run-forbidden-${suffix}`, { payloads });
+      expect(parity.forbidden_public_comparison_fields_absent).toBe(false);
+      expect(parity.parity_status).toBe('failed');
+      expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+      expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+      expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+      expect(parity.mismatches.some((m:any)=>m.mismatch_type==='forbidden_public_comparison_field_present')).toBe(true);
+    }
+  });
+
+  it('G/H winner and recommendation leaks set respective diagnostics false', async () => {
+    const rootWinner = await mkdtemp(path.join(os.tmpdir(),'s9-13d-win-leak-'));
+    const winner = await emitCase(rootWinner,'run-win-leak',{ payloads: { public_comparison_payload: { winner:'ta' } } });
+    expect(winner.parity.public_winner_absent).toBe(false);
+    expect(winner.parity.public_recommendation_absent).toBe(true);
+
+    const rootRec = await mkdtemp(path.join(os.tmpdir(),'s9-13d-rec-leak-'));
+    const rec = await emitCase(rootRec,'run-rec-leak',{ payloads: { public_comparison_payload: { recommendation:'ta' } } });
+    expect(rec.parity.public_winner_absent).toBe(true);
+    expect(rec.parity.public_recommendation_absent).toBe(false);
+  });
+
   it('O insufficient parity can be physically written and non-satisfying', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-o-'));
     const { manifest, parity } = await emitCase(root,'run-o',{ payloads: { route_variance_mitigation_status:'unresolved_blocked' } });

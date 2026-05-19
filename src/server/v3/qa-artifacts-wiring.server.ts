@@ -119,18 +119,23 @@ export async function emitComparisonParityProof(input: {
       if (direct !== undefined || nestedComparison !== undefined) forbiddenHits.push(`${surface.key}:${field}`);
     }
   }
-  const publicWinnerAbsent = !forbiddenHits.some((x) => /winner/.test(x));
+  const publicWinnerAbsent = !forbiddenHits.some((x) => /winner|selected_winner|selected_take_id_public/.test(x));
   const publicRecommendationAbsent = !forbiddenHits.some((x) => /recommendation/.test(x));
   const forcedWinnerRiskAbsent = extract(payloadsObject, 'forced_winner_risk') !== true;
   const falseWinnerRiskAbsent = extract(payloadsObject, 'false_winner_risk') !== true;
   const routeVarianceRiskAbsent = !(extract(payloadsObject, 'route_variance_risk') === true || extract(payloadsObject, 'route_variance_mitigation_status') === 'unresolved_blocked');
   const sameVideoRiskAbsent = !(extract(payloadsObject, 'same_video_unresolved_risk') === true || extract(payloadsObject, 'same_video_detected') === true || extract(payloadsObject, 'no_material_difference') === false);
   const comparisonPayloadsAvailable = publicSurfaces.length > 0;
-  const forbiddenPublicComparisonFieldsAbsent = publicWinnerAbsent && publicRecommendationAbsent;
+  const forbiddenPublicComparisonFieldsAbsent = forbiddenHits.length === 0;
   const mismatch: Array<Record<string, unknown>> = [];
   if (!requiredOk && input.comparison_invoked) mismatch.push({ mismatch_type: 'missing_required_comparison_evidence' });
   if (!comparisonPayloadsAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_parity_payload_missing' });
-  if (!forbiddenPublicComparisonFieldsAbsent) mismatch.push({ mismatch_type: 'forbidden_public_comparison_fields_present', forbidden_hits: forbiddenHits });
+  if (!forbiddenPublicComparisonFieldsAbsent) {
+    for (const hit of forbiddenHits) {
+      const [surface, field] = hit.split(':');
+      mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface, field });
+    }
+  }
   if (!forcedWinnerRiskAbsent) mismatch.push({ mismatch_type: 'forced_winner_risk_detected' });
   if (!falseWinnerRiskAbsent) mismatch.push({ mismatch_type: 'false_winner_risk_detected' });
   if (!routeVarianceRiskAbsent) mismatch.push({ mismatch_type: 'route_variance_unresolved' });
@@ -140,7 +145,7 @@ export async function emitComparisonParityProof(input: {
   if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
   const outPayload = {
     schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: true, public_comparison_output_absent_or_unchanged: true,
-    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'comparison_forbidden_public_or_winner_risk_detected' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : 'comparison_evidence_missing_or_unresolved')), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
+    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : 'comparison_evidence_missing_or_unresolved')), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
   };
   const relative = input.take_id ? `takes/take-${input.take_id}/analysis-${analysisRunId}/parity/comparison_parity.json` : 'parity/comparison_parity.json';
   const result = await writeInternalJson(root, input.run_id, relative, outPayload, 'parity_comparison');
