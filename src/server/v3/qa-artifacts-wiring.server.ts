@@ -1197,6 +1197,7 @@ export interface AnalysisEvidenceStateEmitterInput extends AnalysisInputArtefact
   duration_confidence?: 'known' | 'estimated' | 'unknown' | string | null;
   observable_evidence_items?: Array<Record<string, unknown>>;
   filtered_run_evidence_pass_step1?: Record<string, unknown> | null;
+  timestamp_normalisation_warnings?: string[];
   metadata_overrides?: Record<string, unknown>;
 }
 type AnalysisObservableEvidenceItem = {
@@ -1935,6 +1936,16 @@ function unsupportedEvidenceFamilyBlocker(item: Record<string, unknown>): string
   return null;
 }
 
+function safeUnsupportedEvidenceForAnchorHandoff(value: unknown): Array<Record<string, unknown>> {
+  return safeRecordArray(value).map((item, index) => ({
+    evidence_kind: typeof item.evidence_kind === 'string' && item.evidence_kind.trim()
+      ? item.evidence_kind.trim()
+      : `unsupported_or_unavailable_evidence_${index + 1}`,
+    status: typeof item.status === 'string' && item.status.trim() ? item.status.trim() : 'unavailable',
+    blocker_codes: getStringArray(item.blocker_codes),
+  }));
+}
+
 function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<string, unknown>>; analysisEvidenceState: Record<string, unknown> | null }): EvidenceAnchorAggregateGateEvaluation {
   const anchors = args.anchors;
   const analysisEvidenceState = args.analysisEvidenceState;
@@ -2168,6 +2179,9 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     cannot_satisfy_v3_evidence_anchor_gate: evidenceAnchorGateStatus !== 'sufficient',
     gate_satisfaction_reason: gateReason,
     blocker_codes,
+    evidence_family_coverage: isRecord(analysisEvidenceState?.evidence_family_coverage) ? analysisEvidenceState.evidence_family_coverage : null,
+    evidence_family_status_by_id: isRecord(analysisEvidenceState?.evidence_family_status_by_id) ? analysisEvidenceState.evidence_family_status_by_id : null,
+    unsupported_or_unavailable_evidence: isRecord(analysisEvidenceState) ? safeUnsupportedEvidenceForAnchorHandoff(analysisEvidenceState.unsupported_or_unavailable_evidence) : [],
     evidence_anchor_trace_summary: evidenceAnchorTraceSummary,
     public_output_unchanged: true,
     production_safe_status: 'blocked',
@@ -2186,6 +2200,14 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     source_classification: result.written ? sourceClassification : ('missing' as const),
     level2_satisfies: result.written && evidenceAnchorGateStatus === 'sufficient',
     evidence_anchor_trace_summary: evidenceAnchorTraceSummary,
+    evidence_anchor_gate_status: evidenceAnchorGateStatus,
+    evidence_anchor_gate_reason: gateReason,
+    evidence_anchor_source_family_summary: evidenceAnchorTraceSummary.source_family_summary,
+    evidence_family_coverage: payload.evidence_family_coverage,
+    evidence_family_status_by_id: payload.evidence_family_status_by_id,
+    unsupported_or_unavailable_evidence: payload.unsupported_or_unavailable_evidence,
+    blocker_codes,
+    cannot_satisfy_v3_gate: payload.cannot_satisfy_v3_evidence_anchor_gate,
     warning: result.warning ?? null,
     anchors,
   };
@@ -3775,7 +3797,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     const w = await writeInternalJson(root, input.run_id, rel, payload, id);
     if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
   }
-  return { written: !hadFailure, emitted_artefact_ids };
+  return { written: !hadFailure, emitted_artefact_ids, resolver_output, truth_state_map };
 }
 
 export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvidenceStateEmitterInput) {
@@ -4051,6 +4073,9 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const filteredRejected = Array.isArray(filteredStep1?.rejected_or_filtered_fields)
     ? filteredStep1.rejected_or_filtered_fields.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
+  const timestampNormalisationWarnings = Array.isArray(input.timestamp_normalisation_warnings)
+    ? input.timestamp_normalisation_warnings.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : [];
   const filteredBlockers = Array.isArray(filteredStep1?.blocker_codes)
     ? filteredStep1.blocker_codes.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
@@ -4180,8 +4205,10 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     },
     assessability_limitations: [
       ...(!durationKnown ? ['media_duration_unavailable_no_timestamp_evidence_fabricated'] : []),
+      ...timestampNormalisationWarnings,
       ...(hasFilteredStep1Items ? ['filtered_runEvidencePass_step1_contract_partial'] : ['observable_step1_extraction_unavailable']),
     ],
+    timestamp_normalisation_warnings: timestampNormalisationWarnings,
     component_evidence,
     video_observable_evidence_items: step1VideoItems,
     audio_observable_evidence_items: step1AudioItems,

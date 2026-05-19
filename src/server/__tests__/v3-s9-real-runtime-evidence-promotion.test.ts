@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
+import { safeIsoTimestamp } from '@/server/v3/qa-safe-normalisation.server';
 import { emitAnalysisEvidenceStatePrerequisite, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 type LegacyBundleOptions = {
@@ -2218,6 +2219,31 @@ async function emitPublicClaimSupportBundle(options: {
     artefact_type: 'evidence_anchors',
     source_classification: evidenceAnchorGateStatus === 'sufficient' ? 'real_runtime_v3' : 'real_runtime_v3_partial_non_satisfying',
     anchors,
+    evidence_anchor_gate_status: evidenceAnchorGateStatus,
+    evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'sufficient' ? 'complete_controlled_fixture' : 'partial_step1_evidence_coverage',
+    evidence_anchor_source_family_summary: {
+      real_runtime_v3: anchors.filter((anchor) => anchor.source_family === 'real_runtime_v3' || anchor.source_classification === 'real_runtime_v3').length,
+      legacy_adapter: anchors.filter((anchor) => anchor.source_family === 'legacy_adapter').length,
+      report_snapshot: 0,
+      source_scaffold: anchors.filter((anchor) => anchor.source_family === 'source_scaffold').length,
+    },
+    evidence_family_coverage: {
+      video: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      audio: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      material: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      performance: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      candidate_technique: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+    },
+    evidence_family_status_by_id: {
+      video: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      audio: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      material: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      performance: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+      candidate_technique: evidenceAnchorGateStatus === 'sufficient' ? 'complete' : 'partial',
+    },
+    unsupported_or_unavailable_evidence: evidenceAnchorGateStatus === 'sufficient' ? [] : [{ evidence_kind: 'video_observable_performance_evidence_not_extracted' }],
+    blocker_codes: evidenceAnchorGateStatus === 'sufficient' ? [] : ['partial_step1_evidence_coverage'],
+    cannot_satisfy_v3_gate: evidenceAnchorGateStatus !== 'sufficient',
     evidence_anchor_trace_summary: {
       evidence_anchor_gate_status: evidenceAnchorGateStatus,
       evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'sufficient' ? 'complete_controlled_fixture' : 'partial_step1_evidence_coverage',
@@ -2516,6 +2542,12 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status');
     expect(source).toContain('evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary');
     expect(source).toContain('evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary');
+    expect(source).toContain('evidence_family_coverage: evidenceAnchors.evidence_family_coverage');
+    expect(source).toContain('evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id');
+    expect(source).toContain('unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence');
+    expect(source).toContain('blocker_codes: evidenceAnchors.blocker_codes');
+    expect(source).toContain('cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate');
+    expect(source).toContain('truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null');
     expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
     expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
     expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
@@ -2537,6 +2569,27 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     const partial = await emitPublicClaimSupportBundle({ evidenceAnchorGateStatus: 'insufficient' });
     expect(partial.claims.claims[0].support_status).toBe('partially_supported');
     expect(partial.claims.public_claim_gate_status).toBe('insufficient');
+
+    const missingMetadataRoot = await mkdtemp(path.join(os.tmpdir(), 'qa-s914m-missing-anchor-metadata-'));
+    const missingMetadataRun = `run-s914m-${Math.random().toString(36).slice(2)}`;
+    const missingMetadataOut = await emitPublicClaimTraceFirstPass({
+      run_id: missingMetadataRun,
+      analysis_run_id: missingMetadataRun,
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      claim_candidate_trace_data: { claim_candidates: [claimCandidate()] },
+      evidence_anchors_data: { anchors: [runtimeAnchor()] },
+      truth_state_map_data: { truth_state_ids: ['truth-brief-presence'] },
+      root_dir: missingMetadataRoot,
+      internal_qa_emit: true,
+    });
+    const missingMetadataClaims = missingMetadataOut.written
+      ? JSON.parse(await readFile(path.join(missingMetadataRoot, missingMetadataRun, 'takes', 'take-t1', `analysis-${missingMetadataRun}`, 'traces', 'PublicClaimTrace.json'), 'utf8'))
+      : null;
+    expect(missingMetadataClaims.claims[0].support_status).toBe('partially_supported');
+    expect(missingMetadataClaims.public_claim_gate_status).toBe('insufficient');
 
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914m-no-anchors-'));
     const run = `run-s914m-${Math.random().toString(36).slice(2)}`;
@@ -2606,5 +2659,41 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     });
     expect(malformed.claims.claims[0].support_status).toBe('missing_truth_link');
     expect(malformed.claims.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('normalises untrusted take timestamps safely for Step 1 QA context', async () => {
+    expect(safeIsoTimestamp('not-a-date')).toBeNull();
+    expect(safeIsoTimestamp(new Date('not-a-date'))).toBeNull();
+    expect(safeIsoTimestamp(null)).toBeNull();
+    expect(safeIsoTimestamp(undefined)).toBeNull();
+    expect(safeIsoTimestamp('')).toBeNull();
+    expect(safeIsoTimestamp({ value: '2026-01-01' })).toBeNull();
+    expect(safeIsoTimestamp('2026-01-01T00:00:00Z')).toBe('2026-01-01T00:00:00.000Z');
+    expect(safeIsoTimestamp(new Date('2026-01-02T03:04:05Z'))).toBe('2026-01-02T03:04:05.000Z');
+  });
+
+  it('records timestamp normalisation warnings without blocking AnalysisEvidenceState emission', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914m-timestamps-'));
+    const run = `run-s914m-${Math.random().toString(36).slice(2)}`;
+    const out = await emitAnalysisEvidenceStatePrerequisite({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      media_readiness_state: 'ready',
+      take_created_at: safeIsoTimestamp('not-a-date'),
+      take_updated_at: safeIsoTimestamp('2026-01-01T00:00:00Z'),
+      timestamp_normalisation_warnings: ['take_created_at_invalid_timestamp'],
+      resolver_output_available: true,
+      truth_state_map_available: true,
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(out.written).toBe(true);
+    expect(out.payload.timestamp_normalisation_warnings).toEqual(['take_created_at_invalid_timestamp']);
+    expect(out.payload.assessability_limitations).toContain('take_created_at_invalid_timestamp');
+    expect(out.payload.media_readiness_summary.timestamp_source).toBe('unavailable');
   });
 });

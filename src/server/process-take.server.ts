@@ -49,6 +49,7 @@ import {
   enforcePublicReportOutputQuality,
   detectFramingFixed,
 } from "./report-output-enforcement.server";
+import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -1252,8 +1253,12 @@ export async function runProcessTake(
       const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
       const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
         hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
-      const takeCreatedAt = take.created_at ? new Date(take.created_at).toISOString() : null;
-      const takeUpdatedAt = take.updated_at ? new Date(take.updated_at).toISOString() : null;
+      const takeCreatedAt = safeIsoTimestamp(take.created_at);
+      const takeUpdatedAt = safeIsoTimestamp(take.updated_at);
+      const timestampWarnings = timestampNormalisationWarnings({
+        take_created_at: take.created_at,
+        take_updated_at: take.updated_at,
+      });
       const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
       if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
@@ -1264,6 +1269,7 @@ export async function runProcessTake(
         briefPresenceSource,
         takeCreatedAt,
         takeUpdatedAt,
+        timestampWarnings,
         unavailableInputFields,
         takeDurationSeconds: durationKnown ? takeDurationSeconds : null,
         durationConfidence: durationKnown ? 'known' as const : 'unknown' as const,
@@ -1497,6 +1503,7 @@ export async function runProcessTake(
           resolver_output_available: preStep2ResolverTruth.emitted_artefact_ids.includes('resolver_output'),
           truth_state_map_available: preStep2ResolverTruth.emitted_artefact_ids.includes('truth_state_map'),
           filtered_run_evidence_pass_step1: filteredStep1Evidence,
+          timestamp_normalisation_warnings: qaStep1Context.timestampWarnings,
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
@@ -3407,8 +3414,12 @@ export async function runProcessTake(
       const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
       const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
         hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
-      const takeCreatedAt = take.created_at ? new Date(take.created_at).toISOString() : null;
-      const takeUpdatedAt = take.updated_at ? new Date(take.updated_at).toISOString() : null;
+      const takeCreatedAt = safeIsoTimestamp(take.created_at);
+      const takeUpdatedAt = safeIsoTimestamp(take.updated_at);
+      const timestampWarnings = timestampNormalisationWarnings({
+        take_created_at: take.created_at,
+        take_updated_at: take.updated_at,
+      });
       const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
       if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
@@ -3503,6 +3514,7 @@ export async function runProcessTake(
         duration_confidence: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? 'known' : 'unknown',
         resolver_output_available: resolverTruth.emitted_artefact_ids.includes('resolver_output'),
         truth_state_map_available: resolverTruth.emitted_artefact_ids.includes('truth_state_map'),
+        timestamp_normalisation_warnings: timestampWarnings,
         unavailable_fields: unavailableInputFields,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
@@ -3529,6 +3541,11 @@ export async function runProcessTake(
           evidence_anchor_gate_reason: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_reason,
           evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
           evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary,
+          evidence_family_coverage: evidenceAnchors.evidence_family_coverage,
+          evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id,
+          unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence,
+          blocker_codes: evidenceAnchors.blocker_codes,
+          cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate,
         }
         : null;
 
@@ -3542,7 +3559,7 @@ export async function runProcessTake(
         raw_report_data: rawReportPayload,
         analysis_evidence_state_data: analysisEvidenceState.written ? analysisEvidenceState.payload : null,
         evidence_anchors_data: evidenceAnchorsData,
-        truth_state_map_data: null,
+        truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (claimCandidateTrace.written) qaArtefactIds.push(...claimCandidateTrace.emitted_artefact_ids);
@@ -3557,7 +3574,7 @@ export async function runProcessTake(
         raw_report_data: rawReportPayload,
         claim_candidate_trace_data: claimCandidateTrace.written ? { claim_candidates: claimCandidateTrace.claim_candidates ?? [] } : null,
         evidence_anchors_data: evidenceAnchorsData,
-        truth_state_map_data: null,
+        truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
