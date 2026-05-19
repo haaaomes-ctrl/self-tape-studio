@@ -191,7 +191,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -601,6 +601,23 @@ export interface PublicClaimTraceEmitterInput {
   raw_report_data?: Record<string, unknown> | null;
   evidence_anchors_data?: { anchors?: Array<{ evidence_anchor_id?: string; source_path?: string; evidence_text?: string; source_family?: string }> } | null;
   truth_state_map_data?: Record<string, unknown> | null;
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+export interface ClaimCandidateTraceEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  submission_id?: string;
+  take_id: string;
+  comparison_run_id?: string | null;
+  source_module: string;
+  source_stage: string;
+  raw_report_data?: Record<string, unknown> | null;
+  analysis_evidence_state_data?: Record<string, unknown> | null;
+  evidence_anchors_data?: { anchors?: Array<Record<string, unknown>> } | null;
+  resolver_output_data?: Record<string, unknown> | null;
+  truth_state_map_data?: Record<string, unknown> | null;
+  metadata_overrides?: Record<string, unknown>;
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
@@ -1665,7 +1682,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
     const normalisedComparedTakeIds = normaliseUniqueTakeCores(metadata.compared_take_ids ?? metadata.take_ids);
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, evidence_anchor_trace_summary: metadata.evidence_anchor_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary };
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, claim_candidate_trace_summary: metadata.claim_candidate_trace_summary, evidence_anchor_trace_summary: metadata.evidence_anchor_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary };
     const manifestRelativePath = shouldUseExpandedManifestPaths()
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'manifest.json' })
       : 'manifest.json';
@@ -2205,6 +2222,374 @@ function classifyNumericOrScoreClaim(args: { claimType: string; sourcePath: stri
   if (/(overall readiness|overall score|readiness score|final score|model score)/i.test(t)) return { score_scope: 'overall_readiness', is_public_overall_readiness_score_risk: true, is_score_claim: true } as const;
   if (isExplicitScoreClaim(args)) return { score_scope: 'explicit_score_wording', is_public_overall_readiness_score_risk: false, is_score_claim: true } as const;
   return { score_scope: 'not_score', is_public_overall_readiness_score_risk: false, is_score_claim: false } as const;
+}
+
+type ClaimCandidateSourceFamily = 'real_runtime_v3' | 'legacy_adapter' | 'report_candidate_requires_support' | 'first_pass_internal' | 'blocked';
+
+const CLAIM_CANDIDATE_UNSAFE_TEXT_PATTERN = /(https?:\/\/|signed[_-]?url|playback[_-]?url|video[_-]?url|authorization|api[_-]?key|session|cookie|secret|token|x-amz-|signature=)/i;
+const TECHNIQUE_AUTHORITY_CLAIM_PATTERN = /(technique authority|public technique authority|authoritative technique|authoritative diagnosis|named technique|meisner|stanislavski|viewpoints|alexander technique|uta hagen)/i;
+const CASTING_MARKET_CLAIM_PATTERN = /(castability|castable|bookability|bookable|marketability|marketable|casting fit|commercial fit|market fit|buyer fit)/i;
+const COMPARISON_PUBLIC_RESULT_CLAIM_PATTERN = /(winner|recommend(?:ed|ation)?|best take|preferred take|select take|submit take\s*\d|take\s*\d\s+(?:wins|over|beats))/i;
+const ROLE_BRIEF_FIT_OVERCLAIM_PATTERN = /(role[-\s]*fit|brief[-\s]*fit|fits? the brief|perfect match|perfectly suits|well aligned|casting suitability|submit with confidence|send with confidence)/i;
+
+function safeCandidateSummary(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return null;
+  const raw = String(value).trim().replace(/\s+/g, ' ');
+  if (!raw) return null;
+  if (CLAIM_CANDIDATE_UNSAFE_TEXT_PATTERN.test(raw)) return '[redacted unsafe candidate summary]';
+  return raw.slice(0, 280);
+}
+
+function pickSafeRecordText(value: Record<string, unknown>): string | null {
+  for (const key of ['safe_candidate_summary', 'safe_evidence_summary', 'evidence_text', 'summary', 'status', 'value', 'label', 'reason', 'note', 'text', 'observation']) {
+    const text = safeCandidateSummary(value[key]);
+    if (text) return text;
+  }
+  return null;
+}
+
+function claimFamilyForRuntimeEvidence(item: Record<string, unknown>): string {
+  const kind = String(item.evidence_kind ?? item.component_id ?? '').toLowerCase();
+  const modality = String(item.evidence_modality ?? '').toLowerCase();
+  if (/unavailable|limitation|not_extracted|blocked|unknown/.test(kind)) return 'assessability_limitation';
+  if (/media|audio|video|duration|framing|lighting|visibility|intelligibility|volume|noise|crop/.test(kind) || ['media_readiness', 'audio', 'video'].includes(modality)) return 'technical_media';
+  if (/brief|material|component|task/.test(kind)) return 'factual_status';
+  if (/selected_level|audition_type|stable_take_identity|submission|take_identity/.test(kind)) return 'factual_status';
+  if (/truth|resolver/.test(kind)) return 'factual_status';
+  return 'factual_status';
+}
+
+function classifyClaimCandidateSafety(args: { text: string; claimType: string; claimFamily: string; sourcePath: string }) {
+  const scoreMeta = classifyNumericOrScoreClaim({ claimType: args.claimType, sourcePath: args.sourcePath, claimText: args.text });
+  const blockers: string[] = [];
+  if (scoreMeta.is_score_claim) {
+    blockers.push('public_scoring_blocked');
+    return { score_scope: scoreMeta.score_scope, public_safety_status: 'blocked', rewrite_required: true, blocked_claim_category: 'public_scoring', blocker_codes: blockers };
+  }
+  if (TECHNIQUE_AUTHORITY_CLAIM_PATTERN.test(args.text) || args.claimFamily === 'technique_authority') {
+    blockers.push('public_technique_authority_blocked');
+    return { score_scope: 'not_score', public_safety_status: 'blocked', rewrite_required: true, blocked_claim_category: 'public_technique_authority', blocker_codes: blockers };
+  }
+  if (CASTING_MARKET_CLAIM_PATTERN.test(args.text) || args.claimFamily === 'castability_bookability_marketability') {
+    blockers.push('castability_bookability_marketability_blocked');
+    return { score_scope: 'not_score', public_safety_status: 'blocked', rewrite_required: true, blocked_claim_category: 'castability_bookability_marketability', blocker_codes: blockers };
+  }
+  if (COMPARISON_PUBLIC_RESULT_CLAIM_PATTERN.test(args.text) || args.claimFamily === 'comparison_public_result') {
+    blockers.push('public_comparison_result_blocked');
+    return { score_scope: 'not_score', public_safety_status: 'blocked', rewrite_required: true, blocked_claim_category: 'public_comparison_result', blocker_codes: blockers };
+  }
+  if (ROLE_BRIEF_FIT_OVERCLAIM_PATTERN.test(args.text) || OVERCLAIM_PATTERN.test(args.text)) {
+    blockers.push('unsupported_overclaim_requires_rewrite');
+    return { score_scope: 'not_score', public_safety_status: 'needs_rewrite', rewrite_required: true, blocked_claim_category: 'role_or_brief_fit_overclaim', blocker_codes: blockers };
+  }
+  if (GENERIC_PRAISE_PATTERN.test(args.text)) {
+    blockers.push('generic_phrase_unanchored');
+    return { score_scope: 'not_score', public_safety_status: 'needs_rewrite', rewrite_required: true, blocked_claim_category: 'unsupported_praise', blocker_codes: blockers };
+  }
+  return { score_scope: 'not_score', public_safety_status: 'safe_for_public_candidate', rewrite_required: false, blocked_claim_category: null, blocker_codes: blockers };
+}
+
+function inferLegacyClaimFamily(sourcePath: string, text: string, claimType: string): string {
+  if (classifyNumericOrScoreClaim({ claimType, sourcePath, claimText: text }).is_score_claim) return 'score_or_verdict';
+  if (/casting|market|book|castability|bookability|marketability/i.test(sourcePath) || CASTING_MARKET_CLAIM_PATTERN.test(text)) return 'castability_bookability_marketability';
+  if (/comparison|winner|recommend/i.test(sourcePath) || COMPARISON_PUBLIC_RESULT_CLAIM_PATTERN.test(text)) return 'comparison_public_result';
+  if (/fix_first|next_take|priority/i.test(sourcePath)) return 'priority_fix';
+  if (/strength|preserve/i.test(sourcePath)) return 'preserve_strength';
+  if (/category_notes|category_rationale|timestamped_notes/i.test(sourcePath)) return 'readiness_status';
+  if (/brief/i.test(sourcePath)) return 'brief_task_status';
+  return claimType === 'role_or_brief_fit' ? 'role_or_brief_fit_overclaim' : claimType;
+}
+
+function summarizeClaimCandidateSources(candidates: Array<Record<string, unknown>>) {
+  return candidates.reduce<Record<string, number>>((acc, candidate) => {
+    const key = String(candidate.source_family ?? 'unknown');
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {
+    real_runtime_v3: 0,
+    legacy_adapter: 0,
+    report_candidate_requires_support: 0,
+    first_pass_internal: 0,
+    blocked: 0,
+  });
+}
+
+function sourceClassificationForClaimCandidates(sourceSummary: Record<string, number>): string {
+  const realCount = sourceSummary.real_runtime_v3 ?? 0;
+  const legacyCount = sourceSummary.legacy_adapter ?? 0;
+  const reportCandidateCount = sourceSummary.report_candidate_requires_support ?? 0;
+  const firstPassCount = sourceSummary.first_pass_internal ?? 0;
+  if (realCount > 0 && legacyCount === 0 && reportCandidateCount === 0 && firstPassCount === 0) return 'real_runtime_v3_candidate_source';
+  if (realCount > 0) return 'mixed_real_runtime_v3_and_legacy_or_unsupported';
+  if (legacyCount > 0) return 'legacy_or_unsupported';
+  if (reportCandidateCount > 0) return 'report_candidate_requires_support';
+  if (firstPassCount > 0) return 'first_pass_internal';
+  return 'unavailable';
+}
+
+export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const candidates: Array<Record<string, unknown>> = [];
+  const rawReportData = unwrapRawReportData(input.raw_report_data);
+  const analysisEvidenceState = isRecord(input.analysis_evidence_state_data) ? input.analysis_evidence_state_data : null;
+  const anchors = safeRecordArray(input.evidence_anchors_data?.anchors);
+  const generatedAt = new Date().toISOString();
+
+  const addCandidate = (args: {
+    summary: string;
+    claimType: string;
+    claimFamily: string;
+    sourceArtefactId: string;
+    sourcePath: string;
+    sourceFamily: ClaimCandidateSourceFamily;
+    sourceStage?: string;
+    linkedEvidenceAnchorIds?: string[];
+    linkedTruthStateIds?: string[];
+    requiredEvidenceAnchorFamily?: string;
+    requiredTruthStateFamily?: string;
+    supportStatus?: string;
+  }) => {
+    const clean = safeCandidateSummary(args.summary);
+    if (!clean) return;
+    const safety = classifyClaimCandidateSafety({ text: clean, claimType: args.claimType, claimFamily: args.claimFamily, sourcePath: args.sourcePath });
+    const isLegacy = args.sourceFamily === 'legacy_adapter';
+    const eligible = args.sourceFamily === 'real_runtime_v3' && safety.public_safety_status !== 'blocked';
+    const blockerCodes = dedupePreservingOrder([
+      ...safety.blocker_codes,
+      ...(isLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
+      ...(args.sourceFamily === 'report_candidate_requires_support' ? ['report_candidate_requires_support'] : []),
+      ...(!eligible && !isLegacy && safety.public_safety_status !== 'blocked' ? ['claim_candidate_not_eligible_for_support_check'] : []),
+      'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+    ]);
+    candidates.push({
+      claim_candidate_id: `cc-${input.take_id}-${candidates.length + 1}`,
+      safe_candidate_summary: clean,
+      claim_type: safety.blocked_claim_category === 'public_scoring' ? 'score_or_verdict' : args.claimType,
+      claim_family: args.claimFamily,
+      source_artefact_id: args.sourceArtefactId,
+      source_path: args.sourcePath,
+      source_family: args.sourceFamily,
+      source_stage: args.sourceStage ?? input.source_stage,
+      required_evidence_anchor_family: args.requiredEvidenceAnchorFamily ?? args.claimFamily,
+      required_truth_state_family: args.requiredTruthStateFamily ?? 'run_shape_or_claim_family_truth',
+      linked_evidence_anchor_ids: args.linkedEvidenceAnchorIds ?? [],
+      linked_truth_state_ids: args.linkedTruthStateIds ?? [],
+      candidate_support_precheck_status: args.supportStatus ?? (eligible ? 'eligible_for_support_check' : (isLegacy ? 'legacy_or_unsupported' : (safety.public_safety_status === 'blocked' ? 'blocked' : 'requires_support'))),
+      public_safety_status: safety.public_safety_status,
+      rewrite_required: safety.rewrite_required || isLegacy,
+      score_scope: safety.score_scope,
+      blocked_claim_category: safety.blocked_claim_category,
+      blocker_codes: blockerCodes,
+      public_display_status: 'not_rendered_internal_candidate',
+      cannot_satisfy_public_claim_gate: true,
+      eligible_for_public_claim_trace_support_check: eligible,
+    });
+  };
+
+  if (analysisEvidenceState) {
+    const observableItems = safeRecordArray(analysisEvidenceState.observable_evidence_items);
+    observableItems.forEach((item, index) => {
+      const summary = pickSafeRecordText(item);
+      if (!summary) return;
+      const itemPath = typeof item.analysis_evidence_state_source_path === 'string' ? item.analysis_evidence_state_source_path : `observable_evidence_items[${index}]`;
+      const linkedTruthStateIds = Array.isArray(item.linked_truth_state_ids) ? item.linked_truth_state_ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+      addCandidate({
+        summary,
+        claimType: 'factual_or_limitation_status',
+        claimFamily: claimFamilyForRuntimeEvidence(item),
+        sourceArtefactId: 'analysis_evidence_state',
+        sourcePath: itemPath,
+        sourceFamily: 'real_runtime_v3',
+        sourceStage: 'analysis_step_1_evidence_mapping',
+        linkedTruthStateIds,
+        requiredEvidenceAnchorFamily: String(item.evidence_kind ?? 'runtime_fact'),
+        requiredTruthStateFamily: linkedTruthStateIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact',
+      });
+    });
+    safeRecordArray(analysisEvidenceState.unsupported_or_unavailable_evidence).forEach((item, index) => {
+      const kind = safeCandidateSummary(item.evidence_kind) ?? `unavailable_evidence_family_${index + 1}`;
+      const reason = safeCandidateSummary(item.reason) ?? safeCandidateSummary(item.status) ?? 'not extracted';
+      addCandidate({
+        summary: `${kind}: ${reason}`,
+        claimType: 'assessability_limitation',
+        claimFamily: 'assessability_limitation',
+        sourceArtefactId: 'analysis_evidence_state',
+        sourcePath: `unsupported_or_unavailable_evidence[${index}]`,
+        sourceFamily: 'real_runtime_v3',
+        sourceStage: 'analysis_step_1_evidence_mapping',
+        requiredEvidenceAnchorFamily: 'assessability_limitation',
+        requiredTruthStateFamily: 'not_required_for_limitation_candidate',
+      });
+    });
+    safeRecordArray(analysisEvidenceState.assessability_limitations).forEach((item, index) => {
+      const summary = pickSafeRecordText(item);
+      if (!summary) return;
+      addCandidate({
+        summary,
+        claimType: 'assessability_limitation',
+        claimFamily: 'assessability_limitation',
+        sourceArtefactId: 'analysis_evidence_state',
+        sourcePath: `assessability_limitations[${index}]`,
+        sourceFamily: 'real_runtime_v3',
+        sourceStage: 'analysis_step_1_evidence_mapping',
+      });
+    });
+  }
+
+  anchors.forEach((anchor, index) => {
+    if (anchor.source_family !== 'real_runtime_v3' && anchor.source_classification !== 'real_runtime_v3') return;
+    const summary = pickSafeRecordText(anchor);
+    if (!summary) return;
+    const anchorId = typeof anchor.evidence_anchor_id === 'string' ? anchor.evidence_anchor_id : null;
+    const truthIds = Array.isArray(anchor.linked_truth_state_ids) ? anchor.linked_truth_state_ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+    addCandidate({
+      summary,
+      claimType: 'evidence_summary',
+      claimFamily: claimFamilyForRuntimeEvidence(anchor),
+      sourceArtefactId: 'evidence_anchors',
+      sourcePath: `anchors[${index}]`,
+      sourceFamily: 'real_runtime_v3',
+      sourceStage: 'evidence_anchor_promotion',
+      linkedEvidenceAnchorIds: anchorId ? [anchorId] : [],
+      linkedTruthStateIds: truthIds,
+      requiredEvidenceAnchorFamily: String(anchor.evidence_modality ?? anchor.evidence_kind ?? 'runtime_anchor'),
+      requiredTruthStateFamily: truthIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact',
+    });
+  });
+
+  const addLegacyCandidate = (value: unknown, sourcePath: string, claimType: string) => {
+    const summary = safeCandidateSummary(value);
+    if (!summary) return;
+    addCandidate({
+      summary,
+      claimType,
+      claimFamily: inferLegacyClaimFamily(sourcePath, summary, claimType),
+      sourceArtefactId: 'raw_report',
+      sourcePath,
+      sourceFamily: 'legacy_adapter',
+      sourceStage: 'raw_report_snapshot',
+      supportStatus: 'legacy_or_unsupported',
+    });
+  };
+  const directFields: Array<[string, unknown, string]> = [
+    ['report_data.submission_verdict.label', (rawReportData.submission_verdict as Record<string, unknown> | undefined)?.label, 'score_or_verdict'],
+    ['report_data.submission_verdict.reason', (rawReportData.submission_verdict as Record<string, unknown> | undefined)?.reason, 'readiness_status'],
+    ['report_data.verdict_final', rawReportData.verdict_final, 'score_or_verdict'],
+    ['report_data.casting_insight', rawReportData.casting_insight, 'role_or_brief_fit'],
+    ['report_data.casting_headline', rawReportData.casting_headline, 'role_or_brief_fit'],
+    ['report_data.fix_first', rawReportData.fix_first, 'priority_fix'],
+    ['report_data.next_take', rawReportData.next_take, 'priority_fix'],
+    ['report_data.presentation_notes', rawReportData.presentation_notes, 'performance_quality'],
+  ];
+  directFields.forEach(([sourcePath, value, claimType]) => addLegacyCandidate(value, sourcePath, claimType));
+  for (const key of ['overall_score', 'overall_score_final', 'overall_score_model', 'overall_readiness', 'readiness_score'] as const) {
+    const value = rawReportData[key];
+    if (typeof value === 'number' || typeof value === 'string') addLegacyCandidate(value, `report_data.${key}`, 'score_or_verdict');
+  }
+  if (isRecord(rawReportData.scores)) {
+    for (const [key, value] of Object.entries(rawReportData.scores)) {
+      if (typeof value === 'number' || typeof value === 'string') addLegacyCandidate(`${key}: ${String(value)}`, `report_data.scores.${key}`, 'score_or_verdict');
+    }
+  }
+  for (const [key, value, claimType] of [
+    ['strengths', rawReportData.strengths, 'preserve_strength'],
+    ['improvements', rawReportData.improvements, 'priority_fix'],
+    ['category_notes', rawReportData.category_notes, 'readiness_status'],
+    ['category_rationale', rawReportData.category_rationale, 'readiness_status'],
+    ['priority_fixes', rawReportData.priority_fixes, 'priority_fix'],
+  ] as const) {
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => {
+        if (typeof item === 'string' || typeof item === 'number') addLegacyCandidate(item, `report_data.${key}[${index}]`, claimType);
+        else if (isRecord(item)) {
+          const text = pickSafeRecordText(item);
+          if (text) addLegacyCandidate(text, `report_data.${key}[${index}]`, claimType);
+        }
+      });
+    } else if (isRecord(value)) {
+      for (const [subKey, subValue] of Object.entries(value)) addLegacyCandidate(subValue, `report_data.${key}.${subKey}`, claimType);
+    }
+  }
+  if (Array.isArray(rawReportData.timestamped_notes)) {
+    rawReportData.timestamped_notes.forEach((item, index) => {
+      if (!isRecord(item)) return;
+      const text = getTimestampedNoteText(item);
+      const field = getTimestampedNoteTextField(item);
+      if (text && field) addLegacyCandidate(text, `report_data.timestamped_notes[${index}].${field}`, 'performance_quality');
+    });
+  }
+
+  if (candidates.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const sourceSummary = summarizeClaimCandidateSources(candidates);
+  const sourceClassification = sourceClassificationForClaimCandidates(sourceSummary);
+  const blockedCandidateCount = candidates.filter((candidate) => candidate.public_safety_status === 'blocked').length;
+  const rewriteRequiredCount = candidates.filter((candidate) => candidate.rewrite_required === true).length;
+  const unsupportedCandidateCount = candidates.filter((candidate) => ['legacy_or_unsupported', 'requires_support'].includes(String(candidate.candidate_support_precheck_status))).length;
+  const safeCandidateCount = candidates.filter((candidate) => candidate.public_safety_status === 'safe_for_public_candidate').length;
+  const blockerCodes = dedupePreservingOrder([
+    'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+    'public_claim_trace_not_promoted',
+    ...(sourceSummary.legacy_adapter > 0 ? ['legacy_or_unsupported_claim_candidate_source'] : []),
+    ...candidates.flatMap((candidate) => Array.isArray(candidate.blocker_codes) ? candidate.blocker_codes.filter((x): x is string => typeof x === 'string' && x.length > 0) : []),
+  ]);
+  const payload = {
+    ...(input.metadata_overrides ?? {}),
+    schema_version: 'tapecoach_v3_claim_candidate_trace_v1',
+    artefact_type: 'claim_candidate_trace',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    generated_at: generatedAt,
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_classification: sourceClassification,
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id,
+    comparison_run_id: input.comparison_run_id ?? null,
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    claim_candidate_count: candidates.length,
+    claim_candidates: candidates,
+    claim_candidate_source_summary: sourceSummary,
+    blocked_candidate_count: blockedCandidateCount,
+    rewrite_required_count: rewriteRequiredCount,
+    unsupported_candidate_count: unsupportedCandidateCount,
+    safe_candidate_count: safeCandidateCount,
+    public_render_permission_status: 'not_evaluated_or_blocked',
+    cannot_satisfy_public_claim_gate: true,
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    blocker_codes: blockerCodes,
+    gate_satisfaction_reason: sourceSummary.real_runtime_v3 > 0
+      ? 'claim_candidate_source_available_public_claim_trace_not_promoted'
+      : 'legacy_or_unsupported_claim_candidates_only',
+    public_output_unchanged: true,
+    redaction_policy: 'safe_summaries_only',
+  };
+  assertSafeSegment(input.take_id, 'take_id');
+  const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ClaimCandidateTrace.json`, payload, 'claim_candidate_trace');
+  const summary = {
+    claim_candidate_count: candidates.length,
+    source_classification: sourceClassification,
+    claim_candidate_source_summary: sourceSummary,
+    blocked_candidate_count: blockedCandidateCount,
+    rewrite_required_count: rewriteRequiredCount,
+    unsupported_candidate_count: unsupportedCandidateCount,
+    safe_candidate_count: safeCandidateCount,
+    claim_candidate_gate_status: 'insufficient' as const,
+    claim_candidate_gate_reason: 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+  };
+  return {
+    written: result.written as boolean,
+    emitted_artefact_ids: result.written ? ['claim_candidate_trace'] : [],
+    source_classification: result.written ? sourceClassification : 'missing',
+    summary,
+    claim_candidates: result.written ? candidates : [],
+    warning: result.warning ?? null,
+  };
 }
 
 export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitterInput) {

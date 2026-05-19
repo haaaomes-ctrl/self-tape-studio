@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
-import { emitAnalysisEvidenceStatePrerequisite, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitAnalysisEvidenceStatePrerequisite, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 type LegacyBundleOptions = {
   run?: string;
@@ -1842,6 +1842,298 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
     const payload = JSON.parse(await readFile(path.join(root, 'run-s914h-malformed', 'takes', 'take-t1', 'analysis-run-s914h-malformed', 'traces', 'EvidenceAnchors.json'), 'utf8'));
     expect(payload.public_output_unchanged).toBe(true);
     expect(payload.production_safe_status).toBe('blocked');
+  });
+});
+
+async function emitClaimCandidateBundle(options: {
+  rawReport?: Record<string, unknown> | null;
+  includeAnalysis?: boolean;
+  includeAnchors?: boolean;
+  includePublicClaimTrace?: boolean;
+  metadataOverrides?: Record<string, unknown>;
+} = {}) {
+  const includeAnalysis = options.includeAnalysis ?? true;
+  const base = includeAnalysis
+    ? await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' })
+    : {
+      root: await mkdtemp(path.join(os.tmpdir(), 'qa-s914k-')),
+      run: `run-s914k-${Math.random().toString(36).slice(2)}`,
+      take: 't1',
+      out: null,
+      payload: null,
+    };
+  let anchorsOut: any = null;
+  let anchors: any = null;
+  if (options.includeAnchors && base.payload) {
+    anchorsOut = await emitEvidenceAnchorsFirstPass({
+      run_id: base.run,
+      analysis_run_id: base.run,
+      submission_id: 'sub1',
+      take_id: base.take,
+      source_module: 'test',
+      source_stage: 'unit',
+      analysis_evidence_state_data: base.payload,
+      root_dir: base.root,
+      internal_qa_emit: true,
+    });
+    const anchorsPath = path.join(base.root, base.run, 'takes', `take-${base.take}`, `analysis-${base.run}`, 'traces', 'EvidenceAnchors.json');
+    anchors = anchorsOut.written ? JSON.parse(await readFile(anchorsPath, 'utf8')) : null;
+  }
+  const claimCandidateOut = await emitClaimCandidateTrace({
+    run_id: base.run,
+    analysis_run_id: base.run,
+    submission_id: 'sub1',
+    take_id: base.take,
+    source_module: 'test',
+    source_stage: 'unit',
+    analysis_evidence_state_data: base.payload,
+    evidence_anchors_data: anchors,
+    raw_report_data: options.rawReport === undefined ? null : { report_data: options.rawReport },
+    metadata_overrides: options.metadataOverrides,
+    root_dir: base.root,
+    internal_qa_emit: true,
+  });
+  const claimCandidatePath = path.join(base.root, base.run, 'takes', `take-${base.take}`, `analysis-${base.run}`, 'traces', 'ClaimCandidateTrace.json');
+  const claimCandidateTrace = claimCandidateOut.written ? JSON.parse(await readFile(claimCandidatePath, 'utf8')) : null;
+
+  let claimsOut: any = null;
+  let claims: any = null;
+  if (options.includePublicClaimTrace) {
+    claimsOut = await emitPublicClaimTraceFirstPass({
+      run_id: base.run,
+      analysis_run_id: base.run,
+      submission_id: 'sub1',
+      take_id: base.take,
+      source_module: 'test',
+      source_stage: 'unit',
+      raw_report_data: { report_data: options.rawReport ?? { strengths: ['grounded acting'] } },
+      evidence_anchors_data: anchors,
+      root_dir: base.root,
+      internal_qa_emit: true,
+    });
+    const claimsPath = path.join(base.root, base.run, 'takes', `take-${base.take}`, `analysis-${base.run}`, 'traces', 'PublicClaimTrace.json');
+    claims = claimsOut.written ? JSON.parse(await readFile(claimsPath, 'utf8')) : null;
+  }
+
+  await emitQAManifestForAnalysisRun({
+    run_id: base.run,
+    analysis_run_id: base.run,
+    take_id: base.take,
+    submission_id: 'sub1',
+    root_dir: base.root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: [
+      ...(base.out?.emitted_artefact_ids ?? []),
+      ...(anchorsOut?.written ? ['evidence_anchors'] : []),
+      ...(claimCandidateOut.written ? ['claim_candidate_trace'] : []),
+      ...(claimsOut?.written ? ['public_claim_trace'] : []),
+    ],
+    emitted_blocked_artefact_ids: [...(base.out?.emitted_blocked_artefact_ids ?? [])],
+    artefact_source_classification_by_id: {
+      ...(base.out?.written ? { analysis_evidence_state: base.out.source_classification } : {}),
+      ...(anchorsOut?.written ? { evidence_anchors: anchorsOut.source_classification } : {}),
+      ...(claimCandidateOut.written ? { claim_candidate_trace: claimCandidateOut.source_classification } : {}),
+      ...(claimsOut?.written ? { public_claim_trace: 'legacy_adapter' } : {}),
+    },
+    artefact_level2_spine_satisfaction_by_id: {
+      ...(base.out?.written ? { analysis_evidence_state: false } : {}),
+      ...(anchorsOut?.written ? { evidence_anchors: anchorsOut.level2_satisfies } : {}),
+      ...(claimCandidateOut.written ? { claim_candidate_trace: false } : {}),
+      ...(claimsOut?.written ? { public_claim_trace: false } : {}),
+    },
+    analysis_evidence_state_summary: base.out?.summary,
+    evidence_anchor_trace_summary: anchorsOut?.evidence_anchor_trace_summary,
+    claim_candidate_trace_summary: claimCandidateOut.summary,
+    public_claim_trace_summary: claimsOut?.summary,
+    legacy_adapter_artefact_ids: claimsOut?.written ? ['public_claim_trace'] : [],
+  });
+  const manifest = JSON.parse(await readFile(path.join(base.root, base.run, 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(base.root, base.run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+  return { ...base, anchorsOut, anchors, claimCandidateOut, claimCandidateTrace, claimsOut, claims, manifest, metrics };
+}
+
+describe('S9-14K v3 ClaimCandidate artefact', () => {
+  it('emits an internal-only ClaimCandidateTrace artefact without satisfying the public claim gate', async () => {
+    const { claimCandidateTrace, manifest, metrics } = await emitClaimCandidateBundle();
+    expect(claimCandidateTrace.artefact_type).toBe('claim_candidate_trace');
+    expect(claimCandidateTrace.internal_only).toBe(true);
+    expect(claimCandidateTrace.privacy_classification).toBe('internal_private');
+    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(claimCandidateTrace.public_render_permission_status).toBe('not_evaluated_or_blocked');
+    expect(manifest.artefact_status_by_id.claim_candidate_trace).toBe('emitted');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.claim_candidate_trace).toBe(false);
+    expect(metrics.claim_candidate_gate_status).toBe('insufficient');
+  });
+
+  it('does not let caller metadata override canonical ClaimCandidateTrace fields', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      metadataOverrides: {
+        schema_version: 'attacker',
+        artefact_type: 'accepted_gate_evidence',
+        run_id: 'wrong',
+        analysis_run_id: 'wrong',
+        internal_only: false,
+        privacy_classification: 'public',
+        source_classification: 'real_runtime_v3',
+        blocker_codes: [],
+        cannot_satisfy_public_claim_gate: false,
+      },
+    });
+    expect(claimCandidateTrace.schema_version).toBe('tapecoach_v3_claim_candidate_trace_v1');
+    expect(claimCandidateTrace.artefact_type).toBe('claim_candidate_trace');
+    expect(claimCandidateTrace.run_id).not.toBe('wrong');
+    expect(claimCandidateTrace.analysis_run_id).not.toBe('wrong');
+    expect(claimCandidateTrace.internal_only).toBe(true);
+    expect(claimCandidateTrace.privacy_classification).toBe('internal_private');
+    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(claimCandidateTrace.blocker_codes).toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
+  });
+
+  it('creates factual status candidates from AnalysisEvidenceState without rendering them', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle();
+    const selectedLevel = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.safe_candidate_summary).includes('selected_level'));
+    const mediaReadiness = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.safe_candidate_summary).includes('media_readiness_state'));
+    expect(selectedLevel).toMatchObject({
+      source_artefact_id: 'analysis_evidence_state',
+      source_family: 'real_runtime_v3',
+      eligible_for_public_claim_trace_support_check: true,
+      public_display_status: 'not_rendered_internal_candidate',
+    });
+    expect(mediaReadiness.claim_family).toBe('technical_media');
+    expect(claimCandidateTrace.public_output_unchanged).toBe(true);
+  });
+
+  it('creates assessability limitation candidates from Step 1 unavailable evidence families', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle();
+    const limitation = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.claim_family === 'assessability_limitation');
+    expect(limitation).toBeTruthy();
+    expect(limitation.source_artefact_id).toBe('analysis_evidence_state');
+    expect(limitation.source_family).toBe('real_runtime_v3');
+    expect(['safe_for_public_candidate', 'needs_rewrite']).toContain(limitation.public_safety_status);
+  });
+
+  it('records raw_report submission verdict candidates as legacy_or_unsupported', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      includeAnalysis: false,
+      rawReport: { submission_verdict: { label: 'Submit', reason: 'Ready to submit with confidence' } },
+    });
+    expect(claimCandidateTrace.source_classification).toBe('legacy_or_unsupported');
+    const candidate = claimCandidateTrace.claim_candidates.find((item: any) => item.source_path === 'report_data.submission_verdict.label');
+    expect(candidate).toMatchObject({
+      source_family: 'legacy_adapter',
+      candidate_support_precheck_status: 'legacy_or_unsupported',
+      cannot_satisfy_public_claim_gate: true,
+    });
+  });
+
+  it('keeps raw_report fix_first next_take strengths and category notes non-satisfying', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      includeAnalysis: false,
+      rawReport: {
+        fix_first: 'Sharpen the opening action',
+        next_take: 'Use the next take plan',
+        strengths: ['Strong acting presence'],
+        category_notes: ['Grounded acting reads as professional'],
+      },
+    });
+    const legacyCandidates = claimCandidateTrace.claim_candidates.filter((item: any) => String(item.source_path).startsWith('report_data.'));
+    expect(legacyCandidates.length).toBeGreaterThanOrEqual(4);
+    expect(legacyCandidates.every((item: any) => item.source_family === 'legacy_adapter')).toBe(true);
+    expect(legacyCandidates.every((item: any) => item.candidate_support_precheck_status === 'legacy_or_unsupported')).toBe(true);
+  });
+
+  it('blocks score candidates and keeps public scoring blocked', async () => {
+    const { claimCandidateTrace, metrics } = await emitClaimCandidateBundle({
+      includeAnalysis: false,
+      rawReport: { overall_score: 94, scores: { acting: 91 } },
+    });
+    const scoreCandidates = claimCandidateTrace.claim_candidates.filter((candidate: any) => candidate.blocked_claim_category === 'public_scoring');
+    expect(scoreCandidates.length).toBeGreaterThan(0);
+    expect(scoreCandidates.every((candidate: any) => candidate.blocker_codes.includes('public_scoring_blocked'))).toBe(true);
+    expect(claimCandidateTrace.public_scoring_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+  });
+
+  it.each([
+    ['technique authority', { category_notes: ['Meisner technique authority diagnosis says this is ready'] }, 'public_technique_authority'],
+    ['castability bookability marketability', { casting_headline: 'High castability and marketability for this role' }, 'castability_bookability_marketability'],
+    ['public comparison winner', { category_notes: ['Take 2 is the winner and recommended over Take 1'] }, 'public_comparison_result'],
+  ])('blocks %s candidates', async (_label, rawReport, blockedCategory) => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({ includeAnalysis: false, rawReport });
+    const blocked = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.blocked_claim_category === blockedCategory);
+    expect(blocked).toBeTruthy();
+    expect(blocked.public_safety_status).toBe('blocked');
+    expect(blocked.rewrite_required).toBe(true);
+    expect(blocked.cannot_satisfy_public_claim_gate).toBe(true);
+  });
+
+  it('marks role and brief-fit overclaim candidates as rewrite_required', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      includeAnalysis: false,
+      rawReport: { category_notes: ['This fits the brief perfectly and should be sent with confidence'] },
+    });
+    const overclaim = claimCandidateTrace.claim_candidates[0];
+    expect(overclaim.public_safety_status).toBe('needs_rewrite');
+    expect(overclaim.rewrite_required).toBe(true);
+    expect(overclaim.blocker_codes).toContain('unsupported_overclaim_requires_rewrite');
+  });
+
+  it('does not render safe_for_public_candidate entries or alter public output posture', async () => {
+    const { claimCandidateTrace, metrics } = await emitClaimCandidateBundle();
+    expect(claimCandidateTrace.safe_candidate_count).toBeGreaterThan(0);
+    expect(claimCandidateTrace.public_render_permission_status).toBe('not_evaluated_or_blocked');
+    expect(claimCandidateTrace.public_output_unchanged).toBe(true);
+    expect(metrics.public_output_unchanged).toBe(true);
+  });
+
+  it('does not promote PublicClaimTrace or Level 2 when ClaimCandidateTrace emits', async () => {
+    const { claimCandidateTrace, claims, manifest, metrics } = await emitClaimCandidateBundle({
+      includeAnchors: true,
+      includePublicClaimTrace: true,
+      rawReport: { strengths: ['grounded acting'] },
+    });
+    expect(claimCandidateTrace.artefact_type).toBe('claim_candidate_trace');
+    expect(manifest.artefact_source_classification_by_id.public_claim_trace).toBe('legacy_adapter');
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(metrics.public_claim_gate_status).toBe('insufficient');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.claim_candidate_trace).toBe(false);
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('aligns manifest and qa_acceptance_metrics claim candidate summaries', async () => {
+    const { claimCandidateTrace, manifest, metrics } = await emitClaimCandidateBundle({
+      rawReport: { overall_score: 88, fix_first: 'Sharpen objective' },
+    });
+    expect(manifest.artefact_source_classification_by_id.claim_candidate_trace).toBe(claimCandidateTrace.source_classification);
+    expect(metrics.claim_candidate_trace_status).toBe('emitted');
+    expect(metrics.claim_candidate_source_classification).toBe(claimCandidateTrace.source_classification);
+    expect(metrics.claim_candidate_trace_summary.claim_candidate_count).toBe(claimCandidateTrace.claim_candidate_count);
+    expect(metrics.claim_candidate_source_summary).toEqual(claimCandidateTrace.claim_candidate_source_summary);
+    expect(metrics.blocker_codes).toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
+  });
+
+  it('redacts unsafe candidate diagnostics without leaking URLs credentials or private payloads', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      includeAnalysis: false,
+      rawReport: { fix_first: 'Use https://example.test/video?token=abc and signed_url=bad' },
+    });
+    const serialized = JSON.stringify(claimCandidateTrace).toLowerCase();
+    expect(serialized).toContain('[redacted unsafe candidate summary]');
+    expect(serialized).not.toContain('https://example.test');
+    expect(serialized).not.toContain('token=abc');
+    expect(serialized).not.toContain('signed_url=bad');
+  });
+
+  it('does not crash on malformed claim source input and preserves non-satisfying status', async () => {
+    const { claimCandidateTrace, metrics } = await emitClaimCandidateBundle({
+      includeAnalysis: false,
+      rawReport: { fix_first: { malformed: true }, strengths: [{ nested: ['bad'] }, 'Usable legacy strength'] },
+    });
+    expect(claimCandidateTrace.claim_candidate_count).toBeGreaterThan(0);
+    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(metrics.claim_candidate_gate_status).toBe('insufficient');
   });
 });
 
