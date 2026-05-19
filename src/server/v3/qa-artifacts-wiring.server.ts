@@ -206,14 +206,73 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+function isSafeComparisonParitySegment(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed !== value) return false;
+  if (!trimmed) return false;
+  if (trimmed === '.') return false;
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return false;
+  if (trimmed.includes('..')) return false;
+  if (trimmed.startsWith('take-take-')) return false;
+  return true;
+}
+
+function isSafeComparisonParityTakeIdSegment(value: unknown): value is string {
+  return isSafeComparisonParitySegment(value) && !value.startsWith('take-');
+}
+
+function comparisonParityIdentityIsSafe(input: { run_id: string; analysis_run_id: string; take_id?: string | null; comparison_run_id?: string | null }): boolean {
+  return isSafeComparisonParitySegment(input.run_id)
+    && isSafeComparisonParitySegment(input.analysis_run_id)
+    && (input.take_id === undefined || input.take_id === null || isSafeComparisonParityTakeIdSegment(input.take_id))
+    && (input.comparison_run_id === undefined || input.comparison_run_id === null || isSafeComparisonParitySegment(input.comparison_run_id));
+}
+
 type ComparisonRiskSource = { source: string; value: Record<string, unknown> };
 type ComparisonRiskFieldValue = string | number | boolean | null;
 type ComparisonRiskFieldHit = { source: string; field: string; path: string; value?: ComparisonRiskFieldValue };
 type ComparisonRiskSourceScanWarning = { source: string; path: string; warning: string };
+type ComparisonRiskFieldDiagnostic = {
+  source: string;
+  field: string;
+  path: string;
+  value_type?: 'string' | 'number' | 'boolean' | 'null';
+  value_summary?: string;
+  value_hash?: string;
+};
 
 function comparisonRiskFieldValue(value: unknown): ComparisonRiskFieldValue | undefined {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
   return undefined;
+}
+
+function hashDiagnosticValue(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function comparisonRiskFieldDiagnostic(hit: ComparisonRiskFieldHit): ComparisonRiskFieldDiagnostic {
+  if (hit.value === undefined) return { source: hit.source, field: hit.field, path: hit.path };
+  if (hit.value === null) return { source: hit.source, field: hit.field, path: hit.path, value_type: 'null', value_summary: 'null' };
+  if (typeof hit.value === 'boolean') {
+    return { source: hit.source, field: hit.field, path: hit.path, value_type: 'boolean', value_summary: hit.value ? 'true' : 'false' };
+  }
+  if (typeof hit.value === 'number') {
+    return { source: hit.source, field: hit.field, path: hit.path, value_type: 'number', value_summary: Number.isFinite(hit.value) ? 'finite_number' : 'non_finite_number' };
+  }
+  return {
+    source: hit.source,
+    field: hit.field,
+    path: hit.path,
+    value_type: 'string',
+    value_summary: `string_length_${hit.value.length}`,
+    value_hash: hashDiagnosticValue(hit.value),
+  };
 }
 
 function collectDirectComparisonRiskFieldHits(source: string, value: Record<string, unknown>): ComparisonRiskFieldHit[] {
@@ -446,6 +505,7 @@ export async function emitComparisonParityProof(input: {
     payloadsObject
     && (
       publicSurfaces.length > 0
+      || hasPublicOutputAbsenceEvidence
       || riskSourceCollection.fieldHits.length > 0
     )
   );
@@ -495,8 +555,21 @@ export async function emitComparisonParityProof(input: {
   if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
   const outPayload = {
     schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0, comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true,
-    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, comparison_risk_context_available: comparisonRiskContextAvailable, same_video_risk_context_available: sameVideoRiskContextAvailable, route_variance_risk_context_available: routeVarianceRiskContextAvailable, forced_false_winner_risk_context_available: forcedFalseWinnerRiskContextAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits, mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : (!riskSourceScanSafe ? 'comparison_risk_source_uninspectable' : (!comparisonRiskContextAvailable ? 'comparison_risk_context_missing' : 'comparison_evidence_missing_or_unresolved')))))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
+    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, comparison_risk_context_available: comparisonRiskContextAvailable, same_video_risk_context_available: sameVideoRiskContextAvailable, route_variance_risk_context_available: routeVarianceRiskContextAvailable, forced_false_winner_risk_context_available: forcedFalseWinnerRiskContextAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits.map(comparisonRiskFieldDiagnostic), mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : (!riskSourceScanSafe ? 'comparison_risk_source_uninspectable' : (!comparisonRiskContextAvailable ? 'comparison_risk_context_missing' : 'comparison_evidence_missing_or_unresolved')))))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
   };
+  if (!comparisonParityIdentityIsSafe({
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    take_id: input.take_id,
+    comparison_run_id: input.comparison_run_id,
+  })) {
+    return {
+      written: false as boolean,
+      emitted_artefact_ids: [] as string[],
+      parity_status: 'insufficient' as const,
+      blocker_codes: ['parity_artefacts_missing'],
+    };
+  }
   const relative = input.take_id ? `takes/take-${input.take_id}/analysis-${analysisRunId}/parity/comparison_parity.json` : 'parity/comparison_parity.json';
   const result = await writeInternalJson(root, input.run_id, relative, outPayload, 'parity_comparison');
   return { written: Boolean(result.written), emitted_artefact_ids: result.written ? ['parity_comparison'] : [], parity_status: parityStatus, blocker_codes };
@@ -783,9 +856,12 @@ function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): bo
 
 function isSafeTakeIdSegment(value: string): boolean {
   const trimmed = value.trim();
+  if (trimmed !== value) return false;
   if (!trimmed) return false;
+  if (trimmed === '.') return false;
   if (/[\\/]/.test(trimmed)) return false;
   if (trimmed.includes('..')) return false;
+  if (trimmed.startsWith('take-')) return false;
   return true;
 }
 
@@ -929,10 +1005,10 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const takeId = input.take_id ?? null;
   if (takeId !== null) {
     try { assertSafeSegment(takeId, 'take_id'); } catch {
-      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: 'insufficient' as const, blocker_codes: ['parity_artefacts_missing'] };
     }
     if (!isSafeTakeIdSegment(takeId)) {
-      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: 'insufficient' as const, blocker_codes: ['parity_artefacts_missing'] };
     }
   }
   const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/parity/report_parity_result.json` : 'parity/report_parity_result.json';
@@ -1520,6 +1596,11 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     } catch {
       takeIdForFirstPassTraces = null;
     }
+    const rawTakeIdProvided = typeof baseOptions.take_id === 'string' && baseOptions.take_id.length > 0;
+    const comparisonParityTakeId =
+      rawTakeIdProvided && !isSafeComparisonParityTakeIdSegment(baseOptions.take_id)
+        ? '../unsafe_take_id'
+        : (takeIdForFirstPassTraces ?? undefined);
     const canEmitTakeScopedFirstPassTraces = shouldUseExpandedManifestPaths() && takeIdForFirstPassTraces !== null;
     if (canEmitTakeScopedFirstPassTraces) {
     const validatorWrite = await emitValidatorTraceFirstPass({
@@ -1593,7 +1674,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     const comparisonParityWrite = shouldEmitComparisonParity ? await emitComparisonParityProof({
       run_id: metadata.run_id,
       analysis_run_id: baseOptions.analysis_run_id,
-      take_id: takeIdForFirstPassTraces ?? undefined,
+      take_id: comparisonParityTakeId,
       submission_id: metadata.submission_id ?? null,
       comparison_run_id: metadata.comparison_run_id ?? null,
       compared_take_ids: normalisedComparedTakeIds,
