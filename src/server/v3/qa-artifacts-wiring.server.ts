@@ -1861,6 +1861,139 @@ export async function emitTraceArtefact(input: TraceEmitterInput) {
   return { written: result.written as boolean, path: result.path ?? result.storage_path, artefact_id: input.artefact_id, warning: result.warning };
 }
 
+type EvidenceAnchorAggregateGateStatus = 'insufficient' | 'sufficient';
+type EvidenceAnchorAggregateGateEvaluation = {
+  evidenceAnchorGateStatus: EvidenceAnchorAggregateGateStatus;
+  sourceClassification: string;
+  gateReason: string;
+  blockerCodes: string[];
+  realRuntimeAnchorCount: number;
+  blockedRealRuntimeAnchorCount: number;
+  legacyAdapterAnchorCount: number;
+  reportSnapshotAnchorCount: number;
+  sourceScaffoldAnchorCount: number;
+  blockedAnchorCount: number;
+};
+
+const REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS: Record<string, string> = {
+  video: 'missing_video_observable_evidence',
+  audio: 'missing_audio_observable_evidence',
+  material: 'missing_material_observable_evidence',
+  performance: 'missing_performance_observable_evidence',
+  candidate_technique: 'missing_candidate_technique_evidence',
+};
+
+function normaliseEvidenceFamilyStatus(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value === true) return 'complete';
+  if (value === false) return 'not_extracted';
+  return 'unknown';
+}
+
+function familyCoverageStatus(args: { family: string; coverage: Record<string, unknown> | null; statusById: Record<string, unknown> | null }): 'complete' | 'not_applicable' | 'partial' | 'missing' {
+  const coverageValue = args.coverage?.[args.family];
+  const status = normaliseEvidenceFamilyStatus(args.statusById?.[args.family] ?? coverageValue);
+  if (status === 'not_applicable' || coverageValue === 'not_applicable') return 'not_applicable';
+  if (status === 'complete' || status === 'sufficient' || (coverageValue === true && status === 'unknown')) return 'complete';
+  if (status === 'partial' || coverageValue === 'partial') return 'partial';
+  return 'missing';
+}
+
+function unsupportedEvidenceFamilyBlocker(item: Record<string, unknown>): string | null {
+  const haystack = `${String(item.evidence_kind ?? '')} ${String(item.reason ?? '')} ${String(item.status ?? '')}`.toLowerCase();
+  if (haystack.includes('candidate_technique') || haystack.includes('technique')) return REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS.candidate_technique;
+  if (haystack.includes('video')) return REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS.video;
+  if (haystack.includes('audio')) return REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS.audio;
+  if (haystack.includes('material')) return REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS.material;
+  if (haystack.includes('performance')) return REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS.performance;
+  return null;
+}
+
+function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<string, unknown>>; analysisEvidenceState: Record<string, unknown> | null }): EvidenceAnchorAggregateGateEvaluation {
+  const anchors = args.anchors;
+  const analysisEvidenceState = args.analysisEvidenceState;
+  const realRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3').length;
+  const blockedRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked').length;
+  const legacyAdapterAnchorCount = anchors.filter((a) => a.source_family === 'legacy_adapter').length;
+  const sourceScaffoldAnchorCount = anchors.filter((a) => ['source_scaffold', 'helper_test', 'local_file_fixture'].includes(String(a.source_family ?? a.source_classification ?? ''))).length;
+  const reportSnapshotAnchorCount = anchors.filter((a) => a.source_artefact_id === 'raw_report' || String(a.source_path ?? '').startsWith('report_data')).length;
+  const blockedAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true).length;
+  const unsupported = isRecord(analysisEvidenceState) ? safeRecordArray(analysisEvidenceState.unsupported_or_unavailable_evidence) : [];
+  const unsupportedBlockerCodes = unsupported.flatMap((item) => Array.isArray(item.blocker_codes) ? item.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
+  const unsupportedFamilyBlockers = unsupported.map(unsupportedEvidenceFamilyBlocker).filter((x): x is string => typeof x === 'string');
+  const anchorBlockers = anchors.flatMap((anchor) => Array.isArray(anchor.blocker_codes) ? anchor.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
+  const coverage = isRecord(analysisEvidenceState?.evidence_family_coverage) ? analysisEvidenceState.evidence_family_coverage : null;
+  const statusById = isRecord(analysisEvidenceState?.evidence_family_status_by_id) ? analysisEvidenceState.evidence_family_status_by_id : null;
+  const familyCoverageBlockers = Object.entries(REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS).flatMap(([family, blocker]) => {
+    const status = familyCoverageStatus({ family, coverage, statusById });
+    if (status === 'complete' || status === 'not_applicable') return [];
+    return status === 'partial' ? ['partial_step1_evidence_coverage'] : [blocker];
+  });
+  const mixedRealAndLegacy = realRuntimeAnchorCount > 0 && legacyAdapterAnchorCount > 0;
+  const analysisEvidenceStateComplete = analysisEvidenceState?.source_classification === 'real_runtime_v3'
+    && analysisEvidenceState?.evidence_state_status === 'complete'
+    && analysisEvidenceState?.cannot_satisfy_v3_gate !== true;
+  const blockers = dedupePreservingOrder([
+    ...(legacyAdapterAnchorCount > 0 ? ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate'] : []),
+    ...(mixedRealAndLegacy ? ['mixed_real_and_legacy_non_satisfying', 'mixed_evidence_anchor_source_families'] : []),
+    ...(reportSnapshotAnchorCount > 0 || anchorBlockers.includes('forbidden_report_snapshot_source_ref') ? ['forbidden_raw_report_anchor_source'] : []),
+    ...(sourceScaffoldAnchorCount > 0 ? ['source_scaffold_not_gate_evidence'] : []),
+    ...(blockedRealRuntimeAnchorCount > 0 ? ['blocked_real_runtime_evidence_anchor_present'] : []),
+    ...(blockedAnchorCount > 0 ? ['anchor_cannot_satisfy_v3_gate'] : []),
+    ...(anchorBlockers.includes('analysis_evidence_state_source_path_unresolved') ? ['unresolved_source_path'] : []),
+    ...(anchorBlockers.includes('missing_truth_state_linkage') ? ['missing_truth_state_linkage'] : []),
+    ...familyCoverageBlockers,
+    ...unsupportedFamilyBlockers,
+    ...(realRuntimeAnchorCount > 0 && unsupported.length > 0 ? ['analysis_evidence_state_partial_runtime_facts_only'] : []),
+    ...unsupportedBlockerCodes,
+  ]);
+  const allAnchorsSatisfyingRealRuntime = anchors.length > 0
+    && realRuntimeAnchorCount === anchors.length
+    && blockedRealRuntimeAnchorCount === 0
+    && legacyAdapterAnchorCount === 0
+    && sourceScaffoldAnchorCount === 0
+    && reportSnapshotAnchorCount === 0
+    && blockedAnchorCount === 0;
+  const coverageComplete = !blockers.some((code) => [
+    'partial_step1_evidence_coverage',
+    ...Object.values(REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS),
+  ].includes(code));
+  const evidenceAnchorGateStatus: EvidenceAnchorAggregateGateStatus = allAnchorsSatisfyingRealRuntime && analysisEvidenceStateComplete && coverageComplete
+    ? 'sufficient'
+    : 'insufficient';
+  const sourceClassification = evidenceAnchorGateStatus === 'sufficient'
+    ? 'real_runtime_v3'
+    : (mixedRealAndLegacy
+      ? 'mixed_real_and_legacy_non_satisfying'
+      : (realRuntimeAnchorCount > 0 || blockedRealRuntimeAnchorCount > 0
+        ? 'real_runtime_v3_partial_non_satisfying'
+        : (sourceScaffoldAnchorCount > 0 ? 'source_scaffold' : 'legacy_adapter')));
+  const gateReason = (() => {
+    if (evidenceAnchorGateStatus === 'sufficient') return 'real_runtime_v3_analysis_evidence_state_anchors_complete';
+    if (blockers.includes('forbidden_raw_report_anchor_source')) return 'forbidden_raw_report_anchor_source';
+    if (blockers.includes('mixed_real_and_legacy_non_satisfying')) return 'mixed_real_and_legacy_non_satisfying';
+    if (blockers.includes('source_scaffold_not_gate_evidence')) return 'source_scaffold_not_gate_evidence';
+    if (blockers.includes('unresolved_source_path')) return 'unresolved_source_path';
+    const missingFamilyBlocker = blockers.find((code) => code.startsWith('missing_') && code !== 'missing_truth_state_linkage');
+    if (missingFamilyBlocker) return missingFamilyBlocker;
+    if (blockers.includes('partial_step1_evidence_coverage')) return 'partial_step1_evidence_coverage';
+    if (blockers.includes('missing_truth_state_linkage')) return 'missing_truth_state_linkage';
+    return realRuntimeAnchorCount > 0 ? 'partial_runtime_facts_present_but_performance_extractor_unavailable' : 'legacy_report_snapshot_only';
+  })();
+  return {
+    evidenceAnchorGateStatus,
+    sourceClassification,
+    gateReason,
+    blockerCodes: blockers,
+    realRuntimeAnchorCount,
+    blockedRealRuntimeAnchorCount,
+    legacyAdapterAnchorCount,
+    reportSnapshotAnchorCount,
+    sourceScaffoldAnchorCount,
+    blockedAnchorCount,
+  };
+}
+
 export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
@@ -1954,42 +2087,17 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
       });
     });
   if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const, anchors: [] as Array<Record<string, unknown>> };
-  const realRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3').length;
-  const blockedRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked').length;
-  const legacyAdapterAnchorCount = anchors.filter((a) => a.source_family === 'legacy_adapter').length;
-  const reportSnapshotAnchorCount = anchors.filter((a) => a.source_artefact_id === 'raw_report').length;
-  const blockedAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true).length;
-  const unsupported = isRecord(analysisEvidenceState) && Array.isArray(analysisEvidenceState.unsupported_or_unavailable_evidence)
-    ? analysisEvidenceState.unsupported_or_unavailable_evidence
-    : [];
-  const unsupportedBlockerCodes = unsupported.flatMap((item) => isRecord(item) && Array.isArray(item.blocker_codes) ? item.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
-  const allRealRuntime = anchors.length > 0 && realRuntimeAnchorCount === anchors.length;
-  const mixedRealAndLegacy = realRuntimeAnchorCount > 0 && legacyAdapterAnchorCount > 0;
-  const analysisEvidenceStateComplete = analysisEvidenceState?.source_classification === 'real_runtime_v3'
-    && analysisEvidenceState?.evidence_state_status === 'complete'
-    && analysisEvidenceState?.cannot_satisfy_v3_gate !== true;
-  const evidenceAnchorGateStatus = allRealRuntime && unsupported.length === 0 && analysisEvidenceStateComplete ? 'satisfied' : 'insufficient';
-  const sourceClassification = evidenceAnchorGateStatus === 'satisfied'
-    ? 'real_runtime_v3'
-    : (mixedRealAndLegacy
-      ? 'mixed_real_and_legacy_non_satisfying'
-      : (realRuntimeAnchorCount > 0
-        ? 'real_runtime_v3_partial_non_satisfying'
-        : 'legacy_adapter'));
-  const gateReason = evidenceAnchorGateStatus === 'satisfied'
-    ? 'real_runtime_v3_analysis_evidence_state_anchors_complete'
-    : (mixedRealAndLegacy
-      ? 'mixed_real_runtime_and_legacy_anchor_sources'
-      : (realRuntimeAnchorCount > 0
-        ? 'partial_runtime_facts_present_but_performance_extractor_unavailable'
-        : 'legacy_report_snapshot_only'));
-  const blocker_codes = dedupePreservingOrder([
-    ...(legacyAdapterAnchorCount > 0 ? ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate', 'missing_truth_state_linkage'] : []),
-    ...(mixedRealAndLegacy ? ['mixed_evidence_anchor_source_families'] : []),
-    ...(blockedRealRuntimeAnchorCount > 0 ? ['blocked_real_runtime_evidence_anchor_present'] : []),
-    ...(realRuntimeAnchorCount > 0 && unsupported.length > 0 ? ['analysis_evidence_state_partial_runtime_facts_only'] : []),
-    ...unsupportedBlockerCodes,
-  ]);
+  const aggregateGate = evaluateEvidenceAnchorAggregateGate({ anchors, analysisEvidenceState });
+  const {
+    evidenceAnchorGateStatus,
+    sourceClassification,
+    gateReason,
+    blockerCodes: blocker_codes,
+    realRuntimeAnchorCount,
+    legacyAdapterAnchorCount,
+    reportSnapshotAnchorCount,
+    blockedAnchorCount,
+  } = aggregateGate;
   const promotedSourceArtefactForAnchor = (anchor: Record<string, unknown>): string => {
     if (anchor.source_artefact_id !== 'analysis_evidence_state') return '';
     const sourceItem = readJsonPath(analysisEvidenceState, String(anchor.source_path ?? ''));
@@ -2031,7 +2139,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     report_snapshot_anchor_count: reportSnapshotAnchorCount,
     real_runtime_anchor_count: realRuntimeAnchorCount,
     timestamped_anchor_count: anchors.filter((a) => typeof a.timestamp === 'string' && a.timestamp.length > 0).length,
-    cannot_satisfy_v3_evidence_anchor_gate: evidenceAnchorGateStatus !== 'satisfied',
+    cannot_satisfy_v3_evidence_anchor_gate: evidenceAnchorGateStatus !== 'sufficient',
     gate_satisfaction_reason: gateReason,
     blocker_codes,
     evidence_anchor_trace_summary: evidenceAnchorTraceSummary,
@@ -2050,7 +2158,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     emitted: result.written as boolean,
     emitted_artefact_ids: result.written ? ['evidence_anchors'] : [],
     source_classification: result.written ? sourceClassification : ('missing' as const),
-    level2_satisfies: false as const,
+    level2_satisfies: result.written && evidenceAnchorGateStatus === 'sufficient',
     evidence_anchor_trace_summary: evidenceAnchorTraceSummary,
     warning: result.warning ?? null,
     anchors,

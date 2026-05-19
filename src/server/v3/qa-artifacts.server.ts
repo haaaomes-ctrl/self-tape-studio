@@ -104,7 +104,7 @@ export interface QAArtifactEmitterOptions {
     legacy_adapter_anchor_count?: number;
     blocked_anchor_count?: number;
     source_family_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; source_scaffold?: number; };
-    evidence_anchor_gate_status?: 'missing' | 'insufficient' | 'satisfied';
+    evidence_anchor_gate_status?: 'missing' | 'insufficient' | 'satisfied' | 'sufficient';
     evidence_anchor_gate_reason?: string;
     blocker_codes?: string[];
   };
@@ -346,7 +346,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const analysisEvidenceStateGateStatus = analysisEvidenceStateStatus === 'missing' ? 'missing' : (spineById.analysis_evidence_state === true && sourceClassById.analysis_evidence_state === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
   const evidenceAnchorStatus = manifest.artefact_status_by_id?.evidence_anchors ?? 'missing';
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
-  const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true && sourceClassById.evidence_anchors === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
+  const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true && sourceClassById.evidence_anchors === 'real_runtime_v3' ? 'sufficient' : 'insufficient');
   const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true && sourceClassById.public_claim_trace === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
 
   const techniqueObservationStatus = manifest.artefact_status_by_id?.technique_observation_trace ?? 'missing';
@@ -431,7 +431,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
-    ...(tracesEmitted && (evidenceAnchorGateStatus !== 'satisfied' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
+    ...(tracesEmitted && (evidenceAnchorGateStatus !== 'sufficient' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
     ...(techniqueObservationStatus === 'missing' ? ['TechniqueObservationTrace'] : []),
     ...(techniqueObservationStatus !== 'missing' && techniqueObservationGateStatus !== 'satisfied' ? ['real runtime technique observation evidence linkage'] : []),
     ...(scoreTraceStatus === 'missing' ? ['ScoreTrace'] : []),
@@ -509,8 +509,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     evidence_anchor_trace_status: evidenceAnchorStatus,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_source_family_summary: evidenceAnchorSourceSummary,
-    evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'satisfied'
-      ? 'real_runtime_v3_support_present'
+    evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'sufficient'
+      ? String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? 'real_runtime_v3_support_present')
       : (evidenceAnchorStatus === 'missing'
         ? 'trace_not_emitted'
         : String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? 'legacy_or_non_v3_support_only')),

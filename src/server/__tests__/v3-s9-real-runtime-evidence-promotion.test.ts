@@ -239,7 +239,7 @@ async function emitPromotedEvidenceAnchorsBundle(options: {
     },
     artefact_level2_spine_satisfaction_by_id: {
       analysis_evidence_state: false,
-      ...(anchorsOut.written ? { evidence_anchors: false } : {}),
+      ...(anchorsOut.written ? { evidence_anchors: anchorsOut.level2_satisfies } : {}),
       ...(claimsOut?.written ? { public_claim_trace: false } : {}),
     },
     evidence_anchor_trace_summary: anchorsOut.written ? anchorsOut.evidence_anchor_trace_summary : undefined,
@@ -359,6 +359,219 @@ async function emitFilteredRunEvidencePassAnalysisBundle(options: {
   return { root, run, take, filtered, out, payload, manifest, metrics };
 }
 
+function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
+  familyStatus?: Record<string, string>;
+  familyCoverage?: Record<string, unknown>;
+  materialNotApplicable?: boolean;
+} = {}) {
+  payload.source_classification = 'real_runtime_v3';
+  payload.evidence_state_status = 'complete';
+  payload.cannot_satisfy_v3_gate = false;
+  payload.unsupported_or_unavailable_evidence = [];
+  payload.blocker_codes = [];
+  payload.gate_satisfaction_reason = 'complete_step1_evidence_family_coverage';
+  payload.assessability_limitations = [];
+  payload.component_evidence = [{
+    component_id: 'component_or_task_declaration',
+    evidence_kind: 'component_or_task_declaration_status',
+    status: 'supplied',
+    source_artefact_id: 'analysis_submission',
+    source_path: 'component_or_task_declaration_status',
+    safe_evidence_summary: 'component/task declaration status is supplied',
+    assessability_limitations: [],
+    blocker_codes: [],
+  }];
+  payload.observable_evidence_items = (payload.observable_evidence_items ?? []).map((item: any, index: number) => ({
+    ...item,
+    linked_truth_state_ids: item.source_artefact_id === 'truth_state_map' || String(item.evidence_kind ?? '').includes('truth') ? ['truth-state-runtime-1'] : [],
+    assessability_limitations: [],
+    blocker_codes: [],
+    analysis_evidence_state_source_path: item.analysis_evidence_state_source_path ?? `observable_evidence_items[${index}]`,
+  }));
+  const addFamilyItem = (field: string, item: any) => {
+    payload[field] = [item];
+    payload.observable_evidence_items.push({ ...item, analysis_evidence_state_source_path: `${field}[0]` });
+  };
+  addFamilyItem('video_observable_evidence_items', {
+    evidence_item_id: 'aes-video-complete',
+    evidence_family: 'video',
+    evidence_modality: 'video',
+    evidence_kind: 'video_visibility_observation',
+    safe_evidence_summary: 'Framing and visibility are observable before judgement.',
+    source_artefact_id: 'run_evidence_pass',
+    source_path: 'video_observable_evidence_items[0]',
+    timestamp: '00:08',
+    timestamp_range: null,
+    timestamp_source: 'runEvidencePass_timestamp',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: [],
+    confidence_or_strength: 'runtime_observation',
+    public_display_status: 'internal_only',
+    blocker_codes: [],
+  });
+  addFamilyItem('audio_observable_evidence_items', {
+    evidence_item_id: 'aes-audio-complete',
+    evidence_family: 'audio',
+    evidence_modality: 'audio',
+    evidence_kind: 'audio_presence_observation',
+    safe_evidence_summary: 'Audio presence is observable before judgement.',
+    source_artefact_id: 'run_evidence_pass',
+    source_path: 'audio_observable_evidence_items[0]',
+    timestamp: '00:14',
+    timestamp_range: null,
+    timestamp_source: 'runEvidencePass_timestamp',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: [],
+    confidence_or_strength: 'runtime_observation',
+    public_display_status: 'internal_only',
+    blocker_codes: [],
+  });
+  if (options.materialNotApplicable) {
+    payload.material_observable_evidence_items = [];
+  } else {
+    addFamilyItem('material_observable_evidence_items', {
+      evidence_item_id: 'aes-material-complete',
+      evidence_family: 'material',
+      evidence_modality: 'material',
+      evidence_kind: 'material_presence_observation',
+      safe_evidence_summary: 'Supplied material presence is observable before judgement.',
+      source_artefact_id: 'run_evidence_pass',
+      source_path: 'material_observable_evidence_items[0]',
+      timestamp: null,
+      timestamp_range: null,
+      timestamp_source: 'not_timestamped_material_context',
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: [],
+      confidence_or_strength: 'runtime_observation',
+      public_display_status: 'internal_only',
+      blocker_codes: [],
+    });
+  }
+  addFamilyItem('performance_observable_evidence_items', {
+    evidence_item_id: 'aes-performance-complete',
+    evidence_family: 'performance',
+    evidence_modality: 'video',
+    evidence_kind: 'performance_observable_event',
+    safe_evidence_summary: 'A pre-judgement observable performance event is recorded without score or verdict.',
+    source_artefact_id: 'run_evidence_pass',
+    source_path: 'performance_observable_evidence_items[0]',
+    timestamp: '00:18',
+    timestamp_range: null,
+    timestamp_source: 'runEvidencePass_timestamp',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: [],
+    confidence_or_strength: 'runtime_observation',
+    public_display_status: 'internal_only',
+    blocker_codes: [],
+  });
+  payload.candidate_technique_evidence = [{
+    evidence_item_id: 'aes-technique-complete',
+    evidence_family: 'candidate_technique',
+    evidence_modality: 'video',
+    evidence_kind: 'candidate_technique_observation',
+    safe_evidence_summary: 'Internal candidate technique observation recorded without public authority.',
+    source_artefact_id: 'run_evidence_pass',
+    source_path: 'candidate_technique_evidence[0]',
+    timestamp: null,
+    timestamp_range: null,
+    timestamp_source: 'not_timestamped_candidate_technique',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: [],
+    confidence_or_strength: 'runtime_observation',
+    public_display_status: 'internal_only',
+    blocker_codes: [],
+  }];
+  payload.evidence_family_coverage = {
+    video: true,
+    audio: true,
+    material: options.materialNotApplicable ? 'not_applicable' : true,
+    performance: true,
+    candidate_technique: true,
+    ...(options.familyCoverage ?? {}),
+  };
+  payload.evidence_family_status_by_id = {
+    video: 'complete',
+    audio: 'complete',
+    material: options.materialNotApplicable ? 'not_applicable' : 'complete',
+    performance: 'complete',
+    candidate_technique: 'complete',
+    ...(options.familyStatus ?? {}),
+  };
+}
+
+async function emitAnchorsAndManifestFromAnalysisState(base: {
+  root: string;
+  run: string;
+  take: string;
+  payload: any;
+  out?: any;
+}, options: { rawReport?: Record<string, unknown> | null; includePublicClaimTrace?: boolean } = {}) {
+  const anchorsOut = await emitEvidenceAnchorsFirstPass({
+    run_id: base.run,
+    analysis_run_id: base.run,
+    submission_id: 'sub1',
+    take_id: base.take,
+    source_module: 'test',
+    source_stage: 'unit',
+    analysis_evidence_state_data: base.payload,
+    raw_report_data: options.rawReport === undefined ? null : options.rawReport,
+    root_dir: base.root,
+    internal_qa_emit: true,
+  });
+  const anchorsPath = path.join(base.root, base.run, 'takes', `take-${base.take}`, `analysis-${base.run}`, 'traces', 'EvidenceAnchors.json');
+  const anchors = anchorsOut.written ? JSON.parse(await readFile(anchorsPath, 'utf8')) : null;
+  let claimsOut: any = null;
+  let claims: any = null;
+  if (options.includePublicClaimTrace) {
+    claimsOut = await emitPublicClaimTraceFirstPass({
+      run_id: base.run,
+      analysis_run_id: base.run,
+      submission_id: 'sub1',
+      take_id: base.take,
+      source_module: 'test',
+      source_stage: 'unit',
+      raw_report_data: { report_data: { strengths: ['grounded acting'] } },
+      evidence_anchors_data: anchors,
+      root_dir: base.root,
+      internal_qa_emit: true,
+    });
+    const claimsPath = path.join(base.root, base.run, 'takes', `take-${base.take}`, `analysis-${base.run}`, 'traces', 'PublicClaimTrace.json');
+    claims = claimsOut.written ? JSON.parse(await readFile(claimsPath, 'utf8')) : null;
+  }
+  await emitQAManifestForAnalysisRun({
+    run_id: base.run,
+    analysis_run_id: base.run,
+    take_id: base.take,
+    submission_id: 'sub1',
+    root_dir: base.root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: [...(anchorsOut.written ? ['evidence_anchors'] : []), ...(claimsOut?.written ? ['public_claim_trace'] : [])],
+    emitted_blocked_artefact_ids: base.out?.emitted_blocked_artefact_ids ?? [],
+    artefact_source_classification_by_id: {
+      analysis_evidence_state: base.payload?.source_classification ?? base.out?.source_classification ?? 'missing',
+      ...(anchorsOut.written ? { evidence_anchors: anchorsOut.source_classification } : {}),
+      ...(claimsOut?.written ? { public_claim_trace: 'legacy_adapter' } : {}),
+    },
+    artefact_level2_spine_satisfaction_by_id: {
+      analysis_evidence_state: false,
+      ...(anchorsOut.written ? { evidence_anchors: anchorsOut.level2_satisfies } : {}),
+      ...(claimsOut?.written ? { public_claim_trace: false } : {}),
+    },
+    evidence_anchor_trace_summary: anchorsOut.written ? anchorsOut.evidence_anchor_trace_summary : undefined,
+    analysis_evidence_state_summary: base.out?.summary,
+    public_claim_trace_summary: claimsOut?.summary,
+    legacy_adapter_artefact_ids: claimsOut?.written ? ['public_claim_trace'] : [],
+  });
+  const manifest = JSON.parse(await readFile(path.join(base.root, base.run, 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(base.root, base.run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+  return { anchorsOut, anchors, claimsOut, claims, manifest, metrics };
+}
+
 describe('S9-14A legacy containment and current-state guardrail', () => {
   it('keeps legacy EvidenceAnchors emitted but non-satisfying', async () => {
     const { anchors, manifest, metrics } = await emitLegacyBundle();
@@ -401,7 +614,7 @@ describe('S9-14A legacy containment and current-state guardrail', () => {
   it('keeps EvidenceAnchors without resolver or Step 1 provenance out of accepted gate evidence', async () => {
     const { anchors, manifest } = await emitLegacyBundle();
     expect(anchors.source_stage).toBe('unit');
-    expect(anchors.gate_satisfaction_reason).toBe('legacy_report_snapshot_only');
+    expect(anchors.gate_satisfaction_reason).toBe('forbidden_raw_report_anchor_source');
     expect(anchors.anchors[0].assessability_limitations).toContain('legacy_report_snapshot_not_v3_multimodal');
     expect(manifest.runtime_evidence_accepted_by_id).not.toContain('evidence_anchors');
     expect(manifest.runtime_evidence_blocked_by_id).toContain('evidence_anchors');
@@ -1019,7 +1232,7 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     expect(serialised).not.toContain('video_observable_performance_evidence_not_extracted');
     expect(serialised).not.toContain('candidate_technique_evidence_not_extracted');
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
-    expect(metrics.evidence_anchor_gate_reason).toBe('partial_runtime_facts_present_but_performance_extractor_unavailable');
+    expect(metrics.evidence_anchor_gate_reason).toBe('missing_video_observable_evidence');
   });
 
   it('does not use legacy TechniqueObservationTrace for candidate technique anchors', async () => {
@@ -1044,7 +1257,7 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBeGreaterThan(0);
     expect(manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(false);
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
-    expect(metrics.evidence_anchor_gate_reason).toBe('partial_runtime_facts_present_but_performance_extractor_unavailable');
+    expect(metrics.evidence_anchor_gate_reason).toBe('missing_video_observable_evidence');
   });
 
   it('does not let caller metadata override canonical promoted EvidenceAnchors fields', async () => {
@@ -1415,6 +1628,220 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+});
+
+describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
+  it('keeps current partial S9-14G coverage aggregate insufficient while individual anchors are real_runtime_v3', async () => {
+    const base = await emitFilteredRunEvidencePassAnalysisBundle();
+    const { anchors, manifest, metrics } = await emitAnchorsAndManifestFromAnalysisState(base);
+    expect(anchors.real_runtime_anchor_count).toBeGreaterThan(0);
+    expect(anchors.anchors.some((anchor: any) => anchor.source_family === 'real_runtime_v3')).toBe(true);
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).toEqual(expect.arrayContaining(['partial_step1_evidence_coverage', 'missing_candidate_technique_evidence']));
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(false);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+  });
+
+  it('allows complete required evidence families to satisfy the EvidenceAnchors subgate only', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    const { anchors, manifest, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(anchors.anchors.every((anchor: any) => anchor.source_artefact_id === 'analysis_evidence_state')).toBe(true);
+    expect(anchors.anchors.every((anchor: any) => anchor.source_family === 'real_runtime_v3')).toBe(true);
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('sufficient');
+    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('real_runtime_v3');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(true);
+    expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+  });
+
+  it('does not let complete deterministic facts alone satisfy when performance coverage is missing', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload, {
+      familyCoverage: { performance: false },
+      familyStatus: { performance: 'not_extracted' },
+    });
+    const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('missing_performance_observable_evidence');
+  });
+
+  it('keeps unavailable video audio material and candidate technique families aggregate insufficient when required', async () => {
+    for (const [family, expectedReason] of [
+      ['video', 'missing_video_observable_evidence'],
+      ['audio', 'missing_audio_observable_evidence'],
+      ['material', 'missing_material_observable_evidence'],
+      ['candidate_technique', 'missing_candidate_technique_evidence'],
+    ] as const) {
+      const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+      completeAnalysisEvidenceStateForAggregate(bundle.payload, {
+        familyCoverage: { [family]: false },
+        familyStatus: { [family]: 'not_extracted' },
+      });
+      const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+      expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+      expect(metrics.evidence_anchor_gate_reason).toBe(expectedReason);
+      expect(anchors.blocker_codes).toContain(expectedReason);
+    }
+  });
+
+  it('does not block on a truthfully not_applicable material family', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied', materialPresence: 'absent' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload, { materialNotApplicable: true });
+    const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('missing_material_observable_evidence');
+    expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
+  });
+
+  it('keeps mixed real_runtime_v3 and legacy_adapter anchors insufficient', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    const { anchors, manifest, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle, {
+      rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report note' }] } },
+    });
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(anchors.blocker_codes).toEqual(expect.arrayContaining(['mixed_real_and_legacy_non_satisfying', 'forbidden_raw_report_anchor_source']));
+    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('mixed_real_and_legacy_non_satisfying');
+    expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBeGreaterThan(0);
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(1);
+  });
+
+  it('does not count raw_report or report_data anchors toward aggregate satisfaction', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle, {
+      rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report_data note' }] } },
+    });
+    const legacy = anchors.anchors.find((anchor: any) => anchor.source_artefact_id === 'raw_report');
+    expect(legacy.source_path).toContain('report_data.timestamped_notes');
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('forbidden_raw_report_anchor_source');
+  });
+
+  it('keeps source_scaffold helper and local fixture evidence non-satisfying', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914h-scaffold-'));
+    const run = 'run-s914h-scaffold';
+    await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      take_id: 't1',
+      submission_id: 'sub1',
+      root_dir: root,
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['evidence_anchors'],
+      artefact_source_classification_by_id: { evidence_anchors: 'source_scaffold' },
+      artefact_level2_spine_satisfaction_by_id: { evidence_anchors: true },
+      runtime_evidence_accepted_by_id: ['evidence_anchors'],
+      real_v3_spine_artefact_ids: ['evidence_anchors'],
+      evidence_anchor_trace_summary: {
+        anchor_count: 1,
+        real_runtime_anchor_count: 0,
+        legacy_adapter_anchor_count: 0,
+        blocked_anchor_count: 1,
+        source_family_summary: { legacy_adapter: 0, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0, source_scaffold: 1 },
+        evidence_anchor_gate_status: 'insufficient',
+        evidence_anchor_gate_reason: 'source_scaffold_not_gate_evidence',
+        blocker_codes: ['source_scaffold_not_gate_evidence'],
+      },
+    });
+    const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(false);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('source_scaffold_not_gate_evidence');
+  });
+
+  it('blocks aggregate satisfaction on unresolved AnalysisEvidenceState source paths', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    bundle.payload.observable_evidence_items[0].analysis_evidence_state_source_path = 'observable_evidence_items[999]';
+    const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('unresolved_source_path');
+    expect(anchors.blocker_codes).toContain('unresolved_source_path');
+  });
+
+  it('blocks aggregate satisfaction when required truth linkage is missing', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    const truthItem = bundle.payload.observable_evidence_items.find((item: any) => item.source_artefact_id === 'truth_state_map');
+    truthItem.linked_truth_state_ids = [];
+    const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('missing_truth_state_linkage');
+  });
+
+  it('does not count anchors whose cannot_satisfy_v3_gate remains true', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    bundle.payload.observable_evidence_items[0].blocker_codes = ['caller_marked_anchor_blocked'];
+    const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(anchors.blocker_codes).toContain('anchor_cannot_satisfy_v3_gate');
+  });
+
+  it('does not count rejected prohibited runEvidencePass fields as evidence coverage', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload, {
+      familyCoverage: { performance: false },
+      familyStatus: { performance: 'not_extracted' },
+    });
+    bundle.payload.rejected_or_filtered_fields = ['overall_score', 'fix_first', 'role_fit_evidence'];
+    bundle.payload.prohibited_field_filter_summary = { rejected_field_count: 3, rejected_field_keys: ['overall_score', 'fix_first', 'role_fit_evidence'], raw_values_persisted: false };
+    const { metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('missing_performance_observable_evidence');
+    expect(metrics.public_scoring_status).toBe('blocked');
+  });
+
+  it('aligns manifest and qa_acceptance_metrics for sufficient and insufficient aggregate cases', async () => {
+    const complete = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(complete.payload);
+    const sufficient = await emitAnchorsAndManifestFromAnalysisState(complete);
+    expect(sufficient.manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(true);
+    expect(sufficient.metrics.evidence_anchor_gate_status).toBe('sufficient');
+    expect(sufficient.metrics.evidence_anchor_source_family_summary).toEqual(sufficient.anchors.evidence_anchor_trace_summary.source_family_summary);
+
+    const partial = await emitPromotedEvidenceAnchorsBundle();
+    expect(partial.manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(false);
+    expect(partial.metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(partial.metrics.blocker_codes).toEqual(partial.manifest.blocker_codes);
+  });
+
+  it('keeps PublicClaimTrace legacy and global accepted gate posture blocked', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    const { claims, manifest, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle, { includePublicClaimTrace: true });
+    expect(manifest.artefact_source_classification_by_id.public_claim_trace).toBe('legacy_adapter');
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(metrics.public_claim_gate_status).toBe('insufficient');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+    expect(JSON.stringify(manifest.artefact_source_classification_by_id)).not.toContain('accepted_gate_evidence');
+  });
+
+  it('does not change public output and does not crash on malformed aggregate inputs', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914h-malformed-'));
+    const out = await emitEvidenceAnchorsFirstPass({
+      run_id: 'run-s914h-malformed',
+      analysis_run_id: 'run-s914h-malformed',
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      analysis_evidence_state_data: { run_id: 'run-s914h-malformed', analysis_run_id: 'run-s914h-malformed', source_classification: 'real_runtime_v3', evidence_state_status: 'complete', cannot_satisfy_v3_gate: false, observable_evidence_items: [{}] },
+      root_dir: root,
+      internal_qa_emit: true,
+    } as any);
+    expect(out.written).toBe(true);
+    expect(out.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    const payload = JSON.parse(await readFile(path.join(root, 'run-s914h-malformed', 'takes', 'take-t1', 'analysis-run-s914h-malformed', 'traces', 'EvidenceAnchors.json'), 'utf8'));
+    expect(payload.public_output_unchanged).toBe(true);
+    expect(payload.production_safe_status).toBe('blocked');
   });
 });
 
