@@ -115,6 +115,18 @@ describe('v3-s9 comparison parity proof', () => {
     expectComparisonNotBlocking(manifest);
   });
 
+  it('A duplicated take prefixes are stripped before comparison cardinality checks', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-dedup-prefix-'));
+    await emitQAManifestForAnalysisRun({ run_id:'run-dedup-prefix', analysis_run_id:'run-dedup-prefix', take_id:'ta', root_dir:root, internal_qa_emit:true, compared_take_ids:['take-take-ta','take-tb'], comparison_run_id:null, emitted_artefact_ids:['raw_report'] });
+    const manifest = await readManifest(root,'run-dedup-prefix');
+    const metrics = await readMetrics(root,'run-dedup-prefix');
+    expect(manifest.compared_take_ids).toEqual(['ta','tb']);
+    expect(metrics.compared_take_ids).toEqual(['ta','tb']);
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+  });
+
   it('C metadata.compared_take_ids with 2 ids invokes comparison parity', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-explicit-compared-'));
     const out = await emitCase(root,'run-explicit',{ compared:['ta','tb'], payloads: undefined });
@@ -474,6 +486,12 @@ describe('v3-s9 comparison parity proof', () => {
     const technique = await emitCase(rootTechnique,'run-nested-technique',{ payloads: { public_comparison_payload: { panels: [{ detail: { technique_authority: 'public' } }] } } });
     expect(technique.parity.parity_status).toBe('failed');
     expect(technique.parity.mismatches.some((m:any)=>m.path === 'public_comparison_payload.panels[0].detail.technique_authority')).toBe(true);
+
+    const rootArray = await mkdtemp(path.join(os.tmpdir(),'s9-13d-array-winner-'));
+    const array = await emitCase(rootArray,'run-array-winner',{ payloads: { ...safePublicPayload(), public_comparison_payload: [{ winner: 'take-a' }], public_output_unchanged: true } });
+    expectFailedBlocked(array);
+    expect(array.parity.checked_comparison_surfaces).toContain('public_comparison_payload');
+    expect(array.parity.mismatches.some((m:any)=>m.path === 'public_comparison_payload[0].winner')).toBe(true);
   });
 
   it('recursive public scanner reports exact forbidden hits and diagnostic families', async () => {

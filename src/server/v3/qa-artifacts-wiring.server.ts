@@ -229,7 +229,7 @@ export async function emitComparisonParityProof(input: {
     { key: 'render_payload.comparison', value: extract(payloadsObject, 'render_payload.comparison') },
     { key: 'public_report_payload.comparison', value: extract(payloadsObject, 'public_report_payload.comparison') },
     ...((input.public_comparison_surface_paths ?? []).map((surfacePath) => ({ key: surfacePath, value: extract(payloadsObject, surfacePath) }))),
-  ].filter((x) => isPlainRecord(x.value));
+  ].filter((x) => isPlainRecord(x.value) || Array.isArray(x.value));
   const hasPublicOutputAbsenceEvidence = Boolean(
     payloadsObject?.public_comparison_output_absent_or_unchanged === true
     || payloadsObject?.public_output_unchanged === true
@@ -1123,12 +1123,17 @@ function stripTakePrefix(value: string): string {
   if (!core || core.startsWith('take-')) return '';
   return core;
 }
+function stripRepeatedTakePrefixes(value: string): string {
+  let core = String(value ?? '').trim();
+  while (core.startsWith('take-')) core = core.slice(5);
+  return core;
+}
 function normaliseUniqueTakeCores(values: readonly unknown[] | undefined): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const value of values ?? []) {
     if (typeof value !== 'string') continue;
-    const core = stripTakePrefix(value);
+    const core = stripRepeatedTakePrefixes(value);
     if (!core || seen.has(core)) continue;
     seen.add(core);
     out.push(core);
