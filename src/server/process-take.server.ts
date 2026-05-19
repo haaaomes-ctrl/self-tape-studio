@@ -50,7 +50,7 @@ import {
   detectFramingFixed,
 } from "./report-output-enforcement.server";
 import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
-import { evaluateStep1EvidenceForStep2 } from "./v3/qa-step2-dependency.server";
+import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from "./v3/qa-step2-dependency.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -1470,6 +1470,25 @@ export async function runProcessTake(
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
+        const preStep2ResolverTruthIdentity = {
+          expectedRunId: `take-${takeId}`,
+          expectedAnalysisRunId: `take-${takeId}`,
+          takeId,
+        };
+        const preStep2ResolverOutputPayload = (preStep2ResolverTruth as { resolver_output?: unknown }).resolver_output;
+        const preStep2TruthStateMapPayload = (preStep2ResolverTruth as { truth_state_map?: unknown }).truth_state_map;
+        const preStep2ResolverOutputAvailable = hasValidResolverOutputForStep2(preStep2ResolverOutputPayload, preStep2ResolverTruthIdentity);
+        const preStep2TruthStateMapAvailable = hasValidTruthStateMapForStep2(preStep2TruthStateMapPayload, preStep2ResolverTruthIdentity);
+        if (internalQaEmit && (preStep2ResolverOutputAvailable || preStep2TruthStateMapAvailable) && preStep2ResolverTruth.written === false) {
+          console.warn("[take-pipeline] resolver_truth_qa_persistence_failed_but_payload_valid", {
+            take_id: takeId,
+            resolver_output_available: preStep2ResolverOutputAvailable,
+            truth_state_map_available: preStep2TruthStateMapAvailable,
+          });
+          metric("resolver_truth_qa_persistence_failed_but_payload_valid", {
+            take_id: takeId,
+          });
+        }
         const filteredStep1Evidence = filterRunEvidencePassForStep1(twoStepEvidence, {
           model: evResult.model,
           durationSeconds: take.mux_duration_seconds ?? null,
@@ -1501,8 +1520,8 @@ export async function runProcessTake(
           media_readiness_state: take.status ?? null,
           media_duration_seconds: qaStep1Context.takeDurationSeconds,
           duration_confidence: qaStep1Context.durationConfidence,
-          resolver_output_available: preStep2ResolverTruth.emitted_artefact_ids.includes('resolver_output'),
-          truth_state_map_available: preStep2ResolverTruth.emitted_artefact_ids.includes('truth_state_map'),
+          resolver_output_available: preStep2ResolverOutputAvailable,
+          truth_state_map_available: preStep2TruthStateMapAvailable,
           filtered_run_evidence_pass_step1: filteredStep1Evidence,
           timestamp_normalisation_warnings: qaStep1Context.timestampWarnings,
           unavailable_fields: qaStep1Context.unavailableInputFields,
@@ -3502,8 +3521,19 @@ export async function runProcessTake(
         unavailable_fields: unavailableInputFields,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
-      qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
       const qaBlockedArtefactIds: string[] = [];
+      qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
+      const resolverTruthIdentity = {
+        expectedRunId: `take-${takeId}`,
+        expectedAnalysisRunId: `take-${takeId}`,
+        takeId,
+      };
+      const resolverOutputPayload = (resolverTruth as { resolver_output?: Record<string, unknown> }).resolver_output;
+      const truthStateMapPayload = (resolverTruth as { truth_state_map?: Record<string, unknown> }).truth_state_map;
+      const resolverOutputAvailable = hasValidResolverOutputForStep2(resolverOutputPayload, resolverTruthIdentity);
+      const truthStateMapAvailable = hasValidTruthStateMapForStep2(truthStateMapPayload, resolverTruthIdentity);
+      if (resolverOutputAvailable && !resolverTruth.emitted_artefact_ids.includes('resolver_output')) qaBlockedArtefactIds.push('resolver_output');
+      if (truthStateMapAvailable && !resolverTruth.emitted_artefact_ids.includes('truth_state_map')) qaBlockedArtefactIds.push('truth_state_map');
       const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
       const analysisEvidenceState = preStep2AnalysisEvidenceState ?? await emitAnalysisEvidenceStatePrerequisite({
         run_id: `take-${takeId}`,
@@ -3532,8 +3562,8 @@ export async function runProcessTake(
         media_readiness_state: take.status ?? null,
         media_duration_seconds: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? takeDurationSeconds : null,
         duration_confidence: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? 'known' : 'unknown',
-        resolver_output_available: resolverTruth.emitted_artefact_ids.includes('resolver_output'),
-        truth_state_map_available: resolverTruth.emitted_artefact_ids.includes('truth_state_map'),
+        resolver_output_available: resolverOutputAvailable,
+        truth_state_map_available: truthStateMapAvailable,
         timestamp_normalisation_warnings: timestampWarnings,
         unavailable_fields: unavailableInputFields,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
@@ -3587,7 +3617,8 @@ export async function runProcessTake(
         raw_report_data: rawReportPayload,
         analysis_evidence_state_data: analysisEvidenceState.written ? analysisEvidenceState.payload : null,
         evidence_anchors_data: evidenceAnchorsData,
-        truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null,
+        resolver_output_data: resolverOutputAvailable ? (resolverOutputPayload ?? null) : null,
+        truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (claimCandidateTrace.written) qaArtefactIds.push(...claimCandidateTrace.emitted_artefact_ids);
@@ -3609,7 +3640,7 @@ export async function runProcessTake(
           claim_candidates: claimCandidateTrace.claim_candidates ?? [],
         } : null,
         evidence_anchors_data: evidenceAnchorsData,
-        truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null,
+        truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
 import { safeIsoTimestamp } from '@/server/v3/qa-safe-normalisation.server';
-import { evaluateStep1EvidenceForStep2 } from '@/server/v3/qa-step2-dependency.server';
+import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from '@/server/v3/qa-step2-dependency.server';
 import { emitAnalysisEvidenceStatePrerequisite, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 type LegacyBundleOptions = {
@@ -2086,7 +2086,7 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
   });
 
   it('creates factual status candidates from AnalysisEvidenceState without rendering them', async () => {
-    const { claimCandidateTrace } = await emitClaimCandidateBundle();
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({ includeAnchors: true });
     const selectedLevel = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.safe_candidate_summary).includes('selected_level'));
     const mediaReadiness = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.safe_candidate_summary).includes('media_readiness_state'));
     expect(selectedLevel).toMatchObject({
@@ -2725,7 +2725,15 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence');
     expect(source).toContain('blocker_codes: evidenceAnchors.blocker_codes');
     expect(source).toContain('cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate');
-    expect(source).toContain('truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null');
+    expect(source).toContain('hasValidResolverOutputForStep2');
+    expect(source).toContain('hasValidTruthStateMapForStep2');
+    expect(source).toContain('resolver_output_available: resolverOutputAvailable');
+    expect(source).toContain('truth_state_map_available: truthStateMapAvailable');
+    expect(source).toContain('truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null');
+    expect(source).not.toContain("resolver_output_available: preStep2ResolverTruth.emitted_artefact_ids.includes('resolver_output')");
+    expect(source).not.toContain("truth_state_map_available: preStep2ResolverTruth.emitted_artefact_ids.includes('truth_state_map')");
+    expect(source).not.toContain("resolver_output_available: resolverTruth.emitted_artefact_ids.includes('resolver_output')");
+    expect(source).not.toContain("truth_state_map_available: resolverTruth.emitted_artefact_ids.includes('truth_state_map')");
     expect(source).toContain('evaluateStep1EvidenceForStep2');
     expect(source).toContain("step1QaPersistenceStatus === 'failed_emission'");
     expect(source).toContain('qa_persistence_failed_but_step1_evidence_valid');
@@ -2733,6 +2741,47 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
     expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
     expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
+  });
+
+  it('bases resolver and TruthStateMap Step 2 availability on payload identity instead of emitted ids', async () => {
+    const identity = { expectedRunId: 'take-t1', expectedAnalysisRunId: 'take-t1', takeId: 't1' };
+    const resolverOutput = {
+      artefact_type: 'resolver_output',
+      run_id: 'take-t1',
+      analysis_run_id: 'take-t1',
+      take_id: 't1',
+      input_artifact_refs: { analysis_take: 'takes/take-t1/analysis-take-t1/inputs/take.json' },
+    };
+    const truthStateMap = {
+      artefact_type: 'truth_state_map',
+      run_id: 'take-t1',
+      analysis_run_id: 'take-t1',
+      take_id: 't1',
+      known_truths: { take_id: 't1' },
+    };
+    expect(hasValidResolverOutputForStep2(resolverOutput, identity)).toBe(true);
+    expect(hasValidTruthStateMapForStep2(truthStateMap, identity)).toBe(true);
+    expect(hasValidResolverOutputForStep2({ ...resolverOutput, run_id: 'take-other' }, identity)).toBe(false);
+    expect(hasValidTruthStateMapForStep2({ ...truthStateMap, analysis_run_id: 'take-other' }, identity)).toBe(false);
+    expect(hasValidResolverOutputForStep2({ artefact_type: 'resolver_output', run_id: 'take-t1' }, identity)).toBe(false);
+    expect(hasValidTruthStateMapForStep2(null, identity)).toBe(false);
+
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914m-resolver-payload-'));
+    const out = await emitAnalysisEvidenceStatePrerequisite({
+      run_id: 'take-t1',
+      analysis_run_id: 'take-t1',
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      media_readiness_state: 'ready',
+      resolver_output_available: hasValidResolverOutputForStep2(resolverOutput, identity),
+      truth_state_map_available: hasValidTruthStateMapForStep2(truthStateMap, identity),
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(out.payload.resolver_output_ref).toContain('/resolver/resolver_output.json');
+    expect(out.payload.truth_state_map_ref).toContain('/resolver/TruthStateMap.json');
   });
 
   it.each([
@@ -2847,6 +2896,97 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       : null;
     expect(claims.public_claim_gate_status).toBe('insufficient');
     expect(claims.claims[0].support_status).toBe('missing_evidence');
+  });
+
+  it('excludes unlinked internal observation candidates from aggregate public-claim requiredness', async () => {
+    const internalObservation = claimCandidate({
+      claim_candidate_id: 'cc-observation-only',
+      safe_candidate_summary: 'selected_level: professional',
+      source_path: 'observable_evidence_items[1]',
+      linked_evidence_anchor_ids: [],
+      linked_truth_state_ids: [],
+      required_truth_state_family: 'not_required_for_runtime_fact',
+      candidate_support_precheck_status: 'not_applicable',
+      public_safety_status: 'internal_only',
+      eligible_for_public_claim_trace_support_check: false,
+      public_claim_support_required: false,
+      required_for_public_claim_gate: false,
+      excluded_from_public_claim_gate: true,
+    });
+    const { claims } = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate(), internalObservation],
+    });
+    const observationClaim = claims.claims.find((claim: any) => claim.claim_id === 'pc-observation-only');
+    expect(observationClaim).toMatchObject({
+      support_status: 'not_applicable',
+      public_safety_status: 'internal_only',
+      public_claim_support_required: false,
+      required_for_public_claim_gate: false,
+      excluded_from_public_claim_gate: true,
+      cannot_satisfy_public_claim_gate: false,
+    });
+    expect(claims.public_claim_gate_status).toBe('sufficient');
+    expect(claims.claims.find((claim: any) => claim.claim_id === 'pc-brief-presence').support_status).toBe('supported');
+  });
+
+  it('keeps actual public or report candidates with no linked evidence blocking the public claim gate', async () => {
+    const { claims } = await emitPublicClaimSupportBundle({
+      candidates: [claimCandidate({
+        claim_candidate_id: 'cc-required-public-claim',
+        safe_candidate_summary: 'brief supplied',
+        linked_evidence_anchor_ids: [],
+        public_claim_support_required: true,
+        required_for_public_claim_gate: true,
+        excluded_from_public_claim_gate: false,
+      })],
+    });
+    expect(claims.claims[0]).toMatchObject({
+      support_status: 'missing_evidence',
+      required_for_public_claim_gate: true,
+      excluded_from_public_claim_gate: false,
+      cannot_satisfy_public_claim_gate: true,
+    });
+    expect(claims.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('marks generated unlinked observable evidence candidates as internal-only and non-required', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      analysisEvidenceOverrides: {
+        unsupported_or_unavailable_evidence: [],
+        assessability_limitations: [],
+        timestamp_normalisation_warnings: [],
+      },
+    });
+    const observation = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.source_path).startsWith('observable_evidence_items['));
+    expect(observation).toMatchObject({
+      candidate_support_precheck_status: 'not_applicable',
+      public_safety_status: 'internal_only',
+      eligible_for_public_claim_trace_support_check: false,
+      public_claim_support_required: false,
+      required_for_public_claim_gate: false,
+      excluded_from_public_claim_gate: true,
+    });
+    expect(observation.linked_evidence_anchor_ids).toEqual([]);
+  });
+
+  it('links observable evidence candidates to same-run EvidenceAnchors when available', async () => {
+    const { claimCandidateTrace } = await emitClaimCandidateBundle({
+      includeAnchors: true,
+      analysisEvidenceOverrides: {
+        unsupported_or_unavailable_evidence: [],
+        assessability_limitations: [],
+        timestamp_normalisation_warnings: [],
+      },
+    });
+    const selectedLevel = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.safe_candidate_summary).includes('selected_level'));
+    expect(selectedLevel.linked_evidence_anchor_ids.length).toBeGreaterThan(0);
+    expect(selectedLevel).toMatchObject({
+      candidate_support_precheck_status: 'eligible_for_support_check',
+      eligible_for_public_claim_trace_support_check: true,
+      public_claim_support_required: true,
+      required_for_public_claim_gate: true,
+      excluded_from_public_claim_gate: false,
+    });
   });
 
   it('does not resolve linked truth IDs from structural TruthStateMap keys', async () => {

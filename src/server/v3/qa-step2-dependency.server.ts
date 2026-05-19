@@ -4,12 +4,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function getNonBlankString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
 function getStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : [];
 }
 
 function normaliseStatus(value: unknown): string {
   return typeof value === 'string' && value.trim() ? value.trim() : 'missing';
+}
+
+function matchesRuntimeIdentity(value: Record<string, unknown>, input: {
+  expectedRunId: string;
+  expectedAnalysisRunId: string;
+  takeId: string;
+  artefactType: 'resolver_output' | 'truth_state_map';
+}): boolean {
+  return getNonBlankString(value.artefact_type) === input.artefactType
+    && getNonBlankString(value.run_id) === input.expectedRunId
+    && getNonBlankString(value.analysis_run_id) === input.expectedAnalysisRunId
+    && getNonBlankString(value.take_id) === input.takeId;
+}
+
+export function hasValidResolverOutputForStep2(value: unknown, input: {
+  expectedRunId: string;
+  expectedAnalysisRunId: string;
+  takeId: string;
+}): boolean {
+  if (!isRecord(value)) return false;
+  if (!matchesRuntimeIdentity(value, { ...input, artefactType: 'resolver_output' })) return false;
+  return isRecord(value.input_artifact_refs) || isRecord(value.v3_spine_available);
+}
+
+export function hasValidTruthStateMapForStep2(value: unknown, input: {
+  expectedRunId: string;
+  expectedAnalysisRunId: string;
+  takeId: string;
+}): boolean {
+  if (!isRecord(value)) return false;
+  if (!matchesRuntimeIdentity(value, { ...input, artefactType: 'truth_state_map' })) return false;
+  return isRecord(value.known_truths)
+    || isRecord(value.inferred_truths)
+    || Array.isArray(value.truth_state_ids)
+    || Array.isArray(value.canonical_truth_state_ids);
 }
 
 export function evaluateStep1EvidenceForStep2(input: {
