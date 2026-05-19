@@ -66,6 +66,12 @@ function expectComparisonNotBlocking(manifest:any) {
   expect(manifest.missing_artifacts).not.toContain('parity_comparison');
 }
 
+function expectRiskFieldHit(parity:any, source:string, field:string, path:string) {
+  expect(parity.risk_trace_field_hits).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source, field, path }),
+  ]));
+}
+
 describe('v3-s9 comparison parity proof', () => {
   it('A multiple take_ids fallback without compared_take_ids invokes parity requirement', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-inv-fallback-'));
@@ -241,19 +247,37 @@ describe('v3-s9 comparison parity proof', () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-collector-'));
     const { parity } = await emitCase(root,'run-risk-collector',{ payloads: {
       forced_winner_risk: true,
-      same_video_repeatability_trace: { same_video_detected: true, repeated_input_detected: true, forced_winner_risk: true, false_winner_risk: true },
-      route_variance_trace: { route_variance_risk: true, route_mismatch_detected: true, route_variance_detected: true, route_variance_mitigation_status: 'unresolved_blocked' },
+      same_video_repeatability_trace: { same_video_detected: true, repeated_input_detected: true, forced_winner_risk: true, false_winner_risk: true, same_video_repeatability_trace_summary: { same_video_detected: true } },
+      route_variance_trace: { route_variance_risk: true, route_mismatch_detected: true, route_variance_detected: true, route_variance_mitigation_status: 'unresolved_blocked', route_variance_trace_summary: { route_variance_detected: true } },
       comparison_suppression_trace: { same_video_suppression_status: 'not_required', route_variance_suppression_status: 'mitigated', false_winner_prevention_status: 'not_required' },
-      comparison_report_internal: { internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
+      comparison_raw: { false_winner_prevention_status: 'not_required' },
+      comparison_report_internal: { forced_winner_risk: false, internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
     }});
     expect(parity.checked_risk_sources).toContain('comparison_payloads');
     expect(parity.checked_risk_sources).toContain('same_video_repeatability_trace');
     expect(parity.checked_risk_sources).toContain('route_variance_trace');
     expect(parity.checked_risk_sources).toContain('comparison_suppression_trace');
-    expect(parity.risk_source_count).toBeGreaterThanOrEqual(4);
+    expect(parity.checked_risk_sources).toContain('comparison_raw');
+    expect(parity.checked_risk_sources).toContain('comparison_report_internal');
+    expect(parity.risk_source_count).toBeGreaterThanOrEqual(6);
     expect(parity.risk_trace_fields_checked).toContain('repeated_input_detected');
     expect(parity.risk_trace_fields_checked).toContain('route_mismatch_detected');
     expect(parity.risk_trace_fields_checked).toContain('route_variance_detected');
+    expectRiskFieldHit(parity, 'comparison_payloads', 'forced_winner_risk', 'comparison_payloads.forced_winner_risk');
+    expectRiskFieldHit(parity, 'same_video_repeatability_trace', 'same_video_detected', 'same_video_repeatability_trace.same_video_detected');
+    expectRiskFieldHit(parity, 'same_video_repeatability_trace', 'same_video_detected', 'same_video_repeatability_trace.same_video_repeatability_trace_summary.same_video_detected');
+    expectRiskFieldHit(parity, 'same_video_repeatability_trace', 'repeated_input_detected', 'same_video_repeatability_trace.repeated_input_detected');
+    expectRiskFieldHit(parity, 'same_video_repeatability_trace', 'forced_winner_risk', 'same_video_repeatability_trace.forced_winner_risk');
+    expectRiskFieldHit(parity, 'same_video_repeatability_trace', 'false_winner_risk', 'same_video_repeatability_trace.false_winner_risk');
+    expectRiskFieldHit(parity, 'route_variance_trace', 'route_mismatch_detected', 'route_variance_trace.route_mismatch_detected');
+    expectRiskFieldHit(parity, 'route_variance_trace', 'route_variance_detected', 'route_variance_trace.route_variance_trace_summary.route_variance_detected');
+    expectRiskFieldHit(parity, 'route_variance_trace', 'route_variance_mitigation_status', 'route_variance_trace.route_variance_mitigation_status');
+    expectRiskFieldHit(parity, 'comparison_suppression_trace', 'same_video_suppression_status', 'comparison_suppression_trace.same_video_suppression_status');
+    expectRiskFieldHit(parity, 'comparison_suppression_trace', 'route_variance_suppression_status', 'comparison_suppression_trace.route_variance_suppression_status');
+    expectRiskFieldHit(parity, 'comparison_suppression_trace', 'false_winner_prevention_status', 'comparison_suppression_trace.false_winner_prevention_status');
+    expectRiskFieldHit(parity, 'comparison_raw', 'false_winner_prevention_status', 'comparison_raw.false_winner_prevention_status');
+    expectRiskFieldHit(parity, 'comparison_report_internal', 'forced_winner_risk', 'comparison_report_internal.forced_winner_risk');
+    expect(parity.risk_source_scan_warnings).toEqual([]);
   });
 
   it('collector does not infer explicit risk from lookalike internal keys', async () => {
@@ -262,8 +286,42 @@ describe('v3-s9 comparison parity proof', () => {
       ...safePublicPayload(),
       comparison_report_internal: { internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
     }});
-    expect(parity.checked_risk_sources).toEqual(['comparison_payloads']);
+    expect(parity.checked_risk_sources).toEqual([]);
+    expect(parity.risk_trace_field_hits).toEqual([]);
     expect(parity.parity_status).toBe('passed');
+  });
+
+  it('collector records malformed, cyclic and over-depth risk source warnings without throwing', async () => {
+    const rootCycle = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-cycle-'));
+    const cyclicTrace: Record<string, unknown> = { same_video_detected: false };
+    cyclicTrace.self = cyclicTrace;
+    const cycle = await emitCase(rootCycle,'run-risk-cycle',{ payloads: { ...safePublicPayload(), same_video_repeatability_trace: cyclicTrace } });
+    expectInsufficientBlocked(cycle);
+    expect(cycle.parity.risk_source_scan_safe).toBe(false);
+    expect(cycle.parity.risk_source_scan_warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'same_video_repeatability_trace', warning: 'cycle_detected' }),
+    ]));
+    expectRiskFieldHit(cycle.parity, 'same_video_repeatability_trace', 'same_video_detected', 'same_video_repeatability_trace.same_video_detected');
+
+    const rootDepth = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-depth-'));
+    const deepTrace: Record<string, unknown> = {};
+    let cursor = deepTrace;
+    for (let i = 0; i < 30; i += 1) {
+      cursor.next = {};
+      cursor = cursor.next as Record<string, unknown>;
+    }
+    const depth = await emitCase(rootDepth,'run-risk-depth',{ payloads: { ...safePublicPayload(), route_variance_trace: deepTrace } });
+    expectInsufficientBlocked(depth);
+    expect(depth.parity.risk_source_scan_warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'route_variance_trace', warning: 'depth_limit_exceeded' }),
+    ]));
+
+    const rootMalformed = await mkdtemp(path.join(os.tmpdir(),'s9-13d-risk-malformed-'));
+    const malformed = await emitCase(rootMalformed,'run-risk-malformed',{ payloads: { ...safePublicPayload(), comparison_suppression_trace: new Date('2026-05-19T00:00:00.000Z') } });
+    expectInsufficientBlocked(malformed);
+    expect(malformed.parity.risk_source_scan_warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'comparison_suppression_trace', path: 'comparison_suppression_trace', warning: 'uninspectable_object' }),
+    ]));
   });
 
   it('A-F forbidden non-winner public fields fail parity and keep winner/recommendation diagnostics true when applicable', async () => {

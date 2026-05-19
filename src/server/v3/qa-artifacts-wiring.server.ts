@@ -97,6 +97,7 @@ const COMPARISON_RISK_FIELDS = [
   'same_video_unresolved_risk', 'same_video_detected', 'repeated_input_detected', 'no_material_difference', 'same_video_suppression_status', 'same_video_repeatability_status',
   'route_variance_risk', 'route_mismatch_detected', 'route_variance_detected', 'route_variance_status', 'route_variance_mitigation_status', 'route_variance_suppression_status',
 ] as const;
+const COMPARISON_RISK_FIELD_SET = new Set<string>(COMPARISON_RISK_FIELDS);
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -104,24 +105,100 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
-function hasExplicitComparisonRiskField(value: unknown): value is Record<string, unknown> {
-  return isPlainRecord(value) && COMPARISON_RISK_FIELDS.some((field) => value[field] !== undefined);
+type ComparisonRiskSource = { source: string; value: Record<string, unknown> };
+type ComparisonRiskFieldHit = { source: string; field: string; path: string };
+type ComparisonRiskSourceScanWarning = { source: string; path: string; warning: string };
+
+function collectDirectComparisonRiskFieldHits(source: string, value: Record<string, unknown>): ComparisonRiskFieldHit[] {
+  return Object.keys(value)
+    .map((key) => ({ original: key, normalised: key.trim().toLowerCase() }))
+    .filter(({ normalised }) => COMPARISON_RISK_FIELD_SET.has(normalised))
+    .map(({ original, normalised }) => ({ source, field: normalised, path: `${source}.${original}` }));
 }
 
-function collectComparisonRiskSources(payloadsObject: Record<string, unknown> | null): Array<{ source: string; value: Record<string, unknown> }> {
-  if (!payloadsObject) return [];
-  const out: Array<{ source: string; value: Record<string, unknown> }> = [{ source: 'comparison_payloads', value: payloadsObject }];
-  const maybePush = (source: string, value: unknown, requireExplicit = false) => {
-    if (!isPlainRecord(value)) return;
-    if (requireExplicit && !hasExplicitComparisonRiskField(value)) return;
-    out.push({ source, value });
+function scanComparisonRiskFieldHits(source: string, value: unknown): { hits: ComparisonRiskFieldHit[]; warnings: ComparisonRiskSourceScanWarning[] } {
+  const hits: ComparisonRiskFieldHit[] = [];
+  const warnings: ComparisonRiskSourceScanWarning[] = [];
+  const activeObjects = new WeakSet<object>();
+  const maxDepth = 24;
+  const markWarning = (path: string, warning: string) => warnings.push({ source, path, warning });
+  const walk = (node: unknown, pathPrefix: string, depth = 0): void => {
+    if (depth > maxDepth) {
+      markWarning(pathPrefix, 'depth_limit_exceeded');
+      return;
+    }
+    if (Array.isArray(node)) {
+      if (activeObjects.has(node)) {
+        markWarning(pathPrefix, 'cycle_detected');
+        return;
+      }
+      activeObjects.add(node);
+      node.forEach((entry, index) => walk(entry, `${pathPrefix}[${index}]`, depth + 1));
+      activeObjects.delete(node);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    if (activeObjects.has(node)) {
+      markWarning(pathPrefix, 'cycle_detected');
+      return;
+    }
+    activeObjects.add(node);
+    if (!isPlainRecord(node)) {
+      markWarning(pathPrefix, 'uninspectable_object');
+      activeObjects.delete(node);
+      return;
+    }
+    for (const [key, child] of Object.entries(node)) {
+      const nextPath = `${pathPrefix}.${key}`;
+      const normalisedKey = key.trim().toLowerCase();
+      if (COMPARISON_RISK_FIELD_SET.has(normalisedKey)) hits.push({ source, field: normalisedKey, path: nextPath });
+      walk(child, nextPath, depth + 1);
+    }
+    activeObjects.delete(node);
   };
-  maybePush('same_video_repeatability_trace', payloadsObject.same_video_repeatability_trace, false);
-  maybePush('route_variance_trace', payloadsObject.route_variance_trace, false);
-  maybePush('comparison_suppression_trace', payloadsObject.comparison_suppression_trace, false);
-  maybePush('comparison_raw', payloadsObject.comparison_raw, true);
-  maybePush('comparison_report_internal', payloadsObject.comparison_report_internal, true);
-  return out;
+  walk(value, source);
+  return { hits, warnings };
+}
+
+function collectComparisonRiskSources(payloadsObject: Record<string, unknown> | null): {
+  sources: ComparisonRiskSource[];
+  fieldHits: ComparisonRiskFieldHit[];
+  scanWarnings: ComparisonRiskSourceScanWarning[];
+} {
+  if (!payloadsObject) return { sources: [], fieldHits: [], scanWarnings: [] };
+  const sources: ComparisonRiskSource[] = [];
+  const fieldHits: ComparisonRiskFieldHit[] = [];
+  const scanWarnings: ComparisonRiskSourceScanWarning[] = [];
+  const topLevelHits = collectDirectComparisonRiskFieldHits('comparison_payloads', payloadsObject);
+  if (topLevelHits.length > 0) {
+    sources.push({ source: 'comparison_payloads', value: payloadsObject });
+    fieldHits.push(...topLevelHits);
+  }
+  const addKnownTraceSource = (source: string, value: unknown) => {
+    if (value === undefined) return;
+    if (!value || typeof value !== 'object') {
+      scanWarnings.push({ source, path: source, warning: 'uninspectable_source' });
+      return;
+    }
+    if (isPlainRecord(value)) sources.push({ source, value });
+    const scan = scanComparisonRiskFieldHits(source, value);
+    fieldHits.push(...scan.hits);
+    scanWarnings.push(...scan.warnings);
+  };
+  const addExplicitInternalSource = (source: string, value: unknown) => {
+    if (value === undefined) return;
+    if (!value || typeof value !== 'object') return;
+    const scan = scanComparisonRiskFieldHits(source, value);
+    if (scan.hits.length > 0 && isPlainRecord(value)) sources.push({ source, value });
+    fieldHits.push(...scan.hits);
+    scanWarnings.push(...scan.warnings);
+  };
+  addKnownTraceSource('same_video_repeatability_trace', payloadsObject.same_video_repeatability_trace);
+  addKnownTraceSource('route_variance_trace', payloadsObject.route_variance_trace);
+  addKnownTraceSource('comparison_suppression_trace', payloadsObject.comparison_suppression_trace);
+  addExplicitInternalSource('comparison_raw', payloadsObject.comparison_raw);
+  addExplicitInternalSource('comparison_report_internal', payloadsObject.comparison_report_internal);
+  return { sources, fieldHits, scanWarnings };
 }
 
 export async function emitComparisonParityProof(input: {
@@ -201,7 +278,9 @@ export async function emitComparisonParityProof(input: {
   const publicSurfaceScanSafe = publicSurfaceScanIssues.length === 0;
   const publicWinnerAbsent = !forbiddenHits.some((x) => winnerFields.has(x.field));
   const publicRecommendationAbsent = !forbiddenHits.some((x) => recommendationFields.has(x.field));
-  const riskSources = collectComparisonRiskSources(payloadsObject);
+  const riskSourceCollection = collectComparisonRiskSources(payloadsObject);
+  const riskSources = riskSourceCollection.sources;
+  const riskSourceScanSafe = riskSourceCollection.scanWarnings.length === 0;
   const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted']);
   const isAcceptedComparisonMitigation = (v: unknown) => typeof v === 'string' && acceptedMitigationStatuses.has(v);
   const hasTrueFlag = (field: string): boolean => riskSources.some((s) => s.value[field] === true);
@@ -228,10 +307,7 @@ export async function emitComparisonParityProof(input: {
     payloadsObject
     && (
       publicSurfaces.length > 0
-      || hasExplicitComparisonRiskField(payloadsObject)
-      || hasExplicitComparisonRiskField(payloadsObject.same_video_repeatability_trace)
-      || hasExplicitComparisonRiskField(payloadsObject.route_variance_trace)
-      || hasExplicitComparisonRiskField(payloadsObject.comparison_suppression_trace)
+      || riskSourceCollection.fieldHits.length > 0
     )
   );
   const forbiddenPublicComparisonFieldsAbsent = forbiddenHits.length === 0;
@@ -240,6 +316,7 @@ export async function emitComparisonParityProof(input: {
   if (!comparisonPayloadsAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_parity_payload_missing' });
   if (!publicSurfaceContextAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_public_surface_context_missing' });
   if (!publicSurfaceScanSafe && input.comparison_invoked) mismatch.push({ mismatch_type: 'public_comparison_surface_uninspectable', issues: publicSurfaceScanIssues });
+  if (!riskSourceScanSafe && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_risk_source_uninspectable', warnings: riskSourceCollection.scanWarnings });
   if (!forbiddenPublicComparisonFieldsAbsent) {
     for (const hit of forbiddenHits) {
       mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface: hit.surface, field: hit.field, path: hit.path });
@@ -254,13 +331,13 @@ export async function emitComparisonParityProof(input: {
     : (
       (!forbiddenPublicComparisonFieldsAbsent || !forcedWinnerRiskAbsent || !falseWinnerRiskAbsent || !routeVarianceRiskAbsent || !sameVideoRiskAbsent)
         ? 'failed'
-        : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable || !publicSurfaceScanSafe ? 'insufficient' : 'passed')
+        : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable || !publicSurfaceScanSafe || !riskSourceScanSafe ? 'insufficient' : 'passed')
     );
   const blocker_codes = (parityStatus === 'passed' || parityStatus === 'not_applicable') ? [] : ['parity_artefacts_missing'];
   if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
   const outPayload = {
     schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0, comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true,
-    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : 'comparison_evidence_missing_or_unresolved')))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
+    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits, mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : (!riskSourceScanSafe ? 'comparison_risk_source_uninspectable' : 'comparison_evidence_missing_or_unresolved'))))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
   };
   const relative = input.take_id ? `takes/take-${input.take_id}/analysis-${analysisRunId}/parity/comparison_parity.json` : 'parity/comparison_parity.json';
   const result = await writeInternalJson(root, input.run_id, relative, outPayload, 'parity_comparison');
