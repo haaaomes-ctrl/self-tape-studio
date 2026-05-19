@@ -28,6 +28,17 @@ async function emitCase(root:string, run:string, opts:{emitted?:string[]; compar
 }
 
 describe('v3-s9 comparison parity proof', () => {
+  it('A multiple take_ids fallback without compared_take_ids invokes parity requirement', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-inv-fallback-'));
+    await emitQAManifestForAnalysisRun({ run_id:'run-fallback', analysis_run_id:'run-fallback', take_id:'ta', take_ids:['ta','tb'], root_dir:root, internal_qa_emit:true, emitted_artefact_ids:['raw_report'] });
+    const manifest = await readManifest(root,'run-fallback');
+    const metrics = await readMetrics(root,'run-fallback');
+    expect(manifest.compared_take_ids).toEqual(['ta','tb']);
+    expect(manifest.artefact_status_by_id.parity_comparison).not.toBe('not_applicable');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+  });
+
   it('A ordinary single-take comparison parity not required', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-a-'));
     await emitQAManifestForAnalysisRun({ run_id:'run-a', analysis_run_id:'run-a', take_id:'ta', root_dir:root, internal_qa_emit:true, compared_take_ids:['ta'], comparison_run_id:null, emitted_artefact_ids:['raw_report'] });
@@ -37,6 +48,26 @@ describe('v3-s9 comparison parity proof', () => {
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('not_applicable');
     const parityMissingInputs = ['parity_report','parity_comparison'].filter((id:string)=>manifest.missing_artifacts.includes(id));
     expect(parityMissingInputs).toEqual(['parity_report']);
+  });
+
+  it('C metadata.compared_take_ids with 2 ids invokes comparison parity', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-explicit-compared-'));
+    const out = await emitCase(root,'run-explicit',{ compared:['ta','tb'], payloads: undefined });
+    expect(out.manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+  });
+
+  it('D comparison artefact presence forces invoked even with one compared id', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-artefact-forces-'));
+    await emitQAManifestForAnalysisRun({ run_id:'run-artefact-forces', analysis_run_id:'run-artefact-forces', take_id:'ta', root_dir:root, internal_qa_emit:true, compared_take_ids:['ta'], emitted_artefact_ids:['raw_report','comparison_raw'] });
+    const manifest = await readManifest(root,'run-artefact-forces');
+    expect(manifest.artefact_status_by_id.parity_comparison).not.toBe('not_applicable');
+  });
+
+  it('E comparison_run_id forces invoked', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-runid-forces-'));
+    await emitQAManifestForAnalysisRun({ run_id:'run-runid-forces', analysis_run_id:'run-runid-forces', take_id:'ta', root_dir:root, internal_qa_emit:true, compared_take_ids:['ta'], comparison_run_id:'cmp-123', emitted_artefact_ids:['raw_report'] });
+    const manifest = await readManifest(root,'run-runid-forces');
+    expect(manifest.artefact_status_by_id.parity_comparison).not.toBe('not_applicable');
   });
 
   it('B/T/U complete safe evidence passes; public gates remain blocked', async () => {

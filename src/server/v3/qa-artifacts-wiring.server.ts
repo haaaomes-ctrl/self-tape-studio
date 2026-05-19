@@ -1200,7 +1200,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         }
       }
     }
-    const comparisonInvoked = Boolean(metadata.comparison_run_id) || (metadata.compared_take_ids ?? []).length > 1 || COMPARISON_ARTEFACT_IDS.some((id) => emittedWithInternalTraces.includes(id) || emittedBlockedWithInternalTraces.includes(id));
+    const normalisedComparedTakeIds = baseOptions.compared_take_ids ?? [];
+    const comparisonInvoked = Boolean(metadata.comparison_run_id) || normalisedComparedTakeIds.length > 1 || COMPARISON_ARTEFACT_IDS.some((id) => emittedWithInternalTraces.includes(id) || emittedBlockedWithInternalTraces.includes(id));
     const comparisonEvidenceStatus = {
       comparison_raw: emittedWithInternalTraces.includes('comparison_raw'),
       comparison_report_internal: emittedWithInternalTraces.includes('comparison_report_internal'),
