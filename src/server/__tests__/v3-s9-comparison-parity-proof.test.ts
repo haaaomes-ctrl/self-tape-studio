@@ -1,8 +1,13 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { emitQAManifestForAnalysisRun } from '@/server/v3/qa-artifacts-wiring.server';
+import * as qaSinkModule from '@/server/v3/qa-artifact-sink.server';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 async function readManifest(root:string, run:string){ return JSON.parse(await readFile(path.join(root, run, 'manifest.json'),'utf8')); }
 async function readMetrics(root:string, run:string){ return JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'),'utf8')); }
@@ -161,6 +166,25 @@ describe('v3-s9 comparison parity proof', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('passed comparison parity does not satisfy L2 when the proof write fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-write-fail-'));
+    const realWriteQAArtifact = qaSinkModule.writeQAArtifact;
+    vi.spyOn(qaSinkModule, 'writeQAArtifact').mockImplementation((input) => {
+      if (input.artefact_id === 'parity_comparison') {
+        return Promise.resolve({ written: false, sink_mode: 'file', sink_write_status: 'failed', warning: 'parity sink failed', log_fallback_emitted: false } as any);
+      }
+      return realWriteQAArtifact(input);
+    });
+    const { manifest, metrics, parity } = await emitCase(root,'run-write-fail',{ payloads: safePublicPayload() });
+    expect(parity).toBeNull();
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('missing');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.parity_comparison).toBe(false);
+    expect(manifest.missing_artifacts).toContain('parity_comparison');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.missing_required_artefacts).toContain('parity_comparison');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
   });
 
   it('B public-clean payload without risk context is insufficient', async () => {
