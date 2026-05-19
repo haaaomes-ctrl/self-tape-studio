@@ -110,17 +110,25 @@ export async function emitComparisonParityProof(input: {
   const publicSurfaces = publicSurfaceKeys
     .map((k) => ({ key: k, value: payloadsObject?.[k] }))
     .filter((x) => x.value && typeof x.value === 'object');
-  const forbiddenPublicFields = ['winner', 'public_winner', 'selected_winner', 'selected_take_id_public', 'recommendation', 'public_recommendation', 'comparison_recommendation', 'forced_winner', 'false_winner', 'castability', 'bookability', 'marketability', 'public_scoring', 'public_score', 'public_technique_authority', 'technique_authority'];
-  const forbiddenHits: string[] = [];
-  for (const surface of publicSurfaces) {
-    for (const field of forbiddenPublicFields) {
-      const direct = extract(surface.value, field);
-      const nestedComparison = extract(surface.value, `comparison.${field}`);
-      if (direct !== undefined || nestedComparison !== undefined) forbiddenHits.push(`${surface.key}:${field}`);
+  const forbiddenPublicFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public', 'recommendation', 'public_recommendation', 'comparison_recommendation', 'forced_winner', 'false_winner', 'castability', 'bookability', 'marketability', 'public_scoring', 'public_score', 'public_technique_authority', 'technique_authority']);
+  const winnerFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public']);
+  const recommendationFields = new Set(['recommendation', 'public_recommendation', 'comparison_recommendation']);
+  const forbiddenHits: Array<{ surface: string; field: string; path: string }> = [];
+  const walk = (value: unknown, pathPrefix: string, surface: string): void => {
+    if (Array.isArray(value)) {
+      value.forEach((entry, idx) => walk(entry, `${pathPrefix}[${idx}]`, surface));
+      return;
     }
-  }
-  const publicWinnerAbsent = !forbiddenHits.some((x) => /winner|selected_winner|selected_take_id_public/.test(x));
-  const publicRecommendationAbsent = !forbiddenHits.some((x) => /recommendation/.test(x));
+    if (!value || typeof value !== 'object') return;
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const nextPath = pathPrefix ? `${pathPrefix}.${k}` : k;
+      if (forbiddenPublicFields.has(k)) forbiddenHits.push({ surface, field: k, path: nextPath });
+      walk(v, nextPath, surface);
+    }
+  };
+  for (const surface of publicSurfaces) walk(surface.value, surface.key, surface.key);
+  const publicWinnerAbsent = !forbiddenHits.some((x) => winnerFields.has(x.field));
+  const publicRecommendationAbsent = !forbiddenHits.some((x) => recommendationFields.has(x.field));
   const forcedWinnerRiskAbsent = extract(payloadsObject, 'forced_winner_risk') !== true;
   const falseWinnerRiskAbsent = extract(payloadsObject, 'false_winner_risk') !== true;
   const routeVarianceRiskAbsent = !(extract(payloadsObject, 'route_variance_risk') === true || extract(payloadsObject, 'route_variance_mitigation_status') === 'unresolved_blocked');
@@ -132,8 +140,7 @@ export async function emitComparisonParityProof(input: {
   if (!comparisonPayloadsAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_parity_payload_missing' });
   if (!forbiddenPublicComparisonFieldsAbsent) {
     for (const hit of forbiddenHits) {
-      const [surface, field] = hit.split(':');
-      mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface, field });
+      mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface: hit.surface, field: hit.field, path: hit.path });
     }
   }
   if (!forcedWinnerRiskAbsent) mismatch.push({ mismatch_type: 'forced_winner_risk_detected' });

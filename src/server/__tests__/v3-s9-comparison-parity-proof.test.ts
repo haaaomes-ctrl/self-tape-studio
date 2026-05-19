@@ -156,6 +156,24 @@ describe('v3-s9 comparison parity proof', () => {
     expect(rec.parity.public_recommendation_absent).toBe(false);
   });
 
+  it('P1-6 nested public leaks are detected recursively', async () => {
+    const rootWinner = await mkdtemp(path.join(os.tmpdir(),'s9-13d-nested-winner-'));
+    const winner = await emitCase(rootWinner,'run-nested-winner',{ payloads: { public_comparison_payload: { summary: { winner: 'take-a' } } } });
+    expect(winner.parity.parity_status).toBe('failed');
+    expect(winner.parity.forbidden_public_comparison_fields_absent).toBe(false);
+    expect(winner.parity.mismatches.some((m:any)=>m.path === 'public_comparison_payload.summary.winner')).toBe(true);
+
+    const rootRec = await mkdtemp(path.join(os.tmpdir(),'s9-13d-nested-rec-'));
+    const rec = await emitCase(rootRec,'run-nested-rec',{ payloads: { public_comparison_payload: { sections: [{ recommendation: 'use take-a' }] } } });
+    expect(rec.parity.parity_status).toBe('failed');
+    expect(rec.parity.mismatches.some((m:any)=>m.path === 'public_comparison_payload.sections[0].recommendation')).toBe(true);
+
+    const rootScore = await mkdtemp(path.join(os.tmpdir(),'s9-13d-nested-score-'));
+    const score = await emitCase(rootScore,'run-nested-score',{ payloads: { public_output: { comparison: { cards: [{ public_score: 98 }] } } } });
+    expect(score.parity.parity_status).toBe('failed');
+    expect(score.parity.mismatches.some((m:any)=>m.path === 'public_output.comparison.cards[0].public_score')).toBe(true);
+  });
+
   it('O insufficient parity can be physically written and non-satisfying', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-o-'));
     const { manifest, parity } = await emitCase(root,'run-o',{ payloads: { route_variance_mitigation_status:'unresolved_blocked' } });
