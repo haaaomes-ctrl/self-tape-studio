@@ -1605,7 +1605,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       public_comparison_surface_paths: metadata.comparison_parity_input?.public_comparison_surface_paths ?? undefined,
     }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: (comparisonInvoked ? 'insufficient' : 'not_applicable') as 'insufficient'|'not_applicable' };
     artefactSourceClassificationById.parity_comparison = 'internal_comparison_parity_proof';
-    artefactLevel2ById.parity_comparison = shouldEmitComparisonParity && comparisonParityWrite.parity_status === 'passed';
+    artefactLevel2ById.parity_comparison = shouldEmitComparisonParity && comparisonParityWrite.written && comparisonParityWrite.parity_status === 'passed';
     if (parityDeferred) {
       emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_comparison');
       emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_comparison');
