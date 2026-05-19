@@ -50,6 +50,7 @@ import {
   detectFramingFixed,
 } from "./report-output-enforcement.server";
 import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
+import { evaluateStep1EvidenceForStep2 } from "./v3/qa-step2-dependency.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -1507,28 +1508,47 @@ export async function runProcessTake(
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
-        const step2DependencyBlocked = preStep2AnalysisEvidenceState.written
-          && preStep2AnalysisEvidenceState.payload?.step2_dependency_status?.status === 'blocked';
-        if (internalQaEmit && (!preStep2AnalysisEvidenceState.written || step2DependencyBlocked)) {
+        const step1Dependency = evaluateStep1EvidenceForStep2({
+          analysisEvidenceState: preStep2AnalysisEvidenceState,
+          expectedRunId: `take-${takeId}`,
+          expectedAnalysisRunId: `take-${takeId}`,
+          takeId,
+          internalQaEmit,
+        });
+        if (step1Dependency.step1EvidenceValidForStep2 && step1Dependency.step1QaPersistenceStatus === 'failed_emission') {
+          console.warn("[take-pipeline] qa_persistence_failed_but_step1_evidence_valid", {
+            take_id: takeId,
+            step2_dependency_status: step1Dependency.step2DependencyStatus,
+            qa_persistence_status: step1Dependency.step1QaPersistenceStatus,
+          });
+          metric("qa_persistence_failed_but_step1_evidence_valid", {
+            take_id: takeId,
+            artefact_id: 'analysis_evidence_state',
+          });
+        }
+        if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
           console.warn("[take-pipeline] step2_blocked_by_analysis_evidence_state", {
             take_id: takeId,
             written: preStep2AnalysisEvidenceState.written,
-            step2_dependency_status: preStep2AnalysisEvidenceState.payload?.step2_dependency_status?.status ?? 'missing',
+            step2_dependency_status: step1Dependency.step2DependencyStatus,
+            blocker_codes: step1Dependency.blockerCodes,
           });
           metric("report_polish_blocked", {
             take_id: takeId,
-            reason: 'analysis_evidence_state_unavailable_or_blocked',
+            reason: 'analysis_evidence_state_invalid_for_step2',
           });
           twoStepFallbackUsed = true;
-          twoStepFallbackReason = 'analysis_evidence_state_unavailable_or_blocked';
+          twoStepFallbackReason = 'analysis_evidence_state_invalid_for_step2';
         } else {
         const step2Evidence = {
           ...twoStepEvidence,
-          analysis_evidence_state_ref: preStep2AnalysisEvidenceState.written
-            ? `takes/take-${takeId}/analysis-take-${takeId}/analysis/AnalysisEvidenceState.json`
-            : null,
+          analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
+          analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
+          analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
           analysis_evidence_state_status: preStep2AnalysisEvidenceState.payload?.evidence_state_status ?? 'missing',
-          analysis_evidence_state_step2_dependency_status: preStep2AnalysisEvidenceState.payload?.step2_dependency_status?.status ?? 'missing',
+          analysis_evidence_state_step2_dependency_status: step1Dependency.step2DependencyStatus,
+          analysis_evidence_state_dependency_blocker_codes: step1Dependency.blockerCodes,
+          analysis_evidence_state_qa_warning_codes: step1Dependency.warningCodes,
         } as EvidencePass & Record<string, unknown>;
 
         // ---- Step 2: text-only polish ----
@@ -3520,6 +3540,10 @@ export async function runProcessTake(
       });
       qaArtefactIds.push(...analysisEvidenceState.emitted_artefact_ids);
       qaBlockedArtefactIds.push(...analysisEvidenceState.emitted_blocked_artefact_ids);
+      const analysisEvidenceStatePayloadAvailable = Boolean(analysisEvidenceState.payload);
+      if (!analysisEvidenceState.written && analysisEvidenceStatePayloadAvailable) {
+        qaBlockedArtefactIds.push('analysis_evidence_state');
+      }
 
       const rawReportPayload = rawReportEmit.written ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>) : (report as Record<string, unknown>);
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
@@ -3670,7 +3694,7 @@ export async function runProcessTake(
         emitted_blocked_artefact_ids: qaBlockedArtefactIds,
         artefact_source_classification_by_id: {
           raw_report: 'legacy_adapter',
-          ...(analysisEvidenceState.written ? { analysis_evidence_state: analysisEvidenceState.source_classification } : {}),
+          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: analysisEvidenceState.source_classification } : {}),
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
           ...(claimCandidateTrace.written ? { claim_candidate_trace: claimCandidateTrace.source_classification } : {}),
           ...(publicClaimTrace.written ? { public_claim_trace: publicClaimTrace.source_classification } : {}),
@@ -3680,7 +3704,7 @@ export async function runProcessTake(
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
-          ...(analysisEvidenceState.written ? { analysis_evidence_state: analysisEvidenceState.level2_satisfies } : {}),
+          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: false } : {}),
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.level2_satisfies } : {}),
           ...(claimCandidateTrace.written ? { claim_candidate_trace: false } : {}),
           ...(publicClaimTrace.written ? { public_claim_trace: publicClaimTrace.level2_satisfies === true } : {}),
@@ -3701,7 +3725,11 @@ export async function runProcessTake(
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
-        analysis_evidence_state_summary: analysisEvidenceState.written ? analysisEvidenceState.summary : undefined,
+        analysis_evidence_state_summary: analysisEvidenceStatePayloadAvailable ? {
+          ...analysisEvidenceState.summary,
+          qa_persistence_status: analysisEvidenceState.written ? 'written' : 'failed_emission',
+          qa_persistence_warning: analysisEvidenceState.warning ?? null,
+        } : undefined,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

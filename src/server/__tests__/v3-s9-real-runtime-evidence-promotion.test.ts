@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
 import { safeIsoTimestamp } from '@/server/v3/qa-safe-normalisation.server';
+import { evaluateStep1EvidenceForStep2 } from '@/server/v3/qa-step2-dependency.server';
 import { emitAnalysisEvidenceStatePrerequisite, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 type LegacyBundleOptions = {
@@ -1531,6 +1532,96 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(out.level2_satisfies).toBe(false);
   });
 
+  it('allows Step 2 to continue when Step 1 evidence is valid but the QA sink write fails', async () => {
+    const rootFile = path.join(os.tmpdir(), `qa-s914g-step2-sink-fail-${Math.random().toString(36).slice(2)}`);
+    await writeFile(rootFile, 'not a directory', 'utf8');
+    const run = 'take-step2-sink-fail';
+    const filtered = filterRunEvidencePassForStep1(sampleRunEvidencePass(), { model: 'test-model', durationSeconds: 60 });
+    const out = await emitAnalysisEvidenceStatePrerequisite({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: 'step2-sink-fail',
+      source_module: 'test',
+      source_stage: 'analysis_step_1_evidence_mapping',
+      resolver_output_available: true,
+      truth_state_map_available: true,
+      filtered_run_evidence_pass_step1: filtered,
+      root_dir: rootFile,
+      internal_qa_emit: true,
+    } as any);
+
+    const dependency = evaluateStep1EvidenceForStep2({
+      analysisEvidenceState: out,
+      expectedRunId: run,
+      expectedAnalysisRunId: run,
+      takeId: 'step2-sink-fail',
+      internalQaEmit: true,
+    });
+
+    expect(out.written).toBe(false);
+    expect(out.payload.step2_dependency_status).toMatchObject({ can_run_step2: true });
+    expect(dependency.step1EvidenceValidForStep2).toBe(true);
+    expect(dependency.step1QaPersistenceStatus).toBe('failed_emission');
+    expect(dependency.step2DependencyBlocked).toBe(false);
+    expect(dependency.warningCodes).toEqual(['qa_persistence_failed_but_step1_evidence_valid']);
+
+    const manifestRoot = await mkdtemp(path.join(os.tmpdir(), 'qa-s914g-step2-sink-fail-manifest-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      take_id: 'step2-sink-fail',
+      root_dir: manifestRoot,
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+      emitted_blocked_artefact_ids: ['analysis_evidence_state'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter', analysis_evidence_state: out.source_classification },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false, analysis_evidence_state: false },
+      analysis_evidence_state_summary: {
+        ...out.summary,
+        qa_persistence_status: 'failed_emission',
+        qa_persistence_warning: out.warning ?? null,
+      },
+    });
+    const manifest = JSON.parse(await readFile(path.join(manifestRoot, run, 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(manifestRoot, run, 'qa/acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.analysis_evidence_state).toBe('emitted_blocked');
+    expect(metrics.analysis_evidence_state_status).toBe('emitted_blocked');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+  });
+
+  it('blocks Step 2 when Step 1 evidence is invalid even if a result object exists', async () => {
+    const run = 'take-step2-invalid';
+    const dependency = evaluateStep1EvidenceForStep2({
+      analysisEvidenceState: {
+        written: false,
+        payload: {
+          run_id: run,
+          analysis_run_id: run,
+          evidence_state_status: 'blocked',
+          step2_dependency_status: {
+            status: 'blocked',
+            can_run_step2: false,
+            blocker_codes: ['TruthStateMap_missing'],
+          },
+        },
+      },
+      expectedRunId: run,
+      expectedAnalysisRunId: run,
+      takeId: 'step2-invalid',
+      internalQaEmit: true,
+    });
+
+    expect(dependency.step1EvidenceValidForStep2).toBe(false);
+    expect(dependency.step2DependencyBlocked).toBe(true);
+    expect(dependency.blockerCodes).toEqual(expect.arrayContaining([
+      'analysis_evidence_state_invalid_for_step2',
+      'analysis_evidence_state_step2_dependency_blocked',
+      'TruthStateMap_missing',
+    ]));
+  });
+
   it('handles malformed runEvidencePass output without crashing', async () => {
     const { payload, out } = await emitFilteredRunEvidencePassAnalysisBundle({ evidence: 'malformed-runEvidencePass-output' });
     expect(out.written).toBe(true);
@@ -2548,6 +2639,10 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('blocker_codes: evidenceAnchors.blocker_codes');
     expect(source).toContain('cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate');
     expect(source).toContain('truth_state_map_data: resolverTruth.written ? resolverTruth.truth_state_map : null');
+    expect(source).toContain('evaluateStep1EvidenceForStep2');
+    expect(source).toContain("step1QaPersistenceStatus === 'failed_emission'");
+    expect(source).toContain('qa_persistence_failed_but_step1_evidence_valid');
+    expect(source).toContain('analysisEvidenceStatePayloadAvailable');
     expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
     expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
     expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
