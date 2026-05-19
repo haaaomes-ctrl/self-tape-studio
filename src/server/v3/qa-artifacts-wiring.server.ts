@@ -2891,6 +2891,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     for (const [field, value] of [
       ['assessability_limitations', analysisEvidenceState.assessability_limitations],
       ['timestamp_normalisation_warnings', analysisEvidenceState.timestamp_normalisation_warnings],
+      ['timestamp_normalization_warnings', analysisEvidenceState.timestamp_normalization_warnings],
       ['extraction_limitations', analysisEvidenceState.extraction_limitations],
     ] as const) {
       normaliseSafeLimitationItems(value).forEach((item) => {

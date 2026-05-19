@@ -2159,10 +2159,12 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
         unsupported_or_unavailable_evidence: ['video_observable_evidence_not_extracted'],
         assessability_limitations: [],
         timestamp_normalisation_warnings: ['take_created_at_invalid_timestamp'],
+        timestamp_normalization_warnings: ['take_updated_at_invalid_timestamp'],
       },
     });
     const unavailable = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.source_path === 'unsupported_or_unavailable_evidence[0]');
     const timestampWarning = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.source_path === 'timestamp_normalisation_warnings[0]');
+    const timestampWarningAlias = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.source_path === 'timestamp_normalization_warnings[0]');
     expect(unavailable).toMatchObject({
       claim_family: 'assessability_limitation',
       safe_candidate_summary: 'video_observable_evidence_not_extracted',
@@ -2170,6 +2172,10 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     expect(timestampWarning).toMatchObject({
       claim_family: 'assessability_limitation',
       safe_candidate_summary: 'take_created_at_invalid_timestamp',
+    });
+    expect(timestampWarningAlias).toMatchObject({
+      claim_family: 'assessability_limitation',
+      safe_candidate_summary: 'take_updated_at_invalid_timestamp',
     });
   });
 
@@ -2932,5 +2938,6 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('normaliseSafeLimitationItems');
     expect(source).not.toContain('safeRecordArray(analysisEvidenceState.assessability_limitations)');
     expect(source).not.toContain('safeRecordArray(analysisEvidenceState.timestamp_normalisation_warnings)');
+    expect(source).not.toContain('safeRecordArray(analysisEvidenceState.timestamp_normalization_warnings)');
   });
 });
