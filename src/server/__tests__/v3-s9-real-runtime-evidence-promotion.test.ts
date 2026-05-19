@@ -1,7 +1,8 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
 import { emitAnalysisEvidenceStatePrerequisite, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 type LegacyBundleOptions = {
@@ -249,6 +250,113 @@ async function emitPromotedEvidenceAnchorsBundle(options: {
   const manifest = JSON.parse(await readFile(path.join(base.root, base.run, 'manifest.json'), 'utf8'));
   const metrics = JSON.parse(await readFile(path.join(base.root, base.run, 'qa', 'acceptance_metrics.json'), 'utf8'));
   return { ...base, anchorsOut, anchors, claimsOut, claims, manifest, metrics };
+}
+
+function sampleRunEvidencePass(overrides: Record<string, unknown> = {}) {
+  return {
+    evidence_version: '1',
+    audition_type: 'monologue',
+    detected_components: [{ type: 'monologue', weight: 1, score: 91, note: 'report-ready component judgement' }],
+    raw_scores: { technical: 88, audio: 82, vocal: null, acting: 90, brief_adherence: 84, professional_presentation: 86 },
+    core_strengths_evidence: [{ area: 'acting', evidence: 'report-ready strength prose' }],
+    core_improvements_evidence: [{ area: 'pacing', evidence: 'report-ready improvement prose' }],
+    fix_first_evidence: 'Fix first: choose a sharper objective',
+    brief_adherence_evidence: {
+      material_compliance: 'Material appears supplied',
+      technical_compliance: 'Technical setup is visible',
+      instruction_precision: 'Instruction judgement',
+      professionalism_signals: 'Professionalism judgement',
+      score_material: 80,
+      score_technical: 82,
+      score_instruction: 79,
+      score_professional: 81,
+    },
+    category_notes_evidence: {
+      technical: 'report-ready technical category note',
+      audio: 'report-ready audio category note',
+      vocal: '',
+      acting: 'report-ready acting category note',
+      brief_adherence: 'report-ready brief category note',
+      professional_presentation: 'report-ready presentation category note',
+    },
+    role_fit_evidence: 'Perfect role fit for this casting brief',
+    role_fit_modifier_suggested: 4,
+    role_fit_confidence: 'high',
+    presentation_evidence: ['Framing keeps the performer visible from shoulders up.'],
+    risk_evidence: [{ severity: 'medium', flag: 'recall risk', why: 'may reduce recall', recall_impact: 'may_reduce' }],
+    timestamped_evidence: [
+      { timestamp: '00:08', observation: 'Performer shifts eyeline before the second phrase.', why_it_matters: 'Useful moment', linked_category: 'acting' },
+      { timestamp: '00:14', observation: 'Audio drops slightly on the final word.', why_it_matters: 'Useful moment', linked_category: 'audio' },
+      { timestamp: '00:18', observation: 'Supplied material text is visible in the runtime context.', why_it_matters: 'Material context', linked_category: 'brief_adherence' },
+      { timestamp: '00:20', observation: 'Ready to submit because the scene is strong.', why_it_matters: 'Judgement', linked_category: 'acting' },
+    ],
+    evidence_sufficiency: {
+      audio_assessable: true,
+      video_assessable: true,
+      acting_assessable: true,
+      vocal_assessable: false,
+      movement_assessable: true,
+      brief_assessable: true,
+      role_fit_assessable: false,
+      notes: 'Assessability notes only',
+    },
+    ...overrides,
+  };
+}
+
+async function emitFilteredRunEvidencePassAnalysisBundle(options: {
+  evidence?: unknown;
+  resolver?: boolean;
+  truth?: boolean;
+  rawReport?: Record<string, unknown>;
+} = {}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914g-'));
+  const run = `run-s914g-${Math.random().toString(36).slice(2)}`;
+  const take = 't1';
+  const filtered = filterRunEvidencePassForStep1(options.evidence ?? sampleRunEvidencePass(), { model: 'test-model', durationSeconds: 60 });
+  const out = await emitAnalysisEvidenceStatePrerequisite({
+    run_id: run,
+    analysis_run_id: run,
+    submission_id: 'sub1',
+    take_id: take,
+    source_module: 'test',
+    source_stage: 'analysis_step_1_evidence_mapping',
+    selected_level: 'advanced',
+    audition_type: 'monologue',
+    brief_presence: 'supplied',
+    brief_presence_source: 'audition.brief',
+    material_presence: 'supplied',
+    material_presence_source: 'loaded_runtime_field',
+    component_or_task_declaration_status: 'unknown',
+    component_or_task_declaration_source: 'not_loaded',
+    media_readiness_state: 'ready',
+    media_duration_seconds: 60,
+    duration_confidence: 'known',
+    resolver_output_available: options.resolver ?? true,
+    truth_state_map_available: options.truth ?? true,
+    filtered_run_evidence_pass_step1: filtered,
+    raw_report_data: options.rawReport ?? { report_data: { timestamped_notes: [{ timestamp: '00:01', note: 'Forbidden report note' }], strengths: ['Forbidden report strength'], fix_first: 'Forbidden fix first', category_notes: { acting: 'Forbidden category note' } } },
+    root_dir: root,
+    internal_qa_emit: true,
+  } as any);
+  await emitQAManifestForAnalysisRun({
+    run_id: run,
+    analysis_run_id: run,
+    take_id: take,
+    submission_id: 'sub1',
+    root_dir: root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: out.emitted_artefact_ids,
+    emitted_blocked_artefact_ids: out.emitted_blocked_artefact_ids,
+    artefact_source_classification_by_id: out.written ? { analysis_evidence_state: out.source_classification } : {},
+    artefact_level2_spine_satisfaction_by_id: out.written ? { analysis_evidence_state: out.level2_satisfies } : {},
+    analysis_evidence_state_summary: out.written ? out.summary : undefined,
+  });
+  const payloadPath = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'analysis', 'AnalysisEvidenceState.json');
+  const payload = out.written ? JSON.parse(await readFile(payloadPath, 'utf8')) : null;
+  const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+  return { root, run, take, filtered, out, payload, manifest, metrics };
 }
 
 describe('S9-14A legacy containment and current-state guardrail', () => {
@@ -1006,6 +1114,307 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     expect(out.written).toBe(true);
     expect(out.source_classification).toBe('real_runtime_v3_partial_non_satisfying');
     expect(out.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+  });
+});
+
+describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
+  it('persists filtered runEvidencePass output as Step 1 before Step 2/raw_report', async () => {
+    const { payload, out } = await emitFilteredRunEvidencePassAnalysisBundle();
+    expect(out.written).toBe(true);
+    expect(payload.source_stage).toBe('analysis_step_1_evidence_mapping');
+    expect(payload.source_trigger_stage).toBe('analysis_step_1_evidence_mapping');
+    expect(payload.extractor_source_module).toBe('src/server/evidence-pass.server.ts');
+    expect(payload.extractor_source_stage).toBe('runEvidencePass_filtered_before_step2');
+    expect(payload.step2_dependency_status).toMatchObject({ status: 'ready_with_limitations', can_run_step2: true });
+    expect(payload.video_observable_evidence_items.length).toBeGreaterThan(0);
+    expect(payload.audio_observable_evidence_items.length).toBeGreaterThan(0);
+    expect(payload.material_observable_evidence_items.length).toBeGreaterThan(0);
+    expect(payload.performance_observable_evidence_items.length).toBeGreaterThan(0);
+  });
+
+  it('does not use raw_report or report_data as Step 1 evidence', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle();
+    const serialised = JSON.stringify(payload).toLowerCase();
+    expect(serialised).not.toContain('source_artefact_id":"raw_report');
+    expect(serialised).not.toContain('report_data');
+    expect(serialised).not.toContain('forbidden report note');
+    expect(serialised).not.toContain('forbidden report strength');
+    expect(serialised).not.toContain('forbidden fix first');
+    expect(serialised).not.toContain('forbidden category note');
+  });
+
+  it('filters score fields and preserves public scoring as blocked', async () => {
+    const { payload, metrics } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        overall_score: 94,
+        score: 93,
+        score_breakdown: { acting: 92 },
+        readiness_score: 91,
+      }),
+    });
+    expect(payload.rejected_or_filtered_fields).toEqual(expect.arrayContaining([
+      'overall_score',
+      'score',
+      'score_breakdown',
+      'readiness_score',
+      'raw_scores',
+    ]));
+    const evidenceOnly = JSON.stringify(payload.observable_evidence_items).toLowerCase();
+    expect(evidenceOnly).not.toContain('overall_score');
+    expect(evidenceOnly).not.toContain('readiness_score');
+    expect(evidenceOnly).not.toContain('raw_scores');
+    expect(payload.prohibited_field_filter_summary.raw_values_persisted).toBe(false);
+    expect(metrics.public_scoring_status).toBe('blocked');
+  });
+
+  it('filters readiness, verdict and submit/retake recommendations', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        readiness: 'ready to submit',
+        verdict: 'submit this take',
+        submit_recommendation: 'submit',
+        retake_recommendation: 'not needed',
+      }),
+    });
+    expect(payload.rejected_or_filtered_fields).toEqual(expect.arrayContaining([
+      'readiness',
+      'verdict',
+      'submit_recommendation',
+      'retake_recommendation',
+      'timestamped_evidence[3].observation',
+    ]));
+    const evidenceOnly = JSON.stringify(payload.observable_evidence_items).toLowerCase();
+    expect(evidenceOnly).not.toContain('ready to submit');
+    expect(evidenceOnly).not.toContain('submit this take');
+  });
+
+  it('filters role-fit, casting-fit, marketability, bookability and castability fields', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        role_fit: 'ideal role fit',
+        casting_fit: 'casting fit is strong',
+        marketability: 'high',
+        bookability: 'high',
+        castability: 'high',
+      }),
+    });
+    expect(payload.rejected_or_filtered_fields).toEqual(expect.arrayContaining([
+      'role_fit',
+      'casting_fit',
+      'marketability',
+      'bookability',
+      'castability',
+      'role_fit_evidence',
+    ]));
+    const evidenceOnly = JSON.stringify(payload.observable_evidence_items).toLowerCase();
+    expect(evidenceOnly).not.toContain('role fit');
+    expect(evidenceOnly).not.toContain('casting fit');
+    expect(evidenceOnly).not.toContain('bookability');
+  });
+
+  it('filters fix-first, priority, next-take and report prose fields', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        fix_first: 'Fix first: change the ending',
+        priority_fixes: ['report-ready priority'],
+        next_take_plan: 'Next take should be brighter',
+        report_prose: 'This is final report prose',
+      }),
+    });
+    expect(payload.rejected_or_filtered_fields).toEqual(expect.arrayContaining([
+      'fix_first',
+      'priority_fixes',
+      'next_take_plan',
+      'report_prose',
+      'fix_first_evidence',
+      'category_notes_evidence',
+      'core_strengths_evidence',
+      'core_improvements_evidence',
+    ]));
+    const evidenceOnly = JSON.stringify(payload.observable_evidence_items).toLowerCase();
+    expect(evidenceOnly).not.toContain('fix first');
+    expect(evidenceOnly).not.toContain('next take');
+    expect(evidenceOnly).not.toContain('final report prose');
+  });
+
+  it('persists candidate technique evidence only as internal non-authoritative observation candidates', async () => {
+    const { payload, metrics } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        candidate_technique_evidence: [
+          { safe_evidence_summary: 'Breath support pattern is observable as a candidate only.', label: 'breath_support' },
+          { safe_evidence_summary: 'Authoritative diagnosis with score', score: 99, authoritative: true },
+        ],
+      }),
+    });
+    expect(payload.candidate_technique_evidence).toHaveLength(1);
+    expect(payload.candidate_technique_evidence[0]).toMatchObject({
+      evidence_family: 'candidate_technique',
+      public_display_status: 'internal_only',
+    });
+    expect(payload.rejected_or_filtered_fields).toContain('candidate_technique_evidence[1]');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('persists video, audio, material and performance observations when provided by runEvidencePass', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle();
+    expect(payload.video_observable_evidence_items.some((item: any) => item.source_artefact_id === 'run_evidence_pass')).toBe(true);
+    expect(payload.audio_observable_evidence_items.some((item: any) => item.evidence_family === 'audio')).toBe(true);
+    expect(payload.material_observable_evidence_items.some((item: any) => item.evidence_family === 'material')).toBe(true);
+    expect(payload.performance_observable_evidence_items.some((item: any) => item.evidence_family === 'performance')).toBe(true);
+    const serialised = JSON.stringify([
+      payload.video_observable_evidence_items,
+      payload.audio_observable_evidence_items,
+      payload.material_observable_evidence_items,
+      payload.performance_observable_evidence_items,
+    ]).toLowerCase();
+    expect(serialised).not.toContain('ready to submit');
+    expect(serialised).not.toContain('overall score');
+  });
+
+  it('records missing extractor families as unavailable instead of fabricating evidence', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        presentation_evidence: [],
+        timestamped_evidence: [],
+        candidate_technique_evidence: [],
+      }),
+    });
+    expect(payload.evidence_state_status).toBe('partial');
+    expect(payload.cannot_satisfy_v3_gate).toBe(true);
+    const unavailableKinds = payload.unsupported_or_unavailable_evidence.map((item: any) => item.evidence_kind);
+    expect(unavailableKinds).toEqual(expect.arrayContaining([
+      'video_observable_evidence_not_extracted',
+      'audio_observable_evidence_not_extracted',
+      'material_observable_evidence_not_extracted',
+      'performance_observable_evidence_not_extracted',
+      'candidate_technique_observable_evidence_not_extracted',
+    ]));
+  });
+
+  it('blocks Step 2 dependency when TruthStateMap linkage is missing', async () => {
+    const { payload, metrics } = await emitFilteredRunEvidencePassAnalysisBundle({ truth: false });
+    expect(payload.step2_dependency_status).toMatchObject({ status: 'blocked', can_run_step2: false });
+    expect(payload.step2_dependency_status.blocker_codes).toContain('TruthStateMap_missing');
+    expect(metrics.blocker_codes).toContain('TruthStateMap_missing');
+  });
+
+  it('reports Step 1 write failure without creating satisfying evidence', async () => {
+    const rootFile = path.join(os.tmpdir(), `qa-s914g-not-dir-${Math.random().toString(36).slice(2)}`);
+    await writeFile(rootFile, 'not a directory', 'utf8');
+    const filtered = filterRunEvidencePassForStep1(sampleRunEvidencePass(), { model: 'test-model', durationSeconds: 60 });
+    const out = await emitAnalysisEvidenceStatePrerequisite({
+      run_id: 'run-s914g-write-fail',
+      analysis_run_id: 'run-s914g-write-fail',
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'analysis_step_1_evidence_mapping',
+      filtered_run_evidence_pass_step1: filtered,
+      root_dir: rootFile,
+      internal_qa_emit: true,
+    } as any);
+    expect(out.written).toBe(false);
+    expect(out.level2_satisfies).toBe(false);
+  });
+
+  it('handles malformed runEvidencePass output without crashing', async () => {
+    const { payload, out } = await emitFilteredRunEvidencePassAnalysisBundle({ evidence: 'malformed-runEvidencePass-output' });
+    expect(out.written).toBe(true);
+    expect(payload.evidence_state_status).toBe('blocked');
+    expect(payload.cannot_satisfy_v3_gate).toBe(true);
+    expect(payload.rejected_or_filtered_fields).toContain('runEvidencePass.malformed_output');
+    expect(payload.blocker_codes).toContain('runEvidencePass_malformed_output');
+  });
+
+  it('does not let caller metadata override canonical AnalysisEvidenceState fields', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914g-canonical-'));
+    const run = `run-s914g-canonical-${Math.random().toString(36).slice(2)}`;
+    const filtered = {
+      ...filterRunEvidencePassForStep1(sampleRunEvidencePass(), { model: 'test-model', durationSeconds: 60 }),
+      schema_version: 'attacker',
+      artefact_type: 'accepted_gate_evidence',
+      run_id: 'attacker-run',
+      analysis_run_id: 'attacker-analysis',
+      internal_only: false,
+      privacy_classification: 'public',
+      source_classification: 'accepted_gate_evidence',
+      cannot_satisfy_v3_gate: false,
+      blocker_codes: [],
+    };
+    const out = await emitAnalysisEvidenceStatePrerequisite({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'analysis_step_1_evidence_mapping',
+      selected_level: 'advanced',
+      audition_type: 'monologue',
+      brief_presence: 'supplied',
+      material_presence: 'supplied',
+      media_readiness_state: 'ready',
+      media_duration_seconds: 60,
+      duration_confidence: 'known',
+      resolver_output_available: true,
+      truth_state_map_available: true,
+      filtered_run_evidence_pass_step1: filtered,
+      root_dir: root,
+      internal_qa_emit: true,
+    } as any);
+    expect(out.written).toBe(true);
+    const payload = out.payload as any;
+    expect(payload.schema_version).toBe('tapecoach_v3_analysis_evidence_state_v1');
+    expect(payload.artefact_type).toBe('analysis_evidence_state');
+    expect(payload.run_id).toBe(run);
+    expect(payload.analysis_run_id).toBe(run);
+    expect(payload.internal_only).toBe(true);
+    expect(payload.privacy_classification).toBe('internal_private');
+    expect(payload.cannot_satisfy_v3_gate).toBe(true);
+  });
+
+  it('keeps EvidenceAnchors truthful after persisted filtered Step 1 evidence', async () => {
+    const base = await emitFilteredRunEvidencePassAnalysisBundle();
+    const anchorsOut = await emitEvidenceAnchorsFirstPass({
+      run_id: base.run,
+      analysis_run_id: base.run,
+      submission_id: 'sub1',
+      take_id: base.take,
+      source_module: 'test',
+      source_stage: 'process_take_success',
+      analysis_evidence_state_data: base.payload,
+      raw_report_data: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report note' }] } },
+      root_dir: base.root,
+      internal_qa_emit: true,
+    } as any);
+    expect(anchorsOut.written).toBe(true);
+    expect(anchorsOut.source_classification).toBe('mixed_real_and_legacy_non_satisfying');
+    expect(anchorsOut.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+  });
+
+  it('keeps PublicClaimTrace legacy and non-satisfying after persisted filtered Step 1 evidence', async () => {
+    const { claims, manifest, metrics } = await emitPromotedEvidenceAnchorsBundle({ includePublicClaimTrace: true });
+    expect(manifest.artefact_source_classification_by_id.public_claim_trace).toBe('legacy_adapter');
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(metrics.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('aligns manifest and qa_acceptance_metrics for AnalysisEvidenceState and keeps global gates blocked', async () => {
+    const { manifest, metrics, out, payload } = await emitFilteredRunEvidencePassAnalysisBundle();
+    expect(manifest.artefact_status_by_id.analysis_evidence_state).toBe(metrics.analysis_evidence_state_status);
+    expect(manifest.artefact_source_classification_by_id.analysis_evidence_state).toBe(metrics.analysis_evidence_state_source_classification);
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.analysis_evidence_state).toBe(false);
+    expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
+    expect(metrics.analysis_evidence_state_gate_reason).toBe(out.summary.analysis_evidence_state_gate_reason);
+    expect(metrics.blocker_codes).toEqual(manifest.blocker_codes);
+    expect(payload.public_output_unchanged).toBe(true);
+    expect(manifest.level2_qa_acceptance).toBe('not_accepted');
+    expect(manifest.production_safe_status).toBe('blocked');
+    expect(manifest.public_scoring_status).toBe('blocked');
+    expect(manifest.public_technique_authority_status).toBe('blocked');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 });
 

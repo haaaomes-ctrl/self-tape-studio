@@ -682,3 +682,367 @@ export function summariseEvidence(ev: EvidencePass) {
     },
   };
 }
+
+type Step1EvidenceFamily = "video" | "audio" | "material" | "performance" | "candidate_technique";
+
+export type FilteredStep1EvidenceItem = {
+  evidence_item_id: string;
+  evidence_family: Step1EvidenceFamily;
+  evidence_modality: "video" | "audio" | "material" | "submission_context" | "resolver_truth" | "media_readiness" | "unknown";
+  evidence_kind: string;
+  safe_evidence_summary: string;
+  source_artefact_id: "run_evidence_pass";
+  source_path: string;
+  timestamp: string | null;
+  timestamp_range: null;
+  timestamp_source: string;
+  component_id: string | null;
+  linked_truth_state_ids: string[];
+  assessability_limitations: string[];
+  confidence_or_strength: string | null;
+  public_display_status: "internal_only";
+  blocker_codes: string[];
+};
+
+export type FilteredRunEvidencePassStep1 = {
+  schema_version: "tapecoach_v3_filtered_run_evidence_pass_step1_v1";
+  extractor_source: "runEvidencePass";
+  extractor_model_ref: string | null;
+  extraction_status: "partial" | "blocked";
+  evidence_family_coverage: {
+    video: boolean;
+    audio: boolean;
+    material: boolean;
+    performance: boolean;
+    candidate_technique: boolean;
+  };
+  evidence_family_status_by_id: Record<Step1EvidenceFamily, "partial" | "not_extracted" | "blocked">;
+  video_observable_evidence_items: FilteredStep1EvidenceItem[];
+  audio_observable_evidence_items: FilteredStep1EvidenceItem[];
+  material_observable_evidence_items: FilteredStep1EvidenceItem[];
+  performance_observable_evidence_items: FilteredStep1EvidenceItem[];
+  candidate_technique_evidence: FilteredStep1EvidenceItem[];
+  observable_evidence_items: FilteredStep1EvidenceItem[];
+  unsupported_or_unavailable_evidence: Array<{
+    evidence_kind: string;
+    status: "not_extracted" | "blocked";
+    reason: string;
+    blocker_codes: string[];
+  }>;
+  rejected_or_filtered_fields: string[];
+  prohibited_field_filter_summary: {
+    rejected_field_count: number;
+    rejected_field_keys: string[];
+    raw_values_persisted: false;
+  };
+  assessability_limitations: string[];
+  blocker_codes: string[];
+};
+
+const ALWAYS_FILTERED_STEP1_FIELDS = [
+  "detected_components[].score",
+  "raw_scores",
+  "brief_adherence_evidence.score_material",
+  "brief_adherence_evidence.score_technical",
+  "brief_adherence_evidence.score_instruction",
+  "brief_adherence_evidence.score_professional",
+  "core_strengths_evidence",
+  "core_improvements_evidence",
+  "fix_first_evidence",
+  "category_notes_evidence",
+  "role_fit_evidence",
+  "role_fit_modifier_suggested",
+  "role_fit_confidence",
+  "risk_evidence",
+] as const;
+
+const PROHIBITED_STEP1_TOP_LEVEL_FIELDS = [
+  "overall_score",
+  "score",
+  "score_breakdown",
+  "readiness_score",
+  "readiness",
+  "verdict",
+  "submission_verdict",
+  "submit_recommendation",
+  "retake_recommendation",
+  "role_fit",
+  "role_fit_notes",
+  "casting_fit",
+  "casting_headline",
+  "casting_insight",
+  "market_fit",
+  "marketability",
+  "bookability",
+  "castability",
+  "comparison_winner",
+  "comparison_recommendation",
+  "fix_first",
+  "priority_fixes",
+  "next_take",
+  "next_take_plan",
+  "report_prose",
+] as const;
+
+const PROHIBITED_STEP1_TEXT_RE =
+  /\b(overall score|readiness|ready to submit|not ready|retake|re-take|submit|bookability|marketability|castability|casting fit|role fit|perfect match|winner|recommend|fix first|priority fix|next take|technique authority|diagnosis)\b/i;
+
+const UNSAFE_STEP1_TEXT_RE = /\bhttps?:\/\/|token|secret|signed url|signature=|mux_token\b/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function addRejected(target: Set<string>, key: string) {
+  if (key.trim()) target.add(key.trim());
+}
+
+function safeStep1Text(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/\s+/g, " ");
+  if (!text) return null;
+  if (UNSAFE_STEP1_TEXT_RE.test(text)) return null;
+  if (PROHIBITED_STEP1_TEXT_RE.test(text)) return null;
+  return text.slice(0, 280);
+}
+
+function familyForLinkedCategory(category: unknown): Step1EvidenceFamily {
+  switch (String(category ?? "").toLowerCase()) {
+    case "technical":
+    case "professional_presentation":
+      return "video";
+    case "audio":
+      return "audio";
+    case "brief_adherence":
+      return "material";
+    case "acting":
+    case "vocal":
+      return "performance";
+    default:
+      return "performance";
+  }
+}
+
+function modalityForFamily(family: Step1EvidenceFamily): FilteredStep1EvidenceItem["evidence_modality"] {
+  if (family === "candidate_technique") return "unknown";
+  return family;
+}
+
+export function filterRunEvidencePassForStep1(
+  input: unknown,
+  options: { model?: string | null; durationSeconds?: number | null } = {},
+): FilteredRunEvidencePassStep1 {
+  const rejected = new Set<string>();
+  for (const field of ALWAYS_FILTERED_STEP1_FIELDS) addRejected(rejected, field);
+
+  if (!isRecord(input)) {
+    addRejected(rejected, "runEvidencePass.malformed_output");
+    return buildFilteredStep1Result({
+      model: options.model ?? null,
+      rejected,
+      video: [],
+      audio: [],
+      material: [],
+      performance: [],
+      technique: [],
+      malformed: true,
+    });
+  }
+
+  for (const field of PROHIBITED_STEP1_TOP_LEVEL_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(input, field)) addRejected(rejected, field);
+  }
+
+  const video: FilteredStep1EvidenceItem[] = [];
+  const audio: FilteredStep1EvidenceItem[] = [];
+  const material: FilteredStep1EvidenceItem[] = [];
+  const performance: FilteredStep1EvidenceItem[] = [];
+  const technique: FilteredStep1EvidenceItem[] = [];
+
+  const addItem = (
+    family: Step1EvidenceFamily,
+    sourcePath: string,
+    evidenceKind: string,
+    summary: string,
+    timestamp: string | null = null,
+    limitations: string[] = [],
+  ) => {
+    const target =
+      family === "video"
+        ? video
+        : family === "audio"
+          ? audio
+          : family === "material"
+            ? material
+            : family === "candidate_technique"
+              ? technique
+              : performance;
+    const item: FilteredStep1EvidenceItem = {
+      evidence_item_id: `step1-${family}-${String(target.length + 1).padStart(4, "0")}`,
+      evidence_family: family,
+      evidence_modality: modalityForFamily(family),
+      evidence_kind: evidenceKind,
+      safe_evidence_summary: summary,
+      source_artefact_id: "run_evidence_pass",
+      source_path: sourcePath,
+      timestamp,
+      timestamp_range: null,
+      timestamp_source: timestamp ? "runEvidencePass_validated_timestamp" : "not_timestamped_observation",
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: limitations,
+      confidence_or_strength: "runEvidencePass_observation",
+      public_display_status: "internal_only",
+      blocker_codes: [],
+    };
+    target.push(item);
+  };
+
+  const timestamped = Array.isArray(input.timestamped_evidence) ? input.timestamped_evidence : [];
+  timestamped.forEach((entry, index) => {
+    if (!isRecord(entry)) {
+      addRejected(rejected, `timestamped_evidence[${index}]`);
+      return;
+    }
+    const observation = safeStep1Text(entry.observation);
+    const timestamp = typeof entry.timestamp === "string" && isValidTimestamp(entry.timestamp, options.durationSeconds)
+      ? entry.timestamp
+      : null;
+    if (!observation) {
+      addRejected(rejected, `timestamped_evidence[${index}].observation`);
+      return;
+    }
+    if (!timestamp && typeof entry.timestamp === "string") addRejected(rejected, `timestamped_evidence[${index}].timestamp`);
+    const family = familyForLinkedCategory(entry.linked_category);
+    addItem(
+      family,
+      `timestamped_evidence[${index}].observation`,
+      `${family}_observable_event`,
+      observation,
+      timestamp,
+      timestamp ? [] : ["timestamp_unavailable_or_invalid"],
+    );
+  });
+
+  const presentation = Array.isArray(input.presentation_evidence) ? input.presentation_evidence : [];
+  presentation.forEach((entry, index) => {
+    const text = safeStep1Text(entry);
+    if (!text) {
+      addRejected(rejected, `presentation_evidence[${index}]`);
+      return;
+    }
+    addItem("video", `presentation_evidence[${index}]`, "video_presentation_observation", text);
+  });
+
+  const sufficiency = isRecord(input.evidence_sufficiency) ? input.evidence_sufficiency : null;
+  if (sufficiency) {
+    const notes = safeStep1Text(sufficiency.notes);
+    if (sufficiency.video_assessable === false) {
+      addItem("video", "evidence_sufficiency.video_assessable", "video_assessability_limitation", notes ?? "Video assessability limitation recorded", null, ["video_not_fully_assessable"]);
+    }
+    if (sufficiency.audio_assessable === false) {
+      addItem("audio", "evidence_sufficiency.audio_assessable", "audio_assessability_limitation", notes ?? "Audio assessability limitation recorded", null, ["audio_not_fully_assessable"]);
+    }
+    if (sufficiency.movement_assessable === false) {
+      addItem("video", "evidence_sufficiency.movement_assessable", "movement_visibility_limitation", notes ?? "Movement assessability limitation recorded", null, ["movement_not_fully_assessable"]);
+    }
+  }
+
+  const candidateTechnique = Array.isArray(input.candidate_technique_evidence)
+    ? input.candidate_technique_evidence
+    : [];
+  candidateTechnique.forEach((entry, index) => {
+    const rawText = isRecord(entry)
+      ? (entry.safe_evidence_summary ?? entry.evidence ?? entry.label)
+      : entry;
+    const text = safeStep1Text(rawText);
+    const hasUnsafeAuthority = isRecord(entry) && (
+      typeof entry.score === "number"
+      || entry.authoritative === true
+      || PROHIBITED_STEP1_TEXT_RE.test(String(entry.diagnosis ?? ""))
+    );
+    if (!text || hasUnsafeAuthority) {
+      addRejected(rejected, `candidate_technique_evidence[${index}]`);
+      return;
+    }
+    addItem("candidate_technique", `candidate_technique_evidence[${index}]`, "candidate_technique_observation", text);
+  });
+
+  return buildFilteredStep1Result({
+    model: options.model ?? null,
+    rejected,
+    video,
+    audio,
+    material,
+    performance,
+    technique,
+    malformed: false,
+  });
+}
+
+function buildFilteredStep1Result(args: {
+  model: string | null;
+  rejected: Set<string>;
+  video: FilteredStep1EvidenceItem[];
+  audio: FilteredStep1EvidenceItem[];
+  material: FilteredStep1EvidenceItem[];
+  performance: FilteredStep1EvidenceItem[];
+  technique: FilteredStep1EvidenceItem[];
+  malformed: boolean;
+}): FilteredRunEvidencePassStep1 {
+  const evidence_family_coverage = {
+    video: args.video.length > 0,
+    audio: args.audio.length > 0,
+    material: args.material.length > 0,
+    performance: args.performance.length > 0,
+    candidate_technique: args.technique.length > 0,
+  };
+  const familyStatus = (present: boolean): "partial" | "not_extracted" | "blocked" =>
+    args.malformed ? "blocked" : (present ? "partial" : "not_extracted");
+  const evidence_family_status_by_id: Record<Step1EvidenceFamily, "partial" | "not_extracted" | "blocked"> = {
+    video: familyStatus(evidence_family_coverage.video),
+    audio: familyStatus(evidence_family_coverage.audio),
+    material: familyStatus(evidence_family_coverage.material),
+    performance: familyStatus(evidence_family_coverage.performance),
+    candidate_technique: familyStatus(evidence_family_coverage.candidate_technique),
+  };
+  const unsupported_or_unavailable_evidence = (Object.entries(evidence_family_status_by_id) as Array<[Step1EvidenceFamily, "partial" | "not_extracted" | "blocked"]>)
+    .filter(([, status]) => status !== "partial")
+    .map(([family, status]) => ({
+      evidence_kind: `${family}_observable_evidence_${status}`,
+      status: status as "not_extracted" | "blocked",
+      reason: status === "blocked"
+        ? "runEvidencePass output was malformed or unsafe for this evidence family"
+        : `${family} observable evidence was not extracted from runEvidencePass`,
+      blocker_codes: [`${family}_observable_evidence_${status}`],
+    }));
+  const rejectedKeys = [...args.rejected].sort();
+  const blocker_codes = [
+    ...(args.malformed ? ["runEvidencePass_malformed_output"] : []),
+    ...unsupported_or_unavailable_evidence.flatMap((item) => item.blocker_codes),
+    ...(rejectedKeys.length > 0 ? ["runEvidencePass_prohibited_fields_filtered"] : []),
+  ];
+  return {
+    schema_version: "tapecoach_v3_filtered_run_evidence_pass_step1_v1",
+    extractor_source: "runEvidencePass",
+    extractor_model_ref: args.model,
+    extraction_status: args.malformed ? "blocked" : "partial",
+    evidence_family_coverage,
+    evidence_family_status_by_id,
+    video_observable_evidence_items: args.video,
+    audio_observable_evidence_items: args.audio,
+    material_observable_evidence_items: args.material,
+    performance_observable_evidence_items: args.performance,
+    candidate_technique_evidence: args.technique,
+    observable_evidence_items: [...args.video, ...args.audio, ...args.material, ...args.performance],
+    unsupported_or_unavailable_evidence,
+    rejected_or_filtered_fields: rejectedKeys,
+    prohibited_field_filter_summary: {
+      rejected_field_count: rejectedKeys.length,
+      rejected_field_keys: rejectedKeys,
+      raw_values_persisted: false,
+    },
+    assessability_limitations: unsupported_or_unavailable_evidence.map((item) => item.evidence_kind),
+    blocker_codes,
+  };
+}
