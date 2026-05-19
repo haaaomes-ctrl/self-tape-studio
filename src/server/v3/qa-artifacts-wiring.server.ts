@@ -158,23 +158,26 @@ export async function emitComparisonParityProof(input: {
   const publicWinnerAbsent = !forbiddenHits.some((x) => winnerFields.has(x.field));
   const publicRecommendationAbsent = !forbiddenHits.some((x) => recommendationFields.has(x.field));
   const riskSources = collectComparisonRiskSources(payloadsObject);
-  const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted', 'suppressed_internal_only']);
-  const mitigationAccepted = (v: unknown) => typeof v === 'string' && acceptedMitigationStatuses.has(v);
+  const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted']);
+  const isAcceptedComparisonMitigation = (v: unknown) => typeof v === 'string' && acceptedMitigationStatuses.has(v);
   const hasTrueFlag = (field: string): boolean => riskSources.some((s) => s.value[field] === true);
   const hasUnresolvedBlocked = (field: string): boolean => riskSources.some((s) => s.value[field] === 'unresolved_blocked');
-  const hasUnmitigatedDetected = (flagField: string, mitigationField: string): boolean => riskSources.some((s) => s.value[flagField] === true && !mitigationAccepted(s.value[mitigationField]));
+  const hasUnmitigatedDetected = (flagField: string, ...mitigationFields: string[]): boolean => riskSources.some((s) => {
+    if (s.value[flagField] !== true) return false;
+    return !mitigationFields.some((field) => isAcceptedComparisonMitigation(s.value[field]));
+  });
   const forcedWinnerRiskAbsent = !hasTrueFlag('forced_winner_risk');
   const falseWinnerRiskAbsent = !hasTrueFlag('false_winner_risk');
   const routeVarianceRiskAbsent = !(
     hasTrueFlag('route_variance_risk')
     || hasUnresolvedBlocked('route_variance_mitigation_status')
-    || hasUnmitigatedDetected('route_mismatch_detected', 'route_variance_mitigation_status')
-    || hasUnmitigatedDetected('route_variance_detected', 'route_variance_mitigation_status')
+    || hasUnmitigatedDetected('route_mismatch_detected', 'route_variance_mitigation_status', 'route_variance_suppression_status')
+    || hasUnmitigatedDetected('route_variance_detected', 'route_variance_mitigation_status', 'route_variance_suppression_status')
   );
   const sameVideoRiskAbsent = !(
     hasTrueFlag('same_video_unresolved_risk')
-    || hasUnmitigatedDetected('same_video_detected', 'same_video_mitigation_status')
-    || hasUnmitigatedDetected('repeated_input_detected', 'same_video_mitigation_status')
+    || hasUnmitigatedDetected('same_video_detected', 'same_video_mitigation_status', 'same_video_suppression_status')
+    || hasUnmitigatedDetected('repeated_input_detected', 'same_video_mitigation_status', 'same_video_suppression_status')
     || riskSources.some((s) => s.value.no_material_difference === false)
   );
   const comparisonPayloadsAvailable = publicSurfaces.length > 0;
@@ -191,7 +194,13 @@ export async function emitComparisonParityProof(input: {
   if (!falseWinnerRiskAbsent) mismatch.push({ mismatch_type: 'false_winner_risk_detected', source_trace_keys: riskSources.filter((s) => s.value.false_winner_risk === true).map((s) => s.source) });
   if (!routeVarianceRiskAbsent) mismatch.push({ mismatch_type: 'route_variance_unresolved', source_trace_keys: riskSources.filter((s) => s.value.route_variance_risk === true || s.value.route_variance_mitigation_status === 'unresolved_blocked' || s.value.route_mismatch_detected === true || s.value.route_variance_detected === true).map((s) => s.source) });
   if (!sameVideoRiskAbsent) mismatch.push({ mismatch_type: 'same_video_unresolved_risk', source_trace_keys: riskSources.filter((s) => s.value.same_video_unresolved_risk === true || s.value.same_video_detected === true || s.value.repeated_input_detected === true || s.value.no_material_difference === false).map((s) => s.source) });
-  const parityStatus = !input.comparison_invoked ? 'not_applicable' : ((!forbiddenPublicComparisonFieldsAbsent || !forcedWinnerRiskAbsent || !falseWinnerRiskAbsent) ? 'failed' : (!requiredOk || !comparisonPayloadsAvailable || !routeVarianceRiskAbsent || !sameVideoRiskAbsent ? 'insufficient' : 'passed'));
+  const parityStatus = !input.comparison_invoked
+    ? 'not_applicable'
+    : (
+      (!forbiddenPublicComparisonFieldsAbsent || !forcedWinnerRiskAbsent || !falseWinnerRiskAbsent || !routeVarianceRiskAbsent || !sameVideoRiskAbsent)
+        ? 'failed'
+        : (!requiredOk || !comparisonPayloadsAvailable ? 'insufficient' : 'passed')
+    );
   const blocker_codes = (parityStatus === 'passed' || parityStatus === 'not_applicable') ? [] : ['parity_artefacts_missing'];
   if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
   const outPayload = {

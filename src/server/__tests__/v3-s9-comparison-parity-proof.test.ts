@@ -136,7 +136,7 @@ describe('v3-s9 comparison parity proof', () => {
     for (const [suffix, payloads] of cases) {
       const root = await mkdtemp(path.join(os.tmpdir(), `s9-13d-nested-risk-${suffix}-`));
       const { manifest, metrics, parity } = await emitCase(root, `run-${suffix}`, { payloads });
-      expect(['failed', 'insufficient']).toContain(parity.parity_status);
+      expect(parity.parity_status).toBe('failed');
       expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
       expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
       expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
@@ -152,9 +152,39 @@ describe('v3-s9 comparison parity proof', () => {
 
     const rootSameVideo = await mkdtemp(path.join(os.tmpdir(), 's9-13d-samevideo-mitigated-'));
     const sameVideo = await emitCase(rootSameVideo, 'run-samevideo-mitigated', {
-      payloads: { same_video_repeatability_trace: { same_video_detected: true, same_video_mitigation_status: 'accepted' }, public_comparison_payload: { note: 'safe' } },
+      payloads: { same_video_repeatability_trace: { same_video_detected: true, same_video_suppression_status: 'resolved' }, public_comparison_payload: { note: 'safe' } },
     });
     expect(sameVideo.parity.parity_status).toBe('passed');
+
+    const rootRouteSuppressed = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-suppressed-'));
+    const routeSuppressed = await emitCase(rootRouteSuppressed, 'run-route-suppressed', {
+      payloads: { route_variance_trace: { route_variance_detected: true, route_variance_suppression_status: 'mitigated' }, public_comparison_payload: { note: 'safe' } },
+    });
+    expect(routeSuppressed.parity.parity_status).toBe('passed');
+
+    const rootRepeatedMitigated = await mkdtemp(path.join(os.tmpdir(), 's9-13d-repeated-mitigated-'));
+    const repeatedMitigated = await emitCase(rootRepeatedMitigated, 'run-repeated-mitigated', {
+      payloads: { same_video_repeatability_trace: { repeated_input_detected: true, same_video_suppression_status: 'mitigated' }, public_comparison_payload: { note: 'safe' } },
+    });
+    expect(repeatedMitigated.parity.parity_status).toBe('passed');
+  });
+
+  it('top-level repeated_input_detected and route_mismatch_detected fail when unmitigated', async () => {
+    const rootRepeated = await mkdtemp(path.join(os.tmpdir(), 's9-13d-top-repeated-'));
+    const repeated = await emitCase(rootRepeated, 'run-top-repeated', { payloads: { repeated_input_detected: true } });
+    expect(repeated.parity.parity_status).toBe('failed');
+
+    const rootMismatch = await mkdtemp(path.join(os.tmpdir(), 's9-13d-top-route-mismatch-'));
+    const mismatch = await emitCase(rootMismatch, 'run-top-route-mismatch', { payloads: { route_mismatch_detected: true } });
+    expect(mismatch.parity.parity_status).toBe('failed');
+  });
+
+  it('unresolved_blocked always fails even with benign suppression status', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-unresolved-blocked-'));
+    const out = await emitCase(root, 'run-unresolved-blocked', {
+      payloads: { route_variance_trace: { route_variance_detected: true, route_variance_mitigation_status: 'unresolved_blocked', route_variance_suppression_status: 'not_required' } },
+    });
+    expect(out.parity.parity_status).toBe('failed');
   });
 
   it('collector diagnostics include top-level and nested risk sources/fields', async () => {
@@ -237,10 +267,10 @@ describe('v3-s9 comparison parity proof', () => {
     expect(score.parity.mismatches.some((m:any)=>m.path === 'public_output.comparison.cards[0].public_score')).toBe(true);
   });
 
-  it('O insufficient parity can be physically written and non-satisfying', async () => {
+  it('O unresolved_blocked route risk is failed and non-satisfying', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-o-'));
     const { manifest, parity } = await emitCase(root,'run-o',{ payloads: { route_variance_mitigation_status:'unresolved_blocked' } });
-    expect(parity.parity_status).toBe('insufficient');
+    expect(parity.parity_status).toBe('failed');
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
   });
 
