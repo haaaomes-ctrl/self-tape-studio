@@ -1596,8 +1596,9 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     } catch {
       takeIdForFirstPassTraces = null;
     }
+    const rawTakeIdProvided = typeof baseOptions.take_id === 'string' && baseOptions.take_id.length > 0;
     const comparisonParityTakeId =
-      baseOptions.take_id && !takeIdForFirstPassTraces
+      rawTakeIdProvided && !isSafeComparisonParityTakeIdSegment(baseOptions.take_id)
         ? '../unsafe_take_id'
         : (takeIdForFirstPassTraces ?? undefined);
     const canEmitTakeScopedFirstPassTraces = shouldUseExpandedManifestPaths() && takeIdForFirstPassTraces !== null;

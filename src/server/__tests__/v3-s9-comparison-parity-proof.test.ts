@@ -804,6 +804,28 @@ describe('v3-s9 comparison parity proof', () => {
     await expect(readRootParity(root, run)).rejects.toThrow();
   });
 
+  it('manifest comparison parity handoff rejects whitespace-padded take identity before proof pathing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-unsafe-take-space-'));
+    const run = 'run-unsafe-take-space';
+    await emitQAManifestForAnalysisRun({
+      run_id: run,
+      analysis_run_id: run,
+      take_id: 'ta ',
+      root_dir: root,
+      internal_qa_emit: true,
+      comparison_run_id: 'cmp-safe',
+      compared_take_ids: ['ta','tb'],
+      emitted_artefact_ids: ['raw_report', ...evidenceIds],
+      comparison_parity_input: { comparison_payloads: safePublicPayload() },
+    });
+    const manifest = await readManifest(root, run);
+    const metrics = await readMetrics(root, run);
+    expect(manifest.artefact_status_by_id.parity_comparison).toBe('missing');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    await expect(readParity(root, run, 'ta')).rejects.toThrow();
+  });
+
   it('unsafe direct comparison parity identities do not write unintended paths', async () => {
     const cases: Array<[string, Partial<Parameters<typeof emitComparisonParityProof>[0]>]> = [
       ['run', { run_id: '../run' }],
