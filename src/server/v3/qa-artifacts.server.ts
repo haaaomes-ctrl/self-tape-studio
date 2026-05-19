@@ -98,6 +98,16 @@ export interface QAArtifactEmitterOptions {
     analysis_evidence_state_gate_status?: 'missing' | 'insufficient' | 'satisfied';
     analysis_evidence_state_gate_reason?: string;
   };
+  evidence_anchor_trace_summary?: {
+    anchor_count?: number;
+    real_runtime_anchor_count?: number;
+    legacy_adapter_anchor_count?: number;
+    blocked_anchor_count?: number;
+    source_family_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; source_scaffold?: number; };
+    evidence_anchor_gate_status?: 'missing' | 'insufficient' | 'satisfied';
+    evidence_anchor_gate_reason?: string;
+    blocker_codes?: string[];
+  };
   validator_trace_summary?: Record<string, unknown>;
   gate_trace_summary?: Record<string, unknown>;
 }
@@ -350,7 +360,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     input_artifact: sourceClassById.technique_observation_trace === 'input_artifact' ? 1 : 0,
     resolver_truth_state: sourceClassById.technique_observation_trace === 'resolver_truth_state' ? 1 : 0,
   };
-  const evidenceAnchorSourceSummary = {
+  const evidenceAnchorTraceSummary = manifest.evidence_anchor_trace_summary ?? {};
+  const evidenceAnchorSourceSummary = evidenceAnchorTraceSummary.source_family_summary ?? {
     real_runtime_v3: sourceClassById.evidence_anchors === 'real_runtime_v3' ? 1 : 0,
     legacy_adapter: sourceClassById.evidence_anchors === 'legacy_adapter' ? 1 : 0,
     report_snapshot: sourceClassById.evidence_anchors === 'report_snapshot' ? 1 : 0,
@@ -498,7 +509,11 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     evidence_anchor_trace_status: evidenceAnchorStatus,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_source_family_summary: evidenceAnchorSourceSummary,
-    evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (evidenceAnchorStatus === 'missing' ? 'trace_not_emitted' : 'legacy_or_non_v3_support_only'),
+    evidence_anchor_gate_reason: evidenceAnchorGateStatus === 'satisfied'
+      ? 'real_runtime_v3_support_present'
+      : (evidenceAnchorStatus === 'missing'
+        ? 'trace_not_emitted'
+        : String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? 'legacy_or_non_v3_support_only')),
     public_claim_trace_status: publicClaimStatus,
     public_claim_gate_status: publicClaimGateStatus,
     public_claim_trace_summary: publicClaimSummary,
@@ -665,6 +680,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     real_v3_spine_artefact_ids: [...real_v3_spine_artefact_ids],
     defect_risk_ids: options.defect_risk_ids ?? [],
     public_claim_trace_summary: options.public_claim_trace_summary ?? undefined,
+    evidence_anchor_trace_summary: options.evidence_anchor_trace_summary ?? undefined,
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
     score_trace_summary: options.score_trace_summary ?? undefined,
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
