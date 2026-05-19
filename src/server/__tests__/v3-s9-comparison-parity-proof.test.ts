@@ -295,6 +295,20 @@ describe('v3-s9 comparison parity proof', () => {
     expect(noMaterialDifferenceMitigated.parity.parity_status).toBe('passed');
   });
 
+  it('accepted mitigation statuses do not neutralise risk in unrelated sources', async () => {
+    const rootSameVideo = await mkdtemp(path.join(os.tmpdir(), 's9-13d-samevideo-unrelated-mitigation-'));
+    const sameVideo = await emitCase(rootSameVideo, 'run-samevideo-unrelated-mitigation', {
+      payloads: { ...safePublicPayload(), same_video_suppression_status: 'resolved', same_video_repeatability_trace: { same_video_detected: true } },
+    });
+    expectFailedBlocked(sameVideo);
+
+    const rootRoute = await mkdtemp(path.join(os.tmpdir(), 's9-13d-route-unrelated-mitigation-'));
+    const route = await emitCase(rootRoute, 'run-route-unrelated-mitigation', {
+      payloads: { ...safePublicPayload(), comparison_suppression_trace: { route_variance_suppression_status: 'mitigated' }, route_variance_trace: { route_variance_detected: true } },
+    });
+    expectFailedBlocked(route);
+  });
+
   it('top-level repeated_input_detected and route variance detections fail when unmitigated', async () => {
     const rootRepeated = await mkdtemp(path.join(os.tmpdir(), 's9-13d-top-repeated-'));
     const repeated = await emitCase(rootRepeated, 'run-top-repeated', { payloads: { repeated_input_detected: true } });

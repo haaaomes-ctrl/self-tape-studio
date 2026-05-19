@@ -301,8 +301,16 @@ export async function emitComparisonParityProof(input: {
     return hit.value === expected;
   };
   const hasRiskHit = (field: string, expected: boolean | string): boolean => riskHitsFor(field).some((hit) => riskHitValueIs(hit, expected));
-  const hasAcceptedRiskMitigation = (...fields: string[]): boolean => riskFieldHits.some((hit) => fields.includes(hit.field) && isAcceptedComparisonMitigation(hit.value));
-  const hasUnmitigatedRiskHit = (flagField: string, mitigationFields: string[]): boolean => riskHitsFor(flagField).some((hit) => riskHitValueIs(hit, true) && !hasAcceptedRiskMitigation(...mitigationFields));
+  const parentRiskPath = (path: string): string => path.replace(/\.[^.]+$/, '');
+  const mitigationAppliesToRiskHit = (riskHit: ComparisonRiskFieldHit, mitigationHit: ComparisonRiskFieldHit): boolean => {
+    if (riskHit.source !== mitigationHit.source) return false;
+    const mitigationParent = parentRiskPath(mitigationHit.path);
+    return mitigationParent === riskHit.source || mitigationParent === parentRiskPath(riskHit.path);
+  };
+  const hasAcceptedRiskMitigationForHit = (riskHit: ComparisonRiskFieldHit, fields: string[]): boolean =>
+    riskFieldHits.some((hit) => fields.includes(hit.field) && isAcceptedComparisonMitigation(hit.value) && mitigationAppliesToRiskHit(riskHit, hit));
+  const hasUnmitigatedRiskHit = (flagField: string, mitigationFields: string[], expected: boolean | string = true): boolean =>
+    riskHitsFor(flagField).some((hit) => riskHitValueIs(hit, expected) && !hasAcceptedRiskMitigationForHit(hit, mitigationFields));
   const noRiskStatusFields = new Set(['same_video_repeatability_status', 'route_variance_status']);
   const mitigationStatusFields = new Set(['same_video_suppression_status', 'route_variance_mitigation_status', 'route_variance_suppression_status', 'false_winner_prevention_status']);
   const riskContextValueInspectable = (hit: ComparisonRiskFieldHit): boolean => {
@@ -322,19 +330,17 @@ export async function emitComparisonParityProof(input: {
   const comparisonRiskContextAvailable = sameVideoRiskContextAvailable && routeVarianceRiskContextAvailable && forcedFalseWinnerRiskContextAvailable;
   const forcedWinnerRiskAbsent = !hasRiskHit('forced_winner_risk', true);
   const falseWinnerRiskAbsent = !hasRiskHit('false_winner_risk', true);
-  const routeVarianceMitigationAccepted = hasAcceptedRiskMitigation('route_variance_mitigation_status', 'route_variance_suppression_status');
-  const sameVideoMitigationAccepted = hasAcceptedRiskMitigation('same_video_suppression_status');
   const routeVarianceRiskAbsent = !(
     hasRiskHit('route_variance_mitigation_status', 'unresolved_blocked')
-    || (hasRiskHit('route_variance_risk', true) && !routeVarianceMitigationAccepted)
+    || hasUnmitigatedRiskHit('route_variance_risk', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
     || hasUnmitigatedRiskHit('route_mismatch_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
     || hasUnmitigatedRiskHit('route_variance_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
   );
   const sameVideoRiskAbsent = !(
     hasRiskHit('same_video_unresolved_risk', true)
-    || (hasRiskHit('same_video_detected', true) && !sameVideoMitigationAccepted)
-    || (hasRiskHit('repeated_input_detected', true) && !sameVideoMitigationAccepted)
-    || (hasRiskHit('no_material_difference', false) && !sameVideoMitigationAccepted)
+    || hasUnmitigatedRiskHit('same_video_detected', ['same_video_suppression_status'])
+    || hasUnmitigatedRiskHit('repeated_input_detected', ['same_video_suppression_status'])
+    || hasUnmitigatedRiskHit('no_material_difference', ['same_video_suppression_status'], false)
   );
   const comparisonPayloadsAvailable = Boolean(
     payloadsObject
