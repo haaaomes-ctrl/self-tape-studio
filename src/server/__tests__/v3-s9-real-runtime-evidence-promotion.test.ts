@@ -1,11 +1,16 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
 import { safeIsoTimestamp } from '@/server/v3/qa-safe-normalisation.server';
 import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from '@/server/v3/qa-step2-dependency.server';
 import { emitAnalysisEvidenceStatePrerequisite, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
+import * as qaSinkModule from '@/server/v3/qa-artifact-sink.server';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 type LegacyBundleOptions = {
   run?: string;
@@ -2854,7 +2859,15 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
   it('wires ClaimCandidateTrace into process-take PublicClaimTrace support classification', async () => {
     const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
     expect(source).toContain('emitClaimCandidateTrace');
-    expect(source).toContain('claim_candidate_trace_data: claimCandidateTrace.written');
+    expect(source).toContain('analysisEvidenceStatePayloadForRuntimeTraces');
+    expect(source).toContain('evidenceAnchorsDataForRuntimeTraces');
+    expect(source).toContain('claimCandidateTraceDataForRuntimeTraces');
+    expect(source).toContain('publicClaimTraceDataForRuntimeTraces');
+    expect(source).toContain('claim_candidate_trace_data: claimCandidateTraceDataForRuntimeTraces');
+    expect(source).not.toContain('analysis_evidence_state_data: analysisEvidenceState.written ? analysisEvidenceState.payload : null');
+    expect(source).not.toContain('claim_candidate_trace_data: claimCandidateTrace.written ?');
+    expect(source).not.toContain('public_claim_trace_data: publicClaimTrace.written ?');
+    expect(source).not.toContain('const publicClaimTraceClaims = publicClaimTrace.written && Array.isArray(publicClaimTrace.claims)');
     expect(source).toContain('run_id: `take-${takeId}`');
     expect(source).toContain('take_id: takeId');
     expect(source).toContain('evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status');
@@ -2877,10 +2890,129 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('evaluateStep1EvidenceForStep2');
     expect(source).toContain("step1QaPersistenceStatus === 'failed_emission'");
     expect(source).toContain('qa_persistence_failed_but_step1_evidence_valid');
+    expect(source).toContain('qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces');
     expect(source).toContain('analysisEvidenceStatePayloadAvailable');
     expect(source).toContain('public_claim_trace: publicClaimTrace.source_classification');
-    expect(source).toContain('claim_candidate_trace_summary: claimCandidateTrace.written ? claimCandidateTrace.summary : undefined');
+    expect(source).toContain('claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined');
     expect(source).not.toContain("public_claim_trace: 'legacy_adapter'");
+  });
+
+  it('keeps valid in-memory runtime trace payloads available when QA sink writes fail', async () => {
+    vi.spyOn(qaSinkModule, 'writeQAArtifact').mockResolvedValue({ written: false, warning: 'qa storage timeout' } as any);
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914m-inmemory-runtime-'));
+    const run = `take-inmemory-${Math.random().toString(36).slice(2)}`;
+    const take = 'inmemory';
+    const filtered = filterRunEvidencePassForStep1(sampleRunEvidencePass(), { model: 'test-model', durationSeconds: 60 });
+    const analysisOut = await emitAnalysisEvidenceStatePrerequisite({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: take,
+      source_module: 'test',
+      source_stage: 'analysis_step_1_evidence_mapping',
+      selected_level: 'advanced',
+      audition_type: 'monologue',
+      brief_presence: 'supplied',
+      brief_presence_source: 'audition.brief',
+      material_presence: 'supplied',
+      material_presence_source: 'loaded_runtime_field',
+      component_or_task_declaration_status: 'supplied',
+      component_or_task_declaration_source: 'loaded_runtime_field',
+      media_readiness_state: 'ready',
+      media_duration_seconds: 60,
+      duration_confidence: 'known',
+      resolver_output_available: true,
+      truth_state_map_available: true,
+      filtered_run_evidence_pass_step1: filtered,
+      root_dir: root,
+      internal_qa_emit: true,
+    } as any);
+    expect(analysisOut.written).toBe(false);
+    expect(analysisOut.payload).toBeTruthy();
+    completeAnalysisEvidenceStateForAggregate(analysisOut.payload);
+    const dependency = evaluateStep1EvidenceForStep2({
+      analysisEvidenceState: analysisOut,
+      expectedRunId: run,
+      expectedAnalysisRunId: run,
+      takeId: take,
+      internalQaEmit: true,
+    });
+    expect(dependency.step1EvidenceValidForStep2).toBe(true);
+    expect(dependency.step1QaPersistenceStatus).toBe('failed_emission');
+
+    const anchorsOut = await emitEvidenceAnchorsFirstPass({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: take,
+      source_module: 'test',
+      source_stage: 'unit',
+      analysis_evidence_state_data: analysisOut.payload,
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(anchorsOut.written).toBe(false);
+    expect(anchorsOut.level2_satisfies).toBe(false);
+    expect(anchorsOut.anchors.length).toBeGreaterThan(0);
+    expect(anchorsOut.evidence_anchor_gate_status).toBe('sufficient');
+    const evidenceAnchorsData = {
+      run_id: run,
+      analysis_run_id: run,
+      take_id: take,
+      anchors: anchorsOut.anchors,
+      source_classification: anchorsOut.source_classification,
+      evidence_anchor_gate_status: anchorsOut.evidence_anchor_gate_status,
+      evidence_anchor_gate_reason: anchorsOut.evidence_anchor_gate_reason,
+      evidence_anchor_trace_summary: anchorsOut.evidence_anchor_trace_summary,
+      evidence_anchor_source_family_summary: anchorsOut.evidence_anchor_source_family_summary,
+      evidence_family_coverage: anchorsOut.evidence_family_coverage,
+      evidence_family_status_by_id: anchorsOut.evidence_family_status_by_id,
+      unsupported_or_unavailable_evidence: anchorsOut.unsupported_or_unavailable_evidence,
+      blocker_codes: anchorsOut.blocker_codes,
+      cannot_satisfy_v3_gate: anchorsOut.cannot_satisfy_v3_gate,
+    };
+
+    const candidateOut = await emitClaimCandidateTrace({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: take,
+      source_module: 'test',
+      source_stage: 'unit',
+      analysis_evidence_state_data: analysisOut.payload,
+      evidence_anchors_data: evidenceAnchorsData,
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(candidateOut.written).toBe(false);
+    expect(candidateOut.claim_candidates.length).toBeGreaterThan(0);
+    const candidateTraceData = {
+      run_id: run,
+      analysis_run_id: run,
+      take_id: take,
+      source_classification: candidateOut.source_classification,
+      claim_candidate_source_summary: candidateOut.summary.claim_candidate_source_summary,
+      claim_candidates: candidateOut.claim_candidates,
+    };
+
+    const publicClaimsOut = await emitPublicClaimTraceFirstPass({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: take,
+      source_module: 'test',
+      source_stage: 'unit',
+      claim_candidate_trace_data: candidateTraceData,
+      evidence_anchors_data: evidenceAnchorsData,
+      truth_state_map_data: { run_id: run, analysis_run_id: run, take_id: take, truth_state_ids: ['truth-state-runtime-1'] },
+      root_dir: root,
+      internal_qa_emit: true,
+    });
+    expect(publicClaimsOut.written).toBe(false);
+    expect(publicClaimsOut.level2_satisfies).toBe(false);
+    expect(publicClaimsOut.claims.length).toBeGreaterThan(0);
+    expect(publicClaimsOut.summary.public_claim_gate_status).toBe('sufficient');
+    expect(publicClaimsOut.claims.some((claim: any) => claim.support_status === 'supported')).toBe(true);
   });
 
   it('bases resolver and TruthStateMap Step 2 availability on payload identity instead of emitted ids', async () => {

@@ -2226,7 +2226,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     written: result.written as boolean,
     emitted: result.written as boolean,
     emitted_artefact_ids: result.written ? ['evidence_anchors'] : [],
-    source_classification: result.written ? sourceClassification : ('missing' as const),
+    source_classification: sourceClassification,
     level2_satisfies: result.written && evidenceAnchorGateStatus === 'sufficient',
     evidence_anchor_trace_summary: evidenceAnchorTraceSummary,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
@@ -3139,9 +3139,9 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
   return {
     written: result.written as boolean,
     emitted_artefact_ids: result.written ? ['claim_candidate_trace'] : [],
-    source_classification: result.written ? sourceClassification : 'missing',
+    source_classification: sourceClassification,
     summary,
-    claim_candidates: result.written ? candidates : [],
+    claim_candidates: candidates,
     warning: result.warning ?? null,
   };
 }
@@ -3243,8 +3243,8 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
     return {
       written: result.written as boolean,
       emitted_artefact_ids: result.written ? ['public_claim_trace'] : [],
-      claims: result.written ? classified.claims : [],
-      source_classification: result.written ? classified.sourceClassification : 'missing',
+      claims: classified.claims,
+      source_classification: classified.sourceClassification,
       level2_satisfies: result.written && classified.publicClaimGateStatus === 'sufficient',
       summary,
       warning: result.warning ?? null,
@@ -3345,7 +3345,7 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   return {
     written: result.written as boolean,
     emitted_artefact_ids: result.written ? ['public_claim_trace'] : [],
-    claims: result.written ? claims : [],
+    claims,
     summary: {
       claim_count: payload.claim_count,
       unsupported_claim_count: payload.unsupported_claim_count,
