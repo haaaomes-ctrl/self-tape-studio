@@ -823,9 +823,30 @@ function familyForLinkedCategory(category: unknown): Step1EvidenceFamily {
   }
 }
 
-function modalityForFamily(family: Step1EvidenceFamily): FilteredStep1EvidenceItem["evidence_modality"] {
-  if (family === "candidate_technique") return "unknown";
-  return family;
+function normaliseDeclaredStep1Modality(value: unknown): FilteredStep1EvidenceItem["evidence_modality"] | null {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!raw) return null;
+  if (raw === "video" || raw === "visual" || raw === "movement") return "video";
+  if (raw === "audio" || raw === "vocal" || raw === "voice") return "audio";
+  if (raw === "material" || raw === "brief" || raw === "brief_adherence") return "material";
+  if (raw === "submission_context" || raw === "resolver_truth" || raw === "media_readiness" || raw === "unknown") return raw;
+  return null;
+}
+
+function modalityForFamily(
+  family: Step1EvidenceFamily,
+  declaredModality?: unknown,
+  sourceContext?: unknown,
+): FilteredStep1EvidenceItem["evidence_modality"] {
+  const declared = normaliseDeclaredStep1Modality(declaredModality);
+  if (declared) return declared;
+  if (family === "video" || family === "audio" || family === "material") return family;
+  if (family === "performance") {
+    const context = typeof sourceContext === "string" ? sourceContext.toLowerCase() : "";
+    if (/\b(audio|vocal|voice|song|singing)\b/.test(context)) return "audio";
+    if (/\b(video|visual|movement|dance|physical)\b/.test(context)) return "video";
+  }
+  return "unknown";
 }
 
 export function filterRunEvidencePassForStep1(
@@ -866,6 +887,8 @@ export function filterRunEvidencePassForStep1(
     summary: string,
     timestamp: string | null = null,
     limitations: string[] = [],
+    declaredModality?: unknown,
+    sourceContext?: unknown,
   ) => {
     const target =
       family === "video"
@@ -877,10 +900,11 @@ export function filterRunEvidencePassForStep1(
             : family === "candidate_technique"
               ? technique
               : performance;
+    const evidenceModality = modalityForFamily(family, declaredModality, sourceContext);
     const item: FilteredStep1EvidenceItem = {
       evidence_item_id: `step1-${family}-${String(target.length + 1).padStart(4, "0")}`,
       evidence_family: family,
-      evidence_modality: modalityForFamily(family),
+      evidence_modality: evidenceModality,
       evidence_kind: evidenceKind,
       safe_evidence_summary: summary,
       source_artefact_id: "run_evidence_pass",
@@ -890,7 +914,10 @@ export function filterRunEvidencePassForStep1(
       timestamp_source: timestamp ? "runEvidencePass_validated_timestamp" : "not_timestamped_observation",
       component_id: null,
       linked_truth_state_ids: [],
-      assessability_limitations: limitations,
+      assessability_limitations: [
+        ...limitations,
+        ...(family === "performance" && evidenceModality === "unknown" ? ["performance_modality_unavailable"] : []),
+      ],
       confidence_or_strength: "runEvidencePass_observation",
       public_display_status: "internal_only",
       blocker_codes: [],
@@ -921,6 +948,8 @@ export function filterRunEvidencePassForStep1(
       observation,
       timestamp,
       timestamp ? [] : ["timestamp_unavailable_or_invalid"],
+      entry.evidence_modality ?? entry.modality,
+      entry.linked_category,
     );
   });
 
@@ -965,7 +994,15 @@ export function filterRunEvidencePassForStep1(
       addRejected(rejected, `candidate_technique_evidence[${index}]`);
       return;
     }
-    addItem("candidate_technique", `candidate_technique_evidence[${index}]`, "candidate_technique_observation", text);
+    addItem(
+      "candidate_technique",
+      `candidate_technique_evidence[${index}]`,
+      "candidate_technique_observation",
+      text,
+      null,
+      [],
+      isRecord(entry) ? (entry.evidence_modality ?? entry.modality) : null,
+    );
   });
 
   return buildFilteredStep1Result({

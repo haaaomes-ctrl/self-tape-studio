@@ -1486,6 +1486,65 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(serialised).not.toContain('overall score');
   });
 
+  it('keeps performance Step 1 family on a valid evidence modality enum', () => {
+    const filtered = filterRunEvidencePassForStep1(sampleRunEvidencePass({
+      timestamped_evidence: [
+        { timestamp: '00:08', observation: 'Performer shifts eyeline before the second phrase.', linked_category: 'acting' },
+      ],
+    }), { model: 'test-model', durationSeconds: 60 });
+    const performanceItem = filtered.performance_observable_evidence_items[0];
+
+    expect(performanceItem).toMatchObject({
+      evidence_family: 'performance',
+      evidence_modality: 'unknown',
+    });
+    expect(performanceItem.evidence_modality).not.toBe('performance');
+    expect(performanceItem.assessability_limitations).toContain('performance_modality_unavailable');
+  });
+
+  it('preserves explicit valid modality on performance Step 1 evidence', () => {
+    const filtered = filterRunEvidencePassForStep1(sampleRunEvidencePass({
+      timestamped_evidence: [
+        { timestamp: '00:08', observation: 'Breath is audible before the phrase.', linked_category: 'acting', evidence_modality: 'audio' },
+        { timestamp: '00:12', observation: 'Physical shift is visible before the turn.', linked_category: 'acting', modality: 'video' },
+      ],
+    }), { model: 'test-model', durationSeconds: 60 });
+
+    expect(filtered.performance_observable_evidence_items.map((item) => item.evidence_family)).toEqual(['performance', 'performance']);
+    expect(filtered.performance_observable_evidence_items.map((item) => item.evidence_modality)).toEqual(['audio', 'video']);
+    expect(filtered.performance_observable_evidence_items.map((item) => item.evidence_modality)).not.toContain('performance');
+  });
+
+  it('keeps candidate technique evidence on a valid modality enum', () => {
+    const filtered = filterRunEvidencePassForStep1(sampleRunEvidencePass({
+      candidate_technique_evidence: [
+        { safe_evidence_summary: 'Breath support pattern is observable as a candidate only.', evidence_modality: 'video' },
+        { safe_evidence_summary: 'Jaw release is visible as a candidate only.' },
+      ],
+    }), { model: 'test-model', durationSeconds: 60 });
+
+    expect(filtered.candidate_technique_evidence.map((item) => item.evidence_modality)).toEqual(['video', 'unknown']);
+    expect(filtered.candidate_technique_evidence.map((item) => item.evidence_modality)).not.toContain('candidate_technique');
+    expect(filtered.candidate_technique_evidence.map((item) => item.evidence_modality)).not.toContain('performance');
+  });
+
+  it('does not hand downstream AnalysisEvidenceState an invalid performance modality', async () => {
+    const { payload } = await emitFilteredRunEvidencePassAnalysisBundle({
+      evidence: sampleRunEvidencePass({
+        timestamped_evidence: [
+          { timestamp: '00:08', observation: 'Performer shifts eyeline before the second phrase.', linked_category: 'acting' },
+          { timestamp: '00:14', observation: 'Breath is audible before the phrase.', linked_category: 'acting', evidence_modality: 'audio' },
+        ],
+      }),
+    });
+    const allowed = ['video', 'audio', 'material', 'submission_context', 'resolver_truth', 'media_readiness', 'unknown'];
+    const performanceModalities = payload.performance_observable_evidence_items.map((item: any) => item.evidence_modality);
+
+    expect(performanceModalities).toEqual(expect.arrayContaining(['unknown', 'audio']));
+    expect(performanceModalities).not.toContain('performance');
+    expect(payload.observable_evidence_items.every((item: any) => allowed.includes(item.evidence_modality))).toBe(true);
+  });
+
   it('records missing extractor families as unavailable instead of fabricating evidence', async () => {
     const { payload } = await emitFilteredRunEvidencePassAnalysisBundle({
       evidence: sampleRunEvidencePass({
