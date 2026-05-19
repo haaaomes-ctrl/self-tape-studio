@@ -807,12 +807,17 @@ describe('v3-s9 comparison parity proof', () => {
   it('unsafe direct comparison parity identities do not write unintended paths', async () => {
     const cases: Array<[string, Partial<Parameters<typeof emitComparisonParityProof>[0]>]> = [
       ['run', { run_id: '../run' }],
+      ['run-dot', { run_id: '.' }],
       ['run-space', { run_id: 'run-unsafe-run-space ' }],
       ['analysis', { analysis_run_id: '../analysis' }],
+      ['analysis-dot', { analysis_run_id: '.' }],
       ['analysis-space', { analysis_run_id: 'run-unsafe-analysis-space ' }],
       ['take', { take_id: '../take' }],
+      ['take-dot', { take_id: '.' }],
       ['take-space', { take_id: 'ta ' }],
+      ['take-prefixed', { take_id: 'take-ta' }],
       ['comparison', { comparison_run_id: '../comparison' }],
+      ['comparison-dot', { comparison_run_id: '.' }],
       ['comparison-space', { comparison_run_id: 'cmp-safe ' }],
     ];
     for (const [suffix, override] of cases) {

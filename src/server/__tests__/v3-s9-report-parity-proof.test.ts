@@ -623,10 +623,24 @@ describe('v3-s9 report parity proof', () => {
     const unsafeTakeRoot = await mkdtemp(path.join(os.tmpdir(), 's9-13c-unsafe-take-'));
     const unsafeSlash = await emitReportParityProof({ run_id:'run-unsafe-slash', analysis_run_id:'run-unsafe-slash', take_id:'bad/take', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
     expect(unsafeSlash.written).toBe(false);
+    expect(unsafeSlash.parity_status).toBe('insufficient');
+    expect(unsafeSlash.blocker_codes).toContain('parity_artefacts_missing');
     const unsafeBackslash = await emitReportParityProof({ run_id:'run-unsafe-backslash', analysis_run_id:'run-unsafe-backslash', take_id:'bad\\take', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
     expect(unsafeBackslash.written).toBe(false);
     const unsafeEmpty = await emitReportParityProof({ run_id:'run-unsafe-empty', analysis_run_id:'run-unsafe-empty', take_id:'', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
     expect(unsafeEmpty.written).toBe(false);
+    const unsafeDot = await emitReportParityProof({ run_id:'run-unsafe-dot', analysis_run_id:'run-unsafe-dot', take_id:'.', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(unsafeDot.written).toBe(false);
+    expect(unsafeDot.parity_status).toBe('insufficient');
+    expect(unsafeDot.blocker_codes).toContain('parity_artefacts_missing');
+    const unsafeWhitespace = await emitReportParityProof({ run_id:'run-unsafe-whitespace', analysis_run_id:'run-unsafe-whitespace', take_id:'ts ', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(unsafeWhitespace.written).toBe(false);
+    expect(unsafeWhitespace.parity_status).toBe('insufficient');
+    expect(unsafeWhitespace.blocker_codes).toContain('parity_artefacts_missing');
+    const unsafePrefixed = await emitReportParityProof({ run_id:'run-unsafe-prefixed', analysis_run_id:'run-unsafe-prefixed', take_id:'take-ts', internal_qa_emit:true, root_dir: unsafeTakeRoot, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok' }, allowed_public_fields:['summary'] });
+    expect(unsafePrefixed.written).toBe(false);
+    expect(unsafePrefixed.parity_status).toBe('insufficient');
+    expect(unsafePrefixed.blocker_codes).toContain('parity_artefacts_missing');
 
   });
 

@@ -217,7 +217,12 @@ export function resolveProjectRootForQAManifest(): string {
   try { return process.cwd(); } catch { return '.'; }
 }
 export function assertSafeSegment(value: string, field: string) {
-  if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..') || path.isAbsolute(value)) throw new Error(`${field}_invalid_path`);
+  if (
+    !/^[A-Za-z0-9._/-]+$/.test(value)
+    || value.includes('..')
+    || path.isAbsolute(value)
+    || value.split('/').some((segment) => segment === '' || segment === '.')
+  ) throw new Error(`${field}_invalid_path`);
 }
 
 export function stableStringify(v: unknown): string {

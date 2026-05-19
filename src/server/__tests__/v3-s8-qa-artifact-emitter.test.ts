@@ -48,6 +48,7 @@ describe('v3 s8 internal qa artefact emitter', () => {
 
   it('rejects path traversal', async () => {
     await expect(emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: '../bad' })).rejects.toThrow('run_id_invalid_path');
+    await expect(emitInternalQAArtifactManifest({ internal_qa_emit: true, run_id: '.' })).rejects.toThrow('run_id_invalid_path');
   });
 
   it('infers comparison qa_artifact_root when comparison artefacts are emitted without explicit comparison_run_id', async () => {

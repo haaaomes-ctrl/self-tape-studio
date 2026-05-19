@@ -211,16 +211,21 @@ function isSafeComparisonParitySegment(value: unknown): value is string {
   const trimmed = value.trim();
   if (trimmed !== value) return false;
   if (!trimmed) return false;
+  if (trimmed === '.') return false;
   if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) return false;
   if (trimmed.includes('..')) return false;
   if (trimmed.startsWith('take-take-')) return false;
   return true;
 }
 
+function isSafeComparisonParityTakeIdSegment(value: unknown): value is string {
+  return isSafeComparisonParitySegment(value) && !value.startsWith('take-');
+}
+
 function comparisonParityIdentityIsSafe(input: { run_id: string; analysis_run_id: string; take_id?: string | null; comparison_run_id?: string | null }): boolean {
   return isSafeComparisonParitySegment(input.run_id)
     && isSafeComparisonParitySegment(input.analysis_run_id)
-    && (input.take_id === undefined || input.take_id === null || isSafeComparisonParitySegment(input.take_id))
+    && (input.take_id === undefined || input.take_id === null || isSafeComparisonParityTakeIdSegment(input.take_id))
     && (input.comparison_run_id === undefined || input.comparison_run_id === null || isSafeComparisonParitySegment(input.comparison_run_id));
 }
 
@@ -851,9 +856,12 @@ function isBlockedScoreFieldPath(path: string, blockedScorePaths?: string[]): bo
 
 function isSafeTakeIdSegment(value: string): boolean {
   const trimmed = value.trim();
+  if (trimmed !== value) return false;
   if (!trimmed) return false;
+  if (trimmed === '.') return false;
   if (/[\\/]/.test(trimmed)) return false;
   if (trimmed.includes('..')) return false;
+  if (trimmed.startsWith('take-')) return false;
   return true;
 }
 
@@ -997,10 +1005,10 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const takeId = input.take_id ?? null;
   if (takeId !== null) {
     try { assertSafeSegment(takeId, 'take_id'); } catch {
-      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: 'insufficient' as const, blocker_codes: ['parity_artefacts_missing'] };
     }
     if (!isSafeTakeIdSegment(takeId)) {
-      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], parity_status: 'insufficient' as const, blocker_codes: ['parity_artefacts_missing'] };
     }
   }
   const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/parity/report_parity_result.json` : 'parity/report_parity_result.json';
