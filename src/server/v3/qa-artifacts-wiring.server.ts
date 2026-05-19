@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from './qa-artifacts.server';
+import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance, type QAArtifactEmitterOptions } from './qa-artifacts.server';
 import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
 function mergeQAWarnings(...warnings: Array<string | null | undefined>): string | null {
@@ -37,6 +37,106 @@ const COMPARISON_SOURCE_BY_ID: Record<ComparisonArtefactId,string> = {
 };
 function isComparisonArtefactId(value: unknown): value is ComparisonArtefactId {
   return typeof value === 'string' && (COMPARISON_ARTEFACT_IDS as readonly string[]).includes(value);
+}
+
+type ComparisonParityStatus = 'not_applicable' | 'passed' | 'failed' | 'insufficient';
+
+function applyComparisonParityManifestState(input: {
+  manifest: Record<string, any>;
+  written: boolean;
+  parity_status: ComparisonParityStatus;
+}) {
+  const manifest = JSON.parse(JSON.stringify(input.manifest ?? {}));
+  const emittedSet = new Set<string>(manifest.emitted_artifacts ?? []);
+  const emittedBlockedSet = new Set<string>(manifest.emitted_blocked_artefact_ids ?? []);
+  const missingSet = new Set<string>(manifest.missing_artifacts ?? []);
+  const deferredSet = new Set<string>(manifest.deferred_artifact_ids ?? []);
+  const notApplicableSet = new Set<string>(manifest.not_applicable_artifact_ids ?? []);
+  const blockerSet = new Set<string>(manifest.blocker_codes ?? []);
+  const acceptedSet = new Set<string>(manifest.runtime_evidence_accepted_by_id ?? []);
+  const blockedSet = new Set<string>(manifest.runtime_evidence_blocked_by_id ?? []);
+  const statusById = { ...(manifest.artefact_status_by_id ?? {}) };
+  const srcById = { ...(manifest.artefact_source_classification_by_id ?? {}) };
+  const l2ById = { ...(manifest.artefact_level2_spine_satisfaction_by_id ?? {}) };
+  const hasOtherParityBlocker = Array.isArray(manifest.required_artifacts)
+    ? manifest.required_artifacts.some((artefact: any) => (
+      artefact?.artefact_id !== 'parity_comparison'
+      && artefact?.blocker_code === 'parity_artefacts_missing'
+      && artefact?.status !== 'emitted'
+      && artefact?.status !== 'not_applicable'
+    ))
+    : false;
+
+  emittedSet.delete('parity_comparison');
+  emittedBlockedSet.delete('parity_comparison');
+  missingSet.delete('parity_comparison');
+  deferredSet.delete('parity_comparison');
+  notApplicableSet.delete('parity_comparison');
+  acceptedSet.delete('parity_comparison');
+  blockedSet.delete('parity_comparison');
+
+  const status =
+    input.parity_status === 'not_applicable'
+      ? 'not_applicable'
+      : (input.written && input.parity_status === 'passed'
+        ? 'emitted'
+        : (input.written ? 'emitted_blocked' : 'missing'));
+
+  srcById.parity_comparison = 'internal_comparison_parity_proof';
+  l2ById.parity_comparison = status === 'emitted';
+  statusById.parity_comparison = status;
+
+  if (status === 'emitted') {
+    emittedSet.add('parity_comparison');
+    acceptedSet.add('parity_comparison');
+  } else if (status === 'emitted_blocked') {
+    emittedBlockedSet.add('parity_comparison');
+    blockedSet.add('parity_comparison');
+    blockerSet.add('parity_artefacts_missing');
+  } else if (status === 'missing') {
+    missingSet.add('parity_comparison');
+    blockedSet.add('parity_comparison');
+    blockerSet.add('parity_artefacts_missing');
+  } else {
+    notApplicableSet.add('parity_comparison');
+  }
+  if ((status === 'emitted' || status === 'not_applicable') && !hasOtherParityBlocker) {
+    blockerSet.delete('parity_artefacts_missing');
+  }
+
+  const reason =
+    status === 'emitted'
+      ? 'Emitted in current run'
+      : (status === 'emitted_blocked'
+        ? 'Emitted with blocked/not_executed runtime evidence'
+        : (status === 'not_applicable' ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'));
+  const required_artifacts = Array.isArray(manifest.required_artifacts)
+    ? manifest.required_artifacts.map((artefact: any) => {
+      if (artefact?.artefact_id !== 'parity_comparison') return artefact;
+      return {
+        ...artefact,
+        status,
+        blocker_code: status === 'emitted' || status === 'not_applicable' ? undefined : 'parity_artefacts_missing',
+        reason,
+      };
+    })
+    : manifest.required_artifacts;
+
+  return {
+    ...manifest,
+    required_artifacts,
+    emitted_artifacts: [...emittedSet],
+    emitted_blocked_artefact_ids: [...emittedBlockedSet],
+    missing_artifacts: [...missingSet],
+    deferred_artifact_ids: [...deferredSet],
+    not_applicable_artifact_ids: [...notApplicableSet],
+    blocker_codes: [...blockerSet],
+    runtime_evidence_accepted_by_id: [...acceptedSet],
+    runtime_evidence_blocked_by_id: [...blockedSet],
+    artefact_status_by_id: statusById,
+    artefact_source_classification_by_id: srcById,
+    artefact_level2_spine_satisfaction_by_id: l2ById,
+  };
 }
 
 export function reconcileComparisonManifestState(input: {
@@ -90,7 +190,317 @@ export function reconcileComparisonManifestState(input: {
     artefact_level2_spine_satisfaction_by_id: l2ById,
   };
 }
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: { score_count: number; overall_count: number; discipline_attribute_count: number; component_score_count: number; component_weight_count: number; brief_adherence_subscore_count: number; assessment_confidence_count: number; calibration_modifier_count: number; calibration_metadata_count: number; source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; overall_readiness_public_score_status: 'blocked'; discipline_attribute_score_trace_status: 'internal_trace_only'; score_trace_gate_status: 'insufficient'; score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace'; }; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; }
+type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+
+const COMPARISON_RISK_FIELDS = [
+  'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
+  'same_video_unresolved_risk', 'same_video_detected', 'repeated_input_detected', 'no_material_difference', 'same_video_suppression_status', 'same_video_repeatability_status',
+  'route_variance_risk', 'route_mismatch_detected', 'route_variance_detected', 'route_variance_status', 'route_variance_mitigation_status', 'route_variance_suppression_status',
+] as const;
+const COMPARISON_RISK_FIELD_SET = new Set<string>(COMPARISON_RISK_FIELDS);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+type ComparisonRiskSource = { source: string; value: Record<string, unknown> };
+type ComparisonRiskFieldValue = string | number | boolean | null;
+type ComparisonRiskFieldHit = { source: string; field: string; path: string; value?: ComparisonRiskFieldValue };
+type ComparisonRiskSourceScanWarning = { source: string; path: string; warning: string };
+
+function comparisonRiskFieldValue(value: unknown): ComparisonRiskFieldValue | undefined {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) return value;
+  return undefined;
+}
+
+function collectDirectComparisonRiskFieldHits(source: string, value: Record<string, unknown>): ComparisonRiskFieldHit[] {
+  return Object.keys(value)
+    .map((key) => ({ original: key, normalised: key.trim().toLowerCase() }))
+    .filter(({ normalised }) => COMPARISON_RISK_FIELD_SET.has(normalised))
+    .map(({ original, normalised }) => ({ source, field: normalised, path: `${source}.${original}`, value: comparisonRiskFieldValue(value[original]) }));
+}
+
+function scanComparisonRiskFieldHits(source: string, value: unknown): { hits: ComparisonRiskFieldHit[]; warnings: ComparisonRiskSourceScanWarning[] } {
+  const hits: ComparisonRiskFieldHit[] = [];
+  const warnings: ComparisonRiskSourceScanWarning[] = [];
+  const activeObjects = new WeakSet<object>();
+  const maxDepth = 24;
+  const markWarning = (path: string, warning: string) => warnings.push({ source, path, warning });
+  const walk = (node: unknown, pathPrefix: string, depth = 0): void => {
+    if (depth > maxDepth) {
+      markWarning(pathPrefix, 'depth_limit_exceeded');
+      return;
+    }
+    if (Array.isArray(node)) {
+      if (activeObjects.has(node)) {
+        markWarning(pathPrefix, 'cycle_detected');
+        return;
+      }
+      activeObjects.add(node);
+      node.forEach((entry, index) => walk(entry, `${pathPrefix}[${index}]`, depth + 1));
+      activeObjects.delete(node);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    if (activeObjects.has(node)) {
+      markWarning(pathPrefix, 'cycle_detected');
+      return;
+    }
+    activeObjects.add(node);
+    if (!isPlainRecord(node)) {
+      markWarning(pathPrefix, 'uninspectable_object');
+      activeObjects.delete(node);
+      return;
+    }
+    for (const [key, child] of Object.entries(node)) {
+      const nextPath = `${pathPrefix}.${key}`;
+      const normalisedKey = key.trim().toLowerCase();
+      if (COMPARISON_RISK_FIELD_SET.has(normalisedKey)) hits.push({ source, field: normalisedKey, path: nextPath, value: comparisonRiskFieldValue(child) });
+      walk(child, nextPath, depth + 1);
+    }
+    activeObjects.delete(node);
+  };
+  walk(value, source);
+  return { hits, warnings };
+}
+
+function collectComparisonRiskSources(payloadsObject: Record<string, unknown> | null): {
+  sources: ComparisonRiskSource[];
+  fieldHits: ComparisonRiskFieldHit[];
+  scanWarnings: ComparisonRiskSourceScanWarning[];
+} {
+  if (!payloadsObject) return { sources: [], fieldHits: [], scanWarnings: [] };
+  const sources: ComparisonRiskSource[] = [];
+  const fieldHits: ComparisonRiskFieldHit[] = [];
+  const scanWarnings: ComparisonRiskSourceScanWarning[] = [];
+  const topLevelHits = collectDirectComparisonRiskFieldHits('comparison_payloads', payloadsObject);
+  if (topLevelHits.length > 0) {
+    sources.push({ source: 'comparison_payloads', value: payloadsObject });
+    fieldHits.push(...topLevelHits);
+  }
+  const addKnownTraceSource = (source: string, value: unknown) => {
+    if (value === undefined) return;
+    if (!value || typeof value !== 'object') {
+      scanWarnings.push({ source, path: source, warning: 'uninspectable_source' });
+      return;
+    }
+    if (isPlainRecord(value)) sources.push({ source, value });
+    const scan = scanComparisonRiskFieldHits(source, value);
+    fieldHits.push(...scan.hits);
+    scanWarnings.push(...scan.warnings);
+  };
+  const addExplicitInternalSource = (source: string, value: unknown) => {
+    if (value === undefined) return;
+    if (!value || typeof value !== 'object') return;
+    const scan = scanComparisonRiskFieldHits(source, value);
+    if (scan.hits.length > 0 && isPlainRecord(value)) sources.push({ source, value });
+    fieldHits.push(...scan.hits);
+    scanWarnings.push(...scan.warnings);
+  };
+  addKnownTraceSource('same_video_repeatability_trace', payloadsObject.same_video_repeatability_trace);
+  addKnownTraceSource('route_variance_trace', payloadsObject.route_variance_trace);
+  addKnownTraceSource('comparison_suppression_trace', payloadsObject.comparison_suppression_trace);
+  addExplicitInternalSource('comparison_raw', payloadsObject.comparison_raw);
+  addExplicitInternalSource('comparison_report_internal', payloadsObject.comparison_report_internal);
+  return { sources, fieldHits, scanWarnings };
+}
+
+export async function emitComparisonParityProof(input: {
+  run_id: string; analysis_run_id?: string; take_id?: string | null; submission_id?: string | null; comparison_run_id?: string | null; compared_take_ids?: string[]; root_dir?: string; internal_qa_emit?: boolean; comparison_invoked: boolean; comparison_evidence_status: Record<string, boolean>; comparison_payloads?: unknown; public_comparison_surface_paths?: string[];
+}) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const };
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const evidence = input.comparison_evidence_status;
+  const requiredOk = Object.values(evidence).every(Boolean);
+  const payloads = input.comparison_payloads;
+  const payloadsObject = isPlainRecord(payloads) ? payloads : null;
+  const extract = (obj: unknown, path: string): unknown => path.split('.').reduce<unknown>((acc, key) => {
+    if (!acc || typeof acc !== 'object') return undefined;
+    return (acc as Record<string, unknown>)[key];
+  }, obj);
+  const publicSurfaces = [
+    { key: 'public_comparison_payload', value: payloadsObject?.public_comparison_payload },
+    { key: 'comparison_public_payload', value: payloadsObject?.comparison_public_payload },
+    { key: 'public_output', value: payloadsObject?.public_output },
+    { key: 'comparison_output_public', value: payloadsObject?.comparison_output_public },
+    { key: 'render_payload.comparison', value: extract(payloadsObject, 'render_payload.comparison') },
+    { key: 'public_report_payload.comparison', value: extract(payloadsObject, 'public_report_payload.comparison') },
+    ...((input.public_comparison_surface_paths ?? []).map((surfacePath) => ({ key: surfacePath, value: extract(payloadsObject, surfacePath) }))),
+  ].filter((x) => isPlainRecord(x.value) || Array.isArray(x.value));
+  const hasPublicOutputAbsenceEvidence = Boolean(
+    payloadsObject?.public_comparison_output_absent_or_unchanged === true
+    || payloadsObject?.public_output_unchanged === true
+    || payloadsObject?.comparison_public_output_absent === true
+  );
+  const publicSurfaceContextAvailable = publicSurfaces.length > 0 || hasPublicOutputAbsenceEvidence;
+  const forbiddenPublicFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public', 'recommendation', 'public_recommendation', 'comparison_recommendation', 'forced_winner', 'false_winner', 'castability', 'bookability', 'marketability', 'public_scoring', 'public_score', 'public_technique_authority', 'technique_authority']);
+  const winnerFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public']);
+  const recommendationFields = new Set(['recommendation', 'public_recommendation', 'comparison_recommendation']);
+  const forbiddenHits: Array<{ surface: string; field: string; path: string }> = [];
+  const publicSurfaceScanIssues: Array<{ surface: string; path: string; issue: string }> = [];
+  const activePublicSurfacePathObjects = new WeakSet<object>();
+  const maxPublicSurfaceScanDepth = 24;
+  const markPublicScanIssue = (surface: string, path: string, issue: string) => {
+    publicSurfaceScanIssues.push({ surface, path, issue });
+  };
+  const walk = (value: unknown, pathPrefix: string, surface: string, depth = 0): void => {
+    if (depth > maxPublicSurfaceScanDepth) {
+      markPublicScanIssue(surface, pathPrefix, 'depth_limit_exceeded');
+      return;
+    }
+    if (Array.isArray(value)) {
+      if (activePublicSurfacePathObjects.has(value)) {
+        markPublicScanIssue(surface, pathPrefix, 'cycle_detected');
+        return;
+      }
+      activePublicSurfacePathObjects.add(value);
+      value.forEach((entry, idx) => walk(entry, `${pathPrefix}[${idx}]`, surface, depth + 1));
+      activePublicSurfacePathObjects.delete(value);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (activePublicSurfacePathObjects.has(value)) {
+      markPublicScanIssue(surface, pathPrefix, 'cycle_detected');
+      return;
+    }
+    activePublicSurfacePathObjects.add(value);
+    if (!isPlainRecord(value)) {
+      markPublicScanIssue(surface, pathPrefix, 'uninspectable_object');
+      activePublicSurfacePathObjects.delete(value);
+      return;
+    }
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const nextPath = pathPrefix ? `${pathPrefix}.${k}` : k;
+      const normalisedKey = k.trim().toLowerCase();
+      if (forbiddenPublicFields.has(normalisedKey)) forbiddenHits.push({ surface, field: normalisedKey, path: nextPath });
+      walk(v, nextPath, surface, depth + 1);
+    }
+    activePublicSurfacePathObjects.delete(value);
+  };
+  for (const surface of publicSurfaces) walk(surface.value, surface.key, surface.key);
+  const publicSurfaceScanSafe = publicSurfaceScanIssues.length === 0;
+  const publicWinnerAbsent = !forbiddenHits.some((x) => winnerFields.has(x.field));
+  const publicRecommendationAbsent = !forbiddenHits.some((x) => recommendationFields.has(x.field));
+  const riskSourceCollection = collectComparisonRiskSources(payloadsObject);
+  const riskSources = riskSourceCollection.sources;
+  const riskFieldHits = riskSourceCollection.fieldHits;
+  const riskSourceScanSafe = riskSourceCollection.scanWarnings.length === 0;
+  const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted']);
+  const normaliseRiskStatus = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : null);
+  const isAcceptedComparisonMitigation = (value: unknown) => {
+    const status = normaliseRiskStatus(value);
+    return Boolean(status && acceptedMitigationStatuses.has(status));
+  };
+  const riskHitsFor = (field: string) => riskFieldHits.filter((hit) => hit.field === field);
+  const riskHitValueIs = (hit: ComparisonRiskFieldHit, expected: boolean | string) => {
+    if (typeof expected === 'string') return normaliseRiskStatus(hit.value) === expected;
+    return hit.value === expected;
+  };
+  const hasRiskHit = (field: string, expected: boolean | string): boolean => riskHitsFor(field).some((hit) => riskHitValueIs(hit, expected));
+  const parentRiskPath = (path: string): string => path.replace(/\.[^.]+$/, '');
+  const mitigationAppliesToRiskHit = (riskHit: ComparisonRiskFieldHit, mitigationHit: ComparisonRiskFieldHit): boolean => {
+    if (riskHit.source !== mitigationHit.source) return false;
+    const mitigationParent = parentRiskPath(mitigationHit.path);
+    return mitigationParent === riskHit.source || mitigationParent === parentRiskPath(riskHit.path);
+  };
+  const hasAcceptedRiskMitigationForHit = (riskHit: ComparisonRiskFieldHit, fields: string[]): boolean =>
+    riskFieldHits.some((hit) => fields.includes(hit.field) && isAcceptedComparisonMitigation(hit.value) && mitigationAppliesToRiskHit(riskHit, hit));
+  const hasUnmitigatedRiskHit = (flagField: string, mitigationFields: string[], expected: boolean | string = true): boolean =>
+    riskHitsFor(flagField).some((hit) => riskHitValueIs(hit, expected) && !hasAcceptedRiskMitigationForHit(hit, mitigationFields));
+  const noRiskStatusFields = new Set(['same_video_repeatability_status', 'route_variance_status']);
+  const mitigationStatusFields = new Set(['same_video_suppression_status', 'route_variance_mitigation_status', 'route_variance_suppression_status', 'false_winner_prevention_status']);
+  const riskContextValueInspectable = (hit: ComparisonRiskFieldHit): boolean => {
+    if (typeof hit.value === 'boolean') return true;
+    const status = normaliseRiskStatus(hit.value);
+    if (!status) return false;
+    if (noRiskStatusFields.has(hit.field)) return status === 'not_detected';
+    if (mitigationStatusFields.has(hit.field)) return acceptedMitigationStatuses.has(status);
+    return false;
+  };
+  const hasRiskContext = (...fields: string[]): boolean =>
+    riskFieldHits.some((hit) => fields.includes(hit.field) && riskContextValueInspectable(hit));
+  const sourceKeysForRiskHits = (predicate: (hit: ComparisonRiskFieldHit) => boolean): string[] => [...new Set(riskFieldHits.filter(predicate).map((hit) => hit.source))];
+  const sameVideoRiskContextAvailable = hasRiskContext('same_video_unresolved_risk', 'same_video_detected', 'repeated_input_detected', 'no_material_difference', 'same_video_suppression_status', 'same_video_repeatability_status');
+  const routeVarianceRiskContextAvailable = hasRiskContext('route_variance_risk', 'route_mismatch_detected', 'route_variance_detected', 'route_variance_status', 'route_variance_mitigation_status', 'route_variance_suppression_status');
+  const forcedFalseWinnerRiskContextAvailable = hasRiskContext('forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status');
+  const comparisonRiskContextAvailable = sameVideoRiskContextAvailable && routeVarianceRiskContextAvailable && forcedFalseWinnerRiskContextAvailable;
+  const forcedWinnerRiskAbsent = !hasRiskHit('forced_winner_risk', true);
+  const falseWinnerRiskAbsent = !hasRiskHit('false_winner_risk', true);
+  const routeVarianceRiskAbsent = !(
+    hasRiskHit('route_variance_mitigation_status', 'unresolved_blocked')
+    || hasUnmitigatedRiskHit('route_variance_risk', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
+    || hasUnmitigatedRiskHit('route_mismatch_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
+    || hasUnmitigatedRiskHit('route_variance_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
+  );
+  const sameVideoRiskAbsent = !(
+    hasRiskHit('same_video_unresolved_risk', true)
+    || hasUnmitigatedRiskHit('same_video_detected', ['same_video_suppression_status'])
+    || hasUnmitigatedRiskHit('repeated_input_detected', ['same_video_suppression_status'])
+    || hasUnmitigatedRiskHit('no_material_difference', ['same_video_suppression_status'], false)
+  );
+  const comparisonPayloadsAvailable = Boolean(
+    payloadsObject
+    && (
+      publicSurfaces.length > 0
+      || riskSourceCollection.fieldHits.length > 0
+    )
+  );
+  const forbiddenPublicComparisonFieldsAbsent = forbiddenHits.length === 0;
+  const failedRiskOrLeakDetected = !forbiddenPublicComparisonFieldsAbsent || !forcedWinnerRiskAbsent || !falseWinnerRiskAbsent || !routeVarianceRiskAbsent || !sameVideoRiskAbsent;
+  const mismatch: Array<Record<string, unknown>> = [];
+  if (!requiredOk && input.comparison_invoked) mismatch.push({ mismatch_type: 'missing_required_comparison_evidence' });
+  if (!comparisonPayloadsAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_parity_payload_missing' });
+  if (!publicSurfaceContextAvailable && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_public_surface_context_missing' });
+  if (!publicSurfaceScanSafe && input.comparison_invoked) mismatch.push({ mismatch_type: 'public_comparison_surface_uninspectable', issues: publicSurfaceScanIssues });
+  if (!riskSourceScanSafe && input.comparison_invoked) mismatch.push({ mismatch_type: 'comparison_risk_source_uninspectable', warnings: riskSourceCollection.scanWarnings });
+  if (!comparisonRiskContextAvailable && input.comparison_invoked && !failedRiskOrLeakDetected) mismatch.push({
+    mismatch_type: 'comparison_risk_context_missing',
+    missing_contexts: [
+      ...(!sameVideoRiskContextAvailable ? ['same_video'] : []),
+      ...(!routeVarianceRiskContextAvailable ? ['route_variance'] : []),
+      ...(!forcedFalseWinnerRiskContextAvailable ? ['forced_false_winner'] : []),
+    ],
+  });
+  if (!forbiddenPublicComparisonFieldsAbsent) {
+    for (const hit of forbiddenHits) {
+      mismatch.push({ mismatch_type: 'forbidden_public_comparison_field_present', surface: hit.surface, field: hit.field, path: hit.path });
+    }
+  }
+  if (!forcedWinnerRiskAbsent) mismatch.push({ mismatch_type: 'forced_winner_risk_detected', source_trace_keys: sourceKeysForRiskHits((hit) => hit.field === 'forced_winner_risk' && riskHitValueIs(hit, true)) });
+  if (!falseWinnerRiskAbsent) mismatch.push({ mismatch_type: 'false_winner_risk_detected', source_trace_keys: sourceKeysForRiskHits((hit) => hit.field === 'false_winner_risk' && riskHitValueIs(hit, true)) });
+  if (!routeVarianceRiskAbsent) mismatch.push({ mismatch_type: 'route_variance_unresolved', source_trace_keys: sourceKeysForRiskHits((hit) => (
+    (hit.field === 'route_variance_risk' && riskHitValueIs(hit, true))
+    || (hit.field === 'route_variance_mitigation_status' && riskHitValueIs(hit, 'unresolved_blocked'))
+    || (hit.field === 'route_mismatch_detected' && riskHitValueIs(hit, true))
+    || (hit.field === 'route_variance_detected' && riskHitValueIs(hit, true))
+  )) });
+  if (!sameVideoRiskAbsent) mismatch.push({ mismatch_type: 'same_video_unresolved_risk', source_trace_keys: sourceKeysForRiskHits((hit) => (
+    (hit.field === 'same_video_unresolved_risk' && riskHitValueIs(hit, true))
+    || (hit.field === 'same_video_detected' && riskHitValueIs(hit, true))
+    || (hit.field === 'repeated_input_detected' && riskHitValueIs(hit, true))
+    || (hit.field === 'no_material_difference' && riskHitValueIs(hit, false))
+  )) });
+  const parityStatus = !input.comparison_invoked
+    ? 'not_applicable'
+    : (
+      failedRiskOrLeakDetected
+        ? 'failed'
+        : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable || !publicSurfaceScanSafe || !riskSourceScanSafe || !comparisonRiskContextAvailable ? 'insufficient' : 'passed')
+    );
+  const blocker_codes = (parityStatus === 'passed' || parityStatus === 'not_applicable') ? [] : ['parity_artefacts_missing'];
+  if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
+  const outPayload = {
+    schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0, comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true,
+    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, comparison_risk_context_available: comparisonRiskContextAvailable, same_video_risk_context_available: sameVideoRiskContextAvailable, route_variance_risk_context_available: routeVarianceRiskContextAvailable, forced_false_winner_risk_context_available: forcedFalseWinnerRiskContextAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits, mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present' : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : (!riskSourceScanSafe ? 'comparison_risk_source_uninspectable' : (!comparisonRiskContextAvailable ? 'comparison_risk_context_missing' : 'comparison_evidence_missing_or_unresolved')))))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
+  };
+  const relative = input.take_id ? `takes/take-${input.take_id}/analysis-${analysisRunId}/parity/comparison_parity.json` : 'parity/comparison_parity.json';
+  const result = await writeInternalJson(root, input.run_id, relative, outPayload, 'parity_comparison');
+  return { written: Boolean(result.written), emitted_artefact_ids: result.written ? ['parity_comparison'] : [], parity_status: parityStatus, blocker_codes };
+}
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface TraceEmitterInput { run_id: string; artefact_id: string; relative_path: string; trace_data: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; }
@@ -574,6 +984,8 @@ export interface InternalComparisonOperatorTriggerResult {
   compared_take_ids: string[];
   compared_analysis_run_ids: string[];
   emitted_artefact_ids: string[];
+  emitted_blocked_artefact_ids?: string[];
+  comparison_parity_status?: ComparisonParityStatus;
   warning?: string | null;
   blocker_codes?: string[];
 }
@@ -613,6 +1025,8 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
   const sourceRunId = String(input.run_id ?? '').trim();
   const takeIdRaw = (input.root_take_id ?? input.take_id ?? '').trim();
   const compared = (input.compared_take_ids ?? []).map((x) => String(x).trim()).filter(Boolean);
+  const takeCore = stripRepeatedTakePrefixes(takeIdRaw);
+  const comparedTakeCores = normaliseUniqueTakeCores(compared);
   const safeMismatch = (): CanonicalComparisonReconciliationIdentity => ({
     source_run_id: sourceRunId,
     canonical_qa_run_id: '',
@@ -633,25 +1047,25 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
     identity_status: 'comparison_reconciliation_manifest_identity_mismatch',
     blocker_code: 'comparison_reconciliation_manifest_identity_mismatch',
   });
-  if (!takeIdRaw) return safeMismatch();
-  try { assertSafeSegment(takeIdRaw, 'take_id'); } catch { return safeMismatch(); }
-  if (compared.length > 0 && !compared.includes(takeIdRaw)) return safeMismatch();
+  if (!takeCore) return safeMismatch();
+  try { assertSafeSegment(takeCore, 'take_id'); } catch { return safeMismatch(); }
+  if (compared.length > 0 && !comparedTakeCores.includes(takeCore)) return safeMismatch();
   const takeRunMatch = /^take-(.+)$/.exec(sourceRunId);
-  if (takeRunMatch && takeRunMatch[1] !== takeIdRaw) return safeMismatch();
-  if (sourceRunId && !takeRunMatch && sourceRunId !== `take-${takeIdRaw}` && !isUuidLike(sourceRunId)) {
+  if (takeRunMatch && stripRepeatedTakePrefixes(takeRunMatch[1]) !== takeCore) return safeMismatch();
+  if (sourceRunId && !takeRunMatch && sourceRunId !== `take-${takeCore}` && !isUuidLike(sourceRunId)) {
     try { assertSafeSegment(sourceRunId, 'run_id'); } catch { return safeMismatch(); }
   }
-  const canonicalQaRunId = `take-${takeIdRaw}`;
+  const canonicalQaRunId = `take-${takeCore}`;
   const canonicalAnalysisRunId = canonicalQaRunId;
   const analysisInput = (input.analysis_run_id ?? '').trim();
   if (analysisInput && analysisInput !== canonicalAnalysisRunId) return safeMismatch();
-  const canonicalComparisonRoot = `takes/take-${takeIdRaw}/analysis-${canonicalAnalysisRunId}`;
+  const canonicalComparisonRoot = `takes/take-${takeCore}/analysis-${canonicalAnalysisRunId}`;
   const manifestRelativePath = 'manifest.json' as const;
   const metricsRelativePath = 'qa/acceptance_metrics.json' as const;
   return {
     source_run_id: sourceRunId,
     canonical_qa_run_id: canonicalQaRunId,
-    canonical_take_id: takeIdRaw,
+    canonical_take_id: takeCore,
     canonical_analysis_run_id: canonicalAnalysisRunId,
     manifest_relative_path: manifestRelativePath,
     metrics_relative_path: metricsRelativePath,
@@ -828,6 +1242,23 @@ function stripTakePrefix(value: string): string {
   if (!core || core.startsWith('take-')) return '';
   return core;
 }
+function stripRepeatedTakePrefixes(value: string): string {
+  let core = String(value ?? '').trim();
+  while (core.startsWith('take-')) core = core.slice(5);
+  return core;
+}
+function normaliseUniqueTakeCores(values: readonly unknown[] | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values ?? []) {
+    if (typeof value !== 'string') continue;
+    const core = stripRepeatedTakePrefixes(value);
+    if (!core || seen.has(core)) continue;
+    seen.add(core);
+    out.push(core);
+  }
+  return out;
+}
 function toCanonicalTakeRunId(value: string): string {
   const core = stripTakePrefix(value);
   if (!core) return '';
@@ -940,8 +1371,10 @@ export async function runInternalComparisonOperatorTrigger(
     compared_take_ids: ids,
     compared_analysis_run_ids: compared_takes.map((t) => t.analysis_run_id),
     emitted_artefact_ids: out.emitted_artefact_ids ?? [],
+    emitted_blocked_artefact_ids: out.emitted_blocked_artefact_ids ?? [],
+    comparison_parity_status: out.comparison_parity_status,
     warning: out.warning ?? null,
-    blocker_codes: out.written ? [] : ['comparison_not_emitted'],
+    blocker_codes: out.blocker_codes ?? (out.written ? [] : ['comparison_not_emitted']),
   };
 }
 export async function runInternalComparisonForTakes(input: InternalComparisonRuntimeSourceInput): Promise<any> {
@@ -1036,7 +1469,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   if (!internalEmit) return { written: false, warning: null as string | null };
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: metadata.compared_take_ids ?? metadata.take_ids ?? [], fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary };
+    const normalisedComparedTakeIds = normaliseUniqueTakeCores(metadata.compared_take_ids ?? metadata.take_ids);
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary };
     const manifestRelativePath = shouldUseExpandedManifestPaths()
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'manifest.json' })
       : 'manifest.json';
@@ -1144,6 +1578,47 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_report'])];
         }
       }
+    }
+    const comparisonInvoked = Boolean(metadata.comparison_run_id) || normalisedComparedTakeIds.length > 1 || COMPARISON_ARTEFACT_IDS.some((id) => emittedWithInternalTraces.includes(id) || emittedBlockedWithInternalTraces.includes(id));
+    const comparisonEvidenceStatus = {
+      comparison_raw: emittedWithInternalTraces.includes('comparison_raw'),
+      comparison_report_internal: emittedWithInternalTraces.includes('comparison_report_internal'),
+      same_video_repeatability_trace: emittedWithInternalTraces.includes('same_video_repeatability_trace'),
+      comparison_suppression_trace: emittedWithInternalTraces.includes('comparison_suppression_trace'),
+      route_variance_trace: emittedWithInternalTraces.includes('route_variance_trace'),
+    };
+    const hasCompleteComparisonEvidence = Object.values(comparisonEvidenceStatus).every(Boolean);
+    const parityDeferred = (metadata.deferred_artefact_ids ?? []).includes('parity_comparison');
+    const shouldEmitComparisonParity = comparisonInvoked && !parityDeferred;
+    const comparisonParityWrite = shouldEmitComparisonParity ? await emitComparisonParityProof({
+      run_id: metadata.run_id,
+      analysis_run_id: baseOptions.analysis_run_id,
+      take_id: takeIdForFirstPassTraces ?? undefined,
+      submission_id: metadata.submission_id ?? null,
+      comparison_run_id: metadata.comparison_run_id ?? null,
+      compared_take_ids: normalisedComparedTakeIds,
+      root_dir: metadata.root_dir,
+      internal_qa_emit: true,
+      comparison_invoked: comparisonInvoked,
+      comparison_evidence_status: comparisonEvidenceStatus,
+      comparison_payloads: metadata.comparison_parity_input?.comparison_payloads ?? undefined,
+      public_comparison_surface_paths: metadata.comparison_parity_input?.public_comparison_surface_paths ?? undefined,
+    }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: (comparisonInvoked ? 'insufficient' : 'not_applicable') as 'insufficient'|'not_applicable' };
+    artefactSourceClassificationById.parity_comparison = 'internal_comparison_parity_proof';
+    artefactLevel2ById.parity_comparison = shouldEmitComparisonParity && comparisonParityWrite.written && comparisonParityWrite.parity_status === 'passed';
+    if (parityDeferred) {
+      emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_comparison');
+      emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_comparison');
+    } else if (comparisonParityWrite.parity_status === 'not_applicable') {
+      emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_comparison');
+      emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_comparison');
+      baseOptions.not_applicable_artefact_ids = [...new Set([...(baseOptions.not_applicable_artefact_ids ?? []), 'parity_comparison'])];
+    } else if (comparisonParityWrite.written && comparisonParityWrite.parity_status === 'passed') {
+      emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'parity_comparison'])];
+      emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_comparison');
+    } else if (comparisonParityWrite.written) {
+      emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_comparison');
+      emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_comparison'])];
     }
 
     const metrics = preFinalMetrics;
@@ -1904,10 +2379,43 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
   }
   const emitOut = await emitComparisonRuntimeArtifacts({ ...input, run_id: identity.canonical_qa_run_id, take_id: identity.canonical_take_id, analysis_run_id: identity.canonical_analysis_run_id });
   const emittedIds = emitOut.emitted_artefact_ids ?? [];
-  const reconciledManifest = reconcileComparisonManifestState({
+  const emittedBlockedIds = emitOut.emitted_blocked_artefact_ids ?? [];
+  const normalisedComparedTakeIds = normaliseUniqueTakeCores(comparedTakeIds);
+  const comparisonRunId = emitOut.comparison_run_id ?? input.comparison_run_id ?? null;
+  const comparisonEvidenceStatus = {
+    comparison_raw: emittedIds.includes('comparison_raw'),
+    comparison_report_internal: emittedIds.includes('comparison_report_internal'),
+    same_video_repeatability_trace: emittedIds.includes('same_video_repeatability_trace'),
+    comparison_suppression_trace: emittedIds.includes('comparison_suppression_trace'),
+    route_variance_trace: emittedIds.includes('route_variance_trace'),
+  };
+  const comparisonInvoked = Boolean(comparisonRunId)
+    || normalisedComparedTakeIds.length > 1
+    || COMPARISON_ARTEFACT_IDS.some((id) => emittedIds.includes(id) || emittedBlockedIds.includes(id));
+  const comparisonParityPayloads = {
+    public_output_unchanged: true,
+    public_comparison_output_absent_or_unchanged: true,
+    ...(input.comparison_raw_data ? { comparison_raw: { ...input.comparison_raw_data, public_output_unchanged: true } } : {}),
+    ...(input.same_video_repeatability_trace ? { same_video_repeatability_trace: { ...input.same_video_repeatability_trace, public_output_unchanged: true } } : {}),
+    ...(input.suppression_trace ? { comparison_suppression_trace: { ...input.suppression_trace, public_output_unchanged: true } } : {}),
+    ...(input.route_variance_trace ? { route_variance_trace: { ...input.route_variance_trace, public_output_unchanged: true } } : {}),
+  };
+  const comparisonParityWrite = comparisonInvoked ? await emitComparisonParityProof({
+    run_id: identity.canonical_qa_run_id,
+    analysis_run_id: identity.canonical_analysis_run_id,
+    take_id: identity.canonical_take_id,
+    comparison_run_id: comparisonRunId,
+    compared_take_ids: normalisedComparedTakeIds,
+    root_dir: root,
+    internal_qa_emit: true,
+    comparison_invoked: comparisonInvoked,
+    comparison_evidence_status: comparisonEvidenceStatus,
+    comparison_payloads: comparisonParityPayloads,
+  }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes: [] as string[] };
+  const reconciledComparisonManifest = reconcileComparisonManifestState({
     manifest: manifestObj,
-    comparison_run_id: emitOut.comparison_run_id ?? input.comparison_run_id ?? null,
-    compared_take_ids: comparedTakeIds,
+    comparison_run_id: comparisonRunId,
+    compared_take_ids: normalisedComparedTakeIds,
     comparison_write_success_by_id: {
       comparison_raw: emittedIds.includes('comparison_raw'),
       comparison_report_internal: emittedIds.includes('comparison_report_internal'),
@@ -1916,22 +2424,42 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
       route_variance_trace: emittedIds.includes('route_variance_trace'),
     },
   });
+  const reconciledManifest = applyComparisonParityManifestState({
+    manifest: reconciledComparisonManifest,
+    written: Boolean(comparisonParityWrite.written),
+    parity_status: comparisonParityWrite.parity_status as ComparisonParityStatus,
+  });
   const mw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.manifest_relative_path, payload: reconciledManifest, artefact_id: 'manifest' });
   const metrics = { ...buildQAAcceptanceMetrics(reconciledManifest), ...resolveQADeploymentProvenance() };
   const qw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.metrics_relative_path, payload: metrics, artefact_id: 'qa_acceptance_metrics' });
   const reconciliation_written = Boolean(mw.written && qw.written);
+  const comparison_parity_write_satisfied = !comparisonInvoked || comparisonParityWrite.parity_status === 'not_applicable' || Boolean(comparisonParityWrite.written);
   const comparison_artefacts_written = emittedIds.length > 0;
   const comparison_artefact_root_match = Boolean(identity.canonical_comparison_root === `takes/take-${identity.canonical_take_id}/analysis-${identity.canonical_analysis_run_id}`);
   const read_write_root_match = Boolean(identity.canonical_manifest_storage_key.startsWith(`${identity.canonical_qa_run_id}/`) && identity.canonical_metrics_storage_key.startsWith(`${identity.canonical_qa_run_id}/`));
   return {
     ...emitOut,
     ...baseResult,
-    written: Boolean(emitOut.written && reconciliation_written),
+    emitted_artefact_ids: [...new Set([
+      ...emittedIds,
+      ...(comparisonParityWrite.written && comparisonParityWrite.parity_status === 'passed' ? ['parity_comparison'] : []),
+    ])],
+    emitted_blocked_artefact_ids: [...new Set([
+      ...emittedBlockedIds,
+      ...(comparisonParityWrite.written && comparisonParityWrite.parity_status !== 'passed' && comparisonParityWrite.parity_status !== 'not_applicable' ? ['parity_comparison'] : []),
+    ])],
+    written: Boolean(emitOut.written && reconciliation_written && comparison_parity_write_satisfied),
     reconciliation_written,
     comparison_artefacts_written,
+    comparison_parity_written: Boolean(comparisonParityWrite.written),
+    comparison_parity_status: comparisonParityWrite.parity_status,
     comparison_artefact_root_match,
     read_write_root_match,
-    blocker_codes: emitOut.written && reconciliation_written ? [] : ['comparison_reconciliation_failed'],
+    blocker_codes: [...new Set([
+      ...(emitOut.written && reconciliation_written ? [] : ['comparison_reconciliation_failed']),
+      ...(!comparison_parity_write_satisfied ? ['parity_artefacts_missing'] : []),
+      ...(comparisonParityWrite.blocker_codes ?? []),
+    ])],
   };
 }
 
