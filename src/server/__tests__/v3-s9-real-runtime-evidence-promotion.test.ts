@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitAnalysisEvidenceStatePrerequisite, emitEvidenceAnchorsFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 type LegacyBundleOptions = {
   run?: string;
@@ -13,6 +13,7 @@ type LegacyBundleOptions = {
   acceptedIds?: string[];
   blockedIds?: string[];
   realV3Ids?: string[];
+  includeAnalysisEvidenceState?: boolean;
 };
 
 const defaultLegacyReport = {
@@ -68,6 +69,21 @@ async function emitLegacyBundle(options: LegacyBundleOptions = {}) {
   });
   const claimsPath = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'traces', 'PublicClaimTrace.json');
   const claims = claimsOut.written ? JSON.parse(await readFile(claimsPath, 'utf8')) : null;
+  const analysisEvidenceStateOut = options.includeAnalysisEvidenceState ? await emitAnalysisEvidenceStatePrerequisite({
+    run_id: run,
+    analysis_run_id: run,
+    submission_id: 'sub1',
+    take_id: take,
+    source_module: 'test',
+    source_stage: 'unit',
+    media_readiness_state: 'ready',
+    media_duration_seconds: null,
+    duration_confidence: 'unknown',
+    resolver_output_available: true,
+    truth_state_map_available: true,
+    root_dir: root,
+    internal_qa_emit: true,
+  }) : null;
   await emitQAManifestForAnalysisRun({
     run_id: run,
     analysis_run_id: run,
@@ -75,15 +91,18 @@ async function emitLegacyBundle(options: LegacyBundleOptions = {}) {
     submission_id: 'sub1',
     root_dir: root,
     internal_qa_emit: true,
-    emitted_artefact_ids: ['raw_report', ...(anchorsOut.written ? ['evidence_anchors'] : []), ...(claimsOut.written ? ['public_claim_trace'] : [])],
+    emitted_artefact_ids: ['raw_report', ...(analysisEvidenceStateOut?.emitted_artefact_ids ?? []), ...(anchorsOut.written ? ['evidence_anchors'] : []), ...(claimsOut.written ? ['public_claim_trace'] : [])],
+    emitted_blocked_artefact_ids: [...(analysisEvidenceStateOut?.emitted_blocked_artefact_ids ?? [])],
     artefact_source_classification_by_id: {
       raw_report: 'legacy_adapter',
+      ...(analysisEvidenceStateOut?.written ? { analysis_evidence_state: analysisEvidenceStateOut.source_classification } : {}),
       ...(anchorsOut.written ? { evidence_anchors: 'legacy_adapter' } : {}),
       ...(claimsOut.written ? { public_claim_trace: 'legacy_adapter' } : {}),
       ...(options.manifestSource ?? {}),
     },
     artefact_level2_spine_satisfaction_by_id: {
       raw_report: false,
+      ...(analysisEvidenceStateOut?.written ? { analysis_evidence_state: analysisEvidenceStateOut.level2_satisfies } : {}),
       ...(anchorsOut.written ? { evidence_anchors: false } : {}),
       ...(claimsOut.written ? { public_claim_trace: false } : {}),
       ...(options.manifestLevel2 ?? {}),
@@ -93,10 +112,62 @@ async function emitLegacyBundle(options: LegacyBundleOptions = {}) {
     runtime_evidence_blocked_by_id: options.blockedIds,
     real_v3_spine_artefact_ids: options.realV3Ids,
     public_claim_trace_summary: claimsOut.summary,
+    analysis_evidence_state_summary: analysisEvidenceStateOut?.written ? analysisEvidenceStateOut.summary : undefined,
   });
   const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
   const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
-  return { root, run, take, report, anchorsOut, anchors, claimsOut, claims, manifest, metrics };
+  const analysisEvidenceStatePath = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'analysis', 'AnalysisEvidenceState.json');
+  const analysisEvidenceState = analysisEvidenceStateOut?.written ? JSON.parse(await readFile(analysisEvidenceStatePath, 'utf8')) : null;
+  return { root, run, take, report, anchorsOut, anchors, claimsOut, claims, analysisEvidenceStateOut, analysisEvidenceState, manifest, metrics };
+}
+
+async function emitAnalysisEvidenceStateBundle(options: {
+  run?: string;
+  take?: string;
+  resolver?: boolean;
+  truth?: boolean;
+  duration?: number | null;
+  mediaState?: string | null;
+  metadataOverrides?: Record<string, unknown>;
+} = {}) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s914b-'));
+  const run = options.run ?? `run-s914b-${Math.random().toString(36).slice(2)}`;
+  const take = options.take ?? 't1';
+  const out = await emitAnalysisEvidenceStatePrerequisite({
+    run_id: run,
+    analysis_run_id: run,
+    submission_id: 'sub1',
+    take_id: take,
+    source_module: 'test',
+    source_stage: 'unit',
+    media_readiness_state: options.mediaState ?? 'ready',
+    media_duration_seconds: options.duration ?? null,
+    duration_confidence: options.duration ? 'known' : 'unknown',
+    resolver_output_available: options.resolver ?? true,
+    truth_state_map_available: options.truth ?? true,
+    metadata_overrides: options.metadataOverrides,
+    raw_report_data: { report_data: { timestamped_notes: [{ timestamp: '00:12', note: 'Forbidden downstream note' }], fix_first: 'Forbidden raw report field' } },
+    root_dir: root,
+    internal_qa_emit: true,
+  } as any);
+  await emitQAManifestForAnalysisRun({
+    run_id: run,
+    analysis_run_id: run,
+    take_id: take,
+    submission_id: 'sub1',
+    root_dir: root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: out.emitted_artefact_ids,
+    emitted_blocked_artefact_ids: out.emitted_blocked_artefact_ids,
+    artefact_source_classification_by_id: out.written ? { analysis_evidence_state: out.source_classification } : {},
+    artefact_level2_spine_satisfaction_by_id: out.written ? { analysis_evidence_state: out.level2_satisfies } : {},
+    analysis_evidence_state_summary: out.written ? out.summary : undefined,
+  });
+  const payloadPath = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'analysis', 'AnalysisEvidenceState.json');
+  const payload = out.written ? JSON.parse(await readFile(payloadPath, 'utf8')) : null;
+  const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+  return { root, run, take, out, payload, manifest, metrics };
 }
 
 describe('S9-14A legacy containment and current-state guardrail', () => {
@@ -364,6 +435,164 @@ describe('S9-14A legacy containment and current-state guardrail', () => {
   });
 });
 
+describe('S9-14B prerequisite AnalysisEvidenceState source', () => {
+  it('emits AnalysisEvidenceState at the canonical path as a blocked prerequisite artefact', async () => {
+    const { payload, manifest, metrics } = await emitAnalysisEvidenceStateBundle();
+    expect(payload.artefact_type).toBe('analysis_evidence_state');
+    expect(payload.schema_version).toBe('tapecoach_v3_analysis_evidence_state_prerequisite_v1');
+    expect(payload.run_id).toBe(manifest.run_id);
+    expect(payload.analysis_run_id).toBe(manifest.analysis_run_id);
+    expect(payload.internal_only).toBe(true);
+    expect(payload.privacy_classification).toBe('internal_private');
+    expect(manifest.artefact_status_by_id.analysis_evidence_state).toBe('emitted_blocked');
+    expect(manifest.artefact_source_classification_by_id.analysis_evidence_state).toBe('unavailable');
+    expect(metrics.analysis_evidence_state_status).toBe('emitted_blocked');
+  });
+
+  it('does not derive AnalysisEvidenceState from raw_report or report_data snapshots', async () => {
+    const { payload } = await emitAnalysisEvidenceStateBundle();
+    expect(JSON.stringify(payload)).not.toContain('report_data.timestamped_notes');
+    expect(JSON.stringify(payload)).not.toContain('Forbidden raw report field');
+    expect(payload.observable_evidence_items.some((item: any) => item.source_artefact_id === 'raw_report')).toBe(false);
+    expect(payload.observable_evidence_items.some((item: any) => String(item.source_path ?? '').startsWith('report_data'))).toBe(false);
+  });
+
+  it('records absent genuine observable extraction as non-satisfying unavailable source state', async () => {
+    const { payload, manifest, metrics } = await emitAnalysisEvidenceStateBundle();
+    expect(payload.source_classification).toBe('unavailable');
+    expect(payload.evidence_state_status).toBe('unavailable');
+    expect(payload.cannot_satisfy_v3_gate).toBe(true);
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.analysis_evidence_state).toBe(false);
+    expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
+    expect(metrics.analysis_evidence_state_gate_reason).toBe('genuine_step1_observable_evidence_source_unavailable');
+  });
+
+  it('does not fake real_runtime_v3 Step 1 classification without a genuine source', async () => {
+    const { payload, manifest } = await emitAnalysisEvidenceStateBundle({
+      metadataOverrides: {
+        source_classification: 'real_runtime_v3',
+        cannot_satisfy_v3_gate: false,
+        blocker_codes: [],
+      },
+    });
+    expect(payload.source_classification).not.toBe('real_runtime_v3');
+    expect(payload.cannot_satisfy_v3_gate).toBe(true);
+    expect(manifest.artefact_source_classification_by_id.analysis_evidence_state).toBe('unavailable');
+    expect(manifest.runtime_evidence_accepted_by_id).not.toContain('analysis_evidence_state');
+  });
+
+  it('records media readiness and resolver/truth refs safely without URL or token leakage', async () => {
+    const { payload } = await emitAnalysisEvidenceStateBundle({ duration: 42 });
+    expect(payload.resolver_output_ref).toContain('/resolver/resolver_output.json');
+    expect(payload.truth_state_map_ref).toContain('/resolver/TruthStateMap.json');
+    expect(payload.media_readiness_summary.media_readiness_state).toBe('ready');
+    expect(payload.media_readiness_summary.media_duration_seconds).toBe(42);
+    const serialized = JSON.stringify(payload).toLowerCase();
+    expect(serialized).not.toContain('http://');
+    expect(serialized).not.toContain('https://');
+    expect(serialized).not.toContain('token');
+    expect(serialized).not.toContain('signed');
+  });
+
+  it('blocks satisfaction when resolver_output is missing', async () => {
+    const { payload, manifest, metrics } = await emitAnalysisEvidenceStateBundle({ resolver: false });
+    expect(payload.resolver_output_ref).toBeNull();
+    expect(payload.blocker_codes).toContain('resolver_output_missing');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.analysis_evidence_state).toBe(false);
+    expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
+  });
+
+  it('blocks satisfaction when TruthStateMap is missing', async () => {
+    const { payload, metrics } = await emitAnalysisEvidenceStateBundle({ truth: false });
+    expect(payload.truth_state_map_ref).toBeNull();
+    expect(payload.blocker_codes).toContain('TruthStateMap_missing');
+    expect(payload.observable_evidence_items).toEqual([]);
+    expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
+  });
+
+  it('truthfully records missing media readiness duration without padded timestamps', async () => {
+    const { payload } = await emitAnalysisEvidenceStateBundle({ duration: null, mediaState: null });
+    expect(payload.media_readiness_summary.media_duration_seconds).toBeNull();
+    expect(payload.media_readiness_summary.duration_confidence).toBe('unknown');
+    expect(payload.media_readiness_summary.timestamp_source).toBe('unavailable');
+    expect(payload.assessability_limitations).toContain('media_duration_unavailable_no_timestamp_evidence_fabricated');
+    expect(payload.observable_evidence_items).toEqual([]);
+  });
+
+  it('does not let caller metadata override canonical AnalysisEvidenceState fields', async () => {
+    const { payload } = await emitAnalysisEvidenceStateBundle({
+      metadataOverrides: {
+        schema_version: 'attacker',
+        artefact_type: 'accepted_gate_evidence',
+        run_id: 'wrong',
+        analysis_run_id: 'wrong',
+        internal_only: false,
+        privacy_classification: 'public',
+        source_classification: 'real_runtime_v3',
+        blocker_codes: [],
+      },
+    });
+    expect(payload.schema_version).toBe('tapecoach_v3_analysis_evidence_state_prerequisite_v1');
+    expect(payload.artefact_type).toBe('analysis_evidence_state');
+    expect(payload.run_id).not.toBe('wrong');
+    expect(payload.internal_only).toBe(true);
+    expect(payload.privacy_classification).toBe('internal_private');
+    expect(payload.source_classification).toBe('unavailable');
+    expect(payload.blocker_codes).toContain('analysis_evidence_state_observable_extractor_unavailable');
+  });
+
+  it('does not crash on partial prerequisite input and preserves blockers', async () => {
+    const { out, payload, manifest } = await emitAnalysisEvidenceStateBundle({ run: 'run-s914b-malformed', take: 't1', resolver: false, truth: false, duration: null });
+    expect(out.written).toBe(true);
+    expect(payload.blocker_codes).toEqual(expect.arrayContaining(['resolver_output_missing', 'TruthStateMap_missing', 'media_duration_unavailable']));
+    expect(manifest.artefact_status_by_id.analysis_evidence_state).toBe('emitted_blocked');
+  });
+
+  it('keeps EvidenceAnchors legacy after AnalysisEvidenceState emits', async () => {
+    const { manifest, metrics } = await emitLegacyBundle({ includeAnalysisEvidenceState: true });
+    expect(manifest.artefact_source_classification_by_id.analysis_evidence_state).toBe('unavailable');
+    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('legacy_adapter');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(false);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+  });
+
+  it('keeps PublicClaimTrace legacy and non-satisfying after AnalysisEvidenceState emits', async () => {
+    const { claims, manifest, metrics } = await emitLegacyBundle({ includeAnalysisEvidenceState: true });
+    expect(manifest.artefact_source_classification_by_id.public_claim_trace).toBe('legacy_adapter');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.public_claim_trace).toBe(false);
+    expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(metrics.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('aligns manifest and qa_acceptance_metrics for AnalysisEvidenceState status and blockers', async () => {
+    const { manifest, metrics } = await emitAnalysisEvidenceStateBundle();
+    expect(metrics.analysis_evidence_state_status).toBe(manifest.artefact_status_by_id.analysis_evidence_state);
+    expect(metrics.analysis_evidence_state_source_classification).toBe(manifest.artefact_source_classification_by_id.analysis_evidence_state);
+    expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
+    expect(metrics.blocker_codes).toEqual(manifest.blocker_codes);
+    expect(metrics.blocker_codes).toContain('AnalysisEvidenceState_missing');
+  });
+
+  it('keeps global gates blocked', async () => {
+    const { manifest, metrics } = await emitAnalysisEvidenceStateBundle();
+    expect(manifest.level2_qa_acceptance).toBe('not_accepted');
+    expect(manifest.production_safe_status).toBe('blocked');
+    expect(manifest.public_scoring_status).toBe('blocked');
+    expect(manifest.public_technique_authority_status).toBe('blocked');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
+  it('does not change public output posture', async () => {
+    const { payload, metrics } = await emitAnalysisEvidenceStateBundle();
+    expect(payload.public_output_unchanged).toBe(true);
+    expect(metrics.public_output_unchanged).toBe(true);
+    expect(metrics.public_scoring_status).toBe('blocked');
+  });
+});
+
 function claimsOutSummary(claims: any) {
   return {
     claim_count: claims.claim_count,
@@ -373,4 +602,3 @@ function claimsOutSummary(claims: any) {
     rewrite_required_count: claims.rewrite_required_count,
   };
 }
-

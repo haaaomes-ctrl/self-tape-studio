@@ -90,6 +90,14 @@ export interface QAArtifactEmitterOptions {
     model_run_trace_gate_status?: 'insufficient' | 'missing' | 'satisfied';
     model_run_trace_gate_reason?: string;
   };
+  analysis_evidence_state_summary?: {
+    evidence_state_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | 'blocked';
+    source_classification?: string;
+    observable_evidence_item_count?: number;
+    unsupported_or_unavailable_evidence_count?: number;
+    analysis_evidence_state_gate_status?: 'missing' | 'insufficient' | 'satisfied';
+    analysis_evidence_state_gate_reason?: string;
+  };
   validator_trace_summary?: Record<string, unknown>;
   gate_trace_summary?: Record<string, unknown>;
 }
@@ -100,7 +108,7 @@ const DEFAULT_EMITTER_VERSION = '0.2.0';
 const RELEASE_STATE = 'planning_dark_mode_internal_only';
 const BLOCKED_STATUS = 'blocked';
 const P0_CODE = 'same_video_false_winner_active_P0';
-const S9_14_CONTAINED_TRACE_IDS = new Set(['evidence_anchors', 'public_claim_trace']);
+const S9_14_CONTAINED_TRACE_IDS = new Set(['analysis_evidence_state', 'evidence_anchors', 'public_claim_trace']);
 
 const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[] = [
   { artefact_id: 'analysis_input_record', name: 'input record', expected_path: 'inputs/input_record.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
@@ -108,6 +116,7 @@ const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[]
   { artefact_id: 'analysis_take', name: 'take', expected_path: 'inputs/take.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'resolver_output', name: 'resolver output', expected_path: 'resolver/resolver_output.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'truth_state_map', name: 'TruthStateMap', expected_path: 'resolver/TruthStateMap.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'analysis_evidence_state', name: 'AnalysisEvidenceState', expected_path: 'analysis/AnalysisEvidenceState.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: ['resolver_output', 'truth_state_map'] },
   { artefact_id: 'evidence_anchors', name: 'EvidenceAnchors', expected_path: 'traces/EvidenceAnchors.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'public_claim_trace', name: 'PublicClaimTrace', expected_path: 'traces/PublicClaimTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'technique_observation_trace', name: 'TechniqueObservationTrace', expected_path: 'traces/TechniqueObservationTrace.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
@@ -134,7 +143,7 @@ const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[]
 const BLOCKERS: Record<string, string> = {
   raw_report: 'raw_JSON_missing', comparison_raw: 'comparison_JSON_missing', evidence_anchors: 'EvidenceAnchor_trace_missing', public_claim_trace: 'PublicClaimTrace_missing',
   technique_observation_trace: 'TechniqueObservation_trace_missing', score_trace: 'ScoreTrace_missing', model_run_trace: 'ModelRunTrace_missing', truth_state_map: 'TruthStateMap_missing',
-  resolver_output: 'resolver_output_missing', same_video_repeatability_trace: 'same_video_repeatability_trace_missing', route_variance_trace: 'route_variance_trace_missing',
+  resolver_output: 'resolver_output_missing', analysis_evidence_state: 'AnalysisEvidenceState_missing', same_video_repeatability_trace: 'same_video_repeatability_trace_missing', route_variance_trace: 'route_variance_trace_missing',
   comparison_suppression_trace: 'comparison_suppression_trace_missing', no_export_proof: 'no_export_proof_missing', no_export_ui_proof: 'no_export_proof_missing', parity_report: 'parity_artefacts_missing', parity_comparison: 'parity_artefacts_missing',
   validator_trace: 'validator_trace_missing', gate_trace: 'gate_trace_missing',
   comparison_report_internal: 'comparison_report_unavailable',
@@ -323,6 +332,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const defects = [...new Set(manifest.defect_risk_ids ?? [])];
   const sourceClassById = manifest.artefact_source_classification_by_id ?? {};
   const spineById = manifest.artefact_level2_spine_satisfaction_by_id ?? {};
+  const analysisEvidenceStateStatus = manifest.artefact_status_by_id?.analysis_evidence_state ?? 'missing';
+  const analysisEvidenceStateGateStatus = analysisEvidenceStateStatus === 'missing' ? 'missing' : (spineById.analysis_evidence_state === true && sourceClassById.analysis_evidence_state === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
   const evidenceAnchorStatus = manifest.artefact_status_by_id?.evidence_anchors ?? 'missing';
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
   const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true && sourceClassById.evidence_anchors === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
@@ -352,6 +363,14 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     legacy_untraced_claim_count: 0,
     unsafe_or_overclaim_count: 0,
     rewrite_required_count: 0,
+  };
+  const analysisEvidenceStateSummary = manifest.analysis_evidence_state_summary ?? {
+    evidence_state_status: analysisEvidenceStateStatus === 'missing' ? 'unavailable' : 'unavailable',
+    source_classification: sourceClassById.analysis_evidence_state ?? 'missing',
+    observable_evidence_item_count: 0,
+    unsupported_or_unavailable_evidence_count: analysisEvidenceStateStatus === 'missing' ? 1 : 0,
+    analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
+    analysis_evidence_state_gate_reason: analysisEvidenceStateStatus === 'missing' ? 'analysis_evidence_state_not_emitted' : 'analysis_evidence_state_not_real_runtime_v3',
   };
 
   const scoreTraceSummary = manifest.score_trace_summary ?? {
@@ -399,6 +418,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const comparisonEmittedCount = comparisonArtefactIds.filter((id) => manifest.artefact_status_by_id?.[id] === 'emitted').length;
   const comparisonEvidenceStatus = comparisonEmittedCount === 5 ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
   const nextTasks = [
+    ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
     ...(tracesEmitted && (evidenceAnchorGateStatus !== 'satisfied' || publicClaimGateStatus !== 'satisfied') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
     ...(techniqueObservationStatus === 'missing' ? ['TechniqueObservationTrace'] : []),
@@ -466,6 +486,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     comparison_runtime_artifact_count: comparisonEmittedCount,
     truth_state_status: manifest.artefact_status_by_id?.truth_state_map ?? 'missing',
     resolver_status: manifest.artefact_status_by_id?.resolver_output ?? 'missing',
+    analysis_evidence_state_status: analysisEvidenceStateStatus,
+    analysis_evidence_state_source_classification: sourceClassById.analysis_evidence_state ?? 'missing',
+    analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
+    analysis_evidence_state_gate_reason: analysisEvidenceStateGateStatus === 'satisfied'
+      ? 'real_runtime_v3_analysis_evidence_state_present'
+      : (analysisEvidenceStateStatus === 'missing'
+        ? 'analysis_evidence_state_not_emitted'
+        : String(analysisEvidenceStateSummary.analysis_evidence_state_gate_reason ?? 'analysis_evidence_state_not_real_runtime_v3')),
+    analysis_evidence_state_summary: analysisEvidenceStateSummary,
     evidence_anchor_trace_status: evidenceAnchorStatus,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_source_family_summary: evidenceAnchorSourceSummary,
@@ -639,6 +668,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
     score_trace_summary: options.score_trace_summary ?? undefined,
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
+    analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },

@@ -29,7 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisEvidenceStatePrerequisite, emitAnalysisInputArtefacts, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3311,6 +3311,42 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
+      const qaBlockedArtefactIds: string[] = [];
+      const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
+      const analysisEvidenceState = await emitAnalysisEvidenceStatePrerequisite({
+        run_id: `take-${takeId}`,
+        analysis_run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_id: takeId,
+        compared_take_ids: [takeId],
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        analysis_route: 'runProcessTake',
+        route_or_model_marker: 'runProcessTake',
+        audition_type: null,
+        selected_level: audition.audition_level ?? null,
+        brief_presence: briefPresence,
+        brief_presence_source: briefPresenceSource,
+        material_presence: 'unknown',
+        mux_playback_id: take.mux_playback_id ?? null,
+        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        take_created_at: takeCreatedAt,
+        take_updated_at: takeUpdatedAt,
+        take_index: null,
+        take_index_source: 'unavailable',
+        component_or_task_declaration: null,
+        component_or_task_declaration_status: 'unknown',
+        component_or_task_declaration_source: 'not_loaded',
+        media_readiness_state: take.status ?? null,
+        media_duration_seconds: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? takeDurationSeconds : null,
+        duration_confidence: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? 'known' : 'unknown',
+        resolver_output_available: resolverTruth.emitted_artefact_ids.includes('resolver_output'),
+        truth_state_map_available: resolverTruth.emitted_artefact_ids.includes('truth_state_map'),
+        unavailable_fields: unavailableInputFields,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+      });
+      qaArtefactIds.push(...analysisEvidenceState.emitted_artefact_ids);
+      qaBlockedArtefactIds.push(...analysisEvidenceState.emitted_blocked_artefact_ids);
 
       const rawReportPayload = rawReportEmit.written ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>) : (report as Record<string, unknown>);
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
@@ -3409,6 +3445,8 @@ export async function runProcessTake(
         take_id: takeId,
         analysis_run_id: `take-${takeId}`,
         emitted_artefact_ids_before_manifest: qaArtefactIds,
+        emitted_blocked_artefact_ids_before_manifest: qaBlockedArtefactIds,
+        includes_analysis_evidence_state: qaArtefactIds.includes('analysis_evidence_state') || qaBlockedArtefactIds.includes('analysis_evidence_state'),
         includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors'),
         includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace'),
         includes_technique_observation_trace: qaArtefactIds.includes('technique_observation_trace'),
@@ -3425,8 +3463,10 @@ export async function runProcessTake(
         commit_sha: process.env.GIT_COMMIT_SHA,
         branch_name: process.env.GIT_BRANCH_NAME,
         emitted_artefact_ids: qaArtefactIds,
+        emitted_blocked_artefact_ids: qaBlockedArtefactIds,
         artefact_source_classification_by_id: {
           raw_report: 'legacy_adapter',
+          ...(analysisEvidenceState.written ? { analysis_evidence_state: analysisEvidenceState.source_classification } : {}),
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
           ...(publicClaimTrace.written ? { public_claim_trace: 'legacy_adapter' } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
@@ -3435,6 +3475,7 @@ export async function runProcessTake(
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
+          ...(analysisEvidenceState.written ? { analysis_evidence_state: analysisEvidenceState.level2_satisfies } : {}),
           ...(evidenceAnchors.written ? { evidence_anchors: evidenceAnchors.level2_satisfies } : {}),
           ...(publicClaimTrace.written ? { public_claim_trace: false } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
@@ -3453,6 +3494,7 @@ export async function runProcessTake(
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
+        analysis_evidence_state_summary: analysisEvidenceState.written ? analysisEvidenceState.summary : undefined,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

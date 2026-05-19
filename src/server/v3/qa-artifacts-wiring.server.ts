@@ -191,7 +191,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -1163,6 +1163,14 @@ export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
 export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
+export interface AnalysisEvidenceStateEmitterInput extends AnalysisInputArtefactEmitterInput {
+  resolver_output_available?: boolean;
+  truth_state_map_available?: boolean;
+  media_duration_seconds?: number | null;
+  duration_confidence?: 'known' | 'estimated' | 'unknown' | string | null;
+  observable_evidence_items?: Array<Record<string, unknown>>;
+  metadata_overrides?: Record<string, unknown>;
+}
 type PresenceValue = 'supplied' | 'absent' | 'unknown';
 function normalisePresenceTruthState(value: PresenceValue | null | undefined, source: string | null | undefined): { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' } {
   const normalizedValue: PresenceValue = value === 'supplied' || value === 'absent' || value === 'unknown' ? value : 'unknown';
@@ -1546,7 +1554,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
     const normalisedComparedTakeIds = normaliseUniqueTakeCores(metadata.compared_take_ids ?? metadata.take_ids);
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary };
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary };
     const manifestRelativePath = shouldUseExpandedManifestPaths()
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'manifest.json' })
       : 'manifest.json';
@@ -2680,6 +2688,113 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
   }
   return { written: !hadFailure, emitted_artefact_ids };
+}
+
+export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvidenceStateEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
+    return {
+      written: false as const,
+      emitted_artefact_ids: [] as string[],
+      emitted_blocked_artefact_ids: [] as string[],
+      source_classification: 'unavailable' as const,
+      level2_satisfies: false as const,
+    };
+  }
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  assertSafeSegment(input.take_id, 'take_id');
+  assertSafeSegment(analysisRunId, 'analysis_run_id');
+  const generatedAt = new Date().toISOString();
+  const resolverOutputAvailable = input.resolver_output_available === true;
+  const truthStateMapAvailable = input.truth_state_map_available === true;
+  const durationKnown = typeof input.media_duration_seconds === 'number' && Number.isFinite(input.media_duration_seconds) && input.media_duration_seconds > 0;
+  const durationConfidence = durationKnown ? (input.duration_confidence ?? 'known') : 'unknown';
+  const blocker_codes = dedupePreservingOrder([
+    'analysis_evidence_state_observable_extractor_unavailable',
+    ...(!resolverOutputAvailable ? ['resolver_output_missing'] : []),
+    ...(!truthStateMapAvailable ? ['TruthStateMap_missing'] : []),
+    ...(!durationKnown ? ['media_duration_unavailable'] : []),
+  ]);
+  const unsupportedOrUnavailableEvidence = [
+    {
+      evidence_kind: 'observable_video_audio_material_evidence',
+      status: 'unavailable',
+      reason: 'no_persisted_step1_observable_evidence_extractor_wired_for_qa_promotion',
+      blocker_codes: ['analysis_evidence_state_observable_extractor_unavailable'],
+    },
+  ];
+  const summary = {
+    evidence_state_status: 'unavailable' as const,
+    source_classification: 'unavailable',
+    observable_evidence_item_count: 0,
+    unsupported_or_unavailable_evidence_count: unsupportedOrUnavailableEvidence.length,
+    analysis_evidence_state_gate_status: 'insufficient' as const,
+    analysis_evidence_state_gate_reason: 'genuine_step1_observable_evidence_source_unavailable',
+  };
+  const payload = {
+    schema_version: 'tapecoach_v3_analysis_evidence_state_prerequisite_v1',
+    artefact_type: 'analysis_evidence_state',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    submission_id: input.submission_id ?? null,
+    take_id: input.take_id,
+    comparison_run_id: input.comparison_run_id ?? null,
+    generated_at: generatedAt,
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_classification: 'unavailable',
+    evidence_state_status: 'unavailable',
+    cannot_satisfy_v3_gate: true,
+    source_stage: input.source_stage,
+    source_module: input.source_module,
+    analysis_route: input.analysis_route ?? null,
+    input_artifact_refs: {
+      analysis_input_record: `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs/input_record.json`,
+      analysis_submission: `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs/submission.json`,
+      analysis_take: `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs/take.json`,
+    },
+    resolver_output_ref: resolverOutputAvailable ? `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver/resolver_output.json` : null,
+    truth_state_map_ref: truthStateMapAvailable ? `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver/TruthStateMap.json` : null,
+    media_readiness_summary: {
+      media_readiness_state: input.media_readiness_state ?? null,
+      media_duration_seconds: durationKnown ? input.media_duration_seconds : null,
+      duration_confidence: durationConfidence,
+      timestamp_source: durationKnown ? 'media_readiness_runtime_field' : 'unavailable',
+      mux_playback_id_present: Boolean(input.mux_playback_id),
+      mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown',
+    },
+    assessability_limitations: [
+      ...(!durationKnown ? ['media_duration_unavailable_no_timestamp_evidence_fabricated'] : []),
+      'observable_step1_extraction_unavailable',
+    ],
+    component_evidence: [],
+    observable_evidence_items: [],
+    candidate_brief_evidence: [],
+    candidate_technique_evidence: [],
+    unsupported_or_unavailable_evidence: unsupportedOrUnavailableEvidence,
+    blocker_codes,
+    gate_satisfaction_reason: summary.analysis_evidence_state_gate_reason,
+    public_output_unchanged: true,
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    redaction_notes: ['Internal-only QA prerequisite; unsafe external media references and raw report payloads are excluded'],
+    analysis_evidence_state_summary: summary,
+    ...resolveQADeploymentProvenance(),
+  };
+  const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/analysis/AnalysisEvidenceState.json`;
+  const w = await writeInternalJson(root, input.run_id, relPath, payload, 'analysis_evidence_state');
+  return {
+    written: Boolean(w.written),
+    emitted_artefact_ids: [] as string[],
+    emitted_blocked_artefact_ids: w.written ? ['analysis_evidence_state'] : [],
+    path: w.path ?? w.storage_path,
+    source_classification: 'unavailable' as const,
+    level2_satisfies: false as const,
+    summary,
+    blocker_codes,
+    warning: w.warning,
+  };
 }
 
 export async function emitValidatorTraceFirstPass(input: any) {
