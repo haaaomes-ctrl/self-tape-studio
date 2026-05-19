@@ -1142,25 +1142,27 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     expect(truthAnchors.some((anchor: any) => anchor.blocker_codes.includes('missing_truth_state_linkage'))).toBe(true);
   });
 
-  it('keeps raw_report timestamped notes as legacy_adapter even beside promoted anchors', async () => {
+  it('keeps raw_report timestamped notes as excluded legacy diagnostics beside promoted anchors', async () => {
     const { anchors, manifest, metrics } = await emitPromotedEvidenceAnchorsBundle({
       rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report note' }] } },
     });
-    const legacy = anchors.anchors.find((anchor: any) => anchor.source_artefact_id === 'raw_report');
-    expect(legacy).toMatchObject({ source_family: 'legacy_adapter', cannot_satisfy_v3_gate: true });
+    const legacy = anchors.legacy_diagnostic_anchors.find((anchor: any) => anchor.source_artefact_id === 'raw_report');
+    expect(legacy).toMatchObject({ source_family: 'legacy_adapter', cannot_satisfy_v3_gate: true, excluded_from_evidence_anchor_gate: true });
     expect(anchors.anchors.some((anchor: any) => anchor.source_artefact_id === 'raw_report' && anchor.source_classification === 'real_runtime_v3')).toBe(false);
-    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('mixed_real_and_legacy_non_satisfying');
+    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('real_runtime_v3_partial_non_satisfying');
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(0);
   });
 
   it('does not promote a legacy report snapshot because public_safe is true', async () => {
     const { anchors } = await emitPromotedEvidenceAnchorsBundle({
       rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy public-safe note', public_safe: true }] } },
     });
-    const legacy = anchors.anchors.find((anchor: any) => anchor.evidence_text === 'Legacy public-safe note');
+    const legacy = anchors.legacy_diagnostic_anchors.find((anchor: any) => anchor.evidence_text === 'Legacy public-safe note');
     expect(legacy.public_safe).toBe(true);
     expect(legacy.source_family).toBe('legacy_adapter');
     expect(legacy.cannot_satisfy_v3_gate).toBe(true);
+    expect(legacy.excluded_from_evidence_anchor_gate).toBe(true);
   });
 
   it('blocks promotion when the AnalysisEvidenceState source path is unresolved', async () => {
@@ -1243,13 +1245,15 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
-  it('keeps mixed real and legacy anchors aggregate insufficient', async () => {
+  it('keeps legacy timestamp anchors diagnostic when runtime anchors exist', async () => {
     const { anchors, metrics } = await emitPromotedEvidenceAnchorsBundle({
       rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report note' }] } },
     });
-    expect(anchors.blocker_codes).toContain('mixed_evidence_anchor_source_families');
+    expect(anchors.blocker_codes).not.toContain('mixed_evidence_anchor_source_families');
+    expect(anchors.legacy_diagnostic_anchors).toHaveLength(1);
+    expect(anchors.legacy_diagnostic_anchors[0].excluded_from_evidence_anchor_gate).toBe(true);
     expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBeGreaterThan(0);
-    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(1);
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(0);
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
   });
 
@@ -1819,7 +1823,8 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
       internal_qa_emit: true,
     } as any);
     expect(anchorsOut.written).toBe(true);
-    expect(anchorsOut.source_classification).toBe('mixed_real_and_legacy_non_satisfying');
+    expect(anchorsOut.source_classification).toBe('real_runtime_v3_partial_non_satisfying');
+    expect(anchorsOut.legacy_diagnostic_anchor_count).toBe(1);
     expect(anchorsOut.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
   });
 
@@ -1914,17 +1919,20 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
     expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
   });
 
-  it('keeps mixed real_runtime_v3 and legacy_adapter anchors insufficient', async () => {
+  it('keeps legacy timestamped notes diagnostic without blocking complete real_runtime_v3 anchors', async () => {
     const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
     completeAnalysisEvidenceStateForAggregate(bundle.payload);
     const { anchors, manifest, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle, {
       rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report note' }] } },
     });
-    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
-    expect(anchors.blocker_codes).toEqual(expect.arrayContaining(['mixed_real_and_legacy_non_satisfying', 'forbidden_raw_report_anchor_source']));
-    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('mixed_real_and_legacy_non_satisfying');
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('sufficient');
+    expect(anchors.blocker_codes).not.toEqual(expect.arrayContaining(['mixed_real_and_legacy_non_satisfying', 'forbidden_raw_report_anchor_source']));
+    expect(anchors.legacy_diagnostic_anchors).toHaveLength(1);
+    expect(anchors.legacy_diagnostic_anchors[0]).toMatchObject({ source_family: 'legacy_adapter', excluded_from_evidence_anchor_gate: true });
+    expect(manifest.artefact_source_classification_by_id.evidence_anchors).toBe('real_runtime_v3');
     expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBeGreaterThan(0);
-    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(1);
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(0);
+    expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
   });
 
   it('does not count raw_report or report_data anchors toward aggregate satisfaction', async () => {
@@ -1933,10 +1941,11 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
     const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle, {
       rawReport: { report_data: { timestamped_notes: [{ timestamp: '00:10', note: 'Legacy report_data note' }] } },
     });
-    const legacy = anchors.anchors.find((anchor: any) => anchor.source_artefact_id === 'raw_report');
+    const legacy = anchors.legacy_diagnostic_anchors.find((anchor: any) => anchor.source_artefact_id === 'raw_report');
     expect(legacy.source_path).toContain('report_data.timestamped_notes');
-    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
-    expect(metrics.evidence_anchor_gate_reason).toBe('forbidden_raw_report_anchor_source');
+    expect(legacy.excluded_from_evidence_anchor_gate).toBe(true);
+    expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('real_runtime_v3_analysis_evidence_state_anchors_complete');
   });
 
   it('keeps source_scaffold helper and local fixture evidence non-satisfying', async () => {
@@ -2315,7 +2324,9 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     const candidate = claimCandidateTrace.claim_candidates.find((item: any) => item.source_path === 'report_data.submission_verdict.label');
     expect(candidate).toMatchObject({
       source_family: 'legacy_adapter',
-      candidate_support_precheck_status: 'legacy_or_unsupported',
+      candidate_support_precheck_status: 'legacy_diagnostic_only',
+      required_for_public_claim_gate: false,
+      excluded_from_public_claim_gate: true,
       cannot_satisfy_public_claim_gate: true,
     });
   });
@@ -2333,7 +2344,9 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     const legacyCandidates = claimCandidateTrace.claim_candidates.filter((item: any) => String(item.source_path).startsWith('report_data.'));
     expect(legacyCandidates.length).toBeGreaterThanOrEqual(4);
     expect(legacyCandidates.every((item: any) => item.source_family === 'legacy_adapter')).toBe(true);
-    expect(legacyCandidates.every((item: any) => item.candidate_support_precheck_status === 'legacy_or_unsupported')).toBe(true);
+    expect(legacyCandidates.every((item: any) => item.candidate_support_precheck_status === 'legacy_diagnostic_only')).toBe(true);
+    expect(legacyCandidates.every((item: any) => item.required_for_public_claim_gate === false)).toBe(true);
+    expect(legacyCandidates.every((item: any) => item.excluded_from_public_claim_gate === true)).toBe(true);
   });
 
   it('blocks score candidates and keeps public scoring blocked', async () => {
@@ -3074,6 +3087,78 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       cannot_satisfy_public_claim_gate: true,
     });
     expect(claims.public_claim_gate_status).toBe('insufficient');
+  });
+
+  it('keeps raw-report ClaimCandidateTrace candidates diagnostic when v3 claim support is complete', async () => {
+    const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
+    completeAnalysisEvidenceStateForAggregate(bundle.payload);
+    const anchorsOut = await emitEvidenceAnchorsFirstPass({
+      run_id: bundle.run,
+      analysis_run_id: bundle.run,
+      submission_id: 'sub1',
+      take_id: bundle.take,
+      source_module: 'test',
+      source_stage: 'unit',
+      analysis_evidence_state_data: bundle.payload,
+      root_dir: bundle.root,
+      internal_qa_emit: true,
+    });
+    const anchorsPath = path.join(bundle.root, bundle.run, 'takes', `take-${bundle.take}`, `analysis-${bundle.run}`, 'traces', 'EvidenceAnchors.json');
+    const anchors = JSON.parse(await readFile(anchorsPath, 'utf8'));
+    expect(anchorsOut.evidence_anchor_gate_status).toBe('sufficient');
+
+    await emitClaimCandidateTrace({
+      run_id: bundle.run,
+      analysis_run_id: bundle.run,
+      submission_id: 'sub1',
+      take_id: bundle.take,
+      source_module: 'test',
+      source_stage: 'unit',
+      analysis_evidence_state_data: bundle.payload,
+      evidence_anchors_data: anchors,
+      raw_report_data: {
+        report_data: {
+          submission_verdict: { label: 'Submit this take', reason: 'Ready from legacy report wording' },
+          fix_first: 'Legacy fix-first note',
+          presentation_notes: 'Legacy presentation note',
+          strengths: ['Legacy strength note'],
+        },
+      },
+      root_dir: bundle.root,
+      internal_qa_emit: true,
+    });
+    const claimTracePath = path.join(bundle.root, bundle.run, 'takes', `take-${bundle.take}`, `analysis-${bundle.run}`, 'traces', 'ClaimCandidateTrace.json');
+    const claimTrace = JSON.parse(await readFile(claimTracePath, 'utf8'));
+    const legacyCandidates = claimTrace.claim_candidates.filter((candidate: any) => candidate.source_family === 'legacy_adapter');
+    expect(legacyCandidates.length).toBeGreaterThan(0);
+    expect(legacyCandidates.every((candidate: any) => candidate.excluded_from_public_claim_gate === true)).toBe(true);
+    expect(legacyCandidates.every((candidate: any) => candidate.required_for_public_claim_gate === false)).toBe(true);
+    expect(legacyCandidates.every((candidate: any) => candidate.eligible_for_public_claim_trace_support_check === false)).toBe(true);
+    expect(legacyCandidates.every((candidate: any) => candidate.candidate_support_precheck_status === 'legacy_diagnostic_only')).toBe(true);
+
+    const claimsOut = await emitPublicClaimTraceFirstPass({
+      run_id: bundle.run,
+      analysis_run_id: bundle.run,
+      submission_id: 'sub1',
+      take_id: bundle.take,
+      source_module: 'test',
+      source_stage: 'unit',
+      claim_candidate_trace_data: claimTrace,
+      evidence_anchors_data: anchors,
+      truth_state_map_data: { run_id: bundle.run, analysis_run_id: bundle.run, take_id: bundle.take, truth_state_ids: ['truth-state-runtime-1'] },
+      root_dir: bundle.root,
+      internal_qa_emit: true,
+    });
+    const publicClaimTracePath = path.join(bundle.root, bundle.run, 'takes', `take-${bundle.take}`, `analysis-${bundle.run}`, 'traces', 'PublicClaimTrace.json');
+    const publicClaimTrace = JSON.parse(await readFile(publicClaimTracePath, 'utf8'));
+    const legacyClaims = publicClaimTrace.claims.filter((claim: any) => claim.source_family === 'legacy_adapter');
+    expect(claimsOut.level2_satisfies).toBe(true);
+    expect(publicClaimTrace.public_claim_gate_status).toBe('sufficient');
+    expect(publicClaimTrace.source_classification).toBe('real_runtime_v3_claim_support');
+    expect(legacyClaims.length).toBe(legacyCandidates.length);
+    expect(legacyClaims.every((claim: any) => claim.excluded_from_public_claim_gate === true)).toBe(true);
+    expect(legacyClaims.every((claim: any) => claim.required_for_public_claim_gate === false)).toBe(true);
+    expect(publicClaimTrace.blocker_codes).not.toContain('legacy_or_unsupported_claim_candidate_source');
   });
 
   it('marks generated unlinked observable evidence candidates as internal-only and non-required', async () => {

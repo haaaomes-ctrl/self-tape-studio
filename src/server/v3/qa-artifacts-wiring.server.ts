@@ -1900,6 +1900,7 @@ type EvidenceAnchorAggregateGateEvaluation = {
   reportSnapshotAnchorCount: number;
   sourceScaffoldAnchorCount: number;
   blockedAnchorCount: number;
+  excludedLegacyDiagnosticAnchorCount: number;
 };
 
 const REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS: Record<string, string> = {
@@ -1947,7 +1948,8 @@ function safeUnsupportedEvidenceForAnchorHandoff(value: unknown): Array<Record<s
 }
 
 function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<string, unknown>>; analysisEvidenceState: Record<string, unknown> | null }): EvidenceAnchorAggregateGateEvaluation {
-  const anchors = args.anchors;
+  const anchors = args.anchors.filter((anchor) => anchor.excluded_from_evidence_anchor_gate !== true);
+  const excludedLegacyDiagnosticAnchorCount = args.anchors.filter((anchor) => anchor.excluded_from_evidence_anchor_gate === true && anchor.source_family === 'legacy_adapter').length;
   const analysisEvidenceState = args.analysisEvidenceState;
   const realRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3').length;
   const blockedRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked').length;
@@ -2028,6 +2030,7 @@ function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<strin
     reportSnapshotAnchorCount,
     sourceScaffoldAnchorCount,
     blockedAnchorCount,
+    excludedLegacyDiagnosticAnchorCount,
   };
 }
 
@@ -2039,6 +2042,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
   const reportData = unwrapRawReportData(input.raw_report_data);
   const timestampedNotes = Array.isArray(reportData.timestamped_notes) ? reportData.timestamped_notes : [];
   const anchors: Array<Record<string, unknown>> = [];
+  const legacyDiagnosticAnchors: Array<Record<string, unknown>> = [];
   const analysisEvidenceState = isRecord(input.analysis_evidence_state_data) ? input.analysis_evidence_state_data : null;
   if (analysisEvidenceState) {
     const sourceRunIdMatches = analysisEvidenceState.run_id === input.run_id && analysisEvidenceState.analysis_run_id === analysisRunId;
@@ -2095,36 +2099,51 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
       });
     }
   }
+  const buildLegacyTimestampAnchor = (item: unknown, originalIndex: number): Record<string, unknown> | null => {
+    if (!item || typeof item !== 'object') return null;
+    const row = item as Record<string, unknown>;
+    const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
+    const note = getTimestampedNoteText(row);
+    const textField = getTimestampedNoteTextField(row);
+    if (!note || !textField) return null;
+    return {
+      evidence_anchor_id: `ea-${input.take_id}-${anchors.length + 1}`,
+      source_family: 'legacy_adapter',
+      source_artefact_id: 'raw_report',
+      source_path: `report_data.timestamped_notes[${originalIndex}].${textField}`,
+      source_index: originalIndex,
+      source_stage: input.source_stage,
+      evidence_status: 'derived_from_legacy_report_snapshot',
+      timestamp: ts,
+      timestamp_source: ts ? 'raw_report_timestamped_note' : 'unavailable',
+      component_id: null,
+      linked_truth_state_ids: [],
+      claim_supported: false,
+      evidence_text: note,
+      confidence_or_strength: null,
+      assessability_limitations: ['legacy_report_snapshot_not_v3_multimodal'],
+      public_safe: true,
+      cannot_satisfy_v3_gate: true,
+      blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate', 'missing_truth_state_linkage'],
+    };
+  };
+  const hasRuntimeAnchorsForGate = anchors.some((anchor) => ['real_runtime_v3', 'real_runtime_v3_blocked'].includes(String(anchor.source_family ?? anchor.source_classification ?? '')));
   timestampedNotes.forEach((item, originalIndex) => {
-      if (!item || typeof item !== 'object') return;
-      const row = item as Record<string, unknown>;
-      const ts = typeof row.timestamp === 'string' ? row.timestamp : (typeof row.time === 'string' ? row.time : null);
-      const note = getTimestampedNoteText(row);
-      const textField = getTimestampedNoteTextField(row);
-      if (!note || !textField) return;
-      anchors.push({
-        evidence_anchor_id: `ea-${input.take_id}-${anchors.length + 1}`,
-        source_family: 'legacy_adapter',
-        source_artefact_id: 'raw_report',
-        source_path: `report_data.timestamped_notes[${originalIndex}].${textField}`,
-        source_index: originalIndex,
-        source_stage: input.source_stage,
-        evidence_status: 'derived_from_legacy_report_snapshot',
-        timestamp: ts,
-        timestamp_source: ts ? 'raw_report_timestamped_note' : 'unavailable',
-        component_id: null,
-        linked_truth_state_ids: [],
-        claim_supported: false,
-        evidence_text: note,
-        confidence_or_strength: null,
-        assessability_limitations: ['legacy_report_snapshot_not_v3_multimodal'],
-        public_safe: true,
-        cannot_satisfy_v3_gate: true,
-        blocker_codes: ['legacy_snapshot_insufficient_for_v3_evidence_anchor_gate', 'missing_truth_state_linkage'],
+    const legacyAnchor = buildLegacyTimestampAnchor(item, originalIndex);
+    if (!legacyAnchor) return;
+    if (hasRuntimeAnchorsForGate) {
+      legacyDiagnosticAnchors.push({
+        ...legacyAnchor,
+        evidence_anchor_id: `legacy-diagnostic-${input.take_id}-${legacyDiagnosticAnchors.length + 1}`,
+        excluded_from_evidence_anchor_gate: true,
+        diagnostic_only: true,
       });
-    });
+      return;
+    }
+    anchors.push(legacyAnchor);
+  });
   if (anchors.length === 0) return { written: false as const, emitted: false as const, emitted_artefact_ids: [] as string[], source_classification: 'missing' as const, level2_satisfies: false as const, anchors: [] as Array<Record<string, unknown>> };
-  const aggregateGate = evaluateEvidenceAnchorAggregateGate({ anchors, analysisEvidenceState });
+  const aggregateGate = evaluateEvidenceAnchorAggregateGate({ anchors: [...anchors, ...legacyDiagnosticAnchors], analysisEvidenceState });
   const {
     evidenceAnchorGateStatus,
     sourceClassification,
@@ -2134,6 +2153,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     legacyAdapterAnchorCount,
     reportSnapshotAnchorCount,
     blockedAnchorCount,
+    excludedLegacyDiagnosticAnchorCount,
   } = aggregateGate;
   const promotedSourceArtefactForAnchor = (anchor: Record<string, unknown>): string => {
     if (anchor.source_artefact_id !== 'analysis_evidence_state') return '';
@@ -2152,9 +2172,14 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
       input_artifact: anchors.filter((a) => ['analysis_submission', 'analysis_take'].includes(promotedSourceArtefactForAnchor(a))).length,
       resolver_truth_state: anchors.filter((a) => promotedSourceArtefactForAnchor(a) === 'truth_state_map').length,
     },
+    diagnostic_source_family_summary: {
+      legacy_adapter: excludedLegacyDiagnosticAnchorCount,
+    },
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_gate_reason: gateReason,
     blocker_codes,
+    legacy_diagnostic_anchor_count: excludedLegacyDiagnosticAnchorCount,
+    excluded_legacy_anchor_count: excludedLegacyDiagnosticAnchorCount,
   };
   const payload = {
     schema_version: realRuntimeAnchorCount > 0 ? 'tapecoach_v3_evidence_anchors_runtime_v1' : 'tapecoach_v3_evidence_anchors_first_pass_v1',
@@ -2172,6 +2197,10 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     generated_at: generatedAt,
     anchor_count: anchors.length,
     anchors,
+    legacy_diagnostic_anchor_count: legacyDiagnosticAnchors.length,
+    excluded_legacy_anchor_count: legacyDiagnosticAnchors.length,
+    legacy_diagnostic_anchors: legacyDiagnosticAnchors,
+    excluded_legacy_anchors: legacyDiagnosticAnchors,
     legacy_adapter_anchor_count: legacyAdapterAnchorCount,
     report_snapshot_anchor_count: reportSnapshotAnchorCount,
     real_runtime_anchor_count: realRuntimeAnchorCount,
@@ -2203,6 +2232,8 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_gate_reason: gateReason,
     evidence_anchor_source_family_summary: evidenceAnchorTraceSummary.source_family_summary,
+    legacy_diagnostic_anchor_count: legacyDiagnosticAnchors.length,
+    excluded_legacy_anchor_count: legacyDiagnosticAnchors.length,
     evidence_family_coverage: payload.evidence_family_coverage,
     evidence_family_status_by_id: payload.evidence_family_status_by_id,
     unsupported_or_unavailable_evidence: payload.unsupported_or_unavailable_evidence,
@@ -2210,6 +2241,8 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
     cannot_satisfy_v3_gate: payload.cannot_satisfy_v3_evidence_anchor_gate,
     warning: result.warning ?? null,
     anchors,
+    legacy_diagnostic_anchors: legacyDiagnosticAnchors,
+    excluded_legacy_anchors: legacyDiagnosticAnchors,
   };
 }
 
@@ -2744,6 +2777,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
   const publicClaimGateStatus = allSupported ? 'sufficient' : 'insufficient';
   const hasLegacy = (sourceSummary.legacy_adapter ?? 0) > 0 || (sourceSummary.legacy_or_unsupported ?? 0) > 0 || claims.some((claim) => claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
   const hasReal = (sourceSummary.real_runtime_v3 ?? 0) > 0;
+  const requiredLegacyClaims = requiredClaims.filter((claim) => ['legacy_adapter', 'legacy_or_unsupported'].includes(String(claim.source_family)) || claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
   const sourceClassification = publicClaimGateStatus === 'sufficient'
     ? 'real_runtime_v3_claim_support'
     : (hasReal && hasLegacy
@@ -2751,7 +2785,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       : (hasReal ? 'real_runtime_v3_partial_non_satisfying' : (hasLegacy ? 'legacy_or_unsupported' : 'first_pass_internal')));
   const blockerCodes = dedupePreservingOrder([
     ...(publicClaimGateStatus === 'sufficient' ? [] : ['public_claim_trace_support_incomplete']),
-    ...(hasLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
+    ...(requiredLegacyClaims.length > 0 || (!hasReal && hasLegacy) ? ['legacy_or_unsupported_claim_candidate_source'] : []),
     ...supportIdentityBlockers,
     ...requiredClaims.flatMap((claim) => getStringArray(claim.blocker_codes)),
   ]);
@@ -2761,7 +2795,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       ? 'missing_evidence_anchor_support'
       : (blockerCodes.includes('missing_truth_state_linkage')
         ? 'missing_truth_state_linkage'
-        : (hasLegacy ? 'legacy_or_unsupported_claim_support_only' : 'public_claim_support_incomplete')));
+        : (!hasReal && hasLegacy ? 'legacy_or_unsupported_claim_support_only' : 'public_claim_support_incomplete')));
   return { claims, sourceSummary, sourceClassification, publicClaimGateStatus, publicClaimGateReason: reason, blockerCodes };
 }
 
@@ -2846,7 +2880,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     const isLegacy = args.sourceFamily === 'legacy_adapter';
     const excludedFromGate = args.excludedFromPublicClaimGate === true || args.publicClaimSupportRequired === false;
     const eligible = !excludedFromGate && args.sourceFamily === 'real_runtime_v3' && safety.public_safety_status !== 'blocked';
-    const publicSafetyStatus = excludedFromGate && safety.public_safety_status !== 'blocked' ? 'internal_only' : safety.public_safety_status;
+    const publicSafetyStatus = excludedFromGate && safety.public_safety_status === 'safe_for_public_candidate' ? 'internal_only' : safety.public_safety_status;
     const blockerCodes = dedupePreservingOrder([
       ...safety.blocker_codes,
       ...(isLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
@@ -2988,7 +3022,10 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       sourcePath,
       sourceFamily: 'legacy_adapter',
       sourceStage: 'raw_report_snapshot',
-      supportStatus: 'legacy_or_unsupported',
+      supportStatus: 'legacy_diagnostic_only',
+      publicClaimSupportRequired: false,
+      excludedFromPublicClaimGate: true,
+      extraBlockerCodes: ['legacy_diagnostic_claim_candidate_excluded_from_public_claim_gate'],
     });
   };
   const directFields: Array<[string, unknown, string]> = [
