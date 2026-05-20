@@ -316,6 +316,24 @@ export function mergeSafeUploadIdentity(
   };
 }
 
+export function replaceReuploadUploadIdentitySignals(incoming: unknown): Record<string, unknown> | null {
+  const incomingRecord = isRecord(incoming) ? incoming : {};
+  const replacementSignals: Record<string, unknown> = { ...incomingRecord };
+  const nestedUploadIdentity = "upload_identity" in incomingRecord
+    ? mergeSafeUploadIdentity(null, incomingRecord.upload_identity)
+    : null;
+  const topLevelUploadIdentity = nestedUploadIdentity
+    ? null
+    : mergeSafeUploadIdentity(null, incomingRecord);
+  const replacementUploadIdentity = nestedUploadIdentity ?? topLevelUploadIdentity;
+  if (replacementUploadIdentity) {
+    replacementSignals.upload_identity = replacementUploadIdentity;
+  } else {
+    delete replacementSignals.upload_identity;
+  }
+  return Object.keys(replacementSignals).length > 0 ? replacementSignals : null;
+}
+
 export function uploadFileToMux(
   url: string,
   file: File,

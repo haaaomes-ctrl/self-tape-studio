@@ -6,6 +6,7 @@ import {
   buildUnavailableUploadIdentityMetadata,
   buildUploadIdentityMetadata,
   mergeSafeUploadIdentity,
+  replaceReuploadUploadIdentitySignals,
   safeUploadBasename,
 } from '@/lib/mux-upload';
 import { extractUploadIdentitySignals } from '@/server/v3/media-identity-upload-signals.server';
@@ -259,6 +260,27 @@ describe('v3 s9 upload identity capture', () => {
     expect(extracted.original_upload_file_hash).toBe(`sha256:${nested.original_upload_file_hash?.value}`);
     expect(extracted.file_size_bytes).toBe(nested.file_size_bytes);
     expect(extracted.upload_identity_capture_status).toBe('captured');
+  });
+
+  it('replaces upload identity for re-upload reset signals instead of preserving stale identity', async () => {
+    const unavailableReupload = replaceReuploadUploadIdentitySignals({
+      orientation: 'landscape',
+      upload_identity: buildUnavailableUploadIdentityMetadata('upload_hash_computation_failed', 35),
+    });
+    expect(unavailableReupload?.orientation).toBe('landscape');
+    expect(unavailableReupload?.upload_identity).toMatchObject({
+      original_upload_file_hash: null,
+      file_size_bytes: null,
+      video_duration_ms: 35000,
+      hash_capture_status: 'failed',
+      blocker_codes: expect.arrayContaining([
+        'upload_hash_computation_failed',
+        'original_upload_file_hash_unavailable',
+      ]),
+    });
+
+    const missingUploadIdentity = replaceReuploadUploadIdentitySignals({ orientation: 'portrait' });
+    expect(missingUploadIdentity).toEqual({ orientation: 'portrait' });
   });
 
   it('records explicit unavailable reason when no browser File object is available', () => {
