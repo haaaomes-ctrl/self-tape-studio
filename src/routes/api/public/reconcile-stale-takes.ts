@@ -13,9 +13,9 @@ import { metric } from "@/server/metrics.server";
 // Stale-analysis reconciler.
 //
 // Called by pg_cron every minute. Authenticated with a shared secret in the
-// `x-reconciler-secret` header (matches RECONCILER_SECRET env var) so it
-// cannot be triggered by anonymous traffic even though it lives under
-// /api/public/.
+// `x-reconciler-secret` header or `Authorization: Bearer <secret>` (matching
+// RECONCILER_SECRET env var) so it cannot be triggered by anonymous traffic
+// even though it lives under /api/public/.
 //
 // Recovery rules:
 //   - processing_phase = "analysis_pending" AND updated_at < now - 2 min:
@@ -66,6 +66,19 @@ type MuxAssetLike = {
   static_renditions?: { status?: string };
   errors?: unknown;
 };
+
+export function isAuthorisedReconcilerRequest(
+  request: Request,
+  env: Pick<NodeJS.ProcessEnv, "RECONCILER_SECRET"> = process.env,
+): "authorised" | "not_configured" | "unauthorised" {
+  const secret = env.RECONCILER_SECRET;
+  if (!secret) return "not_configured";
+  const directHeader = request.headers.get("x-reconciler-secret");
+  const bearerHeader = request.headers.get("authorization");
+  const bearerToken = bearerHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? null;
+  if (directHeader === secret || bearerToken === secret) return "authorised";
+  return "unauthorised";
+}
 
 async function attemptTranscodingRecovery(take: {
   id: string;
@@ -203,13 +216,12 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const secret = process.env.RECONCILER_SECRET;
-        if (!secret) {
+        const authStatus = isAuthorisedReconcilerRequest(request);
+        if (authStatus === "not_configured") {
           console.error("RECONCILER_SECRET not configured");
           return new Response("not configured", { status: 503 });
         }
-        const provided = request.headers.get("x-reconciler-secret");
-        if (provided !== secret) {
+        if (authStatus !== "authorised") {
           return new Response("unauthorized", { status: 401 });
         }
 

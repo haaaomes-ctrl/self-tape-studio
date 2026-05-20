@@ -95,4 +95,27 @@ describe('v3 s9 resolver_output presence truthfulness', () => {
     expect(truth.final_qa_acceptance_source).toBe('qa/acceptance_metrics.json');
     expect(truth.not_final_artefact_emission_state).toBe(true);
   });
+
+  it('marks GF-01/RT-15 not applicable for ordinary single-take resolver snapshots', async () => {
+    const { resolverOutput, truth } = await emitAndRead({
+      compared_take_ids: ['tk-s904'],
+      comparison_run_id: null,
+    });
+    expect(resolverOutput.blocker_codes).not.toContain('gf01_rt15_blocked_no_comparison_runtime_evidence');
+    expect(truth.unsafe_or_blocked_truths.gf01_rt15_status).toBe('not_applicable');
+    expect(truth.unsafe_or_blocked_truths.same_video_comparison_status).toBe('not_executed_single_take');
+    expect(truth.comparison_truths.status).toBe('not_applicable_single_take');
+    expect(truth.comparison_truths.comparison_run_executed).toBe(false);
+  });
+
+  it('keeps GF-01/RT-15 blocked when comparison runtime is invoked', async () => {
+    const { resolverOutput, truth } = await emitAndRead({
+      comparison_run_id: 'cmp-1',
+      compared_take_ids: ['tk-s904', 'tk-s904-b'],
+    });
+    expect(resolverOutput.blocker_codes).toContain('gf01_rt15_blocked_no_comparison_runtime_evidence');
+    expect(truth.unsafe_or_blocked_truths.gf01_rt15_status).toBe('blocked');
+    expect(truth.comparison_truths.status).toBe('blocked_pending_comparison_evidence');
+    expect(truth.comparison_truths.comparison_run_executed).toBe(true);
+  });
 });

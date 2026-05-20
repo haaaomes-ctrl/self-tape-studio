@@ -3899,6 +3899,7 @@ export async function runProcessTake(
         real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
+        evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,

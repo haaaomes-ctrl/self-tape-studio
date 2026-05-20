@@ -16,6 +16,31 @@ import { metric } from "@/server/metrics.server";
 
 const STATIC_RENDITION_HEARTBEAT_STALE_MS = 30_000;
 
+export function classifyStaticRenditionReadyTake(input: {
+  status?: string | null;
+  processing_phase?: string | null;
+  stale_heartbeat_ms: number;
+}): "skip_terminal" | "skip_fresh_inflight" | "recover_stale_analysing" | "continue" {
+  const staleHeartbeatMs = Number.isFinite(input.stale_heartbeat_ms)
+    ? input.stale_heartbeat_ms
+    : Number.POSITIVE_INFINITY;
+  if (input.status === "complete" || input.status === "error") return "skip_terminal";
+  if (
+    (input.processing_phase === "analysing" || input.processing_phase === "finalising") &&
+    staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS
+  ) {
+    return "skip_fresh_inflight";
+  }
+  if (
+    input.processing_phase === "analysing" &&
+    staleHeartbeatMs >= STATIC_RENDITION_HEARTBEAT_STALE_MS
+  ) {
+    return "recover_stale_analysing";
+  }
+  if (input.processing_phase === "finalising") return "skip_fresh_inflight";
+  return "continue";
+}
+
 async function resolveTakeIdForMuxEvent(data: {
   asset_id?: string;
   passthrough?: string;
@@ -119,18 +144,31 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     timestamp: receivedAt,
   });
 
-  if (
-    existing.status === "complete" ||
-    existing.status === "error" ||
-    existing.processing_phase === "analysing" ||
-    existing.processing_phase === "finalising"
-  ) {
+  const recoveryAction = classifyStaticRenditionReadyTake({
+    status: existing.status,
+    processing_phase: existing.processing_phase,
+    stale_heartbeat_ms: staleHeartbeatMs,
+  });
+  if (recoveryAction === "skip_terminal" || recoveryAction === "skip_fresh_inflight") {
     console.log("MUX WEBHOOK static_rendition.ready skipping terminal/inflight take", {
       takeId,
       status: existing.status,
       processing_phase: existing.processing_phase,
+      recovery_action: recoveryAction,
     });
     return new Response("ok", { status: 200 });
+  }
+  if (recoveryAction === "recover_stale_analysing") {
+    console.warn("MUX WEBHOOK static_rendition.ready recovering stale analysing take", {
+      takeId,
+      status: existing.status,
+      processing_phase: existing.processing_phase,
+      stale_heartbeat_ms: staleHeartbeatMs,
+    });
+    metric("static_rendition_recovered_stale_analysing", {
+      take_id: takeId,
+      stale_heartbeat_ms: staleHeartbeatMs,
+    });
   }
 
   if (
