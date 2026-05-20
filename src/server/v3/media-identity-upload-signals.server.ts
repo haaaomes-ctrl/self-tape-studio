@@ -92,10 +92,8 @@ export function extractUploadIdentitySignals(input: {
   const safeUploadIdentity = isRecord(signals.safe_upload_identity) ? signals.safe_upload_identity : null;
   const explicitUploadIdentity = isRecord(signals.upload_identity) ? signals.upload_identity : null;
   const topLevelUploadIdentity = hasAnyUploadIdentityValue(signals) ? signals : null;
-  const uploadIdentity = (mergeSafeUploadIdentity(
-    mergeSafeUploadIdentity(safeUploadIdentity, explicitUploadIdentity),
-    topLevelUploadIdentity,
-  ) ?? {}) as Record<string, unknown>;
+  const nestedUploadIdentity = mergeSafeUploadIdentity(safeUploadIdentity, explicitUploadIdentity);
+  const uploadIdentity = (nestedUploadIdentity ?? mergeSafeUploadIdentity(null, topLevelUploadIdentity) ?? {}) as Record<string, unknown>;
   const originalHashRecord = isRecord(uploadIdentity.original_upload_file_hash)
     ? uploadIdentity.original_upload_file_hash
     : null;

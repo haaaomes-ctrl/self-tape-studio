@@ -188,13 +188,31 @@ describe('v3 s9 upload identity capture', () => {
     });
   });
 
-  it('preserves populated upload identity when later updates send null or invalid fields', async () => {
+  it('preserves upload identity only when a later metadata update omits upload identity entirely', async () => {
     const existing = await buildUploadIdentityMetadata(fakeFile({
       bytes: new TextEncoder().encode('valid original'),
       name: 'valid.mp4',
       type: 'video/mp4',
       lastModified: 1_722_000_000_000,
     }), 30);
+    const metadataOnlyUpdate = mergeSafeUploadIdentity(existing, undefined);
+    expect(metadataOnlyUpdate?.original_upload_file_hash?.value).toBe(existing.original_upload_file_hash?.value);
+    expect(metadataOnlyUpdate?.file_size_bytes).toBe(existing.file_size_bytes);
+
+    const unavailableReupload = mergeSafeUploadIdentity(
+      existing,
+      buildUnavailableUploadIdentityMetadata('upload_hash_computation_failed', 35),
+    );
+    expect(unavailableReupload?.original_upload_file_hash).toBeNull();
+    expect(unavailableReupload?.file_size_bytes).toBeNull();
+    expect(unavailableReupload?.video_duration_ms).toBe(35000);
+    expect(unavailableReupload?.hash_capture_status).toBe('failed');
+    expect(unavailableReupload?.blocker_codes).toEqual(expect.arrayContaining([
+      'upload_hash_computation_failed',
+      'stale_original_upload_file_hash_not_reused',
+      'original_upload_file_hash_unavailable',
+    ]));
+
     const nullUpdate = {
       original_upload_file_hash: null,
       original_file_name_safe_basename: null,
@@ -203,16 +221,44 @@ describe('v3 s9 upload identity capture', () => {
       mime_type_safe_summary: null,
       upload_metadata_source: 'browser_file',
     };
-    const preserved = mergeSafeUploadIdentity(existing, nullUpdate);
-    expect(preserved?.original_upload_file_hash?.value).toBe(existing.original_upload_file_hash?.value);
-    expect(preserved?.file_size_bytes).toBe(existing.file_size_bytes);
+    const explicitNullReupload = mergeSafeUploadIdentity(existing, nullUpdate);
+    expect(explicitNullReupload?.original_upload_file_hash).toBeNull();
+    expect(explicitNullReupload?.file_size_bytes).toBeNull();
+    expect(explicitNullReupload?.blocker_codes).toContain('stale_original_upload_file_hash_not_reused');
 
     const invalidHash = mergeSafeUploadIdentity(existing, {
       ...nullUpdate,
+      original_file_name_safe_basename: 'replacement.mp4',
+      file_size_bytes: 99,
       original_upload_file_hash: { algorithm: 'sha256', value: 'https://signed.example/video.mp4?token=abc' },
     });
-    expect(invalidHash?.original_upload_file_hash?.value).toBe(existing.original_upload_file_hash?.value);
-    expect(invalidHash?.blocker_codes).toContain('invalid_original_upload_file_hash_rejected');
+    expect(invalidHash?.original_upload_file_hash).toBeNull();
+    expect(invalidHash?.original_file_name_safe_basename).toBe('replacement.mp4');
+    expect(invalidHash?.file_size_bytes).toBe(99);
+    expect(invalidHash?.blocker_codes).toEqual(expect.arrayContaining([
+      'invalid_original_upload_file_hash_rejected',
+      'stale_original_upload_file_hash_not_reused',
+    ]));
+  });
+
+  it('does not let top-level partial upload fields wipe nested current upload identity', async () => {
+    const nested = await buildUploadIdentityMetadata(fakeFile({
+      bytes: new TextEncoder().encode('nested current upload'),
+      name: 'nested-current.mp4',
+      type: 'video/mp4',
+      lastModified: 1_722_000_000_000,
+    }), 31);
+    const extracted = extractUploadIdentitySignals({
+      signals: {
+        upload_identity: nested,
+        original_upload_file_hash: null,
+        hash_capture_status: 'unavailable',
+        file_size_bytes: 999,
+      },
+    });
+    expect(extracted.original_upload_file_hash).toBe(`sha256:${nested.original_upload_file_hash?.value}`);
+    expect(extracted.file_size_bytes).toBe(nested.file_size_bytes);
+    expect(extracted.upload_identity_capture_status).toBe('captured');
   });
 
   it('records explicit unavailable reason when no browser File object is available', () => {

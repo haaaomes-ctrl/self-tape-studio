@@ -128,6 +128,39 @@ function hasUploadIdentityLikeKeys(value: unknown): value is Record<string, unkn
   ].some((key) => key in value);
 }
 
+function uploadIdentityBlockerCodes(value: Record<string, unknown> | null): string[] {
+  return Array.isArray(value?.blocker_codes)
+    ? value.blocker_codes.filter((code): code is string => typeof code === "string")
+    : [];
+}
+
+function hasExplicitUploadIdentityField(value: Record<string, unknown> | null): boolean {
+  if (!value) return false;
+  return [
+    "original_upload_file_hash",
+    "original_file_name_safe_basename",
+    "metadata_file_name_safe_basename",
+    "file_size_bytes",
+    "mime_type_safe_summary",
+    "last_modified_ms",
+    "video_duration_ms",
+    "upload_metadata_source",
+    "hash_capture_status",
+  ].some((key) => key in value);
+}
+
+function hasHashUnavailableSignal(value: Record<string, unknown> | null): boolean {
+  if (!value) return false;
+  return value.hash_capture_status === "failed"
+    || value.hash_capture_status === "unavailable"
+    || uploadIdentityBlockerCodes(value).some((code) =>
+      code === "upload_hash_computation_failed"
+      || code === "upload_hash_unavailable_browser_crypto_missing"
+      || code === "upload_hash_unavailable_no_file_object"
+      || code === "original_upload_file_hash_unavailable"
+    );
+}
+
 function bytesToHex(bytes: ArrayBuffer): string {
   return [...new Uint8Array(bytes)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -239,18 +272,28 @@ export function mergeSafeUploadIdentity(
   const existingHash = normaliseUploadHashRecord(existingRecord?.original_upload_file_hash);
   const incomingHash = normaliseUploadHashRecord(incomingRecord?.original_upload_file_hash);
   const invalidIncomingHash = incomingRecord && "original_upload_file_hash" in incomingRecord && incomingRecord.original_upload_file_hash != null && !incomingHash;
-  const hash = incomingHash ?? existingHash;
+  const incomingExplicitUploadIdentity = hasExplicitUploadIdentityField(incomingRecord) || hasHashUnavailableSignal(incomingRecord);
+  const incomingCannotProvideHash = incomingExplicitUploadIdentity && !incomingHash;
+  const staleHashSuppressed = incomingCannotProvideHash && Boolean(existingHash);
+  const hash = incomingHash ?? (incomingCannotProvideHash ? null : existingHash);
 
   const pickName = (key: "original_file_name_safe_basename" | "metadata_file_name_safe_basename") =>
-    safeUploadBasename(incomingRecord?.[key]) ?? safeUploadBasename(existingRecord?.[key]);
+    incomingExplicitUploadIdentity
+      ? safeUploadBasename(incomingRecord?.[key])
+      : safeUploadBasename(existingRecord?.[key]);
   const pickNumber = (key: "file_size_bytes" | "last_modified_ms" | "video_duration_ms") =>
-    safePositiveNumber(incomingRecord?.[key]) ?? safePositiveNumber(existingRecord?.[key]);
+    incomingExplicitUploadIdentity
+      ? safePositiveNumber(incomingRecord?.[key])
+      : safePositiveNumber(existingRecord?.[key]);
   const pickMime = () =>
-    safeMimeTypeSummary(incomingRecord?.mime_type_safe_summary) ?? safeMimeTypeSummary(existingRecord?.mime_type_safe_summary);
+    incomingExplicitUploadIdentity
+      ? safeMimeTypeSummary(incomingRecord?.mime_type_safe_summary)
+      : safeMimeTypeSummary(existingRecord?.mime_type_safe_summary);
   const blockerCodes = dedupe([
-    ...((Array.isArray(existingRecord?.blocker_codes) ? existingRecord?.blocker_codes : []) as string[]),
-    ...((Array.isArray(incomingRecord?.blocker_codes) ? incomingRecord?.blocker_codes : []) as string[]),
+    ...(incomingExplicitUploadIdentity ? [] : uploadIdentityBlockerCodes(existingRecord)),
+    ...uploadIdentityBlockerCodes(incomingRecord),
     invalidIncomingHash ? "invalid_original_upload_file_hash_rejected" : null,
+    staleHashSuppressed ? "stale_original_upload_file_hash_not_reused" : null,
     hash ? null : "original_upload_file_hash_unavailable",
   ]);
   return {
@@ -264,10 +307,10 @@ export function mergeSafeUploadIdentity(
     mime_type_safe_summary: pickMime(),
     last_modified_ms: pickNumber("last_modified_ms"),
     video_duration_ms: pickNumber("video_duration_ms"),
-    upload_metadata_source: safeUploadMetadataSource(incomingRecord?.upload_metadata_source ?? existingRecord?.upload_metadata_source),
+    upload_metadata_source: safeUploadMetadataSource(incomingExplicitUploadIdentity ? incomingRecord?.upload_metadata_source : existingRecord?.upload_metadata_source),
     hash_capture_status: hash
       ? "captured"
-      : ((incomingRecord?.hash_capture_status === "failed" || existingRecord?.hash_capture_status === "failed") ? "failed" : "unavailable"),
+      : (incomingRecord?.hash_capture_status === "failed" || (!incomingExplicitUploadIdentity && existingRecord?.hash_capture_status === "failed") ? "failed" : "unavailable"),
     blocker_codes: blockerCodes,
     public_output_unchanged: true,
   };
