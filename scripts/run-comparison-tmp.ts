@@ -1,10 +1,10 @@
 import { runAdminInternalComparisonTriggerImpl } from "@/server-fns/internal-comparison-trigger.functions";
 
 const result = await runAdminInternalComparisonTriggerImpl({
-  root_take_id: "6b3c9e78-7dc6-45ed-a65e-74258aa22b7f",
+  root_take_id: "34869a93-6fba-456a-baa7-dc71166f917d",
   compared_take_ids: [
-    "6b3c9e78-7dc6-45ed-a65e-74258aa22b7f",
-    "7d6646dc-c5fd-4b9b-a4cd-8db89b38e02e",
+    "34869a93-6fba-456a-baa7-dc71166f917d",
+    "a1ef113f-d203-499d-aeb2-13f7614043f7",
   ],
   source_module: "scripts/run-comparison-tmp.ts",
   source_stage: "admin_internal_comparison_trigger:operator_validation",
