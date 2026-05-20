@@ -69,9 +69,11 @@ describe('v3 s9 no-export ui proof emission', () => {
     expect(manifest.artefact_status_by_id.no_export_ui_proof).toBe('emitted');
     expect(manifest.artefact_source_classification_by_id.no_export_ui_proof).toBe('internal_no_export_ui_proof');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.no_export_ui_proof).toBe(false);
+    expect(manifest.no_export_status).toBe('no_export_proof_complete');
     expect(manifest.blocker_codes).not.toContain('no_export_proof_missing');
     expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
 
+    expect(metrics.export_or_no_export_status).toBe('no_export_proof_complete');
     expect(metrics.blocker_codes).not.toContain('no_export_proof_missing');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');

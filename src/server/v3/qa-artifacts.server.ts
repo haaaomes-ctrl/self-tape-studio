@@ -199,6 +199,13 @@ const COMPARISON_REQUIRED_ARTEFACT_IDS = new Set([
   'route_variance_trace',
   'parity_comparison',
 ]);
+const NO_EXPORT_REQUIRED_ARTEFACT_IDS = [
+  'no_export_proof',
+  'no_export_source_proof',
+  'no_export_config_proof',
+  'no_export_ui_proof',
+  'no_export_log_proof',
+] as const;
 const BASE_REAL_RUNTIME_V3_ARTEFACT_IDS = new Set([
   'analysis_input_record',
   'analysis_submission',
@@ -246,6 +253,13 @@ function fallbackSourceFamilySummary(sourceClassification: unknown) {
     input_artifact: source === 'input_artifact' ? 1 : 0,
     resolver_truth_state: source === 'resolver_truth_state' ? 1 : 0,
   };
+}
+
+function resolveNoExportStatus(artefactStatusById: Record<string, string>): string {
+  const statuses = NO_EXPORT_REQUIRED_ARTEFACT_IDS.map((id) => artefactStatusById[id] ?? 'missing');
+  if (statuses.every((status) => status === 'emitted')) return 'no_export_proof_complete';
+  if (statuses.some((status) => status === 'emitted_blocked')) return 'no_export_proof_insufficient';
+  return 'no_export_proof_missing';
 }
 
 
@@ -542,6 +556,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace'];
   const comparisonEmittedCount = comparisonArtefactIds.filter((id) => manifest.artefact_status_by_id?.[id] === 'emitted').length;
   const comparisonEvidenceStatus = comparisonEmittedCount === comparisonArtefactIds.length ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
+  const noExportStatus = String(manifest.no_export_status ?? 'blocked');
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
@@ -557,7 +572,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
     ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
     ...(comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof']),
-    'parity and no-export proof',
+    noExportStatus === 'no_export_proof_complete' ? 'report parity proof' : 'parity and no-export proof',
   ];
   return {
     schema_version: 'tapecoach_v3_qa_acceptance_metrics_v1',
@@ -601,7 +616,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     legacy_adapter_artefact_count: (manifest.legacy_adapter_artefact_ids ?? []).length,
     output_quality_defects: defects,
     defect_risk_ids: defects,
-    public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: 'blocked', export_or_no_export_status: manifest.no_export_status ?? 'blocked',
+    public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: 'blocked', export_or_no_export_status: noExportStatus,
     comparison_evidence_status: comparisonEvidenceStatus,
     comparison_raw_status: manifest.artefact_status_by_id?.comparison_raw ?? 'missing',
     comparison_report_internal_status: manifest.artefact_status_by_id?.comparison_report_internal ?? 'missing',
@@ -868,6 +883,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
       runtime_evidence_blocked_by_id.add(artefactId);
     }
   }
+  const no_export_status = resolveNoExportStatus(artefact_status_by_id);
   const manifest = {
     schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: options.compared_take_ids ?? [], fixture_id: options.fixture_id ?? null,
     generated_at: options.generated_at ?? new Date().toISOString(), commit_sha: options.commit_sha ?? provenance.build_commit_sha, branch_name: options.branch_name ?? provenance.source_branch, release_state: RELEASE_STATE, internal_qa_emit,
@@ -893,7 +909,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },
     gate_statuses: [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }],
     warnings: ['Rendered PDFs/page-prints are manual-render evidence only'], privacy_notes: ['Internal-only dark mode artefact manifest; no public output changes'], redaction_notes: ['Private traces must not be exposed publicly'],
-    no_export_status: 'no_export_proof_missing', production_safe_status: BLOCKED_STATUS, public_technique_authority_status: BLOCKED_STATUS, public_scoring_status: BLOCKED_STATUS, export_share_enabled: BLOCKED_STATUS,
+    no_export_status, production_safe_status: BLOCKED_STATUS, public_technique_authority_status: BLOCKED_STATUS, public_scoring_status: BLOCKED_STATUS, export_share_enabled: BLOCKED_STATUS,
     fixture_observations: options.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511' ? { take_scores: [91, 94, 91], comparison_recommendation: 'Take 2', same_video_operator_confirmation: true } : undefined,
     ...provenance,
     level2_qa_acceptance: 'not_accepted',
