@@ -23,7 +23,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
-import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
+import { buildUploadIdentityMetadata, preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { createMuxDirectUpload } from "@/server-fns/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server-fns/process-take.functions";
@@ -160,8 +160,9 @@ function NewAuditionPage() {
             brightness: checklist.brightness.value,
             audio_peak: checklist.audio.peak,
             audio_rms: checklist.audio.rms,
+            upload_identity: await buildUploadIdentityMetadata(file, checklist.duration.seconds),
           }
-        : null;
+        : { upload_identity: await buildUploadIdentityMetadata(file, null) };
 
       const { data: take, error: takeErr } = await supabase
         .from("takes")

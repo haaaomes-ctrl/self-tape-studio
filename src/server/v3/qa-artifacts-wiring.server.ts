@@ -1116,6 +1116,9 @@ export interface InternalComparisonTakeInput {
   mime_type_safe_summary?: string | null;
   last_modified_ms?: number | string | null;
   upload_metadata_source?: string | null;
+  upload_identity_capture_status?: string | null;
+  upload_identity_capture_reason?: string | null;
+  upload_identity_merge_status?: string | null;
   video_duration_ms?: number | string | null;
   duration_ms?: number | string | null;
   video_duration_seconds?: number | string | null;
@@ -1267,7 +1270,7 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
 }
 
 export interface AnalysisInputArtefactEmitterInput {
-  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; user_id?: string | null; profile_id?: string | null; audition_id?: string | null; original_upload_file_hash?: string | null; original_upload_file_hash_source_stage?: string | null; visible_or_original_file_name?: string | null; original_file_name?: string | null; file_name?: string | null; filename?: string | null; metadata_file_name?: string | null; file_size_bytes?: number | string | null; mime_type_safe_summary?: string | null; last_modified_ms?: number | string | null; upload_metadata_source?: string | null; video_duration_ms?: number | string | null; duration_ms?: number | string | null; video_duration_seconds?: number | string | null; duration_seconds?: number | string | null; opening_video_sample_hash_or_profile?: string | null; opening_video_sample_hash?: string | null; closing_video_sample_hash_or_profile?: string | null; closing_video_sample_hash?: string | null; opening_audio_profile_hash?: string | null; closing_audio_profile_hash?: string | null; safe_media_fingerprint?: string | null; upload_identity_metadata?: Record<string, unknown> | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
+  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; user_id?: string | null; profile_id?: string | null; audition_id?: string | null; original_upload_file_hash?: string | null; original_upload_file_hash_source_stage?: string | null; visible_or_original_file_name?: string | null; original_file_name?: string | null; file_name?: string | null; filename?: string | null; metadata_file_name?: string | null; file_size_bytes?: number | string | null; mime_type_safe_summary?: string | null; last_modified_ms?: number | string | null; upload_metadata_source?: string | null; upload_identity_capture_status?: string | null; upload_identity_capture_reason?: string | null; upload_identity_merge_status?: string | null; video_duration_ms?: number | string | null; duration_ms?: number | string | null; video_duration_seconds?: number | string | null; duration_seconds?: number | string | null; opening_video_sample_hash_or_profile?: string | null; opening_video_sample_hash?: string | null; closing_video_sample_hash_or_profile?: string | null; closing_video_sample_hash?: string | null; opening_audio_profile_hash?: string | null; closing_audio_profile_hash?: string | null; safe_media_fingerprint?: string | null; upload_identity_metadata?: Record<string, unknown> | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
 export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
 export interface AnalysisEvidenceStateEmitterInput extends AnalysisInputArtefactEmitterInput {
@@ -2022,6 +2025,9 @@ function buildMediaIdentityPayload(input: {
       mime_type_safe_summary: take.mime_type_safe_summary ?? null,
       last_modified_ms: normaliseSignalNumber(take.last_modified_ms) ?? null,
       upload_metadata_source: take.upload_metadata_source ?? null,
+      upload_identity_capture_status: normaliseSignalString(take.upload_identity_capture_status) ?? (media_identity_signals.original_upload_file_hash.status === 'available' ? 'captured' : (uploadIdentity ? 'partial' : 'unavailable')),
+      upload_identity_capture_reason: normaliseSignalString(take.upload_identity_capture_reason) ?? null,
+      upload_identity_merge_status: normaliseSignalString(take.upload_identity_merge_status) ?? null,
       duration_source: normaliseSignalNumber(durationMsRaw) !== null ? 'video_duration_ms' : (normaliseSignalNumber(durationSecondsRaw) !== null ? 'mux_duration_seconds' : 'unavailable'),
       sampling_helper_status: (
         media_identity_signals.opening_video_sample_hash.status === 'available'
@@ -4840,6 +4846,10 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
       mime_type_safe_summary: input.mime_type_safe_summary ?? null,
       last_modified_ms: input.last_modified_ms ?? null,
       upload_metadata_source: input.upload_metadata_source ?? null,
+      upload_identity_capture_status: input.upload_identity_capture_status ?? (input.original_upload_file_hash ? 'captured' : (input.upload_identity_metadata ? 'partial' : 'unavailable')),
+      upload_identity_capture_reason: input.upload_identity_capture_reason ?? null,
+      upload_identity_source_stage: input.original_upload_file_hash_source_stage ?? null,
+      upload_identity_merge_status: input.upload_identity_merge_status ?? null,
       raw_values_redacted: true,
     },
     media_readiness_state: input.media_readiness_state ?? null,
@@ -4871,6 +4881,9 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
       mime_type_safe_summary: input.mime_type_safe_summary ?? null,
       last_modified_ms: input.last_modified_ms ?? null,
       upload_metadata_source: input.upload_metadata_source ?? null,
+      upload_identity_capture_status: input.upload_identity_capture_status ?? null,
+      upload_identity_capture_reason: input.upload_identity_capture_reason ?? null,
+      upload_identity_merge_status: input.upload_identity_merge_status ?? null,
       video_duration_ms: input.video_duration_ms ?? input.duration_ms ?? null,
       video_duration_seconds: input.video_duration_seconds ?? input.duration_seconds ?? null,
       opening_video_sample_hash_or_profile: input.opening_video_sample_hash_or_profile ?? input.opening_video_sample_hash ?? null,

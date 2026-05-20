@@ -35,6 +35,19 @@ export interface UploadIdentityMetadata {
   public_output_unchanged: true;
 }
 
+export type UploadIdentityUnavailableReason =
+  | "upload_hash_computation_failed"
+  | "upload_hash_unavailable_browser_crypto_missing"
+  | "upload_hash_unavailable_no_file_object";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function dedupe(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
 function looksLikeUnsafePrivateValue(value: string): boolean {
   const lower = value.toLowerCase();
   return lower.includes("://")
@@ -68,6 +81,53 @@ function safeMimeTypeSummary(value: unknown): string | null {
   return /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(trimmed) ? trimmed.slice(0, 96) : null;
 }
 
+function safeUploadMetadataSource(value: unknown): "browser_file" {
+  return value === "browser_file" ? "browser_file" : "browser_file";
+}
+
+function safePositiveNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return Math.round(value);
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.round(parsed);
+  }
+  return null;
+}
+
+function normaliseUploadHashRecord(value: unknown): OriginalUploadFileHash | null {
+  const rawValue = isRecord(value) ? value.value : value;
+  if (typeof rawValue !== "string") return null;
+  const match = rawValue.trim().toLowerCase().match(/^(?:sha256:)?([a-f0-9]{64})$/);
+  if (!match) return null;
+  return {
+    algorithm: "sha256",
+    value: match[1],
+    source_stage: "client_pre_upload",
+    source_module: "src/lib/mux-upload.ts",
+    captured_at: typeof (isRecord(value) ? value.captured_at : null) === "string"
+      ? String((value as Record<string, unknown>).captured_at)
+      : new Date().toISOString(),
+    confidence_role: "decisive",
+    raw_value_redacted: false,
+  };
+}
+
+function hasUploadIdentityLikeKeys(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  return [
+    "original_upload_file_hash",
+    "original_file_name_safe_basename",
+    "metadata_file_name_safe_basename",
+    "file_size_bytes",
+    "mime_type_safe_summary",
+    "last_modified_ms",
+    "video_duration_ms",
+    "upload_metadata_source",
+    "hash_capture_status",
+    "blocker_codes",
+  ].some((key) => key in value);
+}
+
 function bytesToHex(bytes: ArrayBuffer): string {
   return [...new Uint8Array(bytes)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -87,14 +147,24 @@ export async function buildUploadIdentityMetadata(
 ): Promise<UploadIdentityMetadata> {
   let hashValue: string | null = null;
   let hashStatus: UploadIdentityMetadata["hash_capture_status"] = "unavailable";
+  let hashBlockerCode: UploadIdentityUnavailableReason | null = null;
   const blockerCodes: string[] = [];
-  try {
-    hashValue = await computeOriginalUploadFileSha256(file);
-    hashStatus = hashValue ? "captured" : "unavailable";
-  } catch {
-    hashStatus = "failed";
+  if (!globalThis.crypto?.subtle) {
+    hashStatus = "unavailable";
+    hashBlockerCode = "upload_hash_unavailable_browser_crypto_missing";
+  } else {
+    try {
+      hashValue = await computeOriginalUploadFileSha256(file);
+      hashStatus = hashValue ? "captured" : "unavailable";
+      if (!hashValue) hashBlockerCode = "upload_hash_unavailable_browser_crypto_missing";
+    } catch {
+      hashStatus = "failed";
+      hashBlockerCode = "upload_hash_computation_failed";
+    }
   }
-  if (!hashValue) blockerCodes.push(hashStatus === "failed" ? "original_upload_file_hash_failed" : "original_upload_file_hash_unavailable");
+  if (!hashValue) {
+    blockerCodes.push(hashBlockerCode ?? (hashStatus === "failed" ? "upload_hash_computation_failed" : "original_upload_file_hash_unavailable"));
+  }
   const safeName = safeUploadBasename(file.name);
   if (!safeName) blockerCodes.push("original_file_name_unavailable_or_redacted");
   const safeMime = safeMimeTypeSummary(file.type);
@@ -128,6 +198,76 @@ export async function buildUploadIdentityMetadata(
     video_duration_ms: durationMs,
     upload_metadata_source: "browser_file",
     hash_capture_status: hashStatus,
+    blocker_codes: blockerCodes,
+    public_output_unchanged: true,
+  };
+}
+
+export function buildUnavailableUploadIdentityMetadata(
+  reason: UploadIdentityUnavailableReason,
+  durationSeconds?: number | null,
+): UploadIdentityMetadata {
+  const durationMs = typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0
+    ? Math.round(durationSeconds * 1000)
+    : null;
+  return {
+    schema_version: "tapecoach_upload_identity_v1",
+    internal_only: true,
+    privacy_classification: "internal_private",
+    original_upload_file_hash: null,
+    original_file_name_safe_basename: null,
+    metadata_file_name_safe_basename: null,
+    file_size_bytes: null,
+    mime_type_safe_summary: null,
+    last_modified_ms: null,
+    video_duration_ms: durationMs,
+    upload_metadata_source: "browser_file",
+    hash_capture_status: reason === "upload_hash_computation_failed" ? "failed" : "unavailable",
+    blocker_codes: [reason],
+    public_output_unchanged: true,
+  };
+}
+
+export function mergeSafeUploadIdentity(
+  existing: unknown,
+  incoming: unknown,
+): UploadIdentityMetadata | null {
+  const existingRecord = hasUploadIdentityLikeKeys(existing) ? existing : null;
+  const incomingRecord = hasUploadIdentityLikeKeys(incoming) ? incoming : null;
+  if (!existingRecord && !incomingRecord) return null;
+
+  const existingHash = normaliseUploadHashRecord(existingRecord?.original_upload_file_hash);
+  const incomingHash = normaliseUploadHashRecord(incomingRecord?.original_upload_file_hash);
+  const invalidIncomingHash = incomingRecord && "original_upload_file_hash" in incomingRecord && incomingRecord.original_upload_file_hash != null && !incomingHash;
+  const hash = incomingHash ?? existingHash;
+
+  const pickName = (key: "original_file_name_safe_basename" | "metadata_file_name_safe_basename") =>
+    safeUploadBasename(incomingRecord?.[key]) ?? safeUploadBasename(existingRecord?.[key]);
+  const pickNumber = (key: "file_size_bytes" | "last_modified_ms" | "video_duration_ms") =>
+    safePositiveNumber(incomingRecord?.[key]) ?? safePositiveNumber(existingRecord?.[key]);
+  const pickMime = () =>
+    safeMimeTypeSummary(incomingRecord?.mime_type_safe_summary) ?? safeMimeTypeSummary(existingRecord?.mime_type_safe_summary);
+  const blockerCodes = dedupe([
+    ...((Array.isArray(existingRecord?.blocker_codes) ? existingRecord?.blocker_codes : []) as string[]),
+    ...((Array.isArray(incomingRecord?.blocker_codes) ? incomingRecord?.blocker_codes : []) as string[]),
+    invalidIncomingHash ? "invalid_original_upload_file_hash_rejected" : null,
+    hash ? null : "original_upload_file_hash_unavailable",
+  ]);
+  return {
+    schema_version: "tapecoach_upload_identity_v1",
+    internal_only: true,
+    privacy_classification: "internal_private",
+    original_upload_file_hash: hash,
+    original_file_name_safe_basename: pickName("original_file_name_safe_basename"),
+    metadata_file_name_safe_basename: pickName("metadata_file_name_safe_basename"),
+    file_size_bytes: pickNumber("file_size_bytes"),
+    mime_type_safe_summary: pickMime(),
+    last_modified_ms: pickNumber("last_modified_ms"),
+    video_duration_ms: pickNumber("video_duration_ms"),
+    upload_metadata_source: safeUploadMetadataSource(incomingRecord?.upload_metadata_source ?? existingRecord?.upload_metadata_source),
+    hash_capture_status: hash
+      ? "captured"
+      : ((incomingRecord?.hash_capture_status === "failed" || existingRecord?.hash_capture_status === "failed") ? "failed" : "unavailable"),
     blocker_codes: blockerCodes,
     public_output_unchanged: true,
   };
