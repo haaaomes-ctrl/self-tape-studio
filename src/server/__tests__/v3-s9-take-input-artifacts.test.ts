@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { emitAnalysisInputArtefacts, emitQAManifestForAnalysisRun, emitRawReportArtefact } from '@/server/v3/qa-artifacts-wiring.server';
 
 describe('v3 s9 take input artifacts', () => {
-  it('emits all three take-level input artefacts and updates manifest truthfully', async () => {
+  it('emits take-level input and media identity artefacts and updates manifest truthfully', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s903-'));
     const run = 'take-tk1';
     const takeId = 'tk1';
@@ -27,6 +27,11 @@ describe('v3 s9 take input artifacts', () => {
       material_presence: 'unknown',
       mux_playback_id: 'pb1',
       mux_asset_or_upload_id_present: true,
+      original_upload_file_hash: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      original_file_name: '../private/uploads/Slate Take.mov',
+      metadata_file_name: 'slate-take.mov',
+      file_size_bytes: 12345678,
+      video_duration_seconds: 62.4,
       submission_created_at: '2026-01-01T00:00:00.000Z',
       submission_updated_at: '2026-01-02T00:00:00.000Z',
       take_created_at: '2026-01-03T00:00:00.000Z',
@@ -35,19 +40,19 @@ describe('v3 s9 take input artifacts', () => {
       internal_qa_emit: true,
       root_dir: root,
     });
-    expect(emit.emitted_artefact_ids.sort()).toEqual(['analysis_input_record', 'analysis_submission', 'analysis_take']);
+    expect(emit.emitted_artefact_ids.sort()).toEqual(['analysis_input_record', 'analysis_submission', 'analysis_take', 'media_identity']);
 
     const base = path.join(root, run, 'takes', `take-${takeId}`, `analysis-${run}`, 'inputs');
     const inputRecord = JSON.parse(await readFile(path.join(base, 'input_record.json'), 'utf8'));
     const submission = JSON.parse(await readFile(path.join(base, 'submission.json'), 'utf8'));
     const take = JSON.parse(await readFile(path.join(base, 'take.json'), 'utf8'));
+    const mediaIdentity = JSON.parse(await readFile(path.join(base, 'media_identity.json'), 'utf8'));
 
-    for (const payload of [inputRecord, submission, take]) {
+    for (const payload of [inputRecord, submission, take, mediaIdentity]) {
       expect(payload.internal_only).toBe(true);
       expect(payload.privacy_classification).toBeTruthy();
       expect(payload.run_id).toBe(run);
       expect(payload.analysis_run_id).toBe(run);
-      expect(payload.submission_id).toBe('sub1');
       expect(payload.take_id).toBe(takeId);
       expect(payload.generated_at).toBeTruthy();
       expect(payload.source_module).toBe('test');
@@ -56,26 +61,51 @@ describe('v3 s9 take input artifacts', () => {
       expect(txt).not.toContain('token_secret');
       expect(txt).not.toContain('webhook_secret');
       expect(txt).not.toContain('session_secret');
+      expect(txt).not.toContain('https://');
+      expect(txt).not.toContain('signed_url');
+    }
+    for (const payload of [inputRecord, submission, take]) {
+      expect(payload.submission_id).toBe('sub1');
     }
 
     expect(take.stable_take_identity).toEqual({ take_id: takeId, analysis_run_id: run });
     expect(take.take_index_source).toBe('loaded_take_index');
+    expect(mediaIdentity.artefact_type).toBe('media_identity');
+    expect(mediaIdentity.public_output_unchanged).toBe(true);
+    expect(mediaIdentity.production_safe_status).toBe('blocked');
+    expect(mediaIdentity.public_scoring_status).toBe('blocked');
+    expect(mediaIdentity.public_technique_authority_status).toBe('blocked');
+    expect(mediaIdentity.media_identity_signals.original_upload_file_hash).toMatchObject({ status: 'available', confidence_role: 'decisive' });
+    expect(mediaIdentity.media_identity_signals.original_file_name).toMatchObject({ status: 'available', safe_value: 'Slate Take.mov', raw_value_redacted: true, confidence_role: 'weak' });
+    expect(mediaIdentity.media_identity_signals.metadata_file_name).toMatchObject({ status: 'available', safe_value: 'slate-take.mov', confidence_role: 'medium' });
+    expect(mediaIdentity.media_identity_signals.file_size_bytes).toMatchObject({ status: 'available', safe_value: 12345678, confidence_role: 'medium' });
+    expect(mediaIdentity.media_identity_signals.video_duration_ms).toMatchObject({ status: 'available', safe_value: 62400, confidence_role: 'weak' });
+    expect(mediaIdentity.media_identity_signals.opening_video_sample_hash.status).toBe('unavailable');
+    expect(mediaIdentity.blocker_codes).toEqual(expect.arrayContaining(['opening_video_sample_unavailable', 'closing_audio_profile_unavailable']));
 
     await emitRawReportArtefact({ run_id: run, take_id: takeId, submission_id: 'sub1', source_stage: 'unit', source_module: 'test', report_data: { schema_version: 'v1-legacy' }, root_dir: root, internal_qa_emit: true });
-    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: takeId, submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', ...emit.emitted_artefact_ids], artefact_source_classification_by_id: { raw_report: 'legacy_adapter' }, artefact_level2_spine_satisfaction_by_id: { raw_report: false } });
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: takeId, submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', ...emit.emitted_artefact_ids], artefact_source_classification_by_id: { raw_report: 'legacy_adapter', media_identity: emit.media_identity_source_classification }, artefact_level2_spine_satisfaction_by_id: { raw_report: false, media_identity: false }, media_identity_summary: emit.media_identity_summary });
 
     const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.analysis_input_record).toBe('emitted');
     expect(manifest.artefact_status_by_id.analysis_submission).toBe('emitted');
     expect(manifest.artefact_status_by_id.analysis_take).toBe('emitted');
-    expect(manifest.emitted_artifacts).toEqual(expect.arrayContaining(['analysis_input_record', 'analysis_submission', 'analysis_take']));
+    expect(manifest.artefact_status_by_id.media_identity).toBe('emitted');
+    expect(manifest.emitted_artifacts).toEqual(expect.arrayContaining(['analysis_input_record', 'analysis_submission', 'analysis_take', 'media_identity']));
     expect(manifest.missing_artifacts).not.toEqual(expect.arrayContaining(['analysis_input_record', 'analysis_submission', 'analysis_take']));
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.media_identity).toBe(false);
+    expect(manifest.runtime_evidence_accepted_by_id).not.toContain('media_identity');
+    expect(manifest.runtime_evidence_blocked_by_id).toContain('media_identity');
     expect(manifest.level2_qa_acceptance).toBe('not_accepted');
     expect(manifest.production_safe_status).toBe('blocked');
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.public_technique_authority_status).toBe('blocked');
     expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('emitted');
     expect(manifest.artefact_source_classification_by_id.raw_report).toBe('legacy_adapter');
+    const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(metrics.media_identity_status).toBe('emitted');
+    expect(metrics.media_identity_available_signal_count).toBeGreaterThanOrEqual(5);
+    expect(metrics.media_identity_gate_status).toBe('insufficient');
   });
 
   it('uses loaded audition-shape truth and keeps not-loaded fields unknown/unavailable', async () => {
@@ -107,6 +137,7 @@ describe('v3 s9 take input artifacts', () => {
       material_presence: 'unknown',
       mux_playback_id: 'pb-x',
       mux_asset_or_upload_id_present: true,
+      safe_media_fingerprint: 'https://storage.example/private/video.mp4?token_secret=abc',
       submission_created_at: null,
       submission_updated_at: null,
       take_created_at: null,
@@ -117,7 +148,7 @@ describe('v3 s9 take input artifacts', () => {
       internal_qa_emit: true,
       root_dir: root,
     });
-    expect(emitted.emitted_artefact_ids.sort()).toEqual(['analysis_input_record', 'analysis_submission', 'analysis_take']);
+    expect(emitted.emitted_artefact_ids.sort()).toEqual(['analysis_input_record', 'analysis_submission', 'analysis_take', 'media_identity']);
 
     const base = path.join(root, 'take-loaded', 'takes', 'take-tk-loaded', 'analysis-take-loaded', 'inputs');
     const inputRecord = JSON.parse(await readFile(path.join(base, 'input_record.json'), 'utf8'));
@@ -142,6 +173,16 @@ describe('v3 s9 take input artifacts', () => {
     expect(new Set(take.unavailable_fields).size).toBe(take.unavailable_fields.length);
     expect(submission.component_or_task_declaration_status).toBe('unknown');
     expect(take.take_index_source).toBe('unavailable');
+    const mediaIdentity = JSON.parse(await readFile(path.join(base, 'media_identity.json'), 'utf8'));
+    expect(mediaIdentity.media_identity_signals.original_upload_file_hash.status).toBe('unavailable');
+    expect(mediaIdentity.media_identity_signals.safe_media_fingerprint).toMatchObject({ status: 'redacted', raw_value_redacted: true });
+    expect(mediaIdentity.media_identity_signals.safe_media_fingerprint).not.toHaveProperty('value_hash');
+    expect(mediaIdentity.media_identity_signals.video_duration_ms.status).toBe('unavailable');
+    expect(mediaIdentity.cannot_satisfy_duplicate_detection_gate).toBe(true);
+    expect(mediaIdentity.blocker_codes).toEqual(expect.arrayContaining(['original_upload_file_hash_unavailable', 'media_identity_no_reliable_upload_or_content_signal']));
+    const mediaIdentityText = JSON.stringify(mediaIdentity).toLowerCase();
+    expect(mediaIdentityText).not.toContain('https://');
+    expect(mediaIdentityText).not.toContain('token_secret');
   });
 
   it('treats structured and json-string extracted brief cache as supplied and empty cache as absent', async () => {

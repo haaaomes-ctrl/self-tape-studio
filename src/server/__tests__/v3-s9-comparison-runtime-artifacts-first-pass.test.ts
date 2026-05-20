@@ -15,8 +15,21 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
+const safeNotDetectedDuplicateTrace = {
+  duplicate_detection_status: 'not_detected',
+  duplicate_detection_confidence: 0,
+  sufficient_upload_or_content_evidence: true,
+  not_detected_evidence_sufficient: true,
+  same_video_detected: false,
+  repeated_input_detected: false,
+  suppression_required: false,
+  public_output_unchanged: true,
+};
+
+const comparisonRuntimeArtefactIds = ['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'duplicate_detection_trace', 'route_variance_trace', 'same_video_repeatability_trace'];
+
 describe('v3 s9 comparison runtime artifacts first pass', () => {
-  it('emits all five artifacts only when real comparison execution evidence exists', async () => {
+  it('emits all six artifacts only when real comparison execution evidence exists', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911-'));
     const out = await emitComparisonRuntimeArtifacts({
       run_id: 'take-root1',
@@ -29,12 +42,14 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'root2' }, raw_comparison_decision_snapshot: { winner: 'root2' } },
       suppression_trace: { suppression_decision: 'allowed' },
       same_video_repeatability_trace: { same_video_detected: false },
+      duplicate_detection_trace: safeNotDetectedDuplicateTrace,
       route_variance_trace: { route_variance_detected: false },
     });
-    expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    expect(out.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
     const base = path.join(root, 'take-root1', 'takes', 'take-root1', 'analysis-ar-1');
     await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8');
     await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8');
+    await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8');
     await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8');
     await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8');
     await readFile(path.join(base, 'comparison_traces', 'route_variance_trace.json'), 'utf8');
@@ -42,6 +57,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     const manifest = JSON.parse(await readFile(path.join(root, 'take-root1', 'manifest.json'), 'utf8'));
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'comparison_raw').expected_path).toBe('comparison/comparison.raw.json');
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'comparison_report_internal').expected_path).toBe('comparison/comparison.report.internal.json');
+    expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'duplicate_detection_trace').expected_path).toBe('comparison/duplicate_detection_trace.json');
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'same_video_repeatability_trace').expected_path).toBe('comparison_traces/same_video_repeatability_trace.json');
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'comparison_suppression_trace').expected_path).toBe('comparison_traces/comparison_suppression_trace.json');
     expect(manifest.required_artifacts.find((a: any) => a.artefact_id === 'route_variance_trace').expected_path).toBe('comparison_traces/route_variance_trace.json');
@@ -83,11 +99,12 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       comparison_raw_data: { comparison_execution_status: 'executed', comparison_result_summary: { winner: 'root3' } },
       suppression_trace: { suppression_decision: 'allowed' },
       same_video_repeatability_trace: { same_video_detected: false },
+      duplicate_detection_trace: safeNotDetectedDuplicateTrace,
       route_variance_trace: { route_variance_detected: false },
     });
     expect(out.written).toBe(true);
     expect(out.comparison_run_id).toBe('cmp-root3');
-    expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    expect(out.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
     expect(out.comparison_parity_written).toBe(true);
     expect(out.comparison_parity_status).toBe('insufficient');
     expect(out.emitted_blocked_artefact_ids).toContain('parity_comparison');
@@ -105,7 +122,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     const metrics = JSON.parse(await readFile(path.join(root, 'take-root3', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(metrics.comparison_run_id).toBe('cmp-root3');
     expect(metrics.compared_take_ids).toEqual(['root3', 'root4']);
-    expect(metrics.comparison_runtime_artifact_count).toBe(5);
+    expect(metrics.comparison_runtime_artifact_count).toBe(6);
     expect(metrics.emitted_blocked_artefacts).toContain('parity_comparison');
     expect(metrics.not_applicable_artefacts).not.toContain('parity_comparison');
     expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
@@ -144,6 +161,7 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
       },
       suppression_trace: { false_winner_prevention_status: 'not_required' },
       same_video_repeatability_trace: { same_video_detected: false, repeated_input_detected: false },
+      duplicate_detection_trace: safeNotDetectedDuplicateTrace,
       route_variance_trace: { route_variance_detected: false, route_mismatch_detected: false, route_variance_status: 'not_detected' },
     });
     expect(out.written).toBe(true);
@@ -267,16 +285,17 @@ describe('pure comparison manifest reconciliation helper', () => {
       { artefact_id: 'comparison_raw', status: 'emitted' },
       { artefact_id: 'comparison_report_internal', status: 'missing' },
       { artefact_id: 'same_video_repeatability_trace', status: 'missing' },
+      { artefact_id: 'duplicate_detection_trace', status: 'missing' },
       { artefact_id: 'comparison_suppression_trace', status: 'missing' },
       { artefact_id: 'route_variance_trace', status: 'missing' },
     ],
   } as any;
 
-  it('full success marks all five emitted and uses report_unavailable mapping only', () => {
+  it('full success marks all six emitted and uses report_unavailable mapping only', () => {
     const out = reconcileComparisonManifestState({ manifest: baseManifest, comparison_write_success_by_id: {
-      comparison_raw: true, comparison_report_internal: true, same_video_repeatability_trace: true, comparison_suppression_trace: true, route_variance_trace: true,
+      comparison_raw: true, comparison_report_internal: true, same_video_repeatability_trace: true, duplicate_detection_trace: true, comparison_suppression_trace: true, route_variance_trace: true,
     } });
-    for (const id of ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace']) {
+    for (const id of comparisonRuntimeArtefactIds) {
       expect(out.emitted_artifacts).toContain(id);
       expect(out.artefact_status_by_id[id]).toBe('emitted');
     }
@@ -298,7 +317,7 @@ describe('pure comparison manifest reconciliation helper', () => {
 
   it('all writes fail clears old comparison emitted state and preserves non-comparison', () => {
     const out = reconcileComparisonManifestState({ manifest: baseManifest, comparison_write_success_by_id: {} });
-    for (const id of ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace']) {
+    for (const id of comparisonRuntimeArtefactIds) {
       expect(out.emitted_artifacts).not.toContain(id);
       expect(out.missing_artifacts).toContain(id);
     }

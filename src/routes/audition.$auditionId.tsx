@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
+import { buildUploadIdentityMetadata, preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
 import { retryProcessTake, resetTake, resetTakeForReupload } from "@/server-fns/process-take.functions";
 import { deleteTake, deleteAudition } from "@/server-fns/delete.functions";
 import { createMuxDirectUpload } from "@/server-fns/mux.functions";
@@ -455,8 +455,9 @@ function FailedTakeView({ take }: { take: Take }) {
             brightness: checklist.brightness.value,
             audio_peak: checklist.audio.peak,
             audio_rms: checklist.audio.rms,
+            upload_identity: await buildUploadIdentityMetadata(f, checklist.duration.seconds),
           }
-        : null;
+        : { upload_identity: await buildUploadIdentityMetadata(f, null) };
 
       await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
       let uploadUrl: string | undefined;
@@ -1758,8 +1759,9 @@ function AddTakeBlock({
             brightness: checklist.brightness.value,
             audio_peak: checklist.audio.peak,
             audio_rms: checklist.audio.rms,
+            upload_identity: await buildUploadIdentityMetadata(file, checklist.duration.seconds),
           }
-        : null;
+        : { upload_identity: await buildUploadIdentityMetadata(file, null) };
       const { data: take, error: takeErr } = await supabase
         .from("takes")
         .insert([

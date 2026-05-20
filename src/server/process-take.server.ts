@@ -51,6 +51,7 @@ import {
 } from "./report-output-enforcement.server";
 import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
 import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from "./v3/qa-step2-dependency.server";
+import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -1277,6 +1278,11 @@ export async function runProcessTake(
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
       const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
       const durationKnown = Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0;
+      const uploadIdentity = extractUploadIdentitySignals({
+        signals: take.signals,
+        checklist: take.checklist,
+        muxDurationSeconds: take.mux_duration_seconds,
+      });
       return {
         briefPresence,
         briefPresenceSource,
@@ -1286,6 +1292,7 @@ export async function runProcessTake(
         unavailableInputFields,
         takeDurationSeconds: durationKnown ? takeDurationSeconds : null,
         durationConfidence: durationKnown ? 'known' as const : 'unknown' as const,
+        uploadIdentity,
       };
     };
 
@@ -1441,6 +1448,16 @@ export async function runProcessTake(
           material_presence: 'unknown',
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+          original_upload_file_hash: qaStep1Context.uploadIdentity.original_upload_file_hash,
+          original_upload_file_hash_source_stage: qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
+          original_file_name: qaStep1Context.uploadIdentity.original_file_name,
+          metadata_file_name: qaStep1Context.uploadIdentity.metadata_file_name,
+          file_size_bytes: qaStep1Context.uploadIdentity.file_size_bytes,
+          mime_type_safe_summary: qaStep1Context.uploadIdentity.mime_type_safe_summary,
+          last_modified_ms: qaStep1Context.uploadIdentity.last_modified_ms,
+          upload_metadata_source: qaStep1Context.uploadIdentity.upload_metadata_source,
+          upload_identity_metadata: qaStep1Context.uploadIdentity.upload_identity_metadata,
+          video_duration_seconds: qaStep1Context.takeDurationSeconds,
           submission_created_at: null,
           submission_updated_at: null,
           take_created_at: qaStep1Context.takeCreatedAt,
@@ -3474,6 +3491,11 @@ export async function runProcessTake(
       const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
       if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
+      const uploadIdentity = extractUploadIdentitySignals({
+        signals: take.signals,
+        checklist: take.checklist,
+        muxDurationSeconds: take.mux_duration_seconds,
+      });
       const inputArtefacts = preStep2InputArtefacts ?? await emitAnalysisInputArtefacts({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -3491,6 +3513,16 @@ export async function runProcessTake(
         material_presence: 'unknown',
         mux_playback_id: take.mux_playback_id ?? null,
         mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        original_upload_file_hash: uploadIdentity.original_upload_file_hash,
+        original_upload_file_hash_source_stage: uploadIdentity.original_upload_file_hash_source_stage,
+        original_file_name: uploadIdentity.original_file_name,
+        metadata_file_name: uploadIdentity.metadata_file_name,
+        file_size_bytes: uploadIdentity.file_size_bytes,
+        mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
+        last_modified_ms: uploadIdentity.last_modified_ms,
+        upload_metadata_source: uploadIdentity.upload_metadata_source,
+        upload_identity_metadata: uploadIdentity.upload_identity_metadata,
+        video_duration_seconds: Number.isFinite(Number(take.mux_duration_seconds)) && Number(take.mux_duration_seconds) > 0 ? Number(take.mux_duration_seconds) : null,
         submission_created_at: null,
         submission_updated_at: null,
         take_created_at: takeCreatedAt,
@@ -3794,6 +3826,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
           ...(modelRunTrace.written ? { model_run_trace: 'internal_model_run_trace' } : {}),
+          ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: inputArtefacts.media_identity_source_classification } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
@@ -3804,6 +3837,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
           ...(scoreTrace.written ? { score_trace: false } : {}),
           ...(modelRunTrace.written ? { model_run_trace: false } : {}),
+          ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: false } : {}),
         },
         legacy_adapter_artefact_ids: [
           'raw_report',
@@ -3812,7 +3846,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
           ...(scoreTrace.written ? ['score_trace'] : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
@@ -3823,6 +3857,7 @@ export async function runProcessTake(
           qa_persistence_status: analysisEvidenceState.written ? 'written' : 'failed_emission',
           qa_persistence_warning: analysisEvidenceState.warning ?? null,
         } : undefined,
+        media_identity_summary: inputArtefacts.media_identity_summary,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

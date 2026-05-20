@@ -14,7 +14,7 @@ async function readMetrics(root:string, run:string){ return JSON.parse(await rea
 async function readParity(root:string, run:string,take='ta'){ return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'parity', 'comparison_parity.json'),'utf8')); }
 async function readRootParity(root:string, run:string){ return JSON.parse(await readFile(path.join(root, run, 'parity', 'comparison_parity.json'),'utf8')); }
 
-const evidenceIds = ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','comparison_suppression_trace','route_variance_trace'] as const;
+const evidenceIds = ['comparison_raw','comparison_report_internal','same_video_repeatability_trace','duplicate_detection_trace','comparison_suppression_trace','route_variance_trace'] as const;
 
 function safePublicPayload(): Record<string, unknown> {
   return {
@@ -23,6 +23,15 @@ function safePublicPayload(): Record<string, unknown> {
     repeated_input_detected: false,
     forced_winner_risk: false,
     false_winner_risk: false,
+    duplicate_detection_trace: {
+      duplicate_detection_status: 'not_detected',
+      duplicate_detection_confidence: 0,
+      sufficient_upload_or_content_evidence: true,
+      not_detected_evidence_sufficient: true,
+      same_video_detected: false,
+      repeated_input_detected: false,
+      suppression_required: false,
+    },
     route_variance_detected: false,
     route_mismatch_detected: false,
     route_variance_risk: false,
@@ -36,6 +45,15 @@ function safeNoPublicSurfacePayload(): Record<string, unknown> {
     repeated_input_detected: false,
     forced_winner_risk: false,
     false_winner_risk: false,
+    duplicate_detection_trace: {
+      duplicate_detection_status: 'not_detected',
+      duplicate_detection_confidence: 0,
+      sufficient_upload_or_content_evidence: true,
+      not_detected_evidence_sufficient: true,
+      same_video_detected: false,
+      repeated_input_detected: false,
+      suppression_required: false,
+    },
     route_variance_detected: false,
     route_mismatch_detected: false,
     route_variance_risk: false,
@@ -169,6 +187,90 @@ describe('v3-s9 comparison parity proof', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
+  it('B duplicate detection trace is required for comparison parity', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-16b-missing-duplicate-'));
+    const out = await emitCase(root,'run-missing-duplicate',{
+      emitted: evidenceIds.filter((id) => id !== 'duplicate_detection_trace'),
+      payloads: safePublicPayload(),
+    });
+    expectInsufficientBlocked(out);
+    expect(out.parity.duplicate_detection_trace_available).toBe(false);
+    expect(out.parity.mismatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mismatch_type: 'missing_required_comparison_evidence' }),
+    ]));
+  });
+
+  it('B insufficient duplicate evidence keeps comparison parity insufficient', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-16b-insufficient-duplicate-'));
+    const out = await emitCase(root,'run-insufficient-duplicate',{
+      payloads: {
+        ...safePublicPayload(),
+        duplicate_detection_trace: {
+          duplicate_detection_status: 'insufficient_evidence',
+          duplicate_detection_confidence: 0,
+          sufficient_upload_or_content_evidence: false,
+          suppression_required: true,
+        },
+      },
+    });
+    expectInsufficientBlocked(out);
+    expect(out.parity.duplicate_detection_blocker).toBe('duplicate_detection_insufficient_evidence');
+  });
+
+  it('B detected duplicate without suppression fails closed', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-16b-duplicate-no-suppression-'));
+    const out = await emitCase(root,'run-duplicate-no-suppression',{
+      payloads: {
+        ...safePublicPayload(),
+        duplicate_detection_trace: {
+          duplicate_detection_status: 'detected',
+          duplicate_detection_confidence: 100,
+          sufficient_upload_or_content_evidence: true,
+          suppression_required: true,
+          same_video_detected: true,
+          repeated_input_detected: true,
+        },
+        same_video_repeatability_trace: {
+          same_video_detected: true,
+          repeated_input_detected: true,
+          same_video_suppression_status: 'not_applicable',
+        },
+      },
+    });
+    expectFailedBlocked(out);
+    expect(out.parity.duplicate_detection_blocker).toBe('duplicate_detection_without_suppression');
+  });
+
+  it('B suppressed duplicate without decisive evidence delta remains insufficient', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),'s9-16b-suppressed-duplicate-'));
+    const out = await emitCase(root,'run-suppressed-duplicate',{
+      payloads: {
+        ...safePublicPayload(),
+        duplicate_detection_trace: {
+          duplicate_detection_status: 'likely_duplicate',
+          duplicate_detection_confidence: 85,
+          sufficient_upload_or_content_evidence: true,
+          suppression_required: true,
+          same_video_suppression_status: 'suppressed',
+          same_video_detected: true,
+          repeated_input_detected: true,
+        },
+        same_video_repeatability_trace: {
+          same_video_detected: true,
+          repeated_input_detected: true,
+          same_video_suppression_status: 'suppressed',
+        },
+        comparison_suppression_trace: {
+          recommendation_suppressed: true,
+          same_video_suppression_status: 'suppressed',
+          false_winner_prevention_status: 'suppressed',
+        },
+      },
+    });
+    expectInsufficientBlocked(out);
+    expect(out.parity.duplicate_detection_blocker).toBe('duplicate_detection_suppressed_without_evidence_delta');
+  });
+
   it('canonical metadata cannot be overwritten by caller comparison payload', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-canonical-metadata-'));
     const out = await emitCase(root,'run-canonical-metadata',{ payloads: {
@@ -294,7 +396,6 @@ describe('v3-s9 comparison parity proof', () => {
       ['nested-repeated-input', { same_video_repeatability_trace: { repeated_input_detected: true } }],
       ['nested-forced-winner', { same_video_repeatability_trace: { forced_winner_risk: true } }],
       ['nested-false-winner', { same_video_repeatability_trace: { false_winner_risk: true } }],
-      ['nested-same-video-unresolved-benign-status', { same_video_repeatability_trace: { same_video_unresolved_risk: true, same_video_suppression_status: 'resolved' } }],
       ['nested-no-material-difference-conflict', { same_video_repeatability_trace: { no_material_difference: false } }],
       ['nested-same-video-summary-detected', { same_video_repeatability_trace: { same_video_repeatability_trace_summary: { same_video_detected: true } } }],
       ['nested-route-risk', { route_variance_trace: { route_variance_risk: true } }],
@@ -311,6 +412,11 @@ describe('v3-s9 comparison parity proof', () => {
       expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
       expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
     }
+    const unresolvedWithMitigationRoot = await mkdtemp(path.join(os.tmpdir(), 's9-13d-nested-risk-unresolved-mitigated-'));
+    const unresolvedWithMitigation = await emitCase(unresolvedWithMitigationRoot, 'run-nested-same-video-unresolved-mitigated', {
+      payloads: { same_video_repeatability_trace: { same_video_unresolved_risk: true, same_video_suppression_status: 'resolved' } },
+    });
+    expect(unresolvedWithMitigation.parity.parity_status).toBe('insufficient');
   });
 
   it('accepted mitigation statuses neutralise nested risk when otherwise safe', async () => {
@@ -478,7 +584,7 @@ describe('v3-s9 comparison parity proof', () => {
       ...safePublicPayload(),
       comparison_report_internal: { internal_same_video_note: 'same video', internal_route_variance_note: 'route variance' },
     }});
-    expect(parity.checked_risk_sources).toEqual(['comparison_payloads']);
+    expect(parity.checked_risk_sources).toEqual(['comparison_payloads', 'duplicate_detection_trace']);
     expect(parity.checked_risk_sources).not.toContain('comparison_report_internal');
     expect(
       parity.risk_trace_field_hits.some(

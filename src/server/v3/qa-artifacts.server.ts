@@ -109,6 +109,14 @@ export interface QAArtifactEmitterOptions {
     analysis_evidence_state_gate_status?: 'missing' | 'insufficient' | 'satisfied';
     analysis_evidence_state_gate_reason?: string;
   };
+  media_identity_summary?: {
+    media_identity_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | string;
+    available_signal_count?: number;
+    unavailable_signal_count?: number;
+    media_identity_gate_status?: 'insufficient' | 'missing' | 'satisfied' | string;
+    media_identity_blocker_codes?: string[];
+    cannot_satisfy_duplicate_detection_gate?: boolean;
+  };
   evidence_anchor_trace_summary?: {
     anchor_count?: number;
     real_runtime_anchor_count?: number;
@@ -149,6 +157,7 @@ const REQUIRED: Omit<QARequiredArtefact, 'status' | 'blocker_code' | 'reason'>[]
   { artefact_id: 'comparison_raw', name: 'comparison raw', expected_path: 'comparison/comparison.raw.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'comparison_report_internal', name: 'comparison report internal', expected_path: 'comparison/comparison.report.internal.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'same_video_repeatability_trace', name: 'same video repeatability trace', expected_path: 'comparison_traces/same_video_repeatability_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
+  { artefact_id: 'duplicate_detection_trace', name: 'duplicate detection trace', expected_path: 'comparison/duplicate_detection_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: ['same_video_repeatability_trace', 'comparison_suppression_trace'] },
   { artefact_id: 'comparison_suppression_trace', name: 'comparison suppression trace', expected_path: 'comparison_traces/comparison_suppression_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'route_variance_trace', name: 'route variance trace', expected_path: 'comparison_traces/route_variance_trace.json', category: 'comparison_run', required_for_level: 'L2', linked_artifacts: [] },
   { artefact_id: 'parity_report', name: 'report parity', expected_path: 'parity/report_parity_result.json', category: 'analysis_run', required_for_level: 'L2', linked_artifacts: [] },
@@ -165,7 +174,7 @@ const BLOCKERS: Record<string, string> = {
   raw_report: 'raw_JSON_missing', comparison_raw: 'comparison_JSON_missing', evidence_anchors: 'EvidenceAnchor_trace_missing', public_claim_trace: 'PublicClaimTrace_missing',
   technique_observation_trace: 'TechniqueObservation_trace_missing', score_trace: 'ScoreTrace_missing', model_run_trace: 'ModelRunTrace_missing', truth_state_map: 'TruthStateMap_missing',
   resolver_output: 'resolver_output_missing', analysis_evidence_state: 'AnalysisEvidenceState_missing', same_video_repeatability_trace: 'same_video_repeatability_trace_missing', route_variance_trace: 'route_variance_trace_missing',
-  comparison_suppression_trace: 'comparison_suppression_trace_missing', no_export_proof: 'no_export_proof_missing', no_export_ui_proof: 'no_export_proof_missing', parity_report: 'parity_artefacts_missing', parity_comparison: 'parity_artefacts_missing',
+  duplicate_detection_trace: 'duplicate_detection_trace_missing', comparison_suppression_trace: 'comparison_suppression_trace_missing', no_export_proof: 'no_export_proof_missing', no_export_ui_proof: 'no_export_proof_missing', parity_report: 'parity_artefacts_missing', parity_comparison: 'parity_artefacts_missing',
   validator_trace: 'validator_trace_missing', gate_trace: 'gate_trace_missing',
   comparison_report_internal: 'comparison_report_unavailable',
 };
@@ -180,6 +189,7 @@ const BASE_REAL_RUNTIME_V3_ARTEFACT_IDS = new Set([
 const NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS = new Set([
   'qa_acceptance_metrics',
   'claim_candidate_trace',
+  'media_identity',
 ]);
 const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
   'legacy_adapter',
@@ -487,11 +497,16 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const gateTraceSummary = manifest.gate_trace_summary ?? {};
   const validatorTraceGateStatus = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
+  const mediaIdentityStatus = manifest.artefact_status_by_id?.media_identity ?? 'missing';
+  const mediaIdentitySummary = manifest.media_identity_summary ?? {};
+  const mediaIdentityBlockerCodes = Array.isArray(mediaIdentitySummary.media_identity_blocker_codes)
+    ? mediaIdentitySummary.media_identity_blocker_codes
+    : [];
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
-  const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'];
+  const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace'];
   const comparisonEmittedCount = comparisonArtefactIds.filter((id) => manifest.artefact_status_by_id?.[id] === 'emitted').length;
-  const comparisonEvidenceStatus = comparisonEmittedCount === 5 ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
+  const comparisonEvidenceStatus = comparisonEmittedCount === comparisonArtefactIds.length ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
@@ -556,9 +571,16 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     comparison_raw_status: manifest.artefact_status_by_id?.comparison_raw ?? 'missing',
     comparison_report_internal_status: manifest.artefact_status_by_id?.comparison_report_internal ?? 'missing',
     same_video_repeatability_trace_status: manifest.artefact_status_by_id?.same_video_repeatability_trace ?? 'missing',
+    duplicate_detection_trace_status: manifest.artefact_status_by_id?.duplicate_detection_trace ?? 'missing',
     comparison_suppression_trace_status: manifest.artefact_status_by_id?.comparison_suppression_trace ?? 'missing',
     route_variance_trace_status: manifest.artefact_status_by_id?.route_variance_trace ?? 'missing',
     comparison_runtime_artifact_count: comparisonEmittedCount,
+    media_identity_status: mediaIdentityStatus,
+    media_identity_available_signal_count: Number(mediaIdentitySummary.available_signal_count ?? 0),
+    media_identity_unavailable_signal_count: Number(mediaIdentitySummary.unavailable_signal_count ?? 0),
+    media_identity_gate_status: String(mediaIdentitySummary.media_identity_gate_status ?? (mediaIdentityStatus === 'missing' ? 'missing' : 'insufficient')),
+    media_identity_blocker_codes: mediaIdentityBlockerCodes,
+    media_identity_cannot_satisfy_duplicate_detection_gate: mediaIdentitySummary.cannot_satisfy_duplicate_detection_gate ?? true,
     truth_state_status: manifest.artefact_status_by_id?.truth_state_map ?? 'missing',
     resolver_status: manifest.artefact_status_by_id?.resolver_output ?? 'missing',
     analysis_evidence_state_status: analysisEvidenceStateStatus,
@@ -667,7 +689,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const internal_qa_emit = options.internal_qa_emit ?? false;
   if (!internal_qa_emit) return { written: false };
   const root = options.root_dir ?? DEFAULT_ROOT;
-  const comparisonArtefactIds = new Set(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace', 'parity_comparison']);
+  const comparisonArtefactIds = new Set(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace', 'parity_comparison']);
   const emittedForMode = [...(options.emitted_artefact_ids ?? []), ...(options.emitted_blocked_artefact_ids ?? [])];
   const inferredComparisonMode = emittedForMode.some((id) => comparisonArtefactIds.has(id));
   const mode = (options.comparison_run_id || inferredComparisonMode) ? 'comparison' : 'take';
@@ -678,7 +700,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const deferredIds = new Set(options.deferred_artefact_ids ?? []);
   const notApplicableIds = new Set(options.not_applicable_artefact_ids ?? []);
   const comparedTakeIds = options.compared_take_ids ?? [];
-  const comparisonRuntimeEvidenceCount = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace']
+  const comparisonRuntimeEvidenceCount = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace']
     .filter((id) => emittedIds.has(id) || emittedBlockedIds.has(id))
     .length;
   const comparisonInvoked =
@@ -754,6 +776,17 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const runtime_evidence_accepted_by_id = new Set<string>(options.runtime_evidence_accepted_by_id ?? []);
   const runtime_evidence_blocked_by_id = new Set<string>(options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids);
   const real_v3_spine_artefact_ids = new Set<string>(options.real_v3_spine_artefact_ids ?? []);
+  if (artefact_status_by_id.media_identity === 'emitted' || artefact_status_by_id.media_identity === 'emitted_blocked') {
+    if (!artefact_source_classification_by_id.media_identity) {
+      artefact_source_classification_by_id.media_identity = options.media_identity_summary?.cannot_satisfy_duplicate_detection_gate === false
+        ? 'real_runtime_v3_media_identity'
+        : 'partial_media_identity';
+    }
+    artefact_level2_spine_satisfaction_by_id.media_identity = false;
+    runtime_evidence_accepted_by_id.delete('media_identity');
+    runtime_evidence_blocked_by_id.add('media_identity');
+    real_v3_spine_artefact_ids.delete('media_identity');
+  }
   for (const artefactId of BASE_REAL_RUNTIME_V3_ARTEFACT_IDS) {
     if (artefact_status_by_id[artefactId] !== 'emitted' || !real_v3_spine_artefact_ids.has(artefactId)) continue;
     if (!artefact_source_classification_by_id[artefactId]) artefact_source_classification_by_id[artefactId] = 'real_runtime_v3';
@@ -819,6 +852,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
     score_trace_summary: options.score_trace_summary ?? undefined,
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
+    media_identity_summary: options.media_identity_summary ?? undefined,
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
