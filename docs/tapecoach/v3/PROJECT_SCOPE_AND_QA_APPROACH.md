@@ -1346,6 +1346,12 @@ The next engineering priority is **S9-17 Render/Public Payload Report Parity Arc
 
 `S9-17 Render/Public Payload Report Parity Architecture`
 
+Status:
+
+- S9-17A design/audit defines the contract for internal render/public payload parity proof.
+- S9-17B/C/D/E remain implementation, integration, runtime retest and closeout slices.
+- S9-17 is not Level 2 acceptance and does not unblock public or production gates.
+
 Scope:
 
 - generate and persist `render_payload`;
@@ -1359,6 +1365,16 @@ Scope:
 ### Why this comes next
 
 S9-16 closed duplicate-media detection, same-video suppression, no-export proof and run-shape summary alignment. The largest remaining Level 2 blocker is truthful report parity: the system emits an insufficient report parity artefact because render and public payload surfaces are missing. Tier 2 near-duplicate sampling and Tier 3 normalised media fingerprinting remain deferred until higher-value report parity and public-boundary proof work is complete.
+
+### S9-17 delivery sequence
+
+- **S9-17A - render/public payload parity contract:** document the internal QA artefact contract, allowed fields, forbidden fields, status model and manifest/metrics alignment rules.
+- **S9-17B - render payload shadow artefact:** emit `render/report_render_payload.json` from the existing report-render source without changing public rendering.
+- **S9-17C - public report payload and forbidden-field scanner:** emit `public/report_public_payload.json` as a sanitised subset and scan both payloads for blocked scoring, technique authority, comparison, castability, bookability, marketability and internal fields.
+- **S9-17D - report parity integration:** feed both payloads into report parity and align manifest and `qa_acceptance_metrics`; insufficient or failed parity remains non-satisfying.
+- **S9-17E - real-runtime retest and closeout:** rerun ordinary single-take and duplicate-comparison runtime evidence and document remaining blockers.
+
+S9-17 must not claim Level 2 acceptance until every required gate truly satisfies. Public scoring, public technique authority, public comparison winner/recommendation and production-safe status remain blocked.
 
 ---
 
@@ -1392,5 +1408,5 @@ The expanded scope in this document should become the controlling scope for Tape
 **Recommended next prompt:**
 
 ```text
-RUN XARCH-V3-S9-17-RENDER-PUBLIC-PAYLOAD-REPORT-PARITY-ARCHITECTURE-UK — TapeCoach v3 render/public payload report parity architecture
+RUN XIMPLEMENT-V3-S9-17B-RENDER-PAYLOAD-SHADOW-ARTEFACT-UK - TapeCoach v3 render payload shadow artefact
 ```
