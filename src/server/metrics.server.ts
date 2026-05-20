@@ -38,6 +38,7 @@ export type MetricName =
   | "mux_static_rendition_timeout"
   | "mux_static_rendition_errored"
   | "mux_static_rendition_skipped"
+  | "static_rendition_recovered_stale_analysing"
   | "mux_recovery_attempt"
   | "mux_recovery_success"
   | "mux_recovery_failure"
