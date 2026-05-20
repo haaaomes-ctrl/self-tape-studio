@@ -78,8 +78,11 @@ describe('admin storage impl', () => {
 
   it('zip returns signed url (no base64 payload) and stages binary zip', async () => {
     const mod = await import('@/lib/admin-storage.functions');
+    const { default: JSZip } = await import('jszip');
     mockList.mockResolvedValue({ data: [], error: null });
-    mockDownload.mockResolvedValue({ data: new Blob(['x']), error: null });
+    mockDownload
+      .mockResolvedValueOnce({ data: new Blob(['{"ok":true}'], { type: 'application/json' }), error: null })
+      .mockResolvedValueOnce({ data: new Blob(['{"ok":false}'], { type: 'application/json' }), error: null });
     mockUpload.mockResolvedValue({ error: null });
     mockSigned.mockResolvedValue({ data: { signedUrl: 'https://signed/zip' }, error: null });
     const out = await mod.zipSelectedArtifactsImpl([
@@ -90,8 +93,17 @@ describe('admin storage impl', () => {
     expect((out as any).base64Zip).toBeUndefined();
     const [uploadPath,,uploadOpts] = mockUpload.mock.calls[0];
     expect(String(uploadPath).startsWith('admin-temp-zips/')).toBe(true);
+    expect(mockUpload.mock.calls[0][1]).toBeInstanceOf(Blob);
+    expect(mockUpload.mock.calls[0][1].type).toBe('application/zip');
     expect(uploadOpts.metadata.temp_zip).toBe('true');
     expect(typeof uploadOpts.metadata.expires_at).toBe('string');
+    const uploadedZip = await JSZip.loadAsync(await mockUpload.mock.calls[0][1].arrayBuffer());
+    expect(Object.keys(uploadedZip.files).sort()).toEqual([
+      'take-aaa__analysis-take-aaa__manifest.json',
+      'take-bbb__analysis-take-bbb__manifest.json',
+    ]);
+    await expect(uploadedZip.file('take-aaa__analysis-take-aaa__manifest.json')?.async('string')).resolves.toBe('{"ok":true}');
+    await expect(uploadedZip.file('take-bbb__analysis-take-bbb__manifest.json')?.async('string')).resolves.toBe('{"ok":false}');
   });
 
   it('delete removes only selected and reports per-file outcomes', async () => {
