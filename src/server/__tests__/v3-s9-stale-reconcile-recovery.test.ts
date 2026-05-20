@@ -20,7 +20,7 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     expect(isAuthorisedReconcilerRequest(customHeader, env)).toBe('authorised');
     expect(isAuthorisedReconcilerRequest(bearerHeader, env)).toBe('authorised');
     expect(isAuthorisedReconcilerRequest(anonymous, env)).toBe('unauthorised');
-    expect(isAuthorisedReconcilerRequest(customHeader, {})).toBe('not_configured');
+    expect(isAuthorisedReconcilerRequest(customHeader, {} as any)).toBe('not_configured');
   });
 
   it('static rendition ready skips fresh in-flight work but recovers stale analysing takes', () => {
