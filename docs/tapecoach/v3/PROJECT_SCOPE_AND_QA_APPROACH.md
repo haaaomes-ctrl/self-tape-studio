@@ -1243,6 +1243,14 @@ Deliverables:
 - P0 metrics pass;
 - controlled tester access;
 - rollback plan.
+- S9-16 closed internal Tier 1 duplicate-media detection and same-video suppression:
+  - original upload SHA-256 and safe media identity are captured where browser file evidence is available;
+  - duplicate detection is same-user / same-audition scoped and confidence-based;
+  - runtime IDs are diagnostic only and cannot prove media difference;
+  - duplicate/same-video comparison suppresses internal winner recommendations;
+  - ordinary single-take comparison artefacts are not applicable and non-blocking;
+  - no-export proof emits complete for the current no-export contract;
+  - report parity remains insufficient until render and public payload surfaces exist.
 
 Exit gate:
 
@@ -1305,65 +1313,52 @@ The current stage is complete when:
 
 ### Artefact blockers
 
-- Missing raw report JSON.
-- Missing comparison JSON.
-- Missing EvidenceAnchors.
-- Missing PublicClaimTrace.
-- Missing TechniqueObservationTrace.
-- Missing ScoreTrace.
-- Missing GateTrace.
-- Missing ModelRunTrace.
-- Missing validator trace.
-- Missing redaction trace.
-- Missing UKEnglishGateResult.
-- Missing public/private leakage result.
-- Missing TruthStateMap.
-- Missing resolver output.
-- Missing same-video repeatability trace.
-- Missing route variance trace.
-- Missing comparison suppression trace.
-- Missing no-export proof.
-- Missing render/export parity where export exists.
+- Report parity remains insufficient because render/public payload surfaces are not generated and persisted.
+- ValidatorTrace, GateTrace and ModelRunTrace remain internal or insufficient as independent Level 2 gate proof.
+- EvidenceAnchors/PublicClaimTrace remain insufficient where runtime anchors are partial and extractor coverage is incomplete.
+- TechniqueObservationTrace and ScoreTrace remain internal or insufficient for public technique/scoring authority.
+- Invoked comparison proof remains non-satisfying unless duplicate detection, suppression, route variance and decisive evidence-delta/no-material-difference proof reconcile.
+- No-export proof is complete for the current no-export contract and is no longer a carry-forward missing-artefact blocker.
+- Ordinary single-take comparison artefacts are not applicable and non-blocking.
 
 ### Behaviour blockers
 
-- Same-video forced winner.
-- Score-first comparison logic.
+- Public comparison winner/recommendation remains blocked.
+- Public scoring remains blocked.
+- Public technique authority remains blocked.
+- Production-safe acceptance remains blocked.
 - Same-confidence masking.
 - Component split instability.
 - Public technique-name risk.
 - Brief/truth-state trace gaps.
 - Generic praise and output specificity failures.
 - Branch live-output gaps.
-- Renderer/export parity gaps.
+- Render/public payload report parity gaps.
 - Public/private leakage risk.
 
 ---
 
 ## 17. Next engineering priority
 
-The next engineering priority is **automated QA artefact emission**, not public report polish.
+The next engineering priority is **S9-17 Render/Public Payload Report Parity Architecture**, not Tier 2 or Tier 3 duplicate detection.
 
 ### Required workstream
 
-`XARCH/XIMPL-V3-QA-ARTEFACT-EMITTERS-DARK-MODE-UK`
+`S9-17 Render/Public Payload Report Parity Architecture`
 
 Scope:
 
-- locate existing emitters;
-- implement missing internal-only emitters;
-- create run-specific artefact directory contract;
-- emit manifests;
-- emit traces;
-- emit redaction/leakage/UK results;
-- emit no-export proof or export parity bundles;
-- ensure artefacts are non-public;
-- test in locked-down production-domain QA;
-- retain current public outputs unchanged.
+- generate and persist `render_payload`;
+- generate and persist `public_report_payload`;
+- compare raw, render and public checked surfaces through report parity;
+- enforce forbidden-field checks for comparison, scoring, technique authority and internal-only evidence;
+- keep public output unchanged until separately approved;
+- keep public scoring and public technique authority blocked;
+- keep Level 2 not accepted until every required gate truly satisfies.
 
 ### Why this comes next
 
-Without automated emitters, the system cannot reliably prove Level 2 artefact QA, Level 3 repeatability, Level 4 live-output behaviour or release-candidate readiness.
+S9-16 closed duplicate-media detection, same-video suppression, no-export proof and run-shape summary alignment. The largest remaining Level 2 blocker is truthful report parity: the system emits an insufficient report parity artefact because render and public payload surfaces are missing. Tier 2 near-duplicate sampling and Tier 3 normalised media fingerprinting remain deferred until higher-value report parity and public-boundary proof work is complete.
 
 ---
 
@@ -1397,6 +1392,5 @@ The expanded scope in this document should become the controlling scope for Tape
 **Recommended next prompt:**
 
 ```text
-RUN XARCH-V3-QA-ARTEFACT-EMITTERS-DARK-MODE-UK — TapeCoach v3 Automated QA Artefact Emitter Planning
+RUN XARCH-V3-S9-17-RENDER-PUBLIC-PAYLOAD-REPORT-PARITY-ARCHITECTURE-UK — TapeCoach v3 render/public payload report parity architecture
 ```
-

@@ -351,16 +351,15 @@ Level 2 remains blocked while any required Level 2 artefacts or proof gates are 
 
 - `validator_trace` and `gate_trace` as independent runtime gate proof;
 - `ModelRunTrace` as independent per-stage model-run proof;
-- comparison runtime artefacts;
-- same-video repeatability, comparison suppression and route-variance traces;
-- real runtime technique-observation evidence linkage (TechniqueObservationTrace currently emitted but insufficient for gate satisfaction);
-- parity artefacts;
-- no-export proof artefacts;
+- report parity proof while `render_payload` and `public_report_payload` surfaces are not generated and persisted;
+- EvidenceAnchors/PublicClaimTrace coverage while runtime anchors remain partial and extractor coverage is incomplete;
+- real runtime technique-observation and score evidence linkage (TechniqueObservationTrace and ScoreTrace remain internal or insufficient for gate satisfaction);
+- comparison parity for invoked duplicate/same-video runs unless suppression and decisive evidence-delta/no-material-difference proof are complete;
 - production-safe proof;
 - public-scoring proof;
 - public-technique-authority proof.
 
-Do not mark Level 2 accepted while required artefacts are missing, comparison evidence is missing, emitted artefacts remain insufficient, public/production gates are blocked, or the v3 spine relies on `legacy_adapter` artefacts.
+No-export proof is complete for the current internal no-export bundle when all required lanes emit. Ordinary single-take runs treat comparison artefacts as not applicable and non-blocking. Do not mark Level 2 accepted while required artefacts are missing, emitted or blocked artefacts remain insufficient, public/production gates are blocked, invoked comparison proof remains non-satisfying, or the v3 spine relies on `legacy_adapter` artefacts.
 
 ---
 
@@ -2494,6 +2493,38 @@ manifest and qa_acceptance_metrics align;
 duplicate comparison suppresses false winner or remains insufficient;
 Level 2 remains not_accepted unless every required gate truly satisfies;
 production/public gates remain blocked unless separately accepted.
+```
+
+#### S9-16G — final closeout status
+
+S9-16 is closed for internal Tier 1 duplicate-media detection and same-video comparison suppression.
+
+Closed S9-16 outcomes:
+
+```text
+Tier 1 media identity capture emits internal safe upload identity.
+Original upload SHA-256 is captured before upload where browser file evidence is available.
+DuplicateDetectionTrace uses same-user / same-audition Tier 1 evidence and deterministic confidence scoring.
+Runtime IDs such as take_id, analysis_run_id and Mux references remain diagnostic only and cannot prove media difference.
+Duplicate or repeated-input comparison runs suppress internal winner recommendations.
+Comparison parity fails closed for duplicate, likely duplicate, possible duplicate, missing or insufficient duplicate evidence unless required suppression/evidence-delta/no-material-difference proof is complete.
+Ordinary single-take runs classify comparison artefacts as not_applicable and non-blocking.
+No-export proof lanes and aggregate no-export proof emit as complete for the current no-export contract.
+Runtime finalisation and stale reconcile recovery have internal recovery coverage.
+EvidenceAnchors and GF-01 / RT-15 summaries align with ordinary/comparison run shape.
+```
+
+Remaining S9-16 closeout state:
+
+```text
+Level 2 remains not_accepted.
+production_safe_status remains blocked.
+public_scoring_status remains blocked.
+public_technique_authority_status remains blocked.
+public comparison winner/recommendation remains unavailable.
+report parity remains blocked by missing render_payload and public_report_payload surfaces.
+Tier 2 near-duplicate sampling remains deferred.
+Tier 3 normalised media fingerprinting remains deferred.
 ```
 
 ---
