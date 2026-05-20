@@ -84,7 +84,9 @@ describe('v3 s9 take input artifacts', () => {
     expect(mediaIdentity.blocker_codes).toEqual(expect.arrayContaining(['opening_video_sample_unavailable', 'closing_audio_profile_unavailable']));
 
     await emitRawReportArtefact({ run_id: run, take_id: takeId, submission_id: 'sub1', source_stage: 'unit', source_module: 'test', report_data: { schema_version: 'v1-legacy' }, root_dir: root, internal_qa_emit: true });
-    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: takeId, submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', ...emit.emitted_artefact_ids], artefact_source_classification_by_id: { raw_report: 'legacy_adapter', media_identity: emit.media_identity_source_classification }, artefact_level2_spine_satisfaction_by_id: { raw_report: false, media_identity: false }, media_identity_summary: emit.media_identity_summary });
+    expect(emit.media_identity_source_classification).toBeDefined();
+    if (!emit.media_identity_source_classification) throw new Error('expected media identity source classification');
+    await emitQAManifestForAnalysisRun({ run_id: run, analysis_run_id: run, take_id: takeId, submission_id: 'sub1', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report', ...emit.emitted_artefact_ids.filter((id): id is string => typeof id === 'string')], artefact_source_classification_by_id: { raw_report: 'legacy_adapter', media_identity: emit.media_identity_source_classification }, artefact_level2_spine_satisfaction_by_id: { raw_report: false, media_identity: false }, media_identity_summary: emit.media_identity_summary });
 
     const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.analysis_input_record).toBe('emitted');

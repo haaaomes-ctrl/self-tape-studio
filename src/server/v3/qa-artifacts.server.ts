@@ -57,6 +57,15 @@ export interface QAArtifactEmitterOptions {
     legacy_untraced_claim_count?: number;
     unsafe_or_overclaim_count?: number;
     rewrite_required_count?: number;
+    supported_claim_count?: number;
+    missing_evidence_count?: number;
+    missing_truth_link_count?: number;
+    blocked_claim_count?: number;
+    public_claim_gate_status?: string;
+    public_claim_gate_reason?: string;
+    source_classification?: string;
+    public_output_unchanged?: boolean;
+    blocker_codes?: string[];
   };
   claim_candidate_trace_summary?: {
     claim_candidate_count?: number;
@@ -108,6 +117,8 @@ export interface QAArtifactEmitterOptions {
     unsupported_or_unavailable_evidence_count?: number;
     analysis_evidence_state_gate_status?: 'missing' | 'insufficient' | 'satisfied';
     analysis_evidence_state_gate_reason?: string;
+    qa_persistence_status?: 'written' | 'failed_emission' | 'unavailable' | 'skipped' | 'fallback_logged';
+    qa_persistence_warning?: string | null;
   };
   media_identity_summary?: {
     media_identity_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | string;
@@ -495,8 +506,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   };
   const validatorTraceSummary = manifest.validator_trace_summary ?? {};
   const gateTraceSummary = manifest.gate_trace_summary ?? {};
-  const validatorTraceGateStatus = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
-  const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
+  const validatorTraceGateStatus: 'missing' | 'insufficient' | 'satisfied' = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
+  const gateTraceGateStatus: 'missing' | 'insufficient' | 'satisfied' = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const mediaIdentityStatus = manifest.artefact_status_by_id?.media_identity ?? 'missing';
   const mediaIdentitySummary = manifest.media_identity_summary ?? {};
   const mediaIdentityBlockerCodes = Array.isArray(mediaIdentitySummary.media_identity_blocker_codes)
@@ -516,9 +527,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(scoreTraceStatus === 'missing' ? ['ScoreTrace'] : []),
     ...(scoreTraceStatus !== 'missing' && scoreTraceGateStatus !== 'satisfied' ? ['real runtime score trace/proof linkage'] : []),
     ...(validatorTraceStatus === 'missing' ? ['ValidatorTrace'] : []),
-    ...(validatorTraceStatus !== 'missing' && validatorTraceGateStatus !== 'satisfied' ? ['independent runtime validator proof chain'] : []),
+    ...(validatorTraceStatus !== 'missing' ? ['independent runtime validator proof chain'] : []),
     ...(gateTraceStatus === 'missing' ? ['GateTrace'] : []),
-    ...(gateTraceStatus !== 'missing' && gateTraceGateStatus !== 'satisfied' ? ['independent runtime gate proof chain'] : []),
+    ...(gateTraceStatus !== 'missing' ? ['independent runtime gate proof chain'] : []),
     ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
     ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
     ...(comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof']),
