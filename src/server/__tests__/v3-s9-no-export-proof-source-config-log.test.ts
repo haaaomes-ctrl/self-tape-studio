@@ -42,8 +42,10 @@ describe('v3 s9 no-export source/config/log proof emission', () => {
     expect(manifest.artefact_status_by_id.no_export_log_proof).toBe('emitted');
     expect(manifest.artefact_status_by_id.no_export_proof).toBe('emitted');
     expect(manifest.artefact_status_by_id.no_export_ui_proof).toBe('missing');
+    expect(manifest.no_export_status).toBe('no_export_proof_missing');
     expect(manifest.blocker_codes).toContain('no_export_proof_missing');
 
+    expect(metrics.export_or_no_export_status).toBe('no_export_proof_missing');
     expect(metrics.blocker_codes).toContain('no_export_proof_missing');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
@@ -106,8 +108,16 @@ describe('v3 s9 no-export source/config/log proof emission', () => {
 
   it('does not emit no_export_proof bundle when source/config/log trio is incomplete', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s913a-missing-'));
-    const out = await emitNoExportProofBundle({ run_id: 'run-s913a-missing', root_dir: root, internal_qa_emit: true, proofs: { no_export_source_proof: { ok: true }, no_export_config_proof: { ok: true } } });
+    const run = 'run-s913a-missing';
+    const out = await emitNoExportProofBundle({ run_id: run, root_dir: root, internal_qa_emit: true, proofs: { no_export_source_proof: { ok: true }, no_export_config_proof: { ok: true } } });
     expect(out.emitted_artefact_ids).toEqual(expect.arrayContaining(['no_export_source_proof', 'no_export_config_proof']));
     expect(out.emitted_artefact_ids).not.toContain('no_export_proof');
+    await emitQAManifestForAnalysisRun({ run_id: run, root_dir: root, internal_qa_emit: true, emitted_artefact_ids: out.emitted_artefact_ids });
+    const manifest = await parse(path.join(root, run, 'manifest.json'));
+    const metrics = await parse(path.join(root, run, 'qa', 'acceptance_metrics.json'));
+    expect(manifest.no_export_status).toBe('no_export_proof_missing');
+    expect(manifest.blocker_codes).toContain('no_export_proof_missing');
+    expect(metrics.export_or_no_export_status).toBe('no_export_proof_missing');
+    expect(metrics.blocker_codes).toContain('no_export_proof_missing');
   });
 });
