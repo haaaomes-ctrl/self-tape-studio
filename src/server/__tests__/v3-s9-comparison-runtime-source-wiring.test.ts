@@ -429,6 +429,7 @@ describe('v3 s9 comparison runtime source wiring', () => {
 
   it('detects exact original upload hash match with high confidence and suppression', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-hash-'));
+    const sameHash = `sha256:${'a'.repeat(64)}`;
     await runInternalComparisonForTakes({
       run_id: 'take-hash-root',
       root_take_id: 'hash-a',
@@ -437,22 +438,52 @@ describe('v3 s9 comparison runtime source wiring', () => {
       root_dir: root,
       internal_qa_emit: true,
       compared_takes: [
-        { take_id: 'hash-a', analysis_run_id: 'hash-ar-a', mux_playback_ref: 'pb-h-a', original_upload_file_hash: 'sha256-same', visible_or_original_file_name: 'take-a.mov', video_duration_ms: 10000 },
-        { take_id: 'hash-b', analysis_run_id: 'hash-ar-b', mux_playback_ref: 'pb-h-b', original_upload_file_hash: 'sha256-same', visible_or_original_file_name: 'take-b.mov', video_duration_ms: 12000 },
+        { take_id: 'hash-a', analysis_run_id: 'hash-ar-a', mux_playback_ref: 'pb-h-a', user_id: 'user-1', audition_id: 'audition-1', original_upload_file_hash: sameHash, visible_or_original_file_name: 'take-a.mov', video_duration_ms: 10000 },
+        { take_id: 'hash-b', analysis_run_id: 'hash-ar-b', mux_playback_ref: 'pb-h-b', user_id: 'user-1', audition_id: 'audition-1', original_upload_file_hash: sameHash, visible_or_original_file_name: 'take-b.mov', video_duration_ms: 12000 },
       ],
     });
     const base = path.join(root, 'take-hash-root', 'takes', 'take-hash-a', 'analysis-hash-ar-a');
     const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     const mediaIdentity = JSON.parse(await readFile(path.join(base, 'inputs', 'media_identity.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
     expect(duplicate.duplicate_detection_status).toBe('detected');
     expect(duplicate.duplicate_detection_confidence).toBe(100);
     expect(duplicate.signals_matched).toContain('original_upload_file_hash');
+    expect(duplicate.same_user_scope_status).toBe('same');
+    expect(duplicate.same_audition_scope_status).toBe('same');
     expect(mediaIdentity.media_identity_signals.original_upload_file_hash).toMatchObject({ status: 'available', confidence_role: 'decisive' });
     expect(mediaIdentity.media_identity_signals.video_duration_ms).toMatchObject({ status: 'available' });
     expect(JSON.stringify(mediaIdentity).toLowerCase()).not.toContain('signed_url');
+    expect(sameVideo.same_video_detected).toBe(true);
+    expect(sameVideo.repeated_input_detected).toBe(true);
+    expect(suppression.same_video_suppression_status).toBe('suppressed');
+    expect(suppression.recommendation_suppressed).toBe(true);
     expect(raw.recommendation_suppressed).toBe(true);
     expect(raw.selected_take_id_internal_only).toBeNull();
+  });
+
+  it('does not use matching upload hash as cross-user duplicate proof', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916d-cross-user-'));
+    const sameHash = `sha256:${'b'.repeat(64)}`;
+    await runInternalComparisonForTakes({
+      run_id: 'take-cross-user-root',
+      root_take_id: 'cross-user-a',
+      source_module: 'test',
+      source_stage: 'cross-user-hash',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'cross-user-a', analysis_run_id: 'cross-user-ar-a', user_id: 'user-a', audition_id: 'audition-1', original_upload_file_hash: sameHash },
+        { take_id: 'cross-user-b', analysis_run_id: 'cross-user-ar-b', user_id: 'user-b', audition_id: 'audition-1', original_upload_file_hash: sameHash },
+      ],
+    });
+    const duplicate = JSON.parse(await readFile(path.join(root, 'take-cross-user-root', 'takes', 'take-cross-user-a', 'analysis-cross-user-ar-a', 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    expect(duplicate.same_user_scope_status).toBe('conflicting');
+    expect(duplicate.duplicate_detection_status).toBe('insufficient_evidence');
+    expect(duplicate.duplicate_detection_confidence).toBe(0);
+    expect(duplicate.blocker_codes).toContain('duplicate_detection_scope_conflict');
   });
 
   it('does not let filename and duration changes defeat stronger duplicate signals', async () => {

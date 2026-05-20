@@ -51,6 +51,7 @@ import {
 } from "./report-output-enforcement.server";
 import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
 import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from "./v3/qa-step2-dependency.server";
+import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -1277,6 +1278,11 @@ export async function runProcessTake(
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
       const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
       const durationKnown = Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0;
+      const uploadIdentity = extractUploadIdentitySignals({
+        signals: take.signals,
+        checklist: take.checklist,
+        muxDurationSeconds: take.mux_duration_seconds,
+      });
       return {
         briefPresence,
         briefPresenceSource,
@@ -1286,6 +1292,7 @@ export async function runProcessTake(
         unavailableInputFields,
         takeDurationSeconds: durationKnown ? takeDurationSeconds : null,
         durationConfidence: durationKnown ? 'known' as const : 'unknown' as const,
+        uploadIdentity,
       };
     };
 
@@ -1441,6 +1448,15 @@ export async function runProcessTake(
           material_presence: 'unknown',
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+          original_upload_file_hash: qaStep1Context.uploadIdentity.original_upload_file_hash,
+          original_upload_file_hash_source_stage: qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
+          original_file_name: qaStep1Context.uploadIdentity.original_file_name,
+          metadata_file_name: qaStep1Context.uploadIdentity.metadata_file_name,
+          file_size_bytes: qaStep1Context.uploadIdentity.file_size_bytes,
+          mime_type_safe_summary: qaStep1Context.uploadIdentity.mime_type_safe_summary,
+          last_modified_ms: qaStep1Context.uploadIdentity.last_modified_ms,
+          upload_metadata_source: qaStep1Context.uploadIdentity.upload_metadata_source,
+          upload_identity_metadata: qaStep1Context.uploadIdentity.upload_identity_metadata,
           video_duration_seconds: qaStep1Context.takeDurationSeconds,
           submission_created_at: null,
           submission_updated_at: null,
@@ -3475,6 +3491,11 @@ export async function runProcessTake(
       const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
       if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
       if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
+      const uploadIdentity = extractUploadIdentitySignals({
+        signals: take.signals,
+        checklist: take.checklist,
+        muxDurationSeconds: take.mux_duration_seconds,
+      });
       const inputArtefacts = preStep2InputArtefacts ?? await emitAnalysisInputArtefacts({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -3492,6 +3513,15 @@ export async function runProcessTake(
         material_presence: 'unknown',
         mux_playback_id: take.mux_playback_id ?? null,
         mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        original_upload_file_hash: uploadIdentity.original_upload_file_hash,
+        original_upload_file_hash_source_stage: uploadIdentity.original_upload_file_hash_source_stage,
+        original_file_name: uploadIdentity.original_file_name,
+        metadata_file_name: uploadIdentity.metadata_file_name,
+        file_size_bytes: uploadIdentity.file_size_bytes,
+        mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
+        last_modified_ms: uploadIdentity.last_modified_ms,
+        upload_metadata_source: uploadIdentity.upload_metadata_source,
+        upload_identity_metadata: uploadIdentity.upload_identity_metadata,
         video_duration_seconds: Number.isFinite(Number(take.mux_duration_seconds)) && Number(take.mux_duration_seconds) > 0 ? Number(take.mux_duration_seconds) : null,
         submission_created_at: null,
         submission_updated_at: null,

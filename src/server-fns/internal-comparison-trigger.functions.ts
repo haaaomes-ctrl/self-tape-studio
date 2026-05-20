@@ -5,6 +5,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runInternalComparisonOperatorTrigger, type CompletedTakeComparisonSource, type InternalComparisonOperatorTriggerInput } from "@/server/v3/qa-artifacts-wiring.server";
 import { assertSafeSegment } from "@/server/v3/qa-artifacts.server";
+import { extractUploadIdentitySignals } from "@/server/v3/media-identity-upload-signals.server";
 
 const ADMIN_EMAIL = "o.halawi90@gmail.com";
 const normalizeEmail = (email?: string | null) => email?.trim().toLowerCase() ?? "";
@@ -55,6 +56,11 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
   }
   const completed = isExplicitCompletedAnalysisStatus((data as any).status);
   if (!completed) return null;
+  const uploadIdentity = extractUploadIdentitySignals({
+    signals: (data as any).signals,
+    checklist: (data as any).checklist,
+    muxDurationSeconds: (data as any).mux_duration_seconds,
+  });
   return {
     take_id: String((data as any).id ?? takeId),
     analysis_run_id: analysisRunId,
@@ -62,11 +68,22 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
     mux_asset_or_upload_id_present: Boolean((data as any).mux_asset_id || (data as any).mux_upload_id),
     user_id: typeof (data as any).user_id === "string" ? (data as any).user_id : null,
     audition_id: typeof (data as any).audition_id === "string" ? (data as any).audition_id : null,
+    original_upload_file_hash: uploadIdentity.original_upload_file_hash,
+    original_upload_file_hash_source_stage: uploadIdentity.original_upload_file_hash_source_stage,
+    original_file_name: uploadIdentity.original_file_name,
+    metadata_file_name: uploadIdentity.metadata_file_name,
+    file_size_bytes: uploadIdentity.file_size_bytes,
+    mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
+    last_modified_ms: uploadIdentity.last_modified_ms,
+    upload_metadata_source: uploadIdentity.upload_metadata_source,
+    upload_identity_metadata: uploadIdentity.upload_identity_metadata,
     video_duration_seconds: typeof (data as any).mux_duration_seconds === "number"
       ? (data as any).mux_duration_seconds
       : (typeof (data as any).signals?.duration === "number"
         ? (data as any).signals.duration
-        : (typeof (data as any).checklist?.duration?.seconds === "number" ? (data as any).checklist.duration.seconds : null)),
+        : (typeof (data as any).checklist?.duration?.seconds === "number"
+          ? (data as any).checklist.duration.seconds
+          : (typeof uploadIdentity.video_duration_ms === "number" ? uploadIdentity.video_duration_ms / 1000 : null))),
     analysis_route: null,
     model_provider_family: null,
     completed,

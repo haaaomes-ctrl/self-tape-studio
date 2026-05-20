@@ -1106,12 +1106,16 @@ export interface InternalComparisonTakeInput {
   audition_id?: string | null;
   submission_id?: string | null;
   original_upload_file_hash?: string | null;
+  original_upload_file_hash_source_stage?: string | null;
   visible_or_original_file_name?: string | null;
   original_file_name?: string | null;
   file_name?: string | null;
   filename?: string | null;
   metadata_file_name?: string | null;
   file_size_bytes?: number | string | null;
+  mime_type_safe_summary?: string | null;
+  last_modified_ms?: number | string | null;
+  upload_metadata_source?: string | null;
   video_duration_ms?: number | string | null;
   duration_ms?: number | string | null;
   video_duration_seconds?: number | string | null;
@@ -1121,6 +1125,7 @@ export interface InternalComparisonTakeInput {
   opening_audio_profile_hash?: string | null;
   closing_audio_profile_hash?: string | null;
   operator_same_video_assertion?: boolean | null;
+  upload_identity_metadata?: Record<string, unknown> | null;
   media_identity?: MediaIdentityPayload | null;
   artefact_summaries?: Record<string, unknown>;
 }
@@ -1262,7 +1267,7 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
 }
 
 export interface AnalysisInputArtefactEmitterInput {
-  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; user_id?: string | null; profile_id?: string | null; audition_id?: string | null; original_upload_file_hash?: string | null; visible_or_original_file_name?: string | null; original_file_name?: string | null; file_name?: string | null; filename?: string | null; metadata_file_name?: string | null; file_size_bytes?: number | string | null; video_duration_ms?: number | string | null; duration_ms?: number | string | null; video_duration_seconds?: number | string | null; duration_seconds?: number | string | null; opening_video_sample_hash_or_profile?: string | null; opening_video_sample_hash?: string | null; closing_video_sample_hash_or_profile?: string | null; closing_video_sample_hash?: string | null; opening_audio_profile_hash?: string | null; closing_audio_profile_hash?: string | null; safe_media_fingerprint?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
+  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; user_id?: string | null; profile_id?: string | null; audition_id?: string | null; original_upload_file_hash?: string | null; original_upload_file_hash_source_stage?: string | null; visible_or_original_file_name?: string | null; original_file_name?: string | null; file_name?: string | null; filename?: string | null; metadata_file_name?: string | null; file_size_bytes?: number | string | null; mime_type_safe_summary?: string | null; last_modified_ms?: number | string | null; upload_metadata_source?: string | null; video_duration_ms?: number | string | null; duration_ms?: number | string | null; video_duration_seconds?: number | string | null; duration_seconds?: number | string | null; opening_video_sample_hash_or_profile?: string | null; opening_video_sample_hash?: string | null; closing_video_sample_hash_or_profile?: string | null; closing_video_sample_hash?: string | null; opening_audio_profile_hash?: string | null; closing_audio_profile_hash?: string | null; safe_media_fingerprint?: string | null; upload_identity_metadata?: Record<string, unknown> | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
 export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
 export interface AnalysisEvidenceStateEmitterInput extends AnalysisInputArtefactEmitterInput {
@@ -1796,6 +1801,15 @@ function mediaIdentityRawValue(input: { take: InternalComparisonTakeInput; keys:
   return rawTakeSignalValue(input.take, input.keys);
 }
 
+function normaliseOriginalUploadHashValue(value: unknown): string | null {
+  const raw = isRecord(value) ? value.value : value;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed || looksLikeUnsafePrivateValue(trimmed) || /[\\/]/.test(trimmed)) return null;
+  const match = trimmed.match(/^(?:sha256:)?([a-f0-9]{64})$/);
+  return match ? `sha256:${match[1]}` : null;
+}
+
 function mediaIdentityStringSignal(input: {
   take: InternalComparisonTakeInput;
   signal_name: MediaIdentitySignalName;
@@ -1830,6 +1844,32 @@ function mediaIdentityStringSignal(input: {
       source_path: input.source_path,
       confidence_role: input.confidence_role,
       notes: safe.redacted ? ['basename_only_path_redacted'] : [],
+    };
+  }
+  if (input.signal_name === 'original_upload_file_hash') {
+    const hashValue = normaliseOriginalUploadHashValue(raw);
+    if (!hashValue) {
+      const unsafe = typeof raw === 'string' && (looksLikeUnsafePrivateValue(raw) || /[\\/]/.test(raw));
+      return {
+        signal_name: input.signal_name,
+        status: unsafe ? 'redacted' : 'unavailable',
+        raw_value_redacted: unsafe,
+        source_artefact_id: 'analysis_take',
+        source_path: input.source_path,
+        confidence_role: input.confidence_role,
+        notes: [unsafe ? 'unsafe_hash_value_redacted' : 'invalid_or_unavailable_sha256_hash'],
+      };
+    }
+    return {
+      signal_name: input.signal_name,
+      status: 'available',
+      safe_value: hashValue,
+      value_hash: hashDiagnosticValue(hashValue),
+      raw_value_redacted: false,
+      source_artefact_id: 'analysis_take',
+      source_path: input.source_path,
+      confidence_role: input.confidence_role,
+      notes: [],
     };
   }
   const value = normaliseSignalString(raw);
@@ -1918,11 +1958,13 @@ function buildMediaIdentityPayload(input: {
   const durationSignal = normaliseSignalNumber(durationMsRaw) !== null
     ? mediaIdentityNumberSignal({ take, signal_name: 'video_duration_ms', keys: ['video_duration_ms', 'duration_ms'], source_path: 'video_duration_ms', confidence_role: 'weak' })
     : mediaIdentityNumberSignal({ take, signal_name: 'video_duration_ms', keys: ['video_duration_seconds', 'duration_seconds'], source_path: 'mux_duration_seconds', confidence_role: 'weak', multiplier: 1000 });
+  const uploadIdentity = isRecord(take.upload_identity_metadata) ? take.upload_identity_metadata : null;
+  const uploadIdentitySource = uploadIdentity ? 'signals.upload_identity' : null;
   const media_identity_signals: Record<MediaIdentitySignalName, MediaIdentitySignalEntry> = {
-    original_upload_file_hash: mediaIdentityStringSignal({ take, signal_name: 'original_upload_file_hash', keys: ['original_upload_file_hash', 'upload_hash', 'sha256', 'checksum'], source_path: 'original_upload_file_hash', confidence_role: 'decisive' }),
-    original_file_name: mediaIdentityStringSignal({ take, signal_name: 'original_file_name', keys: ['visible_or_original_file_name', 'original_file_name', 'file_name', 'filename'], source_path: 'original_file_name', confidence_role: 'weak', filename: true }),
-    metadata_file_name: mediaIdentityStringSignal({ take, signal_name: 'metadata_file_name', keys: ['metadata_file_name'], source_path: 'metadata_file_name', confidence_role: 'medium', filename: true }),
-    file_size_bytes: mediaIdentityNumberSignal({ take, signal_name: 'file_size_bytes', keys: ['file_size_bytes', 'size_bytes'], source_path: 'file_size_bytes', confidence_role: 'medium' }),
+    original_upload_file_hash: mediaIdentityStringSignal({ take, signal_name: 'original_upload_file_hash', keys: ['original_upload_file_hash', 'upload_hash', 'sha256', 'checksum'], source_path: uploadIdentitySource ? `${uploadIdentitySource}.original_upload_file_hash.value` : 'original_upload_file_hash', confidence_role: 'decisive' }),
+    original_file_name: mediaIdentityStringSignal({ take, signal_name: 'original_file_name', keys: ['visible_or_original_file_name', 'original_file_name', 'file_name', 'filename'], source_path: uploadIdentitySource ? `${uploadIdentitySource}.original_file_name_safe_basename` : 'original_file_name', confidence_role: 'weak', filename: true }),
+    metadata_file_name: mediaIdentityStringSignal({ take, signal_name: 'metadata_file_name', keys: ['metadata_file_name'], source_path: uploadIdentitySource ? `${uploadIdentitySource}.metadata_file_name_safe_basename` : 'metadata_file_name', confidence_role: 'medium', filename: true }),
+    file_size_bytes: mediaIdentityNumberSignal({ take, signal_name: 'file_size_bytes', keys: ['file_size_bytes', 'size_bytes'], source_path: uploadIdentitySource ? `${uploadIdentitySource}.file_size_bytes` : 'file_size_bytes', confidence_role: 'medium' }),
     video_duration_ms: durationSignal,
     opening_video_sample_hash: mediaIdentityStringSignal({ take, signal_name: 'opening_video_sample_hash', keys: ['opening_video_sample_hash_or_profile', 'opening_video_sample_hash', 'opening_video_profile_hash'], source_path: 'opening_video_sample_hash', confidence_role: 'strong' }),
     closing_video_sample_hash: mediaIdentityStringSignal({ take, signal_name: 'closing_video_sample_hash', keys: ['closing_video_sample_hash_or_profile', 'closing_video_sample_hash', 'closing_video_profile_hash'], source_path: 'closing_video_sample_hash', confidence_role: 'strong' }),
@@ -1975,6 +2017,11 @@ function buildMediaIdentityPayload(input: {
     signal_source_summary: {
       source_artefact_id: 'analysis_take',
       source_path: 'inputs/media_identity.json',
+      upload_identity_source: uploadIdentitySource ?? 'unavailable',
+      original_upload_file_hash_source_stage: take.original_upload_file_hash_source_stage ?? null,
+      mime_type_safe_summary: take.mime_type_safe_summary ?? null,
+      last_modified_ms: normaliseSignalNumber(take.last_modified_ms) ?? null,
+      upload_metadata_source: take.upload_metadata_source ?? null,
       duration_source: normaliseSignalNumber(durationMsRaw) !== null ? 'video_duration_ms' : (normaliseSignalNumber(durationSecondsRaw) !== null ? 'mux_duration_seconds' : 'unavailable'),
       sampling_helper_status: (
         media_identity_signals.opening_video_sample_hash.status === 'available'
@@ -2093,6 +2140,9 @@ function buildTier1DuplicateDetectionTrace(input: {
   if (referenceDiagnostics.same_mux_playback_ref) basis.push('same_mux_playback_ref_reference_match');
   const referenceMatchDetected = referenceDiagnostics.same_take_id || referenceDiagnostics.same_analysis_run_id || referenceDiagnostics.same_mux_playback_ref;
   if (referenceMatchDetected) score = Math.max(score, 100);
+  const sameUserScopeStatus = scopeStatus(takes, ['user_id', 'profile_id']);
+  const sameAuditionScopeStatus = scopeStatus(takes, ['audition_id', 'submission_id']);
+  const scopeConflict = sameUserScopeStatus === 'conflicting' || sameAuditionScopeStatus === 'conflicting';
 
   const sampleSignalsUnavailable = (
     signalSummaries.opening_video_sample_hash_or_profile.available_count < 2
@@ -2104,13 +2154,17 @@ function buildTier1DuplicateDetectionTrace(input: {
     STRONG_TIER1_SIGNALS.has('original_upload_file_hash') && signalSummaries.original_upload_file_hash.available_count >= 2
   ) || strongComparedCount > 0;
   const hasReliableDifferentEvidence = sufficientUploadOrContentEvidence && signalsMatched.every((signal) => !STRONG_TIER1_SIGNALS.has(signal));
-  const duplicateStatus: DuplicateDetectionStatus = operatorAssertion || referenceMatchDetected
+  const effectiveScore = scopeConflict ? 0 : score;
+  const duplicateStatus: DuplicateDetectionStatus = scopeConflict
+    ? 'insufficient_evidence'
+    : operatorAssertion || referenceMatchDetected
     ? 'detected'
-    : duplicateDetectionStatusFromScore(score, hasReliableDifferentEvidence);
+    : duplicateDetectionStatusFromScore(effectiveScore, hasReliableDifferentEvidence);
   const notDetectedEvidenceSufficient = duplicateStatus === 'not_detected' && sufficientUploadOrContentEvidence;
   const suppressionRequired = duplicateStatus !== 'not_detected';
   const blockerCodes = [
     ...(sampleSignalsUnavailable ? ['duplicate_detection_sampling_unavailable'] : []),
+    ...(scopeConflict ? ['duplicate_detection_scope_conflict'] : []),
     ...(duplicateStatus === 'insufficient_evidence' ? ['duplicate_detection_content_evidence_insufficient'] : []),
     ...(duplicateStatus === 'possible_duplicate' ? ['duplicate_detection_possible_duplicate_unresolved'] : []),
     ...((duplicateStatus === 'detected' || duplicateStatus === 'likely_duplicate') ? ['duplicate_detection_duplicate_or_likely_duplicate'] : []),
@@ -2128,7 +2182,7 @@ function buildTier1DuplicateDetectionTrace(input: {
     privacy_classification: 'internal_private',
     generated_at: new Date().toISOString(),
     duplicate_detection_status: duplicateStatus,
-    duplicate_detection_confidence: score,
+    duplicate_detection_confidence: effectiveScore,
     duplicate_detection_basis: basis.length > 0 ? basis : ['insufficient_upload_or_content_evidence'],
     duplicate_detection_evidence_refs: Object.fromEntries(Object.entries(signalSummaries).map(([signal, summary]) => [signal, summary.value_hashes])),
     media_identity_evidence_refs: Object.fromEntries(takes.map((take) => [
@@ -2147,8 +2201,8 @@ function buildTier1DuplicateDetectionTrace(input: {
     signals_conflicting: signalsConflicting,
     reference_diagnostics: referenceDiagnostics,
     operator_same_video_assertion: operatorAssertion,
-    same_user_scope_status: scopeStatus(takes, ['user_id', 'profile_id']),
-    same_audition_scope_status: scopeStatus(takes, ['audition_id', 'submission_id']),
+    same_user_scope_status: sameUserScopeStatus,
+    same_audition_scope_status: sameAuditionScopeStatus,
     sampling_window_policy: {
       opening_video_sample_window: 'skip_3_to_5_seconds_where_possible_then_sample_5_to_10_second_window',
       closing_video_sample_window: 'sample_5_to_10_second_window_before_final_fade_black_frame_end_card_or_freeze',
@@ -4772,6 +4826,17 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     take_created_at: input.take_created_at ?? null, take_updated_at: input.take_updated_at ?? null, take_index: input.take_index ?? null,
     take_index_source: input.take_index_source ?? (input.take_index == null ? 'unavailable' : 'loaded_take_index'),
     stable_take_identity: { take_id: input.take_id, analysis_run_id: analysisRunId }, mux_playback_id_present: Boolean(input.mux_playback_id), safe_mux_playback_ref: input.safe_mux_playback_ref ?? input.mux_playback_id ?? null,
+    safe_upload_identity: {
+      original_upload_file_hash: input.original_upload_file_hash ?? null,
+      original_upload_file_hash_source_stage: input.original_upload_file_hash_source_stage ?? null,
+      original_file_name_safe_basename: input.original_file_name ?? input.visible_or_original_file_name ?? input.file_name ?? input.filename ?? null,
+      metadata_file_name_safe_basename: input.metadata_file_name ?? null,
+      file_size_bytes: input.file_size_bytes ?? null,
+      mime_type_safe_summary: input.mime_type_safe_summary ?? null,
+      last_modified_ms: input.last_modified_ms ?? null,
+      upload_metadata_source: input.upload_metadata_source ?? null,
+      raw_values_redacted: true,
+    },
     media_readiness_state: input.media_readiness_state ?? null,
     unavailable_fields: dedupePreservingOrder([...unavailableCommonDedupe, ...(input.take_created_at ? [] : ['take_created_at']), ...(input.take_updated_at ? [] : ['take_updated_at'])]), redaction_notes,
   };
@@ -4791,12 +4856,16 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
       audition_id: input.audition_id ?? input.submission_id ?? null,
       submission_id: input.submission_id ?? null,
       original_upload_file_hash: input.original_upload_file_hash ?? null,
+      original_upload_file_hash_source_stage: input.original_upload_file_hash_source_stage ?? null,
       visible_or_original_file_name: input.visible_or_original_file_name ?? null,
       original_file_name: input.original_file_name ?? null,
       file_name: input.file_name ?? null,
       filename: input.filename ?? null,
       metadata_file_name: input.metadata_file_name ?? null,
       file_size_bytes: input.file_size_bytes ?? null,
+      mime_type_safe_summary: input.mime_type_safe_summary ?? null,
+      last_modified_ms: input.last_modified_ms ?? null,
+      upload_metadata_source: input.upload_metadata_source ?? null,
       video_duration_ms: input.video_duration_ms ?? input.duration_ms ?? null,
       video_duration_seconds: input.video_duration_seconds ?? input.duration_seconds ?? null,
       opening_video_sample_hash_or_profile: input.opening_video_sample_hash_or_profile ?? input.opening_video_sample_hash ?? null,
@@ -4804,6 +4873,7 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
       opening_audio_profile_hash: input.opening_audio_profile_hash ?? null,
       closing_audio_profile_hash: input.closing_audio_profile_hash ?? null,
       safe_media_fingerprint: input.safe_media_fingerprint ?? null,
+      upload_identity_metadata: input.upload_identity_metadata ?? null,
     },
   });
   assertSafeSegment(input.take_id, 'take_id');
