@@ -108,6 +108,14 @@ Active learning should mature from observed product gaps, not before the product
 
 Comparison remains high-risk because false winners are P0. It should stay after single-take report value, trace proof and safety gates. The only early comparison work should be invocation discipline and proof that ordinary single-take runs do not accidentally emit comparison outputs.
 
+### 3.6A Limit S9-16 duplicate detection to Tier 1
+
+S9-16 should correct the same-video comparison safety model before any broader comparison user value work. The immediate target is Tier 1 same-user, same-audition duplicate detection as defined in `README.md`.
+
+S9-16 must not treat runtime/reference ID inequality as proof that videos differ. If upload-level or content-level evidence is unavailable, duplicate detection should be `insufficient_evidence`, not cleanly `not_detected`.
+
+Tier 2 near-duplicate sampling and Tier 3 normalised media fingerprinting are deferred. They remain useful later, but they should not displace higher-value near-term work such as readiness reporting, brief itemisation, safe limitations, parity/no-export proof and Level 2 evidence correctness.
+
 ### 3.7 Keep public scoring late or optional
 
 Do not make public raw score exposure a near-term product goal. Users can receive high value from qualitative readiness, gap-to-level and prioritised fixes. Public scoring should remain blocked until the README criteria pass.
@@ -285,12 +293,21 @@ Goal: compare only when explicitly invoked and avoid false winners.
 
 Includes:
 
+- `S9-16A` duplicate detection contract and documentation;
+- `S9-16B` Tier 1 media identity capture;
+- `S9-16C` DuplicateDetectionTrace implementation;
+- `S9-16D` same-video, suppression and comparison parity integration;
+- `S9-16E` base-take Level 2 blocker cleanup;
+- `S9-16F` real-runtime rerun and Level 2 audit;
+- `S9-16G` Level 2 closure decision;
 - `R13.1` invocation record first;
 - `R13.2` evidence-delta comparison;
 - `R14.1` GF-01 same-video suppression;
 - `R14.2` RT-15 repeatability/variance.
 
 Comparison should not be an early user-value dependency. Single-tape clarity is more important and lower risk.
+
+S9-16 is not public comparison output, a public winner/recommendation release, public scoring, public technique authority, production-safe acceptance or Level 2 acceptance by default.
 
 ### Stage I — Operational readiness and release candidate
 
@@ -356,8 +373,6 @@ no public comparison and no definitive repertoire authority.
 
 Then add one discipline at a time based on fixture readiness and user demand.
 
----
-
 ## 9. What should be de-emphasised early
 
 The following work is valuable but should not block early locked-down user value:
@@ -368,6 +383,7 @@ The following work is valuable but should not block early locked-down user value
 | Public named technique authority | Use safe descriptors first. |
 | Definitive repertoire/show claims | Use cautious brief/material context first. |
 | Comparison winners | Keep late; false winners are P0. |
+| Tier 2/Tier 3 duplicate fingerprinting | Defer; S9-16 targets Tier 1 same-user, same-audition evidence first. |
 | Full active-learning workflow | Start after visible product behaviour creates useful candidates. |
 | Full customer-facing release proof | Keep gated; do not confuse locked-down preview with release. |
 
@@ -431,7 +447,246 @@ This PM resequencing preserves:
 
 ---
 
-## 13. Final PM position
+## 13. S9-16 — real-runtime Level 2 blocker closure and Tier 1 duplicate-video detection
+
+This section is sequencing only. It is aligned to the README S9-16 duplicate/same-video detection contract and must not override `README.md`.
+
+### 13.1 Product rationale
+
+S9-15/S9-16 runtime review showed that Level 2 remains `not_accepted` for valid reasons: parity/no-export proof gaps, partial runtime evidence, legacy score/technique traces, internal-only validator/gate/model traces and comparison duplicate-detection weakness.
+
+The same-video comparison test uploaded the same underlying video as two different takes. The system compared take IDs, analysis IDs and Mux playback references, reported `same_video_detected=false`, did not suppress the internal recommendation, and allowed comparison parity to pass. That approach is incorrect because every new upload can receive unique runtime/reference identifiers even when the media content is the same.
+
+S9-16 therefore focuses on:
+
+1. correcting the same-video duplicate-detection contract;
+2. implementing Tier 1 duplicate detection for same-user, same-audition comparison safety;
+3. fixing real-runtime blocker diagnostics revealed by the base-take bundle;
+4. keeping Level 2/public/production gates blocked unless every required gate truly satisfies.
+
+S9-16 must not become a public release, public comparison feature, public scoring feature, public technique-authority feature or full media-fingerprint programme.
+
+### 13.2 S9-16 delivery sequence
+
+#### S9-16A — duplicate detection contract and documentation
+
+Benefit: prevents the same-video work becoming another design-by-review loop.
+
+Output: README and roadmap define Tier 1 / Tier 2 / Tier 3 duplicate detection, confidence scoring and comparison parity behaviour.
+
+Acceptance:
+
+```text
+README states runtime identifiers are diagnostic only.
+README defines confidence-based Tier 1 same-user / same-audition duplicate detection.
+Roadmap defers Tier 2 and Tier 3.
+No public output changes.
+No Level 2 acceptance.
+```
+
+#### S9-16B — Tier 1 media identity capture
+
+Benefit: creates low-cost upload/content evidence for same-audition duplicate detection.
+
+Output: internal safe media identity fields captured where available.
+
+Tier 1 signals:
+
+```text
+original_upload_file_hash
+visible_or_original_file_name
+metadata_file_name
+file_size_bytes
+video_duration_ms
+opening_video_sample_hash_or_profile
+closing_video_sample_hash_or_profile
+opening_audio_profile_hash
+closing_audio_profile_hash
+operator_same_video_assertion
+```
+
+Acceptance:
+
+```text
+available Tier 1 signals are persisted internally;
+unavailable signals are recorded as unavailable;
+missing evidence is not treated as not_detected;
+secrets/signed URLs/raw private media paths are not emitted;
+public output unchanged.
+```
+
+#### S9-16C — DuplicateDetectionTrace implementation
+
+Benefit: comparison runtime gets a dedicated proof artefact for duplicate detection instead of relying on take/playback reference equality.
+
+Output: `comparison/duplicate_detection_trace.json`.
+
+Acceptance:
+
+```text
+duplicate_detection_status supports detected, likely_duplicate, possible_duplicate, insufficient_evidence, not_detected;
+duplicate_detection_confidence is deterministic;
+not_detected requires enough upload/content evidence;
+operator_same_video_assertion works for internal QA duplicate-test mode;
+trace is internal-only and safe.
+```
+
+#### S9-16D — same-video suppression and comparison parity integration
+
+Benefit: duplicate/likely duplicate comparisons no longer produce false internal winners or satisfied comparison parity.
+
+Output: duplicate detection feeds same-video repeatability, suppression, comparison report, comparison parity, manifest and metrics.
+
+Acceptance:
+
+```text
+same video uploaded as two different takes is detected or classified insufficient;
+different take_id / analysis_run_id / mux refs do not prove different media;
+detected or likely_duplicate requires suppression unless decisive evidence_delta_trace proves material difference;
+possible_duplicate keeps comparison parity insufficient unless evidence_delta_trace proves material difference;
+insufficient_evidence keeps comparison parity insufficient;
+comparison parity cannot pass on missing duplicate evidence;
+public output unchanged.
+```
+
+#### S9-16E — base-take Level 2 blocker cleanup
+
+Benefit: closes misleading blocker labels and restores proof artefacts that should exist in ordinary single-take runs.
+
+Output: manifest/metrics and proof bundle corrections.
+
+Acceptance:
+
+```text
+AnalysisEvidenceState emitted/partial is not labelled missing;
+EvidenceAnchors metrics reflect real_runtime_v3 partial anchors;
+ordinary single-take runs are not blocked solely by missing comparison artefacts;
+report parity emits or truthfully blocks;
+no-export proof lanes emit or truthfully block;
+Level 2 remains not_accepted unless all required gates pass.
+```
+
+#### S9-16F — real-runtime rerun and Level 2 audit
+
+Benefit: validates S9-16 against actual base-take and comparison-invoked runtime bundles.
+
+Output: fresh ordinary base-take bundle and duplicate-comparison bundle.
+
+Acceptance:
+
+```text
+manifest and qa_acceptance_metrics align;
+ordinary single-take has no inappropriate comparison blockers;
+duplicate comparison suppresses false winner or remains insufficient;
+parity/no-export blockers are truthful;
+production_safe_status remains blocked;
+public_scoring_status remains blocked;
+public_technique_authority_status remains blocked;
+public output unchanged.
+```
+
+#### S9-16G — Level 2 closure decision
+
+Benefit: avoids claiming acceptance from source code or partial bundles.
+
+Output: decision: Level 2 accepted for the audited run shape, or exact remaining blockers.
+
+Acceptance:
+
+```text
+all required artefacts emitted or genuinely not_applicable;
+no required artefact missing/deferred/emitted_blocked/failed_emission;
+all required subgates sufficient/passed;
+accepted_gate_evidence assigned only to validated runtime evidence;
+legacy_adapter/source_scaffold/first_pass_internal traces do not satisfy real_runtime_v3 gates;
+public/production gates remain correctly blocked unless separately accepted.
+```
+
+### 13.3 Duplicate detection maturity tiers
+
+#### Tier 1 — immediate S9-16 quick win
+
+Tier 1 is same-user and same-audition scoped. It is confidence-based and should catch the majority of accidental duplicate uploads without introducing heavyweight media fingerprinting.
+
+Tier 1 should use upload and lightweight content signals:
+
+```text
+original_upload_file_hash
+visible_or_original_file_name
+metadata_file_name
+file_size_bytes
+video_duration_ms
+opening video sample window
+closing video sample window
+opening audio profile window
+closing audio profile window
+```
+
+Not every signal has to match. Filename and duration may change while stronger content/upload signals still identify the same video.
+
+Tier 1 must use sampling windows, not single frames. This is especially important because many self-tapes start with a performer slate or introduction, and the opening second may look similar across different takes.
+
+#### Tier 2 — deferred near-duplicate sampling
+
+Tier 2 may add:
+
+```text
+perceptual frame hashes;
+middle-window sampling;
+more robust audio profile comparison;
+trim/re-encode tolerance;
+duration-normalised sample windows.
+```
+
+Tier 2 is deferred because the current product has higher-value low-hanging work: report usability, brief itemisation, safer limitations, parity/no-export proof closure and Level 2 evidence correctness.
+
+#### Tier 3 — future normalised media fingerprinting
+
+Tier 3 may add normalised video/audio fingerprinting combined with upload hash.
+
+It should be scoped to the same user profile, with optional same-user cross-audition lookup if later justified. It must not compare across the full database unless a separate privacy, performance and product-value case is approved.
+
+Tier 3 is intentionally much later in the development cycle.
+
+### 13.4 Non-goals for S9-16
+
+S9-16 must not implement:
+
+```text
+public comparison output;
+public winner or recommendation;
+public scoring;
+public technique authority;
+production-safe acceptance;
+Level 3 repeatability;
+Level 4 locked-down website QA;
+full normalised media fingerprinting;
+global database fingerprint comparison;
+DB-wide duplicate search across users.
+```
+
+S9-16 may add internal QA metadata or artefacts needed for Tier 1 duplicate detection, provided public output remains unchanged and secrets/raw private media URLs are not emitted.
+
+### 13.5 Roadmap positioning
+
+S9-16 should proceed before any renewed Level 2 acceptance attempt. It closes the highest-risk comparison-safety gap and the most misleading real-runtime blocker diagnostics.
+
+Tier 2 and Tier 3 duplicate detection should be placed later than near-term user-value work. The product still has lower-hanging improvements with clearer user benefit, including:
+
+```text
+readiness-first report clarity;
+brief requirement itemisation;
+achieved / partly achieved / not assessable status;
+priority-fix ordering;
+next-take actions;
+assessability limitations;
+parity/no-export proof closure;
+real runtime evidence correctness.
+```
+
+---
+
+## 14. Final PM position
 
 The biggest opportunity is not to accelerate every feature. It is to accelerate the right visible value:
 

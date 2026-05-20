@@ -2132,6 +2132,370 @@ Required RT-15 evidence:
 
 GF-01 or RT-15 failure is P0 for public comparison.
 
+### 17.3 Same-video and duplicate-upload detection
+
+Same-video and duplicate-upload detection is a comparison-safety requirement. It exists to prevent TapeCoach from selecting a winner, recommendation or comparison preference when the compared takes are the same recording, near-duplicate recordings or insufficiently distinguishable.
+
+Runtime identifiers are diagnostic only. They must not be treated as proof that two uploaded videos contain different media.
+
+Diagnostic runtime identifiers include:
+
+```text
+take_id
+analysis_run_id
+mux_playback_id
+mux_asset_id
+mux_upload_id
+storage object path
+comparison_run_id
+```
+
+These identifiers may prove that two references are the same stored object when they match. They do not prove that videos differ when they do not match, because every new upload can receive a new take ID, analysis ID, Mux playback reference and storage reference even when the underlying media is the same.
+
+If upload-level or content-level duplicate evidence is unavailable, the system must classify duplicate detection as `insufficient_evidence`, not cleanly `not_detected`.
+
+#### Duplicate detection statuses
+
+Duplicate detection must emit a status and confidence value:
+
+```text
+duplicate_detection_status:
+  detected
+  likely_duplicate
+  possible_duplicate
+  insufficient_evidence
+  not_detected
+
+duplicate_detection_confidence:
+  0-100 internal confidence score
+```
+
+This confidence score is an internal duplicate-detection score. It is not a performer score, readiness score, public score, quality score or casting score.
+
+Recommended status bands:
+
+```text
+90-100 = detected
+70-89  = likely_duplicate
+45-69  = possible_duplicate
+0-44   = not_detected only when enough reliable upload/content evidence exists and indicates different media
+unknown / missing content evidence = insufficient_evidence
+```
+
+`not_detected` is valid only when enough reliable upload-level or content-level signals were inspected and indicate different media. Lack of duplicate evidence is not evidence of different media.
+
+#### Tier 1 — same-user, same-audition duplicate detection
+
+Tier 1 is the S9-16 implementation target.
+
+Tier 1 duplicate detection is scoped to:
+
+```text
+same user profile
+same audition / submission group
+same comparison context
+```
+
+Do not compare duplicate fingerprints across the entire database. Global matching adds privacy and performance cost with little product value at this maturity stage.
+
+Tier 1 is confidence-based. It must not require every signal to match.
+
+A video may still be classified as `detected` or `likely_duplicate` when weaker signals differ, such as filename or duration, if stronger upload/content signals match.
+
+Example:
+
+```text
+file name differs
+video duration differs
+but original upload hash, file size, opening/closing video samples, and opening/closing audio profiles match
+=> duplicate_detection_status = detected or likely_duplicate
+```
+
+Tier 1 may use the following signals:
+
+```text
+original_upload_file_hash
+visible_or_original_file_name
+metadata_file_name
+file_size_bytes
+video_duration_ms
+opening_video_sample_hash_or_profile
+closing_video_sample_hash_or_profile
+opening_audio_profile_hash
+closing_audio_profile_hash
+operator_same_video_assertion
+```
+
+`operator_same_video_assertion` is internal QA-only. It may be used for controlled duplicate-test mode and must never become public output or user-facing evidence by itself.
+
+Implementation may calibrate exact weights, but it must preserve these principles:
+
+| Signal | Strength | Requirement |
+|---|---:|---|
+| Original upload file hash exact match | Decisive | May set confidence to 100 and status to `detected`. |
+| Opening video sample match | Strong | Must be a sampled window, not one frame. |
+| Closing video sample match | Strong | Must avoid final black/fade/end-card frames where possible. |
+| Opening audio profile match | Strong | Must use a short audio window, not one instant. |
+| Closing audio profile match | Strong | Must use a short audio window, not one instant. |
+| File size exact or near match | Medium | Useful with stronger signals; not decisive alone. |
+| Metadata file name match | Medium | Stronger than user-facing filename but not decisive alone. |
+| Visible/original file name match | Weak-to-medium | Useful but user-controlled and not decisive. |
+| Video duration exact or near match | Weak-to-medium | Useful but may be a red herring if the same video is trimmed. |
+
+A suggested deterministic score model is:
+
+```text
+original_upload_file_hash exact match => 100 / detected
+
+otherwise, score available non-hash signals:
+opening_video_sample_match       20
+closing_video_sample_match       20
+opening_audio_profile_match      15
+closing_audio_profile_match      15
+file_size_exact_or_near_match    10
+metadata_file_name_match          8
+visible_file_name_match           5
+video_duration_exact_or_near      7
+```
+
+The score model must be deterministic so repeated analysis of the same evidence produces the same duplicate-detection status and confidence band.
+
+#### Sampling-window requirement
+
+Opening and closing samples must use a sufficient duration window, not a single frame or one instant.
+
+Many self-tapes begin with a slate, ident, introduction, framing adjustment or performer stillness. The first frame or first second may look similar across different takes and create false positives.
+
+Recommended Tier 1 sampling behaviour:
+
+```text
+opening_video_sample_window:
+  skip the first 3-5 seconds where possible;
+  sample a 5-10 second window after the likely slate/intro;
+  use multiple frames or a compact profile over the window.
+
+closing_video_sample_window:
+  sample a 5-10 second window before the final fade, black frame, end card, or freeze;
+  avoid relying only on the final frame.
+
+opening_audio_profile_window:
+  use the same opening window as video where possible;
+  profile the short duration, not a single sample.
+
+closing_audio_profile_window:
+  use the same closing window as video where possible;
+  profile the short duration, not a single sample.
+```
+
+If the video is too short for the recommended windows, the system may use shorter windows but must lower confidence or record a sampling limitation.
+
+#### Tier 1 artefact contract
+
+Tier 1 must emit an internal comparison artefact, preferably:
+
+```text
+comparison/duplicate_detection_trace.json
+```
+
+Required fields:
+
+```text
+artefact_type
+schema_version
+run_id
+analysis_run_id
+comparison_run_id
+compared_take_ids
+internal_only
+privacy_classification
+same_user_scope
+same_audition_scope
+duplicate_detection_status
+duplicate_detection_confidence
+duplicate_detection_basis
+duplicate_detection_evidence_refs
+signals_available
+signals_missing
+signals_matched
+signals_conflicting
+operator_same_video_assertion
+sampling_window_summary
+sampling_limitations
+public_output_unchanged
+cannot_satisfy_level2_comparison_gate
+blocker_codes
+```
+
+The artefact must not emit signed URLs, secret tokens, raw private media URLs, full media paths or user-identifying raw file paths.
+
+#### Tier 2 — later maturity near-duplicate sampling
+
+Tier 2 is deferred until later development maturity because the current product still has higher-value user-facing and evidence-gate work.
+
+Tier 2 may add more robust near-duplicate detection within the same user profile, such as:
+
+```text
+perceptual opening/closing frame hashes
+middle-window frame/audio sampling
+duration-normalised sample windows
+tolerance thresholds for trimmed or re-encoded files
+stronger audio-profile comparison
+near-duplicate confidence calibration
+```
+
+Tier 2 should remain scoped to same user and, by default, same audition/submission group. Cross-audition same-user matching may be added only if it has clear product value and safe privacy/performance handling.
+
+#### Tier 3 — future normalised media fingerprinting
+
+Tier 3 is the gold-standard future state and is explicitly out of immediate S9-16 scope.
+
+Tier 3 may add normalised media fingerprinting:
+
+```text
+normalised video fingerprint
+normalised audio fingerprint
+original upload hash combined with perceptual fingerprints
+same-user profile fingerprint lookup
+optional same-user cross-audition lookup
+```
+
+Fingerprint lookup should be scoped to the same user profile. It must not compare audition tapes across the full database unless a separate privacy, performance, retention and product-value case is approved.
+
+Tier 3 is deferred because its near-term user value is lower than current low-hanging improvements such as clearer readiness reporting, brief itemisation, safer limitations, report parity, no-export proof and Level 2 evidence correctness.
+
+#### Comparison-gate behaviour for duplicate detection
+
+Comparison parity must consume duplicate-detection output.
+
+Rules:
+
+```text
+duplicate_detection_status = detected
+  => suppression_required = true
+  => internal winner/recommendation suppressed unless decisive evidence_delta_trace proves material difference
+
+duplicate_detection_status = likely_duplicate
+  => suppression_required = true
+  => internal winner/recommendation suppressed unless decisive evidence_delta_trace proves material difference
+
+duplicate_detection_status = possible_duplicate
+  => comparison parity insufficient unless evidence_delta_trace proves material difference
+
+duplicate_detection_status = insufficient_evidence
+  => comparison parity insufficient, not passed
+
+duplicate_detection_status = not_detected
+  => comparison parity may proceed only if enough reliable upload/content evidence was inspected and indicates different media
+```
+
+If duplicate or likely duplicate is detected and no decisive material difference is proven, comparison output must be suppressed or classified as non-satisfying internal-only evidence.
+
+Comparison parity must not pass when duplicate detection is missing, insufficient or based only on runtime/reference ID inequality.
+
+For comparison-invoked runs, Level 2 comparison proof requires the comparison family to reconcile together:
+
+```text
+comparison/comparison_invocation_record.json
+comparison/comparison_raw.json
+comparison/comparison_report_internal.json
+comparison/same_video_repeatability_trace.json
+comparison/duplicate_detection_trace.json
+comparison/no_material_difference_trace.json, or equivalent explicit status within duplicate trace
+comparison/evidence_delta_trace.json, where a winner/preference is selected
+comparison/comparison_suppression_trace.json
+comparison/route_variance_trace.json
+parity/comparison_parity.json
+manifest.json
+qa/acceptance_metrics.json
+```
+
+Missing duplicate, no-material-difference, suppression or evidence-delta proof must keep comparison parity non-satisfying.
+
+### 17.4 S9-16 development sequence
+
+S9-16 must proceed in small slices so implementation does not drift back into review-led design.
+
+#### S9-16A — duplicate detection contract and documentation
+
+Update README and roadmap with this Tier 1 / Tier 2 / Tier 3 duplicate-detection contract.
+
+Acceptance:
+
+```text
+README states runtime identifiers cannot prove media difference.
+README defines confidence-based Tier 1 duplicate detection.
+Roadmap defers Tier 2 and Tier 3.
+No runtime source changes required in this slice.
+```
+
+#### S9-16B — Tier 1 media identity capture
+
+Persist safe Tier 1 upload/content signals where available.
+
+Acceptance:
+
+```text
+original_upload_file_hash captured when available;
+file names / metadata filename / file size / duration captured when available;
+opening/closing video/audio sample windows recorded or truthfully unavailable;
+missing signals recorded as unavailable, not treated as not_detected;
+no public output changes.
+```
+
+#### S9-16C — DuplicateDetectionTrace implementation
+
+Emit `comparison/duplicate_detection_trace.json` and compute confidence.
+
+Acceptance:
+
+```text
+detected / likely_duplicate / possible_duplicate / insufficient_evidence / not_detected implemented;
+confidence score deterministic;
+operator_same_video_assertion supported for internal QA duplicate-test mode;
+trace is internal-only and safe.
+```
+
+#### S9-16D — same-video, suppression, and comparison parity integration
+
+Feed duplicate detection into same-video repeatability, suppression, internal comparison report, comparison parity, manifest and metrics.
+
+Acceptance:
+
+```text
+same uploaded video as two different takes is detected or classified insufficient;
+reference-ID inequality does not prove different videos;
+duplicate/likely duplicate requires suppression unless decisive evidence delta exists;
+comparison parity cannot pass on missing duplicate evidence;
+public output unchanged.
+```
+
+#### S9-16E — base-take Level 2 blocker cleanup
+
+Correct the non-comparison blockers revealed by the real runtime bundle.
+
+Acceptance:
+
+```text
+AnalysisEvidenceState partial is not labelled missing;
+EvidenceAnchors metrics reflect real_runtime_v3 partial anchors;
+ordinary single-take runs are not blocked solely by missing comparison artefacts;
+report parity emits or truthfully blocks;
+no-export proof lanes emit or truthfully block.
+```
+
+#### S9-16F — real-runtime rerun and Level 2 audit
+
+Run both an ordinary base take and a same-video duplicate comparison.
+
+Acceptance:
+
+```text
+manifest and qa_acceptance_metrics align;
+duplicate comparison suppresses false winner or remains insufficient;
+Level 2 remains not_accepted unless every required gate truly satisfies;
+production/public gates remain blocked unless separately accepted.
+```
+
 ---
 
 ## 18. QA artefacts and runtime evidence
@@ -2170,15 +2534,16 @@ Minimum target analysis-run artefacts, using canonical relative paths under the 
 Minimum comparison-run artefacts, when comparison is explicitly invoked:
 
 - `comparison/comparison_invocation_record.json`
-- `comparison/comparison.raw.json`
-- `comparison/comparison.render_payload.json`
+- `comparison/comparison_raw.json`
+- `comparison/comparison_report_internal.json`
 - rendered comparison artefact
-- `comparison_traces/duplicate_detection_trace.json`
-- `comparison_traces/no_material_difference_trace.json`
-- `comparison_traces/evidence_delta_trace.json`
-- `comparison_traces/comparison_suppression_trace.json`
-- `comparison_traces/same_video_repeatability_trace.json`
-- `comparison_traces/route_variance_trace.json`
+- `comparison/same_video_repeatability_trace.json`
+- `comparison/duplicate_detection_trace.json`
+- `comparison/no_material_difference_trace.json`, or equivalent explicit status within duplicate trace
+- `comparison/evidence_delta_trace.json` where a winner/preference is selected
+- `comparison/comparison_suppression_trace.json`
+- `comparison/route_variance_trace.json`
+- `parity/comparison_parity.json`
 
 Export handling:
 
@@ -2280,15 +2645,16 @@ Comparison artefacts, when invoked, use these canonical relative paths under the
 | Artefact | Canonical relative path |
 |---|---|
 | Invocation record | `comparison/comparison_invocation_record.json` |
-| Comparison raw | `comparison/comparison.raw.json` |
-| Comparison render payload | `comparison/comparison.render_payload.json` |
+| Comparison raw | `comparison/comparison_raw.json` |
+| Internal comparison report | `comparison/comparison_report_internal.json` |
 | Rendered comparison | `comparison/comparison.rendered.*` |
-| Duplicate detection | `comparison_traces/duplicate_detection_trace.json` |
-| No material difference | `comparison_traces/no_material_difference_trace.json` |
-| Evidence delta | `comparison_traces/evidence_delta_trace.json` |
-| Suppression trace | `comparison_traces/comparison_suppression_trace.json` |
-| Same-video repeatability | `comparison_traces/same_video_repeatability_trace.json` |
-| Route variance | `comparison_traces/route_variance_trace.json` |
+| Same-video repeatability | `comparison/same_video_repeatability_trace.json` |
+| Duplicate detection | `comparison/duplicate_detection_trace.json` |
+| No material difference | `comparison/no_material_difference_trace.json` or equivalent explicit status within duplicate trace |
+| Evidence delta | `comparison/evidence_delta_trace.json` where a winner/preference is selected |
+| Suppression trace | `comparison/comparison_suppression_trace.json` |
+| Route variance | `comparison/route_variance_trace.json` |
+| Comparison parity | `parity/comparison_parity.json` |
 
 ### 18.3 Truth, evidence and trace schemas
 
