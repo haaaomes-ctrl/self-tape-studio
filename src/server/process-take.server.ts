@@ -1441,6 +1441,7 @@ export async function runProcessTake(
           material_presence: 'unknown',
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+          video_duration_seconds: qaStep1Context.takeDurationSeconds,
           submission_created_at: null,
           submission_updated_at: null,
           take_created_at: qaStep1Context.takeCreatedAt,
@@ -3491,6 +3492,7 @@ export async function runProcessTake(
         material_presence: 'unknown',
         mux_playback_id: take.mux_playback_id ?? null,
         mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || take.mux_upload_id),
+        video_duration_seconds: Number.isFinite(Number(take.mux_duration_seconds)) && Number(take.mux_duration_seconds) > 0 ? Number(take.mux_duration_seconds) : null,
         submission_created_at: null,
         submission_updated_at: null,
         take_created_at: takeCreatedAt,
@@ -3794,6 +3796,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
           ...(modelRunTrace.written ? { model_run_trace: 'internal_model_run_trace' } : {}),
+          ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: inputArtefacts.media_identity_source_classification } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
@@ -3804,6 +3807,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
           ...(scoreTrace.written ? { score_trace: false } : {}),
           ...(modelRunTrace.written ? { model_run_trace: false } : {}),
+          ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: false } : {}),
         },
         legacy_adapter_artefact_ids: [
           'raw_report',
@@ -3812,7 +3816,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
           ...(scoreTrace.written ? ['score_trace'] : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
         technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
@@ -3823,6 +3827,7 @@ export async function runProcessTake(
           qa_persistence_status: analysisEvidenceState.written ? 'written' : 'failed_emission',
           qa_persistence_warning: analysisEvidenceState.warning ?? null,
         } : undefined,
+        media_identity_summary: inputArtefacts.media_identity_summary,
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',

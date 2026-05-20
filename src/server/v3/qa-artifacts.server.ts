@@ -109,6 +109,14 @@ export interface QAArtifactEmitterOptions {
     analysis_evidence_state_gate_status?: 'missing' | 'insufficient' | 'satisfied';
     analysis_evidence_state_gate_reason?: string;
   };
+  media_identity_summary?: {
+    media_identity_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | string;
+    available_signal_count?: number;
+    unavailable_signal_count?: number;
+    media_identity_gate_status?: 'insufficient' | 'missing' | 'satisfied' | string;
+    media_identity_blocker_codes?: string[];
+    cannot_satisfy_duplicate_detection_gate?: boolean;
+  };
   evidence_anchor_trace_summary?: {
     anchor_count?: number;
     real_runtime_anchor_count?: number;
@@ -181,6 +189,7 @@ const BASE_REAL_RUNTIME_V3_ARTEFACT_IDS = new Set([
 const NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS = new Set([
   'qa_acceptance_metrics',
   'claim_candidate_trace',
+  'media_identity',
 ]);
 const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
   'legacy_adapter',
@@ -488,6 +497,11 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const gateTraceSummary = manifest.gate_trace_summary ?? {};
   const validatorTraceGateStatus = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const gateTraceGateStatus = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
+  const mediaIdentityStatus = manifest.artefact_status_by_id?.media_identity ?? 'missing';
+  const mediaIdentitySummary = manifest.media_identity_summary ?? {};
+  const mediaIdentityBlockerCodes = Array.isArray(mediaIdentitySummary.media_identity_blocker_codes)
+    ? mediaIdentitySummary.media_identity_blocker_codes
+    : [];
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
   const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace'];
@@ -561,6 +575,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     comparison_suppression_trace_status: manifest.artefact_status_by_id?.comparison_suppression_trace ?? 'missing',
     route_variance_trace_status: manifest.artefact_status_by_id?.route_variance_trace ?? 'missing',
     comparison_runtime_artifact_count: comparisonEmittedCount,
+    media_identity_status: mediaIdentityStatus,
+    media_identity_available_signal_count: Number(mediaIdentitySummary.available_signal_count ?? 0),
+    media_identity_unavailable_signal_count: Number(mediaIdentitySummary.unavailable_signal_count ?? 0),
+    media_identity_gate_status: String(mediaIdentitySummary.media_identity_gate_status ?? (mediaIdentityStatus === 'missing' ? 'missing' : 'insufficient')),
+    media_identity_blocker_codes: mediaIdentityBlockerCodes,
+    media_identity_cannot_satisfy_duplicate_detection_gate: mediaIdentitySummary.cannot_satisfy_duplicate_detection_gate ?? true,
     truth_state_status: manifest.artefact_status_by_id?.truth_state_map ?? 'missing',
     resolver_status: manifest.artefact_status_by_id?.resolver_output ?? 'missing',
     analysis_evidence_state_status: analysisEvidenceStateStatus,
@@ -756,6 +776,17 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const runtime_evidence_accepted_by_id = new Set<string>(options.runtime_evidence_accepted_by_id ?? []);
   const runtime_evidence_blocked_by_id = new Set<string>(options.runtime_evidence_blocked_by_id ?? emitted_blocked_artefact_ids);
   const real_v3_spine_artefact_ids = new Set<string>(options.real_v3_spine_artefact_ids ?? []);
+  if (artefact_status_by_id.media_identity === 'emitted' || artefact_status_by_id.media_identity === 'emitted_blocked') {
+    if (!artefact_source_classification_by_id.media_identity) {
+      artefact_source_classification_by_id.media_identity = options.media_identity_summary?.cannot_satisfy_duplicate_detection_gate === false
+        ? 'real_runtime_v3_media_identity'
+        : 'partial_media_identity';
+    }
+    artefact_level2_spine_satisfaction_by_id.media_identity = false;
+    runtime_evidence_accepted_by_id.delete('media_identity');
+    runtime_evidence_blocked_by_id.add('media_identity');
+    real_v3_spine_artefact_ids.delete('media_identity');
+  }
   for (const artefactId of BASE_REAL_RUNTIME_V3_ARTEFACT_IDS) {
     if (artefact_status_by_id[artefactId] !== 'emitted' || !real_v3_spine_artefact_ids.has(artefactId)) continue;
     if (!artefact_source_classification_by_id[artefactId]) artefact_source_classification_by_id[artefactId] = 'real_runtime_v3';
@@ -821,6 +852,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     technique_observation_trace_summary: options.technique_observation_trace_summary ?? undefined,
     score_trace_summary: options.score_trace_summary ?? undefined,
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
+    media_identity_summary: options.media_identity_summary ?? undefined,
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,

@@ -193,7 +193,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -1091,15 +1091,18 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['parity_report'] : [], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
 }
 
-export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; duplicate_detection_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
+export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; duplicate_detection_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; media_identity_payloads?: MediaIdentityPayload[]; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
 export interface InternalComparisonTakeInput {
   take_id: string;
   analysis_run_id: string;
   analysis_route?: string | null;
   model_provider_family?: string | null;
   mux_playback_ref?: string | null;
+  mux_asset_or_upload_id_present?: boolean | null;
+  safe_mux_playback_ref?: string | null;
   safe_media_fingerprint?: string | null;
   user_id?: string | null;
+  profile_id?: string | null;
   audition_id?: string | null;
   submission_id?: string | null;
   original_upload_file_hash?: string | null;
@@ -1118,6 +1121,7 @@ export interface InternalComparisonTakeInput {
   opening_audio_profile_hash?: string | null;
   closing_audio_profile_hash?: string | null;
   operator_same_video_assertion?: boolean | null;
+  media_identity?: MediaIdentityPayload | null;
   artefact_summaries?: Record<string, unknown>;
 }
 export interface InternalComparisonRuntimeSourceInput {
@@ -1172,6 +1176,7 @@ export interface CanonicalComparisonReconciliationIdentity {
     comparison_raw: 'comparison/comparison.raw.json';
     comparison_report_internal: 'comparison/comparison.report.internal.json';
     same_video_repeatability_trace: 'comparison_traces/same_video_repeatability_trace.json';
+    duplicate_detection_trace: 'comparison/duplicate_detection_trace.json';
     comparison_suppression_trace: 'comparison_traces/comparison_suppression_trace.json';
     route_variance_trace: 'comparison_traces/route_variance_trace.json';
   };
@@ -1209,6 +1214,7 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
       comparison_raw: 'comparison/comparison.raw.json',
       comparison_report_internal: 'comparison/comparison.report.internal.json',
       same_video_repeatability_trace: 'comparison_traces/same_video_repeatability_trace.json',
+      duplicate_detection_trace: 'comparison/duplicate_detection_trace.json',
       comparison_suppression_trace: 'comparison_traces/comparison_suppression_trace.json',
       route_variance_trace: 'comparison_traces/route_variance_trace.json',
     },
@@ -1244,6 +1250,7 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
       comparison_raw: 'comparison/comparison.raw.json',
       comparison_report_internal: 'comparison/comparison.report.internal.json',
       same_video_repeatability_trace: 'comparison_traces/same_video_repeatability_trace.json',
+      duplicate_detection_trace: 'comparison/duplicate_detection_trace.json',
       comparison_suppression_trace: 'comparison_traces/comparison_suppression_trace.json',
       route_variance_trace: 'comparison_traces/route_variance_trace.json',
     },
@@ -1255,7 +1262,7 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
 }
 
 export interface AnalysisInputArtefactEmitterInput {
-  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
+  run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; user_id?: string | null; profile_id?: string | null; audition_id?: string | null; original_upload_file_hash?: string | null; visible_or_original_file_name?: string | null; original_file_name?: string | null; file_name?: string | null; filename?: string | null; metadata_file_name?: string | null; file_size_bytes?: number | string | null; video_duration_ms?: number | string | null; duration_ms?: number | string | null; video_duration_seconds?: number | string | null; duration_seconds?: number | string | null; opening_video_sample_hash_or_profile?: string | null; opening_video_sample_hash?: string | null; closing_video_sample_hash_or_profile?: string | null; closing_video_sample_hash?: string | null; opening_audio_profile_hash?: string | null; closing_audio_profile_hash?: string | null; safe_media_fingerprint?: string | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
 export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
 export interface AnalysisEvidenceStateEmitterInput extends AnalysisInputArtefactEmitterInput {
@@ -1537,6 +1544,57 @@ type Tier1SignalName =
   | 'metadata_file_name'
   | 'visible_or_original_file_name'
   | 'video_duration_ms';
+type MediaIdentityStatus = 'complete' | 'partial' | 'unavailable' | 'failed';
+type MediaIdentitySignalStatus = 'available' | 'unavailable' | 'redacted' | 'unsupported' | 'blocked';
+type MediaIdentitySignalName =
+  | 'original_upload_file_hash'
+  | 'original_file_name'
+  | 'metadata_file_name'
+  | 'file_size_bytes'
+  | 'video_duration_ms'
+  | 'opening_video_sample_hash'
+  | 'closing_video_sample_hash'
+  | 'opening_audio_profile_hash'
+  | 'closing_audio_profile_hash'
+  | 'safe_media_fingerprint';
+type MediaIdentitySignalEntry = {
+  signal_name: MediaIdentitySignalName;
+  status: MediaIdentitySignalStatus;
+  value_hash?: string;
+  safe_value?: string | number | boolean | null;
+  raw_value_redacted: boolean;
+  source_artefact_id: string;
+  source_path: string;
+  confidence_role: 'decisive' | 'strong' | 'medium' | 'weak' | 'diagnostic_only';
+  notes: string[];
+};
+type MediaIdentityPayload = {
+  schema_version: 'tapecoach_v3_media_identity_v1';
+  artefact_type: 'media_identity';
+  run_id: string;
+  take_id: string;
+  analysis_run_id: string;
+  generated_at: string;
+  internal_only: true;
+  privacy_classification: 'internal_private';
+  source_stage: string;
+  source_module: string;
+  media_identity_status: MediaIdentityStatus;
+  media_identity_scope: 'same_user_same_audition';
+  user_scope_status: 'same_user_only' | 'unavailable' | 'blocked';
+  audition_scope_status: 'same_audition_or_submission' | 'unavailable' | 'blocked';
+  available_signal_count: number;
+  unavailable_signal_count: number;
+  media_identity_signals: Record<MediaIdentitySignalName, MediaIdentitySignalEntry>;
+  reference_diagnostics: Record<string, unknown>;
+  signal_source_summary: Record<string, unknown>;
+  blocker_codes: string[];
+  cannot_satisfy_duplicate_detection_gate: boolean;
+  public_output_unchanged: true;
+  production_safe_status: 'blocked';
+  public_scoring_status: 'blocked';
+  public_technique_authority_status: 'blocked';
+};
 
 const TIER1_WEIGHT_BY_SIGNAL: Record<Tier1SignalName, number> = {
   original_upload_file_hash: 100,
@@ -1575,7 +1633,34 @@ function normaliseSignalNumber(value: unknown): number | null {
   return null;
 }
 
-function takeSignalValue(take: InternalComparisonTakeInput, keys: string[]): unknown {
+const MEDIA_IDENTITY_SIGNAL_BY_KEY: Record<string, MediaIdentitySignalName> = {
+  original_upload_file_hash: 'original_upload_file_hash',
+  upload_hash: 'original_upload_file_hash',
+  sha256: 'original_upload_file_hash',
+  checksum: 'original_upload_file_hash',
+  opening_video_sample_hash_or_profile: 'opening_video_sample_hash',
+  opening_video_sample_hash: 'opening_video_sample_hash',
+  opening_video_profile_hash: 'opening_video_sample_hash',
+  closing_video_sample_hash_or_profile: 'closing_video_sample_hash',
+  closing_video_sample_hash: 'closing_video_sample_hash',
+  closing_video_profile_hash: 'closing_video_sample_hash',
+  opening_audio_profile_hash: 'opening_audio_profile_hash',
+  closing_audio_profile_hash: 'closing_audio_profile_hash',
+  safe_media_fingerprint: 'safe_media_fingerprint',
+  file_size_bytes: 'file_size_bytes',
+  size_bytes: 'file_size_bytes',
+  metadata_file_name: 'metadata_file_name',
+  visible_or_original_file_name: 'original_file_name',
+  original_file_name: 'original_file_name',
+  file_name: 'original_file_name',
+  filename: 'original_file_name',
+  video_duration_ms: 'video_duration_ms',
+  duration_ms: 'video_duration_ms',
+  video_duration_seconds: 'video_duration_ms',
+  duration_seconds: 'video_duration_ms',
+};
+
+function rawTakeSignalValue(take: InternalComparisonTakeInput, keys: string[]): unknown {
   for (const key of keys) {
     const direct = (take as Record<string, unknown>)[key];
     if (direct !== undefined && direct !== null && direct !== '') return direct;
@@ -1588,6 +1673,26 @@ function takeSignalValue(take: InternalComparisonTakeInput, keys: string[]): unk
     }
   }
   return null;
+}
+
+function mediaIdentitySignalComparableValue(take: InternalComparisonTakeInput, keys: string[]): unknown {
+  const identity = take.media_identity;
+  if (!identity || !isRecord(identity.media_identity_signals)) return null;
+  for (const key of keys) {
+    const signalName = MEDIA_IDENTITY_SIGNAL_BY_KEY[key];
+    if (!signalName) continue;
+    const signal = identity.media_identity_signals[signalName];
+    if (!signal || signal.status !== 'available') continue;
+    if (signal.safe_value !== undefined && signal.safe_value !== null && signal.safe_value !== '') return signal.safe_value;
+    if (signal.value_hash) return signal.value_hash;
+  }
+  return null;
+}
+
+function takeSignalValue(take: InternalComparisonTakeInput, keys: string[]): unknown {
+  const mediaIdentityValue = mediaIdentitySignalComparableValue(take, keys);
+  if (mediaIdentityValue !== null && mediaIdentityValue !== undefined && mediaIdentityValue !== '') return mediaIdentityValue;
+  return rawTakeSignalValue(take, keys);
 }
 
 function comparableStringValues(takes: InternalComparisonTakeInput[], keys: string[]): string[] {
@@ -1650,6 +1755,243 @@ function duplicateDetectionStatusFromScore(score: number, hasReliableDifferentEv
   return hasReliableDifferentEvidence ? 'not_detected' : 'insufficient_evidence';
 }
 
+function looksLikeUnsafePrivateValue(value: string): boolean {
+  const lower = value.toLowerCase();
+  return lower.includes('://')
+    || lower.includes('signed')
+    || lower.includes('token')
+    || lower.includes('secret')
+    || lower.includes('authorization')
+    || lower.includes('bearer')
+    || lower.includes('x-amz')
+    || lower.includes('sig=')
+    || lower.includes('access_key')
+    || lower.includes('apikey')
+    || lower.includes('api_key');
+}
+
+function safeBasename(value: unknown): { value: string | null; redacted: boolean; note?: string } {
+  if (typeof value !== 'string') return { value: null, redacted: false };
+  const trimmed = value.trim();
+  if (!trimmed) return { value: null, redacted: false };
+  const queryIndex = trimmed.search(/[?#]/);
+  const withoutQuery = queryIndex >= 0 ? trimmed.slice(0, queryIndex) : trimmed;
+  const basename = withoutQuery.replace(/\\/g, '/').split('/').filter(Boolean).pop()?.trim() ?? '';
+  if (!basename) return { value: null, redacted: true, note: 'filename_path_redacted' };
+  if (looksLikeUnsafePrivateValue(trimmed) || looksLikeUnsafePrivateValue(basename)) {
+    return { value: null, redacted: true, note: 'unsafe_filename_value_redacted' };
+  }
+  return { value: basename.slice(0, 160), redacted: trimmed !== basename };
+}
+
+function normaliseSafeDiagnosticRef(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || looksLikeUnsafePrivateValue(trimmed)) return null;
+  if (!/^[A-Za-z0-9._:-]{1,160}$/.test(trimmed)) return hashDiagnosticValue(trimmed);
+  return trimmed;
+}
+
+function mediaIdentityRawValue(input: { take: InternalComparisonTakeInput; keys: string[] }): unknown {
+  return rawTakeSignalValue(input.take, input.keys);
+}
+
+function mediaIdentityStringSignal(input: {
+  take: InternalComparisonTakeInput;
+  signal_name: MediaIdentitySignalName;
+  keys: string[];
+  source_path: string;
+  confidence_role: MediaIdentitySignalEntry['confidence_role'];
+  filename?: boolean;
+}): MediaIdentitySignalEntry {
+  const raw = mediaIdentityRawValue({ take: input.take, keys: input.keys });
+  const notes: string[] = [];
+  if (input.filename) {
+    const safe = safeBasename(raw);
+    if (!safe.value) {
+      if (safe.redacted && safe.note) notes.push(safe.note);
+      return {
+        signal_name: input.signal_name,
+        status: safe.redacted ? 'redacted' : 'unavailable',
+        raw_value_redacted: safe.redacted,
+        source_artefact_id: 'analysis_take',
+        source_path: input.source_path,
+        confidence_role: input.confidence_role,
+        notes: notes.length ? notes : ['signal_unavailable'],
+      };
+    }
+    return {
+      signal_name: input.signal_name,
+      status: 'available',
+      safe_value: safe.value,
+      value_hash: hashDiagnosticValue(safe.value.toLowerCase()),
+      raw_value_redacted: safe.redacted,
+      source_artefact_id: 'analysis_take',
+      source_path: input.source_path,
+      confidence_role: input.confidence_role,
+      notes: safe.redacted ? ['basename_only_path_redacted'] : [],
+    };
+  }
+  const value = normaliseSignalString(raw);
+  if (!value) {
+    return {
+      signal_name: input.signal_name,
+      status: 'unavailable',
+      raw_value_redacted: false,
+      source_artefact_id: 'analysis_take',
+      source_path: input.source_path,
+      confidence_role: input.confidence_role,
+      notes: ['signal_unavailable'],
+    };
+  }
+  const redacted = looksLikeUnsafePrivateValue(value) || /[\\/]/.test(value);
+  if (redacted) {
+    return {
+      signal_name: input.signal_name,
+      status: 'redacted',
+      raw_value_redacted: true,
+      source_artefact_id: 'analysis_take',
+      source_path: input.source_path,
+      confidence_role: input.confidence_role,
+      notes: ['unsafe_raw_value_redacted'],
+    };
+  }
+  return {
+    signal_name: input.signal_name,
+    status: 'available',
+    safe_value: value.slice(0, 160),
+    value_hash: hashDiagnosticValue(value),
+    raw_value_redacted: false,
+    source_artefact_id: 'analysis_take',
+    source_path: input.source_path,
+    confidence_role: input.confidence_role,
+    notes: [],
+  };
+}
+
+function mediaIdentityNumberSignal(input: {
+  take: InternalComparisonTakeInput;
+  signal_name: MediaIdentitySignalName;
+  keys: string[];
+  source_path: string;
+  confidence_role: MediaIdentitySignalEntry['confidence_role'];
+  multiplier?: number;
+}): MediaIdentitySignalEntry {
+  const raw = mediaIdentityRawValue({ take: input.take, keys: input.keys });
+  const value = normaliseSignalNumber(raw);
+  if (value === null) {
+    return {
+      signal_name: input.signal_name,
+      status: 'unavailable',
+      raw_value_redacted: false,
+      source_artefact_id: 'analysis_take',
+      source_path: input.source_path,
+      confidence_role: input.confidence_role,
+      notes: ['signal_unavailable'],
+    };
+  }
+  const normalised = Math.round(value * (input.multiplier ?? 1));
+  return {
+    signal_name: input.signal_name,
+    status: 'available',
+    safe_value: normalised,
+    value_hash: hashDiagnosticValue(String(normalised)),
+    raw_value_redacted: false,
+    source_artefact_id: 'analysis_take',
+    source_path: input.source_path,
+    confidence_role: input.confidence_role,
+    notes: [],
+  };
+}
+
+function buildMediaIdentityPayload(input: {
+  run_id: string;
+  take: InternalComparisonTakeInput;
+  analysis_run_id?: string;
+  source_module?: string;
+  source_stage?: string;
+}): MediaIdentityPayload {
+  const take = input.take;
+  const analysisRunId = input.analysis_run_id ?? take.analysis_run_id;
+  const durationMsRaw = rawTakeSignalValue(take, ['video_duration_ms', 'duration_ms']);
+  const durationSecondsRaw = rawTakeSignalValue(take, ['video_duration_seconds', 'duration_seconds']);
+  const durationSignal = normaliseSignalNumber(durationMsRaw) !== null
+    ? mediaIdentityNumberSignal({ take, signal_name: 'video_duration_ms', keys: ['video_duration_ms', 'duration_ms'], source_path: 'video_duration_ms', confidence_role: 'weak' })
+    : mediaIdentityNumberSignal({ take, signal_name: 'video_duration_ms', keys: ['video_duration_seconds', 'duration_seconds'], source_path: 'mux_duration_seconds', confidence_role: 'weak', multiplier: 1000 });
+  const media_identity_signals: Record<MediaIdentitySignalName, MediaIdentitySignalEntry> = {
+    original_upload_file_hash: mediaIdentityStringSignal({ take, signal_name: 'original_upload_file_hash', keys: ['original_upload_file_hash', 'upload_hash', 'sha256', 'checksum'], source_path: 'original_upload_file_hash', confidence_role: 'decisive' }),
+    original_file_name: mediaIdentityStringSignal({ take, signal_name: 'original_file_name', keys: ['visible_or_original_file_name', 'original_file_name', 'file_name', 'filename'], source_path: 'original_file_name', confidence_role: 'weak', filename: true }),
+    metadata_file_name: mediaIdentityStringSignal({ take, signal_name: 'metadata_file_name', keys: ['metadata_file_name'], source_path: 'metadata_file_name', confidence_role: 'medium', filename: true }),
+    file_size_bytes: mediaIdentityNumberSignal({ take, signal_name: 'file_size_bytes', keys: ['file_size_bytes', 'size_bytes'], source_path: 'file_size_bytes', confidence_role: 'medium' }),
+    video_duration_ms: durationSignal,
+    opening_video_sample_hash: mediaIdentityStringSignal({ take, signal_name: 'opening_video_sample_hash', keys: ['opening_video_sample_hash_or_profile', 'opening_video_sample_hash', 'opening_video_profile_hash'], source_path: 'opening_video_sample_hash', confidence_role: 'strong' }),
+    closing_video_sample_hash: mediaIdentityStringSignal({ take, signal_name: 'closing_video_sample_hash', keys: ['closing_video_sample_hash_or_profile', 'closing_video_sample_hash', 'closing_video_profile_hash'], source_path: 'closing_video_sample_hash', confidence_role: 'strong' }),
+    opening_audio_profile_hash: mediaIdentityStringSignal({ take, signal_name: 'opening_audio_profile_hash', keys: ['opening_audio_profile_hash'], source_path: 'opening_audio_profile_hash', confidence_role: 'strong' }),
+    closing_audio_profile_hash: mediaIdentityStringSignal({ take, signal_name: 'closing_audio_profile_hash', keys: ['closing_audio_profile_hash'], source_path: 'closing_audio_profile_hash', confidence_role: 'strong' }),
+    safe_media_fingerprint: mediaIdentityStringSignal({ take, signal_name: 'safe_media_fingerprint', keys: ['safe_media_fingerprint'], source_path: 'safe_media_fingerprint', confidence_role: 'strong' }),
+  };
+  const availableSignalCount = Object.values(media_identity_signals).filter((signal) => signal.status === 'available').length;
+  const unavailableSignalCount = Object.values(media_identity_signals).filter((signal) => signal.status !== 'available').length;
+  const reliableSignals = ['original_upload_file_hash', 'opening_video_sample_hash', 'closing_video_sample_hash', 'opening_audio_profile_hash', 'closing_audio_profile_hash', 'safe_media_fingerprint'] as const;
+  const hasReliableUploadOrContentSignal = reliableSignals.some((signal) => media_identity_signals[signal].status === 'available');
+  const blocker_codes = dedupePreservingOrder([
+    ...(media_identity_signals.original_upload_file_hash.status === 'available' ? [] : ['original_upload_file_hash_unavailable']),
+    ...(media_identity_signals.opening_video_sample_hash.status === 'available' ? [] : ['opening_video_sample_unavailable']),
+    ...(media_identity_signals.closing_video_sample_hash.status === 'available' ? [] : ['closing_video_sample_unavailable']),
+    ...(media_identity_signals.opening_audio_profile_hash.status === 'available' ? [] : ['opening_audio_profile_unavailable']),
+    ...(media_identity_signals.closing_audio_profile_hash.status === 'available' ? [] : ['closing_audio_profile_unavailable']),
+    ...(hasReliableUploadOrContentSignal ? [] : ['media_identity_no_reliable_upload_or_content_signal']),
+    ...(availableSignalCount === 0 ? ['media_identity_unavailable'] : []),
+  ]);
+  const mediaIdentityStatus: MediaIdentityStatus = availableSignalCount === 0
+    ? 'unavailable'
+    : (unavailableSignalCount === 0 ? 'complete' : 'partial');
+  const muxPlaybackRef = take.safe_mux_playback_ref ?? take.mux_playback_ref ?? null;
+  return {
+    schema_version: 'tapecoach_v3_media_identity_v1',
+    artefact_type: 'media_identity',
+    run_id: input.run_id,
+    take_id: take.take_id,
+    analysis_run_id: analysisRunId,
+    generated_at: new Date().toISOString(),
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_stage: input.source_stage ?? 'buildMediaIdentityPayload',
+    source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts',
+    media_identity_status: mediaIdentityStatus,
+    media_identity_scope: 'same_user_same_audition',
+    user_scope_status: (normaliseSignalString(take.user_id) || normaliseSignalString(take.profile_id)) ? 'same_user_only' : 'unavailable',
+    audition_scope_status: (normaliseSignalString(take.audition_id) || normaliseSignalString(take.submission_id)) ? 'same_audition_or_submission' : 'unavailable',
+    available_signal_count: availableSignalCount,
+    unavailable_signal_count: unavailableSignalCount,
+    media_identity_signals,
+    reference_diagnostics: {
+      take_id: take.take_id,
+      analysis_run_id: analysisRunId,
+      mux_playback_id_present: Boolean(take.mux_playback_ref),
+      mux_asset_or_upload_id_present: take.mux_asset_or_upload_id_present ?? 'unknown',
+      safe_mux_playback_ref: normaliseSafeDiagnosticRef(muxPlaybackRef),
+    },
+    signal_source_summary: {
+      source_artefact_id: 'analysis_take',
+      source_path: 'inputs/media_identity.json',
+      duration_source: normaliseSignalNumber(durationMsRaw) !== null ? 'video_duration_ms' : (normaliseSignalNumber(durationSecondsRaw) !== null ? 'mux_duration_seconds' : 'unavailable'),
+      sampling_helper_status: (
+        media_identity_signals.opening_video_sample_hash.status === 'available'
+        || media_identity_signals.closing_video_sample_hash.status === 'available'
+        || media_identity_signals.opening_audio_profile_hash.status === 'available'
+        || media_identity_signals.closing_audio_profile_hash.status === 'available'
+      ) ? 'provided_by_runtime_input' : 'unavailable',
+    },
+    blocker_codes,
+    cannot_satisfy_duplicate_detection_gate: !hasReliableUploadOrContentSignal,
+    public_output_unchanged: true,
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+  };
+}
+
 function buildTier1DuplicateDetectionTrace(input: {
   run_id: string;
   analysis_run_id: string;
@@ -1661,7 +2003,15 @@ function buildTier1DuplicateDetectionTrace(input: {
   source_module?: string;
   source_stage?: string;
 }): Record<string, unknown> {
-  const takes = input.compared_takes;
+  const takes = input.compared_takes.map((take) => ({
+    ...take,
+    media_identity: take.media_identity ?? buildMediaIdentityPayload({
+      run_id: input.run_id,
+      take,
+      source_module: input.source_module,
+      source_stage: input.source_stage,
+    }),
+  }));
   const referenceDiagnostics = {
     same_take_id: hasDuplicateNonEmptyString(takes.map((take) => take.take_id)),
     same_analysis_run_id: hasDuplicateNonEmptyString(takes.map((take) => take.analysis_run_id)),
@@ -1781,6 +2131,16 @@ function buildTier1DuplicateDetectionTrace(input: {
     duplicate_detection_confidence: score,
     duplicate_detection_basis: basis.length > 0 ? basis : ['insufficient_upload_or_content_evidence'],
     duplicate_detection_evidence_refs: Object.fromEntries(Object.entries(signalSummaries).map(([signal, summary]) => [signal, summary.value_hashes])),
+    media_identity_evidence_refs: Object.fromEntries(takes.map((take) => [
+      take.take_id,
+      {
+        artefact_path: `takes/take-${take.take_id}/analysis-${take.analysis_run_id}/inputs/media_identity.json`,
+        media_identity_status: take.media_identity?.media_identity_status ?? 'unavailable',
+        available_signal_count: take.media_identity?.available_signal_count ?? 0,
+        unavailable_signal_count: take.media_identity?.unavailable_signal_count ?? 0,
+        blocker_codes: take.media_identity?.blocker_codes ?? ['media_identity_unavailable'],
+      },
+    ])),
     duplicate_detection_signal_summary: signalSummaries,
     signals_matched: signalsMatched,
     signals_missing: signalsMissing,
@@ -1796,7 +2156,7 @@ function buildTier1DuplicateDetectionTrace(input: {
       single_frame_or_single_instant_samples_allowed: false,
     },
     sampling_window_status: sampleSignalsUnavailable ? 'unavailable' : 'partial_or_available',
-    sampling_limitations: sampleSignalsUnavailable ? ['server_runtime_sampling_helpers_unavailable_in_s9_16b'] : [],
+    sampling_limitations: sampleSignalsUnavailable ? ['server_runtime_sampling_helpers_unavailable_in_s9_16c'] : [],
     sufficient_upload_or_content_evidence: sufficientUploadOrContentEvidence,
     not_detected_evidence_sufficient: notDetectedEvidenceSufficient,
     same_video_detected: duplicateStatus === 'detected' || duplicateStatus === 'likely_duplicate',
@@ -1983,11 +2343,20 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
   comparedAnalysisRunIds.forEach((id) => assertSafeSegment(id, 'compared_analysis_run_id'));
   const comparison_run_id = input.comparison_run_id ?? computeDeterministicComparisonRunId(comparedTakeIds, comparedAnalysisRunIds);
   assertSafeSegment(comparison_run_id, 'comparison_run_id');
+  const comparedTakesWithMediaIdentity = input.compared_takes.map((take) => ({
+    ...take,
+    media_identity: take.media_identity ?? buildMediaIdentityPayload({
+      run_id: input.run_id,
+      take,
+      source_module: input.source_module,
+      source_stage: input.source_stage,
+    }),
+  }));
   const duplicate_detection_trace = buildTier1DuplicateDetectionTrace({
     run_id: input.run_id,
     analysis_run_id: rootAnalysisRunId,
     comparison_run_id,
-    compared_takes: input.compared_takes,
+    compared_takes: comparedTakesWithMediaIdentity,
     compared_take_ids: comparedTakeIds,
     compared_analysis_run_ids: comparedAnalysisRunIds,
     operator_same_video_assertion: input.operator_same_video_assertion,
@@ -2000,7 +2369,7 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
   const sameMux = Boolean((duplicate_detection_trace.reference_diagnostics as Record<string, unknown> | undefined)?.same_mux_playback_ref);
   const sameVideoDetected = duplicateDetectionStatus === 'detected' || duplicateDetectionStatus === 'likely_duplicate';
   const sameVideoUnresolved = duplicateDetectionStatus === 'possible_duplicate' || duplicateDetectionStatus === 'insufficient_evidence';
-  const routes = input.compared_takes.map((t) => `${t.analysis_route ?? 'unknown'}|${t.model_provider_family ?? 'unknown'}`);
+  const routes = comparedTakesWithMediaIdentity.map((t) => `${t.analysis_route ?? 'unknown'}|${t.model_provider_family ?? 'unknown'}`);
   const routeVarianceDetected = new Set(routes).size > 1;
   const suppressionRequired = sameVideoDetected || sameVideoUnresolved || routeVarianceDetected;
   const suppressionDecision = suppressionRequired ? 'suppressed' : 'allowed_internal_only';
@@ -2057,12 +2426,12 @@ export async function runInternalComparisonForTakes(input: InternalComparisonRun
       const canonicalComparedTakeIds = comparedTakeIds.map((id) => stripTakePrefix(id));
       if (canonicalComparedTakeIds.some((id) => !id)) return { written: false as const, emitted_artefact_ids: [] as string[] };
       canonicalComparedTakeIds.forEach((id) => assertSafeSegment(id, 'compared_take_id'));
-      return emitComparisonRuntimeArtifactsWithManifestReconciliation({ run_id: canonicalRootRunId, root_take_id: canonicalRootTakeCore, take_id: canonicalRootTakeCore, analysis_run_id: canonicalRootRunId, comparison_run_id, compared_take_ids: canonicalComparedTakeIds, comparison_raw_data, same_video_repeatability_trace, duplicate_detection_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
+      return emitComparisonRuntimeArtifactsWithManifestReconciliation({ run_id: canonicalRootRunId, root_take_id: canonicalRootTakeCore, take_id: canonicalRootTakeCore, analysis_run_id: canonicalRootRunId, comparison_run_id, compared_take_ids: canonicalComparedTakeIds, comparison_raw_data, same_video_repeatability_trace, duplicate_detection_trace, suppression_trace, route_variance_trace, media_identity_payloads: comparedTakesWithMediaIdentity.map((take) => take.media_identity!).filter(Boolean), source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
     } catch {
       return { written: false as const, emitted_artefact_ids: [] as string[] };
     }
   }
-  return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: rootAnalysisRunId, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, duplicate_detection_trace, suppression_trace, route_variance_trace, source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
+  return emitComparisonRuntimeArtifacts({ run_id: input.run_id, take_id: input.root_take_id, analysis_run_id: rootAnalysisRunId, comparison_run_id, compared_take_ids: comparedTakeIds, comparison_raw_data, same_video_repeatability_trace, duplicate_detection_trace, suppression_trace, route_variance_trace, media_identity_payloads: comparedTakesWithMediaIdentity.map((take) => take.media_identity!).filter(Boolean), source_module: input.source_module, source_stage: input.source_stage, root_dir: input.root_dir, internal_qa_emit: input.internal_qa_emit });
 }
 export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) {
   const internalEmit = resolveInternalQAEmitEnabled({ internal_qa_emit: metadata.internal_qa_emit });
@@ -2070,7 +2439,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
     const normalisedComparedTakeIds = normaliseUniqueTakeCores(metadata.compared_take_ids ?? metadata.take_ids);
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, claim_candidate_trace_summary: metadata.claim_candidate_trace_summary, evidence_anchor_trace_summary: metadata.evidence_anchor_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary };
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, claim_candidate_trace_summary: metadata.claim_candidate_trace_summary, evidence_anchor_trace_summary: metadata.evidence_anchor_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary, media_identity_summary: metadata.media_identity_summary };
     const manifestRelativePath = shouldUseExpandedManifestPaths()
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'manifest.json' })
       : 'manifest.json';
@@ -4153,6 +4522,17 @@ export async function emitComparisonRuntimeArtifacts(input: ComparisonRuntimeArt
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   assertSafeSegment(analysisRunId, 'analysis_run_id');
   const comparisonRoot = `takes/take-${takeId}/analysis-${analysisRunId}`;
+  for (const payload of input.media_identity_payloads ?? []) {
+    try {
+      assertSafeSegment(payload.take_id, 'media_identity_take_id');
+      assertSafeSegment(payload.analysis_run_id, 'media_identity_analysis_run_id');
+      const w = await writeInternalJson(root, input.run_id, `takes/take-${payload.take_id}/analysis-${payload.analysis_run_id}/inputs/media_identity.json`, payload, 'media_identity');
+      if (w.written && !emitted_artefact_ids.includes('media_identity')) emitted_artefact_ids.push('media_identity');
+      else if (!w.written) hadFailure = true;
+    } catch {
+      hadFailure = true;
+    }
+  }
   if (input.comparison_raw_data) {
     const w = await writeInternalJson(root, input.run_id, `${comparisonRoot}/comparison/comparison.raw.json`, { ...input.comparison_raw_data, schema_version: 'tapecoach_v3_comparison_raw_first_pass_v1', artefact_type: 'comparison_raw', internal_only: true, privacy_classification: 'internal_private', source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: input.source_stage ?? 'emitComparisonRuntimeArtifacts', comparison_run_id: comparisonRunId, compared_take_ids: comparedTakeIds, cannot_satisfy_level2_comparison_gate: true, forbidden_fields_absent: true, public_output_unchanged: true }, 'comparison_raw');
     if (w.written) emitted_artefact_ids.push('comparison_raw'); else hadFailure = true;
@@ -4281,6 +4661,38 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
       route_variance_trace: emittedIds.includes('route_variance_trace'),
     },
   });
+  if (emittedIds.includes('media_identity')) {
+    const emitted = new Set<string>(reconciledComparisonManifest.emitted_artifacts ?? []);
+    const blocked = new Set<string>(reconciledComparisonManifest.runtime_evidence_blocked_by_id ?? []);
+    const accepted = new Set<string>(reconciledComparisonManifest.runtime_evidence_accepted_by_id ?? []);
+    emitted.add('media_identity');
+    blocked.add('media_identity');
+    accepted.delete('media_identity');
+    const mediaIdentityPayloads = input.media_identity_payloads ?? [];
+    const available = mediaIdentityPayloads.reduce((sum, payload) => sum + Number(payload.available_signal_count ?? 0), 0);
+    const unavailable = mediaIdentityPayloads.reduce((sum, payload) => sum + Number(payload.unavailable_signal_count ?? 0), 0);
+    const mediaBlockers = mediaIdentityPayloads.flatMap((payload) => payload.blocker_codes ?? []);
+    reconciledComparisonManifest.emitted_artifacts = [...emitted];
+    reconciledComparisonManifest.runtime_evidence_blocked_by_id = [...blocked];
+    reconciledComparisonManifest.runtime_evidence_accepted_by_id = [...accepted];
+    reconciledComparisonManifest.artefact_status_by_id = { ...(reconciledComparisonManifest.artefact_status_by_id ?? {}), media_identity: 'emitted' };
+    reconciledComparisonManifest.artefact_source_classification_by_id = {
+      ...(reconciledComparisonManifest.artefact_source_classification_by_id ?? {}),
+      media_identity: mediaIdentityPayloads.some((payload) => payload.cannot_satisfy_duplicate_detection_gate === false) ? 'real_runtime_v3_media_identity' : 'partial_media_identity',
+    };
+    reconciledComparisonManifest.artefact_level2_spine_satisfaction_by_id = {
+      ...(reconciledComparisonManifest.artefact_level2_spine_satisfaction_by_id ?? {}),
+      media_identity: false,
+    };
+    reconciledComparisonManifest.media_identity_summary = {
+      media_identity_status: mediaIdentityPayloads.some((payload) => payload.media_identity_status === 'complete') ? 'complete' : (available > 0 ? 'partial' : 'unavailable'),
+      available_signal_count: available,
+      unavailable_signal_count: unavailable,
+      media_identity_gate_status: 'insufficient',
+      media_identity_blocker_codes: [...new Set(mediaBlockers)],
+      cannot_satisfy_duplicate_detection_gate: !mediaIdentityPayloads.some((payload) => payload.cannot_satisfy_duplicate_detection_gate === false),
+    };
+  }
   const reconciledManifest = applyComparisonParityManifestState({
     manifest: reconciledComparisonManifest,
     written: Boolean(comparisonParityWrite.written),
@@ -4363,6 +4775,37 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     media_readiness_state: input.media_readiness_state ?? null,
     unavailable_fields: dedupePreservingOrder([...unavailableCommonDedupe, ...(input.take_created_at ? [] : ['take_created_at']), ...(input.take_updated_at ? [] : ['take_updated_at'])]), redaction_notes,
   };
+  const mediaIdentity = buildMediaIdentityPayload({
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    take: {
+      take_id: input.take_id,
+      analysis_run_id: analysisRunId,
+      mux_playback_ref: input.safe_mux_playback_ref ?? input.mux_playback_id ?? null,
+      safe_mux_playback_ref: input.safe_mux_playback_ref ?? null,
+      mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? null,
+      user_id: input.user_id ?? null,
+      profile_id: input.profile_id ?? null,
+      audition_id: input.audition_id ?? input.submission_id ?? null,
+      submission_id: input.submission_id ?? null,
+      original_upload_file_hash: input.original_upload_file_hash ?? null,
+      visible_or_original_file_name: input.visible_or_original_file_name ?? null,
+      original_file_name: input.original_file_name ?? null,
+      file_name: input.file_name ?? null,
+      filename: input.filename ?? null,
+      metadata_file_name: input.metadata_file_name ?? null,
+      file_size_bytes: input.file_size_bytes ?? null,
+      video_duration_ms: input.video_duration_ms ?? input.duration_ms ?? null,
+      video_duration_seconds: input.video_duration_seconds ?? input.duration_seconds ?? null,
+      opening_video_sample_hash_or_profile: input.opening_video_sample_hash_or_profile ?? input.opening_video_sample_hash ?? null,
+      closing_video_sample_hash_or_profile: input.closing_video_sample_hash_or_profile ?? input.closing_video_sample_hash ?? null,
+      opening_audio_profile_hash: input.opening_audio_profile_hash ?? null,
+      closing_audio_profile_hash: input.closing_audio_profile_hash ?? null,
+      safe_media_fingerprint: input.safe_media_fingerprint ?? null,
+    },
+  });
   assertSafeSegment(input.take_id, 'take_id');
   const base = `takes/take-${input.take_id}/analysis-${analysisRunId}/inputs`;
   const emitted_artefact_ids: string[] = [];
@@ -4371,12 +4814,25 @@ export async function emitAnalysisInputArtefacts(input: AnalysisInputArtefactEmi
     ['analysis_input_record', `${base}/input_record.json`, inputRecord],
     ['analysis_submission', `${base}/submission.json`, submissionSnapshot],
     ['analysis_take', `${base}/take.json`, takeSnapshot],
+    ['media_identity', `${base}/media_identity.json`, mediaIdentity],
   ];
   for (const [id, rel, payload] of writes) {
     const w = await writeInternalJson(root, input.run_id, rel, payload, id);
     if (w.written) emitted_artefact_ids.push(id); else hadFailure = true;
   }
-  return { written: !hadFailure, emitted_artefact_ids };
+  return {
+    written: !hadFailure,
+    emitted_artefact_ids,
+    media_identity_summary: {
+      media_identity_status: mediaIdentity.media_identity_status,
+      available_signal_count: mediaIdentity.available_signal_count,
+      unavailable_signal_count: mediaIdentity.unavailable_signal_count,
+      media_identity_gate_status: 'insufficient' as const,
+      media_identity_blocker_codes: mediaIdentity.blocker_codes,
+      cannot_satisfy_duplicate_detection_gate: mediaIdentity.cannot_satisfy_duplicate_detection_gate,
+    },
+    media_identity_source_classification: mediaIdentity.cannot_satisfy_duplicate_detection_gate ? 'partial_media_identity' as const : 'real_runtime_v3_media_identity' as const,
+  };
 }
 
 export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthStateEmitterInput) {

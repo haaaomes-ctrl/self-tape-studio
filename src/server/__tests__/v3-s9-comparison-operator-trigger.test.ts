@@ -54,13 +54,16 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(result.ok).toBe(true);
     expect(result.written).toBe(true);
     expect(result.root_analysis_run_id).toBe('take-b');
-    expect(result.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
+    expect(result.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds, 'media_identity'].sort());
     expect((result as any).comparison_parity_status).toBe('insufficient');
     expect((result as any).emitted_blocked_artefact_ids).toContain('parity_comparison');
     const base = path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-b');
     await expect(readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
     const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    const mediaIdentity = JSON.parse(await readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-analysis-b', 'inputs', 'media_identity.json'), 'utf8'));
     expect(duplicate.duplicate_detection_status).toBe('insufficient_evidence');
+    expect(mediaIdentity.artefact_type).toBe('media_identity');
+    expect(mediaIdentity.media_identity_status).toBe('unavailable');
     const parity = JSON.parse(await readFile(path.join(base, 'parity', 'comparison_parity.json'), 'utf8'));
     expect(parity.parity_status).toBe('insufficient');
     expect(parity.duplicate_detection_blocker).toBe('duplicate_detection_insufficient_evidence');
@@ -327,7 +330,7 @@ describe('v3 s9 comparison operator trigger', () => {
         internal_qa_emit: true,
       }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}-${status}`, completed: true }));
       expect(out.ok).toBe(true);
-      expect(out.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
+      expect(out.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds, 'media_identity'].sort());
       expect((out as any).comparison_parity_status).toBe('insufficient');
       expect((out as any).emitted_blocked_artefact_ids).toContain('parity_comparison');
     }

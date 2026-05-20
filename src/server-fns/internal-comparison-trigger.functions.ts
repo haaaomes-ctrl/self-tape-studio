@@ -42,7 +42,7 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
   }
   const { data, error } = await supabaseAdmin
     .from("takes")
-    .select("id, mux_playback_id, status")
+    .select("id, user_id, audition_id, mux_playback_id, mux_asset_id, mux_upload_id, mux_duration_seconds, signals, checklist, status")
     .eq("id", takeId)
     .maybeSingle();
   if (error || !data) return null;
@@ -59,6 +59,14 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
     take_id: String((data as any).id ?? takeId),
     analysis_run_id: analysisRunId,
     mux_playback_ref: typeof (data as any).mux_playback_id === "string" ? (data as any).mux_playback_id : null,
+    mux_asset_or_upload_id_present: Boolean((data as any).mux_asset_id || (data as any).mux_upload_id),
+    user_id: typeof (data as any).user_id === "string" ? (data as any).user_id : null,
+    audition_id: typeof (data as any).audition_id === "string" ? (data as any).audition_id : null,
+    video_duration_seconds: typeof (data as any).mux_duration_seconds === "number"
+      ? (data as any).mux_duration_seconds
+      : (typeof (data as any).signals?.duration === "number"
+        ? (data as any).signals.duration
+        : (typeof (data as any).checklist?.duration?.seconds === "number" ? (data as any).checklist.duration.seconds : null)),
     analysis_route: null,
     model_provider_family: null,
     completed,
