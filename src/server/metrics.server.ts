@@ -63,6 +63,10 @@ export type MetricName =
   | "analysis_persist_started"
   | "analysis_persist_completed"
   | "analysis_persist_failed"
+  | "resolver_truth_qa_persistence_failed_but_payload_valid"
+  | "qa_persistence_failed_but_step1_evidence_valid"
+  | "qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces"
+  | "report_polish_blocked"
   // Sweeper
   | "analysis_sweeper_scanned"
   | "analysis_stale_timeout"

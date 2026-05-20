@@ -4,6 +4,13 @@ import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { emitPublicClaimTraceFirstPass, emitScoreTraceFirstPass } from '@/server/v3/qa-artifacts-wiring.server';
 
+function expectPresent<T>(value: T | null | undefined, label: string): NonNullable<T> {
+  expect(value, label).toBeDefined();
+  expect(value, label).not.toBeNull();
+  if (value === null || value === undefined) throw new Error(`expected ${label}`);
+  return value as NonNullable<T>;
+}
+
 describe('v3 s9 score trace first pass', () => {
   it('emits from explicit score fields only', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
@@ -13,10 +20,11 @@ describe('v3 s9 score trace first pass', () => {
     const out = await emitScoreTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: raw, public_claim_trace_data: { claims: claims.claims ?? [] }, internal_qa_emit: true, root_dir: root });
     expect(out.written).toBe(true);
     const payload = JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'ScoreTrace.json'), 'utf8'));
-    expect(out.score_trace_summary.score_count).toBe(payload.score_entries.length);
-    expect(out.score_trace_summary.component_score_count).toBe(2);
-    expect(out.score_trace_summary.component_weight_count).toBe(2);
-    expect(out.score_trace_summary.calibration_metadata_count).toBe(2);
+    const scoreSummary = expectPresent(out.score_trace_summary, 'score trace summary');
+    expect(scoreSummary.score_count).toBe(payload.score_entries.length);
+    expect(scoreSummary.component_score_count).toBe(2);
+    expect(scoreSummary.component_weight_count).toBe(2);
+    expect(scoreSummary.calibration_metadata_count).toBe(2);
     const componentScoreEntry = payload.score_entries.find((x:any)=>x.source_path==='report_data.detected_components[0].score');
     const componentWeightEntry = payload.score_entries.find((x:any)=>x.source_path==='report_data.detected_components[0].weight');
     expect(componentScoreEntry.score_scale).toBe('0-100');
@@ -34,8 +42,9 @@ describe('v3 s9 score trace first pass', () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
     const out = await emitScoreTraceFirstPass({ run_id: 'r3', analysis_run_id: 'r3', submission_id: 's', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: { report_data: { detected_components: [{ type: 'song', weight: 1.2 }, { type: 'slate', weight: -0.1 }, { type: 'acting_scene', weight: '0.5' }] } }, internal_qa_emit: true, root_dir: root });
     expect(out.written).toBe(true);
-    expect(out.score_trace_summary.component_weight_count).toBe(1);
-    expect(out.score_trace_summary.skipped_component_weight_out_of_range).toBe(2);
+    const scoreSummary = expectPresent(out.score_trace_summary, 'score trace summary');
+    expect(scoreSummary.component_weight_count).toBe(1);
+    expect(scoreSummary.skipped_component_weight_out_of_range).toBe(2);
   });
 
 

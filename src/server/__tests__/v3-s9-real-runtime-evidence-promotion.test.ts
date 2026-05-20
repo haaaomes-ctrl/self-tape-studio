@@ -24,6 +24,13 @@ type LegacyBundleOptions = {
   includeAnalysisEvidenceState?: boolean;
 };
 
+function expectPresent<T>(value: T | null | undefined, label: string): NonNullable<T> {
+  expect(value, label).toBeDefined();
+  expect(value, label).not.toBeNull();
+  if (value === null || value === undefined) throw new Error(`expected ${label}`);
+  return value as NonNullable<T>;
+}
+
 const defaultLegacyReport = {
   schema_version: 'v1-legacy',
   overall_score: 92,
@@ -41,7 +48,6 @@ async function emitLegacyBundle(options: LegacyBundleOptions = {}) {
   const report = options.report ?? defaultLegacyReport;
   await emitRawReportArtefact({
     run_id: run,
-    analysis_run_id: run,
     take_id: take,
     submission_id: 'sub1',
     source_stage: 'unit',
@@ -1071,7 +1077,8 @@ describe('S9-14C Step 1 observable evidence extractor', () => {
 
   it('does not change public output posture', async () => {
     const { payload, metrics } = await emitAnalysisEvidenceStateBundle();
-    expect(payload.public_output_unchanged).toBe(true);
+    const analysisPayload = expectPresent(payload, 'analysis evidence payload');
+    expect(analysisPayload.public_output_unchanged).toBe(true);
     expect(metrics.public_output_unchanged).toBe(true);
     expect(metrics.public_scoring_status).toBe('blocked');
   });
@@ -1337,7 +1344,8 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     } as any);
     expect(out.written).toBe(true);
     expect(out.source_classification).toBe('real_runtime_v3_partial_non_satisfying');
-    expect(out.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    const evidenceAnchorSummary = expectPresent(out.evidence_anchor_trace_summary, 'evidence anchor trace summary');
+    expect(evidenceAnchorSummary.evidence_anchor_gate_status).toBe('insufficient');
   });
 });
 
@@ -1628,7 +1636,8 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     });
 
     expect(out.written).toBe(false);
-    expect(out.payload.step2_dependency_status).toMatchObject({ can_run_step2: true });
+    const analysisPayload = expectPresent(out.payload, 'analysis evidence payload');
+    expect(analysisPayload.step2_dependency_status).toMatchObject({ can_run_step2: true });
     expect(dependency.step1EvidenceValidForStep2).toBe(true);
     expect(dependency.step1QaPersistenceStatus).toBe('failed_emission');
     expect(dependency.step2DependencyBlocked).toBe(false);
@@ -1646,7 +1655,7 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
       artefact_source_classification_by_id: { raw_report: 'legacy_adapter', analysis_evidence_state: out.source_classification },
       artefact_level2_spine_satisfaction_by_id: { raw_report: false, analysis_evidence_state: false },
       analysis_evidence_state_summary: {
-        ...out.summary,
+        ...expectPresent(out.summary, 'analysis evidence summary'),
         qa_persistence_status: 'failed_emission',
         qa_persistence_warning: out.warning ?? null,
       },
@@ -1830,7 +1839,8 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(anchorsOut.written).toBe(true);
     expect(anchorsOut.source_classification).toBe('real_runtime_v3_partial_non_satisfying');
     expect(anchorsOut.legacy_diagnostic_anchor_count).toBe(1);
-    expect(anchorsOut.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    const evidenceAnchorSummary = expectPresent(anchorsOut.evidence_anchor_trace_summary, 'evidence anchor trace summary');
+    expect(evidenceAnchorSummary.evidence_anchor_gate_status).toBe('insufficient');
   });
 
   it('keeps PublicClaimTrace legacy and non-satisfying after persisted filtered Step 1 evidence', async () => {
@@ -1846,7 +1856,8 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(manifest.artefact_source_classification_by_id.analysis_evidence_state).toBe(metrics.analysis_evidence_state_source_classification);
     expect(manifest.artefact_level2_spine_satisfaction_by_id.analysis_evidence_state).toBe(false);
     expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
-    expect(metrics.analysis_evidence_state_gate_reason).toBe(out.summary.analysis_evidence_state_gate_reason);
+    const analysisSummary = expectPresent(out.summary, 'analysis evidence summary');
+    expect(metrics.analysis_evidence_state_gate_reason).toBe(analysisSummary.analysis_evidence_state_gate_reason);
     expect(metrics.blocker_codes).toEqual(manifest.blocker_codes);
     expect(payload.public_output_unchanged).toBe(true);
     expect(manifest.level2_qa_acceptance).toBe('not_accepted');
@@ -2071,7 +2082,8 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
       internal_qa_emit: true,
     } as any);
     expect(out.written).toBe(true);
-    expect(out.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    const evidenceAnchorSummary = expectPresent(out.evidence_anchor_trace_summary, 'evidence anchor trace summary');
+    expect(evidenceAnchorSummary.evidence_anchor_gate_status).toBe('insufficient');
     const payload = JSON.parse(await readFile(path.join(root, 'run-s914h-malformed', 'takes', 'take-t1', 'analysis-run-s914h-malformed', 'traces', 'EvidenceAnchors.json'), 'utf8'));
     expect(payload.public_output_unchanged).toBe(true);
     expect(payload.production_safe_status).toBe('blocked');
@@ -2635,7 +2647,10 @@ async function emitPublicClaimSupportBundle(options: {
       claim_candidate_gate_reason: 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
     },
     public_claim_trace_summary: claimsOut.summary as any,
-    blocker_codes: claimsOut.summary?.blocker_codes ?? [],
+    blocker_codes: (() => {
+      const publicClaimSummary = claimsOut.summary ?? {};
+      return 'blocker_codes' in publicClaimSummary ? publicClaimSummary.blocker_codes : [];
+    })(),
     legacy_adapter_artefact_ids: claims?.source_classification === 'legacy_or_unsupported' ? ['public_claim_trace'] : [],
     real_v3_spine_artefact_ids: claimsOut.level2_satisfies ? ['evidence_anchors', 'public_claim_trace'] : (evidenceAnchorGateStatus === 'sufficient' ? ['evidence_anchors'] : []),
     runtime_evidence_accepted_by_id: claimsOut.level2_satisfies ? ['evidence_anchors', 'public_claim_trace'] : (evidenceAnchorGateStatus === 'sufficient' ? ['evidence_anchors'] : []),
@@ -2953,13 +2968,14 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     });
     expect(anchorsOut.written).toBe(false);
     expect(anchorsOut.level2_satisfies).toBe(false);
-    expect(anchorsOut.anchors.length).toBeGreaterThan(0);
+    const anchors = expectPresent(anchorsOut.anchors, 'evidence anchors');
+    expect(anchors.length).toBeGreaterThan(0);
     expect(anchorsOut.evidence_anchor_gate_status).toBe('sufficient');
     const evidenceAnchorsData = {
       run_id: run,
       analysis_run_id: run,
       take_id: take,
-      anchors: anchorsOut.anchors,
+      anchors,
       source_classification: anchorsOut.source_classification,
       evidence_anchor_gate_status: anchorsOut.evidence_anchor_gate_status,
       evidence_anchor_gate_reason: anchorsOut.evidence_anchor_gate_reason,
@@ -2985,14 +3001,15 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       internal_qa_emit: true,
     });
     expect(candidateOut.written).toBe(false);
-    expect(candidateOut.claim_candidates.length).toBeGreaterThan(0);
+    const claimCandidates = expectPresent(candidateOut.claim_candidates, 'claim candidates');
+    expect(claimCandidates.length).toBeGreaterThan(0);
     const candidateTraceData = {
       run_id: run,
       analysis_run_id: run,
       take_id: take,
       source_classification: candidateOut.source_classification,
-      claim_candidate_source_summary: candidateOut.summary.claim_candidate_source_summary,
-      claim_candidates: candidateOut.claim_candidates,
+      claim_candidate_source_summary: expectPresent(candidateOut.summary, 'claim candidate summary').claim_candidate_source_summary,
+      claim_candidates: claimCandidates,
     };
 
     const publicClaimsOut = await emitPublicClaimTraceFirstPass({
@@ -3010,9 +3027,11 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     });
     expect(publicClaimsOut.written).toBe(false);
     expect(publicClaimsOut.level2_satisfies).toBe(false);
-    expect(publicClaimsOut.claims.length).toBeGreaterThan(0);
-    expect(publicClaimsOut.summary.public_claim_gate_status).toBe('sufficient');
-    expect(publicClaimsOut.claims.some((claim: any) => claim.support_status === 'supported')).toBe(true);
+    const publicClaims = expectPresent(publicClaimsOut.claims, 'public claims');
+    const publicClaimSummary = expectPresent(publicClaimsOut.summary, 'public claim summary');
+    expect(publicClaims.length).toBeGreaterThan(0);
+    expect('public_claim_gate_status' in publicClaimSummary ? publicClaimSummary.public_claim_gate_status : undefined).toBe('sufficient');
+    expect(publicClaims.some((claim: any) => claim.support_status === 'supported')).toBe(true);
   });
 
   it('bases resolver and TruthStateMap Step 2 availability on payload identity instead of emitted ids', async () => {
@@ -3052,8 +3071,9 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       root_dir: root,
       internal_qa_emit: true,
     });
-    expect(out.payload.resolver_output_ref).toContain('/resolver/resolver_output.json');
-    expect(out.payload.truth_state_map_ref).toContain('/resolver/TruthStateMap.json');
+    const analysisPayload = expectPresent(out.payload, 'analysis evidence payload');
+    expect(analysisPayload.resolver_output_ref).toContain('/resolver/resolver_output.json');
+    expect(analysisPayload.truth_state_map_ref).toContain('/resolver/TruthStateMap.json');
   });
 
   it.each([
@@ -3412,9 +3432,10 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       internal_qa_emit: true,
     });
     expect(out.written).toBe(true);
-    expect(out.payload.timestamp_normalisation_warnings).toEqual(['take_created_at_invalid_timestamp']);
-    expect(out.payload.assessability_limitations).toContain('take_created_at_invalid_timestamp');
-    expect(out.payload.media_readiness_summary.timestamp_source).toBe('unavailable');
+    const analysisPayload = expectPresent(out.payload, 'analysis evidence payload');
+    expect(analysisPayload.timestamp_normalisation_warnings).toEqual(['take_created_at_invalid_timestamp']);
+    expect(analysisPayload.assessability_limitations).toContain('take_created_at_invalid_timestamp');
+    expect(analysisPayload.media_readiness_summary.timestamp_source).toBe('unavailable');
   });
 
   it('uses mixed limitation normalisation for known string-array limitation fields', async () => {

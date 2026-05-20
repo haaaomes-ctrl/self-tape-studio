@@ -193,7 +193,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: { claim_count?: number; unsupported_claim_count?: number; legacy_untraced_claim_count?: number; unsafe_or_overclaim_count?: number; rewrite_required_count?: number; }; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -1667,7 +1667,7 @@ const MEDIA_IDENTITY_SIGNAL_BY_KEY: Record<string, MediaIdentitySignalName> = {
 
 function rawTakeSignalValue(take: InternalComparisonTakeInput, keys: string[]): unknown {
   for (const key of keys) {
-    const direct = (take as Record<string, unknown>)[key];
+    const direct = (take as unknown as Record<string, unknown>)[key];
     if (direct !== undefined && direct !== null && direct !== '') return direct;
   }
   const summaries = take.artefact_summaries;
@@ -3280,7 +3280,12 @@ function normaliseSafeLimitationItems(value: unknown): Array<{
   blocker_codes: string[];
 }> {
   const items = Array.isArray(value) ? value : (value === null || value === undefined ? [] : [value]);
-  return items.flatMap((item, index) => {
+  return items.flatMap((item, index): Array<{
+    safe_summary: string;
+    source_index: number;
+    source_kind: 'string' | 'record';
+    blocker_codes: string[];
+  }> => {
     if (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean') {
       const summary = safeCandidateSummary(item);
       if (!summary) return [];
@@ -3534,7 +3539,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       blockerCodes.push('evidence_anchor_aggregate_insufficient');
     }
 
-    if (supportStatus !== 'supported') rewriteRequired = rewriteRequired || supportStatus === 'rewrite_required' || supportStatus === 'unsupported_overclaim' || supportStatus === 'blocked' || supportStatus === 'legacy_or_unsupported';
+    if (supportStatus !== 'supported') rewriteRequired = rewriteRequired || supportStatus === 'unsupported_overclaim' || supportStatus === 'blocked' || supportStatus === 'legacy_or_unsupported';
     if (supportStatus === 'supported' && publicSafetyStatus !== 'safe_for_public_candidate') publicSafetyStatus = publicSafetyStatus === 'internal_only' ? 'internal_only' : 'safe_for_public_candidate';
     const cannotSatisfy = candidateRequiredForGate && supportStatus !== 'supported';
     return {
@@ -4076,7 +4081,7 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       linked_truth_state_ids: [],
       support_status: supportStatus,
       public_safety_status: safetyStatus,
-      rewrite_required: supportStatus !== 'supported_by_evidence_anchor' || safetyStatus !== 'public_safe_descriptor',
+      rewrite_required: true,
       blocker_codes: [
         ...(scoreMeta.is_public_overall_readiness_score_risk ? ['public_scoring_blocked'] : []),
         ...((isGeneric && linkedId.length === 0) ? ['generic_phrase_unanchored'] : []),
@@ -5299,8 +5304,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     ...(truthStateMapAvailable ? ['structured_truth_state_ids_unavailable'] : []),
     ...step2DependencyBlockers,
   ]);
-  const sourceClassification = observable_evidence_items.length > 0 ? 'real_runtime_v3' : 'unavailable';
-  const evidenceStateStatus = filteredStep1?.extraction_status === 'blocked'
+  const sourceClassification: 'real_runtime_v3' | 'unavailable' = observable_evidence_items.length > 0 ? 'real_runtime_v3' : 'unavailable';
+  const evidenceStateStatus: 'partial' | 'unavailable' | 'blocked' = filteredStep1?.extraction_status === 'blocked'
     ? 'blocked'
     : (observable_evidence_items.length > 0 ? 'partial' : 'unavailable');
   const summary = {
