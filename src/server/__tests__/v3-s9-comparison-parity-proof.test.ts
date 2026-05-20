@@ -136,12 +136,18 @@ describe('v3-s9 comparison parity proof', () => {
     const root = await mkdtemp(path.join(os.tmpdir(),'s9-13d-a-'));
     await emitQAManifestForAnalysisRun({ run_id:'run-a', analysis_run_id:'run-a', take_id:'ta', root_dir:root, internal_qa_emit:true, compared_take_ids:['ta'], comparison_run_id:null, emitted_artefact_ids:['raw_report'] });
     const manifest = await readManifest(root,'run-a');
+    const metrics = await readMetrics(root,'run-a');
     expect(manifest.comparison_run_id).toBeNull();
     expect(manifest.compared_take_ids).toEqual(['ta']);
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('not_applicable');
     expectComparisonNotBlocking(manifest, 'not_applicable');
     const parityMissingInputs = ['parity_report','parity_comparison'].filter((id:string)=>manifest.missing_artifacts.includes(id));
     expect(parityMissingInputs).toEqual(['parity_report']);
+    expect(manifest.gate_statuses).toEqual([]);
+    expect(metrics.gf01_rt15_status).toBe('not_applicable');
+    expect(metrics.comparison_evidence_status).toBe('not_applicable');
+    expect(metrics.acceptance_reasons).not.toContain('comparison evidence missing');
+    expect(metrics.acceptance_reasons).not.toContain('GF-01 / RT-15 blocked');
   });
 
   it('A duplicate same take in compared_take_ids does not invoke comparison by cardinality alone', async () => {

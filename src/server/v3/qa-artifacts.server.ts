@@ -206,6 +206,43 @@ const NO_EXPORT_REQUIRED_ARTEFACT_IDS = [
   'no_export_ui_proof',
   'no_export_log_proof',
 ] as const;
+
+function stripRepeatedTakePrefixes(value: string): string {
+  let core = String(value ?? '').trim();
+  while (core.startsWith('take-')) core = core.slice(5);
+  return core;
+}
+
+function normaliseComparedTakeIds(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const core = stripRepeatedTakePrefixes(value);
+    if (!core || seen.has(core)) continue;
+    seen.add(core);
+    out.push(core);
+  }
+  return out;
+}
+
+function comparisonInvokedForManifest(manifest: Record<string, any>): boolean {
+  const statusById = manifest.artefact_status_by_id ?? {};
+  const comparedTakeIds = normaliseComparedTakeIds(manifest.compared_take_ids);
+  return Boolean(manifest.comparison_run_id)
+    || comparedTakeIds.length > 1
+    || [...COMPARISON_REQUIRED_ARTEFACT_IDS].some((id) => {
+      const status = statusById[id];
+      return status === 'emitted' || status === 'emitted_blocked';
+    });
+}
+
+function comparisonGateAppliesForManifest(manifest: Record<string, any>): boolean {
+  return comparisonInvokedForManifest(manifest)
+    || manifest.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511';
+}
+
 const BASE_REAL_RUNTIME_V3_ARTEFACT_IDS = new Set([
   'analysis_input_record',
   'analysis_submission',
@@ -253,6 +290,31 @@ function fallbackSourceFamilySummary(sourceClassification: unknown) {
     input_artifact: source === 'input_artifact' ? 1 : 0,
     resolver_truth_state: source === 'resolver_truth_state' ? 1 : 0,
   };
+}
+
+function sourceFamilyCount(value: unknown): number {
+  const count = Number(value ?? 0);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+function resolveEvidenceAnchorSourceFamilySummary(summary: Record<string, any>, sourceClassification: unknown) {
+  if (summary.source_family_summary && typeof summary.source_family_summary === 'object') return summary.source_family_summary;
+  const hasCounts = [
+    'real_runtime_anchor_count',
+    'legacy_adapter_anchor_count',
+    'report_snapshot_anchor_count',
+  ].some((key) => key in summary);
+  if (hasCounts) {
+    return {
+      real_runtime_v3: sourceFamilyCount(summary.real_runtime_anchor_count),
+      legacy_adapter: sourceFamilyCount(summary.legacy_adapter_anchor_count),
+      report_snapshot: sourceFamilyCount(summary.report_snapshot_anchor_count),
+      input_artifact: sourceFamilyCount(summary.input_artifact_anchor_count),
+      resolver_truth_state: sourceFamilyCount(summary.resolver_truth_state_anchor_count),
+      source_scaffold: sourceFamilyCount(summary.source_scaffold_anchor_count),
+    };
+  }
+  return fallbackSourceFamilySummary(sourceClassification);
 }
 
 function resolveNoExportStatus(artefactStatusById: Record<string, string>): string {
@@ -466,7 +528,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     resolver_truth_state: sourceClassById.technique_observation_trace === 'resolver_truth_state' ? 1 : 0,
   };
   const evidenceAnchorTraceSummary = manifest.evidence_anchor_trace_summary ?? {};
-  const evidenceAnchorSourceSummary = evidenceAnchorTraceSummary.source_family_summary ?? fallbackSourceFamilySummary(sourceClassById.evidence_anchors);
+  const evidenceAnchorSourceSummary = resolveEvidenceAnchorSourceFamilySummary(evidenceAnchorTraceSummary, sourceClassById.evidence_anchors);
   const publicClaimSummary = manifest.public_claim_trace_summary ?? {
     claim_count: 0,
     unsupported_claim_count: 0,
@@ -553,9 +615,17 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     : [];
 
   const tracesEmitted = evidenceAnchorStatus === 'emitted' && publicClaimStatus === 'emitted';
+  const comparisonApplies = comparisonGateAppliesForManifest(manifest);
+  const comparisonInvoked = comparisonInvokedForManifest(manifest);
   const comparisonArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace'];
   const comparisonEmittedCount = comparisonArtefactIds.filter((id) => manifest.artefact_status_by_id?.[id] === 'emitted').length;
-  const comparisonEvidenceStatus = comparisonEmittedCount === comparisonArtefactIds.length ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing');
+  const comparisonEvidenceStatus = !comparisonInvoked
+    ? 'not_applicable'
+    : (comparisonEmittedCount === comparisonArtefactIds.length ? 'insufficient' : (comparisonEmittedCount > 0 ? 'partial' : 'missing'));
+  const gf01Rt15Status = comparisonApplies ? 'blocked' : 'not_applicable';
+  const evidenceAnchorHasPartialRealRuntime =
+    sourceFamilyCount(evidenceAnchorSourceSummary.real_runtime_v3) > 0
+    || String(sourceClassById.evidence_anchors ?? '').includes('real_runtime_v3_partial');
   const noExportStatus = String(manifest.no_export_status ?? 'blocked');
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
@@ -571,7 +641,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(gateTraceStatus !== 'missing' ? ['independent runtime gate proof chain'] : []),
     ...(modelRunTraceStatus === 'missing' ? ['ModelRunTrace'] : []),
     ...(modelRunTraceStatus !== 'missing' && modelRunTraceGateStatus !== 'satisfied' ? ['independent model-run proof chain'] : []),
-    ...(comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof']),
+    ...(comparisonInvoked
+      ? (comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof'])
+      : []),
     noExportStatus === 'no_export_proof_complete' ? 'report parity proof' : 'parity and no-export proof',
   ];
   return {
@@ -595,7 +667,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     level2_status: 'not_accepted',
     level3_status: 'blocked',
     level4_status: 'blocked',
-    gf01_rt15_status: 'blocked',
+    gf01_rt15_status: gf01Rt15Status,
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',
@@ -649,7 +721,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
       ? String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? 'real_runtime_v3_support_present')
       : (evidenceAnchorStatus === 'missing'
         ? 'trace_not_emitted'
-        : String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? 'legacy_or_non_v3_support_only')),
+        : String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? (evidenceAnchorHasPartialRealRuntime ? 'partial_runtime_facts_present_but_extractor_coverage_incomplete' : 'legacy_or_non_v3_support_only'))),
     public_claim_trace_status: publicClaimStatus,
     public_claim_gate_status: publicClaimGateStatus,
     public_claim_trace_summary: publicClaimSummary,
@@ -717,10 +789,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     acceptance_reasons: [
       'missing required Level 2 artefacts',
       'raw_report is legacy_adapter where applicable',
-      comparisonEvidenceStatus === 'missing'
-        ? 'comparison evidence missing'
-        : 'comparison evidence emitted but insufficient for Level 2',
-      'GF-01 / RT-15 blocked',
+      ...(comparisonInvoked
+        ? [comparisonEvidenceStatus === 'missing'
+          ? 'comparison evidence missing'
+          : 'comparison evidence emitted but insufficient for Level 2']
+        : []),
+      ...(comparisonApplies ? ['GF-01 / RT-15 blocked'] : []),
       'production/public authority gates blocked',
       'qa_acceptance_metrics emitted but does not satisfy evidence gates',
     ],
@@ -748,7 +822,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const emittedBlockedIds = new Set(options.emitted_blocked_artefact_ids ?? []);
   const deferredIds = new Set(options.deferred_artefact_ids ?? []);
   const notApplicableIds = new Set(options.not_applicable_artefact_ids ?? []);
-  const comparedTakeIds = options.compared_take_ids ?? [];
+  const comparedTakeIds = normaliseComparedTakeIds(options.compared_take_ids);
   const comparisonRuntimeEvidenceCount = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace']
     .filter((id) => emittedIds.has(id) || emittedBlockedIds.has(id))
     .length;
@@ -756,13 +830,16 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     Boolean(options.comparison_run_id) ||
     comparedTakeIds.length > 1 ||
     comparisonRuntimeEvidenceCount > 0;
+  const comparisonGateApplies = comparisonInvoked || options.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511';
   const initialLevel2ById = options.artefact_level2_spine_satisfaction_by_id ?? {};
   const required_artifacts: QARequiredArtefact[] = REQUIRED.map((r) => {
     const emitted = emittedIds.has(r.artefact_id);
     const emittedUnsatisfiedReportParity = r.artefact_id === 'parity_report' && emitted && initialLevel2ById.parity_report !== true;
     const emittedBlocked = emittedBlockedIds.has(r.artefact_id);
     const deferred = deferredIds.has(r.artefact_id);
-    const notApplicable = notApplicableIds.has(r.artefact_id) || (!comparisonInvoked && COMPARISON_REQUIRED_ARTEFACT_IDS.has(r.artefact_id));
+    const explicitNotApplicable = notApplicableIds.has(r.artefact_id)
+      && !(comparisonInvoked && COMPARISON_REQUIRED_ARTEFACT_IDS.has(r.artefact_id));
+    const notApplicable = explicitNotApplicable || (!comparisonInvoked && COMPARISON_REQUIRED_ARTEFACT_IDS.has(r.artefact_id));
     const status: ArtefactStatus = emitted
       ? (emittedUnsatisfiedReportParity ? 'emitted_blocked' : 'emitted')
       : (emittedBlocked ? 'emitted_blocked' : (deferred ? 'deferred' : (notApplicable ? 'not_applicable' : 'missing')));
@@ -885,7 +962,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   }
   const no_export_status = resolveNoExportStatus(artefact_status_by_id);
   const manifest = {
-    schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: options.compared_take_ids ?? [], fixture_id: options.fixture_id ?? null,
+    schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: comparedTakeIds, fixture_id: options.fixture_id ?? null,
     generated_at: options.generated_at ?? new Date().toISOString(), commit_sha: options.commit_sha ?? provenance.build_commit_sha, branch_name: options.branch_name ?? provenance.source_branch, release_state: RELEASE_STATE, internal_qa_emit,
     qa_artifact_root: (process.env.QA_ARTIFACT_SINK === 'storage' && storageRoot) ? storageRoot : runDir, storage_bucket: process.env.QA_ARTIFACT_SINK === 'storage' ? (process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts') : null, storage_key_root: process.env.QA_ARTIFACT_SINK === 'storage' ? storageRoot : null, requested_source_scope_file: requestedSourceScopeFile, source_scope_file: sourceScopeFile, controlling_source_file: sourceScopeFile, controlling_source_location_note: usingRootReadme ? 'Using repository root README.md as controlling requirements source' : (requestedReadmeButMissing ? 'Requested README.md was not present in runtime workspace; using fallback scope file' : 'Replacement README supplied externally; root README.md not present in resolved project root'), controlling_requirements_status: usingRootReadme ? 'root_readme_present' : 'operator_supplied_replacement_README', fixture_refs: options.fixture_refs ?? [], input_refs: options.input_refs ?? [], take_refs: options.take_refs ?? [], mux_playback_ids: options.mux_playback_ids ?? {}, public_output_unchanged: true, user_experience_unchanged: true,
     required_artifacts, emitted_artifacts, emitted_blocked_artefact_ids, missing_artifacts, deferred_artifact_ids, not_applicable_artifact_ids, artefact_status_by_id, blocker_codes,
@@ -906,8 +983,10 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
-    qa_acceptance_metrics: { gf01_rt15_status: 'blocked', level2_status: 'not_accepted', blocker_codes },
-    gate_statuses: [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }],
+    qa_acceptance_metrics: { gf01_rt15_status: comparisonGateApplies ? 'blocked' : 'not_applicable', level2_status: 'not_accepted', blocker_codes },
+    gate_statuses: comparisonGateApplies
+      ? [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }]
+      : [],
     warnings: ['Rendered PDFs/page-prints are manual-render evidence only'], privacy_notes: ['Internal-only dark mode artefact manifest; no public output changes'], redaction_notes: ['Private traces must not be exposed publicly'],
     no_export_status, production_safe_status: BLOCKED_STATUS, public_technique_authority_status: BLOCKED_STATUS, public_scoring_status: BLOCKED_STATUS, export_share_enabled: BLOCKED_STATUS,
     fixture_observations: options.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511' ? { take_scores: [91, 94, 91], comparison_recommendation: 'Take 2', same_video_operator_confirmation: true } : undefined,

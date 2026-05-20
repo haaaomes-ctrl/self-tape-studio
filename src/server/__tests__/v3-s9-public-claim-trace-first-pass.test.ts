@@ -46,7 +46,7 @@ describe('v3 s9 public claim trace first pass', () => {
     const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(metrics.missing_required_artefacts).not.toContain('public_claim_trace');
     expect(metrics.level2_status).toBe('not_accepted');
-    expect(metrics.gf01_rt15_status).toBe('blocked');
+    expect(metrics.gf01_rt15_status).toBe('not_applicable');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');

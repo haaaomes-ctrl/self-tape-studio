@@ -219,6 +219,50 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
+  it('uses EvidenceAnchors runtime count fields when nested source family summary is absent', () => {
+    const metrics = qaArtifactsModule.buildQAAcceptanceMetrics({
+      run_id: 'r-counts',
+      analysis_run_id: 'r-counts',
+      submission_id: 's',
+      take_id: 't',
+      compared_take_ids: ['t'],
+      comparison_run_id: null,
+      generated_at: new Date().toISOString(),
+      qa_artifact_root: 'x',
+      emitted_artifacts: ['evidence_anchors'],
+      missing_artifacts: [],
+      emitted_blocked_artefact_ids: [],
+      deferred_artifact_ids: [],
+      not_applicable_artifact_ids: [],
+      blocker_codes: [],
+      required_artifacts: [],
+      runtime_evidence_accepted_by_id: [],
+      runtime_evidence_blocked_by_id: ['evidence_anchors'],
+      artefact_status_by_id: { evidence_anchors: 'emitted' },
+      artefact_source_classification_by_id: { evidence_anchors: 'real_runtime_v3_partial_non_satisfying' },
+      artefact_level2_spine_satisfaction_by_id: { evidence_anchors: false },
+      legacy_adapter_artefact_ids: [],
+      real_v3_spine_artefact_ids: [],
+      evidence_anchor_trace_summary: {
+        evidence_anchor_gate_status: 'insufficient',
+        real_runtime_anchor_count: 4,
+        legacy_adapter_anchor_count: 0,
+        report_snapshot_anchor_count: 0,
+        input_artifact_anchor_count: 1,
+        resolver_truth_state_anchor_count: 1,
+        source_scaffold_anchor_count: 0,
+      },
+    } as any);
+
+    expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBe(4);
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(0);
+    expect(metrics.evidence_anchor_source_family_summary.input_artifact).toBe(1);
+    expect(metrics.evidence_anchor_source_family_summary.resolver_truth_state).toBe(1);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('partial_runtime_facts_present_but_extractor_coverage_incomplete');
+    expect(metrics.level2_status).toBe('not_accepted');
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';
@@ -241,7 +285,7 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
-    expect(metrics.gf01_rt15_status).toBe('blocked');
+    expect(metrics.gf01_rt15_status).toBe('not_applicable');
     expect(metrics.legacy_adapter_artefacts).toContain('raw_report');
     expect(metrics.output_quality_defects).toEqual(expect.arrayContaining(['legacy_schema_snapshot', 'legacy_numeric_score_snapshot', 'legacy_report_used_as_v3_spine_proxy', 'legacy_fix_first_field_present', 'priority_fixes_missing', 'legacy_next_take_plan_field_present', 'action_plan_missing', 'malformed_strength_entry', 'empty_casting_headline', 'v3_claim_fields_null', 'public_output_snapshot_missing']));
     const txt = JSON.stringify(metrics).toLowerCase();
