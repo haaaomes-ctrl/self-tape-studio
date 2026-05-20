@@ -263,6 +263,51 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
+  it('prefers EvidenceAnchors nested real-runtime source family summary over classification fallback', () => {
+    const metrics = qaArtifactsModule.buildQAAcceptanceMetrics({
+      run_id: 'r-source-summary',
+      analysis_run_id: 'r-source-summary',
+      submission_id: 's',
+      take_id: 't',
+      compared_take_ids: ['t'],
+      comparison_run_id: null,
+      generated_at: new Date().toISOString(),
+      qa_artifact_root: 'x',
+      emitted_artifacts: ['evidence_anchors'],
+      missing_artifacts: [],
+      emitted_blocked_artefact_ids: [],
+      deferred_artifact_ids: [],
+      not_applicable_artifact_ids: [],
+      blocker_codes: [],
+      required_artifacts: [],
+      runtime_evidence_accepted_by_id: [],
+      runtime_evidence_blocked_by_id: ['evidence_anchors'],
+      artefact_status_by_id: { evidence_anchors: 'emitted' },
+      artefact_source_classification_by_id: { evidence_anchors: 'real_runtime_v3_partial_non_satisfying' },
+      artefact_level2_spine_satisfaction_by_id: { evidence_anchors: false },
+      legacy_adapter_artefact_ids: [],
+      real_v3_spine_artefact_ids: [],
+      evidence_anchor_trace_summary: {
+        evidence_anchor_gate_status: 'insufficient',
+        evidence_anchor_gate_reason: 'partial_runtime_facts_present_but_extractor_coverage_incomplete',
+        real_runtime_anchor_count: 8,
+        source_family_summary: {
+          real_runtime_v3: 8,
+          legacy_adapter: 0,
+          report_snapshot: 0,
+          input_artifact: 3,
+          resolver_truth_state: 2,
+        },
+      },
+    } as any);
+
+    expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBe(8);
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(0);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.evidence_anchor_gate_reason).toBe('partial_runtime_facts_present_but_extractor_coverage_incomplete');
+    expect(metrics.level2_status).toBe('not_accepted');
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';

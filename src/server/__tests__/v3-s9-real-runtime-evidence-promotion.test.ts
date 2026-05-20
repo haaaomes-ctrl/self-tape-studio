@@ -2889,6 +2889,7 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     expect(source).toContain('evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status');
     expect(source).toContain('evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary');
     expect(source).toContain('evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary');
+    expect(source).toContain('evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,');
     expect(source).toContain('evidence_family_coverage: evidenceAnchors.evidence_family_coverage');
     expect(source).toContain('evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id');
     expect(source).toContain('unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence');

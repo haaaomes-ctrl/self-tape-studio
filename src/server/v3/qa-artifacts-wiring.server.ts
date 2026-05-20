@@ -4953,13 +4953,17 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   if (input.take_created_at) known_truths.take_created_at = input.take_created_at;
   if (input.take_updated_at) known_truths.take_updated_at = input.take_updated_at;
   if (input.take_index != null) known_truths.take_index = input.take_index;
-  const inferred_truths: Record<string, unknown> = { comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [input.take_id] };
+  const comparedTakeIds = normaliseUniqueTakeCores(input.compared_take_ids ?? [input.take_id]);
+  const comparisonInvoked = Boolean(input.comparison_run_id) || comparedTakeIds.length > 1;
+  const gf01Rt15Status = comparisonInvoked ? 'blocked' : 'not_applicable';
+  const sameVideoComparisonStatus = comparisonInvoked ? 'requires_comparison_runtime_evidence' : 'not_executed_single_take';
+  const inferred_truths: Record<string, unknown> = { comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: comparedTakeIds };
   unavailable_truths.role_fit = 'unavailable_without_brief_or_material_support';
   unavailable_truths.comparison_evidence = 'not_executed';
   unavailable_truths.evidence_anchors = 'not_emitted';
   unavailable_truths.public_claim_support = 'not_emitted';
   if ((input.component_or_task_declaration_status ?? 'unknown') === 'unknown') unavailable_truths.component_or_task_declaration = 'unknown_or_not_loaded';
-  const unsafe_or_blocked_truths = { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', gf01_rt15_status: 'blocked', same_video_comparison_status: 'not_executed_single_take' };
+  const unsafe_or_blocked_truths = { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', gf01_rt15_status: gf01Rt15Status, same_video_comparison_status: sameVideoComparisonStatus };
   const redaction_notes = ['No secret/token/session fields emitted; only safe booleans/refs included'];
   const resolver_output = {
     schema_version: 'tapecoach_v3_resolver_output_v1', artefact_type: 'resolver_output', internal_only: true, privacy_classification: 'internal_private',
@@ -4982,7 +4986,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     timestamps: { take_created_at: input.take_created_at ?? null, take_updated_at: input.take_updated_at ?? null, timestamp_source: (input.take_created_at || input.take_updated_at) ? 'loaded_take_row' : 'unavailable' },
     legacy_adapter_present: true,
     v3_spine_available: { input_artefacts_available: true, resolver_output_available: true, truth_state_map_available: true, evidence_anchors_available: false, public_claim_trace_available: false },
-    unresolved_inputs, unavailable_fields, blocker_codes: ['gf01_rt15_blocked_no_comparison_runtime_evidence'], redaction_notes,
+    unresolved_inputs, unavailable_fields, blocker_codes: comparisonInvoked ? ['gf01_rt15_blocked_no_comparison_runtime_evidence'] : [], redaction_notes,
   };
   const truth_state_map = {
     schema_version: 'tapecoach_v3_truth_state_map_v1', artefact_type: 'truth_state_map', internal_only: true, privacy_classification: 'internal_private',
@@ -4998,7 +5002,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     component_truths: { declaration_source: input.component_or_task_declaration_source ?? 'not_loaded', declaration_status: input.component_or_task_declaration_status ?? 'unknown', legacy_report_detected_components: 'legacy_adapter_report_snapshot_not_v3_input_truth' },
     level_truths: { selected_level: input.selected_level ?? null, status: input.selected_level ? 'known' : 'unknown' },
     role_truths: { status: 'unavailable', reason: 'insufficient_reliable_brief_or_material_context' },
-    comparison_truths: { comparison_run_executed: false, status: 'blocked_or_not_executed', compared_take_ids: input.compared_take_ids ?? [input.take_id] },
+    comparison_truths: { comparison_run_executed: comparisonInvoked, status: comparisonInvoked ? 'blocked_pending_comparison_evidence' : 'not_applicable_single_take', compared_take_ids: comparedTakeIds },
     public_authority_truths: { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', raw_report_legacy_adapter_not_v3_proof: true },
     source_refs: resolver_output.input_artifact_refs, redaction_notes,
   };
