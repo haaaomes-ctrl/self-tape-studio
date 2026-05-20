@@ -349,6 +349,40 @@ describe('v3-s9 report parity proof', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
+  it('J: ordinary runtime with missing render/public payload emits insufficient report parity', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-16e-report-parity-missing-surfaces-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-s916e-report-missing',
+      analysis_run_id: 'run-s916e-report-missing',
+      take_id: 't-report',
+      compared_take_ids: ['t-report'],
+      comparison_run_id: null,
+      submission_id: 's1',
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ['raw_report'],
+      report_parity_input: {
+        raw_report_data: { report_data: { fix_first: 'Keep the eyeline steady.' } },
+        render_payload: null,
+        public_report_payload: null,
+        allowed_public_fields: ['report_data.fix_first'],
+      },
+    });
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'qa', 'acceptance_metrics.json'), 'utf8'));
+    const parity = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'takes', 'take-t-report', 'analysis-run-s916e-report-missing', 'parity', 'report_parity_result.json'), 'utf8'));
+
+    expect(parity.parity_status).toBe('insufficient');
+    expect(parity.mismatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mismatch_type: 'render_payload_missing' }),
+      expect.objectContaining({ mismatch_type: 'public_report_payload_missing' }),
+    ]));
+    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted_blocked');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.level2_status).toBe('not_accepted');
+  });
+
   it('comparison parity requiredness: ordinary runs mark parity_comparison not_applicable and do not block solely for it', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13d-ordinary-'));
     const out = await emitReportParityProof({ run_id: 'run-ordinary', analysis_run_id: 'run-ordinary', take_id: 't1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, render_payload: { summary: 'A' }, public_report_payload: { summary: 'A' }, allowed_public_fields: ['summary'] });

@@ -118,6 +118,107 @@ describe('v3 s9 qa acceptance metrics', () => {
     }
   });
 
+  it('labels emitted-blocked partial AnalysisEvidenceState as insufficient rather than missing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916e-aes-partial-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-s916e-aes-partial',
+      analysis_run_id: 'run-s916e-aes-partial',
+      take_id: 't-aes',
+      compared_take_ids: ['t-aes'],
+      comparison_run_id: null,
+      submission_id: 'sub-aes',
+      root_dir: root,
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+      emitted_blocked_artefact_ids: ['analysis_evidence_state'],
+      artefact_source_classification_by_id: {
+        raw_report: 'legacy_adapter',
+        analysis_evidence_state: 'real_runtime_v3_partial',
+      },
+      artefact_level2_spine_satisfaction_by_id: {
+        raw_report: false,
+        analysis_evidence_state: false,
+      },
+      analysis_evidence_state_summary: {
+        evidence_state_status: 'partial',
+        source_classification: 'real_runtime_v3_partial',
+        observable_evidence_item_count: 2,
+        unsupported_or_unavailable_evidence_count: 1,
+        analysis_evidence_state_gate_status: 'insufficient',
+        analysis_evidence_state_gate_reason: 'partial_runtime_evidence_not_level2_satisfying',
+      },
+    });
+
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-s916e-aes-partial', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'run-s916e-aes-partial', 'qa', 'acceptance_metrics.json'), 'utf8'));
+    const required = manifest.required_artifacts.find((artefact: any) => artefact.artefact_id === 'analysis_evidence_state');
+
+    expect(required?.status).toBe('emitted_blocked');
+    expect(required?.blocker_code).toBe('AnalysisEvidenceState_insufficient');
+    expect(manifest.blocker_codes).toContain('AnalysisEvidenceState_insufficient');
+    expect(manifest.blocker_codes).not.toContain('AnalysisEvidenceState_missing');
+    expect(metrics.blocker_codes).toEqual(manifest.blocker_codes);
+    expect(metrics.blocker_codes).not.toContain('AnalysisEvidenceState_missing');
+    expect(metrics.analysis_evidence_state_status).toBe('emitted_blocked');
+    expect(metrics.analysis_evidence_state_summary.evidence_state_status).toBe('partial');
+    expect(metrics.level2_status).toBe('not_accepted');
+  });
+
+  it('keeps truly missing AnalysisEvidenceState labelled as missing', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916e-aes-missing-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-s916e-aes-missing',
+      analysis_run_id: 'run-s916e-aes-missing',
+      take_id: 't-aes-missing',
+      compared_take_ids: ['t-aes-missing'],
+      comparison_run_id: null,
+      submission_id: 'sub-aes',
+      root_dir: root,
+      internal_qa_emit: true,
+      emitted_artefact_ids: ['raw_report'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter' },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false },
+    });
+
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-s916e-aes-missing', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'run-s916e-aes-missing', 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(manifest.required_artifacts.find((artefact: any) => artefact.artefact_id === 'analysis_evidence_state')?.blocker_code).toBe('AnalysisEvidenceState_missing');
+    expect(manifest.blocker_codes).toContain('AnalysisEvidenceState_missing');
+    expect(metrics.blocker_codes).toContain('AnalysisEvidenceState_missing');
+  });
+
+  it('reports partial real-runtime EvidenceAnchors in metrics without satisfying the gate', () => {
+    const metrics = qaArtifactsModule.buildQAAcceptanceMetrics({
+      run_id: 'r',
+      analysis_run_id: 'r',
+      submission_id: 's',
+      take_id: 't',
+      compared_take_ids: ['t'],
+      comparison_run_id: null,
+      generated_at: new Date().toISOString(),
+      qa_artifact_root: 'x',
+      emitted_artifacts: ['evidence_anchors'],
+      missing_artifacts: [],
+      emitted_blocked_artefact_ids: [],
+      deferred_artifact_ids: [],
+      not_applicable_artifact_ids: [],
+      blocker_codes: [],
+      required_artifacts: [],
+      runtime_evidence_accepted_by_id: [],
+      runtime_evidence_blocked_by_id: ['evidence_anchors'],
+      artefact_status_by_id: { evidence_anchors: 'emitted' },
+      artefact_source_classification_by_id: { evidence_anchors: 'real_runtime_v3_partial_non_satisfying' },
+      artefact_level2_spine_satisfaction_by_id: { evidence_anchors: false },
+      legacy_adapter_artefact_ids: [],
+      real_v3_spine_artefact_ids: [],
+    } as any);
+
+    expect(metrics.evidence_anchor_source_family_summary.real_runtime_v3).toBe(1);
+    expect(metrics.evidence_anchor_source_family_summary.legacy_adapter).toBe(0);
+    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(metrics.level2_status).toBe('not_accepted');
+  });
+
   it('emits qa/acceptance_metrics.json and marks manifest emitted without changing L2 acceptance', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s905-'));
     const run = 'run-s905'; const take = 'tk1';

@@ -190,6 +190,15 @@ const BLOCKERS: Record<string, string> = {
   comparison_report_internal: 'comparison_report_unavailable',
 };
 const REQUIRED_ARTEFACT_ID_SET = new Set(REQUIRED.map((artefact) => artefact.artefact_id));
+const COMPARISON_REQUIRED_ARTEFACT_IDS = new Set([
+  'comparison_raw',
+  'comparison_report_internal',
+  'same_video_repeatability_trace',
+  'duplicate_detection_trace',
+  'comparison_suppression_trace',
+  'route_variance_trace',
+  'parity_comparison',
+]);
 const BASE_REAL_RUNTIME_V3_ARTEFACT_IDS = new Set([
   'analysis_input_record',
   'analysis_submission',
@@ -217,6 +226,27 @@ const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
   'missing',
   'unavailable',
 ];
+
+function blockerCodeForRequiredArtefact(artefactId: string, status: string): string | undefined {
+  if (artefactId === 'analysis_evidence_state') {
+    if (status === 'missing') return 'AnalysisEvidenceState_missing';
+    if (status === 'emitted_blocked') return 'AnalysisEvidenceState_insufficient';
+    if (status === 'failed_emission') return 'AnalysisEvidenceState_failed_emission';
+    if (status === 'deferred' || status === 'unavailable') return 'AnalysisEvidenceState_unavailable';
+  }
+  return BLOCKERS[artefactId];
+}
+
+function fallbackSourceFamilySummary(sourceClassification: unknown) {
+  const source = typeof sourceClassification === 'string' ? sourceClassification : '';
+  return {
+    real_runtime_v3: source === 'real_runtime_v3' || source.includes('real_runtime_v3_partial') ? 1 : 0,
+    legacy_adapter: source.includes('legacy_adapter') ? 1 : 0,
+    report_snapshot: source === 'report_snapshot' ? 1 : 0,
+    input_artifact: source === 'input_artifact' ? 1 : 0,
+    resolver_truth_state: source === 'resolver_truth_state' ? 1 : 0,
+  };
+}
 
 
 function safeExists(filePath: unknown): boolean {
@@ -422,13 +452,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     resolver_truth_state: sourceClassById.technique_observation_trace === 'resolver_truth_state' ? 1 : 0,
   };
   const evidenceAnchorTraceSummary = manifest.evidence_anchor_trace_summary ?? {};
-  const evidenceAnchorSourceSummary = evidenceAnchorTraceSummary.source_family_summary ?? {
-    real_runtime_v3: sourceClassById.evidence_anchors === 'real_runtime_v3' ? 1 : 0,
-    legacy_adapter: sourceClassById.evidence_anchors === 'legacy_adapter' ? 1 : 0,
-    report_snapshot: sourceClassById.evidence_anchors === 'report_snapshot' ? 1 : 0,
-    input_artifact: sourceClassById.evidence_anchors === 'input_artifact' ? 1 : 0,
-    resolver_truth_state: sourceClassById.evidence_anchors === 'resolver_truth_state' ? 1 : 0,
-  };
+  const evidenceAnchorSourceSummary = evidenceAnchorTraceSummary.source_family_summary ?? fallbackSourceFamilySummary(sourceClassById.evidence_anchors);
   const publicClaimSummary = manifest.public_claim_trace_summary ?? {
     claim_count: 0,
     unsupported_claim_count: 0,
@@ -700,9 +724,8 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const internal_qa_emit = options.internal_qa_emit ?? false;
   if (!internal_qa_emit) return { written: false };
   const root = options.root_dir ?? DEFAULT_ROOT;
-  const comparisonArtefactIds = new Set(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace', 'parity_comparison']);
   const emittedForMode = [...(options.emitted_artefact_ids ?? []), ...(options.emitted_blocked_artefact_ids ?? [])];
-  const inferredComparisonMode = emittedForMode.some((id) => comparisonArtefactIds.has(id));
+  const inferredComparisonMode = emittedForMode.some((id) => COMPARISON_REQUIRED_ARTEFACT_IDS.has(id));
   const mode = (options.comparison_run_id || inferredComparisonMode) ? 'comparison' : 'take';
   const comparisonRunId = options.comparison_run_id ?? (inferredComparisonMode ? options.run_id : undefined);
   const runDir = resolveRunDir(root, options.run_id, mode, options.take_id, options.analysis_run_id, comparisonRunId);
@@ -724,11 +747,11 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     const emittedUnsatisfiedReportParity = r.artefact_id === 'parity_report' && emitted && initialLevel2ById.parity_report !== true;
     const emittedBlocked = emittedBlockedIds.has(r.artefact_id);
     const deferred = deferredIds.has(r.artefact_id);
-    const notApplicable = notApplicableIds.has(r.artefact_id) || (r.artefact_id === 'parity_comparison' && !comparisonInvoked);
+    const notApplicable = notApplicableIds.has(r.artefact_id) || (!comparisonInvoked && COMPARISON_REQUIRED_ARTEFACT_IDS.has(r.artefact_id));
     const status: ArtefactStatus = emitted
       ? (emittedUnsatisfiedReportParity ? 'emitted_blocked' : 'emitted')
       : (emittedBlocked ? 'emitted_blocked' : (deferred ? 'deferred' : (notApplicable ? 'not_applicable' : 'missing')));
-    const blocker_code = (status === 'emitted' || status === 'not_applicable') ? undefined : BLOCKERS[r.artefact_id];
+    const blocker_code = (status === 'emitted' || status === 'not_applicable') ? undefined : blockerCodeForRequiredArtefact(r.artefact_id, status);
     return { ...r, status, blocker_code, reason: emitted ? 'Emitted in current run' : (emittedBlocked ? 'Emitted with blocked/not_executed runtime evidence' : (deferred ? 'Intentionally deferred' : (notApplicable ? 'Not applicable for this run shape' : 'Not emitted by current pipeline stage'))) };
   });
   const missing_artifacts = required_artifacts.filter((a) => a.status === 'missing').map((a) => a.artefact_id);

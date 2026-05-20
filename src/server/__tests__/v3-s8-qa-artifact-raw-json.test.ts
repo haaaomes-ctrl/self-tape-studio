@@ -39,7 +39,8 @@ describe('v3 s8-23 raw json emitters', () => {
     const manifest = JSON.parse(await readFile(path.join(root, 'r4', 'manifest.json'), 'utf8'));
     expect(manifest.emitted_artifacts).toContain('raw_report');
     expect(manifest.blocker_codes).not.toContain('raw_JSON_missing');
-    expect(manifest.blocker_codes).toContain('comparison_JSON_missing');
+    expect(manifest.artefact_status_by_id.comparison_raw).toBe('not_applicable');
+    expect(manifest.blocker_codes).not.toContain('comparison_JSON_missing');
     expect(manifest.level2_qa_acceptance).toBe('not_accepted');
   });
 
