@@ -47,11 +47,12 @@ describe('v3 s8 qa artifact wiring', () => {
     expect(manifest.user_experience_unchanged).toBe(true);
   });
 
-  it('preserves manifest default runtime evidence derivation when caller does not pass explicit lists', async () => {
+  it('does not accept emitted artefacts as runtime evidence without satisfying L2 proof', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-wiring-'));
     await emitQAManifestForAnalysisRun({ run_id: 'run-ev', root_dir: root, internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-ev', 'manifest.json'), 'utf8'));
-    expect(manifest.runtime_evidence_accepted_by_id).toContain('raw_report');
+    expect(manifest.runtime_evidence_accepted_by_id).not.toContain('raw_report');
+    expect(manifest.runtime_evidence_blocked_by_id).toContain('raw_report');
   });
 
   it('emitter failure is captured as warning and does not throw', async () => {
