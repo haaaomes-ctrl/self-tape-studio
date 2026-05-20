@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 
 const ENV_KEYS = ['INTERNAL_QA_EMIT', 'V3_QA_ARTIFACTS_ENABLED'] as const;
+const comparisonRuntimeArtefactIds = ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'duplicate_detection_trace', 'comparison_suppression_trace', 'route_variance_trace'];
 async function seedCanonicalRootManifestForComparison(input: { root: string; root_take_id: string }) {
   const runId = `take-${input.root_take_id}`;
   const manifestPath = path.join(input.root, runId, 'manifest.json');
@@ -19,9 +20,9 @@ async function seedCanonicalRootManifestForComparison(input: { root: string; roo
   const base = {
     run_id: runId,
     emitted_artifacts: ['analysis_input_record', 'analysis_submission', 'analysis_take', 'raw_report', 'resolver_output', 'truth_state_map', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'qa_acceptance_metrics'],
-    missing_artifacts: ['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace'],
-    blocker_codes: ['comparison_JSON_missing', 'comparison_report_unavailable', 'same_video_repeatability_trace_missing', 'comparison_suppression_trace_missing', 'route_variance_trace_missing'],
-    required_artifacts: [{ artefact_id: 'comparison_raw', status: 'missing' }, { artefact_id: 'comparison_report_internal', status: 'missing' }, { artefact_id: 'same_video_repeatability_trace', status: 'missing' }, { artefact_id: 'comparison_suppression_trace', status: 'missing' }, { artefact_id: 'route_variance_trace', status: 'missing' }],
+    missing_artifacts: comparisonRuntimeArtefactIds,
+    blocker_codes: ['comparison_JSON_missing', 'comparison_report_unavailable', 'same_video_repeatability_trace_missing', 'duplicate_detection_trace_missing', 'comparison_suppression_trace_missing', 'route_variance_trace_missing'],
+    required_artifacts: comparisonRuntimeArtefactIds.map((artefact_id) => ({ artefact_id, status: 'missing' })),
     level2_accepted: false,
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
@@ -53,13 +54,16 @@ describe('v3 s9 comparison operator trigger', () => {
     expect(result.ok).toBe(true);
     expect(result.written).toBe(true);
     expect(result.root_analysis_run_id).toBe('take-b');
-    expect(result.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace', 'parity_comparison'].sort());
-    expect((result as any).comparison_parity_status).toBe('passed');
-    expect((result as any).emitted_blocked_artefact_ids).not.toContain('parity_comparison');
+    expect(result.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
+    expect((result as any).comparison_parity_status).toBe('insufficient');
+    expect((result as any).emitted_blocked_artefact_ids).toContain('parity_comparison');
     const base = path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-b');
     await expect(readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8')).resolves.toBeTruthy();
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    expect(duplicate.duplicate_detection_status).toBe('insufficient_evidence');
     const parity = JSON.parse(await readFile(path.join(base, 'parity', 'comparison_parity.json'), 'utf8'));
-    expect(parity.parity_status).toBe('passed');
+    expect(parity.parity_status).toBe('insufficient');
+    expect(parity.duplicate_detection_blocker).toBe('duplicate_detection_insufficient_evidence');
     await expect(readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-analysis-b', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
     await expect(readFile(path.join(root, 'take-b', 'takes', 'take-b', 'analysis-take-take-b', 'comparison', 'comparison.raw.json'), 'utf8')).rejects.toThrow();
   });
@@ -323,9 +327,9 @@ describe('v3 s9 comparison operator trigger', () => {
         internal_qa_emit: true,
       }, async (takeId) => ({ take_id: takeId, analysis_run_id: `ar-${takeId}-${status}`, completed: true }));
       expect(out.ok).toBe(true);
-      expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'same_video_repeatability_trace', 'comparison_suppression_trace', 'route_variance_trace', 'parity_comparison'].sort());
-      expect((out as any).comparison_parity_status).toBe('passed');
-      expect((out as any).emitted_blocked_artefact_ids).not.toContain('parity_comparison');
+      expect(out.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
+      expect((out as any).comparison_parity_status).toBe('insufficient');
+      expect((out as any).emitted_blocked_artefact_ids).toContain('parity_comparison');
     }
   });
 

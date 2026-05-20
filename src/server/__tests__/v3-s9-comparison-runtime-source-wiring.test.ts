@@ -11,6 +11,8 @@ async function seedCanonicalManifest(root: string, core: string) {
   await writeFile(path.join(root, runId, 'qa', 'acceptance_metrics.json'), JSON.stringify({ run_id: runId }), 'utf8');
 }
 
+const comparisonRuntimeArtefactIds = ['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'duplicate_detection_trace', 'route_variance_trace', 'same_video_repeatability_trace'];
+
 describe('v3 s9 comparison runtime source wiring', () => {
   it('uses upstream internal runtime source for two real completed takes and emits comparison artefacts', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s911b-source-'));
@@ -28,11 +30,13 @@ describe('v3 s9 comparison runtime source wiring', () => {
     });
     expect(out.written).toBe(true);
     expect(out.comparison_run_id).toBeTruthy();
-    expect(out.emitted_artefact_ids.sort()).toEqual(['comparison_raw', 'comparison_report_internal', 'comparison_suppression_trace', 'route_variance_trace', 'same_video_repeatability_trace'].sort());
+    expect(out.emitted_artefact_ids.sort()).toEqual([...comparisonRuntimeArtefactIds].sort());
     const base = path.join(root, 'take-root-a', 'takes', 'take-root-a', 'analysis-ar-a');
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     expect(raw.comparison_execution_status).toBe('executed');
     expect(raw.compared_take_ids).toEqual(['root-a', 'root-b']);
+    expect(duplicate.duplicate_detection_status).toBe('insufficient_evidence');
     await emitQAManifestForAnalysisRun({ run_id: 'take-root-a', take_id: 'root-a', analysis_run_id: 'ar-a', comparison_run_id: raw.comparison_run_id, compared_take_ids: ['root-a', 'root-b'], root_dir: root, internal_qa_emit: true, emitted_artefact_ids: out.emitted_artefact_ids });
     const metrics = JSON.parse(await readFile(path.join(root, 'take-root-a', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(metrics.comparison_evidence_status).toBe('insufficient');
@@ -127,10 +131,12 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(out.written).toBe(true);
     const base = path.join(root, 'take-dup-root', 'takes', 'take-dup-root', 'analysis-ar1');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
     const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
     expect(sameVideo.same_video_detected).toBe(true);
+    expect(duplicate.duplicate_detection_status).toBe('detected');
     expect(sameVideo.false_winner_risk).toBe(true);
     expect(suppression.suppression_decision).toBe('suppressed');
     expect(suppression.recommendation_suppressed).toBe(true);
@@ -215,9 +221,11 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(out.written).toBe(true);
     const base = path.join(root, 'take-dup-mux-root', 'takes', 'take-t-a', 'analysis-ar-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
     expect(sameVideo.same_mux_playback_ref).toBe(true);
+    expect(duplicate.duplicate_detection_status).toBe('detected');
     expect(sameVideo.same_video_detected).toBe(true);
     expect(sameVideo.repeated_input_detected).toBe(true);
     expect(suppression.suppression_decision).toBe('suppressed');
@@ -244,7 +252,9 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(out.written).toBe(true);
     const base = path.join(root, 'take-dup-fp-root', 'takes', 'take-t-a1', 'analysis-ar-a1');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    expect(duplicate.duplicate_detection_status).toBe('likely_duplicate');
     expect(sameVideo.same_video_detected).toBe(true);
     expect(sameVideo.repeated_input_detected).toBe(true);
     expect(sameVideo.false_winner_risk).toBe(true);
@@ -269,10 +279,12 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(out.written).toBe(true);
     const base = path.join(root, 'take-unique-root', 'takes', 'take-tu-a', 'analysis-aru-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
     const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
     const report = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.report.internal.json'), 'utf8'));
     expect(sameVideo.same_video_detected).toBe(false);
+    expect(duplicate.duplicate_detection_status).toBe('not_detected');
     expect(sameVideo.repeated_input_detected).toBe(false);
     expect(raw.recommendation_suppressed).toBe(false);
     expect(report.recommendation_suppressed).toBe(false);
@@ -376,8 +388,10 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(out.written).toBe(true);
     const base = path.join(root, 'take-blank-root', 'takes', 'take-tb-a', 'analysis-arb-a');
     const sameVideo = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'same_video_repeatability_trace.json'), 'utf8'));
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
     expect(sameVideo.same_mux_playback_ref).toBe(false);
     expect(sameVideo.same_video_detected).toBe(false);
+    expect(duplicate.duplicate_detection_status).toBe('insufficient_evidence');
   });
 
   it('detects duplicate take_id/analysis_run_id pairs in 3+ inputs', async () => {
@@ -405,5 +419,132 @@ describe('v3 s9 comparison runtime source wiring', () => {
     expect(sameVideo.same_video_detected).toBe(true);
     expect(suppression.suppression_decision).toBe('suppressed');
     expect(raw.selected_take_id_internal_only).toBeNull();
+  });
+
+  it('detects exact original upload hash match with high confidence and suppression', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-hash-'));
+    await runInternalComparisonForTakes({
+      run_id: 'take-hash-root',
+      root_take_id: 'hash-a',
+      source_module: 'test',
+      source_stage: 'hash-match',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'hash-a', analysis_run_id: 'hash-ar-a', mux_playback_ref: 'pb-h-a', original_upload_file_hash: 'sha256-same', visible_or_original_file_name: 'take-a.mov', video_duration_ms: 10000 },
+        { take_id: 'hash-b', analysis_run_id: 'hash-ar-b', mux_playback_ref: 'pb-h-b', original_upload_file_hash: 'sha256-same', visible_or_original_file_name: 'take-b.mov', video_duration_ms: 12000 },
+      ],
+    });
+    const base = path.join(root, 'take-hash-root', 'takes', 'take-hash-a', 'analysis-hash-ar-a');
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    const raw = JSON.parse(await readFile(path.join(base, 'comparison', 'comparison.raw.json'), 'utf8'));
+    expect(duplicate.duplicate_detection_status).toBe('detected');
+    expect(duplicate.duplicate_detection_confidence).toBe(100);
+    expect(duplicate.signals_matched).toContain('original_upload_file_hash');
+    expect(raw.recommendation_suppressed).toBe(true);
+    expect(raw.selected_take_id_internal_only).toBeNull();
+  });
+
+  it('does not let filename and duration changes defeat stronger duplicate signals', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-strong-'));
+    await runInternalComparisonForTakes({
+      run_id: 'take-strong-root',
+      root_take_id: 'strong-a',
+      source_module: 'test',
+      source_stage: 'strong-signals',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'strong-a', analysis_run_id: 'strong-ar-a', mux_playback_ref: 'pb-s-a', visible_or_original_file_name: 'first-name.mov', video_duration_ms: 10000, opening_video_sample_hash_or_profile: 'open-v', closing_video_sample_hash_or_profile: 'close-v', opening_audio_profile_hash: 'open-a', closing_audio_profile_hash: 'close-a' },
+        { take_id: 'strong-b', analysis_run_id: 'strong-ar-b', mux_playback_ref: 'pb-s-b', visible_or_original_file_name: 'changed-name.mov', video_duration_ms: 13000, opening_video_sample_hash_or_profile: 'open-v', closing_video_sample_hash_or_profile: 'close-v', opening_audio_profile_hash: 'open-a', closing_audio_profile_hash: 'close-a' },
+      ],
+    });
+    const duplicate = JSON.parse(await readFile(path.join(root, 'take-strong-root', 'takes', 'take-strong-a', 'analysis-strong-ar-a', 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    expect(['detected', 'likely_duplicate']).toContain(duplicate.duplicate_detection_status);
+    expect(duplicate.signals_conflicting).toEqual(expect.arrayContaining(['visible_or_original_file_name', 'video_duration_ms']));
+    expect(duplicate.signals_matched).toEqual(expect.arrayContaining(['opening_video_sample_hash_or_profile', 'closing_video_sample_hash_or_profile', 'opening_audio_profile_hash', 'closing_audio_profile_hash']));
+  });
+
+  it('keeps filename-only and duration-only matches non-decisive', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-weak-'));
+    await runInternalComparisonForTakes({
+      run_id: 'take-weak-root',
+      root_take_id: 'weak-a',
+      source_module: 'test',
+      source_stage: 'weak-signals',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'weak-a', analysis_run_id: 'weak-ar-a', mux_playback_ref: 'pb-w-a', visible_or_original_file_name: 'same.mov', video_duration_ms: 42000 },
+        { take_id: 'weak-b', analysis_run_id: 'weak-ar-b', mux_playback_ref: 'pb-w-b', visible_or_original_file_name: 'same.mov', video_duration_ms: 42000 },
+      ],
+    });
+    const duplicate = JSON.parse(await readFile(path.join(root, 'take-weak-root', 'takes', 'take-weak-a', 'analysis-weak-ar-a', 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    expect(duplicate.duplicate_detection_status).toBe('possible_duplicate');
+    expect(duplicate.duplicate_detection_confidence).toBeLessThan(45);
+    expect(duplicate.same_video_unresolved_risk).toBe(true);
+  });
+
+  it('detects full opening and closing video/audio profile matches without upload hash', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-samples-'));
+    await runInternalComparisonForTakes({
+      run_id: 'take-samples-root',
+      root_take_id: 'samples-a',
+      source_module: 'test',
+      source_stage: 'sample-signals',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'samples-a', analysis_run_id: 'samples-ar-a', opening_video_sample_hash_or_profile: 'ov', closing_video_sample_hash_or_profile: 'cv', opening_audio_profile_hash: 'oa', closing_audio_profile_hash: 'ca' },
+        { take_id: 'samples-b', analysis_run_id: 'samples-ar-b', opening_video_sample_hash_or_profile: 'ov', closing_video_sample_hash_or_profile: 'cv', opening_audio_profile_hash: 'oa', closing_audio_profile_hash: 'ca' },
+      ],
+    });
+    const duplicate = JSON.parse(await readFile(path.join(root, 'take-samples-root', 'takes', 'take-samples-a', 'analysis-samples-ar-a', 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    expect(['detected', 'likely_duplicate']).toContain(duplicate.duplicate_detection_status);
+    expect(duplicate.duplicate_detection_confidence).toBeGreaterThanOrEqual(70);
+  });
+
+  it('does not over-detect on opening sample alone', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-opening-only-'));
+    await runInternalComparisonForTakes({
+      run_id: 'take-opening-root',
+      root_take_id: 'opening-a',
+      source_module: 'test',
+      source_stage: 'opening-only',
+      root_dir: root,
+      internal_qa_emit: true,
+      compared_takes: [
+        { take_id: 'opening-a', analysis_run_id: 'opening-ar-a', opening_video_sample_hash_or_profile: 'common-slate' },
+        { take_id: 'opening-b', analysis_run_id: 'opening-ar-b', opening_video_sample_hash_or_profile: 'common-slate' },
+      ],
+    });
+    const duplicate = JSON.parse(await readFile(path.join(root, 'take-opening-root', 'takes', 'take-opening-a', 'analysis-opening-ar-a', 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    expect(['possible_duplicate', 'insufficient_evidence']).toContain(duplicate.duplicate_detection_status);
+    expect(duplicate.duplicate_detection_confidence).toBeLessThan(45);
+  });
+
+  it('records internal operator same-video assertion and forces suppression without accepting Level 2', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s916b-operator-'));
+    await runInternalComparisonForTakes({
+      run_id: 'take-operator-root',
+      root_take_id: 'operator-a',
+      source_module: 'test',
+      source_stage: 'operator-assertion',
+      root_dir: root,
+      internal_qa_emit: true,
+      operator_same_video_assertion: true,
+      compared_takes: [
+        { take_id: 'operator-a', analysis_run_id: 'operator-ar-a', mux_playback_ref: 'pb-op-a' },
+        { take_id: 'operator-b', analysis_run_id: 'operator-ar-b', mux_playback_ref: 'pb-op-b' },
+      ],
+    });
+    const base = path.join(root, 'take-operator-root', 'takes', 'take-operator-a', 'analysis-operator-ar-a');
+    const duplicate = JSON.parse(await readFile(path.join(base, 'comparison', 'duplicate_detection_trace.json'), 'utf8'));
+    const suppression = JSON.parse(await readFile(path.join(base, 'comparison_traces', 'comparison_suppression_trace.json'), 'utf8'));
+    expect(duplicate.duplicate_detection_status).toBe('detected');
+    expect(duplicate.operator_same_video_assertion).toBe(true);
+    expect(duplicate.duplicate_detection_basis).toContain('operator_same_video_assertion');
+    expect(duplicate.cannot_satisfy_level2_comparison_gate).toBe(true);
+    expect(suppression.recommendation_suppressed).toBe(true);
   });
 });
