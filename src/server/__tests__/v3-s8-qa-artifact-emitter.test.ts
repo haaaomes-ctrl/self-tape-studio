@@ -23,7 +23,7 @@ describe('v3 s8 internal qa artefact emitter', () => {
     expect(manifest.public_scoring_status).toBe('blocked');
     expect(manifest.no_export_status).toBe('no_export_proof_missing');
     expect(manifest.qa_artifact_root).toContain('takes/take-take-b/analysis-run-b');
-    expect(manifest.artefact_status_by_id.comparison_report_internal).toBe('missing');
+    expect(manifest.artefact_status_by_id.comparison_report_internal).toBe('not_applicable');
     expect(Array.isArray(manifest.emitted_blocked_artefact_ids)).toBe(true);
   });
 

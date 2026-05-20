@@ -93,10 +93,24 @@ function expectFailedBlocked(out:{manifest:any; metrics:any; parity:any}) {
   expect(out.metrics.blocker_codes).toContain('parity_artefacts_missing');
 }
 
-function expectComparisonNotBlocking(manifest:any) {
-  const parityComparison = manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison');
-  expect(parityComparison?.blocker_code).toBeUndefined();
-  expect(manifest.missing_artifacts).not.toContain('parity_comparison');
+function expectComparisonNotBlocking(manifest:any, expectedStatus?: 'not_applicable') {
+  const comparisonBlockers = [
+    'comparison_JSON_missing',
+    'comparison_report_unavailable',
+    'same_video_repeatability_trace_missing',
+    'duplicate_detection_trace_missing',
+    'comparison_suppression_trace_missing',
+    'route_variance_trace_missing',
+  ];
+  for (const artefactId of [...evidenceIds, 'parity_comparison']) {
+    const required = manifest.required_artifacts.find((a:any)=>a.artefact_id===artefactId);
+    if (expectedStatus) expect(required?.status).toBe(expectedStatus);
+    expect(required?.blocker_code).toBeUndefined();
+    expect(manifest.missing_artifacts).not.toContain(artefactId);
+  }
+  for (const blocker of comparisonBlockers) {
+    expect(manifest.blocker_codes).not.toContain(blocker);
+  }
 }
 
 function expectRiskFieldHit(parity:any, source:string, field:string, path:string) {
@@ -125,7 +139,7 @@ describe('v3-s9 comparison parity proof', () => {
     expect(manifest.comparison_run_id).toBeNull();
     expect(manifest.compared_take_ids).toEqual(['ta']);
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('not_applicable');
-    expectComparisonNotBlocking(manifest);
+    expectComparisonNotBlocking(manifest, 'not_applicable');
     const parityMissingInputs = ['parity_report','parity_comparison'].filter((id:string)=>manifest.missing_artifacts.includes(id));
     expect(parityMissingInputs).toEqual(['parity_report']);
   });
@@ -136,7 +150,7 @@ describe('v3-s9 comparison parity proof', () => {
     const manifest = await readManifest(root,'run-dedup-same-take');
     expect(manifest.compared_take_ids).toEqual(['ta']);
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('not_applicable');
-    expectComparisonNotBlocking(manifest);
+    expectComparisonNotBlocking(manifest, 'not_applicable');
   });
 
   it('A duplicated take prefixes are stripped before comparison cardinality checks', async () => {

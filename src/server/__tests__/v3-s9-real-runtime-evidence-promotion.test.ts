@@ -1060,7 +1060,8 @@ describe('S9-14C Step 1 observable evidence extractor', () => {
     expect(metrics.analysis_evidence_state_source_classification).toBe(manifest.artefact_source_classification_by_id.analysis_evidence_state);
     expect(metrics.analysis_evidence_state_gate_status).toBe('insufficient');
     expect(metrics.blocker_codes).toEqual(manifest.blocker_codes);
-    expect(metrics.blocker_codes).toContain('AnalysisEvidenceState_missing');
+    expect(metrics.blocker_codes).toContain('AnalysisEvidenceState_insufficient');
+    expect(metrics.blocker_codes).not.toContain('AnalysisEvidenceState_missing');
   });
 
   it('keeps global gates blocked', async () => {

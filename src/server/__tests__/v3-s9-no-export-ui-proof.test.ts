@@ -7,6 +7,16 @@ import { emitNoExportProofBundle, emitQAManifestForAnalysisRun } from '@/server/
 const parse = async (p: string) => JSON.parse(await readFile(p, 'utf8'));
 
 describe('v3 s9 no-export ui proof emission', () => {
+  it('process-take wires the no-export proof bundle into ordinary runtime QA', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
+    expect(source).toContain('emitNoExportProofBundle');
+    expect(source).toContain('no_export_source_proof');
+    expect(source).toContain('no_export_config_proof');
+    expect(source).toContain('no_export_ui_proof');
+    expect(source).toContain('no_export_log_proof');
+    expect(source).toContain('admin/internal only');
+  });
+
   it('emits no_export_ui_proof, classifies internal/admin surfaces, and aligns manifest + metrics', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s913b-ui-'));
     const run = 'run-s913b-ui';

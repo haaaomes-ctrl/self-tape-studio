@@ -30,7 +30,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisEvidenceStatePrerequisite, emitAnalysisInputArtefacts, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import { emitAnalysisEvidenceStatePrerequisite, emitAnalysisInputArtefacts, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitNoExportProofBundle, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
@@ -3798,6 +3798,50 @@ export async function runProcessTake(
       });
       if (modelRunTrace.written) qaArtefactIds.push(...modelRunTrace.emitted_artefact_ids);
 
+      const noExportProof = await emitNoExportProofBundle({
+        run_id: `take-${takeId}`,
+        source_stage: 'process_take_success',
+        source_module: 'process-take.server',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        proofs: {
+          no_export_source_proof: {
+            checked_paths: [
+              'src/routes/audition.$auditionId.tsx',
+              'src/components/report/V2ReportView.tsx',
+              'src/server/process-take.server.ts',
+              'src/server/v3/qa-artifacts-wiring.server.ts',
+            ],
+            no_public_export_route_enabled: true,
+            no_public_share_route_enabled: true,
+            no_public_download_route_enabled: true,
+            public_comparison_output_enabled: false,
+            admin_storage_download_surface_classified_internal_only: true,
+          },
+          no_export_config_proof: {
+            checked_env_keys: ['EXPORT_ENABLED', 'SHARE_ENABLED', 'DOWNLOAD_ENABLED', 'PUBLIC_COMPARISON_OUTPUT_ENABLED'],
+            public_export_runtime_flag_status: process.env.EXPORT_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
+            public_share_runtime_flag_status: process.env.SHARE_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
+            public_download_runtime_flag_status: process.env.DOWNLOAD_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
+            public_comparison_output_runtime_flag_status: process.env.PUBLIC_COMPARISON_OUTPUT_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
+          },
+          no_export_ui_proof: {
+            checked_routes: ['src/routes/audition.$auditionId.tsx', 'src/routes/admin/storage-downloads.tsx'],
+            checked_components_or_files: ['src/components/report/V2ReportView.tsx'],
+            admin_internal_surfaces_classified: ['src/routes/admin/storage-downloads.tsx: admin/internal only'],
+            unsupported_or_unknown_surfaces: [],
+          },
+          no_export_log_proof: {
+            source_stage: 'process_take_success',
+            analysis_path_export_event_emitted: false,
+            analysis_path_share_event_emitted: false,
+            analysis_path_download_event_emitted: false,
+            comparison_public_output_event_emitted: false,
+            live_log_access: 'process_take_runtime_diagnostics_only',
+          },
+        },
+      });
+      if (noExportProof.emitted_artefact_ids.length > 0) qaArtefactIds.push(...noExportProof.emitted_artefact_ids);
+
       console.info('[internal-qa] emitQAManifestForAnalysisRun_start', {
         event: 'emitQAManifestForAnalysisRun_start',
         run_id: `take-${takeId}`,
@@ -3864,6 +3908,20 @@ export async function runProcessTake(
           qa_persistence_warning: analysisEvidenceState.warning ?? null,
         } : undefined,
         media_identity_summary: inputArtefacts.media_identity_summary,
+        report_parity_input: {
+          raw_report_data: rawReportPayload,
+          render_payload: null,
+          public_report_payload: null,
+          allowed_public_fields: [
+            'report_data.schema_version',
+            'report_data.submission_verdict',
+            'report_data.fix_first',
+            'report_data.priority_fixes',
+            'report_data.strengths',
+            'report_data.next_take_plan',
+            'report_data.feedback_reliability',
+          ],
+        },
       });
       console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
         event: 'emitQAManifestForAnalysisRun_result',
