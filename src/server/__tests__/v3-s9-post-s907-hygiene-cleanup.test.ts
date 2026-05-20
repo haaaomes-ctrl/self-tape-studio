@@ -25,6 +25,6 @@ describe('v3 s9 post s907 hygiene cleanup', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
-    expect(metrics.gf01_rt15_status).toBe('blocked');
+    expect(metrics.gf01_rt15_status).toBe('not_applicable');
   });
 });

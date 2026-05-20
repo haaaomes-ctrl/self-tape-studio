@@ -43,7 +43,7 @@ describe('v3 s9 trace manifest metrics integration', () => {
     expect(metrics.public_claim_trace_summary.claim_count).toBeGreaterThan(0);
     expect(metrics.public_claim_trace_summary.rewrite_required_count).toBeGreaterThan(0);
     expect(metrics.level2_status).toBe('not_accepted');
-    expect(metrics.gf01_rt15_status).toBe('blocked');
+    expect(metrics.gf01_rt15_status).toBe('not_applicable');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');

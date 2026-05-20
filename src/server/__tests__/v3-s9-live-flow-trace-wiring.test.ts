@@ -44,7 +44,7 @@ describe('v3 s9 live flow trace wiring', () => {
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
-    expect(metrics.gf01_rt15_status).toBe('blocked');
+    expect(metrics.gf01_rt15_status).toBe('not_applicable');
   });
 
   it('B: does not predeclare traces when no source data exists', async () => {

@@ -150,7 +150,10 @@ export function reconcileComparisonManifestState(input: {
   const manifest = JSON.parse(JSON.stringify(input.manifest ?? {}));
   const succ = input.comparison_write_success_by_id ?? {};
   const emittedSet = new Set<string>(manifest.emitted_artifacts ?? []);
+  const emittedBlockedSet = new Set<string>((manifest.emitted_blocked_artefact_ids ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
   const missingSet = new Set<string>((manifest.missing_artifacts ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
+  const deferredSet = new Set<string>((manifest.deferred_artifact_ids ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
+  const notApplicableSet = new Set<string>((manifest.not_applicable_artifact_ids ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
   const blockerSet = new Set<string>((manifest.blocker_codes ?? []).filter((b:string)=> b !== 'comparison_report_internal_missing'));
   const acceptedSet = new Set<string>((manifest.runtime_evidence_accepted_by_id ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
   const blockedSet = new Set<string>((manifest.runtime_evidence_blocked_by_id ?? []).filter((id:string)=>!isComparisonArtefactId(id)));
@@ -173,7 +176,12 @@ export function reconcileComparisonManifestState(input: {
     if (!isComparisonArtefactId(a?.artefact_id)) return a;
     const id=a.artefact_id as ComparisonArtefactId;
     const ok = Boolean(succ[id]);
-    return { ...a, status: ok ? 'emitted' : 'missing', blocker_code: ok ? undefined : COMPARISON_BLOCKER_BY_ID[id] };
+    return {
+      ...a,
+      status: ok ? 'emitted' : 'missing',
+      blocker_code: ok ? undefined : COMPARISON_BLOCKER_BY_ID[id],
+      reason: ok ? 'Emitted in current run' : 'Not emitted by current pipeline stage',
+    };
   }) : manifest.required_artifacts;
   delete manifest.comparison_report_internal_missing;
   const emittedComparisonArtefact = COMPARISON_ARTEFACT_IDS.some((id) => Boolean(succ[id]));
@@ -183,7 +191,10 @@ export function reconcileComparisonManifestState(input: {
     compared_take_ids: emittedComparisonArtefact ? (input.compared_take_ids ?? manifest.compared_take_ids ?? []) : (manifest.compared_take_ids ?? []),
     required_artifacts: req,
     emitted_artifacts: [...emittedSet],
+    emitted_blocked_artefact_ids: [...emittedBlockedSet],
     missing_artifacts: [...missingSet],
+    deferred_artifact_ids: [...deferredSet],
+    not_applicable_artifact_ids: [...notApplicableSet],
     blocker_codes: [...blockerSet],
     runtime_evidence_accepted_by_id: [...acceptedSet],
     runtime_evidence_blocked_by_id: [...blockedSet],

@@ -118,6 +118,13 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
     expect(manifest.emitted_blocked_artefact_ids).toContain('parity_comparison');
     expect(manifest.not_applicable_artifact_ids).not.toContain('parity_comparison');
+    for (const artefactId of comparisonRuntimeArtefactIds) {
+      expect(manifest.not_applicable_artifact_ids).not.toContain(artefactId);
+      const required = manifest.required_artifacts.find((artefact: any) => artefact.artefact_id === artefactId);
+      expect(required?.status).toBe('emitted');
+      expect(required?.reason).not.toContain('Not applicable for this run shape');
+    }
+    expect(manifest.required_artifacts.find((artefact: any) => artefact.artefact_id === 'parity_comparison')?.reason).not.toContain('Not applicable for this run shape');
     expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
     const metrics = JSON.parse(await readFile(path.join(root, 'take-root3', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(metrics.comparison_run_id).toBe('cmp-root3');
@@ -125,6 +132,9 @@ describe('v3 s9 comparison runtime artifacts first pass', () => {
     expect(metrics.comparison_runtime_artifact_count).toBe(6);
     expect(metrics.emitted_blocked_artefacts).toContain('parity_comparison');
     expect(metrics.not_applicable_artefacts).not.toContain('parity_comparison');
+    for (const artefactId of comparisonRuntimeArtefactIds) {
+      expect(metrics.not_applicable_artefacts).not.toContain(artefactId);
+    }
     expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
