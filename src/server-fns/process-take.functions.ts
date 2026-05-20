@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { runProcessTake } from "@/server/process-take.server";
+import { replaceReuploadUploadIdentitySignals } from "@/lib/mux-upload";
 import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
@@ -110,6 +111,7 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { takeId, signals, checklist } = data;
     await assertTakeOwnership(takeId, context.userId, "resetTakeForReupload");
+    const replacementSignals = replaceReuploadUploadIdentitySignals(signals);
     await supabaseAdmin
       .from("takes")
       .update({
@@ -120,7 +122,7 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
         scores: null,
         overall_score: null,
         confidence: null,
-        signals: signals ?? null,
+        signals: replacementSignals as never,
         checklist: checklist ?? null,
         attempt_count: 0,
         analysis_tier: null,

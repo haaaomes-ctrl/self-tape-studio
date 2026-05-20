@@ -76,6 +76,9 @@ export async function resolveCompletedTakeComparisonSourceByTakeId(takeId: strin
     mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
     last_modified_ms: uploadIdentity.last_modified_ms,
     upload_metadata_source: uploadIdentity.upload_metadata_source,
+    upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
+    upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
+    upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
     upload_identity_metadata: uploadIdentity.upload_identity_metadata,
     video_duration_seconds: typeof (data as any).mux_duration_seconds === "number"
       ? (data as any).mux_duration_seconds

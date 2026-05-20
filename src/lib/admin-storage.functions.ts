@@ -164,11 +164,13 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
     zip.file(name, await blob.arrayBuffer());
   }
   const bytes = await zip.generateAsync({ type: "uint8array" });
-  const filename = `qa-artifacts-selected-${new Date().toISOString().replace(/[:.]/g, "")}Z.zip`;
+  const zipArrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const zipBlob = new Blob([zipArrayBuffer], { type: "application/zip" });
+  const filename = `qa-artifacts-selected-${new Date().toISOString().replace(/[:.]/g, "")}.zip`;
   const expiresAt = new Date(Date.now() + ZIP_TMP_TTL_MS).toISOString();
   const objectPath = `${ZIP_TMP_PREFIX}/${Date.now()}-${Math.random().toString(36).slice(2)}.zip`;
 
-  const { error: uploadError } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(objectPath, bytes, {
+  const { error: uploadError } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(objectPath, zipBlob, {
     contentType: "application/zip",
     upsert: false,
     metadata: { temp_zip: "true", expires_at: expiresAt },

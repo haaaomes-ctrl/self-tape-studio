@@ -1,3 +1,5 @@
+import { mergeSafeUploadIdentity } from "@/lib/mux-upload";
+
 type UploadIdentityExtraction = {
   original_upload_file_hash: string | null;
   original_upload_file_hash_source_stage: string | null;
@@ -9,6 +11,9 @@ type UploadIdentityExtraction = {
   video_duration_ms: number | null;
   upload_metadata_source: string | null;
   upload_identity_metadata: Record<string, unknown> | null;
+  upload_identity_capture_status: string | null;
+  upload_identity_capture_reason: string | null;
+  upload_identity_merge_status: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,6 +67,21 @@ function normaliseUploadHash(value: unknown): string | null {
   return match ? `sha256:${match[1]}` : null;
 }
 
+function hasAnyUploadIdentityValue(value: Record<string, unknown>): boolean {
+  return [
+    'original_upload_file_hash',
+    'original_file_name_safe_basename',
+    'metadata_file_name_safe_basename',
+    'file_size_bytes',
+    'mime_type_safe_summary',
+    'last_modified_ms',
+    'video_duration_ms',
+    'upload_metadata_source',
+    'hash_capture_status',
+  ].some((key) => value[key] != null)
+    || (Array.isArray(value.blocker_codes) && value.blocker_codes.length > 0);
+}
+
 export function extractUploadIdentitySignals(input: {
   signals?: unknown;
   checklist?: unknown;
@@ -69,7 +89,11 @@ export function extractUploadIdentitySignals(input: {
 }): UploadIdentityExtraction {
   const signals = isRecord(input.signals) ? input.signals : {};
   const checklist = isRecord(input.checklist) ? input.checklist : {};
-  const uploadIdentity = isRecord(signals.upload_identity) ? signals.upload_identity : {};
+  const safeUploadIdentity = isRecord(signals.safe_upload_identity) ? signals.safe_upload_identity : null;
+  const explicitUploadIdentity = isRecord(signals.upload_identity) ? signals.upload_identity : null;
+  const topLevelUploadIdentity = hasAnyUploadIdentityValue(signals) ? signals : null;
+  const nestedUploadIdentity = mergeSafeUploadIdentity(safeUploadIdentity, explicitUploadIdentity);
+  const uploadIdentity = (nestedUploadIdentity ?? mergeSafeUploadIdentity(null, topLevelUploadIdentity) ?? {}) as Record<string, unknown>;
   const originalHashRecord = isRecord(uploadIdentity.original_upload_file_hash)
     ? uploadIdentity.original_upload_file_hash
     : null;
@@ -91,6 +115,11 @@ export function extractUploadIdentitySignals(input: {
       ?? (signalDurationSeconds && signalDurationSeconds > 0 ? Math.round(signalDurationSeconds * 1000) : null)
       ?? (checklistDurationSeconds && checklistDurationSeconds > 0 ? Math.round(checklistDurationSeconds * 1000) : null),
     upload_metadata_source: safeString(uploadIdentity.upload_metadata_source),
-    upload_identity_metadata: isRecord(uploadIdentity) ? uploadIdentity : null,
+    upload_identity_metadata: isRecord(uploadIdentity) && hasAnyUploadIdentityValue(uploadIdentity) ? uploadIdentity : null,
+    upload_identity_capture_status: safeString(uploadIdentity.hash_capture_status),
+    upload_identity_capture_reason: Array.isArray(uploadIdentity.blocker_codes)
+      ? uploadIdentity.blocker_codes.filter((code: unknown) => typeof code === 'string').join(',')
+      : null,
+    upload_identity_merge_status: safeUploadIdentity || explicitUploadIdentity || topLevelUploadIdentity ? 'merged_safe_upload_identity' : null,
   };
 }
