@@ -69,7 +69,7 @@ type MuxAssetLike = {
 
 export function isAuthorisedReconcilerRequest(
   request: Request,
-  env: Pick<NodeJS.ProcessEnv, "RECONCILER_SECRET"> = process.env,
+  env: { RECONCILER_SECRET?: string } = process.env,
 ): "authorised" | "not_configured" | "unauthorised" {
   const secret = env.RECONCILER_SECRET;
   if (!secret) return "not_configured";
