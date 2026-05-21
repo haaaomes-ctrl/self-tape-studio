@@ -15,6 +15,76 @@
 const DEFAULT_MODEL =
   process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
 
+const COMPACT_STEP1_SCHEMA_VERSION = "tapecoach_step1_observable_evidence_v1";
+
+export type EvidencePassProviderContract =
+  | "tool_call"
+  | "plain_json_observations";
+
+type CompactStep1Family =
+  | "video_observable"
+  | "audio_observable"
+  | "material_specific"
+  | "performance_observable"
+  | "candidate_technique";
+
+type CompactStep1SourceBasis =
+  | "observed_video"
+  | "observed_audio"
+  | "supplied_context"
+  | "assessability_limit"
+  | "internal_shadow";
+
+export type CompactStep1Observation = {
+  family: CompactStep1Family;
+  kind?: string | null;
+  summary: string;
+  timestamp_start_sec?: number | null;
+  timestamp_end_sec?: number | null;
+  source_basis?: CompactStep1SourceBasis | null;
+  confidence?: "low" | "medium" | "high" | null;
+  limitations?: string[] | null;
+};
+
+type CompactStep1EvidenceResponse = {
+  schema_version: typeof COMPACT_STEP1_SCHEMA_VERSION;
+  observations: CompactStep1Observation[];
+  rejected_or_uncertain?: Array<{ reason?: string; summary?: string }>;
+};
+
+const COMPACT_STEP1_SYSTEM_PROMPT = `You are an internal Step 1 observable-evidence extractor for a self-tape audition.
+
+Return ONLY valid JSON. Do not use markdown. Do not call tools.
+
+Schema:
+{
+  "schema_version": "tapecoach_step1_observable_evidence_v1",
+  "observations": [
+    {
+      "family": "video_observable | audio_observable | material_specific | performance_observable | candidate_technique",
+      "kind": "short_snake_case_kind",
+      "summary": "short, safe, non-judgemental observation",
+      "timestamp_start_sec": number | null,
+      "timestamp_end_sec": number | null,
+      "source_basis": "observed_video | observed_audio | supplied_context | assessability_limit | internal_shadow",
+      "confidence": "low | medium | high",
+      "limitations": ["short safe limitation strings"]
+    }
+  ],
+  "rejected_or_uncertain": [
+    { "reason": "short safe reason", "summary": "short safe summary" }
+  ]
+}
+
+Allowed observations:
+- video_observable: framing, orientation, lighting visibility, background visibility, camera stability, slate visibility or visual assessability limitations.
+- audio_observable: voice audibility, music/accompaniment presence, clipping/noise/intelligibility limitations or dialogue/song audio segment presence.
+- material_specific: scene/song/slate/material component presence or supplied task reference.
+- performance_observable: observable action/event, eyeline direction, pause/silence/action timing, expression/movement visibility fact.
+- candidate_technique: internal_shadow, public_safe_descriptor_candidate or limitation-only descriptor. This is internal-only and never public technique authority.
+
+Reject and place in rejected_or_uncertain instead of observations: scores, readiness verdicts, role fit, casting fit, bookability, marketability, castability, public named technique authority, "technique demonstrated", "strong performance", "beautiful voice", "ready to submit", public comparison recommendations, report prose, hidden reasoning, URLs, tokens, secrets or signed URLs.`;
+
 const EVIDENCE_TOOL = {
   type: "function" as const,
   function: {
@@ -338,6 +408,8 @@ Return ONLY via the collect_audition_evidence tool.`;
 
 export type EvidencePass = {
   evidence_version: "1";
+  step1_provider_contract?: EvidencePassProviderContract;
+  step1_observations?: CompactStep1Observation[];
   audition_type: string;
   detected_components: Array<{
     type: string;
@@ -525,6 +597,230 @@ export function buildEvidencePassToolForProvider(): typeof EVIDENCE_TOOL {
   return cloneForProviderToolSchema(EVIDENCE_TOOL) as typeof EVIDENCE_TOOL;
 }
 
+export function selectEvidencePassProviderContract(
+  model = DEFAULT_MODEL,
+): EvidencePassProviderContract {
+  const forced = process.env.EVIDENCE_PASS_PROVIDER_CONTRACT?.trim().toLowerCase();
+  if (forced === "tool_call" || forced === "plain_json_observations") {
+    return forced;
+  }
+  const normalisedModel = model.trim().toLowerCase();
+  if (normalisedModel.includes("google/gemini")) {
+    return "plain_json_observations";
+  }
+  return "tool_call";
+}
+
+export function buildEvidencePassRequestBodyForProvider(input: {
+  model?: string | null;
+  contextText: string;
+  videoUrl: string;
+  systemPrompt?: string;
+  toolForCall?: typeof EVIDENCE_TOOL;
+  providerContract?: EvidencePassProviderContract;
+}): Record<string, unknown> {
+  const model = input.model ?? DEFAULT_MODEL;
+  const providerContract = input.providerContract ?? selectEvidencePassProviderContract(model);
+  const userContent = [
+    { type: "text", text: input.contextText },
+    { type: "file_url", file_url: { url: input.videoUrl } },
+  ];
+  if (providerContract === "plain_json_observations") {
+    return {
+      model,
+      temperature: 0,
+      top_p: 1,
+      max_tokens: 3072,
+      messages: [
+        { role: "system", content: COMPACT_STEP1_SYSTEM_PROMPT },
+        { role: "user", content: userContent },
+      ],
+    };
+  }
+  return {
+    model,
+    temperature: 0,
+    top_p: 1,
+    max_tokens: 6144,
+    messages: [
+      { role: "system", content: input.systemPrompt ?? EVIDENCE_SYSTEM_PROMPT },
+      { role: "user", content: userContent },
+    ],
+    tools: [input.toolForCall ?? buildEvidencePassToolForProvider()],
+    tool_choice: {
+      type: "function",
+      function: { name: "collect_audition_evidence" },
+    },
+  };
+}
+
+function messageContentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (!part || typeof part !== "object") return "";
+      const record = part as Record<string, unknown>;
+      return typeof record.text === "string" ? record.text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseJsonObjectFromModelText(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+  if (start < 0 || end <= start) {
+    throw new SyntaxError("compact_step1_json_object_missing");
+  }
+  return JSON.parse(withoutFence.slice(start, end + 1)) as Record<string, unknown>;
+}
+
+function isCompactStep1Family(value: unknown): value is CompactStep1Family {
+  return value === "video_observable"
+    || value === "audio_observable"
+    || value === "material_specific"
+    || value === "performance_observable"
+    || value === "candidate_technique";
+}
+
+function normaliseCompactSourceBasis(value: unknown): CompactStep1SourceBasis | null {
+  return value === "observed_video"
+    || value === "observed_audio"
+    || value === "supplied_context"
+    || value === "assessability_limit"
+    || value === "internal_shadow"
+    ? value
+    : null;
+}
+
+function normaliseCompactConfidence(value: unknown): "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high" ? value : "medium";
+}
+
+export function parseCompactStep1EvidenceContent(content: unknown): CompactStep1EvidenceResponse {
+  const text = messageContentToText(content);
+  const parsed = parseJsonObjectFromModelText(text);
+  if (parsed.schema_version !== COMPACT_STEP1_SCHEMA_VERSION) {
+    throw new SyntaxError("compact_step1_schema_version_mismatch");
+  }
+  if (!Array.isArray(parsed.observations)) {
+    throw new SyntaxError("compact_step1_observations_missing");
+  }
+  const observations: CompactStep1Observation[] = [];
+  parsed.observations.slice(0, 40).forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const record = entry as Record<string, unknown>;
+    if (!isCompactStep1Family(record.family)) return;
+    const summary = safeStep1Text(record.summary);
+    if (!summary) return;
+    observations.push({
+      family: record.family,
+      kind: typeof record.kind === "string" ? record.kind.trim().slice(0, 80) : null,
+      summary,
+      timestamp_start_sec: typeof record.timestamp_start_sec === "number" && Number.isFinite(record.timestamp_start_sec)
+        ? Math.max(0, record.timestamp_start_sec)
+        : null,
+      timestamp_end_sec: typeof record.timestamp_end_sec === "number" && Number.isFinite(record.timestamp_end_sec)
+        ? Math.max(0, record.timestamp_end_sec)
+        : null,
+      source_basis: normaliseCompactSourceBasis(record.source_basis),
+      confidence: normaliseCompactConfidence(record.confidence),
+      limitations: Array.isArray(record.limitations)
+        ? record.limitations.map((item) => safeStep1Text(item)).filter((item): item is string => Boolean(item)).slice(0, 6)
+        : [],
+    });
+  });
+  return {
+    schema_version: COMPACT_STEP1_SCHEMA_VERSION,
+    observations,
+    rejected_or_uncertain: [],
+  };
+}
+
+function secondsToTimestamp(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  const total = Math.floor(value);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+export function normaliseCompactStep1EvidenceForEvidencePass(
+  compact: CompactStep1EvidenceResponse,
+): EvidencePass {
+  const ev: EvidencePass = {
+    evidence_version: "1",
+    step1_provider_contract: "plain_json_observations",
+    step1_observations: compact.observations,
+    audition_type: "unknown",
+    detected_components: [],
+    candidate_technique_evidence: [],
+    raw_scores: {
+      technical: 0,
+      audio: 0,
+      vocal: null,
+      acting: 0,
+      brief_adherence: 0,
+      professional_presentation: 0,
+    },
+    core_strengths_evidence: [],
+    core_improvements_evidence: [],
+    fix_first_evidence: "",
+    brief_adherence_evidence: {
+      material_compliance: "",
+      technical_compliance: "",
+      instruction_precision: "",
+      professionalism_signals: "",
+      score_material: 0,
+      score_technical: 0,
+      score_instruction: 0,
+      score_professional: 0,
+    },
+    category_notes_evidence: {
+      technical: "",
+      audio: "",
+      vocal: "",
+      acting: "",
+      brief_adherence: "",
+      professional_presentation: "",
+    },
+    role_fit_evidence: "",
+    role_fit_modifier_suggested: 0,
+    role_fit_confidence: "low",
+    presentation_evidence: [],
+    risk_evidence: [],
+    timestamped_evidence: [],
+    evidence_sufficiency: {
+      audio_assessable: true,
+      video_assessable: true,
+      acting_assessable: true,
+      vocal_assessable: true,
+      movement_assessable: true,
+      brief_assessable: true,
+      role_fit_assessable: true,
+      notes: "",
+    },
+  };
+  compact.observations.forEach((observation) => {
+    if (observation.family === "video_observable") {
+      if (observation.source_basis === "assessability_limit") ev.evidence_sufficiency.video_assessable = false;
+      return;
+    }
+    if (observation.family === "audio_observable") {
+      if (observation.source_basis === "assessability_limit") ev.evidence_sufficiency.audio_assessable = false;
+      return;
+    }
+  });
+  return ev;
+}
+
 export async function runEvidencePass(
   args: RunEvidencePassArgs,
 ): Promise<RunEvidencePassResult> {
@@ -549,6 +845,7 @@ export async function runEvidencePass(
   }
 
   let resp: Response | null = null;
+  const providerContract = selectEvidencePassProviderContract(model);
   try {
     resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -556,27 +853,14 @@ export async function runEvidencePass(
         Authorization: `Bearer ${args.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.stringify(buildEvidencePassRequestBodyForProvider({
         model,
-        temperature: 0,
-        top_p: 1,
-        max_tokens: 6144,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: args.contextText },
-              { type: "file_url", file_url: { url: args.videoUrl } },
-            ],
-          },
-        ],
-        tools: [toolForCall],
-        tool_choice: {
-          type: "function",
-          function: { name: "collect_audition_evidence" },
-        },
-      }),
+        contextText: args.contextText,
+        videoUrl: args.videoUrl,
+        systemPrompt,
+        toolForCall,
+        providerContract,
+      })),
       signal: args.signal,
     });
   } catch (err) {
@@ -611,18 +895,23 @@ export async function runEvidencePass(
   try {
     const json = await resp.json();
     const choice = json.choices?.[0];
-    const tc = choice?.message?.tool_calls?.[0];
-    if (!tc?.function?.arguments) {
-      return {
-        ok: false,
-        httpStatus: resp.status,
-        error: "evidence_pass_no_tool_call",
-        safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, "evidence_pass_no_tool_call"),
-        durationMs: Date.now() - startedAt,
-        model,
-      };
+    if (providerContract === "plain_json_observations") {
+      const compact = parseCompactStep1EvidenceContent(choice?.message?.content);
+      parsed = normaliseCompactStep1EvidenceForEvidencePass(compact);
+    } else {
+      const tc = choice?.message?.tool_calls?.[0];
+      if (!tc?.function?.arguments) {
+        return {
+          ok: false,
+          httpStatus: resp.status,
+          error: "evidence_pass_no_tool_call",
+          safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, "evidence_pass_no_tool_call"),
+          durationMs: Date.now() - startedAt,
+          model,
+        };
+      }
+      parsed = JSON.parse(tc.function.arguments) as EvidencePass;
     }
-    parsed = JSON.parse(tc.function.arguments) as EvidencePass;
   } catch (err) {
     return {
       ok: false,
@@ -637,6 +926,7 @@ export async function runEvidencePass(
   // Defensive normalisation. Validate, drop bad timestamps, enforce ordering.
   const ev = parsed as EvidencePass;
   ev.evidence_version = "1";
+  ev.step1_provider_contract = ev.step1_provider_contract ?? providerContract;
   if (!ev.raw_scores || typeof ev.raw_scores !== "object") {
     ev.raw_scores = {
       technical: 0,
@@ -952,6 +1242,49 @@ function modalityForFamily(
   return "unknown";
 }
 
+function compactFamilyToStep1Family(value: unknown): Step1EvidenceFamily | null {
+  switch (value) {
+    case "video_observable":
+      return "video";
+    case "audio_observable":
+      return "audio";
+    case "material_specific":
+      return "material";
+    case "performance_observable":
+      return "performance";
+    case "candidate_technique":
+      return "candidate_technique";
+    default:
+      return null;
+  }
+}
+
+function compactEvidenceKind(
+  family: Step1EvidenceFamily,
+  value: unknown,
+): string {
+  const raw = typeof value === "string" && value.trim()
+    ? value.trim().slice(0, 80)
+    : `${family}_observable_event`;
+  return family === "candidate_technique" && !raw.includes("technique")
+    ? `candidate_technique_${raw}`
+    : raw;
+}
+
+function compactDeclaredModality(
+  family: Step1EvidenceFamily,
+  sourceBasis: unknown,
+): FilteredStep1EvidenceItem["evidence_modality"] | null {
+  if (family === "video") return "video";
+  if (family === "audio") return "audio";
+  if (family === "material") return "material";
+  if (family === "candidate_technique") return "unknown";
+  if (sourceBasis === "observed_audio") return "audio";
+  if (sourceBasis === "observed_video") return "video";
+  if (sourceBasis === "supplied_context") return "material";
+  return null;
+}
+
 export function filterRunEvidencePassForStep1(
   input: unknown,
   options: { model?: string | null; durationSeconds?: number | null } = {},
@@ -1027,6 +1360,40 @@ export function filterRunEvidencePassForStep1(
     };
     target.push(item);
   };
+
+  const compactObservations = Array.isArray(input.step1_observations)
+    ? input.step1_observations
+    : (input.schema_version === COMPACT_STEP1_SCHEMA_VERSION && Array.isArray(input.observations) ? input.observations : []);
+  compactObservations.forEach((entry, index) => {
+    if (!isRecord(entry)) {
+      addRejected(rejected, `step1_observations[${index}]`);
+      return;
+    }
+    const family = compactFamilyToStep1Family(entry.family);
+    const summary = safeStep1Text(entry.summary);
+    if (!family || !summary) {
+      addRejected(rejected, `step1_observations[${index}]`);
+      return;
+    }
+    const timestamp = secondsToTimestamp(entry.timestamp_start_sec);
+    const limitations = Array.isArray(entry.limitations)
+      ? entry.limitations.map((item) => safeStep1Text(item)).filter((item): item is string => Boolean(item)).slice(0, 6)
+      : [];
+    const sourceBasis = typeof entry.source_basis === "string" ? entry.source_basis : null;
+    addItem(
+      family,
+      `step1_observations[${index}].summary`,
+      compactEvidenceKind(family, entry.kind),
+      summary,
+      timestamp,
+      [
+        ...limitations,
+        ...(sourceBasis === "assessability_limit" ? [`${family}_assessability_limitation`] : []),
+      ],
+      compactDeclaredModality(family, sourceBasis),
+      sourceBasis,
+    );
+  });
 
   const timestamped = Array.isArray(input.timestamped_evidence) ? input.timestamped_evidence : [];
   const derivedTechniqueCandidates: Array<Parameters<typeof addItem>> = [];

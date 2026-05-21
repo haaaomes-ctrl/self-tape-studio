@@ -1544,7 +1544,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   }
   const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/parity/report_parity_result.json` : 'parity/report_parity_result.json';
   const result = await writeInternalJson(root, input.run_id, relative, payload, 'parity_report');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['parity_report'] : [], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes };
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['parity_report'] : [], parity_status: parityStatus as 'passed'|'failed'|'insufficient', blocker_codes, report_parity_summary: payload };
 }
 
 export interface ComparisonRuntimeArtifactsInput { run_id: string; analysis_run_id?: string; take_id?: string | null; comparison_run_id?: string; comparison_id?: string; compared_take_ids?: string[]; comparison_raw_data?: Record<string, unknown>; suppression_trace?: Record<string, unknown>; same_video_repeatability_trace?: Record<string, unknown>; duplicate_detection_trace?: Record<string, unknown>; route_variance_trace?: Record<string, unknown>; media_identity_payloads?: MediaIdentityPayload[]; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string; }
@@ -4103,7 +4103,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       if (parityWrite.written) {
         artefactSourceClassificationById.parity_report = 'internal_report_parity_proof';
         artefactLevel2ById.parity_report = parityWrite.parity_status === 'passed';
-        reportParitySummary = { parity_status: parityWrite.parity_status };
+        reportParitySummary = parityWrite.report_parity_summary ?? { parity_status: parityWrite.parity_status };
         if (parityWrite.parity_status === 'passed') {
           emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'parity_report'])];
           emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'parity_report');

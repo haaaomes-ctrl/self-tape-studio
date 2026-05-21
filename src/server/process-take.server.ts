@@ -1609,6 +1609,8 @@ export async function runProcessTake(
           takeId,
           internalQaEmit,
         });
+        const observationOnlyStep1Contract =
+          (twoStepEvidence as EvidencePass & Record<string, unknown>).step1_provider_contract === 'plain_json_observations';
         if (step1Dependency.step1EvidenceValidForStep2 && step1Dependency.step1QaPersistenceStatus === 'failed_emission') {
           console.warn("[take-pipeline] qa_persistence_failed_but_step1_evidence_valid", {
             take_id: takeId,
@@ -1620,7 +1622,18 @@ export async function runProcessTake(
             artefact_id: 'analysis_evidence_state',
           });
         }
-        if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
+        if (observationOnlyStep1Contract) {
+          console.warn("[take-pipeline] step2_blocked_by_observation_only_evidence_pass; falling back to single-pass", {
+            take_id: takeId,
+            step1_provider_contract: (twoStepEvidence as EvidencePass & Record<string, unknown>).step1_provider_contract,
+          });
+          metric("report_polish_blocked", {
+            take_id: takeId,
+            reason: 'step1_observation_only_contract_not_valid_for_step2_score_calibration',
+          });
+          twoStepFallbackUsed = true;
+          twoStepFallbackReason = 'step1_observation_only_contract_not_valid_for_step2_score_calibration';
+        } else if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
           console.warn("[take-pipeline] step2_blocked_by_analysis_evidence_state", {
             take_id: takeId,
             written: preStep2AnalysisEvidenceState.written,
@@ -3914,10 +3927,10 @@ export async function runProcessTake(
           model_provider: 'openrouter',
           model_name: currentModel,
           model_version: currentModel,
-          prompt_version: isTwoStepEnabled() ? 'two_step_report_polish_current' : 'single_pass_analysis_current',
+          prompt_version: isTwoStepEnabled() && !twoStepFallbackUsed ? 'two_step_report_polish_current' : 'single_pass_analysis_current',
           model_role: geminiRetryCount > 0 || circuitOpenAtStart ? ('fallback' as const) : ('primary' as const),
           stage: 'analysis_step_2_judgement_or_report_generation',
-          source_stage: isTwoStepEnabled() ? 'report_polish' : 'analysis_generation',
+          source_stage: isTwoStepEnabled() && !twoStepFallbackUsed ? 'report_polish' : 'analysis_generation',
           invocation_status: 'invoked' as const,
           started_at: lastAttemptStartedAtIso ?? undefined,
           completed_at: lastAttemptCompletedAtIso ?? undefined,
