@@ -265,10 +265,10 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(manifestPayload.build_commit_sha).toBe('1111111111111111111111111111111111111111');
   });
 
-  it('surfaces non-null warning when manifest or metrics write fails', async () => {
+  it('continues finalisation with a non-null warning when initial manifest or metrics write fails', async () => {
     upload.mockResolvedValueOnce({ error: { message: 'manifest-fail' } }).mockResolvedValue({ error: null });
     const outManifestFail = await emitQAManifestForAnalysisRun({ run_id: 'take-tfail1', analysis_run_id: 'take-tfail1', take_id: 'tfail1', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
-    expect(outManifestFail.written).toBe(false);
+    expect(outManifestFail.written).toBe(true);
     expect(outManifestFail.warning).toMatch(/manifest/i);
 
     upload.mockReset();
@@ -278,7 +278,7 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     });
 
     const outMetricsFail = await emitQAManifestForAnalysisRun({ run_id: 'take-tfail2', analysis_run_id: 'take-tfail2', take_id: 'tfail2', submission_id: 's1', internal_qa_emit: true, emitted_artefact_ids: ['raw_report'] });
-    expect(outMetricsFail.written).toBe(false);
+    expect(outMetricsFail.written).toBe(true);
     expect(outMetricsFail.warning).toMatch(/qa_acceptance_metrics/i);
   });
 });

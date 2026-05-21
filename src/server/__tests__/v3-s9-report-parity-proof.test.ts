@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitPublicReportPayloadArtifact, emitQAManifestForAnalysisRun, emitRenderPayloadArtifact, emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitNoExportProofBundle, emitPublicReportPayloadArtifact, emitQAManifestForAnalysisRun, emitRenderPayloadArtifact, emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
 
 async function readParity(root: string, run: string, take: string) {
   return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'parity', 'report_parity_result.json'), 'utf8'));
@@ -91,6 +91,52 @@ describe('v3-s9 report parity proof', () => {
     expect(payload.report_data.overall_score).toBeUndefined();
     expect(payload.report_data.fix_first).toBe('Safe text');
     expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
+  });
+
+  it('S9-17D: blocks forbidden fields nested inside allowed render and public report objects', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17d-nested-forbidden-'));
+    const raw = {
+      report_data: {
+        next_take_plan: {
+          steps: ['Retake once.'],
+          raw_prompt: 'private prompt must not pass through an allowed object',
+          safe_nested: { token: 'secret-token' },
+        },
+      },
+    };
+    await emitRenderPayloadArtifact({
+      run_id: 'run-nested-render',
+      analysis_run_id: 'run-nested-render',
+      take_id: 'tnr',
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: raw,
+      allowed_field_paths: ['report_data.next_take_plan'],
+    });
+    const renderPayload = await readRenderPayload(root, 'run-nested-render', 'tnr');
+    expect(renderPayload.render_payload_status).toBe('emitted_blocked');
+    expect(renderPayload.blocker_codes).toContain('render_payload_forbidden_field_present');
+    expect(renderPayload.blocked_field_hits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'report_data.next_take_plan.raw_prompt' }),
+      expect.objectContaining({ path: 'report_data.next_take_plan.safe_nested.token' }),
+    ]));
+
+    await emitPublicReportPayloadArtifact({
+      run_id: 'run-nested-public',
+      analysis_run_id: 'run-nested-public',
+      take_id: 'tnp',
+      internal_qa_emit: true,
+      root_dir: root,
+      render_payload: { report_data: renderPayload.report_data },
+      allowed_field_paths: ['report_data.next_take_plan'],
+    });
+    const publicPayload = await readPublicReportPayload(root, 'run-nested-public', 'tnp');
+    expect(publicPayload.public_report_payload_status).toBe('emitted_blocked');
+    expect(publicPayload.blocker_codes).toContain('public_report_payload_forbidden_field_present');
+    expect(publicPayload.blocked_field_hits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: 'report_data.next_take_plan.raw_prompt' }),
+      expect.objectContaining({ path: 'report_data.next_take_plan.safe_nested.token' }),
+    ]));
   });
 
   it('S9-17D: preserves bracket-indexed allowed paths when copying render and public report payload fields', async () => {
@@ -218,6 +264,18 @@ describe('v3-s9 report parity proof', () => {
 
   it('S9-17C: manifest finalisation auto-emits render and public payloads and can pass report parity for complete safe surfaces', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-17b-manifest-'));
+    const noExport = await emitNoExportProofBundle({
+      run_id: 'run-s917b',
+      root_dir: root,
+      internal_qa_emit: true,
+      proofs: {
+        no_export_source_proof: { checked_paths: ['src/routes', 'src/components'], no_public_export_route_enabled: true },
+        no_export_config_proof: { checked_env_keys: ['EXPORT_ENABLED', 'SHARE_ENABLED', 'DOWNLOAD_ENABLED'] },
+        no_export_ui_proof: { checked_routes: ['src/routes/audition.$auditionId.tsx'], checked_components_or_files: ['src/components/report/V2ReportView.tsx'] },
+        no_export_log_proof: { analysis_path_export_event_emitted: false, comparison_public_output_event_emitted: false },
+      },
+    });
+    expect(noExport.emitted_artefact_ids).toEqual(expect.arrayContaining(['no_export_log_proof', 'no_export_proof']));
     await emitQAManifestForAnalysisRun({
       run_id: 'run-s917b',
       analysis_run_id: 'run-s917b',
@@ -225,7 +283,7 @@ describe('v3-s9 report parity proof', () => {
       submission_id: 'sub1',
       internal_qa_emit: true,
       root_dir: root,
-      emitted_artefact_ids: ['raw_report'],
+      emitted_artefact_ids: ['raw_report', ...noExport.emitted_artefact_ids],
       artefact_source_classification_by_id: { raw_report: 'legacy_adapter' },
       artefact_level2_spine_satisfaction_by_id: { raw_report: false },
       report_parity_input: {
@@ -276,11 +334,19 @@ describe('v3-s9 report parity proof', () => {
     expect(manifest.artefact_source_classification_by_id.public_report_payload).toBe('internal_public_report_payload');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.public_report_payload).toBe(false);
     expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
+    expect(manifest.artefact_status_by_id.no_export_log_proof).toBe('emitted');
+    expect(manifest.artefact_status_by_id.no_export_proof).toBe('emitted');
+    expect(manifest.no_export_status).toBe('no_export_proof_complete');
     expect(manifest.blocker_codes).not.toContain('parity_artefacts_missing');
+    expect(manifest.blocker_codes).not.toContain('no_export_proof_missing');
     expect(metrics.emitted_artefacts).toContain('render_payload');
     expect(metrics.emitted_artefacts).toContain('public_report_payload');
     expect(metrics.emitted_artefacts).toContain('parity_report');
+    expect(metrics.emitted_artefacts).toContain('no_export_log_proof');
+    expect(metrics.emitted_artefacts).toContain('no_export_proof');
+    expect(metrics.export_or_no_export_status).toBe('no_export_proof_complete');
     expect(metrics.blocker_codes).not.toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).not.toContain('no_export_proof_missing');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
