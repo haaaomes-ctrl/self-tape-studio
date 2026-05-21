@@ -288,13 +288,17 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     const step1 = JSON.parse(await readFile(path.join(base, 'analysis', 'Step1ObservableEvidence.json'), 'utf8'));
     const linkedIdValues = step1.observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []);
     expect(linkedIdValues.every((id: unknown) => typeof id === 'string')).toBe(true);
-    const linkedIds = [...new Set(linkedIdValues.filter((id: unknown): id is string => typeof id === 'string'))].sort();
+    const linkedIds: string[] = Array.from(new Set<string>(
+      linkedIdValues.filter((id: unknown): id is string => typeof id === 'string'),
+    )).sort();
     expect(resolver.truth_state_map).toBeDefined();
     if (!resolver.truth_state_map) throw new Error('truth_state_map_missing');
     const truthStateIdValues = resolver.truth_state_map.truth_state_ids ?? [];
     expect(Array.isArray(truthStateIdValues)).toBe(true);
     expect(truthStateIdValues.every((id: unknown) => typeof id === 'string')).toBe(true);
-    const explicitIds = [...new Set(truthStateIdValues.filter((id: unknown): id is string => typeof id === 'string'))].sort();
+    const explicitIds: string[] = Array.from(new Set<string>(
+      truthStateIdValues.filter((id: unknown): id is string => typeof id === 'string'),
+    )).sort();
     const missingExplicitIds = linkedIds.filter((id) => !explicitIds.includes(id));
     expect(linkedIds.length).toBeGreaterThan(0);
     expect(missingExplicitIds).toEqual([]);
