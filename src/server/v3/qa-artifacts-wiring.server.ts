@@ -4107,6 +4107,53 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_comparison'])];
     }
 
+    if (canEmitTakeScopedFirstPassTraces) {
+      const proofSnapshotOut = await emitInternalQAArtifactManifest({
+        ...baseOptions,
+        manifest_relative_path: manifestRelativePath,
+        emitted_artefact_ids: [...new Set([...emittedWithInternalTraces])],
+        emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces,
+        runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces)])],
+        runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])],
+        artefact_source_classification_by_id: artefactSourceClassificationById,
+        artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
+        report_parity_summary: reportParitySummary,
+      });
+      if (proofSnapshotOut.written && 'manifest' in (proofSnapshotOut as any)) {
+        const proofSnapshotManifest = (proofSnapshotOut as any).manifest;
+        const proofSnapshotMetrics = { ...buildQAAcceptanceMetrics(proofSnapshotManifest), ...resolveQADeploymentProvenance() };
+        const validatorWrite = await emitValidatorTraceFirstPass({
+          run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces ?? undefined,
+          source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.final_proof_chain',
+          manifest_snapshot: proofSnapshotManifest, acceptance_metrics_snapshot: proofSnapshotMetrics, emitted_artefact_ids: emittedWithInternalTraces,
+          artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
+          public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary,
+          score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, root_dir: metadata.root_dir, internal_qa_emit: true, intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+        });
+        if (validatorWrite.written) {
+          emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'validator_trace'])];
+          const validatorSatisfied = validatorWrite.validator_trace_summary?.validator_trace_gate_status === 'satisfied';
+          artefactSourceClassificationById.validator_trace = validatorSatisfied ? 'independent_validation_satisfying' : 'internal_validator';
+          artefactLevel2ById.validator_trace = validatorSatisfied;
+          validatorTraceSummary = validatorWrite.validator_trace_summary;
+        }
+        const gateWrite = await emitGateTraceFirstPass({
+          run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces ?? undefined,
+          source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.final_proof_chain',
+          manifest_snapshot: proofSnapshotManifest, acceptance_metrics_snapshot: proofSnapshotMetrics, emitted_artefact_ids: emittedWithInternalTraces,
+          missing_artefact_ids: (proofSnapshotManifest?.missing_artifacts ?? []) as string[], blocker_codes: (proofSnapshotManifest?.blocker_codes ?? []) as string[],
+          validator_trace_summary: validatorTraceSummary, root_dir: metadata.root_dir, internal_qa_emit: true, intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+        });
+        if (gateWrite.written) {
+          emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'gate_trace'])];
+          const gateSatisfied = gateWrite.gate_trace_summary?.gate_trace_gate_status === 'satisfied';
+          artefactSourceClassificationById.gate_trace = gateSatisfied ? 'independent_gate_decision' : 'internal_gate_trace';
+          artefactLevel2ById.gate_trace = gateSatisfied;
+          gateTraceSummary = gateWrite.gate_trace_summary;
+        }
+      }
+    }
+
     const metrics = preFinalMetrics;
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     console.info('[internal-qa] acceptance_metrics_write_attempt', { event: 'acceptance_metrics_write_attempt',
@@ -6380,6 +6427,31 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
   return emitTraceArtefact({ ...input, artefact_id: 'model_run_trace', relative_path: 'traces/ModelRunTrace.json' });
 }
+
+const ORDINARY_L2A_MODEL_RUN_STAGE_REGISTRY = [
+  { stage_id: 'input_capture', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'resolver', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'analysis_step_1_evidence_mapping', stage_kind: 'model_invoked', expected_status: 'invoked_when_two_step_analysis_runs' },
+  { stage_id: 'analysis_step_2_judgement_or_report_generation', stage_kind: 'model_invoked', expected_status: 'invoked' },
+  { stage_id: 'report_parity', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'no_export_proof', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'validator', stage_kind: 'non_model', expected_status: 'tracked_by_validator_trace' },
+  { stage_id: 'gate_finalisation', stage_kind: 'non_model', expected_status: 'tracked_by_gate_trace' },
+  { stage_id: 'comparison_not_applicable_for_ordinary_run', stage_kind: 'non_model', expected_status: 'not_applicable_for_ordinary_single_take' },
+] as const;
+
+const ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS = [
+  'analysis_step_1_evidence_mapping',
+  'analysis_step_2_judgement_or_report_generation',
+] as const;
+
+function normaliseModelRunStageId(value: unknown, fallback: string): string {
+  const candidate = String(value ?? '').trim();
+  if (candidate === 'analysis_step_1' || candidate === 'analysis_step_1_evidence_pass' || candidate === 'evidence_pass') return 'analysis_step_1_evidence_mapping';
+  if (candidate === 'analysis_generation' || candidate === 'analysis_step_2' || candidate === 'analysis_step_2_judgement_or_report_polish' || candidate === 'report_polish') return 'analysis_step_2_judgement_or_report_generation';
+  return candidate || fallback;
+}
+
 export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const root = input.root_dir ?? DEFAULT_ROOT;
@@ -6389,26 +6461,46 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
   assertSafeSegment(takeId, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
   const expectedStages = dedupePreservingOrder([
-    ...(input.expected_model_stages ?? ['analysis_step_1_evidence_pass', 'analysis_step_2_judgement_or_report_polish', 'validator']),
-    ...(input.comparison_invoked ? ['comparison'] : []),
-  ]);
+    ...(input.expected_model_stages ?? ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS),
+  ].map((stage, index) => normaliseModelRunStageId(stage, `expected_model_stage_${index + 1}`)));
   const rawEntries = (input.model_run_entries ?? []).filter((entry) => entry && typeof entry === 'object');
   const normaliseStage = (entry: ModelRunTraceEntryInput, idx: number) => {
-    const candidate = String(entry.stage ?? entry.source_stage ?? input.source_stage ?? '').trim();
-    if (candidate === 'analysis_generation' || candidate === 'analysis_step_2' || candidate === 'report_polish') return 'analysis_step_2_judgement_or_report_polish';
-    if (candidate === 'evidence_pass' || candidate === 'analysis_step_1') return 'analysis_step_1_evidence_pass';
-    return candidate || `unknown_model_stage_${idx + 1}`;
+    return normaliseModelRunStageId(entry.stage ?? entry.source_stage ?? input.source_stage, `unknown_model_stage_${idx + 1}`);
   };
   const safeEntries = rawEntries.map((entry, idx) => {
     const stage = normaliseStage(entry, idx);
     const invocationStatus = entry.invocation_status ?? (entry.request_status === 'failed'
       ? 'failed'
       : (entry.request_status === 'timed_out' ? 'failed' : 'invoked'));
-    const independentStatus = expectedStages.includes(stage) && invocationStatus === 'invoked'
-      ? 'per_stage_metadata_partial'
+    const inputRefs = getStringArray(entry.input_artifact_refs);
+    const outputRefs = getStringArray(entry.output_artifact_refs);
+    const rawPromptOrResponseStored = entry.raw_prompt_or_response_stored === true ? true : false;
+    const secretsOrSignedUrlsStored = entry.secrets_or_signed_urls_stored === true ? true : false;
+    const stageCanSatisfy = expectedStages.includes(stage)
+      && invocationStatus === 'invoked'
+      && inputRefs.length > 0
+      && outputRefs.length > 0
+      && !rawPromptOrResponseStored
+      && !secretsOrSignedUrlsStored
+      && !['failed', 'timed_out'].includes(String(entry.request_status ?? ''));
+    const independentStatus = stageCanSatisfy
+      ? 'per_stage_model_proof_satisfying'
+      : (expectedStages.includes(stage) && invocationStatus === 'invoked' ? 'per_stage_metadata_partial' : 'metadata_only_insufficient');
+    const blockerCodes = dedupePreservingOrder([
+      ...(!expectedStages.includes(stage) ? ['model_stage_not_in_ordinary_l2a_registry'] : []),
+      ...(invocationStatus !== 'invoked' ? ['model_stage_not_invoked'] : []),
+      ...(inputRefs.length === 0 ? ['model_stage_input_refs_missing'] : []),
+      ...(outputRefs.length === 0 ? ['model_stage_output_refs_missing'] : []),
+      ...(rawPromptOrResponseStored ? ['raw_prompt_or_response_storage_detected'] : []),
+      ...(secretsOrSignedUrlsStored ? ['secrets_or_signed_urls_storage_detected'] : []),
+      ...(['failed', 'timed_out'].includes(String(entry.request_status ?? '')) ? ['model_stage_request_not_successful'] : []),
+    ]);
+    const stageProofStatus = stageCanSatisfy
+      ? 'satisfied'
       : 'metadata_only_insufficient';
     return {
       model_run_id: entry.model_run_id ?? `model-run-${takeId}-${idx + 1}`,
+      stage_id: stage,
       stage,
       invocation_status: invocationStatus,
       model_provider: entry.model_provider ?? null,
@@ -6431,13 +6523,14 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
       request_status: entry.request_status ?? (invocationStatus === 'invoked' ? 'unknown' : 'skipped'),
       parse_status: entry.parse_status ?? 'unknown',
       safe_error_category: entry.safe_error_category ?? null,
-      input_artifact_refs: getStringArray(entry.input_artifact_refs).length > 0 ? getStringArray(entry.input_artifact_refs) : ['inputs/input_record.json'],
-      output_artifact_refs: getStringArray(entry.output_artifact_refs).length > 0 ? getStringArray(entry.output_artifact_refs) : ['reports/raw_report.json'],
-      source_classification: 'model_run_metadata_partial',
+      input_artifact_refs: inputRefs,
+      output_artifact_refs: outputRefs,
+      source_classification: stageCanSatisfy ? 'independent_model_run_stage_proof' : 'model_run_metadata_partial',
+      stage_proof_status: stageProofStatus,
       independent_model_proof_status: independentStatus,
-      raw_prompt_or_response_stored: entry.raw_prompt_or_response_stored === true ? true : false,
-      secrets_or_signed_urls_stored: entry.secrets_or_signed_urls_stored === true ? true : false,
-      blocker_codes: independentStatus === 'per_stage_metadata_partial' ? ['model_run_trace_independent_proof_partial'] : ['ModelRunTrace_internal_only'],
+      raw_prompt_or_response_stored: rawPromptOrResponseStored,
+      secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
+      blocker_codes: blockerCodes,
     };
   });
   const representedStages = new Set(safeEntries.map((entry) => String(entry.stage)));
@@ -6445,8 +6538,9 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     .filter((stage) => !representedStages.has(stage))
     .map((stage, idx) => ({
       model_run_id: `model-run-${takeId}-stage-${idx + 1}`,
+      stage_id: stage,
       stage,
-      invocation_status: stage === 'comparison' && !input.comparison_invoked ? 'not_applicable' : 'skipped',
+      invocation_status: 'skipped',
       model_provider: null,
       model_name: null,
       model_version: null,
@@ -6470,24 +6564,63 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
       input_artifact_refs: [],
       output_artifact_refs: [],
       source_classification: 'model_run_metadata_partial',
+      stage_proof_status: 'missing_required_model_stage',
       independent_model_proof_status: 'stage_not_invoked',
       raw_prompt_or_response_stored: false,
       secrets_or_signed_urls_stored: false,
-      blocker_codes: [stage === 'comparison' && !input.comparison_invoked ? 'model_stage_not_applicable' : 'model_stage_not_invoked'],
+      blocker_codes: ['model_stage_not_invoked'],
     }));
-  const allEntries = [...safeEntries, ...syntheticStageEntries];
+  const nonModelStageEntries = ORDINARY_L2A_MODEL_RUN_STAGE_REGISTRY
+    .filter((stage) => stage.stage_kind === 'non_model')
+    .map((stage, idx) => ({
+      model_run_id: `model-run-${takeId}-non-model-${idx + 1}`,
+      stage_id: stage.stage_id,
+      stage: stage.stage_id,
+      invocation_status: 'not_applicable',
+      model_provider: null,
+      model_name: null,
+      model_version: null,
+      prompt_version: null,
+      model_role: 'not_applicable',
+      source_stage: stage.stage_id,
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      timeout_ms: null,
+      timed_out: false,
+      retry_count: 0,
+      attempt_index: null,
+      http_status: null,
+      circuit_open: null,
+      fallback_used: false,
+      analysis_tier: null,
+      request_status: 'not_applicable',
+      parse_status: 'not_applicable',
+      safe_error_category: null,
+      input_artifact_refs: [],
+      output_artifact_refs: [],
+      source_classification: 'tracked_by_non_model_gate',
+      stage_proof_status: stage.expected_status,
+      independent_model_proof_status: 'tracked_by_non_model_gate',
+      raw_prompt_or_response_stored: false,
+      secrets_or_signed_urls_stored: false,
+      blocker_codes: [],
+    }));
+  const allEntries = [...safeEntries, ...syntheticStageEntries, ...nonModelStageEntries];
   if (safeEntries.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const invokedKnownStageCount = safeEntries.filter((entry) => entry.invocation_status === 'invoked' && expectedStages.includes(String(entry.stage))).length;
-  const hasDistinctRequiredStageBoundary = representedStages.has('analysis_step_2_judgement_or_report_polish')
-    && (representedStages.has('analysis_step_1_evidence_pass') || syntheticStageEntries.some((entry) => entry.stage === 'analysis_step_1_evidence_pass'));
+  const requiredModelStageProofSatisfied = ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS.every((stageId) => safeEntries.some((entry) => entry.stage_id === stageId && entry.stage_proof_status === 'satisfied'));
   const rawPromptOrResponseStored = allEntries.some((entry) => entry.raw_prompt_or_response_stored === true);
   const secretsOrSignedUrlsStored = allEntries.some((entry) => entry.secrets_or_signed_urls_stored === true);
-  const perStageModelProofStatus = hasDistinctRequiredStageBoundary
-    ? 'per_stage_model_proof_partial'
-    : 'partial_missing_stage_boundaries';
-  const independentModelProofStatus = hasDistinctRequiredStageBoundary && !rawPromptOrResponseStored && !secretsOrSignedUrlsStored
-    ? 'independent_model_proof_partial'
-    : 'metadata_only_insufficient';
+  const modelRunTraceGateSatisfied = requiredModelStageProofSatisfied && !rawPromptOrResponseStored && !secretsOrSignedUrlsStored;
+  const perStageModelProofStatus = modelRunTraceGateSatisfied
+    ? 'per_stage_model_proof_satisfied'
+    : (representedStages.has('analysis_step_2_judgement_or_report_generation') || representedStages.has('analysis_step_1_evidence_mapping')
+      ? 'partial_missing_stage_boundaries'
+      : 'partial_metadata_only');
+  const independentModelProofStatus = modelRunTraceGateSatisfied
+    ? 'independent_model_proof_satisfying'
+    : 'independent_model_proof_partial';
   const summary = {
     model_run_count: allEntries.length,
     model_run_completed_count: safeEntries.filter((x) => x.request_status === 'completed').length,
@@ -6499,18 +6632,21 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     not_applicable_stage_count: allEntries.filter((x) => x.invocation_status === 'not_applicable').length,
     model_run_stage_names: allEntries.map((x) => x.stage),
     model_run_missing_stage_names: expectedStages.filter((stage) => !representedStages.has(stage)),
-    model_run_trace_gate_status: 'insufficient' as const,
-    model_run_trace_gate_reason: independentModelProofStatus === 'independent_model_proof_partial'
-      ? 'per_stage_model_metadata_partial_not_full_independent_proof_chain' as const
+    model_run_trace_gate_status: modelRunTraceGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    model_run_trace_gate_reason: modelRunTraceGateSatisfied
+      ? 'ordinary_l2a_expected_model_stages_represented_without_prompt_or_secret_storage' as const
       : 'runtime_metadata_without_distinct_stage_boundaries' as const,
     independent_model_proof_status: independentModelProofStatus,
     per_stage_model_proof_status: perStageModelProofStatus,
+    expected_stage_registry_version: 's9-19d-ordinary-l2a-model-run-stage-registry-v1',
+    expected_stage_registry: ORDINARY_L2A_MODEL_RUN_STAGE_REGISTRY,
+    required_model_stage_ids: ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS,
     raw_prompt_or_response_stored: rawPromptOrResponseStored,
     secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
     forbidden_payload_fields_absent: !rawPromptOrResponseStored && !secretsOrSignedUrlsStored,
     blocker_codes: dedupePreservingOrder([
-      'ModelRunTrace_independent_proof_partial',
-      ...(hasDistinctRequiredStageBoundary ? [] : ['model_run_trace_requires_distinct_stage_boundaries']),
+      ...(modelRunTraceGateSatisfied ? [] : ['ModelRunTrace_independent_proof_partial']),
+      ...(requiredModelStageProofSatisfied ? [] : ['model_run_trace_requires_distinct_stage_boundaries']),
       ...(rawPromptOrResponseStored ? ['raw_prompt_or_response_storage_detected'] : []),
       ...(secretsOrSignedUrlsStored ? ['secrets_or_signed_urls_storage_detected'] : []),
     ]),
@@ -6526,7 +6662,7 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     generated_at: new Date().toISOString(),
     source_module: input.source_module,
     source_stage: input.source_stage,
-    source_classification: 'model_run_metadata_partial',
+    source_classification: modelRunTraceGateSatisfied ? 'independent_model_run_trace' : 'model_run_metadata_partial',
     analysis_route: input.analysis_route ?? 'runProcessTake',
     trace_mode: 'first_pass_runtime_model_metadata',
     independent_model_proof_status: independentModelProofStatus,
@@ -6540,7 +6676,7 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     forbidden_fields_absent: true,
     raw_prompt_or_response_stored: rawPromptOrResponseStored,
     secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
-    cannot_satisfy_model_run_gate: true,
+    cannot_satisfy_model_run_gate: !modelRunTraceGateSatisfied,
     gate_satisfaction_reason: summary.model_run_trace_gate_reason,
     blocker_codes: summary.blocker_codes,
     public_output_unchanged: true,
@@ -6550,7 +6686,7 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     ...resolveQADeploymentProvenance(),
   };
   const result = await writeInternalJson(root, input.run_id, `takes/take-${takeId}/analysis-${analysisRunId}/traces/ModelRunTrace.json`, payload, 'model_run_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], source_classification: payload.source_classification, model_run_trace_summary: result.written ? summary : undefined };
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], source_classification: payload.source_classification, level2_satisfies: modelRunTraceGateSatisfied, model_run_trace_summary: result.written ? summary : undefined };
 }
 export async function emitNoExportProofBundle(input: { run_id: string; proofs?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string }) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -8427,22 +8563,66 @@ export async function emitValidatorTraceFirstPass(input: any) {
   addMetricValidation({ validation_id: 'model_run_secrets_absent', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_secrets_or_signed_urls_stored', expected: false, observed: input.acceptance_metrics_snapshot.model_run_secrets_or_signed_urls_stored, source_path: 'qa.acceptance_metrics.model_run_secrets_or_signed_urls_stored', related_artefact_ids: ['model_run_trace'], passWhen: (value) => value === false, blocker_code: 'secrets_or_signed_urls_storage_detected', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
   addMetricValidation({ validation_id: 'report_parity_passed_status_recorded', validation_area: 'report_parity_gate', subject: 'report_parity_status', expected: 'passed_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.report_parity_status, source_path: 'qa.acceptance_metrics.report_parity_status', related_artefact_ids: ['parity_report'], passWhen: (value) => ['passed', 'missing', 'insufficient'].includes(String(value)), blocker_code: 'report_parity_status_missing' });
   addMetricValidation({ validation_id: 'no_export_complete_status_recorded', validation_area: 'no_export_gate', subject: 'no_export_status', expected: 'complete_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.no_export_status, source_path: 'qa.acceptance_metrics.no_export_status', related_artefact_ids: ['no_export_proof'], passWhen: (value) => ['no_export_proof_complete', 'no_export_proof_missing', 'no_export_proof_insufficient'].includes(String(value)), blocker_code: 'no_export_status_missing' });
+  const ordinaryUnsatisfiedGateIds = getStringArray(input.acceptance_metrics_snapshot.ordinary_l2a_unsatisfied_gate_ids);
+  const ordinaryUnsatisfiedExcludingSelf = ordinaryUnsatisfiedGateIds.filter((gateId) => !['validator_trace_gate', 'gate_trace_gate'].includes(gateId));
+  const ordinaryMetricsStatusSatisfied = input.acceptance_metrics_snapshot.ordinary_l2a_analysis_proof_status === 'satisfied';
+  const ordinaryDependenciesSatisfied = ordinaryUnsatisfiedExcludingSelf.length === 0
+    && ordinaryMetricsStatusSatisfied;
+  entries.push({
+    validation_id: 'ordinary_l2a_dependency_gate_validation',
+    validation_rule_version: 's9-19d-independent-ordinary-l2a-proof-v1',
+    validation_area: 'ordinary_l2a_internal_proof',
+    subject: 'ordinary_l2a_unsatisfied_gate_ids_excluding_validator_gate',
+    status: ordinaryDependenciesSatisfied ? 'pass' : 'fail',
+    expected: [],
+    observed: ordinaryUnsatisfiedExcludingSelf,
+    source_path: 'qa.acceptance_metrics.ordinary_l2a_unsatisfied_gate_ids',
+    related_artefact_ids: ['qa_acceptance_metrics', 'model_run_trace', 'evidence_anchors', 'public_claim_trace', 'score_trace', 'technique_observation_trace'],
+    blocker_codes: ordinaryDependenciesSatisfied ? [] : ['ordinary_l2a_dependency_gate_unsatisfied'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'public_release_gates_separated_from_ordinary_l2a',
+    validation_rule_version: 's9-19d-independent-ordinary-l2a-proof-v1',
+    validation_area: 'public_release_gate_separation',
+    subject: 'public_release_dependency_status',
+    status: input.acceptance_metrics_snapshot.ordinary_l2a_public_release_dependency_status === 'blocked'
+      && input.acceptance_metrics_snapshot.public_scoring_status === 'blocked'
+      && input.acceptance_metrics_snapshot.public_technique_authority_status === 'blocked'
+      && input.acceptance_metrics_snapshot.production_safe_status === 'blocked'
+      ? 'pass'
+      : 'fail',
+    expected: 'public_release_gates_blocked_and_separated',
+    observed: {
+      ordinary_l2a_public_release_dependency_status: input.acceptance_metrics_snapshot.ordinary_l2a_public_release_dependency_status,
+      public_scoring_status: input.acceptance_metrics_snapshot.public_scoring_status,
+      public_technique_authority_status: input.acceptance_metrics_snapshot.public_technique_authority_status,
+      production_safe_status: input.acceptance_metrics_snapshot.production_safe_status,
+    },
+    source_path: 'qa.acceptance_metrics.public_release_statuses',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace'],
+    blocker_codes: [],
+    notes: null,
+  });
+  const failCount = entries.filter((e) => e.status === 'fail').length;
+  const warningCount = entries.filter((e) => e.status === 'warn' || e.status === 'warning').length;
+  const validatorTraceSatisfied = ordinaryDependenciesSatisfied && failCount === 0;
   const summary = {
     validation_count: entries.length,
     pass_count: entries.filter((e) => e.status === 'pass').length,
-    warning_count: entries.filter((e) => e.status === 'warn').length,
-    fail_count: 0,
+    warning_count: warningCount,
+    fail_count: failCount,
     blocked_count: 0,
-    validator_trace_gate_status: 'insufficient' as const,
-    validator_trace_gate_reason: 'ordinary_analysis_artifact_snapshot_checks_partial_not_independent_runtime_v3_proof' as const,
-    independent_validation_status: 'independent_validation_partial' as const,
-    referential_integrity_status: 'partial_snapshot_checks' as const,
-    deterministic_checks_version: 's9-19c-score-technique-modelrun-proof-v1' as const,
+    validator_trace_gate_status: validatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    validator_trace_gate_reason: validatorTraceSatisfied ? 'ordinary_l2a_artifact_derived_validations_passed' as const : 'ordinary_analysis_artifact_checks_missing_or_failed' as const,
+    independent_validation_status: validatorTraceSatisfied ? 'independent_validation_satisfying' as const : 'independent_validation_partial' as const,
+    referential_integrity_status: validatorTraceSatisfied ? 'passed' as const : 'partial_snapshot_checks' as const,
+    deterministic_checks_version: 's9-19d-independent-ordinary-l2a-proof-v1' as const,
     public_private_leakage_validation_status: 'not_independent' as const,
     uk_english_validation_status: 'not_run' as const,
     render_permission_validation_status: 'not_independent' as const,
   };
-  const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: 'internal_validator', trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: true, gate_satisfaction_reason: 'internal_bundle_validator_not_independent_runtime_v3_proof', blocker_codes: ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
+  const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: validatorTraceSatisfied ? 'independent_validation_satisfying' : 'internal_validator', trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: !validatorTraceSatisfied, gate_satisfaction_reason: summary.validator_trace_gate_reason, blocker_codes: validatorTraceSatisfied ? ['public_release_gates_blocked'] : ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
   const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ValidatorTrace.json`;
   const w = await writeInternalJson(input.root_dir ?? DEFAULT_ROOT, input.run_id, relPath, payload, 'validator_trace');
   if (!w.written) return { written: false, emitted_artefact_ids: [] as string[] };
@@ -8458,14 +8638,26 @@ export async function emitGateTraceFirstPass(input: any) {
   if (!analysisRunId) return { written: false, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.take_id, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
+  const ordinaryUnsatisfiedGateIds = getStringArray(input.acceptance_metrics_snapshot?.ordinary_l2a_unsatisfied_gate_ids);
+  const validatorTraceSatisfied = input.validator_trace_summary?.validator_trace_gate_status === 'satisfied'
+    || input.validator_trace_summary?.independent_validation_status === 'independent_validation_satisfying';
+  const ordinaryUnsatisfiedExcludingGate = ordinaryUnsatisfiedGateIds.filter((gateId) => gateId !== 'gate_trace_gate' && gateId !== 'validator_trace_gate');
+  const ordinaryL2AGateSatisfied = validatorTraceSatisfied && ordinaryUnsatisfiedExcludingGate.length === 0;
+  const ordinaryL2AStatus = ordinaryL2AGateSatisfied ? 'satisfied' : 'insufficient';
+  const ordinaryL2AReason = ordinaryL2AGateSatisfied
+    ? 'ordinary_internal_analysis_proof_chain_satisfied_public_release_gates_separated'
+    : `ordinary_internal_analysis_proof_chain_unsatisfied:${ordinaryUnsatisfiedExcludingGate.join(',') || 'validator_trace_gate'}`;
   const gate_entries: Array<Record<string, unknown>> = [
-    { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing', expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [], blocker_codes: ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? (input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing')), expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [`qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status=${String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? 'missing')}`], blocker_codes: ['ModelRunTrace_independent_proof_partial'], dependent_artefact_ids: ['model_run_trace'], source_paths: ['traces/ModelRunTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'production_safe_gate', gate_name: 'production_safe_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['manifest.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', notes: null },
-    { gate_id: 'public_scoring_gate', gate_name: 'public_scoring_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_overall_score=false'], blocker_codes: ['public_scoring_blocked'], dependent_artefact_ids: ['score_trace', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_scores', notes: null },
-    { gate_id: 'public_technique_authority_gate', gate_name: 'public_technique_authority_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_public_technique_names=false'], blocker_codes: ['public_technique_authority_blocked'], dependent_artefact_ids: ['technique_observation_trace', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_named_techniques', notes: null },
-    { gate_id: 'public_comparison_recommendation_gate', gate_name: 'public_comparison_recommendation_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['public_comparison_recommendation_blocked'], dependent_artefact_ids: ['comparison_raw', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation', notes: null },
+    { gate_id: 'ordinary_l2a_analysis_proof_gate', gate_name: 'ordinary_l2a_analysis_proof_gate', gate_family: 'ordinary_l2a_internal_analysis', status: ordinaryL2AGateSatisfied ? 'passed' : 'insufficient', reason: ordinaryL2AReason, required_for_level: 'ordinary_l2a_internal', current_state: ordinaryL2AStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`ordinary_l2a_unsatisfied_gate_ids=${ordinaryUnsatisfiedGateIds.join(',')}`], blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'], dependent_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], evidence_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], validator_rule_ids: ['ordinary_l2a_dependency_gate_validation'], source_paths: ['traces/ValidatorTrace.json', 'traces/GateTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: ordinaryUnsatisfiedGateIds, notes: null },
+    { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'global_l2', dependency_gate_ids: ['production_safe_gate', 'public_scoring_gate', 'public_technique_authority_gate', 'public_comparison_recommendation_gate'], notes: null },
+    { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: validatorTraceSatisfied ? 'passed' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: validatorTraceSatisfied ? 'independent_validation_satisfying' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing'), expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [`validator_trace_summary.independent_validation_status=${String(input.validator_trace_summary?.independent_validation_status ?? 'missing')}`], blocker_codes: validatorTraceSatisfied ? [] : ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], evidence_artefact_ids: ['validator_trace'], validator_rule_ids: [], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
+    { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? 'passed' : (input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? (input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing')), expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [`qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status=${String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? 'missing')}`], blocker_codes: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? [] : ['ModelRunTrace_independent_proof_partial'], dependent_artefact_ids: ['model_run_trace'], evidence_artefact_ids: ['model_run_trace'], validator_rule_ids: ['model_run_per_stage_proof_status_recorded'], source_paths: ['traces/ModelRunTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
+    { gate_id: 'production_safe_gate', gate_name: 'production_safe_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['manifest.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_scoring_gate', gate_name: 'public_scoring_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_overall_score=false'], blocker_codes: ['public_scoring_blocked'], dependent_artefact_ids: ['score_trace', 'gate_trace'], evidence_artefact_ids: ['score_trace', 'gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_scores', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_technique_authority_gate', gate_name: 'public_technique_authority_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_public_technique_names=false'], blocker_codes: ['public_technique_authority_blocked'], dependent_artefact_ids: ['technique_observation_trace', 'gate_trace'], evidence_artefact_ids: ['technique_observation_trace', 'gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_named_techniques', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_comparison_recommendation_gate', gate_name: 'public_comparison_recommendation_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['public_comparison_recommendation_blocked'], dependent_artefact_ids: ['comparison_raw', 'gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'customer_release_gate', gate_name: 'customer_release_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['production_safe_status=blocked'], blocker_codes: ['customer_release_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_customer_release', required_maturity_level: 'public_release', dependency_gate_ids: ['production_safe_gate'], notes: null },
+    { gate_id: 'global_level2_acceptance_gate', gate_name: 'global_level2_acceptance_gate', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['level2_status=not_accepted'], blocker_codes: ['global_level2_public_release_gates_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_global_level2_acceptance', required_maturity_level: 'global_l2', dependency_gate_ids: ['ordinary_l2a_analysis_proof_gate', 'production_safe_gate', 'public_scoring_gate', 'public_technique_authority_gate', 'public_comparison_recommendation_gate'], notes: null },
   ];
   const metricStatus = (key: string, fallback = 'missing') => String(input.acceptance_metrics_snapshot?.[key] ?? fallback);
   const addOrdinaryGate = (args: { gate_id: string; gate_family: string; metric_key: string; expected_state_for_acceptance: string; dependent_artefact_ids: string[]; source_paths: string[]; blocker_codes: string[]; public_effect?: string; satisfiedValues?: string[]; notApplicableValues?: string[] }) => {
@@ -8484,8 +8676,12 @@ export async function emitGateTraceFirstPass(input: any) {
       observed_evidence: [`qa.acceptance_metrics.${args.metric_key}=${currentState}`],
       blocker_codes: status === 'passed' || status === 'not_applicable' ? [] : args.blocker_codes,
       dependent_artefact_ids: args.dependent_artefact_ids,
+      evidence_artefact_ids: args.dependent_artefact_ids,
+      validator_rule_ids: [],
       source_paths: args.source_paths,
       public_effect: args.public_effect ?? 'none_internal_only',
+      required_maturity_level: 'internal_l2a',
+      dependency_gate_ids: [],
       notes: null,
     });
   };
@@ -8505,10 +8701,17 @@ export async function emitGateTraceFirstPass(input: any) {
     insufficient_gate_count: gate_entries.filter((g) => g.status === 'insufficient').length,
     missing_gate_count: gate_entries.filter((g) => g.status === 'missing').length,
     not_applicable_gate_count: gate_entries.filter((g) => g.status === 'not_applicable').length,
-    gate_trace_gate_status: 'insufficient' as const,
-    gate_trace_gate_reason: 'ordinary_analysis_gate_decisions_partial_not_level2_acceptance_proof' as const,
-    independent_gate_decision_status: 'independent_gate_partial' as const,
-    gate_registry_version: 's9-19c-score-technique-modelrun-gate-registry-v1' as const,
+    gate_trace_gate_status: ordinaryL2AGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    gate_trace_gate_reason: ordinaryL2AGateSatisfied ? 'ordinary_l2a_independent_gate_decisions_satisfied_public_release_blocked' as const : 'ordinary_analysis_gate_decisions_partial_not_level2_acceptance_proof' as const,
+    independent_gate_decision_status: ordinaryL2AGateSatisfied ? 'independent_gate_satisfying' as const : 'independent_gate_partial' as const,
+    gate_registry_version: 's9-19d-independent-ordinary-l2a-gate-registry-v1' as const,
+    ordinary_l2a_analysis_proof_status: ordinaryL2AStatus,
+    ordinary_l2a_analysis_proof_reason: ordinaryL2AReason,
+    ordinary_l2a_analysis_proof_blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'],
+    ordinary_l2a_satisfied_gate_ids: gate_entries.filter((g) => ['passed', 'satisfied', 'not_applicable'].includes(String(g.status))).map((g) => String(g.gate_id)),
+    ordinary_l2a_unsatisfied_gate_ids: gate_entries.filter((g) => !['passed', 'satisfied', 'not_applicable'].includes(String(g.status)) && !['public_output_permission', 'release', 'level2'].includes(String(g.gate_family))).map((g) => String(g.gate_id)),
+    ordinary_l2a_public_release_dependency_status: 'blocked' as const,
+    ordinary_l2a_comparison_dependency_status: 'ordinary_single_take_comparison_not_applicable' as const,
     public_output_permissions: BLOCKED_PUBLIC_OUTPUT_PERMISSIONS,
   };
   const payload = {
@@ -8522,8 +8725,8 @@ export async function emitGateTraceFirstPass(input: any) {
     generated_at: new Date().toISOString(),
     source_module: input.source_module,
     source_stage: input.source_stage,
-    source_classification: 'internal_gate_trace',
-    trace_mode: 'first_pass_internal_gate_snapshot',
+    source_classification: ordinaryL2AGateSatisfied ? 'independent_gate_decision' : 'internal_gate_trace',
+    trace_mode: 'ordinary_l2a_independent_gate_decisions',
     validated_snapshot_stage: 'pre_finalisation_snapshot',
     final_manifest_rewrite_expected: true,
     self_inclusion_validated: false,
@@ -8531,9 +8734,9 @@ export async function emitGateTraceFirstPass(input: any) {
     ...summary,
     gate_entries,
     gate_trace_summary: summary,
-    cannot_satisfy_level2_gate_trace_gate: true,
-    gate_satisfaction_reason: 'internal_gate_snapshot_not_independent_runtime_v3_proof',
-    blocker_codes: ['GateTrace_internal_only'],
+    cannot_satisfy_level2_gate_trace_gate: !ordinaryL2AGateSatisfied,
+    gate_satisfaction_reason: summary.gate_trace_gate_reason,
+    blocker_codes: ordinaryL2AGateSatisfied ? ['public_release_gates_blocked'] : ['GateTrace_internal_only'],
     level2_status: 'not_accepted',
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',

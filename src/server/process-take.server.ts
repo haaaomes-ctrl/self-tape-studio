@@ -1246,6 +1246,12 @@ export async function runProcessTake(
     let reportPolishDurationMs = 0;
     let twoStepFallbackUsed = false;
     let twoStepFallbackReason: string | null = null;
+    let evidencePassStartedAtIso: string | null = null;
+    let evidencePassCompletedAtIso: string | null = null;
+    let evidencePassModel: string | null = null;
+    let evidencePassHttpStatus: number | null = null;
+    let evidencePassRequestStatus: 'completed' | 'failed' | 'timed_out' | null = null;
+    let evidencePassParseStatus: 'completed' | 'unknown' = 'unknown';
     let preStep2InputArtefacts: Awaited<ReturnType<typeof emitAnalysisInputArtefacts>> | null = null;
     let preStep2ResolverTruth: Awaited<ReturnType<typeof emitResolverOutputAndTruthStateMap>> | null = null;
     let preStep2AnalysisEvidenceState: Awaited<ReturnType<typeof emitAnalysisEvidenceStatePrerequisite>> | null = null;
@@ -1331,6 +1337,8 @@ export async function runProcessTake(
       } catch {
         withFutureDimensions = false;
       }
+      const evidencePassAttemptStart = Date.now();
+      evidencePassStartedAtIso = new Date(evidencePassAttemptStart).toISOString();
       const evResult = await runEvidencePass({
         videoUrl: evidenceUrl,
         apiKey,
@@ -1339,6 +1347,12 @@ export async function runProcessTake(
         durationSeconds: take.mux_duration_seconds ?? null,
         withFutureDimensions,
       }).finally(() => clearTimeout(evTimer));
+      evidencePassCompletedAtIso = new Date().toISOString();
+      evidencePassDurationMs = evResult.durationMs;
+      evidencePassModel = evResult.model;
+      evidencePassHttpStatus = evResult.httpStatus;
+      evidencePassRequestStatus = evAc.signal.aborted ? 'timed_out' : (evResult.ok ? 'completed' : 'failed');
+      evidencePassParseStatus = evResult.ok ? 'completed' : 'unknown';
 
       if (!evResult.ok) {
         // Step 1 failure → fall back to single-pass for this run. Don't
@@ -1355,7 +1369,6 @@ export async function runProcessTake(
           duration_ms: evResult.durationMs,
         });
       } else {
-        evidencePassDurationMs = evResult.durationMs;
         twoStepEvidence = evResult.evidence;
         twoStepTimestampsDropped = evResult.timestamps_dropped;
         const evSummary = summariseEvidence(twoStepEvidence);
@@ -3862,15 +3875,45 @@ export async function runProcessTake(
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (scoreTrace.written) qaArtefactIds.push(...scoreTrace.emitted_artefact_ids);
-      const safeModelRunEntries = (lastAttemptStartedAtIso || lastAttemptCompletedAtIso || lastAttemptDurationMs != null || lastAttemptHttpStatus != null)
-        ? [{
+      const safeModelRunEntries = [
+        ...(evidencePassStartedAtIso || evidencePassCompletedAtIso || evidencePassDurationMs > 0 || evidencePassHttpStatus != null
+          ? [{
+            model_run_id: `mr-${takeId}-step1`,
+            model_provider: 'openrouter',
+            model_name: evidencePassModel ?? 'unknown',
+            model_version: evidencePassModel ?? 'unknown',
+            prompt_version: 'evidence_pass_current',
+            model_role: 'primary' as const,
+            stage: 'analysis_step_1_evidence_mapping',
+            source_stage: 'evidence_pass',
+            invocation_status: 'invoked' as const,
+            started_at: evidencePassStartedAtIso ?? undefined,
+            completed_at: evidencePassCompletedAtIso ?? undefined,
+            duration_ms: evidencePassDurationMs || undefined,
+            timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+            timed_out: evidencePassRequestStatus === 'timed_out',
+            retry_count: 0,
+            attempt_index: 1,
+            http_status: evidencePassHttpStatus ?? undefined,
+            circuit_open: false,
+            fallback_used: false,
+            analysis_tier: tier,
+            request_status: evidencePassRequestStatus ?? ('failed' as const),
+            parse_status: evidencePassParseStatus,
+            input_artifact_refs: ['inputs/input_record.json'],
+            output_artifact_refs: ['analysis/Step1ObservableEvidence.json', 'analysis/AnalysisEvidenceState.json'],
+            raw_prompt_or_response_stored: false,
+            secrets_or_signed_urls_stored: false,
+          }] : []),
+        ...((lastAttemptStartedAtIso || lastAttemptCompletedAtIso || lastAttemptDurationMs != null || lastAttemptHttpStatus != null)
+          ? [{
           model_run_id: `mr-${takeId}-1`,
           model_provider: 'openrouter',
           model_name: currentModel,
           model_version: currentModel,
           prompt_version: isTwoStepEnabled() ? 'two_step_report_polish_current' : 'single_pass_analysis_current',
           model_role: geminiRetryCount > 0 || circuitOpenAtStart ? ('fallback' as const) : ('primary' as const),
-          stage: isTwoStepEnabled() ? 'analysis_step_2_judgement_or_report_polish' : 'analysis_step_2_judgement_or_report_polish',
+          stage: 'analysis_step_2_judgement_or_report_generation',
           source_stage: isTwoStepEnabled() ? 'report_polish' : 'analysis_generation',
           invocation_status: 'invoked' as const,
           started_at: lastAttemptStartedAtIso ?? undefined,
@@ -3890,7 +3933,8 @@ export async function runProcessTake(
           output_artifact_refs: ['reports/raw_report.json'],
           raw_prompt_or_response_stored: false,
           secrets_or_signed_urls_stored: false,
-        }] : [];
+        }] : []),
+      ];
       const modelRunTrace = await emitModelRunTraceFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -3899,7 +3943,7 @@ export async function runProcessTake(
         source_module: 'process-take.server',
         analysis_route: isTwoStepEnabled() ? 'two_step_or_fallback_single_pass' : 'single_pass',
         model_run_entries: safeModelRunEntries,
-        expected_model_stages: ['analysis_step_1_evidence_pass', 'analysis_step_2_judgement_or_report_polish', 'validator'],
+        expected_model_stages: ['analysis_step_1_evidence_mapping', 'analysis_step_2_judgement_or_report_generation'],
         comparison_invoked: false,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
@@ -3990,13 +4034,13 @@ export async function runProcessTake(
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
           ...(qaArtefactIds.includes('step1_observable_evidence') ? { step1_observable_evidence: false } : {}),
-          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: false } : {}),
+          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: analysisEvidenceState.level2_satisfies === true } : {}),
           ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.written ? evidenceAnchors.level2_satisfies : false } : {}),
           ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: false } : {}),
           ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.written ? publicClaimTrace.level2_satisfies === true : false } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.level2_satisfies === true } : {}),
-          ...(modelRunTrace.written ? { model_run_trace: false } : {}),
+          ...(modelRunTrace.written ? { model_run_trace: (modelRunTrace as { level2_satisfies?: boolean }).level2_satisfies === true } : {}),
           ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: false } : {}),
         },
         legacy_adapter_artefact_ids: [

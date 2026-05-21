@@ -178,17 +178,17 @@ describe('v3 s9 score technique model-run proof bundle', () => {
 
     expect(out.written).toBe(true);
     const payload = JSON.parse(await readFile(path.join(root, 'r19c-model', 'takes', 'take-t1', 'analysis-r19c-model', 'traces', 'ModelRunTrace.json'), 'utf8'));
-    expect(payload.source_classification).toBe('model_run_metadata_partial');
-    expect(payload.independent_model_proof_status).toBe('independent_model_proof_partial');
-    expect(payload.per_stage_model_proof_status).toBe('per_stage_model_proof_partial');
+    expect(payload.source_classification).toBe('independent_model_run_trace');
+    expect(payload.independent_model_proof_status).toBe('independent_model_proof_satisfying');
+    expect(payload.per_stage_model_proof_status).toBe('per_stage_model_proof_satisfied');
     expect(payload.model_run_entries.map((entry: any) => entry.stage)).toEqual(expect.arrayContaining([
-      'analysis_step_1_evidence_pass',
-      'analysis_step_2_judgement_or_report_polish',
+      'analysis_step_1_evidence_mapping',
+      'analysis_step_2_judgement_or_report_generation',
       'validator',
     ]));
     expect(payload.raw_prompt_or_response_stored).toBe(false);
     expect(payload.secrets_or_signed_urls_stored).toBe(false);
-    expect(payload.model_run_trace_summary.model_run_trace_gate_status).toBe('insufficient');
+    expect(payload.model_run_trace_summary.model_run_trace_gate_status).toBe('satisfied');
   });
 
   it('surfaces S9-19C classifications in metrics without unblocking public or production gates', () => {

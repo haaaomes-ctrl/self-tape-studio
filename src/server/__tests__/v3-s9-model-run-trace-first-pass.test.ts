@@ -25,7 +25,7 @@ describe('v3 s9 model run trace first pass', () => {
     expect(payload.public_output_unchanged).toBe(true);
     expect(payload.cannot_satisfy_model_run_gate).toBe(true);
     expect(payload.source_classification).toBe('model_run_metadata_partial');
-    expect(payload.gate_satisfaction_reason).toContain('per_stage_model_metadata_partial_not_full_independent_proof_chain');
+    expect(payload.gate_satisfaction_reason).toContain('runtime_metadata_without_distinct_stage_boundaries');
     expect(payload.raw_prompt_or_response_stored).toBe(false);
     expect(payload.secrets_or_signed_urls_stored).toBe(false);
   });
