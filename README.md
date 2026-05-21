@@ -351,7 +351,6 @@ Level 2 remains blocked while any required Level 2 artefacts or proof gates are 
 
 - `validator_trace` and `gate_trace` as independent runtime gate proof;
 - `ModelRunTrace` as independent per-stage model-run proof;
-- report parity proof while `render_payload` and `public_report_payload` surfaces are not generated and persisted;
 - EvidenceAnchors/PublicClaimTrace coverage while runtime anchors remain partial and extractor coverage is incomplete;
 - real runtime technique-observation and score evidence linkage (TechniqueObservationTrace and ScoreTrace remain internal or insufficient for gate satisfaction);
 - comparison parity for invoked duplicate/same-video runs unless suppression and decisive evidence-delta/no-material-difference proof are complete;
@@ -360,6 +359,8 @@ Level 2 remains blocked while any required Level 2 artefacts or proof gates are 
 - public-technique-authority proof.
 
 No-export proof is complete for the current internal no-export bundle when all required lanes emit. Ordinary single-take runs treat comparison artefacts as not applicable and non-blocking. Do not mark Level 2 accepted while required artefacts are missing, emitted or blocked artefacts remain insufficient, public/production gates are blocked, invoked comparison proof remains non-satisfying, or the v3 spine relies on `legacy_adapter` artefacts.
+
+S9-17 closes the internal render/public report parity proof path: `reports/render_payload.json`, `reports/public_report_payload.json` and `parity/report_parity_result.json` emit for the ordinary runtime path, and `qa_acceptance_metrics` reflects report parity as passed when the raw/render/public surfaces are complete and safe. This physical proof emission does not accept Level 2 by itself.
 
 ---
 
@@ -2522,16 +2523,16 @@ production_safe_status remains blocked.
 public_scoring_status remains blocked.
 public_technique_authority_status remains blocked.
 public comparison winner/recommendation remains unavailable.
-report parity moved to S9-17; source/tests now emit render_payload and public_report_payload, but fresh operator runtime verification is still required before closeout.
+report parity moved to S9-17 and is now closed for the internal render/public payload parity path.
 Tier 2 near-duplicate sampling remains deferred.
 Tier 3 normalised media fingerprinting remains deferred.
 ```
 
 ### S9-17 - render/public payload report parity architecture
 
-S9-17 is the active internal QA workstream for report parity. It defines and implements internal `render_payload` and `public_report_payload` artefacts so report parity can compare raw, render and public-safe report surfaces without changing public UX or exposing blocked fields.
+S9-17 is closed for internal render/public report parity. It defines and implements internal `render_payload` and `public_report_payload` artefacts so report parity can compare raw, render and public-safe report surfaces without changing public UX or exposing blocked fields.
 
-S9-17A is design/audit only. S9-17B/C implement the internal QA payload emitters in source/tests:
+S9-17A provided the design/audit contract. S9-17B/C implemented the internal QA payload emitters. S9-17D wired ordinary runtime finalisation. S9-17E aligned manifest and acceptance metrics so passed report parity is not described as blocked.
 
 ```text
 reports/render_payload.json
@@ -2539,11 +2540,35 @@ reports/public_report_payload.json
 parity/report_parity_result.json
 ```
 
-S9-17D must verify fresh operator runtime artefacts before runtime closeout. If fresh runtime artefacts are unavailable, the runtime retest remains `operator_verification_required`; source/tests alone must not be reported as real-runtime proof.
-
 S9-17 does not accept Level 2, unblock production/public gates, expose public scoring, expose public technique authority, expose public comparison winner/recommendation, or move Tier 2/Tier 3 duplicate detection forward.
 
-Until fresh runtime shows raw/render/public payload parity is present and truthful, report parity closeout remains operator-verification gated and Level 2 remains `not_accepted`.
+Current S9-17 closeout posture:
+
+```text
+report parity passes only when raw/render/public allowed fields match and forbidden fields are absent;
+parity_artefacts_missing remains for missing, failed or insufficient parity;
+public scoring remains blocked;
+public technique authority remains blocked;
+public comparison winner/recommendation remains blocked;
+production_safe_status remains blocked;
+Level 2 remains not_accepted due remaining evidence-spine and proof-chain blockers.
+```
+
+### S9-18 - real Step 1 evidence extraction and public claim support closure
+
+S9-18 is the next recommended workstream. It should address the remaining Level 2 evidence-spine blockers without changing public output or unblocking public/production gates prematurely.
+
+Suggested S9-18 scope:
+
+```text
+real video/audio/material/performance observable evidence extraction;
+candidate-technique evidence extraction;
+EvidenceAnchors truth linkage;
+PublicClaimTrace support promotion from real runtime evidence;
+ScoreTrace and TechniqueObservationTrace proof strategy;
+ValidatorTrace, GateTrace and ModelRunTrace independent proof chain;
+public/production gates remain blocked until every required gate satisfies.
+```
 
 ---
 
