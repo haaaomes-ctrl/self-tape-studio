@@ -2255,7 +2255,10 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
 
   it('creates assessability limitation candidates from Step 1 unavailable evidence families', async () => {
     const { claimCandidateTrace } = await emitClaimCandidateBundle();
-    const limitation = claimCandidateTrace.claim_candidates.find((candidate: any) => candidate.claim_family === 'assessability_limitation');
+    const limitation = claimCandidateTrace.claim_candidates.find((candidate: any) =>
+      candidate.claim_family === 'assessability_limitation'
+      && String(candidate.source_path).startsWith('unsupported_or_unavailable_evidence[')
+    );
     expect(limitation).toBeTruthy();
     expect(limitation.source_artefact_id).toBe('analysis_evidence_state');
     expect(limitation.source_family).toBe('real_runtime_v3');

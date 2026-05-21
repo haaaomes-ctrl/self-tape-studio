@@ -27,6 +27,9 @@ async function emitStep1Bundle() {
     brief_presence_source: 'audition.brief',
     material_presence: 'supplied',
     material_presence_source: 'loaded_runtime_field',
+    original_upload_file_hash: 'sha256:test-upload-hash',
+    original_upload_file_hash_source_stage: 'client_pre_upload',
+    upload_identity_capture_status: 'captured',
     mux_playback_id: 'safe-playback-ref',
     mux_asset_or_upload_id_present: true,
     take_created_at: '2026-05-21T09:00:00.000Z',
@@ -119,6 +122,59 @@ describe('S9-18B Step1ObservableEvidence container', () => {
       'score_trace',
       'technique_observation_trace',
     ]));
+  });
+
+  it('emits deterministic metadata and supplied-context facts from allowed pre-Step 2 sources only', async () => {
+    const { step1, aes, metrics } = await emitStep1Bundle();
+    const kinds = step1.observable_evidence_items.map((item: any) => item.evidence_kind);
+    expect(kinds).toEqual(expect.arrayContaining([
+      'selected_level',
+      'audition_type',
+      'submission_identity_loaded',
+      'take_identity_loaded',
+      'brief_presence',
+      'brief_presence_source_resolved',
+      'extracted_brief_cache_status',
+      'material_presence',
+      'material_presence_source_resolved',
+      'media_duration_known',
+      'safe_upload_identity_available',
+      'take_created_at_normalised',
+      'take_updated_at_normalised',
+      'component_or_task_declaration_unavailable',
+    ]));
+    const sourceIds = new Set(step1.observable_evidence_items.map((item: any) => item.source_artefact_id));
+    expect([...sourceIds].sort()).toEqual([...new Set([...sourceIds])].sort());
+    expect([...sourceIds]).toEqual(expect.arrayContaining(['analysis_submission', 'analysis_take', 'resolver_output', 'truth_state_map', 'media_readiness']));
+    expect([...sourceIds]).not.toEqual(expect.arrayContaining(['raw_report', 'render_payload', 'public_report_payload', 'report_parity_result', 'score_trace', 'technique_observation_trace']));
+    expect(step1.evidence_family_coverage.material_specific).toBe('partial');
+    expect(step1.step1_observable_evidence_summary.deterministic_runtime_evidence_count).toBeGreaterThan(0);
+    expect(step1.step1_observable_evidence_summary.brief_material_evidence_count).toBeGreaterThan(0);
+    expect(step1.deterministic_evidence_source_refs.allowed_source_artefact_ids).toEqual(expect.arrayContaining([
+      'analysis_input_record',
+      'analysis_submission',
+      'analysis_take',
+      'resolver_output',
+      'truth_state_map',
+      'media_readiness',
+    ]));
+    expect(aes.deterministic_runtime_evidence_count).toBe(step1.step1_observable_evidence_summary.deterministic_runtime_evidence_count);
+    expect(aes.brief_material_evidence_count).toBe(step1.step1_observable_evidence_summary.brief_material_evidence_count);
+    expect(aes.step1_observable_evidence_family_summary.material_specific).toBe('partial');
+    expect(metrics.step1_observable_evidence_summary.brief_material_evidence_count).toBeGreaterThan(0);
+  });
+
+  it('keeps deterministic and brief/material evidence free of achievement, scoring, technique, and market-fit judgements', async () => {
+    const { step1 } = await emitStep1Bundle();
+    const serialised = JSON.stringify(step1.observable_evidence_items).toLowerCase();
+    expect(serialised).not.toContain('brief achieved');
+    expect(serialised).not.toContain('technique demonstrated');
+    expect(serialised).not.toContain('public score');
+    expect(serialised).not.toContain('castable');
+    expect(serialised).not.toContain('marketable');
+    expect(serialised).not.toContain('role fit');
+    expect(serialised).not.toContain('winner');
+    expect(serialised).not.toContain('recommendation');
   });
 
   it('links Step1ObservableEvidence into AnalysisEvidenceState while keeping Step 2 limited and Level 2 blocked', async () => {

@@ -1722,6 +1722,40 @@ type Step1ObservableEvidenceItem = {
   blocker_codes: string[];
   cannot_satisfy_v3_gate: boolean;
 };
+const STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS = new Set([
+  'analysis_input_record',
+  'analysis_submission',
+  'analysis_take',
+  'resolver_output',
+  'truth_state_map',
+  'media_readiness',
+]);
+const STEP1_FORBIDDEN_SATISFYING_SOURCE_REFS = [
+  { source_family: 'raw_report', source_path: 'reports/raw_report.json', blocker_code: 'raw_report_forbidden_as_step1_observable_evidence', reason: 'raw_report_prose_forbidden_as_satisfying_step1_observable_evidence' },
+  { source_family: 'render_payload', source_path: 'reports/render_payload.json', blocker_code: 'render_payload_forbidden_as_step1_observable_evidence', reason: 'render_payload_forbidden_as_satisfying_step1_observable_evidence' },
+  { source_family: 'public_report_payload', source_path: 'reports/public_report_payload.json', blocker_code: 'public_report_payload_forbidden_as_step1_observable_evidence', reason: 'public_report_payload_forbidden_as_satisfying_step1_observable_evidence' },
+  { source_family: 'report_parity_result', source_path: 'parity/report_parity_result.json', blocker_code: 'report_parity_result_forbidden_as_step1_observable_evidence', reason: 'report_parity_result_forbidden_as_satisfying_step1_observable_evidence' },
+  { source_family: 'legacy_score_trace', source_path: 'traces/ScoreTrace.json', blocker_code: 'legacy_score_trace_forbidden_as_step1_observable_evidence', reason: 'legacy ScoreTrace forbidden as satisfying Step 1 observable evidence' },
+  { source_family: 'legacy_technique_observation_trace', source_path: 'traces/TechniqueObservationTrace.json', blocker_code: 'legacy_technique_trace_forbidden_as_step1_observable_evidence', reason: 'legacy TechniqueObservationTrace forbidden as satisfying Step 1 observable evidence' },
+] as const;
+function isAllowedStep1EvidenceSource(source: unknown): source is Step1ObservableEvidenceItem['source_artefact_id'] {
+  return typeof source === 'string' && STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS.has(source);
+}
+function hasMeaningfulStep1Value(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'boolean') return true;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  return false;
+}
+function normaliseSafeStep1Value(value: unknown): string {
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'unknown';
+  if (typeof value === 'string') return value.trim() || 'unknown';
+  return 'unknown';
+}
 type PresenceValue = 'supplied' | 'absent' | 'unknown';
 function normalisePresenceTruthState(value: PresenceValue | null | undefined, source: string | null | undefined): { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' } {
   const normalizedValue: PresenceValue = value === 'supplied' || value === 'absent' || value === 'unknown' ? value : 'unknown';
@@ -5838,24 +5872,18 @@ function step1EvidenceFamilyForItem(item: AnalysisObservableEvidenceItem): Step1
   return 'deterministic_runtime_fact';
 }
 
-function step1SourceArtefactIdForItem(item: AnalysisObservableEvidenceItem): Step1ObservableEvidenceItem['source_artefact_id'] {
-  if (item.source_artefact_id === 'analysis_input_record') return 'analysis_input_record';
-  if (item.source_artefact_id === 'analysis_submission') return 'analysis_submission';
-  if (item.source_artefact_id === 'analysis_take') return 'analysis_take';
-  if (item.source_artefact_id === 'resolver_output') return 'resolver_output';
-  if (item.source_artefact_id === 'truth_state_map') return 'truth_state_map';
-  if (item.source_artefact_id === 'media_readiness') return 'media_readiness';
-  return 'model_run_trace';
+function step1SourceArtefactIdForItem(item: AnalysisObservableEvidenceItem): Step1ObservableEvidenceItem['source_artefact_id'] | null {
+  return isAllowedStep1EvidenceSource(item.source_artefact_id) ? item.source_artefact_id : null;
 }
 
-function toStep1ObservableEvidenceItem(item: AnalysisObservableEvidenceItem, index: number): Step1ObservableEvidenceItem {
+function toStep1ObservableEvidenceItem(item: AnalysisObservableEvidenceItem, index: number, sourceArtefactId: Step1ObservableEvidenceItem['source_artefact_id']): Step1ObservableEvidenceItem {
   return {
     evidence_item_id: `step1-${String(index + 1).padStart(4, '0')}`,
     evidence_family: step1EvidenceFamilyForItem(item),
     evidence_modality: item.evidence_modality,
     evidence_kind: item.evidence_kind,
     safe_evidence_summary: item.safe_evidence_summary,
-    source_artefact_id: step1SourceArtefactIdForItem(item),
+    source_artefact_id: sourceArtefactId,
     source_path: item.source_artefact_id === 'run_evidence_pass'
       ? `filtered_run_evidence_pass_step1.${item.source_path}`
       : item.source_path,
@@ -5922,6 +5950,18 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       safe_evidence_summary: `${item.label}: ${String(value)}`,
     });
   };
+  const addUnavailableRuntimeFact = (item: Omit<AnalysisObservableEvidenceItem, 'evidence_item_id' | 'timestamp' | 'timestamp_range' | 'public_display_status' | 'confidence_or_strength'> & { confidence_or_strength?: string | null }) => {
+    addRuntimeFact({
+      confidence_or_strength: null,
+      ...item,
+      assessability_limitations: dedupePreservingOrder(item.assessability_limitations),
+      blocker_codes: dedupePreservingOrder(item.blocker_codes),
+    });
+  };
+  const unavailableFieldSet = new Set((input.unavailable_fields ?? []).filter((field): field is string => typeof field === 'string' && field.length > 0));
+  const extractedBriefCacheStatus = String(input.brief_presence_source ?? '').includes('extracted_brief_cached')
+    ? 'loaded'
+    : (input.brief_presence_source === 'audition.brief+audition.extracted_brief_cached_empty' ? 'known_empty' : 'not_loaded');
   addIfKnown(input.selected_level, {
     label: 'selected_level',
     evidence_modality: 'submission_context',
@@ -5950,6 +5990,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   });
   addRuntimeFact({
     evidence_modality: 'submission_context',
+    evidence_kind: 'submission_identity_loaded',
+    safe_evidence_summary: `submission_identity_loaded: ${input.submission_id ? 'present' : 'missing'}`,
+    source_artefact_id: 'analysis_submission',
+    source_path: 'submission_id',
+    timestamp_source: 'not_timestamped_runtime_metadata',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: input.submission_id ? [] : ['submission_id_unavailable'],
+    confidence_or_strength: input.submission_id ? 'runtime_identity_present' : null,
+    blocker_codes: input.submission_id ? [] : ['submission_id_missing'],
+  });
+  addRuntimeFact({
+    evidence_modality: 'submission_context',
     evidence_kind: 'brief_presence',
     safe_evidence_summary: `brief_presence: ${input.brief_presence ?? 'unknown'}`,
     source_artefact_id: 'resolver_output',
@@ -5958,6 +6011,32 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     component_id: null,
     linked_truth_state_ids: [],
     assessability_limitations: [],
+    confidence_or_strength: resolverOutputAvailable ? 'resolver_runtime_fact' : null,
+    blocker_codes: resolverOutputAvailable ? [] : ['resolver_output_missing'],
+  });
+  addRuntimeFact({
+    evidence_modality: 'submission_context',
+    evidence_kind: 'brief_presence_source_resolved',
+    safe_evidence_summary: `brief_presence_source: ${input.brief_presence_source ?? 'unavailable'}`,
+    source_artefact_id: 'resolver_output',
+    source_path: 'brief_presence.source',
+    timestamp_source: 'not_timestamped_resolver_fact',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: input.brief_presence_source ? [] : ['brief_presence_source_unavailable'],
+    confidence_or_strength: resolverOutputAvailable && input.brief_presence_source ? 'resolver_runtime_fact' : null,
+    blocker_codes: resolverOutputAvailable ? (input.brief_presence_source ? [] : ['brief_presence_source_unavailable']) : ['resolver_output_missing'],
+  });
+  addRuntimeFact({
+    evidence_modality: 'submission_context',
+    evidence_kind: 'extracted_brief_cache_status',
+    safe_evidence_summary: `extracted_brief_cache_status: ${extractedBriefCacheStatus}`,
+    source_artefact_id: 'resolver_output',
+    source_path: 'brief_presence.source',
+    timestamp_source: 'not_timestamped_resolver_fact',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: extractedBriefCacheStatus === 'not_loaded' ? ['extracted_brief_cache_not_loaded'] : [],
     confidence_or_strength: resolverOutputAvailable ? 'resolver_runtime_fact' : null,
     blocker_codes: resolverOutputAvailable ? [] : ['resolver_output_missing'],
   });
@@ -5975,6 +6054,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     blocker_codes: resolverOutputAvailable ? [] : ['resolver_output_missing'],
   });
   addRuntimeFact({
+    evidence_modality: 'material',
+    evidence_kind: 'material_presence_source_resolved',
+    safe_evidence_summary: `material_presence_source: ${input.material_presence_source ?? 'unavailable'}`,
+    source_artefact_id: 'resolver_output',
+    source_path: 'material_presence.source',
+    timestamp_source: 'not_timestamped_resolver_fact',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: input.material_presence_source ? [] : ['material_presence_source_unavailable'],
+    confidence_or_strength: resolverOutputAvailable && input.material_presence_source ? 'resolver_runtime_fact' : null,
+    blocker_codes: resolverOutputAvailable ? (input.material_presence_source ? [] : ['material_presence_source_unavailable']) : ['resolver_output_missing'],
+  });
+  addRuntimeFact({
     evidence_modality: 'submission_context',
     evidence_kind: 'stable_take_identity',
     safe_evidence_summary: `stable_take_identity: take ${input.take_id} / analysis ${analysisRunId}`,
@@ -5988,9 +6080,80 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     blocker_codes: [],
   });
   addRuntimeFact({
+    evidence_modality: 'submission_context',
+    evidence_kind: 'take_identity_loaded',
+    safe_evidence_summary: 'take_identity_loaded: take and analysis identifiers present',
+    source_artefact_id: 'analysis_take',
+    source_path: 'stable_take_identity',
+    timestamp_source: 'not_timestamped_runtime_metadata',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: [],
+    confidence_or_strength: 'runtime_identity_present',
+    blocker_codes: [],
+  });
+  if (input.take_created_at) {
+    addRuntimeFact({
+      evidence_modality: 'submission_context',
+      evidence_kind: 'take_created_at_normalised',
+      safe_evidence_summary: 'take_created_at_normalised: timestamp available',
+      source_artefact_id: 'analysis_take',
+      source_path: 'take_created_at',
+      timestamp_source: 'loaded_take_row',
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: [],
+      confidence_or_strength: 'normalised_runtime_timestamp_present',
+      blocker_codes: [],
+    });
+  }
+  if (input.take_updated_at) {
+    addRuntimeFact({
+      evidence_modality: 'submission_context',
+      evidence_kind: 'take_updated_at_normalised',
+      safe_evidence_summary: 'take_updated_at_normalised: timestamp available',
+      source_artefact_id: 'analysis_take',
+      source_path: 'take_updated_at',
+      timestamp_source: 'loaded_take_row',
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: [],
+      confidence_or_strength: 'normalised_runtime_timestamp_present',
+      blocker_codes: [],
+    });
+  }
+  if (input.take_index != null) {
+    addRuntimeFact({
+      evidence_modality: 'submission_context',
+      evidence_kind: 'take_index_loaded',
+      safe_evidence_summary: `take_index_loaded: ${input.take_index}`,
+      source_artefact_id: 'analysis_take',
+      source_path: 'take_index',
+      timestamp_source: 'not_timestamped_runtime_metadata',
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: [],
+      confidence_or_strength: input.take_index_source ?? 'runtime_field_present',
+      blocker_codes: [],
+    });
+  } else {
+    addUnavailableRuntimeFact({
+      evidence_modality: 'submission_context',
+      evidence_kind: 'take_index_unavailable',
+      safe_evidence_summary: 'take_index_unavailable: not loaded before Step 2',
+      source_artefact_id: 'analysis_take',
+      source_path: 'take_index',
+      timestamp_source: 'unavailable',
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: ['take_index_unavailable'],
+      blocker_codes: ['take_index_unavailable'],
+    });
+  }
+  addRuntimeFact({
     evidence_modality: 'media_readiness',
     evidence_kind: 'media_readiness_state',
-    safe_evidence_summary: `media_readiness_state: ${input.media_readiness_state ?? 'unknown'}`,
+    safe_evidence_summary: `media_readiness_state_loaded: ${input.media_readiness_state ? 'runtime field present' : 'unknown'}`,
     source_artefact_id: 'analysis_take',
     source_path: 'media_readiness_state',
     timestamp_source: durationKnown ? 'media_readiness_runtime_field' : 'unavailable',
@@ -5998,6 +6161,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     linked_truth_state_ids: [],
     assessability_limitations: durationKnown ? [] : ['media_duration_unavailable_no_timestamp_evidence_fabricated'],
     confidence_or_strength: input.media_readiness_state ? 'runtime_field_present' : null,
+    blocker_codes: durationKnown ? [] : ['media_duration_unavailable'],
+  });
+  addRuntimeFact({
+    evidence_modality: 'media_readiness',
+    evidence_kind: durationKnown ? 'media_duration_known' : 'media_duration_unknown',
+    safe_evidence_summary: durationKnown ? `media_duration_known: ${normaliseSafeStep1Value(input.media_duration_seconds)} seconds` : 'media_duration_unknown: duration unavailable before Step 2',
+    source_artefact_id: 'media_readiness',
+    source_path: 'media_duration_seconds',
+    timestamp_source: durationKnown ? 'media_readiness_runtime_field' : 'unavailable',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: durationKnown ? [] : ['media_duration_unavailable_no_timestamp_evidence_fabricated'],
+    confidence_or_strength: durationKnown ? durationConfidence : null,
     blocker_codes: durationKnown ? [] : ['media_duration_unavailable'],
   });
   addRuntimeFact({
@@ -6012,6 +6188,21 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     assessability_limitations: [],
     confidence_or_strength: resolverOutputAvailable ? 'resolver_runtime_fact' : null,
     blocker_codes: resolverOutputAvailable ? [] : ['resolver_output_missing'],
+  });
+  addRuntimeFact({
+    evidence_modality: 'media_readiness',
+    evidence_kind: hasMeaningfulStep1Value(input.original_upload_file_hash) ? 'safe_upload_identity_available' : 'safe_upload_identity_unavailable',
+    safe_evidence_summary: hasMeaningfulStep1Value(input.original_upload_file_hash)
+      ? 'safe_upload_identity_available: original upload hash present'
+      : `safe_upload_identity_unavailable: ${input.upload_identity_capture_status ?? 'not captured'}`,
+    source_artefact_id: 'analysis_take',
+    source_path: 'safe_upload_identity.original_upload_file_hash',
+    timestamp_source: 'not_timestamped_upload_identity_metadata',
+    component_id: null,
+    linked_truth_state_ids: [],
+    assessability_limitations: hasMeaningfulStep1Value(input.original_upload_file_hash) ? [] : ['safe_upload_identity_unavailable'],
+    confidence_or_strength: hasMeaningfulStep1Value(input.original_upload_file_hash) ? 'runtime_upload_identity_present' : null,
+    blocker_codes: hasMeaningfulStep1Value(input.original_upload_file_hash) ? [] : ['safe_upload_identity_unavailable'],
   });
   addRuntimeFact({
     evidence_modality: 'resolver_truth',
@@ -6040,6 +6231,21 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     blocker_codes: truthStateMapAvailable ? ['structured_truth_state_ids_unavailable'] : ['TruthStateMap_missing'],
   });
   addRuntimeFact({
+    evidence_modality: 'material',
+    evidence_kind: (input.component_or_task_declaration_status ?? 'unknown') === 'supplied'
+      ? 'component_or_task_declaration_loaded'
+      : 'component_or_task_declaration_unavailable',
+    safe_evidence_summary: `component_or_task_declaration_status: ${input.component_or_task_declaration_status ?? 'unknown'}`,
+    source_artefact_id: 'analysis_submission',
+    source_path: 'component_or_task_declaration_status',
+    timestamp_source: 'not_timestamped_supplied_context',
+    component_id: 'component_or_task_declaration',
+    linked_truth_state_ids: [],
+    assessability_limitations: (input.component_or_task_declaration_status ?? 'unknown') === 'unknown' ? ['component_or_task_declaration_not_loaded'] : [],
+    confidence_or_strength: input.component_or_task_declaration_source === 'loaded_runtime_field' ? 'supplied_context_runtime_field' : null,
+    blocker_codes: (input.component_or_task_declaration_status ?? 'unknown') === 'unknown' ? ['component_or_task_declaration_unknown'] : [],
+  });
+  addRuntimeFact({
     evidence_modality: 'resolver_truth',
     evidence_kind: 'comparison_truths',
     safe_evidence_summary: `comparison execution status: ${input.comparison_run_id ? 'comparison_context_present' : 'not_executed_single_take'}`,
@@ -6052,6 +6258,20 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     confidence_or_strength: truthStateMapAvailable ? 'truth_state_map_runtime_fact' : null,
     blocker_codes: truthStateMapAvailable ? ['structured_truth_state_ids_unavailable'] : ['TruthStateMap_missing'],
   });
+  if (unavailableFieldSet.size > 0) {
+    addUnavailableRuntimeFact({
+      evidence_modality: 'submission_context',
+      evidence_kind: 'unavailable_runtime_fields_recorded',
+      safe_evidence_summary: `unavailable_runtime_fields_recorded: ${Array.from(unavailableFieldSet).sort().join(', ')}`,
+      source_artefact_id: 'analysis_input_record',
+      source_path: 'unavailable_fields',
+      timestamp_source: 'unavailable',
+      component_id: null,
+      linked_truth_state_ids: [],
+      assessability_limitations: Array.from(unavailableFieldSet).map((field) => `${field}_unavailable`),
+      blocker_codes: Array.from(unavailableFieldSet).map((field) => `${field}_unavailable`),
+    });
+  }
   const appendFilteredStep1Items = (items: Array<Record<string, unknown>>, familyPath: string) => {
     items.forEach((item, index) => {
       const evidenceModality = typeof item.evidence_modality === 'string' && ['video', 'audio', 'material', 'submission_context', 'resolver_truth', 'media_readiness', 'unknown'].includes(item.evidence_modality)
@@ -6200,27 +6420,35 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const evidenceStateStatus: 'partial' | 'unavailable' | 'blocked' = filteredStep1?.extraction_status === 'blocked'
     ? 'blocked'
     : (observable_evidence_items.length > 0 ? 'partial' : 'unavailable');
-  const summary = {
-    evidence_state_status: evidenceStateStatus,
-    source_classification: sourceClassification,
-    observable_evidence_item_count: observable_evidence_items.length,
-    unsupported_or_unavailable_evidence_count: unsupportedOrUnavailableEvidence.length,
-    filtered_runEvidencePass_observation_count: step1VideoItems.length + step1AudioItems.length + step1MaterialItems.length + step1PerformanceItems.length,
-    rejected_or_filtered_field_count: filteredRejected.length,
-    analysis_evidence_state_gate_status: 'insufficient' as const,
-    analysis_evidence_state_gate_reason: hasFilteredStep1Items
-      ? 'filtered_runEvidencePass_observations_persisted_but_step1_contract_partial'
-      : (sourceClassification === 'real_runtime_v3'
-        ? 'partial_runtime_facts_present_but_performance_extractor_unavailable'
-        : 'genuine_step1_observable_evidence_source_unavailable'),
-    step2_dependency_status: step2DependencyStatus.status,
-  };
+  const step1ObservableEvidenceItems = observable_evidence_items.flatMap((item) => {
+    const sourceArtefactId = step1SourceArtefactIdForItem(item);
+    return sourceArtefactId ? [toStep1ObservableEvidenceItem(item, 0, sourceArtefactId)] : [];
+  }).map((item, index) => ({ ...item, evidence_item_id: `step1-${String(index + 1).padStart(4, '0')}` }));
+  const deterministicRuntimeEvidenceCount = step1ObservableEvidenceItems.filter((item) => ['deterministic_runtime_fact', 'resolver_truth_fact'].includes(item.evidence_family)).length;
+  const briefMaterialEvidenceKinds = new Set([
+    'brief_presence',
+    'brief_presence_source_resolved',
+    'extracted_brief_cache_status',
+    'material_presence',
+    'material_presence_source_resolved',
+    'component_or_task_declaration_loaded',
+    'component_or_task_declaration_unavailable',
+  ]);
+  const briefMaterialEvidenceCount = step1ObservableEvidenceItems.filter((item) => briefMaterialEvidenceKinds.has(item.evidence_kind)).length;
+  const suppliedContextUnavailableCount = step1ObservableEvidenceItems.filter((item) =>
+    ['brief_presence_source_resolved', 'material_presence_source_resolved', 'component_or_task_declaration_unavailable', 'unavailable_runtime_fields_recorded'].includes(item.evidence_kind)
+    && item.blocker_codes.length > 0
+  ).length;
+  const hasSuppliedContextMaterialFact = step1ObservableEvidenceItems.some((item) =>
+    item.evidence_family === 'material_specific'
+    && ['material_presence', 'material_presence_source_resolved', 'component_or_task_declaration_loaded', 'component_or_task_declaration_unavailable'].includes(item.evidence_kind)
+  );
   const filteredEvidenceFamilyCoverage = isRecord(filteredStep1?.evidence_family_coverage)
     ? filteredStep1.evidence_family_coverage
     : {
       video: hasStep1Video,
       audio: hasStep1Audio,
-      material: hasStep1Material,
+      material: hasStep1Material || hasSuppliedContextMaterialFact,
       performance: hasStep1Performance,
       candidate_technique: hasStep1Technique,
     };
@@ -6229,7 +6457,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     : {
       video: hasStep1Video ? 'partial' : 'not_extracted',
       audio: hasStep1Audio ? 'partial' : 'not_extracted',
-      material: hasStep1Material ? 'partial' : 'not_extracted',
+      material: (hasStep1Material || hasSuppliedContextMaterialFact) ? 'partial' : 'not_extracted',
       performance: hasStep1Performance ? 'partial' : 'not_extracted',
       candidate_technique: hasStep1Technique ? 'partial' : 'not_extracted',
     };
@@ -6243,15 +6471,12 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       rejected_field_keys: [],
       raw_values_persisted: false,
     };
-  const step1ObservableEvidenceItems = observable_evidence_items
-    .filter((item) => item.source_artefact_id !== 'run_evidence_pass')
-    .map(toStep1ObservableEvidenceItem);
   const step1Coverage = {
-    deterministic_runtime_facts: observable_evidence_items.some((item) => ['analysis_submission', 'analysis_take', 'resolver_output'].includes(item.source_artefact_id)) ? 'partial' : 'missing',
+    deterministic_runtime_facts: observable_evidence_items.some((item) => ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'media_readiness'].includes(item.source_artefact_id)) ? 'partial' : 'missing',
     resolver_truth_facts: resolverOutputAvailable && truthStateMapAvailable ? 'complete' : (resolverOutputAvailable || truthStateMapAvailable ? 'partial' : 'missing'),
     video_observable: 'not_extracted',
     audio_observable: 'not_extracted',
-    material_specific: 'not_extracted',
+    material_specific: hasSuppliedContextMaterialFact ? 'partial' : 'not_extracted',
     performance_observable: 'not_extracted',
     candidate_technique: 'not_extracted',
   } as const;
@@ -6355,14 +6580,40 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     extraction_status: step1ExtractionStatus,
     source_classification: step1SourceClassification,
     observable_evidence_item_count: step1ObservableEvidenceItems.length,
+    deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
+    brief_material_evidence_count: briefMaterialEvidenceCount,
+    supplied_context_fact_count: briefMaterialEvidenceCount,
+    supplied_context_unavailable_count: suppliedContextUnavailableCount,
     unsupported_or_unavailable_evidence_count: step1Unsupported.length,
     rejected_or_filtered_field_count: step1RejectedOrFilteredFields.length,
     step1_observable_evidence_gate_status: 'insufficient' as const,
     step1_observable_evidence_gate_reason: 'container_emitted_but_real_video_audio_material_performance_candidate_extractors_unavailable',
     blocker_codes: step1BlockerCodes,
     forbidden_sources_rejected: true,
+    allowed_source_artefact_ids: Array.from(STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS),
     internal_only: true,
     public_output_unchanged: true,
+  };
+  const summary = {
+    evidence_state_status: evidenceStateStatus,
+    source_classification: sourceClassification,
+    observable_evidence_item_count: observable_evidence_items.length,
+    deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
+    brief_material_evidence_count: briefMaterialEvidenceCount,
+    step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
+    step1_observable_evidence_family_summary: step1FamilyStatusById,
+    supplied_context_fact_count: briefMaterialEvidenceCount,
+    supplied_context_unavailable_count: suppliedContextUnavailableCount,
+    unsupported_or_unavailable_evidence_count: unsupportedOrUnavailableEvidence.length,
+    filtered_runEvidencePass_observation_count: step1VideoItems.length + step1AudioItems.length + step1MaterialItems.length + step1PerformanceItems.length,
+    rejected_or_filtered_field_count: filteredRejected.length,
+    analysis_evidence_state_gate_status: 'insufficient' as const,
+    analysis_evidence_state_gate_reason: hasFilteredStep1Items
+      ? 'filtered_runEvidencePass_observations_persisted_but_step1_contract_partial'
+      : (sourceClassification === 'real_runtime_v3'
+        ? 'partial_runtime_facts_present_but_performance_extractor_unavailable'
+        : 'genuine_step1_observable_evidence_source_unavailable'),
+    step2_dependency_status: step2DependencyStatus.status,
   };
   const step1Payload = {
     schema_version: 'tapecoach_v3_step1_observable_evidence_v1',
@@ -6401,6 +6652,14 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     evidence_family_coverage: step1Coverage,
     evidence_family_status_by_id: step1FamilyStatusById,
     observable_evidence_items: step1ObservableEvidenceItems,
+    deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
+    brief_material_evidence_count: briefMaterialEvidenceCount,
+    supplied_context_fact_count: briefMaterialEvidenceCount,
+    supplied_context_unavailable_count: suppliedContextUnavailableCount,
+    deterministic_evidence_source_refs: {
+      allowed_source_artefact_ids: Array.from(STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS),
+      forbidden_satisfying_source_refs: STEP1_FORBIDDEN_SATISFYING_SOURCE_REFS.map((item) => item.source_path),
+    },
     unsupported_or_unavailable_evidence: step1Unsupported,
     rejected_or_filtered_fields: step1RejectedOrFilteredFields,
     anti_fake_evidence_guard: {
@@ -6466,6 +6725,18 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       mux_playback_id_present: Boolean(input.mux_playback_id),
       mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown',
     },
+    deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
+    brief_material_evidence_count: briefMaterialEvidenceCount,
+    step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
+    step1_observable_evidence_family_summary: step1FamilyStatusById,
+    deterministic_evidence_source_refs: {
+      allowed_source_artefact_ids: Array.from(STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS),
+      input_artifact_refs: inputArtifactRefs,
+      resolver_output_ref: resolverOutputAvailable ? `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver/resolver_output.json` : null,
+      truth_state_map_ref: truthStateMapAvailable ? `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver/TruthStateMap.json` : null,
+    },
+    supplied_context_fact_count: briefMaterialEvidenceCount,
+    supplied_context_unavailable_count: suppliedContextUnavailableCount,
     assessability_limitations: [
       ...(!durationKnown ? ['media_duration_unavailable_no_timestamp_evidence_fabricated'] : []),
       ...timestampNormalisationWarnings,
