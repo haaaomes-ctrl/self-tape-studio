@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitQAManifestForAnalysisRun, emitRenderPayloadArtifact, emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitPublicReportPayloadArtifact, emitQAManifestForAnalysisRun, emitRenderPayloadArtifact, emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
 
 async function readParity(root: string, run: string, take: string) {
   return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'parity', 'report_parity_result.json'), 'utf8'));
@@ -10,6 +10,10 @@ async function readParity(root: string, run: string, take: string) {
 
 async function readRenderPayload(root: string, run: string, take: string) {
   return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'reports', 'render_payload.json'), 'utf8'));
+}
+
+async function readPublicReportPayload(root: string, run: string, take: string) {
+  return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'reports', 'public_report_payload.json'), 'utf8'));
 }
 
 describe('v3-s9 report parity proof', () => {
@@ -89,7 +93,83 @@ describe('v3-s9 report parity proof', () => {
     expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
   });
 
-  it('S9-17B: manifest finalisation auto-emits render_payload and parity remains insufficient until public_report_payload exists', async () => {
+  it('S9-17C: emits public_report_payload as an internal-only sanitised subset of render payload', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17c-public-'));
+    const renderPayload = {
+      report_data: {
+        schema_version: 'tapecoach-v3-report',
+        submission_verdict: 'not_yet_ready',
+        fix_first: 'Retake with a more active eyeline.',
+        priority_fixes: ['Clarify the first beat.'],
+        strengths: ['The text is clear.'],
+        next_take_plan: ['Record one cleaner take.'],
+        feedback_reliability: { status: 'partial' },
+      },
+    };
+    const out = await emitPublicReportPayloadArtifact({
+      run_id: 'run-public-1',
+      analysis_run_id: 'run-public-1',
+      take_id: 'tp1',
+      submission_id: 'sub1',
+      internal_qa_emit: true,
+      root_dir: root,
+      render_payload: renderPayload,
+      raw_report_data: {
+        report_data: {
+          ...renderPayload.report_data,
+          overall_score: 91,
+          technique_authority: { unsafe: true },
+          comparison: { winner: 'take-2' },
+          raw_prompt: 'private prompt text',
+          signed_url: 'https://storage.example/video.mp4?signature=secret',
+        },
+      },
+    });
+    expect(out.written).toBe(true);
+    const payload = await readPublicReportPayload(root, 'run-public-1', 'tp1');
+    expect(payload.artefact_type).toBe('public_report_payload');
+    expect(payload.internal_only).toBe(true);
+    expect(payload.privacy_classification).toBe('internal_private');
+    expect(payload.public_output_unchanged).toBe(true);
+    expect(payload.production_safe_status).toBe('blocked');
+    expect(payload.public_scoring_status).toBe('blocked');
+    expect(payload.public_technique_authority_status).toBe('blocked');
+    expect(payload.public_comparison_output_status).toBe('blocked');
+    expect(payload.cannot_satisfy_level2_by_itself).toBe(true);
+    expect(payload.public_report_payload_status).toBe('emitted');
+    expect(payload.report_data).toEqual(renderPayload.report_data);
+    expect(JSON.stringify(payload.report_data)).not.toMatch(/overall_score|technique_authority|comparison|winner|raw_prompt|signature=secret|signed_url/);
+    expect(payload.excluded_field_paths.some((field: any) => field.field_path === 'report_data.overall_score' && field.reason === 'raw_report_field_excluded_from_public_report_payload')).toBe(true);
+    expect(payload.forbidden_field_scan.forbidden_fields_absent).toBe(true);
+    expect(payload.forbidden_field_scan.strict_subset_of_render_payload).toBe(true);
+    expect(payload.blocked_field_hits).toEqual([]);
+  });
+
+  it('S9-17C: blocks public report payload fields that are not in render payload or are forbidden', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17c-public-blocked-'));
+    await emitPublicReportPayloadArtifact({
+      run_id: 'run-public-blocked',
+      analysis_run_id: 'run-public-blocked',
+      take_id: 'tpb',
+      internal_qa_emit: true,
+      root_dir: root,
+      render_payload: { report_data: { schema_version: 'v3', fix_first: 'Safe text' } },
+      public_report_data: { report_data: { schema_version: 'v3', fix_first: 'Safe text', strengths: ['Extra public-only item'], overall_score: 99 } },
+      allowed_field_paths: ['report_data.schema_version', 'report_data.fix_first', 'report_data.strengths', 'report_data.overall_score'],
+    });
+    const payload = await readPublicReportPayload(root, 'run-public-blocked', 'tpb');
+    expect(payload.public_report_payload_status).toBe('emitted_blocked');
+    expect(payload.blocker_codes).toContain('public_report_payload_forbidden_field_present');
+    expect(payload.blocker_codes).toContain('public_report_payload_extra_path_not_in_render_payload');
+    expect(payload.allowed_field_status_by_path['report_data.strengths'].reason).toBe('public_field_not_present_in_render_payload');
+    expect(payload.allowed_field_status_by_path['report_data.overall_score'].status).toBe('blocked');
+    expect(payload.report_data.strengths).toBeUndefined();
+    expect(payload.report_data.overall_score).toBeUndefined();
+    expect(payload.excluded_field_paths.some((field: any) => field.field_path === 'report_data.strengths')).toBe(true);
+    expect(payload.excluded_field_paths.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
+  });
+
+  it('S9-17C: manifest finalisation auto-emits render and public payloads and can pass report parity for complete safe surfaces', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-17b-manifest-'));
     await emitQAManifestForAnalysisRun({
       run_id: 'run-s917b',
@@ -127,24 +207,33 @@ describe('v3-s9 report parity proof', () => {
     });
     const renderPayload = await readRenderPayload(root, 'run-s917b', 'trp');
     expect(renderPayload.render_payload_status).toBe('emitted');
+    const publicPayload = await readPublicReportPayload(root, 'run-s917b', 'trp');
+    expect(publicPayload.public_report_payload_status).toBe('emitted');
+    expect(publicPayload.report_data).toEqual(renderPayload.report_data);
     const parity = await readParity(root, 'run-s917b', 'trp');
     expect(parity.render_payload_available).toBe(true);
     expect(parity.render_payload_checked).toBe(true);
+    expect(parity.public_report_payload_available).toBe(true);
+    expect(parity.public_report_payload_checked).toBe(true);
     expect(parity.checked_surfaces).toContain('render_payload');
+    expect(parity.checked_surfaces).toContain('public_report_payload');
     expect(parity.mismatches.some((m: any) => m.mismatch_type === 'render_payload_missing')).toBe(false);
-    expect(parity.public_report_payload_available).toBe(false);
-    expect(parity.mismatches.some((m: any) => m.mismatch_type === 'public_report_payload_missing')).toBe(true);
-    expect(parity.parity_status).toBe('insufficient');
+    expect(parity.mismatches.some((m: any) => m.mismatch_type === 'public_report_payload_missing')).toBe(false);
+    expect(parity.parity_status).toBe('passed');
     const manifest = JSON.parse(await readFile(path.join(root, 'run-s917b', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-s917b', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.render_payload).toBe('emitted');
     expect(manifest.artefact_source_classification_by_id.render_payload).toBe('internal_render_payload');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.render_payload).toBe(false);
-    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted_blocked');
-    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(manifest.artefact_status_by_id.public_report_payload).toBe('emitted');
+    expect(manifest.artefact_source_classification_by_id.public_report_payload).toBe('internal_public_report_payload');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.public_report_payload).toBe(false);
+    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
+    expect(manifest.blocker_codes).not.toContain('parity_artefacts_missing');
     expect(metrics.emitted_artefacts).toContain('render_payload');
-    expect(metrics.emitted_blocked_artefacts).toContain('parity_report');
-    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.emitted_artefacts).toContain('public_report_payload');
+    expect(metrics.emitted_artefacts).toContain('parity_report');
+    expect(metrics.blocker_codes).not.toContain('parity_artefacts_missing');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
@@ -491,7 +580,7 @@ describe('v3-s9 report parity proof', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
-  it('J/S9-17B: ordinary runtime emits render payload and keeps report parity insufficient while public payload is missing', async () => {
+  it('J/S9-17C: ordinary runtime emits render and public payloads and clears report surface missing mismatches', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-16e-report-parity-missing-surfaces-'));
     await emitQAManifestForAnalysisRun({
       run_id: 'run-s916e-report-missing',
@@ -513,21 +602,28 @@ describe('v3-s9 report parity proof', () => {
     const manifest = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'manifest.json'), 'utf8'));
     const metrics = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'qa', 'acceptance_metrics.json'), 'utf8'));
     const parity = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'takes', 'take-t-report', 'analysis-run-s916e-report-missing', 'parity', 'report_parity_result.json'), 'utf8'));
+    const publicPayload = await readPublicReportPayload(root, 'run-s916e-report-missing', 't-report');
 
-    expect(parity.parity_status).toBe('insufficient');
+    expect(parity.parity_status).toBe('passed');
     expect(parity.render_payload_available).toBe(true);
     expect(parity.render_payload_checked).toBe(true);
+    expect(parity.public_report_payload_available).toBe(true);
+    expect(parity.public_report_payload_checked).toBe(true);
     expect(parity.mismatches).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ mismatch_type: 'render_payload_missing' }),
     ]));
-    expect(parity.mismatches).toEqual(expect.arrayContaining([
+    expect(parity.mismatches).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ mismatch_type: 'public_report_payload_missing' }),
     ]));
+    expect(publicPayload.public_report_payload_status).toBe('emitted');
+    expect(publicPayload.report_data.fix_first).toBe('Keep the eyeline steady.');
     expect(manifest.artefact_status_by_id.render_payload).toBe('emitted');
+    expect(manifest.artefact_status_by_id.public_report_payload).toBe('emitted');
     expect(metrics.emitted_artefacts).toContain('render_payload');
-    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted_blocked');
-    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
-    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.emitted_artefacts).toContain('public_report_payload');
+    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
+    expect(manifest.blocker_codes).not.toContain('parity_artefacts_missing');
+    expect(metrics.blocker_codes).not.toContain('parity_artefacts_missing');
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
@@ -765,7 +861,8 @@ describe('v3-s9 report parity proof', () => {
 
     await emitReportParityProof({ run_id:'run-readiness-note-safe', analysis_run_id:'run-readiness-note-safe', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, render_payload:{ summary:'ok' }, public_report_payload:{ summary:'ok', readiness_note:'narrative only' }, allowed_public_fields:['summary'] });
     const readinessNoteSafe = await readParity(root, 'run-readiness-note-safe', 'ts');
-    expect(readinessNoteSafe.parity_status).toBe('passed');
+    expect(readinessNoteSafe.parity_status).toBe('failed');
+    expect(readinessNoteSafe.mismatches.some((m:any)=>m.mismatch_type==='public_report_payload_extra_path' && m.field==='readiness_note')).toBe(true);
 
     await emitReportParityProof({ run_id:'run-tech-auth-public', analysis_run_id:'run-tech-auth-public', take_id:'ts', internal_qa_emit:true, root_dir: root, raw_report_data:{ summary:'ok' }, public_report_payload:{ summary:'ok', technique_authority:{ score: 1 } }, allowed_public_fields:['summary'] });
     const techAuthPublic = await readParity(root, 'run-tech-auth-public', 'ts');
