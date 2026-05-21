@@ -2527,6 +2527,14 @@ Tier 2 near-duplicate sampling remains deferred.
 Tier 3 normalised media fingerprinting remains deferred.
 ```
 
+### S9-17 - render/public payload report parity architecture
+
+S9-17 is the next active internal QA workstream. It must define and then implement internal `render_payload` and `public_report_payload` artefacts so report parity can compare raw, render and public-safe report surfaces without changing public UX or exposing blocked fields.
+
+S9-17A is design/audit only. It does not implement payload generation, accept Level 2, unblock production/public gates, expose public scoring, expose public technique authority, expose public comparison winner/recommendation, or move Tier 2/Tier 3 duplicate detection forward.
+
+Until the render and public payload surfaces emit and pass parity checks, report parity remains blocked and Level 2 remains `not_accepted`.
+
 ---
 
 ## 18. QA artefacts and runtime evidence
