@@ -377,6 +377,7 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
   familyCoverage?: Record<string, unknown>;
   materialNotApplicable?: boolean;
 } = {}) {
+  const truthIdFor = (slug: string) => `${payload.run_id}:truth_state:${slug.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
   payload.source_classification = 'real_runtime_v3';
   payload.evidence_state_status = 'complete';
   payload.cannot_satisfy_v3_gate = false;
@@ -391,12 +392,13 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     source_artefact_id: 'analysis_submission',
     source_path: 'component_or_task_declaration_status',
     safe_evidence_summary: 'component/task declaration status is supplied',
+    linked_truth_state_ids: [truthIdFor('component_or_task_declaration_loaded')],
     assessability_limitations: [],
     blocker_codes: [],
   }];
   payload.observable_evidence_items = (payload.observable_evidence_items ?? []).map((item: any, index: number) => ({
     ...item,
-    linked_truth_state_ids: item.source_artefact_id === 'truth_state_map' || String(item.evidence_kind ?? '').includes('truth') ? ['truth-state-runtime-1'] : [],
+    linked_truth_state_ids: [truthIdFor(`${item.evidence_kind ?? 'runtime_fact'}_${index + 1}`)],
     assessability_limitations: [],
     blocker_codes: [],
     analysis_evidence_state_source_path: item.analysis_evidence_state_source_path ?? `observable_evidence_items[${index}]`,
@@ -499,6 +501,28 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     public_display_status: 'internal_only',
     blocker_codes: [],
   }];
+  payload.observable_evidence_items = payload.observable_evidence_items.map((item: any, index: number) => ({
+    ...item,
+    linked_truth_state_ids: [truthIdFor(`${item.evidence_kind ?? 'runtime_fact'}_${index + 1}`)],
+    blocker_codes: [],
+    assessability_limitations: [],
+    analysis_evidence_state_source_path: item.analysis_evidence_state_source_path ?? `observable_evidence_items[${index}]`,
+  }));
+  payload.component_evidence = (payload.component_evidence ?? []).map((item: any) => ({
+    ...item,
+    linked_truth_state_ids: item.linked_truth_state_ids?.length ? item.linked_truth_state_ids : [truthIdFor('component_or_task_declaration_loaded')],
+  }));
+  payload.candidate_brief_evidence = (payload.candidate_brief_evidence ?? []).map((item: any) => ({
+    ...item,
+    linked_truth_state_ids: item.linked_truth_state_ids?.length ? item.linked_truth_state_ids : [truthIdFor(String(item.evidence_kind ?? 'candidate_brief_fact'))],
+  }));
+  const truthIds = [
+    ...payload.observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []),
+    ...payload.component_evidence.flatMap((item: any) => item.linked_truth_state_ids ?? []),
+    ...payload.candidate_brief_evidence.flatMap((item: any) => item.linked_truth_state_ids ?? []),
+  ];
+  payload.truth_state_ids = [...new Set(truthIds)];
+  payload.canonical_truth_state_ids = Object.fromEntries(payload.truth_state_ids.map((id: string) => [id.split(':truth_state:')[1] ?? id, id]));
   payload.evidence_family_coverage = {
     video: true,
     audio: true,
@@ -878,13 +902,13 @@ describe('S9-14C Step 1 observable evidence extractor', () => {
     expect(payload.observable_evidence_items.some((item: any) => String(item.source_path ?? '').startsWith('report_data'))).toBe(false);
   });
 
-  it('records TruthStateMap known component and comparison truths without fake truth IDs', async () => {
+  it('records TruthStateMap known component and comparison truths with explicit canonical truth IDs', async () => {
     const { payload } = await emitAnalysisEvidenceStateBundle();
     const truthItems = payload.observable_evidence_items.filter((item: any) => item.source_artefact_id === 'truth_state_map');
     expect(truthItems.map((item: any) => item.evidence_kind)).toEqual(expect.arrayContaining(['known_truths', 'component_truths', 'comparison_truths']));
-    expect(truthItems.every((item: any) => Array.isArray(item.linked_truth_state_ids) && item.linked_truth_state_ids.length === 0)).toBe(true);
-    expect(payload.blocker_codes).toContain('structured_truth_state_ids_unavailable');
-    expect(truthItems.some((item: any) => item.assessability_limitations.includes('structured_truth_state_ids_unavailable_in_current_truth_map_schema'))).toBe(true);
+    expect(truthItems.every((item: any) => Array.isArray(item.linked_truth_state_ids) && item.linked_truth_state_ids.every((id: string) => id.includes(':truth_state:')))).toBe(true);
+    expect(payload.blocker_codes).not.toContain('structured_truth_state_ids_unavailable');
+    expect(truthItems.some((item: any) => item.assessability_limitations.includes('structured_truth_state_ids_unavailable_in_current_truth_map_schema'))).toBe(false);
   });
 
   it('does not invent performance observations when no persisted extractor exists', async () => {
@@ -1146,13 +1170,13 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
     expect(String(component.evidence_text).toLowerCase()).not.toContain('performance');
   });
 
-  it('records TruthStateMap anchors as blocked when structured truth IDs are unavailable', async () => {
+  it('promotes TruthStateMap anchors when explicit truth IDs are available', async () => {
     const { anchors } = await emitPromotedEvidenceAnchorsBundle();
     const truthAnchors = anchors.anchors.filter((anchor: any) => anchor.evidence_modality === 'resolver_truth');
     expect(truthAnchors.length).toBeGreaterThan(0);
     expect(truthAnchors.every((anchor: any) => anchor.source_artefact_id === 'analysis_evidence_state')).toBe(true);
-    expect(truthAnchors.every((anchor: any) => anchor.cannot_satisfy_v3_gate === true)).toBe(true);
-    expect(truthAnchors.some((anchor: any) => anchor.blocker_codes.includes('missing_truth_state_linkage'))).toBe(true);
+    expect(truthAnchors.every((anchor: any) => anchor.cannot_satisfy_v3_gate === false)).toBe(true);
+    expect(truthAnchors.every((anchor: any) => anchor.linked_truth_state_ids.every((id: string) => id.includes(':truth_state:')))).toBe(true);
   });
 
   it('keeps raw_report timestamped notes as excluded legacy diagnostics beside promoted anchors', async () => {
@@ -1201,7 +1225,15 @@ describe('S9-14D EvidenceAnchors real_runtime_v3 promotion', () => {
   });
 
   it('blocks truth-linked anchors when linked_truth_state_ids are unavailable', async () => {
-    const { anchors } = await emitPromotedEvidenceAnchorsBundle();
+    const { anchors } = await emitPromotedEvidenceAnchorsBundle({
+      transformAnalysisEvidenceState(payload) {
+        delete payload.truth_state_ids;
+        delete payload.canonical_truth_state_ids;
+        payload.observable_evidence_items = payload.observable_evidence_items.map((item: any) =>
+          item.evidence_modality === 'resolver_truth' ? { ...item, linked_truth_state_ids: [] } : item
+        );
+      },
+    });
     const knownTruths = anchors.anchors.find((anchor: any) => anchor.evidence_modality === 'resolver_truth' && anchor.evidence_text.includes('known runtime truth'));
     expect(knownTruths.linked_truth_state_ids).toEqual([]);
     expect(knownTruths.cannot_satisfy_v3_gate).toBe(true);
@@ -3026,7 +3058,12 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       source_stage: 'unit',
       claim_candidate_trace_data: candidateTraceData,
       evidence_anchors_data: evidenceAnchorsData,
-      truth_state_map_data: { run_id: run, analysis_run_id: run, take_id: take, truth_state_ids: ['truth-state-runtime-1'] },
+      truth_state_map_data: {
+        run_id: run,
+        analysis_run_id: run,
+        take_id: take,
+        truth_state_ids: [...new Set(anchors.flatMap((anchor: any) => anchor.linked_truth_state_ids ?? []))],
+      },
       root_dir: root,
       internal_qa_emit: true,
     });
@@ -3302,7 +3339,12 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
       source_stage: 'unit',
       claim_candidate_trace_data: claimTrace,
       evidence_anchors_data: anchors,
-      truth_state_map_data: { run_id: bundle.run, analysis_run_id: bundle.run, take_id: bundle.take, truth_state_ids: ['truth-state-runtime-1'] },
+      truth_state_map_data: {
+        run_id: bundle.run,
+        analysis_run_id: bundle.run,
+        take_id: bundle.take,
+        truth_state_ids: [...new Set(anchors.anchors.flatMap((anchor: any) => anchor.linked_truth_state_ids ?? []))],
+      },
       root_dir: bundle.root,
       internal_qa_emit: true,
     });

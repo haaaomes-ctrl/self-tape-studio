@@ -124,6 +124,16 @@ export interface QAArtifactEmitterOptions {
     media_observable_evidence_family_summary?: Record<string, unknown>;
     media_observable_evidence_gate_status?: string;
     media_observable_evidence_gate_reason?: string;
+    step1_truth_linked_evidence_item_count?: number;
+    step1_truth_unlinked_evidence_item_count?: number;
+    deterministic_truth_linked_count?: number;
+    supplied_context_truth_linked_count?: number;
+    media_observable_truth_linked_count?: number;
+    limitation_only_truth_entry_count?: number;
+    missing_truth_state_linkage_count?: number;
+    truth_state_linkage_status?: string;
+    truth_state_linkage_gate_reason?: string;
+    truth_state_linkage_blocker_codes?: string[];
     step1_observable_evidence_item_count?: number;
     step1_observable_evidence_family_summary?: Record<string, unknown>;
     supplied_context_fact_count?: number;
@@ -148,6 +158,16 @@ export interface QAArtifactEmitterOptions {
     media_observable_evidence_family_summary?: Record<string, unknown>;
     media_observable_evidence_gate_status?: string;
     media_observable_evidence_gate_reason?: string;
+    step1_truth_linked_evidence_item_count?: number;
+    step1_truth_unlinked_evidence_item_count?: number;
+    deterministic_truth_linked_count?: number;
+    supplied_context_truth_linked_count?: number;
+    media_observable_truth_linked_count?: number;
+    limitation_only_truth_entry_count?: number;
+    missing_truth_state_linkage_count?: number;
+    truth_state_linkage_status?: string;
+    truth_state_linkage_gate_reason?: string;
+    truth_state_linkage_blocker_codes?: string[];
     supplied_context_fact_count?: number;
     supplied_context_unavailable_count?: number;
     unsupported_or_unavailable_evidence_count?: number;
@@ -804,6 +824,14 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
         ? 'step1_observable_evidence_not_emitted'
         : String(step1ObservableEvidenceSummary.step1_observable_evidence_gate_reason ?? 'step1_observable_evidence_container_partial_extractors_unavailable')),
     step1_observable_evidence_summary: step1ObservableEvidenceSummary,
+    step1_truth_linked_evidence_item_count: Number(step1ObservableEvidenceSummary.step1_truth_linked_evidence_item_count ?? analysisEvidenceStateSummary.step1_truth_linked_evidence_item_count ?? 0),
+    step1_truth_unlinked_evidence_item_count: Number(step1ObservableEvidenceSummary.step1_truth_unlinked_evidence_item_count ?? analysisEvidenceStateSummary.step1_truth_unlinked_evidence_item_count ?? 0),
+    deterministic_truth_linked_count: Number(step1ObservableEvidenceSummary.deterministic_truth_linked_count ?? analysisEvidenceStateSummary.deterministic_truth_linked_count ?? 0),
+    supplied_context_truth_linked_count: Number(step1ObservableEvidenceSummary.supplied_context_truth_linked_count ?? analysisEvidenceStateSummary.supplied_context_truth_linked_count ?? 0),
+    media_observable_truth_linked_count: Number(step1ObservableEvidenceSummary.media_observable_truth_linked_count ?? analysisEvidenceStateSummary.media_observable_truth_linked_count ?? 0),
+    limitation_only_truth_entry_count: Number(step1ObservableEvidenceSummary.limitation_only_truth_entry_count ?? analysisEvidenceStateSummary.limitation_only_truth_entry_count ?? 0),
+    missing_truth_state_linkage_count: Number(step1ObservableEvidenceSummary.missing_truth_state_linkage_count ?? analysisEvidenceStateSummary.missing_truth_state_linkage_count ?? 0),
+    truth_state_linkage_status: String(step1ObservableEvidenceSummary.truth_state_linkage_status ?? analysisEvidenceStateSummary.truth_state_linkage_status ?? 'missing'),
     evidence_anchor_trace_status: evidenceAnchorStatus,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_source_family_summary: evidenceAnchorSourceSummary,

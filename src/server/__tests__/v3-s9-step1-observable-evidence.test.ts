@@ -6,6 +6,7 @@ import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
 import {
   emitAnalysisEvidenceStatePrerequisite,
   emitQAManifestForAnalysisRun,
+  emitResolverOutputAndTruthStateMap,
 } from '@/server/v3/qa-artifacts-wiring.server';
 
 async function emitStep1Bundle(options: { filteredStep1?: Record<string, unknown> | null } = {}) {
@@ -213,7 +214,8 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     ]));
     expect(mediaItems.every((item: any) => item.source_artefact_id === 'step1_observable_evidence')).toBe(true);
     expect(mediaItems.every((item: any) => String(item.source_path).startsWith('observable_evidence_items['))).toBe(true);
-    expect(mediaItems.every((item: any) => item.blocker_codes.includes('missing_truth_state_linkage'))).toBe(true);
+    expect(mediaItems.every((item: any) => item.linked_truth_state_ids.every((id: string) => id.includes(':truth_state:')))).toBe(true);
+    expect(mediaItems.some((item: any) => item.blocker_codes.includes('missing_truth_state_linkage'))).toBe(false);
     expect(mediaItems.filter((item: any) => item.timestamp).map((item: any) => item.timestamp)).toEqual(['00:05', '00:12']);
     expect(step1.evidence_family_coverage.video_observable).toBe('partial');
     expect(step1.evidence_family_coverage.audio_observable).toBe('partial');
@@ -231,6 +233,63 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     expect(aes.cannot_satisfy_v3_gate).toBe(true);
     expect(metrics.step1_observable_evidence_summary.video_observable_evidence_count).toBeGreaterThan(0);
     expect(metrics.step1_observable_evidence_summary.audio_observable_evidence_count).toBeGreaterThan(0);
+  });
+
+  it('links Step1ObservableEvidence items only to explicit TruthStateMap IDs', async () => {
+    const filteredStep1 = filteredMediaProjection();
+    const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s918e-step1-truth-'));
+    const run = `run-s918e-${Math.random().toString(36).slice(2)}`;
+    const take = 't1';
+    const common = {
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 'sub1',
+      take_id: take,
+      compared_take_ids: [take],
+      source_stage: 'unit',
+      source_module: 'test',
+      audition_type: 'screen',
+      selected_level: 'pro',
+      brief_presence: 'supplied' as const,
+      brief_presence_source: 'audition.brief' as const,
+      material_presence: 'supplied' as const,
+      material_presence_source: 'loaded_runtime_field' as const,
+      original_upload_file_hash: 'sha256:test-upload-hash',
+      original_upload_file_hash_source_stage: 'client_pre_upload',
+      upload_identity_capture_status: 'captured',
+      mux_playback_id: 'safe-playback-ref',
+      mux_asset_or_upload_id_present: true,
+      take_created_at: '2026-05-21T09:00:00.000Z',
+      take_updated_at: '2026-05-21T09:01:00.000Z',
+      component_or_task_declaration_status: 'unknown' as const,
+      component_or_task_declaration_source: 'not_loaded' as const,
+      media_readiness_state: 'ready',
+      video_duration_seconds: 42,
+      media_duration_seconds: 42,
+      duration_confidence: 'known',
+      filtered_run_evidence_pass_step1: filteredStep1,
+      root_dir: root,
+      internal_qa_emit: true,
+    };
+    const resolver = await emitResolverOutputAndTruthStateMap({
+      ...common,
+      unavailable_fields: [],
+    });
+    const analysis = await emitAnalysisEvidenceStatePrerequisite({
+      ...common,
+      resolver_output_available: true,
+      truth_state_map_available: true,
+      unavailable_fields: [],
+    });
+    const base = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`);
+    const step1 = JSON.parse(await readFile(path.join(base, 'analysis', 'Step1ObservableEvidence.json'), 'utf8'));
+    const linkedIds = [...new Set(step1.observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []))].sort();
+    const explicitIds = [...new Set((resolver.truth_state_map.truth_state_ids ?? []) as string[])].sort();
+    const missingExplicitIds = linkedIds.filter((id) => !explicitIds.includes(id));
+    expect(linkedIds.length).toBeGreaterThan(0);
+    expect(missingExplicitIds).toEqual([]);
+    expect(analysis.step1_observable_evidence_summary.step1_truth_unlinked_evidence_item_count).toBe(0);
+    expect(step1.truth_state_linkage_status).toBe('partial');
   });
 
   it('rejects unsafe media-observable projection fields instead of promoting report-like judgement', async () => {

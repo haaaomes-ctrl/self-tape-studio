@@ -1474,6 +1474,10 @@ export async function runProcessTake(
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
+        const filteredStep1Evidence = filterRunEvidencePassForStep1(twoStepEvidence, {
+          model: evResult.model,
+          durationSeconds: take.mux_duration_seconds ?? null,
+        });
         preStep2ResolverTruth = await emitResolverOutputAndTruthStateMap({
           run_id: `take-${takeId}`,
           analysis_run_id: `take-${takeId}`,
@@ -1504,6 +1508,7 @@ export async function runProcessTake(
           upload_identity_capture_status: qaStep1Context.uploadIdentity.upload_identity_capture_status,
           upload_identity_capture_reason: qaStep1Context.uploadIdentity.upload_identity_capture_reason,
           upload_identity_merge_status: qaStep1Context.uploadIdentity.upload_identity_merge_status,
+          video_duration_seconds: qaStep1Context.takeDurationSeconds,
           take_created_at: qaStep1Context.takeCreatedAt,
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
@@ -1512,6 +1517,7 @@ export async function runProcessTake(
           component_or_task_declaration_status: 'unknown',
           component_or_task_declaration_source: 'not_loaded',
           media_readiness_state: take.status ?? null,
+          filtered_run_evidence_pass_step1: filteredStep1Evidence,
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
@@ -1534,10 +1540,6 @@ export async function runProcessTake(
             take_id: takeId,
           });
         }
-        const filteredStep1Evidence = filterRunEvidencePassForStep1(twoStepEvidence, {
-          model: evResult.model,
-          durationSeconds: take.mux_duration_seconds ?? null,
-        });
         preStep2AnalysisEvidenceState = await emitAnalysisEvidenceStatePrerequisite({
           run_id: `take-${takeId}`,
           analysis_run_id: `take-${takeId}`,
@@ -3599,6 +3601,7 @@ export async function runProcessTake(
         upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
         upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
         upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
+        video_duration_seconds: Number.isFinite(Number(take.mux_duration_seconds)) && Number(take.mux_duration_seconds) > 0 ? Number(take.mux_duration_seconds) : null,
         take_created_at: takeCreatedAt,
         take_updated_at: takeUpdatedAt,
         take_index: null,
@@ -3710,6 +3713,7 @@ export async function runProcessTake(
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
         analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
+        truth_state_map_data: truthStateMapAvailable && isRuntimeRecord(truthStateMapPayload) ? truthStateMapPayload : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (evidenceAnchors.written) qaArtefactIds.push(...evidenceAnchors.emitted_artefact_ids);

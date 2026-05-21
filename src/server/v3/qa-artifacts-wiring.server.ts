@@ -635,6 +635,7 @@ export interface EvidenceAnchorsEmitterInput {
   source_stage: string;
   raw_report_data?: Record<string, unknown> | null;
   analysis_evidence_state_data?: Record<string, unknown> | null;
+  truth_state_map_data?: Record<string, unknown> | null;
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
@@ -1658,7 +1659,9 @@ export function resolveCanonicalComparisonReconciliationIdentity(input: {
 export interface AnalysisInputArtefactEmitterInput {
   run_id: string; analysis_run_id?: string; submission_id?: string; take_id: string; compared_take_ids?: string[]; comparison_run_id?: string; source_module: string; source_stage: string; analysis_route?: string; route_or_model_marker?: string; audition_type?: string | null; selected_level?: string | null; brief_presence?: 'supplied' | 'absent' | 'unknown'; brief_presence_source?: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' | 'unavailable' | 'not_loaded' | 'audition.brief+audition.extracted_brief_cached_empty'; material_presence?: 'supplied' | 'absent' | 'unknown'; material_presence_source?: 'loaded_runtime_field' | 'not_loaded' | 'unavailable'; mux_playback_id?: string | null; mux_asset_or_upload_id_present?: boolean | null; submission_created_at?: string | null; submission_updated_at?: string | null; take_created_at?: string | null; take_updated_at?: string | null; take_index?: number | null; take_index_source?: 'loaded_take_index' | 'computed_from_loaded_submission_takes_order' | 'unavailable'; component_or_task_declaration?: string[] | null; component_or_task_declaration_status?: 'unknown' | 'known_empty' | 'supplied'; component_or_task_declaration_source?: 'not_loaded' | 'loaded_runtime_field'; media_readiness_state?: string | null; safe_submission_refs?: string[]; safe_mux_playback_ref?: string | null; user_id?: string | null; profile_id?: string | null; audition_id?: string | null; original_upload_file_hash?: string | null; original_upload_file_hash_source_stage?: string | null; visible_or_original_file_name?: string | null; original_file_name?: string | null; file_name?: string | null; filename?: string | null; metadata_file_name?: string | null; file_size_bytes?: number | string | null; mime_type_safe_summary?: string | null; last_modified_ms?: number | string | null; upload_metadata_source?: string | null; upload_identity_capture_status?: string | null; upload_identity_capture_reason?: string | null; upload_identity_merge_status?: string | null; video_duration_ms?: number | string | null; duration_ms?: number | string | null; video_duration_seconds?: number | string | null; duration_seconds?: number | string | null; opening_video_sample_hash_or_profile?: string | null; opening_video_sample_hash?: string | null; closing_video_sample_hash_or_profile?: string | null; closing_video_sample_hash?: string | null; opening_audio_profile_hash?: string | null; closing_audio_profile_hash?: string | null; safe_media_fingerprint?: string | null; upload_identity_metadata?: Record<string, unknown> | null; unavailable_fields?: string[]; root_dir?: string; internal_qa_emit?: boolean;
 }
-export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {}
+export interface ResolverTruthStateEmitterInput extends AnalysisInputArtefactEmitterInput {
+  filtered_run_evidence_pass_step1?: Record<string, unknown> | null;
+}
 export interface AnalysisEvidenceStateEmitterInput extends AnalysisInputArtefactEmitterInput {
   resolver_output_available?: boolean;
   truth_state_map_available?: boolean;
@@ -1909,6 +1912,211 @@ function buildMediaObservableStep1EvidenceItems(args: {
     timestampedCount: projected.filter((item) => item.evidence_kind.startsWith('timestamped_')).length,
     limitationCount: projected.filter((item) => item.evidence_family === 'assessability_limit').length,
   };
+}
+type ExplicitTruthStateEntry = {
+  truth_state_entry_id: string;
+  key: string;
+  state: string;
+  value_summary: string;
+  confidence: string;
+  source_artifact_ids: string[];
+  source_paths: string[];
+  evidence_item_ids: string[];
+  public_claim_allowed: false;
+  public_claim_limit: 'direct' | 'cautious' | 'limitation_only' | 'blocked';
+  run_id: string;
+  analysis_run_id: string;
+  take_id: string;
+};
+function safeTruthStateSlugPart(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'unknown';
+}
+function canonicalTruthStateId(runId: string, slug: string): string {
+  return `${runId}:truth_state:${safeTruthStateSlugPart(slug)}`;
+}
+function isCanonicalTruthStateId(value: unknown): value is string {
+  return typeof value === 'string' && /:truth_state:[a-z0-9_]+$/.test(value);
+}
+function step1EvidenceTruthSlug(item: Pick<Step1ObservableEvidenceItem, 'evidence_kind'>, occurrence: number): string {
+  const kind = safeTruthStateSlugPart(item.evidence_kind);
+  if (
+    kind.startsWith('timestamped_')
+    || kind.includes('observed')
+    || kind.includes('limitation')
+    || kind.endsWith('_unavailable')
+    || kind.endsWith('_not_extracted')
+  ) {
+    return `${kind}_${String(occurrence).padStart(3, '0')}`;
+  }
+  return kind;
+}
+function step1EvidenceTruthSourcePath(item: Pick<Step1ObservableEvidenceItem, 'evidence_kind' | 'source_path'>): string {
+  if (item.source_path && item.source_path !== 'observable_evidence_items[pending]') return item.source_path;
+  return step1EvidenceTruthSlug({ evidence_kind: item.evidence_kind }, 1);
+}
+function isStep1LimitationOnlyEvidenceItem(item: Record<string, unknown>): boolean {
+  const family = String(item.evidence_family ?? '');
+  const kind = String(item.evidence_kind ?? '');
+  const blockers = Array.isArray(item.blocker_codes) ? item.blocker_codes.filter((x): x is string => typeof x === 'string') : [];
+  return family === 'assessability_limit'
+    || kind.includes('limitation')
+    || kind.endsWith('_unavailable')
+    || kind.endsWith('_not_extracted')
+    || blockers.includes('media_assessability_limitation_only');
+}
+function removeTruthLinkagePlaceholderBlockers(blockers: string[], linked: boolean): string[] {
+  if (!linked) return dedupePreservingOrder(blockers);
+  return dedupePreservingOrder(blockers.filter((code) =>
+    code !== 'missing_truth_state_linkage'
+    && code !== 'structured_truth_state_ids_unavailable'
+  ));
+}
+function removeTruthLinkagePlaceholderLimitations(limitations: string[], linked: boolean): string[] {
+  if (!linked) return dedupePreservingOrder(limitations);
+  return dedupePreservingOrder(limitations.filter((value) =>
+    value !== 'structured_truth_state_ids_unavailable_in_current_truth_map_schema'
+    && value !== 'missing_truth_state_linkage'
+  ));
+}
+function linkStep1ObservableEvidenceItemsToTruthState(runId: string, items: Step1ObservableEvidenceItem[]): Step1ObservableEvidenceItem[] {
+  const occurrenceByKind = new Map<string, number>();
+  return items.map((item) => {
+    const kind = safeTruthStateSlugPart(item.evidence_kind);
+    const occurrence = (occurrenceByKind.get(kind) ?? 0) + 1;
+    occurrenceByKind.set(kind, occurrence);
+    const truthId = canonicalTruthStateId(runId, step1EvidenceTruthSlug(item, occurrence));
+    const linkedTruthStateIds = dedupePreservingOrder([...(item.linked_truth_state_ids ?? []), truthId]);
+    const linked = linkedTruthStateIds.length > 0;
+    return {
+      ...item,
+      linked_truth_state_ids: linkedTruthStateIds,
+      blocker_codes: removeTruthLinkagePlaceholderBlockers(item.blocker_codes, linked),
+      assessability_limitations: removeTruthLinkagePlaceholderLimitations(item.assessability_limitations, linked),
+    };
+  });
+}
+function linkAnalysisObservableEvidenceItemsToTruthState(runId: string, items: AnalysisObservableEvidenceItem[]): AnalysisObservableEvidenceItem[] {
+  const occurrenceByKind = new Map<string, number>();
+  return items.map((item) => {
+    const kind = safeTruthStateSlugPart(item.evidence_kind);
+    const occurrence = (occurrenceByKind.get(kind) ?? 0) + 1;
+    occurrenceByKind.set(kind, occurrence);
+    const truthId = canonicalTruthStateId(runId, step1EvidenceTruthSlug({ evidence_kind: item.evidence_kind }, occurrence));
+    const linkedTruthStateIds = dedupePreservingOrder([...(item.linked_truth_state_ids ?? []), truthId]);
+    const linked = linkedTruthStateIds.length > 0;
+    return {
+      ...item,
+      linked_truth_state_ids: linkedTruthStateIds,
+      blocker_codes: removeTruthLinkagePlaceholderBlockers(item.blocker_codes, linked),
+      assessability_limitations: removeTruthLinkagePlaceholderLimitations(item.assessability_limitations, linked),
+    };
+  });
+}
+function makeExplicitTruthStateEntry(args: {
+  run_id: string;
+  analysis_run_id: string;
+  take_id: string;
+  slug: string;
+  state: string;
+  value_summary: string;
+  confidence?: string;
+  source_artifact_ids: string[];
+  source_paths: string[];
+  public_claim_limit?: ExplicitTruthStateEntry['public_claim_limit'];
+}): ExplicitTruthStateEntry {
+  const key = safeTruthStateSlugPart(args.slug);
+  return {
+    truth_state_entry_id: canonicalTruthStateId(args.run_id, key),
+    key,
+    state: args.state,
+    value_summary: args.value_summary,
+    confidence: args.confidence ?? 'runtime_fact',
+    source_artifact_ids: dedupePreservingOrder(args.source_artifact_ids),
+    source_paths: dedupePreservingOrder(args.source_paths),
+    evidence_item_ids: [],
+    public_claim_allowed: false,
+    public_claim_limit: args.public_claim_limit ?? 'blocked',
+    run_id: args.run_id,
+    analysis_run_id: args.analysis_run_id,
+    take_id: args.take_id,
+  };
+}
+function mediaProjectionForFilteredStep1(filteredStep1: Record<string, unknown> | null): Step1ObservableEvidenceItem[] {
+  if (!filteredStep1) return [];
+  return buildMediaObservableStep1EvidenceItems({
+    videoItems: safeRecordArray(filteredStep1.video_observable_evidence_items),
+    audioItems: safeRecordArray(filteredStep1.audio_observable_evidence_items),
+  }).items;
+}
+function buildExplicitTruthStateEntriesForStep1(args: {
+  input: ResolverTruthStateEmitterInput;
+  analysisRunId: string;
+  filteredStep1: Record<string, unknown> | null;
+  briefPresenceState: { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' };
+  materialPresenceState: { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' };
+  comparedTakeIds: string[];
+  comparisonInvoked: boolean;
+}): ExplicitTruthStateEntry[] {
+  const entries: ExplicitTruthStateEntry[] = [];
+  const add = (entry: Omit<Parameters<typeof makeExplicitTruthStateEntry>[0], 'run_id' | 'analysis_run_id' | 'take_id'>) => {
+    entries.push(makeExplicitTruthStateEntry({
+      run_id: args.input.run_id,
+      analysis_run_id: args.analysisRunId,
+      take_id: args.input.take_id,
+      ...entry,
+    }));
+  };
+  add({ slug: 'submission_identity_loaded', state: args.input.submission_id ? 'known' : 'unavailable', value_summary: args.input.submission_id ? 'submission identity present' : 'submission identity unavailable', source_artifact_ids: ['analysis_submission'], source_paths: ['submission_id'] });
+  add({ slug: 'stable_take_identity', state: 'known', value_summary: `take ${args.input.take_id} / analysis ${args.analysisRunId}`, source_artifact_ids: ['analysis_take'], source_paths: ['stable_take_identity'] });
+  add({ slug: 'take_identity_loaded', state: 'known', value_summary: 'take and analysis identifiers present', source_artifact_ids: ['analysis_take'], source_paths: ['stable_take_identity'] });
+  if (args.input.selected_level) add({ slug: 'selected_level', state: 'known', value_summary: `selected level: ${args.input.selected_level}`, source_artifact_ids: ['analysis_submission'], source_paths: ['selected_level'] });
+  if (args.input.audition_type) add({ slug: 'audition_type', state: 'known', value_summary: `audition type: ${args.input.audition_type}`, source_artifact_ids: ['analysis_submission'], source_paths: ['audition_type'] });
+  add({ slug: 'brief_presence', state: args.briefPresenceState.status, value_summary: `brief presence: ${args.briefPresenceState.value}`, source_artifact_ids: ['resolver_output'], source_paths: ['brief_presence'] });
+  add({ slug: 'brief_presence_source_resolved', state: args.briefPresenceState.source ? args.briefPresenceState.status : 'unavailable', value_summary: `brief presence source: ${args.briefPresenceState.source}`, source_artifact_ids: ['resolver_output'], source_paths: ['brief_presence.source'] });
+  add({ slug: 'extracted_brief_cache_status', state: String(args.input.brief_presence_source ?? '').includes('extracted_brief_cached') ? 'known' : 'unavailable', value_summary: `extracted brief cache status: ${String(args.input.brief_presence_source ?? 'not_loaded')}`, source_artifact_ids: ['resolver_output'], source_paths: ['brief_presence.source'] });
+  add({ slug: 'material_presence', state: args.materialPresenceState.status, value_summary: `material presence: ${args.materialPresenceState.value}`, source_artifact_ids: ['resolver_output'], source_paths: ['material_presence'] });
+  add({ slug: 'material_presence_source_resolved', state: args.materialPresenceState.source ? args.materialPresenceState.status : 'unavailable', value_summary: `material presence source: ${args.materialPresenceState.source}`, source_artifact_ids: ['resolver_output'], source_paths: ['material_presence.source'] });
+  const componentDeclarationEvidenceKind = args.input.component_or_task_declaration_status === 'supplied'
+    ? 'component_or_task_declaration_loaded'
+    : 'component_or_task_declaration_unavailable';
+  add({ slug: step1EvidenceTruthSlug({ evidence_kind: componentDeclarationEvidenceKind }, 1), state: args.input.component_or_task_declaration_status === 'supplied' ? 'known' : 'unavailable', value_summary: `component/task declaration status: ${args.input.component_or_task_declaration_status ?? 'unknown'}`, source_artifact_ids: ['analysis_submission'], source_paths: ['component_or_task_declaration_status'] });
+  if (args.input.take_created_at) add({ slug: 'take_created_at_normalised', state: 'known', value_summary: 'take created timestamp normalised', source_artifact_ids: ['analysis_take'], source_paths: ['take_created_at'] });
+  if (args.input.take_updated_at) add({ slug: 'take_updated_at_normalised', state: 'known', value_summary: 'take updated timestamp normalised', source_artifact_ids: ['analysis_take'], source_paths: ['take_updated_at'] });
+  const takeIndexEvidenceKind = args.input.take_index != null ? 'take_index_loaded' : 'take_index_unavailable';
+  add({ slug: step1EvidenceTruthSlug({ evidence_kind: takeIndexEvidenceKind }, 1), state: args.input.take_index != null ? 'known' : 'unavailable', value_summary: args.input.take_index != null ? `take index: ${args.input.take_index}` : 'take index unavailable', source_artifact_ids: ['analysis_take'], source_paths: ['take_index'] });
+  add({ slug: 'media_readiness_state', state: args.input.media_readiness_state ? 'known' : 'unknown', value_summary: `media readiness state: ${args.input.media_readiness_state ?? 'unknown'}`, source_artifact_ids: ['analysis_take'], source_paths: ['media_readiness_state'] });
+  const durationKnown = typeof args.input.video_duration_seconds === 'number' && Number.isFinite(args.input.video_duration_seconds) && args.input.video_duration_seconds > 0;
+  add({ slug: durationKnown ? 'media_duration_known' : 'media_duration_unknown', state: durationKnown ? 'known' : 'unavailable', value_summary: durationKnown ? `media duration seconds: ${args.input.video_duration_seconds}` : 'media duration unavailable', source_artifact_ids: ['media_readiness'], source_paths: ['media_duration_seconds'] });
+  add({ slug: 'safe_media_reference_state', state: 'known', value_summary: `media reference present: playback=${Boolean(args.input.mux_playback_id)}, asset_or_upload=${String(args.input.mux_asset_or_upload_id_present ?? 'unknown')}`, source_artifact_ids: ['resolver_output'], source_paths: ['safe_media_reference_state'] });
+  add({ slug: hasMeaningfulStep1Value(args.input.original_upload_file_hash) ? 'safe_upload_identity_available' : 'safe_upload_identity_unavailable', state: hasMeaningfulStep1Value(args.input.original_upload_file_hash) ? 'known' : 'unavailable', value_summary: hasMeaningfulStep1Value(args.input.original_upload_file_hash) ? 'safe upload identity available' : 'safe upload identity unavailable', source_artifact_ids: ['analysis_take'], source_paths: ['safe_upload_identity.original_upload_file_hash'] });
+  add({ slug: 'known_truths', state: 'known', value_summary: 'known runtime truth fields recorded', source_artifact_ids: ['truth_state_map'], source_paths: ['known_truths'] });
+  add({ slug: 'component_truths', state: args.input.component_or_task_declaration_status === 'unknown' ? 'unavailable' : 'known', value_summary: `component truth status: ${args.input.component_or_task_declaration_status ?? 'unknown'}`, source_artifact_ids: ['truth_state_map'], source_paths: ['component_truths.declaration_status'] });
+  add({ slug: 'comparison_truths', state: args.comparisonInvoked ? 'blocked' : 'not_applicable', value_summary: args.comparisonInvoked ? 'comparison context present' : 'single-take comparison not applicable', source_artifact_ids: ['truth_state_map'], source_paths: ['comparison_truths.status'] });
+  if ((args.input.unavailable_fields ?? []).length > 0) add({ slug: 'unavailable_runtime_fields_recorded', state: 'unavailable', value_summary: `unavailable runtime fields: ${dedupePreservingOrder(args.input.unavailable_fields ?? []).sort().join(', ')}`, source_artifact_ids: ['analysis_input_record'], source_paths: ['unavailable_fields'], public_claim_limit: 'limitation_only' });
+  const mediaOccurrenceByKind = new Map<string, number>();
+  mediaProjectionForFilteredStep1(args.filteredStep1).forEach((item) => {
+    const kind = safeTruthStateSlugPart(item.evidence_kind);
+    const occurrence = (mediaOccurrenceByKind.get(kind) ?? 0) + 1;
+    mediaOccurrenceByKind.set(kind, occurrence);
+    const limitationOnly = isStep1LimitationOnlyEvidenceItem(item);
+    add({
+      slug: step1EvidenceTruthSlug(item, occurrence),
+      state: limitationOnly ? 'limitation_only' : 'observed',
+      value_summary: item.safe_evidence_summary,
+      confidence: item.confidence_or_strength ?? 'runEvidencePass_filtered_media_observable',
+      source_artifact_ids: ['step1_observable_evidence'],
+      source_paths: [step1EvidenceTruthSourcePath(item)],
+      public_claim_limit: limitationOnly ? 'limitation_only' : 'blocked',
+    });
+  });
+  const seen = new Map<string, ExplicitTruthStateEntry>();
+  entries.forEach((entry) => seen.set(entry.truth_state_entry_id, entry));
+  return Array.from(seen.values()).sort((a, b) => a.truth_state_entry_id.localeCompare(b.truth_state_entry_id));
 }
 type PresenceValue = 'supplied' | 'absent' | 'unknown';
 function normalisePresenceTruthState(value: PresenceValue | null | undefined, source: string | null | undefined): { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' } {
@@ -2321,23 +2529,29 @@ function buildAnalysisEvidenceAnchor(args: {
   input: EvidenceAnchorsEmitterInput;
   analysisRunId: string;
   generatedAt: string;
+  truthStateMapData?: Record<string, unknown> | null;
 }) {
   const resolved = readJsonPath(args.source, args.sourcePath);
   const sourceRunIdMatches = args.source.run_id === args.input.run_id && args.source.analysis_run_id === args.analysisRunId;
   const sourcePathResolved = resolved !== undefined;
   const itemBlockers = Array.isArray(args.item.blocker_codes) ? args.item.blocker_codes.filter((x): x is string => typeof x === 'string' && x.length > 0) : [];
   const evidenceKind = typeof args.item.evidence_kind === 'string' ? args.item.evidence_kind : 'unknown_runtime_fact';
-  const requiresTruthLinkage = (args.item.source_artefact_id === 'truth_state_map' || evidenceKind.includes('truth'));
+  const limitationOnly = isStep1LimitationOnlyEvidenceItem(args.item);
+  const requiresTruthLinkage = !limitationOnly;
   const linkedTruthStateIds = Array.isArray(args.item.linked_truth_state_ids)
     ? args.item.linked_truth_state_ids.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
   const structuredTruthMissing = requiresTruthLinkage && linkedTruthStateIds.length === 0;
+  const unresolvedTruthStateIds = linkedTruthStateIds.filter((truthId) => !truthStateIdResolves(args.truthStateMapData ?? args.source, truthId));
+  const structuralTruthKeysUsedAsIds = linkedTruthStateIds.filter((truthId) => !isCanonicalTruthStateId(truthId));
   const forbiddenSource = hasForbiddenEvidenceSourceRef(args.item);
   const blocker_codes = dedupePreservingOrder([
     ...itemBlockers,
     ...(!sourceRunIdMatches ? ['analysis_evidence_state_identity_mismatch'] : []),
     ...(!sourcePathResolved ? ['analysis_evidence_state_source_path_unresolved'] : []),
     ...(structuredTruthMissing ? ['missing_truth_state_linkage'] : []),
+    ...(unresolvedTruthStateIds.length > 0 ? ['truth_state_id_unresolved'] : []),
+    ...(structuralTruthKeysUsedAsIds.length > 0 ? ['structural_truth_key_used_as_id'] : []),
     ...(forbiddenSource ? ['forbidden_report_snapshot_source_ref'] : []),
   ]);
   const cannotSatisfy = blocker_codes.length > 0;
@@ -2366,6 +2580,9 @@ function buildAnalysisEvidenceAnchor(args: {
     timestamp_source: typeof args.item.timestamp_source === 'string' ? args.item.timestamp_source : 'not_timestamped_runtime_metadata',
     component_id: typeof args.item.component_id === 'string' ? args.item.component_id : null,
     linked_truth_state_ids: linkedTruthStateIds,
+    truth_state_entry_ids: linkedTruthStateIds,
+    limitation_only: limitationOnly,
+    unresolved_truth_state_ids: unresolvedTruthStateIds,
     linked_public_claim_ids: [],
     assessability_limitations: Array.isArray(args.item.assessability_limitations) ? args.item.assessability_limitations.filter((x): x is string => typeof x === 'string') : [],
     evidence_status: cannotSatisfy ? 'blocked_or_limited_runtime_fact' : 'resolved_step1_runtime_fact',
@@ -3868,7 +4085,7 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
         const sourcePath = typeof item.analysis_evidence_state_source_path === 'string'
           ? item.analysis_evidence_state_source_path
           : `observable_evidence_items[${index}]`;
-        anchors.push(buildAnalysisEvidenceAnchor({ source: analysisEvidenceState, sourcePath, item, index: anchors.length, input, analysisRunId, generatedAt }));
+        anchors.push(buildAnalysisEvidenceAnchor({ source: analysisEvidenceState, sourcePath, item, index: anchors.length, input, analysisRunId, generatedAt, truthStateMapData: input.truth_state_map_data }));
       });
       const componentItems = Array.isArray(analysisEvidenceState.component_evidence) ? analysisEvidenceState.component_evidence : [];
       componentItems.forEach((item, index) => {
@@ -3882,13 +4099,14 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
             timestamp: null,
             timestamp_range: null,
             timestamp_source: 'not_timestamped_runtime_metadata',
-            linked_truth_state_ids: [],
+            linked_truth_state_ids: Array.isArray(item.linked_truth_state_ids) ? item.linked_truth_state_ids : [],
             public_display_status: 'internal_only',
           },
           index: anchors.length,
           input,
           analysisRunId,
           generatedAt,
+          truthStateMapData: input.truth_state_map_data,
         }));
       });
       const briefItems = Array.isArray(analysisEvidenceState.candidate_brief_evidence) ? analysisEvidenceState.candidate_brief_evidence : [];
@@ -3903,13 +4121,14 @@ export async function emitEvidenceAnchorsFirstPass(input: EvidenceAnchorsEmitter
             timestamp: null,
             timestamp_range: null,
             timestamp_source: 'not_timestamped_resolver_fact',
-            linked_truth_state_ids: [],
+            linked_truth_state_ids: Array.isArray(item.linked_truth_state_ids) ? item.linked_truth_state_ids : [],
             public_display_status: 'internal_only',
           },
           index: anchors.length,
           input,
           analysisRunId,
           generatedAt,
+          truthStateMapData: input.truth_state_map_data,
         }));
       });
     }
@@ -5946,6 +6165,7 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   if (input.selected_level) known_truths.selected_level = input.selected_level;
   const briefPresenceState = normalisePresenceTruthState(input.brief_presence, input.brief_presence_source ?? 'unavailable');
   const materialPresenceState = normalisePresenceTruthState(input.material_presence, input.material_presence_source ?? 'unavailable');
+  const filteredStep1 = isRecord(input.filtered_run_evidence_pass_step1) ? input.filtered_run_evidence_pass_step1 : null;
   assignPresenceTruthBucket('brief_presence', briefPresenceState, known_truths, unavailable_truths);
   assignPresenceTruthBucket('material_presence', materialPresenceState, known_truths, unavailable_truths);
   known_truths.safe_media_reference_state = { mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' };
@@ -5963,6 +6183,18 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
   unavailable_truths.public_claim_support = 'not_emitted';
   if ((input.component_or_task_declaration_status ?? 'unknown') === 'unknown') unavailable_truths.component_or_task_declaration = 'unknown_or_not_loaded';
   const unsafe_or_blocked_truths = { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', gf01_rt15_status: gf01Rt15Status, same_video_comparison_status: sameVideoComparisonStatus };
+  const explicitTruthStateEntries = buildExplicitTruthStateEntriesForStep1({
+    input,
+    analysisRunId,
+    filteredStep1,
+    briefPresenceState,
+    materialPresenceState,
+    comparedTakeIds,
+    comparisonInvoked,
+  });
+  const truthStateIds = explicitTruthStateEntries.map((entry) => entry.truth_state_entry_id);
+  const canonicalTruthStateIds = Object.fromEntries(explicitTruthStateEntries.map((entry) => [entry.key, entry.truth_state_entry_id]));
+  const truthStatesById = Object.fromEntries(explicitTruthStateEntries.map((entry) => [entry.truth_state_entry_id, entry]));
   const redaction_notes = ['No secret/token/session fields emitted; only safe booleans/refs included'];
   const resolver_output = {
     schema_version: 'tapecoach_v3_resolver_output_v1', artefact_type: 'resolver_output', internal_only: true, privacy_classification: 'internal_private',
@@ -5996,6 +6228,10 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     final_qa_acceptance_source: 'qa/acceptance_metrics.json',
     not_final_artefact_emission_state: true,
     known_truths, inferred_truths, unavailable_truths, unsafe_or_blocked_truths,
+    truth_state_ids: truthStateIds,
+    canonical_truth_state_ids: canonicalTruthStateIds,
+    truth_state_entry_count: explicitTruthStateEntries.length,
+    truth_state_entry_status: explicitTruthStateEntries.length > 0 ? 'partial_explicit_ids' : 'missing',
     brief_truths: { brief_presence: briefPresenceState.value, source: briefPresenceState.source, status: briefPresenceState.status },
     media_truths: { media_readiness_state: input.media_readiness_state ?? null, mux_playback_id_present: Boolean(input.mux_playback_id), mux_asset_or_upload_id_present: input.mux_asset_or_upload_id_present ?? 'unknown' },
     component_truths: { declaration_source: input.component_or_task_declaration_source ?? 'not_loaded', declaration_status: input.component_or_task_declaration_status ?? 'unknown', legacy_report_detected_components: 'legacy_adapter_report_snapshot_not_v3_input_truth' },
@@ -6003,6 +6239,10 @@ export async function emitResolverOutputAndTruthStateMap(input: ResolverTruthSta
     role_truths: { status: 'unavailable', reason: 'insufficient_reliable_brief_or_material_context' },
     comparison_truths: { comparison_run_executed: comparisonInvoked, status: comparisonInvoked ? 'blocked_pending_comparison_evidence' : 'not_applicable_single_take', compared_take_ids: comparedTakeIds },
     public_authority_truths: { production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', raw_report_legacy_adapter_not_v3_proof: true },
+    truth_state_entries: explicitTruthStateEntries,
+    explicit_truth_state_entries: explicitTruthStateEntries,
+    entries: explicitTruthStateEntries,
+    truth_states: truthStatesById,
     source_refs: resolver_output.input_artifact_refs, redaction_notes,
   };
   const base = `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver`;
@@ -6466,6 +6706,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       source_artefact_id: 'resolver_output',
       source_path: 'brief_presence',
       safe_evidence_summary: 'brief presence only; downstream judgement not asserted',
+      linked_truth_state_ids: truthStateMapAvailable ? [canonicalTruthStateId(input.run_id, 'brief_presence')] : [],
       blocker_codes: resolverOutputAvailable ? [] : ['resolver_output_missing'],
     },
     {
@@ -6474,6 +6715,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       source_artefact_id: 'resolver_output',
       source_path: 'material_presence',
       safe_evidence_summary: 'material presence only; downstream judgement not asserted',
+      linked_truth_state_ids: truthStateMapAvailable ? [canonicalTruthStateId(input.run_id, 'material_presence')] : [],
       blocker_codes: resolverOutputAvailable ? [] : ['resolver_output_missing'],
     },
   ];
@@ -6485,6 +6727,11 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       source_artefact_id: 'analysis_submission',
       source_path: 'component_or_task_declaration_status',
       safe_evidence_summary: `component/task declaration status is ${input.component_or_task_declaration_status ?? 'unknown'}`,
+      linked_truth_state_ids: truthStateMapAvailable ? [canonicalTruthStateId(input.run_id, step1EvidenceTruthSlug({
+        evidence_kind: (input.component_or_task_declaration_status ?? 'unknown') === 'supplied'
+          ? 'component_or_task_declaration_loaded'
+          : 'component_or_task_declaration_unavailable',
+      }, 1))] : [],
       assessability_limitations: (input.component_or_task_declaration_status ?? 'unknown') === 'unknown' ? ['component_or_task_declaration_not_loaded'] : [],
       blocker_codes: (input.component_or_task_declaration_status ?? 'unknown') === 'unknown' ? ['component_or_task_declaration_unknown'] : [],
     },
@@ -6567,7 +6814,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     ...(!resolverOutputAvailable ? ['resolver_output_missing'] : []),
     ...(!truthStateMapAvailable ? ['TruthStateMap_missing'] : []),
     ...(!durationKnown ? ['media_duration_unavailable'] : []),
-    ...(truthStateMapAvailable ? ['structured_truth_state_ids_unavailable'] : []),
+    ...(!truthStateMapAvailable ? ['structured_truth_state_ids_unavailable'] : []),
     ...step2DependencyBlockers,
   ]);
   const sourceClassification: 'real_runtime_v3' | 'unavailable' = observable_evidence_items.length > 0 ? 'real_runtime_v3' : 'unavailable';
@@ -6582,7 +6829,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     videoItems: step1VideoItems,
     audioItems: step1AudioItems,
   });
-  const step1ObservableEvidenceItems = [
+  const step1ObservableEvidenceItemsUnlinked = [
     ...deterministicStep1ObservableEvidenceItems,
     ...mediaObservableProjection.items,
   ].map((item, index) => ({
@@ -6592,6 +6839,29 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       ? `observable_evidence_items[${index}]`
       : item.source_path,
   }));
+  const step1ObservableEvidenceItems = truthStateMapAvailable
+    ? linkStep1ObservableEvidenceItemsToTruthState(input.run_id, step1ObservableEvidenceItemsUnlinked)
+    : step1ObservableEvidenceItemsUnlinked;
+  const analysisObservableEvidenceItems = truthStateMapAvailable
+    ? linkAnalysisObservableEvidenceItemsToTruthState(input.run_id, observable_evidence_items)
+    : observable_evidence_items;
+  const step1TruthLinkedEvidenceItemCount = step1ObservableEvidenceItems.filter((item) => item.linked_truth_state_ids.length > 0).length;
+  const step1TruthUnlinkedEvidenceItemCount = step1ObservableEvidenceItems.length - step1TruthLinkedEvidenceItemCount;
+  const deterministicTruthLinkedCount = step1ObservableEvidenceItems.filter((item) => ['deterministic_runtime_fact', 'resolver_truth_fact'].includes(item.evidence_family) && item.linked_truth_state_ids.length > 0).length;
+  const suppliedContextTruthLinkedCount = step1ObservableEvidenceItems.filter((item) => item.evidence_family === 'material_specific' && item.linked_truth_state_ids.length > 0).length;
+  const mediaObservableTruthLinkedCount = step1ObservableEvidenceItems.filter((item) => ['video_observable', 'audio_observable'].includes(item.evidence_family) && item.linked_truth_state_ids.length > 0).length;
+  const limitationOnlyTruthEntryCount = step1ObservableEvidenceItems.filter((item) => isStep1LimitationOnlyEvidenceItem(item) && item.linked_truth_state_ids.length > 0).length;
+  const missingTruthStateLinkageCount = step1ObservableEvidenceItems.filter((item) => item.linked_truth_state_ids.length === 0 || item.blocker_codes.includes('missing_truth_state_linkage')).length;
+  const step1TruthStateIds = dedupePreservingOrder(step1ObservableEvidenceItems.flatMap((item) => item.linked_truth_state_ids));
+  const step1CanonicalTruthStateIds = Object.fromEntries(step1TruthStateIds.map((truthId) => [truthId.split(':truth_state:')[1] ?? truthId, truthId]));
+  const truthStateLinkageStatus = !truthStateMapAvailable
+    ? 'missing'
+    : (step1TruthUnlinkedEvidenceItemCount === 0 ? 'partial' : 'partial_with_unlinked_items');
+  const truthStateLinkageBlockerCodes = dedupePreservingOrder([
+    ...(!truthStateMapAvailable ? ['TruthStateMap_missing'] : []),
+    ...(step1TruthUnlinkedEvidenceItemCount > 0 ? ['missing_truth_state_linkage'] : []),
+    'required_evidence_families_still_incomplete',
+  ]);
   const deterministicRuntimeEvidenceCount = step1ObservableEvidenceItems.filter((item) => ['deterministic_runtime_fact', 'resolver_truth_fact'].includes(item.evidence_family)).length;
   const videoObservableEvidenceCount = mediaObservableProjection.videoCount;
   const audioObservableEvidenceCount = mediaObservableProjection.audioCount;
@@ -6759,6 +7029,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const step1BlockerCodes = dedupePreservingOrder([
     'step1_observable_evidence_partial',
     ...blocker_codes,
+    ...truthStateLinkageBlockerCodes,
   ]);
   const step1Summary = {
     extraction_status: step1ExtractionStatus,
@@ -6777,6 +7048,16 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
+    step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
+    deterministic_truth_linked_count: deterministicTruthLinkedCount,
+    supplied_context_truth_linked_count: suppliedContextTruthLinkedCount,
+    media_observable_truth_linked_count: mediaObservableTruthLinkedCount,
+    limitation_only_truth_entry_count: limitationOnlyTruthEntryCount,
+    missing_truth_state_linkage_count: missingTruthStateLinkageCount,
+    truth_state_linkage_status: truthStateLinkageStatus,
+    truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
+    truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
     media_observable_evidence_gate_status: 'insufficient' as const,
     media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     supplied_context_fact_count: briefMaterialEvidenceCount,
@@ -6794,7 +7075,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const summary = {
     evidence_state_status: evidenceStateStatus,
     source_classification: sourceClassification,
-    observable_evidence_item_count: observable_evidence_items.length,
+    observable_evidence_item_count: analysisObservableEvidenceItems.length,
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
     video_observable_evidence_count: videoObservableEvidenceCount,
@@ -6808,6 +7089,16 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
+    step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
+    deterministic_truth_linked_count: deterministicTruthLinkedCount,
+    supplied_context_truth_linked_count: suppliedContextTruthLinkedCount,
+    media_observable_truth_linked_count: mediaObservableTruthLinkedCount,
+    limitation_only_truth_entry_count: limitationOnlyTruthEntryCount,
+    missing_truth_state_linkage_count: missingTruthStateLinkageCount,
+    truth_state_linkage_status: truthStateLinkageStatus,
+    truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
+    truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
     media_observable_evidence_gate_status: 'insufficient' as const,
     media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
@@ -6861,6 +7152,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     },
     evidence_family_coverage: step1Coverage,
     evidence_family_status_by_id: step1FamilyStatusById,
+    truth_state_ids: step1TruthStateIds,
+    canonical_truth_state_ids: step1CanonicalTruthStateIds,
     observable_evidence_items: step1ObservableEvidenceItems,
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
@@ -6875,6 +7168,16 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
+    step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
+    deterministic_truth_linked_count: deterministicTruthLinkedCount,
+    supplied_context_truth_linked_count: suppliedContextTruthLinkedCount,
+    media_observable_truth_linked_count: mediaObservableTruthLinkedCount,
+    limitation_only_truth_entry_count: limitationOnlyTruthEntryCount,
+    missing_truth_state_linkage_count: missingTruthStateLinkageCount,
+    truth_state_linkage_status: truthStateLinkageStatus,
+    truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
+    truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
     media_observable_evidence_gate_status: 'insufficient' as const,
     media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     supplied_context_fact_count: briefMaterialEvidenceCount,
@@ -6931,6 +7234,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     extraction_status: evidenceStateStatus,
     evidence_family_coverage: filteredEvidenceFamilyCoverage,
     evidence_family_status_by_id: filteredFamilyStatus,
+    truth_state_ids: step1TruthStateIds,
+    canonical_truth_state_ids: step1CanonicalTruthStateIds,
     input_artifact_refs: inputArtifactRefs,
     resolver_output_ref: resolverOutputAvailable ? `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver/resolver_output.json` : null,
     truth_state_map_ref: truthStateMapAvailable ? `takes/take-${input.take_id}/analysis-${analysisRunId}/resolver/TruthStateMap.json` : null,
@@ -6961,6 +7266,16 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
+    step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
+    deterministic_truth_linked_count: deterministicTruthLinkedCount,
+    supplied_context_truth_linked_count: suppliedContextTruthLinkedCount,
+    media_observable_truth_linked_count: mediaObservableTruthLinkedCount,
+    limitation_only_truth_entry_count: limitationOnlyTruthEntryCount,
+    missing_truth_state_linkage_count: missingTruthStateLinkageCount,
+    truth_state_linkage_status: truthStateLinkageStatus,
+    truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
+    truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
     media_observable_evidence_gate_status: 'insufficient' as const,
     media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
@@ -6984,7 +7299,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     audio_observable_evidence_items: step1AudioItems,
     material_observable_evidence_items: step1MaterialItems,
     performance_observable_evidence_items: step1PerformanceItems,
-    observable_evidence_items,
+    observable_evidence_items: analysisObservableEvidenceItems,
     candidate_brief_evidence,
     candidate_technique_evidence: step1TechniqueItems,
     unsupported_or_unavailable_evidence: unsupportedOrUnavailableEvidence,
