@@ -91,6 +91,11 @@ export interface QAArtifactEmitterOptions {
     real_runtime_v3: number;
     input_artifact: number;
     resolver_truth_state: number;
+    technique_observation_trace_gate_status?: 'missing' | 'insufficient' | 'satisfied';
+    technique_observation_trace_gate_reason?: string;
+    real_runtime_v3_internal_technique_observation_count?: number;
+    satisfying_internal_technique_observation_count?: number;
+    public_technique_authority_status?: 'blocked';
   };
   score_trace_summary?: {
     score_count: number;
@@ -103,10 +108,12 @@ export interface QAArtifactEmitterOptions {
     calibration_modifier_count: number;
     calibration_metadata_count: number;
     source_family_summary: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; };
+    real_runtime_v3_internal_score_entry_count?: number;
     overall_readiness_public_score_status: 'blocked';
-    discipline_attribute_score_trace_status: 'internal_trace_only';
-    score_trace_gate_status: 'insufficient';
-    score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace';
+    discipline_attribute_score_trace_status: 'internal_trace_only' | 'real_runtime_v3_internal_trace' | 'missing';
+    score_trace_gate_status: 'insufficient' | 'missing' | 'satisfied';
+    score_trace_gate_reason: string;
+    blocker_codes?: string[];
   };
   model_run_trace_summary?: {
     model_run_count?: number;
@@ -114,8 +121,18 @@ export interface QAArtifactEmitterOptions {
     model_run_failed_count?: number;
     model_run_timeout_count?: number;
     model_run_fallback_count?: number;
+    invoked_stage_count?: number;
+    skipped_stage_count?: number;
+    not_applicable_stage_count?: number;
+    model_run_stage_names?: string[];
+    model_run_missing_stage_names?: string[];
     model_run_trace_gate_status?: 'insufficient' | 'missing' | 'satisfied';
     model_run_trace_gate_reason?: string;
+    independent_model_proof_status?: string;
+    per_stage_model_proof_status?: string;
+    raw_prompt_or_response_stored?: boolean;
+    secrets_or_signed_urls_stored?: boolean;
+    forbidden_payload_fields_absent?: boolean;
   };
   analysis_evidence_state_summary?: {
     evidence_state_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | 'blocked';
@@ -361,6 +378,7 @@ const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
   'internal_validator',
   'internal_gate_trace',
   'internal_model_run_trace',
+  'model_run_metadata_partial',
   'internal_comparison_runtime',
   'internal_comparison_report',
   'internal_comparison_trace',
@@ -622,8 +640,10 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const scoreTraceStatus = manifest.artefact_status_by_id?.score_trace ?? 'missing';
   const techniqueObservationGateStatus = techniqueObservationStatus === 'missing' ? 'missing' : (spineById.technique_observation_trace === true ? 'satisfied' : 'insufficient');
   const scoreTraceGateStatus = scoreTraceStatus === 'missing' ? 'missing' : (spineById.score_trace === true ? 'satisfied' : 'insufficient');
+  const techniqueSourceClass = String(sourceClassById.technique_observation_trace ?? '');
+  const scoreSourceClass = String(sourceClassById.score_trace ?? '');
   const techniqueObservationSourceSummary = manifest.technique_observation_trace_summary ?? {
-    real_runtime_v3: sourceClassById.technique_observation_trace === 'real_runtime_v3' ? 1 : 0,
+    real_runtime_v3: techniqueSourceClass === 'real_runtime_v3' || techniqueSourceClass === 'real_runtime_v3_internal_technique_observation' ? 1 : 0,
     legacy_adapter: sourceClassById.technique_observation_trace === 'legacy_adapter' ? 1 : 0,
     report_snapshot: sourceClassById.technique_observation_trace === 'report_snapshot' ? 1 : 0,
     input_artifact: sourceClassById.technique_observation_trace === 'input_artifact' ? 1 : 0,
@@ -703,7 +723,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     calibration_modifier_count: 0,
     calibration_metadata_count: 0,
     source_family_summary: {
-      real_runtime_v3: sourceClassById.score_trace === 'real_runtime_v3' ? 1 : 0,
+      real_runtime_v3: scoreSourceClass === 'real_runtime_v3' || scoreSourceClass === 'real_runtime_v3_internal_score_proof' ? 1 : 0,
       legacy_adapter: sourceClassById.score_trace === 'legacy_adapter' ? 1 : 0,
       report_snapshot: sourceClassById.score_trace === 'report_snapshot' ? 1 : 0,
       input_artifact: sourceClassById.score_trace === 'input_artifact' ? 1 : 0,
@@ -964,12 +984,17 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     technique_observation_gate_status: techniqueObservationGateStatus,
     technique_observation_source_family_summary: techniqueObservationSourceSummary,
     technique_observation_gate_reason: techniqueObservationGateStatus === 'satisfied' ? 'real_runtime_v3_support_present' : (techniqueObservationStatus === 'missing' ? 'trace_not_emitted' : 'legacy_report_snapshot_not_real_runtime_technique_evidence'),
+    technique_observation_internal_proof_status: techniqueObservationGateStatus === 'satisfied' ? 'real_runtime_v3_internal_technique_proof' : 'insufficient',
+    technique_observation_real_runtime_internal_count: Number(techniqueObservationSourceSummary.real_runtime_v3_internal_technique_observation_count ?? techniqueObservationSourceSummary.real_runtime_v3 ?? 0),
+    public_technique_authority_status_from_technique_trace: techniqueObservationSourceSummary.public_technique_authority_status ?? 'blocked',
 
     score_trace_status: scoreTraceStatus,
     score_trace_gate_status: scoreTraceGateStatus,
     score_trace_gate_reason: scoreTraceSummary.score_trace_gate_reason,
     score_trace_source_family_summary: scoreTraceSummary.source_family_summary,
     score_trace_count: scoreTraceSummary.score_count,
+    score_trace_internal_proof_status: scoreTraceGateStatus === 'satisfied' ? 'real_runtime_v3_internal_score_proof' : 'insufficient',
+    score_trace_real_runtime_internal_count: Number(scoreTraceSummary.real_runtime_v3_internal_score_entry_count ?? scoreTraceSummary.source_family_summary.real_runtime_v3 ?? 0),
     overall_readiness_public_score_status: scoreTraceSummary.overall_readiness_public_score_status,
     discipline_attribute_score_trace_status: scoreTraceSummary.discipline_attribute_score_trace_status,
     score_trace_overall_count: scoreTraceSummary.overall_count,
@@ -1020,6 +1045,11 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     model_run_fallback_count: Number(modelRunTraceSummary.model_run_fallback_count ?? 0),
     model_run_trace_independent_model_proof_status: String(modelRunTraceSummary.independent_model_proof_status ?? (modelRunTraceStatus === 'missing' ? 'missing' : 'metadata_only_insufficient')),
     model_run_trace_per_stage_model_proof_status: String(modelRunTraceSummary.per_stage_model_proof_status ?? (modelRunTraceStatus === 'missing' ? 'missing' : 'partial_metadata_only')),
+    model_run_stage_names: Array.isArray(modelRunTraceSummary.model_run_stage_names) ? modelRunTraceSummary.model_run_stage_names : [],
+    model_run_missing_stage_names: Array.isArray(modelRunTraceSummary.model_run_missing_stage_names) ? modelRunTraceSummary.model_run_missing_stage_names : [],
+    model_run_invoked_stage_count: Number(modelRunTraceSummary.invoked_stage_count ?? 0),
+    model_run_skipped_stage_count: Number(modelRunTraceSummary.skipped_stage_count ?? 0),
+    model_run_not_applicable_stage_count: Number(modelRunTraceSummary.not_applicable_stage_count ?? 0),
     model_run_raw_prompt_or_response_stored: Boolean(modelRunTraceSummary.raw_prompt_or_response_stored ?? false),
     model_run_secrets_or_signed_urls_stored: Boolean(modelRunTraceSummary.secrets_or_signed_urls_stored ?? false),
     model_run_forbidden_payload_fields_absent: modelRunTraceSummary.forbidden_payload_fields_absent ?? true,

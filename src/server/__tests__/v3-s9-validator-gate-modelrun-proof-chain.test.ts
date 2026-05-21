@@ -86,7 +86,7 @@ describe('v3 s9 validator gate model-run proof-chain posture', () => {
     ]));
   });
 
-  it('keeps metadata-only ModelRunTrace insufficient and stores no raw prompts or responses', async () => {
+  it('keeps partial ModelRunTrace insufficient and stores no raw prompts or responses', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-modelrun-'));
     const out = await emitModelRunTraceFirstPass({
       run_id: 'run-proof-chain',
@@ -111,16 +111,21 @@ describe('v3 s9 validator gate model-run proof-chain posture', () => {
     expect(out.written).toBe(true);
 
     const payload = JSON.parse(await readFile(path.join(root, 'run-proof-chain', 'takes', 'take-take-a', 'analysis-run-proof-chain', 'traces', 'ModelRunTrace.json'), 'utf8'));
-    expect(payload.source_classification).toBe('internal_model_run_trace');
+    expect(payload.source_classification).toBe('model_run_metadata_partial');
     expect(payload.model_run_trace_summary.model_run_trace_gate_status).toBe('insufficient');
-    expect(payload.independent_model_proof_status).toBe('metadata_only_insufficient');
-    expect(payload.per_stage_model_proof_status).toBe('partial_metadata_only');
+    expect(payload.independent_model_proof_status).toBe('independent_model_proof_partial');
+    expect(payload.per_stage_model_proof_status).toBe('per_stage_model_proof_partial');
     expect(payload.raw_prompt_or_response_stored).toBe(false);
     expect(payload.secrets_or_signed_urls_stored).toBe(false);
     expect(payload.forbidden_fields_absent).toBe(true);
     expect(payload.model_run_entries.some((entry: any) => 'raw_prompt' in entry || 'raw_response' in entry || 'request_body' in entry)).toBe(false);
     expect(payload.model_run_entries.every((entry: any) => entry.raw_prompt_or_response_stored === false)).toBe(true);
-    expect(payload.model_run_entries.every((entry: any) => entry.independent_model_proof_status === 'metadata_only_insufficient')).toBe(true);
+    expect(payload.model_run_entries.map((entry: any) => entry.stage)).toEqual(expect.arrayContaining([
+      'analysis_step_1_evidence_pass',
+      'analysis_step_2_judgement_or_report_polish',
+      'validator',
+    ]));
+    expect(payload.model_run_entries.some((entry: any) => entry.independent_model_proof_status === 'per_stage_metadata_partial')).toBe(true);
     expect(payload.cannot_satisfy_model_run_gate).toBe(true);
   });
 

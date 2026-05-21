@@ -3792,6 +3792,45 @@ export async function runProcessTake(
         addUniqueId(qaBlockedArtefactIds, 'public_claim_trace');
       }
 
+      const realRuntimeEvidenceAnchorIdsForScore = evidenceAnchorsRuntimeAnchors
+        .filter((anchor) => anchor.source_family === 'real_runtime_v3' && anchor.cannot_satisfy_v3_gate !== true)
+        .map((anchor) => typeof anchor.evidence_anchor_id === 'string' ? anchor.evidence_anchor_id : '')
+        .filter((id) => id.length > 0);
+      const canonicalTruthStateIds = isRuntimeRecord(truthStateMapPayload?.canonical_truth_state_ids)
+        ? truthStateMapPayload.canonical_truth_state_ids
+        : {};
+      const selectedLevelTruthId = typeof canonicalTruthStateIds.selected_level === 'string' ? canonicalTruthStateIds.selected_level : null;
+      const auditionTypeTruthId = typeof canonicalTruthStateIds.audition_type === 'string' ? canonicalTruthStateIds.audition_type : null;
+      const linkedScoreTruthStateIds = [selectedLevelTruthId, auditionTypeTruthId].filter((value): value is string => typeof value === 'string' && value.length > 0);
+      const structuredStep2ScoreEntries = Object.entries(modelScores)
+        .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+        .map(([scoreName, scoreValue], index) => ({
+          score_name: scoreName,
+          score_scope: 'discipline_attribute',
+          score_value: scoreValue,
+          score_scale: '0-100',
+          source_path: `structured_step2_score_data.score_entries[${index}]`,
+          selected_level: auditionLevel,
+          audition_type: auditionType,
+          linked_evidence_anchor_ids: realRuntimeEvidenceAnchorIdsForScore,
+          linked_truth_state_ids: linkedScoreTruthStateIds,
+          category_id: scoreName,
+        }));
+      const structuredStep2ScoreDataForRuntimeTraces = structuredStep2ScoreEntries.length > 0
+        ? {
+          source_artefact_id: 'structured_step2_score_projection',
+          source_stage: 'finalising_score_recompute',
+          selected_level: auditionLevel,
+          audition_type: auditionType,
+          linked_analysis_evidence_state_ref: `takes/take-${takeId}/analysis-take-${takeId}/analysis/AnalysisEvidenceState.json`,
+          linked_evidence_anchor_ids: realRuntimeEvidenceAnchorIdsForScore,
+          linked_truth_state_ids: linkedScoreTruthStateIds,
+          score_entries: structuredStep2ScoreEntries,
+          calibration_context_internal_only: true,
+          public_scoring_status: 'blocked',
+        }
+        : null;
+
       const techniqueObservationTrace = await emitTechniqueObservationTraceFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -3800,9 +3839,10 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
+        analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
         evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
         public_claim_trace_data: publicClaimTraceDataForRuntimeTraces,
-        truth_state_map_data: null,
+        truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (techniqueObservationTrace.written) qaArtefactIds.push(...techniqueObservationTrace.emitted_artefact_ids);
@@ -3815,9 +3855,10 @@ export async function runProcessTake(
         source_stage: 'process_take_success',
         source_module: 'process-take.server',
         raw_report_data: rawReportPayload,
+        structured_step2_score_data: structuredStep2ScoreDataForRuntimeTraces,
         public_claim_trace_data: publicClaimTraceDataForRuntimeTraces,
         evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
-        truth_state_map_data: null,
+        truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (scoreTrace.written) qaArtefactIds.push(...scoreTrace.emitted_artefact_ids);
@@ -3826,8 +3867,12 @@ export async function runProcessTake(
           model_run_id: `mr-${takeId}-1`,
           model_provider: 'openrouter',
           model_name: currentModel,
+          model_version: currentModel,
+          prompt_version: isTwoStepEnabled() ? 'two_step_report_polish_current' : 'single_pass_analysis_current',
           model_role: geminiRetryCount > 0 || circuitOpenAtStart ? ('fallback' as const) : ('primary' as const),
-          source_stage: 'analysis_generation',
+          stage: isTwoStepEnabled() ? 'analysis_step_2_judgement_or_report_polish' : 'analysis_step_2_judgement_or_report_polish',
+          source_stage: isTwoStepEnabled() ? 'report_polish' : 'analysis_generation',
+          invocation_status: 'invoked' as const,
           started_at: lastAttemptStartedAtIso ?? undefined,
           completed_at: lastAttemptCompletedAtIso ?? undefined,
           duration_ms: lastAttemptDurationMs ?? undefined,
@@ -3841,6 +3886,10 @@ export async function runProcessTake(
           analysis_tier: tier,
           request_status: lastAttemptTimedOut ? ('timed_out' as const) : ('completed' as const),
           parse_status: report ? ('completed' as const) : ('unknown' as const),
+          input_artifact_refs: ['inputs/input_record.json', 'analysis/AnalysisEvidenceState.json'],
+          output_artifact_refs: ['reports/raw_report.json'],
+          raw_prompt_or_response_stored: false,
+          secrets_or_signed_urls_stored: false,
         }] : [];
       const modelRunTrace = await emitModelRunTraceFirstPass({
         run_id: `take-${takeId}`,
@@ -3850,6 +3899,8 @@ export async function runProcessTake(
         source_module: 'process-take.server',
         analysis_route: isTwoStepEnabled() ? 'two_step_or_fallback_single_pass' : 'single_pass',
         model_run_entries: safeModelRunEntries,
+        expected_model_stages: ['analysis_step_1_evidence_pass', 'analysis_step_2_judgement_or_report_polish', 'validator'],
+        comparison_invoked: false,
         internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
       });
       if (modelRunTrace.written) qaArtefactIds.push(...modelRunTrace.emitted_artefact_ids);
@@ -3933,7 +3984,7 @@ export async function runProcessTake(
           ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.source_classification } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
-          ...(modelRunTrace.written ? { model_run_trace: 'internal_model_run_trace' } : {}),
+          ...(modelRunTrace.written ? { model_run_trace: (modelRunTrace as { source_classification?: string }).source_classification ?? 'model_run_metadata_partial' } : {}),
           ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: inputArtefacts.media_identity_source_classification } : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
@@ -3944,7 +3995,7 @@ export async function runProcessTake(
           ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: false } : {}),
           ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.written ? publicClaimTrace.level2_satisfies === true : false } : {}),
           ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
-          ...(scoreTrace.written ? { score_trace: false } : {}),
+          ...(scoreTrace.written ? { score_trace: scoreTrace.level2_satisfies === true } : {}),
           ...(modelRunTrace.written ? { model_run_trace: false } : {}),
           ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: false } : {}),
         },
@@ -3952,14 +4003,14 @@ export async function runProcessTake(
           'raw_report',
           ...(evidenceAnchors.written && String(evidenceAnchors.source_classification).includes('legacy') ? ['evidence_anchors'] : []),
           ...(publicClaimTrace.written && String(publicClaimTrace.source_classification).includes('legacy') ? ['public_claim_trace'] : []),
-          ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
-          ...(scoreTrace.written ? ['score_trace'] : []),
+          ...(techniqueObservationTrace.written && String(techniqueObservationTrace.source_classification).includes('legacy') ? ['technique_observation_trace'] : []),
+          ...(scoreTrace.written && String(scoreTrace.source_classification).includes('legacy') ? ['score_trace'] : []),
         ],
         real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'step1_observable_evidence', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
         evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
-        technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.source_family_summary : undefined,
+        technique_observation_trace_summary: techniqueObservationTrace.written ? (techniqueObservationTrace.technique_observation_trace_summary ?? techniqueObservationTrace.source_family_summary) : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
         analysis_evidence_state_summary: analysisEvidenceStatePayloadAvailable ? {

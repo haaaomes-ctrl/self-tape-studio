@@ -204,7 +204,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; step1_observable_evidence_summary?: QAArtifactEmitterOptions['step1_observable_evidence_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_summary?: QAArtifactEmitterOptions['report_parity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: QAArtifactEmitterOptions['technique_observation_trace_summary']; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; step1_observable_evidence_summary?: QAArtifactEmitterOptions['step1_observable_evidence_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_summary?: QAArtifactEmitterOptions['report_parity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -683,11 +683,17 @@ export interface TechniqueObservationTraceEmitterInput extends PublicClaimTraceE
   public_claim_trace_data?: { claims?: Array<Record<string, unknown>> } | null;
 }
 
-export interface ScoreTraceEmitterInput extends TechniqueObservationTraceEmitterInput {}
+export interface ScoreTraceEmitterInput extends TechniqueObservationTraceEmitterInput {
+  structured_step2_score_data?: Record<string, unknown> | null;
+}
 export interface ModelRunTraceEntryInput {
   model_run_id?: string;
+  stage?: string;
+  invocation_status?: 'invoked' | 'skipped' | 'not_applicable' | 'failed' | 'blocked';
   model_provider?: string;
   model_name?: string;
+  model_version?: string;
+  prompt_version?: string;
   model_role?: 'primary' | 'fallback' | 'parser' | 'unknown';
   source_stage?: string;
   started_at?: string;
@@ -704,6 +710,10 @@ export interface ModelRunTraceEntryInput {
   request_status?: 'started' | 'completed' | 'failed' | 'timed_out' | 'unknown';
   parse_status?: 'completed' | 'failed' | 'skipped' | 'unknown';
   safe_error_category?: string;
+  input_artifact_refs?: string[];
+  output_artifact_refs?: string[];
+  raw_prompt_or_response_stored?: boolean;
+  secrets_or_signed_urls_stored?: boolean;
 }
 export interface ModelRunTraceEmitterInput {
   run_id: string;
@@ -713,6 +723,8 @@ export interface ModelRunTraceEmitterInput {
   source_stage: string;
   analysis_route?: string;
   model_run_entries?: ModelRunTraceEntryInput[];
+  expected_model_stages?: string[];
+  comparison_invoked?: boolean;
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
@@ -4837,7 +4849,7 @@ function collectScalarTruthTokens(value: unknown, out: Set<string>) {
 }
 
 function isExplicitTruthIdField(key: string): boolean {
-  return /^(truth_state_id|truth_state_ids|canonical_truth_state_id|canonical_truth_state_ids|known_truth_ids|brief_truth_ids|component_truth_ids|comparison_truth_ids)$/i.test(key);
+  return /^(truth_state_id|truth_state_ids|truth_state_entry_id|truth_state_entry_ids|canonical_truth_state_id|canonical_truth_state_ids|known_truth_ids|brief_truth_ids|component_truth_ids|comparison_truth_ids)$/i.test(key);
 }
 
 function isCanonicalTruthStateMapKey(key: string): boolean {
@@ -5847,6 +5859,93 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   };
 }
 
+const FORBIDDEN_INTERNAL_PROOF_SOURCE_ARTEFACT_IDS = new Set([
+  'raw_report',
+  'render_payload',
+  'public_report_payload',
+  'report_parity_result',
+  'legacy_score_trace',
+  'legacy_technique_observation_trace',
+]);
+
+function isForbiddenInternalProofSource(sourceArtefactId: unknown, sourcePath: unknown): boolean {
+  const artefact = String(sourceArtefactId ?? '').trim();
+  const path = String(sourcePath ?? '').trim();
+  return FORBIDDEN_INTERNAL_PROOF_SOURCE_ARTEFACT_IDS.has(artefact)
+    || /(^|\.|\/)(raw_report|report_data|render_payload|public_report_payload|report_parity_result)(\.|\/|$)/i.test(path)
+    || /ScoreTrace|TechniqueObservationTrace|public_ui|comparison_rank/i.test(path);
+}
+
+function getRealRuntimeAnchorIdsForTrace(
+  anchors: Array<Record<string, unknown>>,
+  requestedIds: string[],
+  linkedTruthIds: string[] = [],
+): string[] {
+  const requested = new Set(requestedIds.filter(Boolean));
+  const linkedTruths = new Set(linkedTruthIds.filter(Boolean));
+  return anchors
+    .filter((anchor) => {
+      const id = String(anchor.evidence_anchor_id ?? '');
+      if (!id) return false;
+      if (anchor.source_family !== 'real_runtime_v3' || anchor.cannot_satisfy_v3_gate === true) return false;
+      if (requested.size > 0) return requested.has(id);
+      const anchorTruths = getStringArray(anchor.linked_truth_state_ids);
+      return anchorTruths.some((truthId) => linkedTruths.has(truthId));
+    })
+    .map((anchor) => String(anchor.evidence_anchor_id ?? ''))
+    .filter(Boolean);
+}
+
+function getResolvedTraceTruthIds(truthStateMapData: unknown, truthIds: string[]): string[] {
+  return dedupePreservingOrder(
+    truthIds
+      .filter(isCanonicalTruthStateId)
+      .filter((truthId) => truthStateIdResolves(truthStateMapData, truthId)),
+  );
+}
+
+function getStructuredScoreEntries(scoreData: Record<string, unknown>): Array<Record<string, unknown>> {
+  const explicitEntries = safeRecordArray(scoreData.score_entries);
+  if (explicitEntries.length > 0) return explicitEntries;
+  const scores = isRecord(scoreData.scores) ? scoreData.scores : null;
+  if (!scores) return [];
+  return Object.entries(scores)
+    .filter(([, value]) => typeof value === 'number' || (typeof value === 'string' && Number.isFinite(Number(value))))
+    .map(([scoreName, scoreValue], index) => ({
+      score_name: scoreName,
+      score_scope: 'discipline_attribute',
+      score_value: scoreValue,
+      source_path: `structured_step2_score_data.scores.${scoreName}`,
+      source_index: index,
+    }));
+}
+
+function getCandidateTechniqueEvidenceItems(analysisEvidenceState: Record<string, unknown> | null): Array<Record<string, unknown>> {
+  if (!analysisEvidenceState) return [];
+  const direct = safeRecordArray(analysisEvidenceState.candidate_technique_evidence)
+    .map((item, index) => ({
+      ...item,
+      analysis_evidence_state_source_path: typeof item.analysis_evidence_state_source_path === 'string'
+        ? item.analysis_evidence_state_source_path
+        : `candidate_technique_evidence[${index}]`,
+    }));
+  const observable = safeRecordArray(analysisEvidenceState.observable_evidence_items)
+    .filter((item) => String(item.evidence_family ?? '') === 'candidate_technique')
+    .map((item, index) => ({
+      ...item,
+      analysis_evidence_state_source_path: typeof item.analysis_evidence_state_source_path === 'string'
+        ? item.analysis_evidence_state_source_path
+        : `observable_evidence_items[${index}]`,
+    }));
+  const byPath = new Map<string, Record<string, unknown>>();
+  for (const item of [...direct, ...observable]) {
+    const path = String(item.analysis_evidence_state_source_path ?? item.source_path ?? '');
+    if (!path || byPath.has(path)) continue;
+    byPath.set(path, item);
+  }
+  return [...byPath.values()];
+}
+
 export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObservationTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
@@ -5854,6 +5953,8 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const reportData = unwrapRawReportData(input.raw_report_data);
   const anchors = (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>>;
   const claims = (input.public_claim_trace_data?.claims ?? []) as Array<Record<string, unknown>>;
+  const truthStateMapData = isRecord(input.truth_state_map_data) ? input.truth_state_map_data : null;
+  const analysisEvidenceState = isRecord(input.analysis_evidence_state_data) ? input.analysis_evidence_state_data : null;
   const observations: Array<Record<string, unknown>> = [];
   const extractTimestampedNoteIndex = (value: unknown): number | null => {
     if (typeof value !== 'string') return null;
@@ -5940,6 +6041,57 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const addIfString = (value: unknown, sourcePath: string, family: 'legacy_adapter' | 'report_snapshot', timestamp?: string | null, index?: number) => {
     if (typeof value === 'string' && value.trim()) addObs(value, sourcePath, family, timestamp, index);
   };
+  const addInternalTechniqueObservation = (item: Record<string, unknown>, index: number) => {
+    if (!analysisEvidenceState) return;
+    const sourcePath = String(item.analysis_evidence_state_source_path ?? item.source_path ?? '').trim();
+    const safeSummary = String(item.safe_evidence_summary ?? item.observation_text_safe_summary ?? item.evidence_text ?? '').trim();
+    if (!sourcePath || !safeSummary) return;
+    const linkedTruthStateIds = getStringArray(item.linked_truth_state_ids);
+    const resolvedTruthStateIds = getResolvedTraceTruthIds(truthStateMapData, linkedTruthStateIds);
+    const explicitAnchorIds = getStringArray(item.linked_evidence_anchor_ids);
+    const linkedEvidenceAnchorIds = getRealRuntimeAnchorIdsForTrace(anchors, explicitAnchorIds, linkedTruthStateIds);
+    const sourcePathResolved = readJsonPath(analysisEvidenceState, sourcePath) !== undefined;
+    const sourceForbidden = isForbiddenInternalProofSource(item.source_artefact_id ?? 'analysis_evidence_state', sourcePath) || hasForbiddenEvidenceSourceRef(item);
+    const itemBlockers = getStringArray(item.blocker_codes);
+    const observationType = isStep1LimitationOnlyEvidenceItem(item)
+      ? 'limitation_only'
+      : (/safe_descriptor/i.test(String(item.evidence_kind ?? item.observation_type ?? '')) ? 'public_safe_descriptor_candidate' : 'internal_shadow');
+    const blockerCodes = dedupePreservingOrder([
+      ...itemBlockers,
+      ...(!sourcePathResolved ? ['technique_observation_source_path_unresolved'] : []),
+      ...(sourceForbidden ? ['forbidden_technique_observation_source'] : []),
+      ...(linkedEvidenceAnchorIds.length === 0 ? ['technique_observation_missing_real_runtime_evidence_anchor'] : []),
+      ...(linkedTruthStateIds.length === 0 ? ['missing_truth_state_linkage'] : []),
+      ...(linkedTruthStateIds.length > 0 && resolvedTruthStateIds.length !== linkedTruthStateIds.length ? ['truth_state_id_unresolved'] : []),
+      ...(observationType === 'limitation_only' ? ['limitation_only_cannot_support_technique_achievement'] : []),
+    ]);
+    const canSatisfyInternal = blockerCodes.filter((code) => code !== 'limitation_only_cannot_support_technique_achievement').length === 0;
+    observations.push({
+      technique_observation_id: `to-${input.take_id}-rt-${String(index + 1).padStart(3, '0')}`,
+      observation_type: observationType,
+      observation_text_safe_summary: safeSummary,
+      observable_basis: 'structured_step1_candidate_technique_projection',
+      source_family: 'real_runtime_v3_internal_technique_observation',
+      source_artefact_id: 'analysis_evidence_state',
+      source_path: sourcePath,
+      source_index: index,
+      timestamp_refs: getStringArray(item.timestamp_refs),
+      linked_evidence_anchor_ids: linkedEvidenceAnchorIds,
+      linked_truth_state_ids: resolvedTruthStateIds,
+      truth_state_entry_ids: resolvedTruthStateIds,
+      linked_public_claim_ids: [],
+      technique_authority_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      public_display_status: 'internal_only',
+      evidence_status: canSatisfyInternal ? 'real_runtime_v3_internal_technique_observation' : 'real_runtime_v3_internal_technique_observation_blocked',
+      cannot_satisfy_public_technique_authority_gate: true,
+      can_satisfy_internal_technique_trace_gate: canSatisfyInternal,
+      cannot_satisfy_v3_gate: !canSatisfyInternal,
+      blocker_codes: blockerCodes,
+      notes: ['internal_only', 'public_technique_authority_unapproved'],
+    });
+  };
+  getCandidateTechniqueEvidenceItems(analysisEvidenceState).forEach(addInternalTechniqueObservation);
   for (const key of ['detected_components', 'category_notes', 'category_rationale', 'strengths', 'improvements', 'priority_fixes'] as const) {
     const arr = reportData[key];
     if (!Array.isArray(arr)) continue;
@@ -5976,25 +6128,49 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
     if (text && field) addObs(text, `report_data.timestamped_notes[${idx}].${field}`, 'report_snapshot', ts, idx);
   });
   if (observations.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const realRuntimeInternalTechniqueCount = observations.filter((obs) => obs.source_family === 'real_runtime_v3_internal_technique_observation').length;
+  const satisfyingInternalTechniqueCount = observations.filter((obs) => obs.can_satisfy_internal_technique_trace_gate === true).length;
+  const techniqueGateSatisfied = satisfyingInternalTechniqueCount > 0;
   const sourceFamilySummary = observations.reduce<Record<string, number>>((acc, obs) => {
     const key = String(obs.source_family);
-    acc[key] = (acc[key] ?? 0) + 1;
+    if (key === 'real_runtime_v3_internal_technique_observation') acc.real_runtime_v3 = (acc.real_runtime_v3 ?? 0) + 1;
+    else acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, { legacy_adapter: 0, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 });
-  const derivedSourceClassification = sourceFamilySummary.report_snapshot > 0 && sourceFamilySummary.legacy_adapter === 0 ? 'report_snapshot' : 'legacy_adapter';
+  const derivedSourceClassification = techniqueGateSatisfied
+    ? 'real_runtime_v3_internal_technique_observation'
+    : (sourceFamilySummary.report_snapshot > 0 && sourceFamilySummary.legacy_adapter === 0 ? 'report_snapshot' : 'legacy_adapter');
   const payload = {
     schema_version: 'tapecoach_v3_technique_observation_trace_v1', artefact_type: 'technique_observation_trace', internal_only: true, privacy_classification: 'internal_private',
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: [],
     source_module: input.source_module, source_stage: input.source_stage, generated_at: new Date().toISOString(),
     observation_count: observations.length, observations, source_family_summary: sourceFamilySummary,
-    cannot_satisfy_technique_observation_gate: true,
-    gate_satisfaction_reason: 'legacy_report_snapshot_not_real_runtime_technique_evidence',
-    blocker_codes: ['TechniqueObservation_legacy_only', 'technique_trace_requires_step1_candidate_technique_extractor'], redaction_notes: ['Internal-only trace; no public technique authority satisfaction'],
+    real_runtime_v3_internal_technique_observation_count: realRuntimeInternalTechniqueCount,
+    satisfying_internal_technique_observation_count: satisfyingInternalTechniqueCount,
+    public_technique_authority_status: 'blocked',
+    cannot_satisfy_technique_observation_gate: !techniqueGateSatisfied,
+    gate_satisfaction_reason: techniqueGateSatisfied ? 'real_runtime_v3_internal_technique_observations_linked' : 'legacy_report_snapshot_not_real_runtime_technique_evidence',
+    technique_observation_trace_gate_status: techniqueGateSatisfied ? 'satisfied' : 'insufficient',
+    blocker_codes: techniqueGateSatisfied ? ['public_technique_authority_blocked'] : ['TechniqueObservation_legacy_only', 'technique_trace_requires_step1_candidate_technique_extractor'], redaction_notes: ['Internal-only trace; no public technique authority satisfaction'],
     ...resolveQADeploymentProvenance(),
   };
   assertSafeSegment(input.take_id, 'take_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/TechniqueObservationTrace.json`, payload, 'technique_observation_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['technique_observation_trace'] : [], source_classification: derivedSourceClassification as 'legacy_adapter' | 'report_snapshot', source_family_summary: sourceFamilySummary as { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number }, level2_satisfies: false as const };
+  return {
+    written: result.written as boolean,
+    emitted_artefact_ids: result.written ? ['technique_observation_trace'] : [],
+    source_classification: derivedSourceClassification,
+    source_family_summary: sourceFamilySummary as { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number },
+    technique_observation_trace_summary: {
+      ...sourceFamilySummary,
+      technique_observation_trace_gate_status: techniqueGateSatisfied ? 'satisfied' : 'insufficient',
+      technique_observation_trace_gate_reason: techniqueGateSatisfied ? 'real_runtime_v3_internal_technique_observations_linked' : 'legacy_report_snapshot_not_real_runtime_technique_evidence',
+      real_runtime_v3_internal_technique_observation_count: realRuntimeInternalTechniqueCount,
+      satisfying_internal_technique_observation_count: satisfyingInternalTechniqueCount,
+      public_technique_authority_status: 'blocked',
+    },
+    level2_satisfies: techniqueGateSatisfied,
+  };
 }
 
 export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
@@ -6012,6 +6188,138 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
   const linkClaims = (sourcePath: string, scoreScope: string, scoreName: string, value: number) => claims
     .filter((c) => c?.source_path === sourcePath || (c?.source_path === sourcePath && Number(c?.claim_text) === value) || (Number(c?.claim_text) === value && c?.score_scope === scoreScope && String(c?.source_path ?? '').startsWith(sourcePath.split('.').slice(0,3).join('.')) && c?.score_name === scoreName))
     .map((c) => String(c.claim_id ?? '')).filter(Boolean);
+  const structuredScoreData = isRecord(input.structured_step2_score_data) ? input.structured_step2_score_data : null;
+  const structuredScoreSourceArtefactId = String(structuredScoreData?.source_artefact_id ?? 'structured_step2_score_projection');
+  const structuredScoreInputEntries = structuredScoreData ? getStructuredScoreEntries(structuredScoreData) : [];
+  if (structuredScoreData && structuredScoreInputEntries.length > 0) {
+    const anchors = (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>>;
+    const selectedLevel = String(structuredScoreData.selected_level ?? '').trim();
+    const auditionType = String(structuredScoreData.audition_type ?? '').trim();
+    const scoreEntries = structuredScoreInputEntries.map((entry, index) => {
+      const scoreValue = finiteNum(entry.score_value ?? entry.value);
+      const scoreBand = typeof entry.score_band === 'string' && entry.score_band.trim() ? entry.score_band.trim() : null;
+      const scoreName = String(entry.score_name ?? entry.name ?? `score_${index + 1}`).trim();
+      const scoreScope = String(entry.score_scope ?? entry.scope ?? 'discipline_attribute').trim();
+      const sourcePathRaw = String(entry.source_path ?? `structured_step2_score_data.score_entries[${index}]`).trim();
+      const sourcePath = sourcePathRaw.startsWith('structured_step2_score_data') ? sourcePathRaw : `structured_step2_score_data.${sourcePathRaw}`;
+      const linkedTruthStateIds = getStringArray(entry.linked_truth_state_ids).length > 0
+        ? getStringArray(entry.linked_truth_state_ids)
+        : getStringArray(structuredScoreData.linked_truth_state_ids);
+      const resolvedTruthStateIds = getResolvedTraceTruthIds(input.truth_state_map_data, linkedTruthStateIds);
+      const requestedAnchorIds = getStringArray(entry.linked_evidence_anchor_ids).length > 0
+        ? getStringArray(entry.linked_evidence_anchor_ids)
+        : getStringArray(structuredScoreData.linked_evidence_anchor_ids);
+      const linkedEvidenceAnchorIds = getRealRuntimeAnchorIdsForTrace(anchors, requestedAnchorIds, linkedTruthStateIds);
+      const sourcePathResolved = readJsonPath({ structured_step2_score_data: structuredScoreData }, sourcePath) !== undefined;
+      const sourceForbidden = isForbiddenInternalProofSource(entry.source_artefact_id ?? structuredScoreSourceArtefactId, sourcePath);
+      const blockerCodes = dedupePreservingOrder([
+        ...(sourceForbidden ? ['forbidden_score_trace_source'] : []),
+        ...(!sourcePathResolved ? ['score_trace_source_path_unresolved'] : []),
+        ...(!selectedLevel ? ['score_trace_selected_level_missing'] : []),
+        ...(scoreValue == null && !scoreBand ? ['score_trace_value_missing'] : []),
+        ...(linkedEvidenceAnchorIds.length === 0 ? ['score_trace_missing_real_runtime_evidence_anchor'] : []),
+        ...(requestedAnchorIds.length > 0 && linkedEvidenceAnchorIds.length !== requestedAnchorIds.length ? ['score_trace_evidence_anchor_unresolved'] : []),
+        ...(linkedTruthStateIds.length === 0 ? ['missing_truth_state_linkage'] : []),
+        ...(linkedTruthStateIds.length > 0 && resolvedTruthStateIds.length !== linkedTruthStateIds.length ? ['truth_state_id_unresolved'] : []),
+      ]);
+      const canSatisfyInternalScoreTraceGate = blockerCodes.length === 0;
+      return {
+        score_trace_id: `st-${input.take_id}-rt-${String(index + 1).padStart(3, '0')}`,
+        source_family: canSatisfyInternalScoreTraceGate ? 'real_runtime_v3_internal_score_proof' : 'real_runtime_v3_internal_score_proof_blocked',
+        source_artefact_id: structuredScoreSourceArtefactId,
+        source_path: sourcePath,
+        source_index: index,
+        score_name: scoreName,
+        score_scope: scoreScope,
+        ...(scoreValue != null ? { score_value: scoreValue, score_scale: String(entry.score_scale ?? '0-100') } : {}),
+        ...(scoreBand ? { score_band: scoreBand } : {}),
+        selected_level: selectedLevel || null,
+        audition_type: auditionType || null,
+        audition_type_status: auditionType ? 'known' : 'unknown',
+        linked_analysis_evidence_state_ref: structuredScoreData.linked_analysis_evidence_state_ref ?? 'analysis/AnalysisEvidenceState.json',
+        linked_evidence_anchor_ids: linkedEvidenceAnchorIds,
+        linked_truth_state_ids: resolvedTruthStateIds,
+        truth_state_entry_ids: resolvedTruthStateIds,
+        component_id: typeof entry.component_id === 'string' ? entry.component_id : null,
+        category_id: typeof entry.category_id === 'string' ? entry.category_id : null,
+        calibration_context_internal_only: true,
+        public_display_status: 'internal_only',
+        public_scoring_status: 'blocked',
+        cannot_satisfy_public_scoring_gate: true,
+        can_satisfy_internal_score_trace_gate: canSatisfyInternalScoreTraceGate,
+        cannot_satisfy_v3_gate: !canSatisfyInternalScoreTraceGate,
+        blocker_codes: blockerCodes,
+        notes: 'structured Step 2 score projection; internal-only score proof',
+      };
+    });
+    const satisfyingScoreEntryCount = scoreEntries.filter((entry) => entry.can_satisfy_internal_score_trace_gate === true).length;
+    const scoreTraceGateSatisfied = scoreEntries.length > 0 && satisfyingScoreEntryCount === scoreEntries.length;
+    const countScope = (scope: string) => scoreEntries.filter((x) => x.score_scope === scope).length;
+    const source_family_summary = {
+      legacy_adapter: 0,
+      report_snapshot: 0,
+      real_runtime_v3: satisfyingScoreEntryCount,
+      input_artifact: 0,
+      resolver_truth_state: 0,
+    };
+    const skipped_component_weight_out_of_range = 0;
+    const summary = {
+      score_count: scoreEntries.length,
+      overall_count: countScope('overall_readiness') + countScope('overall_readiness_internal'),
+      discipline_attribute_count: countScope('discipline_attribute'),
+      component_score_count: countScope('component_score'),
+      component_weight_count: countScope('component_weight'),
+      brief_adherence_subscore_count: countScope('brief_adherence_subscore'),
+      assessment_confidence_count: countScope('assessment_confidence'),
+      calibration_modifier_count: countScope('calibration_modifier'),
+      calibration_metadata_count: countScope('assessment_confidence') + countScope('calibration_modifier'),
+      source_family_summary,
+      real_runtime_v3_internal_score_entry_count: satisfyingScoreEntryCount,
+      overall_readiness_public_score_status: 'blocked' as const,
+      discipline_attribute_score_trace_status: scoreTraceGateSatisfied ? 'real_runtime_v3_internal_trace' as const : 'internal_trace_only' as const,
+      score_trace_gate_status: scoreTraceGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+      score_trace_gate_reason: scoreTraceGateSatisfied ? 'real_runtime_v3_internal_score_projection_linked' as const : 'structured_score_projection_unresolved_or_incomplete' as const,
+      skipped_component_weight_out_of_range,
+      blocker_codes: scoreTraceGateSatisfied ? ['public_scoring_blocked'] : ['score_trace_requires_structured_step2_score_projection', 'score_trace_structured_projection_linkage_incomplete'],
+    };
+    const payload = {
+      schema_version: 'tapecoach_v3_score_trace_real_runtime_internal_v1',
+      artefact_type: 'score_trace',
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      run_id: input.run_id,
+      analysis_run_id: analysisRunId,
+      take_id: input.take_id,
+      generated_at: new Date().toISOString(),
+      source_module: input.source_module ?? 'qa-artifacts-wiring.server',
+      source_stage: input.source_stage ?? 'process_take_success',
+      source_classification: scoreTraceGateSatisfied ? 'real_runtime_v3_internal_score_proof' : 'real_runtime_v3_internal_score_proof_blocked',
+      trace_mode: 'structured_step2_score_projection_internal',
+      score_count: scoreEntries.length,
+      score_entries: scoreEntries,
+      source_family_summary,
+      overall_readiness_public_score_status: 'blocked',
+      discipline_attribute_score_trace_status: summary.discipline_attribute_score_trace_status,
+      public_scoring_status: 'blocked',
+      cannot_satisfy_score_gate: !scoreTraceGateSatisfied,
+      gate_satisfaction_reason: summary.score_trace_gate_reason,
+      blocker_codes: summary.blocker_codes,
+      linked_public_claim_trace_summary: { claim_count: claims.length },
+      score_trace_summary: summary,
+      ...resolveQADeploymentProvenance(),
+    };
+    assertSafeSegment(input.take_id, 'take_id');
+    assertSafeSegment(analysisRunId, 'analysis_run_id');
+    const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ScoreTrace.json`, payload, 'score_trace');
+    return {
+      written: result.written as boolean,
+      emitted_artefact_ids: result.written ? ['score_trace'] : [],
+      source_classification: payload.source_classification,
+      level2_satisfies: scoreTraceGateSatisfied,
+      score_entries: scoreEntries,
+      score_trace_summary: summary,
+    };
+  }
   const push = (scope: string, name: string, value: unknown, sourcePath: string, extra: Record<string, unknown> = {}) => {
     const num = finiteNum(value);
     if (num == null) return;
@@ -6080,48 +6388,132 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   assertSafeSegment(takeId, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
-  const safeEntries = (input.model_run_entries ?? []).filter((entry) => entry && typeof entry === 'object').map((entry, idx) => ({
-    model_run_id: entry.model_run_id ?? `model-run-${takeId}-${idx + 1}`,
-    model_provider: entry.model_provider ?? null,
-    model_name: entry.model_name ?? null,
-    model_role: entry.model_role ?? 'unknown',
-    source_stage: entry.source_stage ?? input.source_stage,
-    started_at: entry.started_at ?? null,
-    completed_at: entry.completed_at ?? null,
-    duration_ms: Number.isFinite(entry.duration_ms) ? entry.duration_ms : null,
-    timeout_ms: Number.isFinite(entry.timeout_ms) && Number(entry.timeout_ms) >= 0 ? Number(entry.timeout_ms) : null,
-    timed_out: Boolean(entry.timed_out),
-    retry_count: Number.isFinite(entry.retry_count) ? entry.retry_count : 0,
-    attempt_index: Number.isFinite(entry.attempt_index) ? entry.attempt_index : (idx + 1),
-    http_status: Number.isFinite(entry.http_status) ? entry.http_status : null,
-    circuit_open: typeof entry.circuit_open === 'boolean' ? entry.circuit_open : null,
-    fallback_used: Boolean(entry.fallback_used),
-    analysis_tier: entry.analysis_tier ?? null,
-    request_status: entry.request_status ?? 'unknown',
-    parse_status: entry.parse_status ?? 'unknown',
-    safe_error_category: entry.safe_error_category ?? null,
-    input_artifact_refs: ['inputs/input_record.json'],
-    output_artifact_refs: ['reports/raw_report.json'],
-    source_classification: 'internal_model_run_trace',
-    independent_model_proof_status: 'metadata_only_insufficient',
-    raw_prompt_or_response_stored: false,
-    secrets_or_signed_urls_stored: false,
-    blocker_codes: ['ModelRunTrace_internal_only'],
-  }));
+  const expectedStages = dedupePreservingOrder([
+    ...(input.expected_model_stages ?? ['analysis_step_1_evidence_pass', 'analysis_step_2_judgement_or_report_polish', 'validator']),
+    ...(input.comparison_invoked ? ['comparison'] : []),
+  ]);
+  const rawEntries = (input.model_run_entries ?? []).filter((entry) => entry && typeof entry === 'object');
+  const normaliseStage = (entry: ModelRunTraceEntryInput, idx: number) => {
+    const candidate = String(entry.stage ?? entry.source_stage ?? input.source_stage ?? '').trim();
+    if (candidate === 'analysis_generation' || candidate === 'analysis_step_2' || candidate === 'report_polish') return 'analysis_step_2_judgement_or_report_polish';
+    if (candidate === 'evidence_pass' || candidate === 'analysis_step_1') return 'analysis_step_1_evidence_pass';
+    return candidate || `unknown_model_stage_${idx + 1}`;
+  };
+  const safeEntries = rawEntries.map((entry, idx) => {
+    const stage = normaliseStage(entry, idx);
+    const invocationStatus = entry.invocation_status ?? (entry.request_status === 'failed'
+      ? 'failed'
+      : (entry.request_status === 'timed_out' ? 'failed' : 'invoked'));
+    const independentStatus = expectedStages.includes(stage) && invocationStatus === 'invoked'
+      ? 'per_stage_metadata_partial'
+      : 'metadata_only_insufficient';
+    return {
+      model_run_id: entry.model_run_id ?? `model-run-${takeId}-${idx + 1}`,
+      stage,
+      invocation_status: invocationStatus,
+      model_provider: entry.model_provider ?? null,
+      model_name: entry.model_name ?? null,
+      model_version: entry.model_version ?? null,
+      prompt_version: entry.prompt_version ?? null,
+      model_role: entry.model_role ?? 'unknown',
+      source_stage: entry.source_stage ?? input.source_stage,
+      started_at: entry.started_at ?? null,
+      completed_at: entry.completed_at ?? null,
+      duration_ms: Number.isFinite(entry.duration_ms) ? entry.duration_ms : null,
+      timeout_ms: Number.isFinite(entry.timeout_ms) && Number(entry.timeout_ms) >= 0 ? Number(entry.timeout_ms) : null,
+      timed_out: Boolean(entry.timed_out),
+      retry_count: Number.isFinite(entry.retry_count) ? entry.retry_count : 0,
+      attempt_index: Number.isFinite(entry.attempt_index) ? entry.attempt_index : (idx + 1),
+      http_status: Number.isFinite(entry.http_status) ? entry.http_status : null,
+      circuit_open: typeof entry.circuit_open === 'boolean' ? entry.circuit_open : null,
+      fallback_used: Boolean(entry.fallback_used),
+      analysis_tier: entry.analysis_tier ?? null,
+      request_status: entry.request_status ?? (invocationStatus === 'invoked' ? 'unknown' : 'skipped'),
+      parse_status: entry.parse_status ?? 'unknown',
+      safe_error_category: entry.safe_error_category ?? null,
+      input_artifact_refs: getStringArray(entry.input_artifact_refs).length > 0 ? getStringArray(entry.input_artifact_refs) : ['inputs/input_record.json'],
+      output_artifact_refs: getStringArray(entry.output_artifact_refs).length > 0 ? getStringArray(entry.output_artifact_refs) : ['reports/raw_report.json'],
+      source_classification: 'model_run_metadata_partial',
+      independent_model_proof_status: independentStatus,
+      raw_prompt_or_response_stored: entry.raw_prompt_or_response_stored === true ? true : false,
+      secrets_or_signed_urls_stored: entry.secrets_or_signed_urls_stored === true ? true : false,
+      blocker_codes: independentStatus === 'per_stage_metadata_partial' ? ['model_run_trace_independent_proof_partial'] : ['ModelRunTrace_internal_only'],
+    };
+  });
+  const representedStages = new Set(safeEntries.map((entry) => String(entry.stage)));
+  const syntheticStageEntries = expectedStages
+    .filter((stage) => !representedStages.has(stage))
+    .map((stage, idx) => ({
+      model_run_id: `model-run-${takeId}-stage-${idx + 1}`,
+      stage,
+      invocation_status: stage === 'comparison' && !input.comparison_invoked ? 'not_applicable' : 'skipped',
+      model_provider: null,
+      model_name: null,
+      model_version: null,
+      prompt_version: null,
+      model_role: 'unknown',
+      source_stage: stage,
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      timeout_ms: null,
+      timed_out: false,
+      retry_count: 0,
+      attempt_index: null,
+      http_status: null,
+      circuit_open: null,
+      fallback_used: false,
+      analysis_tier: null,
+      request_status: stage === 'comparison' && !input.comparison_invoked ? 'not_applicable' : 'skipped',
+      parse_status: 'skipped',
+      safe_error_category: null,
+      input_artifact_refs: [],
+      output_artifact_refs: [],
+      source_classification: 'model_run_metadata_partial',
+      independent_model_proof_status: 'stage_not_invoked',
+      raw_prompt_or_response_stored: false,
+      secrets_or_signed_urls_stored: false,
+      blocker_codes: [stage === 'comparison' && !input.comparison_invoked ? 'model_stage_not_applicable' : 'model_stage_not_invoked'],
+    }));
+  const allEntries = [...safeEntries, ...syntheticStageEntries];
   if (safeEntries.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const invokedKnownStageCount = safeEntries.filter((entry) => entry.invocation_status === 'invoked' && expectedStages.includes(String(entry.stage))).length;
+  const hasDistinctRequiredStageBoundary = representedStages.has('analysis_step_2_judgement_or_report_polish')
+    && (representedStages.has('analysis_step_1_evidence_pass') || syntheticStageEntries.some((entry) => entry.stage === 'analysis_step_1_evidence_pass'));
+  const rawPromptOrResponseStored = allEntries.some((entry) => entry.raw_prompt_or_response_stored === true);
+  const secretsOrSignedUrlsStored = allEntries.some((entry) => entry.secrets_or_signed_urls_stored === true);
+  const perStageModelProofStatus = hasDistinctRequiredStageBoundary
+    ? 'per_stage_model_proof_partial'
+    : 'partial_missing_stage_boundaries';
+  const independentModelProofStatus = hasDistinctRequiredStageBoundary && !rawPromptOrResponseStored && !secretsOrSignedUrlsStored
+    ? 'independent_model_proof_partial'
+    : 'metadata_only_insufficient';
   const summary = {
-    model_run_count: safeEntries.length,
+    model_run_count: allEntries.length,
     model_run_completed_count: safeEntries.filter((x) => x.request_status === 'completed').length,
     model_run_failed_count: safeEntries.filter((x) => x.request_status === 'failed').length,
     model_run_timeout_count: safeEntries.filter((x) => x.request_status === 'timed_out' || x.timed_out).length,
     model_run_fallback_count: safeEntries.filter((x) => x.fallback_used).length,
+    invoked_stage_count: invokedKnownStageCount,
+    skipped_stage_count: allEntries.filter((x) => x.invocation_status === 'skipped').length,
+    not_applicable_stage_count: allEntries.filter((x) => x.invocation_status === 'not_applicable').length,
+    model_run_stage_names: allEntries.map((x) => x.stage),
+    model_run_missing_stage_names: expectedStages.filter((stage) => !representedStages.has(stage)),
     model_run_trace_gate_status: 'insufficient' as const,
-    model_run_trace_gate_reason: 'runtime_metadata_without_independent_model_proof_chain' as const,
-    independent_model_proof_status: 'metadata_only_insufficient' as const,
-    per_stage_model_proof_status: 'partial_metadata_only' as const,
-    raw_prompt_or_response_stored: false as const,
-    secrets_or_signed_urls_stored: false as const,
-    forbidden_payload_fields_absent: true as const,
+    model_run_trace_gate_reason: independentModelProofStatus === 'independent_model_proof_partial'
+      ? 'per_stage_model_metadata_partial_not_full_independent_proof_chain' as const
+      : 'runtime_metadata_without_distinct_stage_boundaries' as const,
+    independent_model_proof_status: independentModelProofStatus,
+    per_stage_model_proof_status: perStageModelProofStatus,
+    raw_prompt_or_response_stored: rawPromptOrResponseStored,
+    secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
+    forbidden_payload_fields_absent: !rawPromptOrResponseStored && !secretsOrSignedUrlsStored,
+    blocker_codes: dedupePreservingOrder([
+      'ModelRunTrace_independent_proof_partial',
+      ...(hasDistinctRequiredStageBoundary ? [] : ['model_run_trace_requires_distinct_stage_boundaries']),
+      ...(rawPromptOrResponseStored ? ['raw_prompt_or_response_storage_detected'] : []),
+      ...(secretsOrSignedUrlsStored ? ['secrets_or_signed_urls_storage_detected'] : []),
+    ]),
   };
   const payload = {
     schema_version: 'tapecoach_v3_model_run_trace_first_pass_v1',
@@ -6134,22 +6526,23 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     generated_at: new Date().toISOString(),
     source_module: input.source_module,
     source_stage: input.source_stage,
-    source_classification: 'internal_model_run_trace',
+    source_classification: 'model_run_metadata_partial',
     analysis_route: input.analysis_route ?? 'runProcessTake',
     trace_mode: 'first_pass_runtime_model_metadata',
-    independent_model_proof_status: 'metadata_only_insufficient',
-    per_stage_model_proof_status: 'partial_metadata_only',
-    model_run_count: safeEntries.length,
-    model_run_entries: safeEntries,
+    independent_model_proof_status: independentModelProofStatus,
+    per_stage_model_proof_status: perStageModelProofStatus,
+    expected_model_stages: expectedStages,
+    model_run_count: allEntries.length,
+    model_run_entries: allEntries,
     model_run_trace_summary: summary,
     redaction_policy: 'Exclude prompts/raw model output/request+response bodies/headers/secrets/tokens/session identifiers/signed URLs.',
     redacted_fields: ['prompt', 'raw_prompt', 'system_prompt', 'user_prompt', 'request_body', 'raw_response', 'response_text', 'authorization', 'api_key', 'token', 'cookie', 'session', 'signed_url'],
     forbidden_fields_absent: true,
-    raw_prompt_or_response_stored: false,
-    secrets_or_signed_urls_stored: false,
+    raw_prompt_or_response_stored: rawPromptOrResponseStored,
+    secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
     cannot_satisfy_model_run_gate: true,
-    gate_satisfaction_reason: 'runtime_metadata_without_independent_model_proof_chain',
-    blocker_codes: ['ModelRunTrace_internal_only'],
+    gate_satisfaction_reason: summary.model_run_trace_gate_reason,
+    blocker_codes: summary.blocker_codes,
     public_output_unchanged: true,
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
@@ -6157,7 +6550,7 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     ...resolveQADeploymentProvenance(),
   };
   const result = await writeInternalJson(root, input.run_id, `takes/take-${takeId}/analysis-${analysisRunId}/traces/ModelRunTrace.json`, payload, 'model_run_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], model_run_trace_summary: result.written ? summary : undefined };
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], source_classification: payload.source_classification, model_run_trace_summary: result.written ? summary : undefined };
 }
 export async function emitNoExportProofBundle(input: { run_id: string; proofs?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string }) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -8005,11 +8398,11 @@ export async function emitValidatorTraceFirstPass(input: any) {
     { validation_id: 'public_technique_authority_status_agreement', validation_rule_version: 's9-18h-internal-snapshot-v1', validation_area: 'manifest_metrics_agreement', subject: 'public_technique_authority_status', status: input.manifest_snapshot.public_technique_authority_status === input.acceptance_metrics_snapshot.public_technique_authority_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.public_technique_authority_status, observed: input.manifest_snapshot.public_technique_authority_status, source_path: 'manifest.public_technique_authority_status', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
     { validation_id: 'production_safe_status_agreement', validation_rule_version: 's9-18h-internal-snapshot-v1', validation_area: 'manifest_metrics_agreement', subject: 'production_safe_status', status: input.manifest_snapshot.production_safe_status === input.acceptance_metrics_snapshot.production_safe_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.production_safe_status, observed: input.manifest_snapshot.production_safe_status, source_path: 'manifest.production_safe_status', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
   ];
-  const addMetricValidation = (args: { validation_id: string; validation_area: string; subject: string; expected: unknown; observed: unknown; source_path: string; related_artefact_ids: string[]; passWhen?: (observed: unknown) => boolean; blocker_code?: string }) => {
+  const addMetricValidation = (args: { validation_id: string; validation_area: string; subject: string; expected: unknown; observed: unknown; source_path: string; related_artefact_ids: string[]; passWhen?: (observed: unknown) => boolean; blocker_code?: string; validation_rule_version?: string }) => {
     const pass = args.passWhen ? args.passWhen(args.observed) : args.observed === args.expected;
     entries.push({
       validation_id: args.validation_id,
-      validation_rule_version: 's9-19b-ordinary-analysis-proof-chain-v1',
+      validation_rule_version: args.validation_rule_version ?? 's9-19b-ordinary-analysis-proof-chain-v1',
       validation_area: args.validation_area,
       subject: args.subject,
       status: pass ? 'pass' : 'warn',
@@ -8025,8 +8418,13 @@ export async function emitValidatorTraceFirstPass(input: any) {
   addMetricValidation({ validation_id: 'analysis_evidence_state_gate_status_recorded', validation_area: 'ordinary_analysis_proof_bundle', subject: 'analysis_evidence_state_gate_status', expected: 'satisfied_or_insufficient', observed: input.acceptance_metrics_snapshot.analysis_evidence_state_gate_status, source_path: 'qa.acceptance_metrics.analysis_evidence_state_gate_status', related_artefact_ids: ['analysis_evidence_state'], passWhen: (value) => ['satisfied', 'insufficient', 'missing'].includes(String(value)), blocker_code: 'analysis_evidence_state_gate_status_missing' });
   addMetricValidation({ validation_id: 'evidence_anchor_aggregate_status_recorded', validation_area: 'ordinary_analysis_proof_bundle', subject: 'evidence_anchor_gate_status', expected: 'sufficient_or_insufficient', observed: input.acceptance_metrics_snapshot.evidence_anchor_gate_status, source_path: 'qa.acceptance_metrics.evidence_anchor_gate_status', related_artefact_ids: ['evidence_anchors'], passWhen: (value) => ['sufficient', 'insufficient', 'missing'].includes(String(value)), blocker_code: 'evidence_anchor_gate_status_missing' });
   addMetricValidation({ validation_id: 'public_claim_trace_aggregate_status_recorded', validation_area: 'ordinary_analysis_proof_bundle', subject: 'public_claim_gate_status', expected: 'sufficient_or_insufficient', observed: input.acceptance_metrics_snapshot.public_claim_gate_status, source_path: 'qa.acceptance_metrics.public_claim_gate_status', related_artefact_ids: ['public_claim_trace'], passWhen: (value) => ['sufficient', 'insufficient', 'missing'].includes(String(value)), blocker_code: 'public_claim_gate_status_missing' });
-  addMetricValidation({ validation_id: 'score_trace_remains_non_public', validation_area: 'score_trace_gate', subject: 'score_trace_gate_status', expected: 'insufficient', observed: input.acceptance_metrics_snapshot.score_trace_gate_status, source_path: 'qa.acceptance_metrics.score_trace_gate_status', related_artefact_ids: ['score_trace'], passWhen: (value) => value === 'insufficient' || value === 'missing', blocker_code: 'score_trace_gate_unexpected_status' });
-  addMetricValidation({ validation_id: 'technique_trace_remains_non_public', validation_area: 'technique_observation_trace_gate', subject: 'technique_observation_trace_status', expected: 'legacy_or_internal_non_satisfying', observed: input.acceptance_metrics_snapshot.technique_observation_real_runtime_count, source_path: 'qa.acceptance_metrics.technique_observation_real_runtime_count', related_artefact_ids: ['technique_observation_trace'], passWhen: (value) => Number(value ?? 0) === 0, blocker_code: 'technique_observation_trace_unexpected_real_runtime_count' });
+  addMetricValidation({ validation_id: 'score_trace_remains_non_public', validation_area: 'score_trace_gate', subject: 'score_trace_gate_status', expected: 'internal_or_insufficient_score_trace_with_public_scoring_blocked', observed: input.acceptance_metrics_snapshot.score_trace_gate_status, source_path: 'qa.acceptance_metrics.score_trace_gate_status', related_artefact_ids: ['score_trace'], passWhen: (value) => ['insufficient', 'missing', 'satisfied'].includes(String(value)) && input.acceptance_metrics_snapshot.public_scoring_status === 'blocked', blocker_code: 'score_trace_gate_unexpected_status' });
+  addMetricValidation({ validation_id: 'technique_trace_remains_non_public', validation_area: 'technique_observation_trace_gate', subject: 'technique_observation_trace_status', expected: 'internal_or_insufficient_technique_trace_with_public_authority_blocked', observed: input.acceptance_metrics_snapshot.technique_observation_gate_status, source_path: 'qa.acceptance_metrics.technique_observation_gate_status', related_artefact_ids: ['technique_observation_trace'], passWhen: (value) => ['insufficient', 'missing', 'satisfied'].includes(String(value)) && input.acceptance_metrics_snapshot.public_technique_authority_status === 'blocked', blocker_code: 'technique_observation_trace_unexpected_real_runtime_count' });
+  addMetricValidation({ validation_id: 'score_trace_internal_proof_status_recorded', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'score_trace_internal_proof_status', expected: 'recorded', observed: input.acceptance_metrics_snapshot.score_trace_internal_proof_status, source_path: 'qa.acceptance_metrics.score_trace_internal_proof_status', related_artefact_ids: ['score_trace'], passWhen: (value) => typeof value === 'string' && value.length > 0, blocker_code: 'score_trace_internal_proof_status_missing', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'technique_trace_internal_proof_status_recorded', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'technique_observation_internal_proof_status', expected: 'recorded', observed: input.acceptance_metrics_snapshot.technique_observation_internal_proof_status, source_path: 'qa.acceptance_metrics.technique_observation_internal_proof_status', related_artefact_ids: ['technique_observation_trace'], passWhen: (value) => typeof value === 'string' && value.length > 0, blocker_code: 'technique_observation_internal_proof_status_missing', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'model_run_per_stage_proof_status_recorded', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_trace_per_stage_model_proof_status', expected: 'recorded', observed: input.acceptance_metrics_snapshot.model_run_trace_per_stage_model_proof_status, source_path: 'qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status', related_artefact_ids: ['model_run_trace'], passWhen: (value) => typeof value === 'string' && value.length > 0 && value !== 'missing', blocker_code: 'model_run_trace_per_stage_status_missing', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'model_run_raw_prompt_response_absent', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_raw_prompt_or_response_stored', expected: false, observed: input.acceptance_metrics_snapshot.model_run_raw_prompt_or_response_stored, source_path: 'qa.acceptance_metrics.model_run_raw_prompt_or_response_stored', related_artefact_ids: ['model_run_trace'], passWhen: (value) => value === false, blocker_code: 'raw_prompt_or_response_storage_detected', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'model_run_secrets_absent', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_secrets_or_signed_urls_stored', expected: false, observed: input.acceptance_metrics_snapshot.model_run_secrets_or_signed_urls_stored, source_path: 'qa.acceptance_metrics.model_run_secrets_or_signed_urls_stored', related_artefact_ids: ['model_run_trace'], passWhen: (value) => value === false, blocker_code: 'secrets_or_signed_urls_storage_detected', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
   addMetricValidation({ validation_id: 'report_parity_passed_status_recorded', validation_area: 'report_parity_gate', subject: 'report_parity_status', expected: 'passed_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.report_parity_status, source_path: 'qa.acceptance_metrics.report_parity_status', related_artefact_ids: ['parity_report'], passWhen: (value) => ['passed', 'missing', 'insufficient'].includes(String(value)), blocker_code: 'report_parity_status_missing' });
   addMetricValidation({ validation_id: 'no_export_complete_status_recorded', validation_area: 'no_export_gate', subject: 'no_export_status', expected: 'complete_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.no_export_status, source_path: 'qa.acceptance_metrics.no_export_status', related_artefact_ids: ['no_export_proof'], passWhen: (value) => ['no_export_proof_complete', 'no_export_proof_missing', 'no_export_proof_insufficient'].includes(String(value)), blocker_code: 'no_export_status_missing' });
   const summary = {
@@ -8039,7 +8437,7 @@ export async function emitValidatorTraceFirstPass(input: any) {
     validator_trace_gate_reason: 'ordinary_analysis_artifact_snapshot_checks_partial_not_independent_runtime_v3_proof' as const,
     independent_validation_status: 'independent_validation_partial' as const,
     referential_integrity_status: 'partial_snapshot_checks' as const,
-    deterministic_checks_version: 's9-19b-ordinary-analysis-proof-chain-v1' as const,
+    deterministic_checks_version: 's9-19c-score-technique-modelrun-proof-v1' as const,
     public_private_leakage_validation_status: 'not_independent' as const,
     uk_english_validation_status: 'not_run' as const,
     render_permission_validation_status: 'not_independent' as const,
@@ -8063,7 +8461,7 @@ export async function emitGateTraceFirstPass(input: any) {
   const gate_entries: Array<Record<string, unknown>> = [
     { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', notes: null },
     { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing', expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [], blocker_codes: ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing', expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [], blocker_codes: ['ModelRunTrace_internal_only'], dependent_artefact_ids: ['model_run_trace'], source_paths: ['traces/ModelRunTrace.json'], public_effect: 'none_internal_only', notes: null },
+    { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? (input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing')), expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [`qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status=${String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? 'missing')}`], blocker_codes: ['ModelRunTrace_independent_proof_partial'], dependent_artefact_ids: ['model_run_trace'], source_paths: ['traces/ModelRunTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', notes: null },
     { gate_id: 'production_safe_gate', gate_name: 'production_safe_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['manifest.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', notes: null },
     { gate_id: 'public_scoring_gate', gate_name: 'public_scoring_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_overall_score=false'], blocker_codes: ['public_scoring_blocked'], dependent_artefact_ids: ['score_trace', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_scores', notes: null },
     { gate_id: 'public_technique_authority_gate', gate_name: 'public_technique_authority_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_public_technique_names=false'], blocker_codes: ['public_technique_authority_blocked'], dependent_artefact_ids: ['technique_observation_trace', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_named_techniques', notes: null },
@@ -8102,15 +8500,15 @@ export async function emitGateTraceFirstPass(input: any) {
   addOrdinaryGate({ gate_id: 'ordinary_comparison_not_applicable_gate', gate_family: 'comparison', metric_key: 'comparison_status', expected_state_for_acceptance: 'not_applicable', dependent_artefact_ids: ['parity_comparison'], source_paths: ['qa/acceptance_metrics.json'], blocker_codes: ['comparison_gate_unexpectedly_applicable'], satisfiedValues: ['not_applicable', 'not_invoked'], notApplicableValues: ['not_applicable', 'not_invoked'] });
   const summary = {
     gate_count: gate_entries.length,
-    passed_gate_count: 0,
+    passed_gate_count: gate_entries.filter((g) => g.status === 'passed').length,
     blocked_gate_count: gate_entries.filter((g) => g.status === 'blocked').length,
     insufficient_gate_count: gate_entries.filter((g) => g.status === 'insufficient').length,
     missing_gate_count: gate_entries.filter((g) => g.status === 'missing').length,
-    not_applicable_gate_count: 0,
+    not_applicable_gate_count: gate_entries.filter((g) => g.status === 'not_applicable').length,
     gate_trace_gate_status: 'insufficient' as const,
     gate_trace_gate_reason: 'ordinary_analysis_gate_decisions_partial_not_level2_acceptance_proof' as const,
     independent_gate_decision_status: 'independent_gate_partial' as const,
-    gate_registry_version: 's9-19b-ordinary-analysis-gate-registry-v1' as const,
+    gate_registry_version: 's9-19c-score-technique-modelrun-gate-registry-v1' as const,
     public_output_permissions: BLOCKED_PUBLIC_OUTPUT_PERMISSIONS,
   };
   const payload = {
