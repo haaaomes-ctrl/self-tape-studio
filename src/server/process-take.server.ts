@@ -1252,6 +1252,7 @@ export async function runProcessTake(
     let evidencePassHttpStatus: number | null = null;
     let evidencePassRequestStatus: 'completed' | 'failed' | 'timed_out' | null = null;
     let evidencePassParseStatus: 'completed' | 'unknown' = 'unknown';
+    let evidencePassSafeErrorCategory: string | null = null;
     let preStep2InputArtefacts: Awaited<ReturnType<typeof emitAnalysisInputArtefacts>> | null = null;
     let preStep2ResolverTruth: Awaited<ReturnType<typeof emitResolverOutputAndTruthStateMap>> | null = null;
     let preStep2AnalysisEvidenceState: Awaited<ReturnType<typeof emitAnalysisEvidenceStatePrerequisite>> | null = null;
@@ -1353,6 +1354,7 @@ export async function runProcessTake(
       evidencePassHttpStatus = evResult.httpStatus;
       evidencePassRequestStatus = evAc.signal.aborted ? 'timed_out' : (evResult.ok ? 'completed' : 'failed');
       evidencePassParseStatus = evResult.ok ? 'completed' : 'unknown';
+      evidencePassSafeErrorCategory = evResult.ok ? null : evResult.safe_error_category;
 
       if (!evResult.ok) {
         // Step 1 failure → fall back to single-pass for this run. Don't
@@ -1360,7 +1362,7 @@ export async function runProcessTake(
         console.warn("[take-pipeline] evidence_pass_failed; falling back to single-pass", {
           ...baseLog,
           http_status: evResult.httpStatus,
-          error: evResult.error.slice(0, 200),
+          safe_error_category: evResult.safe_error_category,
           duration_ms: evResult.durationMs,
         });
         metric("evidence_pass_failed", {
@@ -3900,6 +3902,7 @@ export async function runProcessTake(
             analysis_tier: tier,
             request_status: evidencePassRequestStatus ?? ('failed' as const),
             parse_status: evidencePassParseStatus,
+            safe_error_category: evidencePassSafeErrorCategory ?? undefined,
             input_artifact_refs: ['inputs/input_record.json'],
             output_artifact_refs: ['analysis/Step1ObservableEvidence.json', 'analysis/AnalysisEvidenceState.json'],
             raw_prompt_or_response_stored: false,

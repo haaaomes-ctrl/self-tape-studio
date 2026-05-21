@@ -8641,7 +8641,8 @@ export async function emitValidatorTraceFirstPass(input: any) {
   const publicTechniqueSuppressionSatisfied = input.acceptance_metrics_snapshot.public_technique_authority_suppression_proof_status === 'satisfied'
     && input.acceptance_metrics_snapshot.public_technique_gate_permission === false
     && input.acceptance_metrics_snapshot.public_named_technique_fields_absent_from_public_payload === true
-    && input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed === true;
+    && input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed === true
+    && input.acceptance_metrics_snapshot.public_technique_authority_content_scan_status === 'satisfied';
   const publicComparisonSuppressionSatisfied = ['satisfied', 'not_applicable'].includes(String(input.acceptance_metrics_snapshot.public_comparison_recommendation_suppression_proof_status))
     && input.acceptance_metrics_snapshot.comparison_recommendation_gate_permission === false
     && input.acceptance_metrics_snapshot.public_winner_absent === true
@@ -8688,6 +8689,7 @@ export async function emitValidatorTraceFirstPass(input: any) {
       public_technique_gate_permission: input.acceptance_metrics_snapshot.public_technique_gate_permission,
       public_named_technique_fields_absent_from_public_payload: input.acceptance_metrics_snapshot.public_named_technique_fields_absent_from_public_payload,
       public_named_technique_claims_suppressed: input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed,
+      public_technique_authority_content_scan_status: input.acceptance_metrics_snapshot.public_technique_authority_content_scan_status,
     },
     source_path: 'qa.acceptance_metrics.public_technique_authority_suppression_proof_status',
     related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'public_claim_trace', 'technique_observation_trace', 'parity_report', 'no_export_proof'],

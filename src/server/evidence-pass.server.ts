@@ -62,6 +62,32 @@ const EVIDENCE_TOOL = {
             required: ["type", "weight", "score", "note"],
           },
         },
+        candidate_technique_evidence: {
+          type: "array",
+          description:
+            "Internal-only candidate technique or safe descriptor observations. These are NOT public technique authority claims. Include only observable descriptors or assessability limitations, never technique approval.",
+          items: {
+            type: "object",
+            properties: {
+              safe_evidence_summary: { type: "string", maxLength: 220 },
+              evidence_modality: {
+                type: "string",
+                enum: ["video", "audio", "material", "unknown"],
+              },
+              observation_type: {
+                type: "string",
+                enum: [
+                  "internal_shadow",
+                  "limitation_only",
+                  "public_safe_descriptor_candidate",
+                ],
+              },
+              timestamp: { type: "string" },
+            },
+            required: ["safe_evidence_summary", "evidence_modality", "observation_type"],
+          },
+          maxItems: 8,
+        },
         raw_scores: {
           type: "object",
           properties: {
@@ -285,6 +311,7 @@ Rules:
   * absolute technical maximum: 36
 - For DANCE: cover rhythm/timing, control/coordination, transitions/pathway, dynamics/attack/release, performance presence, and at least 1 improvement moment. Do not invent style/subtype confidence; if style is not supplied, note that and assess from observable movement only.
 - For MUSICAL THEATRE: cover acting scene, song, scene-to-song transition, acting-through-song, vocal technique in service of story/style, and at least 1 improvement/fix moment.
+- candidate_technique_evidence is internal-only. Use it only for observable safe descriptor candidates or limitations, e.g. eyeline shift observed, breath/noise limitation, movement visibility limitation. Never claim public technique authority or that a named technique was demonstrated.
 - Before returning, self-check: if the tape is 3+ minutes, multi-component, and assessable, and you have under-produced for the duration band, re-scan the tape and add the missing moments before returning.
 - NEVER reference page numbers, line numbers, "page X", "line X", "script page", "book page", "the side", "the sides", "in the script", or "in the book". The system has no page/line/sides metadata. Use timestamps or neutral moment descriptions only ("during the longer speech", "around 02:14", "before the reader's line", "in the scene section").
 - Visual presentation evidence (presentation_evidence) may name a clothing colour ONLY when the colour is clearly visible and the colour itself is the observation that matters (e.g. low contrast against the background). When colour is not essential, use colour-neutral wording such as "the performer separates clearly from the background" or "the framing is clean and easy to read". Never guess at colour.
@@ -294,7 +321,7 @@ Rules:
 - Order presentation_evidence with the most technically useful first.
 - Score categories on the same 0–100 scale as the final report.
 - For BASELINE (no brief), still score brief_adherence as a professional-standards equivalent.
-- Use null for vocal when there is no singing.
+- If the provider schema rejects null for vocal, omit raw_scores.vocal when there is no singing; the server will normalise it to null.
 - Keep observation/why_it_matters short, concrete, and DIFFERENT from each other. If they would say the same thing, merge into one useful note.
 - Never invent timestamps. Never pad. If fewer genuine moments exist, return fewer.
 - Never comment on appearance, body, age, race, class, disability, mobility aids, medical devices, or socioeconomic status. If something affects assessability, comment only on the technical outcome (e.g. "the frame cuts off part of the movement").
@@ -317,6 +344,18 @@ export type EvidencePass = {
     weight: number;
     score: number;
     note: string;
+  }>;
+  candidate_technique_evidence?: Array<{
+    safe_evidence_summary?: string;
+    evidence?: string;
+    label?: string;
+    evidence_modality?: string;
+    modality?: string;
+    observation_type?: string;
+    timestamp?: string;
+    score?: number;
+    authoritative?: boolean;
+    diagnosis?: string;
   }>;
   raw_scores: {
     technical: number;
@@ -435,9 +474,56 @@ export type RunEvidencePassResult =
       ok: false;
       httpStatus: number | null;
       error: string;
+      safe_error_category:
+        | "provider_request_contract_error"
+        | "provider_response_schema_error"
+        | "provider_timeout"
+        | "provider_unavailable"
+        | "parser_error"
+        | "unknown_safe_error";
       durationMs: number;
       model: string;
     };
+
+type EvidencePassSafeErrorCategory =
+  Extract<RunEvidencePassResult, { ok: false }>["safe_error_category"];
+
+export function classifyEvidencePassSafeErrorCategory(
+  httpStatus: number | null,
+  error?: unknown,
+): EvidencePassSafeErrorCategory {
+  const message = error instanceof Error
+    ? error.message
+    : (typeof error === "string" ? error : "");
+  if (message.toLowerCase().includes("abort") || message.toLowerCase().includes("timeout")) {
+    return "provider_timeout";
+  }
+  if (httpStatus === 400 || httpStatus === 422) return "provider_request_contract_error";
+  if (httpStatus === 408 || httpStatus === 504) return "provider_timeout";
+  if (httpStatus === 429 || (typeof httpStatus === "number" && httpStatus >= 500)) return "provider_unavailable";
+  if (error instanceof SyntaxError || message.includes("JSON") || message.toLowerCase().includes("parse")) return "parser_error";
+  if (message === "evidence_pass_no_tool_call") return "provider_response_schema_error";
+  return "unknown_safe_error";
+}
+
+function cloneForProviderToolSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => cloneForProviderToolSchema(item));
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "type" && Array.isArray(child)) {
+      const nonNullType = child.find((item) => item !== "null");
+      out.type = typeof nonNullType === "string" ? nonNullType : "string";
+      continue;
+    }
+    out[key] = cloneForProviderToolSchema(child);
+  }
+  return out;
+}
+
+export function buildEvidencePassToolForProvider(): typeof EVIDENCE_TOOL {
+  return cloneForProviderToolSchema(EVIDENCE_TOOL) as typeof EVIDENCE_TOOL;
+}
 
 export async function runEvidencePass(
   args: RunEvidencePassArgs,
@@ -449,13 +535,13 @@ export async function runEvidencePass(
   // Phase 1 — flag-gated additive prompt + schema. Lazy-imported to keep the
   // legacy code path byte-identical when the flag is off.
   let systemPrompt = EVIDENCE_SYSTEM_PROMPT;
-  let toolForCall: typeof EVIDENCE_TOOL = EVIDENCE_TOOL;
+  let toolForCall: typeof EVIDENCE_TOOL = buildEvidencePassToolForProvider();
   if (withDims) {
     const dims = await import("./dimensions");
     systemPrompt = `${EVIDENCE_SYSTEM_PROMPT}\n\n${dims.buildDimensionsPromptFragment()}`;
     // Clone the tool and add an OPTIONAL future_components array. Existing
     // required fields are not touched.
-    const cloned = JSON.parse(JSON.stringify(EVIDENCE_TOOL)) as typeof EVIDENCE_TOOL;
+    const cloned = buildEvidencePassToolForProvider();
     (cloned.function.parameters.properties as Record<string, unknown>)[
       "future_components"
     ] = dims.FUTURE_COMPONENTS_SCHEMA;
@@ -497,7 +583,8 @@ export async function runEvidencePass(
     return {
       ok: false,
       httpStatus: null,
-      error: err instanceof Error ? err.message : "network_error",
+      error: "evidence_pass_network_or_timeout_error",
+      safe_error_category: classifyEvidencePassSafeErrorCategory(null, err),
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -513,7 +600,8 @@ export async function runEvidencePass(
     return {
       ok: false,
       httpStatus: resp.status,
-      error: `evidence_pass_http_${resp.status}: ${body.slice(0, 200)}`,
+      error: `evidence_pass_http_${resp.status}`,
+      safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, body),
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -529,6 +617,7 @@ export async function runEvidencePass(
         ok: false,
         httpStatus: resp.status,
         error: "evidence_pass_no_tool_call",
+        safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, "evidence_pass_no_tool_call"),
         durationMs: Date.now() - startedAt,
         model,
       };
@@ -538,7 +627,8 @@ export async function runEvidencePass(
     return {
       ok: false,
       httpStatus: resp.status,
-      error: err instanceof Error ? err.message : "evidence_pass_parse_error",
+      error: "evidence_pass_parse_error",
+      safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, err),
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -547,6 +637,17 @@ export async function runEvidencePass(
   // Defensive normalisation. Validate, drop bad timestamps, enforce ordering.
   const ev = parsed as EvidencePass;
   ev.evidence_version = "1";
+  if (!ev.raw_scores || typeof ev.raw_scores !== "object") {
+    ev.raw_scores = {
+      technical: 0,
+      audio: 0,
+      vocal: null,
+      acting: 0,
+      brief_adherence: 0,
+      professional_presentation: 0,
+    };
+  }
+  if (typeof ev.raw_scores.vocal !== "number") ev.raw_scores.vocal = null;
 
   if (!Array.isArray(ev.timestamped_evidence)) ev.timestamped_evidence = [];
   const beforeTsCount = ev.timestamped_evidence.length;
@@ -785,9 +886,11 @@ const PROHIBITED_STEP1_TOP_LEVEL_FIELDS = [
 ] as const;
 
 const PROHIBITED_STEP1_TEXT_RE =
-  /\b(overall score|readiness|ready to submit|not ready|retake|re-take|submit|bookability|marketability|castability|casting fit|role fit|perfect match|winner|recommend|fix first|priority fix|next take|technique authority|technique demonstrated|professional quality|strong performance|brief achieved|diagnosis)\b/i;
+  /\b(overall score|readiness|ready to submit|not ready|retake|re-take|submit|bookability|marketability|castability|casting fit|role fit|perfect match|winner|recommend|fix first|priority fix|next take|technique authority|technique demonstrated|professional quality|strong performance|strong vocal control|exceptional vocal control|excellent breath control|beautiful voice|brief achieved|diagnosis)\b/i;
 
 const UNSAFE_STEP1_TEXT_RE = /\bhttps?:\/\/|token|secret|signed url|signature=|mux_token\b/i;
+const SAFE_TECHNIQUE_DESCRIPTOR_RE =
+  /\b(eyeline|eye line|pause|stillness|transition|breath|diction|articulation|vocal|voice|movement|rhythm|timing|control|coordination|slate|gesture)\b/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -926,6 +1029,7 @@ export function filterRunEvidencePassForStep1(
   };
 
   const timestamped = Array.isArray(input.timestamped_evidence) ? input.timestamped_evidence : [];
+  const derivedTechniqueCandidates: Array<Parameters<typeof addItem>> = [];
   timestamped.forEach((entry, index) => {
     if (!isRecord(entry)) {
       addRejected(rejected, `timestamped_evidence[${index}]`);
@@ -950,6 +1054,42 @@ export function filterRunEvidencePassForStep1(
       timestamp ? [] : ["timestamp_unavailable_or_invalid"],
       entry.evidence_modality ?? entry.modality,
       entry.linked_category,
+    );
+    if (family === "performance" && SAFE_TECHNIQUE_DESCRIPTOR_RE.test(observation)) {
+      derivedTechniqueCandidates.push([
+        "candidate_technique",
+        `timestamped_evidence[${index}].observation`,
+        "candidate_technique_internal_shadow_observation",
+        `Internal descriptor candidate only: ${observation}`,
+        timestamp,
+        [],
+        entry.evidence_modality ?? entry.modality,
+        observation,
+      ]);
+    }
+  });
+
+  const detectedComponents = Array.isArray(input.detected_components) ? input.detected_components : [];
+  detectedComponents.forEach((entry, index) => {
+    if (!isRecord(entry) || typeof entry.type !== "string") {
+      addRejected(rejected, `detected_components[${index}]`);
+      return;
+    }
+    const type = entry.type.trim().toLowerCase();
+    const allowedTypes = new Set(["acting_scene", "song", "monologue", "dance", "commercial", "slate", "other"]);
+    if (!allowedTypes.has(type)) {
+      addRejected(rejected, `detected_components[${index}].type`);
+      return;
+    }
+    addItem(
+      "material",
+      `detected_components[${index}].type`,
+      "material_component_presence_observed",
+      `Observed component presence: ${type.replace(/_/g, " ")}`,
+      null,
+      [],
+      "material",
+      type,
     );
   });
 
@@ -1004,6 +1144,9 @@ export function filterRunEvidencePassForStep1(
       isRecord(entry) ? (entry.evidence_modality ?? entry.modality) : null,
     );
   });
+  if (candidateTechnique.length === 0) {
+    derivedTechniqueCandidates.forEach((args) => addItem(...args));
+  }
 
   return buildFilteredStep1Result({
     model: options.model ?? null,
