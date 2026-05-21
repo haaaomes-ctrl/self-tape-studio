@@ -2522,18 +2522,28 @@ production_safe_status remains blocked.
 public_scoring_status remains blocked.
 public_technique_authority_status remains blocked.
 public comparison winner/recommendation remains unavailable.
-report parity remains blocked by missing render_payload and public_report_payload surfaces.
+report parity moved to S9-17; source/tests now emit render_payload and public_report_payload, but fresh operator runtime verification is still required before closeout.
 Tier 2 near-duplicate sampling remains deferred.
 Tier 3 normalised media fingerprinting remains deferred.
 ```
 
 ### S9-17 - render/public payload report parity architecture
 
-S9-17 is the next active internal QA workstream. It must define and then implement internal `render_payload` and `public_report_payload` artefacts so report parity can compare raw, render and public-safe report surfaces without changing public UX or exposing blocked fields.
+S9-17 is the active internal QA workstream for report parity. It defines and implements internal `render_payload` and `public_report_payload` artefacts so report parity can compare raw, render and public-safe report surfaces without changing public UX or exposing blocked fields.
 
-S9-17A is design/audit only. It does not implement payload generation, accept Level 2, unblock production/public gates, expose public scoring, expose public technique authority, expose public comparison winner/recommendation, or move Tier 2/Tier 3 duplicate detection forward.
+S9-17A is design/audit only. S9-17B/C implement the internal QA payload emitters in source/tests:
 
-Until the render and public payload surfaces emit and pass parity checks, report parity remains blocked and Level 2 remains `not_accepted`.
+```text
+reports/render_payload.json
+reports/public_report_payload.json
+parity/report_parity_result.json
+```
+
+S9-17D must verify fresh operator runtime artefacts before runtime closeout. If fresh runtime artefacts are unavailable, the runtime retest remains `operator_verification_required`; source/tests alone must not be reported as real-runtime proof.
+
+S9-17 does not accept Level 2, unblock production/public gates, expose public scoring, expose public technique authority, expose public comparison winner/recommendation, or move Tier 2/Tier 3 duplicate detection forward.
+
+Until fresh runtime shows raw/render/public payload parity is present and truthful, report parity closeout remains operator-verification gated and Level 2 remains `not_accepted`.
 
 ---
 
@@ -2557,6 +2567,7 @@ Minimum target analysis-run artefacts, using canonical relative paths under the 
 - `analysis/AnalysisEvidenceState.json`
 - `reports/raw_report.json`
 - `reports/render_payload.json`
+- `reports/public_report_payload.json`
 - rendered report artefact
 - `traces/EvidenceAnchors.json`
 - `traces/PublicClaimTrace.json`
@@ -2671,6 +2682,7 @@ All relative paths below are relative to the canonical analysis root `take-[core
 | Validator trace | `traces/ValidatorTrace.json` | Target independent validation proof. |
 | Gate trace | `traces/GateTrace.json` | Target release/gate proof. |
 | Render payload | `reports/render_payload.json` | Required before render parity. |
+| Public report payload | `reports/public_report_payload.json` | Required public-safe surface for report parity. |
 | Rendered report | `reports/rendered_report.*` | Format may vary; internal proof only. |
 | Report parity | `parity/report_parity_result.json` | Required for L2-B. |
 | Redaction trace | `traces/redaction_trace.json` | Required for L2-E. |

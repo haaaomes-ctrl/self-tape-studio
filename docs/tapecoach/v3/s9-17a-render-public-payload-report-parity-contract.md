@@ -55,8 +55,8 @@ S9-17A and the immediate S9-17 implementation sequence must not implement:
 S9-17 proposes the following artefacts:
 
 ```text
-render/report_render_payload.json
-public/report_public_payload.json
+reports/render_payload.json
+reports/public_report_payload.json
 parity/report_parity_result.json
 ```
 
@@ -236,17 +236,17 @@ Recommended sequence:
 
 ### S9-17B - Render Payload Shadow Artefact
 
-Emit `render/report_render_payload.json` from the existing report-render source without changing the report UI.
+Emit `reports/render_payload.json` from the existing report-render source without changing the report UI.
 
 ### S9-17C - Public Report Payload and Forbidden-Field Scanner
 
-Emit `public/report_public_payload.json` as a sanitised subset and enforce forbidden-field scanning.
+Emit `reports/public_report_payload.json` as a sanitised subset and enforce forbidden-field scanning.
 
-### S9-17D - Report Parity Integration
+### S9-17D - Real-Runtime Report Parity Retest
 
-Feed both payloads into `parity/report_parity_result.json`, align manifest and `qa_acceptance_metrics`, and keep blockers when parity is insufficient or failed.
+Audit fresh operator runtime artefacts for `reports/render_payload.json`, `reports/public_report_payload.json` and `parity/report_parity_result.json`. If fresh runtime artefacts are unavailable, classify the retest as `operator_verification_required` rather than treating source/tests as runtime proof. Keep blockers when parity is insufficient or failed.
 
-### S9-17E - Real-Runtime Retest and Closeout
+### S9-17E - Final Closeout
 
 Rerun ordinary single-take and duplicate-comparison runtime evidence. Level 2 remains not accepted unless every required gate truly satisfies.
 
