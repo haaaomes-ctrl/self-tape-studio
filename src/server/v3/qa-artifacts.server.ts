@@ -61,6 +61,9 @@ export interface QAArtifactEmitterOptions {
     missing_evidence_count?: number;
     missing_truth_link_count?: number;
     blocked_claim_count?: number;
+    limitation_only_claim_count?: number;
+    suppressed_claim_count?: number;
+    overclaim_claim_count?: number;
     public_claim_gate_status?: string;
     public_claim_gate_reason?: string;
     source_classification?: string;
@@ -74,6 +77,10 @@ export interface QAArtifactEmitterOptions {
     blocked_candidate_count?: number;
     rewrite_required_count?: number;
     unsupported_candidate_count?: number;
+    supported_candidate_count?: number;
+    unsafe_candidate_count?: number;
+    limitation_only_candidate_count?: number;
+    suppressed_candidate_count?: number;
     safe_candidate_count?: number;
     claim_candidate_gate_status?: 'missing' | 'insufficient';
     claim_candidate_gate_reason?: string;
@@ -604,6 +611,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     legacy_untraced_claim_count: 0,
     unsafe_or_overclaim_count: 0,
     rewrite_required_count: 0,
+    limitation_only_claim_count: 0,
+    suppressed_claim_count: 0,
+    overclaim_claim_count: 0,
   };
   const claimCandidateSummary = manifest.claim_candidate_trace_summary ?? {
     claim_candidate_count: 0,
@@ -618,6 +628,10 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     blocked_candidate_count: 0,
     rewrite_required_count: 0,
     unsupported_candidate_count: 0,
+    supported_candidate_count: 0,
+    unsafe_candidate_count: 0,
+    limitation_only_candidate_count: 0,
+    suppressed_candidate_count: 0,
     safe_candidate_count: 0,
     claim_candidate_gate_status: claimCandidateGateStatus,
     claim_candidate_gate_reason: claimCandidateStatus === 'missing' ? 'trace_not_emitted' : 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
@@ -843,6 +857,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_claim_trace_status: publicClaimStatus,
     public_claim_gate_status: publicClaimGateStatus,
     public_claim_trace_summary: publicClaimSummary,
+    public_claim_supported_count: Number(publicClaimSummary.supported_claim_count ?? 0),
+    public_claim_unsupported_count: Number(publicClaimSummary.unsupported_claim_count ?? 0),
+    public_claim_blocked_count: Number(publicClaimSummary.blocked_claim_count ?? 0),
+    public_claim_rewrite_required_count: Number(publicClaimSummary.rewrite_required_count ?? 0),
+    public_claim_limitation_only_count: Number(publicClaimSummary.limitation_only_claim_count ?? 0),
+    public_claim_suppressed_count: Number(publicClaimSummary.suppressed_claim_count ?? 0),
+    public_claim_overclaim_count: Number(publicClaimSummary.overclaim_claim_count ?? 0),
     public_claim_gate_reason: publicClaimGateStatus === 'sufficient'
       ? String(publicClaimSummary.public_claim_gate_reason ?? 'real_runtime_v3_claim_support_present')
       : (publicClaimStatus === 'missing'
@@ -853,6 +874,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claim_candidate_source_classification: sourceClassById.claim_candidate_trace ?? 'missing',
     claim_candidate_source_summary: claimCandidateSummary.claim_candidate_source_summary,
     claim_candidate_trace_summary: claimCandidateSummary,
+    claim_candidate_supported_count: Number(claimCandidateSummary.supported_candidate_count ?? 0),
+    claim_candidate_unsupported_count: Number(claimCandidateSummary.unsupported_candidate_count ?? 0),
+    claim_candidate_blocked_count: Number(claimCandidateSummary.blocked_candidate_count ?? 0),
+    claim_candidate_rewrite_required_count: Number(claimCandidateSummary.rewrite_required_count ?? 0),
+    claim_candidate_limitation_only_count: Number(claimCandidateSummary.limitation_only_candidate_count ?? 0),
+    claim_candidate_suppressed_count: Number(claimCandidateSummary.suppressed_candidate_count ?? 0),
+    claim_candidate_unsafe_count: Number(claimCandidateSummary.unsafe_candidate_count ?? 0),
     claim_candidate_gate_reason: claimCandidateStatus === 'missing'
       ? 'trace_not_emitted'
       : String(claimCandidateSummary.claim_candidate_gate_reason ?? 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence'),

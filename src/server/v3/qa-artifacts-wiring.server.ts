@@ -4428,12 +4428,17 @@ function sourceClassificationForClaimCandidates(sourceSummary: Record<string, nu
 
 type PublicClaimSupportStatus =
   | 'supported'
+  | 'limitation_only_supported'
   | 'partially_supported'
+  | 'unsupported'
   | 'missing_evidence'
   | 'missing_truth_link'
   | 'blocked'
   | 'rewrite_required'
   | 'unsupported_overclaim'
+  | 'overclaim'
+  | 'unsafe'
+  | 'suppressed'
   | 'legacy_or_unsupported'
   | 'not_applicable';
 
@@ -4662,6 +4667,55 @@ function isLimitationClaimFamily(claimFamily: string, claimType: string): boolea
   return claimFamily === 'assessability_limitation' || claimType === 'assessability_limitation';
 }
 
+function isLimitationOnlyEvidenceAnchor(anchor: Record<string, unknown> | undefined): boolean {
+  if (!anchor) return false;
+  const blockerText = getStringArray(anchor.blocker_codes).join(' ').toLowerCase();
+  const text = [
+    anchor.claim_family,
+    anchor.evidence_family,
+    anchor.evidence_kind,
+    anchor.safe_evidence_summary,
+    anchor.evidence_text,
+    anchor.public_claim_limit,
+    anchor.claim_support_scope,
+  ].map((value) => String(value ?? '').toLowerCase()).join(' ');
+  return anchor.limitation_only === true
+    || anchor.public_claim_limit === 'limitation_only'
+    || anchor.claim_support_scope === 'limitation_only'
+    || /\blimitation\b|not extracted|unavailable|unsupported|blocked/.test(text)
+    || /limitation_only|not_extracted|unavailable|unsupported|blocked/.test(blockerText);
+}
+
+function classifyClaimPublicAuthorityRequirement(blockedClaimCategory: string | null): {
+  required: boolean;
+  category: string | null;
+  status: 'blocked' | 'not_required';
+} {
+  if (!blockedClaimCategory) return { required: false, category: null, status: 'not_required' };
+  if ([
+    'public_scoring',
+    'public_technique_authority',
+    'castability_bookability_marketability',
+    'public_comparison_result',
+  ].includes(blockedClaimCategory)) {
+    return { required: true, category: blockedClaimCategory, status: 'blocked' };
+  }
+  return { required: false, category: blockedClaimCategory, status: 'not_required' };
+}
+
+function supportClassificationForStatus(status: PublicClaimSupportStatus, blockedCategory: string | null): string {
+  if (status === 'supported') return 'supported';
+  if (status === 'limitation_only_supported') return 'limitation_only_supported';
+  if (status === 'blocked') return blockedCategory ?? 'blocked';
+  if (status === 'unsupported_overclaim' || status === 'overclaim') return 'overclaim';
+  if (status === 'rewrite_required') return 'rewrite_required';
+  if (status === 'unsafe') return 'unsafe';
+  if (status === 'suppressed') return 'suppressed';
+  if (status === 'legacy_or_unsupported') return 'legacy_or_unsupported';
+  if (status === 'not_applicable') return 'not_applicable';
+  return 'unsupported';
+}
+
 function normalizeCandidateBlockedCategory(category: unknown): string | null {
   return typeof category === 'string' && category.trim() ? category.trim() : null;
 }
@@ -4706,13 +4760,17 @@ function classifyPublicClaimSupportFromCandidates(input: {
     const safety = classifyClaimCandidateSafety({ text: candidateSummary, claimType, claimFamily, sourcePath });
     const candidateSafetyStatus = String(candidate.public_safety_status ?? safety.public_safety_status);
     const candidateBlockedCategory = normalizeCandidateBlockedCategory(candidate.blocked_claim_category ?? safety.blocked_claim_category);
+    const publicAuthority = classifyClaimPublicAuthorityRequirement(candidateBlockedCategory);
     const isLegacyOrRaw = sourceFamily === 'legacy_adapter' || sourceFamily === 'legacy_or_unsupported' || sourceArtefactId === 'raw_report' || sourcePath.startsWith('report_data.');
     const linkedAnchors = linkedEvidenceAnchorIds.map((id) => anchorById.get(id));
     const realLinkedAnchors = linkedAnchors.filter(isRealRuntimeEvidenceAnchor);
     const hasUnresolvedAnchor = linkedEvidenceAnchorIds.some((id) => !anchorById.has(id));
+    const missingEvidenceAnchorIds = linkedEvidenceAnchorIds.filter((id) => !anchorById.has(id));
     const requiresTruth = publicClaimRequiresTruth(candidate);
-    const hasMissingTruth = requiresTruth && (linkedTruthStateIds.length === 0 || linkedTruthStateIds.some((id) => !truthStateIdResolves(truthStateMapData, id)));
+    const unresolvedTruthStateIds = requiresTruth ? linkedTruthStateIds.filter((id) => !truthStateIdResolves(truthStateMapData, id)) : [];
+    const hasMissingTruth = requiresTruth && (linkedTruthStateIds.length === 0 || unresolvedTruthStateIds.length > 0);
     const isLimitationClaim = isLimitationClaimFamily(claimFamily, claimType);
+    const realLinkedAnchorsAreLimitationOnly = realLinkedAnchors.length > 0 && realLinkedAnchors.every(isLimitationOnlyEvidenceAnchor);
     const candidateRequiredForGate = isCandidateRequiredForPublicClaimGate(candidate);
     const blockerCodes: string[] = [
       ...getStringArray(candidate.blocker_codes).filter((code) => code !== 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence' && code !== 'public_claim_trace_not_promoted'),
@@ -4766,30 +4824,55 @@ function classifyPublicClaimSupportFromCandidates(input: {
     } else if (hasMissingTruth) {
       supportStatus = 'missing_truth_link';
       blockerCodes.push('missing_truth_state_linkage');
+    } else if (!isLimitationClaim && realLinkedAnchorsAreLimitationOnly) {
+      supportStatus = 'missing_evidence';
+      blockerCodes.push('limitation_only_evidence_cannot_support_non_limitation_claim');
+    } else if (isLimitationClaim) {
+      supportStatus = 'limitation_only_supported';
     } else if (evidenceAnchorGateStatus !== 'sufficient' && !isLimitationClaim) {
       supportStatus = 'partially_supported';
       blockerCodes.push('evidence_anchor_aggregate_insufficient');
     }
 
-    if (supportStatus !== 'supported') rewriteRequired = rewriteRequired || supportStatus === 'unsupported_overclaim' || supportStatus === 'blocked' || supportStatus === 'legacy_or_unsupported';
+    if (supportStatus !== 'supported' && supportStatus !== 'limitation_only_supported') rewriteRequired = rewriteRequired || supportStatus === 'unsupported_overclaim' || supportStatus === 'blocked' || supportStatus === 'legacy_or_unsupported';
     if (supportStatus === 'supported' && publicSafetyStatus !== 'safe_for_public_candidate') publicSafetyStatus = publicSafetyStatus === 'internal_only' ? 'internal_only' : 'safe_for_public_candidate';
-    const cannotSatisfy = candidateRequiredForGate && supportStatus !== 'supported';
+    if (supportStatus === 'limitation_only_supported' && publicSafetyStatus !== 'safe_for_public_candidate') publicSafetyStatus = 'safe_for_public_candidate';
+    const supportClassification = supportClassificationForStatus(supportStatus, blockedClaimCategory);
+    const currentClaimSuppressed = candidateRequiredForGate && !['supported', 'limitation_only_supported', 'not_applicable'].includes(supportStatus);
+    const cannotSatisfy = candidateRequiredForGate && !['supported', 'limitation_only_supported'].includes(supportStatus);
     return {
       claim_id: typeof candidate.claim_candidate_id === 'string' ? candidate.claim_candidate_id.replace(/^cc-/, 'pc-') : `pc-${input.take_id}-${index + 1}`,
       safe_claim_summary: candidateSummary,
       claim_text: candidateSummary,
+      claim_text_or_summary: candidateSummary,
       claim_type: claimType,
       claim_family: claimFamily,
+      claim_scope: String(candidate.claim_scope ?? (isLimitationClaim ? 'limitation_only' : 'public_claim_candidate')),
+      claim_source_surface: String(candidate.claim_source_surface ?? sourceArtefactId),
+      candidate_public_section: String(candidate.candidate_public_section ?? candidate.claim_section ?? claimType),
       source_artefact_id: sourceArtefactId,
       source_path: sourcePath,
+      claim_source_path: sourcePath,
       source_family: sourceFamily,
       linked_evidence_anchor_ids: linkedEvidenceAnchorIds,
       linked_truth_state_ids: linkedTruthStateIds,
+      evidence_anchor_ids: linkedEvidenceAnchorIds,
+      truth_state_entry_ids: linkedTruthStateIds,
+      missing_evidence_anchor_ids: missingEvidenceAnchorIds,
+      missing_truth_state_entry_ids: unresolvedTruthStateIds,
       support_status: supportStatus,
+      support_classification: supportClassification,
       public_safety_status: publicSafetyStatus,
       rewrite_required: rewriteRequired,
       score_scope: String(candidate.score_scope ?? safety.score_scope),
       blocked_claim_category: blockedClaimCategory,
+      limitation_only: isLimitationClaim,
+      public_authority_required: publicAuthority.required,
+      public_authority_category: publicAuthority.category,
+      public_authority_status: publicAuthority.status,
+      suppress_public_claim: Boolean(candidate.suppress_public_claim === true || currentClaimSuppressed || publicAuthority.status === 'blocked'),
+      safe_public_claim_possible: ['supported', 'limitation_only_supported'].includes(supportStatus) || supportStatus === 'unsupported_overclaim' || supportStatus === 'rewrite_required',
+      reason: supportClassification,
       blocker_codes: dedupePreservingOrder(blockerCodes),
       evidence_support_summary: realLinkedAnchors.length > 0
         ? { linked_real_runtime_v3_anchor_count: realLinkedAnchors.length, evidence_anchor_gate_status: evidenceAnchorGateStatus }
@@ -4797,7 +4880,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       truth_support_summary: {
         required: requiresTruth,
         linked_truth_state_count: linkedTruthStateIds.length,
-        unresolved_truth_state_ids: requiresTruth ? linkedTruthStateIds.filter((id) => !truthStateIdResolves(truthStateMapData, id)) : [],
+        unresolved_truth_state_ids: unresolvedTruthStateIds,
       },
       public_display_status: 'not_rendered_internal_trace',
       public_claim_support_required: candidateRequiredForGate,
@@ -4812,7 +4895,9 @@ function classifyPublicClaimSupportFromCandidates(input: {
     return acc;
   }, { real_runtime_v3: 0, legacy_adapter: 0, legacy_or_unsupported: 0, report_candidate_requires_support: 0, first_pass_internal: 0 });
   const requiredClaims = claims.filter((claim) => claim.required_for_public_claim_gate !== false && claim.excluded_from_public_claim_gate !== true && claim.support_status !== 'not_applicable');
-  const allSupported = requiredClaims.length > 0 && requiredClaims.every((claim) => claim.support_status === 'supported');
+  const allSupported = evidenceAnchorGateStatus === 'sufficient'
+    && requiredClaims.length > 0
+    && requiredClaims.every((claim) => ['supported', 'limitation_only_supported'].includes(String(claim.support_status)));
   const publicClaimGateStatus = allSupported ? 'sufficient' : 'insufficient';
   const hasLegacy = (sourceSummary.legacy_adapter ?? 0) > 0 || (sourceSummary.legacy_or_unsupported ?? 0) > 0 || claims.some((claim) => claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
   const hasReal = (sourceSummary.real_runtime_v3 ?? 0) > 0;
@@ -4852,22 +4937,42 @@ function classifyPublicClaimTraceIdentityRejected(input: {
       claim_id: typeof candidate.claim_candidate_id === 'string' ? candidate.claim_candidate_id.replace(/^cc-/, 'pc-') : `pc-${input.take_id}-${index + 1}`,
       safe_claim_summary: candidateSummary,
       claim_text: candidateSummary,
+      claim_text_or_summary: candidateSummary,
       claim_type: String(candidate.claim_type ?? 'unknown'),
       claim_family: String(candidate.claim_family ?? candidate.claim_type ?? 'unknown'),
+      claim_scope: 'blocked_identity',
+      claim_source_surface: String(candidate.source_artefact_id ?? 'claim_candidate_trace'),
+      candidate_public_section: String(candidate.candidate_public_section ?? candidate.claim_type ?? 'unknown'),
       source_artefact_id: String(candidate.source_artefact_id ?? 'claim_candidate_trace'),
       source_path: String(candidate.source_path ?? ''),
+      claim_source_path: String(candidate.source_path ?? ''),
       source_family: String(candidate.source_family ?? 'first_pass_internal'),
       linked_evidence_anchor_ids: getStringArray(candidate.linked_evidence_anchor_ids),
       linked_truth_state_ids: getStringArray(candidate.linked_truth_state_ids),
+      evidence_anchor_ids: getStringArray(candidate.linked_evidence_anchor_ids),
+      truth_state_entry_ids: getStringArray(candidate.linked_truth_state_ids),
+      missing_evidence_anchor_ids: getStringArray(candidate.linked_evidence_anchor_ids),
+      missing_truth_state_entry_ids: getStringArray(candidate.linked_truth_state_ids),
       support_status: 'blocked' as PublicClaimSupportStatus,
+      support_classification: 'blocked',
       public_safety_status: 'blocked',
       rewrite_required: true,
       score_scope: String(candidate.score_scope ?? 'not_score'),
       blocked_claim_category: 'claim_candidate_trace_identity',
+      limitation_only: false,
+      public_authority_required: false,
+      public_authority_category: null,
+      public_authority_status: 'not_required',
+      suppress_public_claim: true,
+      safe_public_claim_possible: false,
+      reason: 'claim_candidate_trace_identity_mismatch',
       blocker_codes: blockers,
       evidence_support_summary: { linked_real_runtime_v3_anchor_count: 0, evidence_anchor_gate_status: 'insufficient' },
       truth_support_summary: { required: publicClaimRequiresTruth(candidate), linked_truth_state_count: getStringArray(candidate.linked_truth_state_ids).length, unresolved_truth_state_ids: getStringArray(candidate.linked_truth_state_ids) },
       public_display_status: 'not_rendered_internal_trace',
+      public_claim_support_required: true,
+      required_for_public_claim_gate: true,
+      excluded_from_public_claim_gate: false,
       cannot_satisfy_public_claim_gate: true,
     };
   });
@@ -4916,10 +5021,29 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     const clean = safeCandidateSummary(args.summary);
     if (!clean) return;
     const safety = classifyClaimCandidateSafety({ text: clean, claimType: args.claimType, claimFamily: args.claimFamily, sourcePath: args.sourcePath });
+    const publicAuthority = classifyClaimPublicAuthorityRequirement(normalizeCandidateBlockedCategory(safety.blocked_claim_category));
     const isLegacy = args.sourceFamily === 'legacy_adapter';
     const excludedFromGate = args.excludedFromPublicClaimGate === true || args.publicClaimSupportRequired === false;
     const eligible = !excludedFromGate && args.sourceFamily === 'real_runtime_v3' && safety.public_safety_status !== 'blocked';
-    const publicSafetyStatus = excludedFromGate && safety.public_safety_status === 'safe_for_public_candidate' ? 'internal_only' : safety.public_safety_status;
+    const linkedEvidenceAnchorIds = args.linkedEvidenceAnchorIds ?? [];
+    const linkedTruthStateIds = args.linkedTruthStateIds ?? [];
+    const excludedInternalObservation = excludedFromGate
+      && args.sourceFamily === 'real_runtime_v3'
+      && args.sourcePath.startsWith('observable_evidence_items')
+      && linkedEvidenceAnchorIds.length === 0;
+    const publicSafetyStatus = excludedInternalObservation && safety.public_safety_status === 'safe_for_public_candidate'
+      ? 'internal_only'
+      : safety.public_safety_status;
+    const limitationOnly = isLimitationClaimFamily(args.claimFamily, args.claimType);
+    const supportStatus = excludedFromGate
+      ? 'not_applicable'
+      : (safety.public_safety_status === 'blocked'
+        ? 'blocked'
+        : (limitationOnly && linkedEvidenceAnchorIds.length > 0
+          ? 'limitation_only_supported'
+          : (eligible && linkedEvidenceAnchorIds.length > 0 ? 'supported' : (isLegacy ? 'legacy_or_unsupported' : 'unsupported'))));
+    const supportClassification = supportClassificationForStatus(supportStatus as PublicClaimSupportStatus, normalizeCandidateBlockedCategory(safety.blocked_claim_category));
+    const suppressPublicClaim = !['supported', 'limitation_only_supported', 'not_applicable'].includes(supportStatus) || publicAuthority.status === 'blocked';
     const blockerCodes = dedupePreservingOrder([
       ...safety.blocker_codes,
       ...(isLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
@@ -4931,21 +5055,39 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     candidates.push({
       claim_candidate_id: `cc-${input.take_id}-${candidates.length + 1}`,
       safe_candidate_summary: clean,
+      claim_text_or_summary: clean,
       claim_type: safety.blocked_claim_category === 'public_scoring' ? 'score_or_verdict' : args.claimType,
       claim_family: args.claimFamily,
+      claim_scope: limitationOnly ? 'limitation_only' : 'public_claim_candidate',
+      claim_source_surface: args.sourceArtefactId,
+      claim_source_path: args.sourcePath,
+      candidate_public_section: args.claimType,
       source_artefact_id: args.sourceArtefactId,
       source_path: args.sourcePath,
       source_family: args.sourceFamily,
       source_stage: args.sourceStage ?? input.source_stage,
       required_evidence_anchor_family: args.requiredEvidenceAnchorFamily ?? args.claimFamily,
       required_truth_state_family: args.requiredTruthStateFamily ?? 'run_shape_or_claim_family_truth',
-      linked_evidence_anchor_ids: args.linkedEvidenceAnchorIds ?? [],
-      linked_truth_state_ids: args.linkedTruthStateIds ?? [],
+      linked_evidence_anchor_ids: linkedEvidenceAnchorIds,
+      linked_truth_state_ids: linkedTruthStateIds,
+      evidence_anchor_ids: linkedEvidenceAnchorIds,
+      truth_state_entry_ids: linkedTruthStateIds,
+      missing_evidence_anchor_ids: linkedEvidenceAnchorIds.length > 0 ? [] : ['evidence_anchor_link_required'],
+      missing_truth_state_entry_ids: linkedTruthStateIds.length > 0 || args.requiredTruthStateFamily?.startsWith('not_required') ? [] : ['truth_state_link_required'],
       candidate_support_precheck_status: args.supportStatus ?? (excludedFromGate ? 'not_applicable' : (eligible ? 'eligible_for_support_check' : (isLegacy ? 'legacy_or_unsupported' : (safety.public_safety_status === 'blocked' ? 'blocked' : 'requires_support')))),
+      support_status: supportStatus,
+      support_classification: supportClassification,
       public_safety_status: publicSafetyStatus,
       rewrite_required: safety.rewrite_required || isLegacy,
       score_scope: safety.score_scope,
       blocked_claim_category: safety.blocked_claim_category,
+      limitation_only: limitationOnly,
+      public_authority_required: publicAuthority.required,
+      public_authority_category: publicAuthority.category,
+      public_authority_status: publicAuthority.status,
+      suppress_public_claim: suppressPublicClaim,
+      safe_public_claim_possible: ['supported', 'limitation_only_supported'].includes(supportStatus) || supportStatus === 'unsupported_overclaim' || supportStatus === 'rewrite_required',
+      reason: supportClassification,
       blocker_codes: blockerCodes,
       public_display_status: 'not_rendered_internal_candidate',
       cannot_satisfy_public_claim_gate: true,
@@ -5004,6 +5146,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
         requiredEvidenceAnchorFamily: 'assessability_limitation',
         requiredTruthStateFamily: 'not_required_for_limitation_candidate',
         extraBlockerCodes: recordItem ? getStringArray(recordItem.blocker_codes) : (summary === '[redacted unsafe candidate summary]' ? ['unsafe_limitation_summary_redacted'] : []),
+        publicClaimSupportRequired: false,
+        excludedFromPublicClaimGate: true,
       });
     });
     for (const [field, value] of [
@@ -5024,6 +5168,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
           requiredEvidenceAnchorFamily: 'assessability_limitation',
           requiredTruthStateFamily: 'not_required_for_limitation_candidate',
           extraBlockerCodes: item.blocker_codes,
+          publicClaimSupportRequired: false,
+          excludedFromPublicClaimGate: true,
         });
       });
     }
@@ -5035,10 +5181,11 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     if (!summary) return;
     const anchorId = typeof anchor.evidence_anchor_id === 'string' ? anchor.evidence_anchor_id : null;
     const truthIds = Array.isArray(anchor.linked_truth_state_ids) ? anchor.linked_truth_state_ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
+    const limitationOnlyAnchor = isLimitationOnlyEvidenceAnchor(anchor);
     addCandidate({
       summary,
-      claimType: 'evidence_summary',
-      claimFamily: claimFamilyForRuntimeEvidence(anchor),
+      claimType: limitationOnlyAnchor ? 'assessability_limitation' : 'evidence_summary',
+      claimFamily: limitationOnlyAnchor ? 'assessability_limitation' : claimFamilyForRuntimeEvidence(anchor),
       sourceArtefactId: 'evidence_anchors',
       sourcePath: `anchors[${index}]`,
       sourceFamily: 'real_runtime_v3',
@@ -5046,7 +5193,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       linkedEvidenceAnchorIds: anchorId ? [anchorId] : [],
       linkedTruthStateIds: truthIds,
       requiredEvidenceAnchorFamily: String(anchor.evidence_modality ?? anchor.evidence_kind ?? 'runtime_anchor'),
-      requiredTruthStateFamily: truthIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact',
+      requiredTruthStateFamily: limitationOnlyAnchor ? 'not_required_for_limitation_candidate' : (truthIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact'),
     });
   });
 
@@ -5122,6 +5269,10 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
   const rewriteRequiredCount = candidates.filter((candidate) => candidate.rewrite_required === true).length;
   const unsupportedCandidateCount = candidates.filter((candidate) => ['legacy_or_unsupported', 'requires_support'].includes(String(candidate.candidate_support_precheck_status))).length;
   const safeCandidateCount = candidates.filter((candidate) => candidate.public_safety_status === 'safe_for_public_candidate').length;
+  const supportedCandidateCount = candidates.filter((candidate) => ['supported', 'limitation_only_supported'].includes(String(candidate.support_status))).length;
+  const limitationOnlyCandidateCount = candidates.filter((candidate) => candidate.limitation_only === true || candidate.support_status === 'limitation_only_supported').length;
+  const unsafeCandidateCount = candidates.filter((candidate) => ['unsafe', 'unsafe_or_overclaim'].includes(String(candidate.public_safety_status)) || getStringArray(candidate.blocker_codes).some((code) => /unsafe|redacted/.test(code))).length;
+  const suppressedCandidateCount = candidates.filter((candidate) => candidate.suppress_public_claim === true).length;
   const blockerCodes = dedupePreservingOrder([
     'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
     'public_claim_trace_not_promoted',
@@ -5146,15 +5297,20 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     claim_candidate_count: candidates.length,
     claim_candidates: candidates,
     claim_candidate_source_summary: sourceSummary,
+    supported_candidate_count: supportedCandidateCount,
     blocked_candidate_count: blockedCandidateCount,
     rewrite_required_count: rewriteRequiredCount,
     unsupported_candidate_count: unsupportedCandidateCount,
+    unsafe_candidate_count: unsafeCandidateCount,
+    limitation_only_candidate_count: limitationOnlyCandidateCount,
+    suppressed_candidate_count: suppressedCandidateCount,
     safe_candidate_count: safeCandidateCount,
     public_render_permission_status: 'not_evaluated_or_blocked',
     cannot_satisfy_public_claim_gate: true,
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',
+    public_comparison_output_status: 'blocked',
     blocker_codes: blockerCodes,
     gate_satisfaction_reason: sourceSummary.real_runtime_v3 > 0
       ? 'claim_candidate_source_available_public_claim_trace_not_promoted'
@@ -5168,9 +5324,13 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     claim_candidate_count: candidates.length,
     source_classification: sourceClassification,
     claim_candidate_source_summary: sourceSummary,
+    supported_candidate_count: supportedCandidateCount,
     blocked_candidate_count: blockedCandidateCount,
     rewrite_required_count: rewriteRequiredCount,
     unsupported_candidate_count: unsupportedCandidateCount,
+    unsafe_candidate_count: unsafeCandidateCount,
+    limitation_only_candidate_count: limitationOnlyCandidateCount,
+    suppressed_candidate_count: suppressedCandidateCount,
     safe_candidate_count: safeCandidateCount,
     claim_candidate_gate_status: 'insufficient' as const,
     claim_candidate_gate_reason: 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
@@ -5218,9 +5378,12 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
     const missingTruthLinkCount = classified.claims.filter((claim) => claim.support_status === 'missing_truth_link').length;
     const blockedClaimCount = classified.claims.filter((claim) => claim.support_status === 'blocked').length;
     const rewriteRequiredCount = classified.claims.filter((claim) => claim.rewrite_required === true).length;
-    const unsupportedClaimCount = classified.claims.filter((claim) => !['supported', 'not_applicable'].includes(String(claim.support_status))).length;
+    const limitationOnlyClaimCount = classified.claims.filter((claim) => claim.support_status === 'limitation_only_supported' || claim.limitation_only === true).length;
+    const suppressedClaimCount = classified.claims.filter((claim) => claim.suppress_public_claim === true || claim.support_status === 'suppressed').length;
+    const overclaimClaimCount = classified.claims.filter((claim) => ['overclaim', 'unsupported_overclaim'].includes(String(claim.support_status)) || claim.support_classification === 'overclaim').length;
+    const unsupportedClaimCount = classified.claims.filter((claim) => !['supported', 'limitation_only_supported', 'not_applicable'].includes(String(claim.support_status))).length;
     const legacyUntracedClaimCount = classified.claims.filter((claim) => ['legacy_adapter', 'legacy_or_unsupported'].includes(String(claim.source_family)) || claim.source_artefact_id === 'raw_report').length;
-    const unsafeOrOverclaimCount = classified.claims.filter((claim) => ['unsafe_or_overclaim', 'needs_rewrite', 'blocked'].includes(String(claim.public_safety_status))).length;
+    const unsafeOrOverclaimCount = classified.claims.filter((claim) => ['unsafe_or_overclaim', 'needs_rewrite', 'blocked'].includes(String(claim.public_safety_status)) || ['overclaim', 'unsafe'].includes(String(claim.support_classification))).length;
     const payload = {
       ...(input.metadata_overrides ?? {}),
       schema_version: 'tapecoach_v3_public_claim_trace_support_v1',
@@ -5250,12 +5413,16 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       missing_evidence_count: missingEvidenceCount,
       missing_truth_link_count: missingTruthLinkCount,
       blocked_claim_count: blockedClaimCount,
+      limitation_only_claim_count: limitationOnlyClaimCount,
+      suppressed_claim_count: suppressedClaimCount,
+      overclaim_claim_count: overclaimClaimCount,
       public_safe_claim_count: classified.claims.filter((claim) => claim.public_safety_status === 'safe_for_public_candidate').length,
       blocker_codes: classified.blockerCodes,
       cannot_satisfy_public_claim_gate: classified.publicClaimGateStatus !== 'sufficient',
       production_safe_status: 'blocked',
       public_scoring_status: 'blocked',
       public_technique_authority_status: 'blocked',
+      public_comparison_output_status: 'blocked',
       public_output_unchanged: true,
       redaction_notes: ['Internal-only trace; no secrets or token/session credentials included', 'safe summaries only'],
       ...resolveQADeploymentProvenance(),
@@ -5272,6 +5439,9 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       missing_evidence_count: payload.missing_evidence_count,
       missing_truth_link_count: payload.missing_truth_link_count,
       blocked_claim_count: payload.blocked_claim_count,
+      limitation_only_claim_count: payload.limitation_only_claim_count,
+      suppressed_claim_count: payload.suppressed_claim_count,
+      overclaim_claim_count: payload.overclaim_claim_count,
       source_classification: classified.sourceClassification,
       claim_source_summary: classified.sourceSummary,
       support_gate_status: classified.publicClaimGateStatus,
@@ -5304,6 +5474,12 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
     claims.push({
       claim_id: `pc-${input.take_id}-${claims.length + 1}`,
       claim_text: claimText,
+      claim_text_or_summary: claimText,
+      safe_claim_summary: claimText,
+      claim_source_surface: 'raw_report',
+      claim_source_path: sourcePath,
+      candidate_public_section: claimType,
+      claim_scope: 'legacy_report_candidate',
       source_family: 'legacy_adapter',
       source_artefact_id: 'raw_report',
       source_path: sourcePath,
@@ -5311,9 +5487,21 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       score_scope: scoreMeta.score_scope,
       linked_evidence_anchor_ids: linkedId,
       linked_truth_state_ids: [],
+      evidence_anchor_ids: linkedId,
+      truth_state_entry_ids: [],
+      missing_evidence_anchor_ids: linkedId.length > 0 ? [] : ['evidence_anchor_link_required'],
+      missing_truth_state_entry_ids: [],
       support_status: supportStatus,
+      support_classification: isScoreLike ? 'public_scoring' : (hasLegacyLinkOnly ? 'legacy_or_unsupported' : (linkedId.length > 0 ? 'legacy_or_unsupported' : 'unsupported')),
       public_safety_status: safetyStatus,
       rewrite_required: true,
+      limitation_only: false,
+      public_authority_required: isScoreLike,
+      public_authority_category: isScoreLike ? 'public_scoring' : null,
+      public_authority_status: isScoreLike ? 'blocked' : 'not_required',
+      suppress_public_claim: true,
+      safe_public_claim_possible: !isScoreLike && !isOverclaim,
+      reason: hasLegacyLinkOnly ? 'legacy_anchor_cannot_support_public_claim_gate' : 'legacy_report_snapshot_only_or_unsupported_claims',
       blocker_codes: [
         ...(scoreMeta.is_public_overall_readiness_score_risk ? ['public_scoring_blocked'] : []),
         ...((isGeneric && linkedId.length === 0) ? ['generic_phrase_unanchored'] : []),
@@ -5372,12 +5560,20 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
     unsupported_claim_count: claims.filter((c) => ['unsupported', 'missing_evidence', 'legacy_untraced_claim'].includes(String(c.support_status))).length,
     legacy_untraced_claim_count: claims.filter((c) => c.support_status === 'legacy_untraced_claim').length,
     unsafe_or_overclaim_count: claims.filter((c) => c.public_safety_status === 'unsafe_or_overclaim').length,
+    limitation_only_claim_count: claims.filter((c) => c.limitation_only === true).length,
+    suppressed_claim_count: claims.filter((c) => c.suppress_public_claim === true).length,
+    overclaim_claim_count: claims.filter((c) => c.support_classification === 'overclaim' || c.public_safety_status === 'unsafe_or_overclaim').length,
     public_safe_claim_count: claims.filter((c) => c.public_safety_status === 'public_safe_descriptor').length,
     rewrite_required_count: claims.filter((c) => c.rewrite_required === true).length,
     cannot_satisfy_public_claim_gate: true,
     gate_satisfaction_reason: 'legacy_report_snapshot_only_or_unsupported_claims',
     blocker_codes: ['public_claim_trace_legacy_or_unsupported'],
     redaction_notes: ['Internal-only trace; no secrets or token/session credentials included'],
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    public_comparison_output_status: 'blocked',
+    public_output_unchanged: true,
   };
   assertSafeSegment(input.take_id, 'take_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/PublicClaimTrace.json`, payload, 'public_claim_trace');
@@ -5391,6 +5587,9 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       legacy_untraced_claim_count: payload.legacy_untraced_claim_count,
       unsafe_or_overclaim_count: payload.unsafe_or_overclaim_count,
       rewrite_required_count: payload.rewrite_required_count,
+      limitation_only_claim_count: payload.limitation_only_claim_count,
+      suppressed_claim_count: payload.suppressed_claim_count,
+      overclaim_claim_count: payload.overclaim_claim_count,
     },
   };
 }

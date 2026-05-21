@@ -2504,6 +2504,9 @@ function claimsOutSummary(claims: any) {
     legacy_untraced_claim_count: claims.legacy_untraced_claim_count,
     unsafe_or_overclaim_count: claims.unsafe_or_overclaim_count,
     rewrite_required_count: claims.rewrite_required_count,
+    limitation_only_claim_count: claims.limitation_only_claim_count,
+    suppressed_claim_count: claims.suppressed_claim_count,
+    overclaim_claim_count: claims.overclaim_claim_count,
   };
 }
 
@@ -2716,6 +2719,9 @@ describe('S9-14L PublicClaimTrace support classification', () => {
     expect(claims.public_claim_gate_status).toBe('insufficient');
     expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
     expect(claims.claims[0].support_status).toBe('legacy_or_unsupported');
+    expect(claims.claims[0].support_classification).toBe('legacy_or_unsupported');
+    expect(claims.claims[0].claim_source_surface).toBe('raw_report');
+    expect(claims.claims[0].suppress_public_claim).toBe(true);
     expect(metrics.public_claim_gate_status).toBe('insufficient');
   });
 
@@ -2759,6 +2765,7 @@ describe('S9-14L PublicClaimTrace support classification', () => {
       })],
     });
     expect(claims.claims[0].support_status).toBe('unsupported_overclaim');
+    expect(claims.claims[0].support_classification).toBe('overclaim');
     expect(claims.claims[0].public_safety_status).toBe('needs_rewrite');
     expect(claims.claims[0].rewrite_required).toBe(true);
   });
@@ -2798,9 +2805,11 @@ describe('S9-14L PublicClaimTrace support classification', () => {
         runtimeAnchor({ evidence_anchor_id: 'ea-media-limitation', safe_evidence_summary: 'audio evidence family not extracted', evidence_text: 'audio evidence family not extracted', linked_truth_state_ids: [], evidence_modality: 'audio' }),
       ],
     });
-    expect(claims.claims.map((claim: any) => claim.support_status)).toEqual(['supported', 'supported']);
+    expect(claims.claims.map((claim: any) => claim.support_status)).toEqual(['supported', 'limitation_only_supported']);
     expect(claims.claims[0].public_safety_status).toBe('safe_for_public_candidate');
     expect(claims.claims[1].claim_family).toBe('assessability_limitation');
+    expect(claims.claims[1].limitation_only).toBe(true);
+    expect(claims.limitation_only_claim_count).toBe(1);
   });
 
   it('allows limitation claim support while broader EvidenceAnchors aggregate is partial, but keeps aggregate PublicClaimTrace insufficient when other claims are unsupported', async () => {
@@ -2820,8 +2829,9 @@ describe('S9-14L PublicClaimTrace support classification', () => {
       ],
       anchors: [runtimeAnchor({ evidence_anchor_id: 'ea-limitation', linked_truth_state_ids: [], safe_evidence_summary: 'video evidence family not extracted' })],
     });
-    expect(claims.claims[0].support_status).toBe('supported');
-    expect(claims.claims[1].support_status).toBe('partially_supported');
+    expect(claims.claims[0].support_status).toBe('limitation_only_supported');
+    expect(claims.claims[1].support_status).toBe('missing_evidence');
+    expect(claims.claims[1].blocker_codes).toContain('limitation_only_evidence_cannot_support_non_limitation_claim');
     expect(claims.public_claim_gate_status).toBe('insufficient');
   });
 
