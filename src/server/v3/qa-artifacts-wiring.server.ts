@@ -1237,6 +1237,15 @@ function normaliseIndexedWildcardPath(path: string): string {
   return normaliseBlockedPath(path).replace(/\[\d+\]/g, '[]');
 }
 
+function pathStringSegments(path: string): string[] {
+  const tokens = tokenizePath(path);
+  if (!tokens) return [];
+  return tokens
+    .filter((token): token is string => typeof token === 'string')
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 const defaultBlockedScoreFieldPaths = [
   'score','scores','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*'
 ];
@@ -1248,6 +1257,9 @@ function matchesBlockedPath(fieldPath: string, blockedPath: string): boolean {
   const fieldIndexedWildcard = normaliseIndexedWildcardPath(fieldPath);
   const blocked = normaliseBlockedPath(blockedPath);
   if (!field || !blocked) return false;
+  if (!blocked.includes('.') && !blocked.includes('[') && !blocked.endsWith('.*')) {
+    return pathStringSegments(fieldPath).includes(blocked);
+  }
   if (blocked.endsWith('.*')) {
     const base = blocked.slice(0, -2);
     const baseIndexless = normaliseIndexedPath(base);
@@ -3229,9 +3241,10 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       written: Boolean(out.written),
       warning: getQAWriteWarning(out),
     });
-    if (!out.written || !('manifest' in out)) {
+    const initialManifestWarning = getQAWriteWarning(out);
+    if (!('manifest' in out)) {
       const initialWarning = mergeQAWarnings(
-        getQAWriteWarning(out),
+        initialManifestWarning,
         'internal_qa_manifest_sink_write_failed',
       );
       return { written: false, warning: initialWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
@@ -3436,24 +3449,22 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       warning: getQAWriteWarning(qaWrite),
     });
     console.info('[internal-qa] acceptance_metrics_write_result', { event: 'acceptance_metrics_write_result', written: Boolean(qaWrite.written), warning: getQAWriteWarning(qaWrite), sink_warning: (qaWrite as any)?.sink_warning ?? null, resolved_storage_path: qaWrite.storage_path ?? qaWrite.path ?? null });
-    if (qaWrite.written) {
-      const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces, runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
-      let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
-      if (finalOut.written && 'manifest' in (finalOut as any)) {
-        const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };
-        finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
-      }
-      const finalWarning = mergeQAWarnings(
-        qaWrite.warning,
-        getQAWriteWarning(finalOut),
-        getQAWriteWarning(finalMetricsWrite),
-        finalOut.written ? null : 'final QA manifest write failed after qa_acceptance_metrics emission',
-        finalOut.written && finalMetricsWrite && !finalMetricsWrite.written ? 'final qa_acceptance_metrics rewrite failed after final manifest emission' : null,
-      );
-      return { written: finalOut.written, warning: finalWarning, manifest_path: (finalOut as { manifest_path?: string }).manifest_path };
+    const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces, runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
+    let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
+    if (finalOut.written && 'manifest' in (finalOut as any)) {
+      const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };
+      finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     }
-    const qaWriteWarning = mergeQAWarnings(getQAWriteWarning(qaWrite), 'qa_acceptance_metrics_not_written');
-    return { written: false, warning: qaWriteWarning, manifest_path: (out as { manifest_path?: string }).manifest_path };
+    const finalWarning = mergeQAWarnings(
+      initialManifestWarning,
+      getQAWriteWarning(qaWrite),
+      getQAWriteWarning(finalOut),
+      getQAWriteWarning(finalMetricsWrite),
+      qaWrite.written ? null : 'pre_final qa_acceptance_metrics write failed before final manifest emission',
+      finalOut.written ? null : 'final QA manifest write failed after parity/no-export classification',
+      finalOut.written && finalMetricsWrite && !finalMetricsWrite.written ? 'final qa_acceptance_metrics rewrite failed after final manifest emission' : null,
+    );
+    return { written: finalOut.written, warning: finalWarning, manifest_path: (finalOut as { manifest_path?: string }).manifest_path ?? (out as { manifest_path?: string }).manifest_path };
   } catch (error) {
     return { written: false, warning: `internal_qa_manifest_emit_failed:${error instanceof Error ? error.message : 'unknown'}` };
   }
@@ -5251,9 +5262,8 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs?: 
     ['no_export_ui_proof', 'export_or_no_export/no_export_ui_proof.json'],
     ['no_export_log_proof', 'export_or_no_export/no_export_log_proof.json'],
   ];
-  const builtPayloadById: Record<string, unknown> = {};
-  for (const [id, rel] of entries) {
-    if (!providedProofs[id]) continue;
+  const writeResults = await Promise.all(entries.map(async ([id, rel]) => {
+    if (!providedProofs[id]) return null;
     const basePayload = isRecord(providedProofs[id]) ? providedProofs[id] as Record<string, unknown> : { provided_payload: providedProofs[id] };
     const payload = id === 'no_export_ui_proof' ? {
       schema_version: 'tapecoach_v3_no_export_ui_proof_v1',
@@ -5300,9 +5310,13 @@ export async function emitNoExportProofBundle(input: { run_id: string; proofs?: 
       ...resolveQADeploymentProvenance(),
     };
     const w = await writeInternalJson(root, input.run_id, rel, payload, id);
-    if (w.written) {
+    return { id, written: w.written };
+  }));
+  for (const result of writeResults) {
+    if (!result) continue;
+    const { id, written } = result;
+    if (written) {
       ids.push(id);
-      builtPayloadById[id] = payload;
     } else {
       hadFailure = true;
     }
