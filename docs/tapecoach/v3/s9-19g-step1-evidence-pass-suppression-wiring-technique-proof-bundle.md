@@ -21,6 +21,8 @@ S9-19G responds to runtime verification that showed the ordinary single-take Ste
 - Step1ObservableEvidence projection now accepts observed material component presence from structured Step 1 component data and can derive an internal candidate-technique descriptor from safe performance observations when no explicit candidate-technique extractor output is present.
 - Public scoring suppression proof no longer depends on PublicClaimTrace aggregate sufficiency when score claims are absent or specifically suppressed.
 - Public technique authority suppression proof is separated from the internal TechniqueObservationTrace gate. It can satisfy from public-output permission, parity field absence, content-scan status, claim absence/suppression, no-export, and unchanged public output without requiring internal technique proof.
+- PublicClaimTrace and ClaimCandidateTrace summaries now emit category-specific public score and public technique-authority claim counts, suppressed counts, blocked counts, unsuppressed counts, and suppression statuses. Metrics fall back conservatively when only generic public-feature blockers are present.
+- Report parity now performs a content-level scan over render/public payload text for named technique-authority claims, so allowed public fields cannot satisfy technique-authority suppression proof by field-path absence alone.
 - ValidatorTrace now validates the public technique suppression proof with the content-scan status included in the observed evidence.
 
 ## Preserved Boundaries

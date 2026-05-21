@@ -1,3 +1,6 @@
+import { mkdtemp, readFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildEvidencePassToolForProvider,
@@ -5,6 +8,7 @@ import {
   filterRunEvidencePassForStep1,
 } from '@/server/evidence-pass.server';
 import { buildQAAcceptanceMetrics } from '@/server/v3/qa-artifacts.server';
+import { emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
 
 const ordinaryArtefacts = [
   'step1_observable_evidence',
@@ -132,6 +136,7 @@ function completeRuntimeManifest(overrides: Record<string, unknown> = {}) {
       forbidden_fields_absent: true,
       blocked_score_fields_absent: true,
       blocked_technique_authority_fields_absent: true,
+      public_technique_authority_content_scan_safe: true,
       blocked_comparison_fields_absent: true,
       public_output_permissions_checked: true,
     },
@@ -166,6 +171,9 @@ describe('S9-19G Step 1 evidence pass, suppression wiring, and technique proof',
       ],
       presentation_evidence: ['Head and shoulders framing remains visible.'],
       evidence_sufficiency: { audio_assessable: true, video_assessable: true, movement_assessable: true, notes: 'Assessable.' },
+      candidate_technique_evidence: [
+        { safe_evidence_summary: 'Technique demonstrated with strong vocal control.', authoritative: true },
+      ],
       overall_score: 94,
       role_fit_evidence: 'Perfect role fit.',
     }, { model: 'unit-step1', durationSeconds: 30 });
@@ -176,6 +184,7 @@ describe('S9-19G Step 1 evidence pass, suppression wiring, and technique proof',
     expect(filtered.candidate_technique_evidence[0].safe_evidence_summary).toContain('Internal descriptor candidate only');
     expect(filtered.rejected_or_filtered_fields).toEqual(expect.arrayContaining([
       'detected_components[].score',
+      'candidate_technique_evidence[0]',
       'timestamped_evidence[2].observation',
       'overall_score',
       'role_fit_evidence',
@@ -212,5 +221,54 @@ describe('S9-19G Step 1 evidence pass, suppression wiring, and technique proof',
     expect(metrics.public_technique_authority_suppression_proof_status).toBe('insufficient');
     expect(metrics.public_technique_authority_suppression_blocker_codes).toContain('public_technique_claim_suppression_not_validated');
     expect(metrics.public_technique_authority_feature_status).toBe('blocked');
+  });
+
+  it('keeps score suppression insufficient when only generic public scoring blockers are present', () => {
+    const metrics = buildQAAcceptanceMetrics(completeRuntimeManifest({
+      public_claim_trace_summary: {
+        public_claim_gate_status: 'insufficient',
+        public_claim_trace_gate_status: 'insufficient',
+        unsupported_claim_count: 0,
+        rewrite_required_count: 1,
+        unsafe_or_overclaim_count: 0,
+        blocked_claim_count: 1,
+        blocker_codes: ['public_scoring_blocked'],
+      },
+    }));
+
+    expect(metrics.public_scoring_suppression_proof_status).toBe('insufficient');
+    expect(metrics.public_scoring_suppression_blocker_codes).toContain('public_score_claim_suppression_not_validated');
+    expect(metrics.public_scoring_status).toBe('blocked');
+  });
+
+  it('detects named technique-authority text inside otherwise allowed public report content', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-19g-technique-content-'));
+    const run = 'run-technique-content';
+    const take = 'technique-content';
+
+    await emitReportParityProof({
+      run_id: run,
+      analysis_run_id: run,
+      take_id: take,
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: { summary: 'Uses Meisner technique clearly.' },
+      render_payload: { summary: 'Uses Meisner technique clearly.' },
+      public_report_payload: { summary: 'Uses Meisner technique clearly.' },
+      allowed_public_fields: ['summary'],
+    });
+
+    const parity = JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'parity', 'report_parity_result.json'), 'utf8'));
+    expect(parity.public_technique_authority_content_scan_safe).toBe(false);
+    expect(parity.public_technique_authority_content_hit_count).toBeGreaterThan(0);
+    expect(parity.mismatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mismatch_type: 'public_technique_authority_content_present', field: 'summary' }),
+    ]));
+
+    const metrics = buildQAAcceptanceMetrics(completeRuntimeManifest({
+      report_parity_summary: parity,
+    }));
+    expect(metrics.public_technique_authority_suppression_proof_status).toBe('insufficient');
+    expect(metrics.public_technique_authority_suppression_blocker_codes).toContain('public_technique_authority_content_scan_not_validated');
   });
 });

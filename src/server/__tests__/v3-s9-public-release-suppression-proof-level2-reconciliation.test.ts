@@ -115,10 +115,11 @@ function completeManifest(overrides: Record<string, unknown> = {}) {
     },
     report_parity_summary: {
       parity_status: 'passed',
-      forbidden_fields_absent: true,
-      blocked_score_fields_absent: true,
-      blocked_technique_authority_fields_absent: true,
-      blocked_comparison_fields_absent: true,
+	      forbidden_fields_absent: true,
+	      blocked_score_fields_absent: true,
+	      blocked_technique_authority_fields_absent: true,
+	      public_technique_authority_content_scan_safe: true,
+	      blocked_comparison_fields_absent: true,
       public_output_permissions_checked: true,
     },
     no_export_status: 'no_export_proof_complete',
@@ -150,6 +151,28 @@ describe('v3 s9 public release suppression proof and Level 2 reconciliation', ()
     expect(metrics.public_technique_gate_permission).toBe(false);
     expect(metrics.public_named_technique_fields_absent_from_public_payload).toBe(true);
     expect(metrics.public_named_technique_claims_suppressed).toBe(true);
+  });
+
+  it('keeps suppression insufficient and reports the observed permission when public score output is enabled', () => {
+    const metrics = buildQAAcceptanceMetrics(completeManifest({
+      gate_trace_summary: {
+        gate_trace_gate_status: 'satisfied',
+        independent_gate_decision_status: 'independent_gate_satisfying',
+        ordinary_l2a_analysis_proof_status: 'satisfied',
+        ordinary_l2a_analysis_proof_blocker_codes: [],
+        public_output_permissions: {
+          show_overall_score: true,
+          show_public_technique_names: false,
+          show_repertoire_claims: false,
+          show_comparison_recommendation: false,
+          show_public_report: false,
+        },
+      },
+    }));
+
+    expect(metrics.public_score_gate_permission).toBe(true);
+    expect(metrics.public_scoring_suppression_proof_status).toBe('insufficient');
+    expect(metrics.public_scoring_suppression_blocker_codes).toContain('public_score_gate_permission_not_blocked');
   });
 
   it('keeps global Level 2 not accepted while evidence and suppression gates are separated from release gates', () => {

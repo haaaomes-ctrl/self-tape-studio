@@ -63,10 +63,10 @@ export interface QAArtifactEmitterOptions {
   legacy_adapter_artefact_ids?: string[];
   real_v3_spine_artefact_ids?: string[];
   defect_risk_ids?: string[];
-  public_claim_trace_summary?: {
-    claim_count?: number;
-    unsupported_claim_count?: number;
-    legacy_untraced_claim_count?: number;
+	  public_claim_trace_summary?: {
+	    claim_count?: number;
+	    unsupported_claim_count?: number;
+	    legacy_untraced_claim_count?: number;
     unsafe_or_overclaim_count?: number;
     rewrite_required_count?: number;
     supported_claim_count?: number;
@@ -77,14 +77,24 @@ export interface QAArtifactEmitterOptions {
     suppressed_claim_count?: number;
     overclaim_claim_count?: number;
     public_claim_gate_status?: string;
-    public_claim_gate_reason?: string;
-    source_classification?: string;
-    public_output_unchanged?: boolean;
-    blocker_codes?: string[];
-  };
-  claim_candidate_trace_summary?: {
-    claim_candidate_count?: number;
-    source_classification?: string;
+	    public_claim_gate_reason?: string;
+	    source_classification?: string;
+	    public_output_unchanged?: boolean;
+	    blocker_codes?: string[];
+	    public_score_claim_count?: number;
+	    public_score_claim_suppressed_count?: number;
+	    blocked_public_score_claim_count?: number;
+	    unsuppressed_public_score_claim_count?: number;
+	    public_score_claim_suppression_status?: string;
+	    public_technique_authority_claim_count?: number;
+	    public_technique_authority_claim_suppressed_count?: number;
+	    blocked_public_technique_authority_claim_count?: number;
+	    unsuppressed_public_technique_authority_claim_count?: number;
+	    public_technique_authority_claim_suppression_status?: string;
+	  };
+	  claim_candidate_trace_summary?: {
+	    claim_candidate_count?: number;
+	    source_classification?: string;
     claim_candidate_source_summary?: Record<string, number>;
     blocked_candidate_count?: number;
     rewrite_required_count?: number;
@@ -93,10 +103,21 @@ export interface QAArtifactEmitterOptions {
     unsafe_candidate_count?: number;
     limitation_only_candidate_count?: number;
     suppressed_candidate_count?: number;
-    safe_candidate_count?: number;
-    claim_candidate_gate_status?: 'missing' | 'insufficient';
-    claim_candidate_gate_reason?: string;
-  };
+	    safe_candidate_count?: number;
+	    claim_candidate_gate_status?: 'missing' | 'insufficient';
+	    claim_candidate_gate_reason?: string;
+	    blocker_codes?: string[];
+	    public_score_claim_count?: number;
+	    public_score_claim_suppressed_count?: number;
+	    blocked_public_score_claim_count?: number;
+	    unsuppressed_public_score_claim_count?: number;
+	    public_score_claim_suppression_status?: string;
+	    public_technique_authority_claim_count?: number;
+	    public_technique_authority_claim_suppressed_count?: number;
+	    blocked_public_technique_authority_claim_count?: number;
+	    unsuppressed_public_technique_authority_claim_count?: number;
+	    public_technique_authority_claim_suppression_status?: string;
+	  };
   technique_observation_trace_summary?: {
     legacy_adapter: number;
     report_snapshot: number;
@@ -260,9 +281,16 @@ export interface QAArtifactEmitterOptions {
     evidence_anchor_gate_reason?: string;
     blocker_codes?: string[];
   };
-  report_parity_summary?: {
-    parity_status?: 'passed' | 'failed' | 'insufficient' | 'missing' | string;
-  };
+	  report_parity_summary?: {
+	    parity_status?: 'passed' | 'failed' | 'insufficient' | 'missing' | string;
+	    forbidden_fields_absent?: boolean;
+	    public_output_permissions_checked?: boolean;
+	    blocked_score_fields_absent?: boolean;
+	    blocked_technique_authority_fields_absent?: boolean;
+	    blocked_comparison_fields_absent?: boolean;
+	    public_technique_authority_content_scan_safe?: boolean;
+	    public_technique_authority_content_hit_count?: number;
+	  };
   validator_trace_summary?: Record<string, unknown>;
   gate_trace_summary?: Record<string, unknown>;
 }
@@ -994,21 +1022,26 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(!runtimeTakeContextPresent ? ['runtime_verified_take_required'] : []),
   ]);
   const deploymentProvenanceBlockerCodes = deploymentProvenanceResolved ? [] : ['deployment_provenance_or_operator_confirmation_required'];
-  const safeCount = (...values: unknown[]) => {
+  const countFrom = (...values: unknown[]) => {
     for (const value of values) {
       if (value === null || value === undefined || value === '') continue;
       const parsed = Number(value);
-      if (Number.isFinite(parsed)) return parsed;
+      if (Number.isFinite(parsed)) return { value: parsed, present: true };
     }
-    return 0;
+    return { value: 0, present: false };
   };
-  const scoreClaimCount = safeCount(
+  const summaryBlockerCodes = [
+    ...(Array.isArray(publicClaimSummary.blocker_codes) ? publicClaimSummary.blocker_codes : []),
+    ...(Array.isArray(claimCandidateSummary.blocker_codes) ? claimCandidateSummary.blocker_codes : []),
+  ].filter((code): code is string => typeof code === 'string');
+  const hasSummaryBlocker = (code: string) => summaryBlockerCodes.includes(code);
+  const scoreClaimCountInfo = countFrom(
     publicClaimSummary.public_score_claim_count,
     publicClaimSummary.score_claim_count,
     claimCandidateSummary.public_score_claim_count,
     claimCandidateSummary.score_claim_count,
   );
-  const scoreClaimSuppressedCount = safeCount(
+  const scoreClaimSuppressedInfo = countFrom(
     publicClaimSummary.public_score_claim_suppressed_count,
     publicClaimSummary.suppressed_public_score_claim_count,
     publicClaimSummary.blocked_public_score_claim_count,
@@ -1016,12 +1049,19 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claimCandidateSummary.suppressed_public_score_claim_count,
     claimCandidateSummary.blocked_public_score_claim_count,
   );
-  const scoreClaimUnsuppressedCount = safeCount(
+  const scoreClaimUnsuppressedInfo = countFrom(
     publicClaimSummary.unsuppressed_public_score_claim_count,
     publicClaimSummary.unsafe_public_score_claim_count,
     claimCandidateSummary.unsuppressed_public_score_claim_count,
     claimCandidateSummary.unsafe_public_score_claim_count,
   );
+  const scoreClaimCount = scoreClaimCountInfo.present
+    ? scoreClaimCountInfo.value
+    : (hasSummaryBlocker('public_scoring_blocked') ? 1 : 0);
+  const scoreClaimSuppressedCount = scoreClaimSuppressedInfo.value;
+  const scoreClaimUnsuppressedCount = scoreClaimUnsuppressedInfo.present
+    ? scoreClaimUnsuppressedInfo.value
+    : (hasSummaryBlocker('public_scoring_blocked') && !scoreClaimSuppressedInfo.present ? 1 : 0);
   const scoreClaimSuppressionStatus = String(
     publicClaimSummary.public_score_claim_suppression_status
       ?? claimCandidateSummary.public_score_claim_suppression_status
@@ -1031,7 +1071,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     && (scoreClaimCount === 0
       || scoreClaimSuppressedCount >= scoreClaimCount
       || ['suppressed', 'blocked', 'not_applicable', 'satisfied'].includes(scoreClaimSuppressionStatus));
-  const techniqueClaimCount = safeCount(
+  const techniqueClaimCountInfo = countFrom(
     publicClaimSummary.public_technique_authority_claim_count,
     publicClaimSummary.public_technique_claim_count,
     publicClaimSummary.technique_authority_claim_count,
@@ -1039,7 +1079,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claimCandidateSummary.public_technique_claim_count,
     claimCandidateSummary.technique_authority_claim_count,
   );
-  const techniqueClaimSuppressedCount = safeCount(
+  const techniqueClaimSuppressedInfo = countFrom(
     publicClaimSummary.public_technique_authority_claim_suppressed_count,
     publicClaimSummary.suppressed_public_technique_authority_claim_count,
     publicClaimSummary.blocked_public_technique_authority_claim_count,
@@ -1047,12 +1087,19 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claimCandidateSummary.suppressed_public_technique_authority_claim_count,
     claimCandidateSummary.blocked_public_technique_authority_claim_count,
   );
-  const techniqueClaimUnsuppressedCount = safeCount(
+  const techniqueClaimUnsuppressedInfo = countFrom(
     publicClaimSummary.unsuppressed_public_technique_authority_claim_count,
     publicClaimSummary.unsafe_public_technique_authority_claim_count,
     claimCandidateSummary.unsuppressed_public_technique_authority_claim_count,
     claimCandidateSummary.unsafe_public_technique_authority_claim_count,
   );
+  const techniqueClaimCount = techniqueClaimCountInfo.present
+    ? techniqueClaimCountInfo.value
+    : (hasSummaryBlocker('public_technique_authority_blocked') ? 1 : 0);
+  const techniqueClaimSuppressedCount = techniqueClaimSuppressedInfo.value;
+  const techniqueClaimUnsuppressedCount = techniqueClaimUnsuppressedInfo.present
+    ? techniqueClaimUnsuppressedInfo.value
+    : (hasSummaryBlocker('public_technique_authority_blocked') && !techniqueClaimSuppressedInfo.present ? 1 : 0);
   const techniqueClaimSuppressionStatus = String(
     publicClaimSummary.public_technique_authority_claim_suppression_status
       ?? claimCandidateSummary.public_technique_authority_claim_suppression_status
@@ -1063,7 +1110,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
       || techniqueClaimSuppressedCount >= techniqueClaimCount
       || ['suppressed', 'blocked', 'not_applicable', 'satisfied'].includes(techniqueClaimSuppressionStatus));
   const publicTechniqueAuthorityContentScanSafe = blockedTechniqueFieldsAbsent
-    && rawReportParitySummary.forbidden_fields_absent === true;
+    && rawReportParitySummary.public_technique_authority_content_scan_safe === true;
   const publicScoringSuppressionBlockerCodes = dedupePreservingOrder([
     ...(!publicScorePermissionBlocked ? ['public_score_gate_permission_not_blocked'] : []),
     ...(!reportParityPassed || !blockedScoreFieldsAbsent ? ['public_score_absence_not_validated_by_report_parity'] : []),
@@ -1265,7 +1312,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_score_fields_absent_from_public_payload: blockedScoreFieldsAbsent,
     public_score_fields_absent_from_render_payload: blockedScoreFieldsAbsent,
     public_score_claims_suppressed: publicScoreClaimsSuppressed,
-    public_score_gate_permission: false,
+    public_score_gate_permission: !publicScorePermissionBlocked,
     public_score_no_export_leakage_status: noExportComplete ? 'satisfied' : 'insufficient',
     public_scoring_approved_for_release: false,
     public_technique_authority_feature_status: 'blocked',
@@ -1277,7 +1324,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_named_technique_fields_absent_from_public_payload: blockedTechniqueFieldsAbsent,
     public_named_technique_claims_suppressed: publicTechniqueClaimsSuppressed,
     public_technique_authority_content_scan_status: publicTechniqueAuthorityContentScanSafe ? 'satisfied' : 'insufficient',
-    public_technique_gate_permission: false,
+    public_technique_gate_permission: !publicTechniquePermissionBlocked,
     public_technique_no_export_leakage_status: noExportComplete ? 'satisfied' : 'insufficient',
     public_technique_authority_approved_for_release: false,
     public_comparison_recommendation_feature_status: 'blocked',
@@ -1290,7 +1337,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_comparison_recommendation_suppression_blocker_codes: publicComparisonSuppressionBlockerCodes,
     public_winner_absent: !comparisonInvoked || blockedComparisonFieldsAbsent,
     public_recommendation_absent: !comparisonInvoked || blockedComparisonFieldsAbsent,
-    comparison_recommendation_gate_permission: false,
+    comparison_recommendation_gate_permission: !publicComparisonPermissionBlocked,
     comparison_safety_suppression_proof_status: comparisonSafetySuppressionProofStatus,
     duplicate_same_video_safety_status: comparisonInvoked
       ? (publicComparisonSuppressionProofStatus === 'satisfied' ? 'satisfied_suppressed' : 'insufficient')

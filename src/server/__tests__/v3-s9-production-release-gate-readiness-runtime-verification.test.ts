@@ -118,6 +118,7 @@ function completeManifest(overrides: Record<string, unknown> = {}) {
       forbidden_fields_absent: true,
       blocked_score_fields_absent: true,
       blocked_technique_authority_fields_absent: true,
+      public_technique_authority_content_scan_safe: true,
       blocked_comparison_fields_absent: true,
       public_output_permissions_checked: true,
     },

@@ -1144,7 +1144,7 @@ export function filterRunEvidencePassForStep1(
       isRecord(entry) ? (entry.evidence_modality ?? entry.modality) : null,
     );
   });
-  if (candidateTechnique.length === 0) {
+  if (technique.length === 0) {
     derivedTechniqueCandidates.forEach((args) => addItem(...args));
   }
 
