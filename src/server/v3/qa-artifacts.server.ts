@@ -700,9 +700,41 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     model_run_fallback_count: 0,
     model_run_trace_gate_status: modelRunTraceGateStatus,
     model_run_trace_gate_reason: modelRunTraceStatus === 'missing' ? 'trace_not_emitted' : 'runtime_metadata_without_independent_model_proof_chain',
+    independent_model_proof_status: modelRunTraceStatus === 'missing' ? 'missing' : 'metadata_only_insufficient',
+    per_stage_model_proof_status: modelRunTraceStatus === 'missing' ? 'missing' : 'partial_metadata_only',
+    raw_prompt_or_response_stored: false,
+    secrets_or_signed_urls_stored: false,
+    forbidden_payload_fields_absent: true,
   };
-  const validatorTraceSummary = manifest.validator_trace_summary ?? {};
-  const gateTraceSummary = manifest.gate_trace_summary ?? {};
+  const validatorTraceSummary = manifest.validator_trace_summary ?? {
+    validation_count: 0,
+    pass_count: 0,
+    warning_count: 0,
+    fail_count: 0,
+    blocked_count: 0,
+    validator_trace_gate_status: validatorTraceStatus === 'missing' ? 'missing' : 'insufficient',
+    validator_trace_gate_reason: validatorTraceStatus === 'missing' ? 'trace_not_emitted' : 'internal_bundle_validator_not_independent_runtime_v3_proof',
+    independent_validation_status: validatorTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient',
+    referential_integrity_status: validatorTraceStatus === 'missing' ? 'missing' : 'not_run',
+  };
+  const gateTraceSummary = manifest.gate_trace_summary ?? {
+    gate_count: 0,
+    passed_gate_count: 0,
+    blocked_gate_count: 0,
+    insufficient_gate_count: 0,
+    missing_gate_count: 0,
+    not_applicable_gate_count: 0,
+    gate_trace_gate_status: gateTraceStatus === 'missing' ? 'missing' : 'insufficient',
+    gate_trace_gate_reason: gateTraceStatus === 'missing' ? 'trace_not_emitted' : 'internal_gate_snapshot_not_independent_runtime_v3_proof',
+    independent_gate_decision_status: gateTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient',
+    public_output_permissions: {
+      show_overall_score: false,
+      show_public_technique_names: false,
+      show_repertoire_claims: false,
+      show_comparison_recommendation: false,
+      show_public_report: false,
+    },
+  };
   const validatorTraceGateStatus: 'missing' | 'insufficient' | 'satisfied' = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const gateTraceGateStatus: 'missing' | 'insufficient' | 'satisfied' = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const mediaIdentityStatus = manifest.artefact_status_by_id?.media_identity ?? 'missing';
@@ -909,6 +941,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     validator_trace_warning_count: Number(validatorTraceSummary.warning_count ?? 0),
     validator_trace_fail_count: Number(validatorTraceSummary.fail_count ?? 0),
     validator_trace_blocked_count: Number(validatorTraceSummary.blocked_count ?? 0),
+    validator_trace_independent_validation_status: String(validatorTraceSummary.independent_validation_status ?? (validatorTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient')),
+    validator_trace_referential_integrity_status: String(validatorTraceSummary.referential_integrity_status ?? (validatorTraceStatus === 'missing' ? 'missing' : 'not_run')),
+    validator_trace_deterministic_checks_version: validatorTraceSummary.deterministic_checks_version ?? null,
+    validator_trace_public_private_leakage_validation_status: validatorTraceSummary.public_private_leakage_validation_status ?? null,
+    validator_trace_uk_english_validation_status: validatorTraceSummary.uk_english_validation_status ?? null,
+    validator_trace_render_permission_validation_status: validatorTraceSummary.render_permission_validation_status ?? null,
     validator_trace_summary: validatorTraceSummary,
     gate_trace_status: gateTraceStatus,
     gate_trace_gate_status: gateTraceGateStatus,
@@ -919,6 +957,14 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     gate_trace_insufficient_gate_count: Number(gateTraceSummary.insufficient_gate_count ?? 0),
     gate_trace_missing_gate_count: Number(gateTraceSummary.missing_gate_count ?? 0),
     gate_trace_not_applicable_gate_count: Number(gateTraceSummary.not_applicable_gate_count ?? 0),
+    gate_trace_independent_gate_decision_status: String(gateTraceSummary.independent_gate_decision_status ?? (gateTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient')),
+    gate_trace_public_output_permissions: gateTraceSummary.public_output_permissions ?? {
+      show_overall_score: false,
+      show_public_technique_names: false,
+      show_repertoire_claims: false,
+      show_comparison_recommendation: false,
+      show_public_report: false,
+    },
     gate_trace_summary: gateTraceSummary,
     model_run_trace_status: modelRunTraceStatus,
     model_run_trace_gate_status: modelRunTraceGateStatus,
@@ -928,6 +974,11 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     model_run_failed_count: Number(modelRunTraceSummary.model_run_failed_count ?? 0),
     model_run_timeout_count: Number(modelRunTraceSummary.model_run_timeout_count ?? 0),
     model_run_fallback_count: Number(modelRunTraceSummary.model_run_fallback_count ?? 0),
+    model_run_trace_independent_model_proof_status: String(modelRunTraceSummary.independent_model_proof_status ?? (modelRunTraceStatus === 'missing' ? 'missing' : 'metadata_only_insufficient')),
+    model_run_trace_per_stage_model_proof_status: String(modelRunTraceSummary.per_stage_model_proof_status ?? (modelRunTraceStatus === 'missing' ? 'missing' : 'partial_metadata_only')),
+    model_run_raw_prompt_or_response_stored: Boolean(modelRunTraceSummary.raw_prompt_or_response_stored ?? false),
+    model_run_secrets_or_signed_urls_stored: Boolean(modelRunTraceSummary.secrets_or_signed_urls_stored ?? false),
+    model_run_forbidden_payload_fields_absent: modelRunTraceSummary.forbidden_payload_fields_absent ?? true,
     model_run_trace_summary: modelRunTraceSummary,
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
