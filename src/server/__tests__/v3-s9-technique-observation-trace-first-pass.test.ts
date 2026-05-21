@@ -79,6 +79,8 @@ describe('S9 technique observation trace first pass non-array extraction', () =>
     } as any);
     expect(out.written).toBe(true);
     expect(out.level2_satisfies).toBe(false);
+    expect(out.source_family_summary).toBeDefined();
+    if (!out.source_family_summary) throw new Error('source_family_summary_missing');
     expect(out.source_family_summary.real_runtime_v3).toBe(0);
     const payload = JSON.parse(await readFile(path.join(root, 'r7', 'takes', 'take-t1', 'analysis-r7', 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
     expect(payload.cannot_satisfy_technique_observation_gate).toBe(true);
