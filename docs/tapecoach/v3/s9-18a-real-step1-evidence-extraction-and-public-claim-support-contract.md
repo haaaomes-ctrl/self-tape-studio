@@ -1,7 +1,7 @@
 # S9-18A Real Step 1 Evidence Extraction and Public Claim Support Contract
 
-**Status:** S9-18A architecture/design contract.  
-**Scope:** internal QA evidence-spine architecture only.  
+**Status:** S9-18A architecture/design contract.
+**Scope:** internal QA evidence-spine architecture only.
 **Controlling source:** `README.md` remains the product, QA, public/private boundary and release decision authority. This document must not override it.
 
 ## 1. Purpose
@@ -234,9 +234,9 @@ Cons:
 - would require broader manifest, metrics and trace rewiring;
 - risks two competing Step 1 sources unless ownership is strict.
 
-Migration risk: medium.  
-Runtime wiring impact: medium.  
-Manifest/metrics impact: medium.  
+Migration risk: medium.
+Runtime wiring impact: medium.
+Manifest/metrics impact: medium.
 Test impact: medium.
 
 #### Option 2: Extend `AnalysisEvidenceState` only
@@ -253,9 +253,9 @@ Cons:
 - makes provenance and retry semantics harder to isolate;
 - future media/model extractor changes may churn the handoff schema.
 
-Migration risk: low.  
-Runtime wiring impact: low.  
-Manifest/metrics impact: low.  
+Migration risk: low.
+Runtime wiring impact: low.
+Manifest/metrics impact: low.
 Test impact: medium.
 
 #### Option 3: Use both, with `Step1ObservableEvidence` feeding `AnalysisEvidenceState`
@@ -274,9 +274,9 @@ Cons:
 - requires strict identity and freshness checks between the two artefacts;
 - requires manifest and metrics support for both extractor output and aggregate status.
 
-Migration risk: medium.  
-Runtime wiring impact: medium.  
-Manifest/metrics impact: medium.  
+Migration risk: medium.
+Runtime wiring impact: medium.
+Manifest/metrics impact: medium.
 Test impact: medium.
 
 Recommendation: Option 3. Future implementation should introduce `analysis/Step1ObservableEvidence.json` as the extractor output container and project accepted items into `analysis/AnalysisEvidenceState.json`, which remains the canonical Step 1 gate/handoff aggregate.
