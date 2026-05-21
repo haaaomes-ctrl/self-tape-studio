@@ -1349,7 +1349,9 @@ The next engineering priority is **S9-17 Render/Public Payload Report Parity Arc
 Status:
 
 - S9-17A design/audit defines the contract for internal render/public payload parity proof.
-- S9-17B/C/D/E remain implementation, integration, runtime retest and closeout slices.
+- S9-17B/C implement the internal render/public payload emitters in source/tests.
+- S9-17D remains the fresh operator runtime retest and blocker-classification slice.
+- S9-17E remains final runtime closeout.
 - S9-17 is not Level 2 acceptance and does not unblock public or production gates.
 
 Scope:
@@ -1364,15 +1366,15 @@ Scope:
 
 ### Why this comes next
 
-S9-16 closed duplicate-media detection, same-video suppression, no-export proof and run-shape summary alignment. The largest remaining Level 2 blocker is truthful report parity: the system emits an insufficient report parity artefact because render and public payload surfaces are missing. Tier 2 near-duplicate sampling and Tier 3 normalised media fingerprinting remain deferred until higher-value report parity and public-boundary proof work is complete.
+S9-16 closed duplicate-media detection, same-video suppression, no-export proof and run-shape summary alignment. S9-17B/C add source/test coverage for the internal render and public payload surfaces. The remaining S9-17D blocker is fresh operator runtime verification: source/tests may pass, but closeout must inspect actual runtime artefacts before claiming the missing-surface blocker is resolved in production-like evidence. Tier 2 near-duplicate sampling and Tier 3 normalised media fingerprinting remain deferred until higher-value report parity and public-boundary proof work is complete.
 
 ### S9-17 delivery sequence
 
 - **S9-17A - render/public payload parity contract:** document the internal QA artefact contract, allowed fields, forbidden fields, status model and manifest/metrics alignment rules.
-- **S9-17B - render payload shadow artefact:** emit `render/report_render_payload.json` from the existing report-render source without changing public rendering.
-- **S9-17C - public report payload and forbidden-field scanner:** emit `public/report_public_payload.json` as a sanitised subset and scan both payloads for blocked scoring, technique authority, comparison, castability, bookability, marketability and internal fields.
-- **S9-17D - report parity integration:** feed both payloads into report parity and align manifest and `qa_acceptance_metrics`; insufficient or failed parity remains non-satisfying.
-- **S9-17E - real-runtime retest and closeout:** rerun ordinary single-take and duplicate-comparison runtime evidence and document remaining blockers.
+- **S9-17B - render payload shadow artefact:** emit `reports/render_payload.json` from the existing report-render source without changing public rendering.
+- **S9-17C - public report payload and forbidden-field scanner:** emit `reports/public_report_payload.json` as a sanitised subset and scan both payloads for blocked scoring, technique authority, comparison, castability, bookability, marketability and internal fields.
+- **S9-17D - real-runtime report parity retest:** inspect fresh operator runtime evidence for raw/render/public parity, manifest and `qa_acceptance_metrics` alignment; classify unavailable runtime artefacts as `operator_verification_required`.
+- **S9-17E - final closeout:** rerun ordinary single-take and duplicate-comparison runtime evidence after S9-17D verification and document remaining blockers.
 
 S9-17 must not claim Level 2 acceptance until every required gate truly satisfies. Public scoring, public technique authority, public comparison winner/recommendation and production-safe status remain blocked.
 
