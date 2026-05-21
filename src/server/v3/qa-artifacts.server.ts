@@ -138,6 +138,9 @@ export interface QAArtifactEmitterOptions {
     evidence_anchor_gate_reason?: string;
     blocker_codes?: string[];
   };
+  report_parity_summary?: {
+    parity_status?: 'passed' | 'failed' | 'insufficient' | 'missing' | string;
+  };
   validator_trace_summary?: Record<string, unknown>;
   gate_trace_summary?: Record<string, unknown>;
 }
@@ -627,6 +630,23 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     sourceFamilyCount(evidenceAnchorSourceSummary.real_runtime_v3) > 0
     || String(sourceClassById.evidence_anchors ?? '').includes('real_runtime_v3_partial');
   const noExportStatus = String(manifest.no_export_status ?? 'blocked');
+  const parityArtefactStatus = String(manifest.artefact_status_by_id?.parity_report ?? 'missing');
+  const rawReportParitySummary = manifest.report_parity_summary && typeof manifest.report_parity_summary === 'object'
+    ? manifest.report_parity_summary
+    : {};
+  const rawReportParityStatus = typeof rawReportParitySummary.parity_status === 'string'
+    ? rawReportParitySummary.parity_status
+    : null;
+  const reportParityStatus = parityArtefactStatus === 'missing'
+    ? 'missing'
+    : (rawReportParityStatus === 'passed' || rawReportParityStatus === 'failed' || rawReportParityStatus === 'insufficient'
+      ? rawReportParityStatus
+      : (parityArtefactStatus === 'emitted' && spineById.parity_report === true ? 'passed' : 'insufficient'));
+  const reportParityNeedsWork = reportParityStatus !== 'passed';
+  const noExportNeedsWork = noExportStatus !== 'no_export_proof_complete';
+  const parityAndNoExportTask = noExportNeedsWork && reportParityNeedsWork
+    ? 'parity and no-export proof'
+    : (noExportNeedsWork ? 'no-export proof' : (reportParityNeedsWork ? 'report parity proof' : null));
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
@@ -644,7 +664,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(comparisonInvoked
       ? (comparisonEvidenceStatus === 'missing' ? ['comparison runtime artefacts'] : ['promote comparison runtime artefacts to independently validated comparison proof'])
       : []),
-    noExportStatus === 'no_export_proof_complete' ? 'report parity proof' : 'parity and no-export proof',
+    ...(parityAndNoExportTask ? [parityAndNoExportTask] : []),
   ];
   return {
     schema_version: 'tapecoach_v3_qa_acceptance_metrics_v1',
@@ -688,7 +708,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     legacy_adapter_artefact_count: (manifest.legacy_adapter_artefact_ids ?? []).length,
     output_quality_defects: defects,
     defect_risk_ids: defects,
-    public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: 'blocked', export_or_no_export_status: noExportStatus,
+    public_private_leakage_status: 'blocked', uk_english_status: 'unknown', render_parity_status: reportParityStatus, report_parity_status: reportParityStatus, export_or_no_export_status: noExportStatus,
     comparison_evidence_status: comparisonEvidenceStatus,
     comparison_raw_status: manifest.artefact_status_by_id?.comparison_raw ?? 'missing',
     comparison_report_internal_status: manifest.artefact_status_by_id?.comparison_report_internal ?? 'missing',
@@ -981,6 +1001,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
     media_identity_summary: options.media_identity_summary ?? undefined,
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
+    report_parity_summary: options.report_parity_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
     qa_acceptance_metrics: { gf01_rt15_status: comparisonGateApplies ? 'blocked' : 'not_applicable', level2_status: 'not_accepted', blocker_codes },

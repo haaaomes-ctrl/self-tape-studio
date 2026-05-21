@@ -72,6 +72,85 @@ describe('v3 s9 qa acceptance metrics', () => {
     expect(missing.next_required_engineering_tasks).toContain('ModelRunTrace');
   });
 
+  it('derives report parity status and follow-up tasks from the final parity artefact state', () => {
+    const base: any = {
+      run_id: 'r',
+      analysis_run_id: 'r',
+      submission_id: 's',
+      take_id: 't',
+      compared_take_ids: ['t'],
+      comparison_run_id: null,
+      generated_at: new Date().toISOString(),
+      qa_artifact_root: 'x',
+      required_artifacts: [],
+      emitted_artifacts: ['no_export_proof'],
+      missing_artifacts: [],
+      emitted_blocked_artefact_ids: [],
+      deferred_artifact_ids: [],
+      not_applicable_artifact_ids: [],
+      runtime_evidence_accepted_by_id: [],
+      runtime_evidence_blocked_by_id: [],
+      blocker_codes: [],
+      artefact_source_classification_by_id: { parity_report: 'internal_report_parity_proof' },
+      artefact_level2_spine_satisfaction_by_id: {},
+      legacy_adapter_artefact_ids: [],
+      real_v3_spine_artefact_ids: [],
+      no_export_status: 'no_export_proof_complete',
+    };
+
+    const passed = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base,
+      emitted_artifacts: ['no_export_proof', 'parity_report'],
+      artefact_status_by_id: { parity_report: 'emitted' },
+      artefact_level2_spine_satisfaction_by_id: { parity_report: true },
+      report_parity_summary: { parity_status: 'passed' },
+    });
+    expect(passed.render_parity_status).toBe('passed');
+    expect(passed.report_parity_status).toBe('passed');
+    expect(passed.blocker_codes).not.toContain('parity_artefacts_missing');
+    expect(passed.next_required_engineering_tasks).not.toContain('report parity proof');
+    expect(passed.next_required_engineering_tasks).not.toContain('parity and no-export proof');
+    expect(passed.level2_status).toBe('not_accepted');
+    expect(passed.production_safe_status).toBe('blocked');
+    expect(passed.public_scoring_status).toBe('blocked');
+    expect(passed.public_technique_authority_status).toBe('blocked');
+
+    const failed = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base,
+      emitted_blocked_artefact_ids: ['parity_report'],
+      blocker_codes: ['parity_artefacts_missing'],
+      artefact_status_by_id: { parity_report: 'emitted_blocked' },
+      artefact_level2_spine_satisfaction_by_id: { parity_report: false },
+      report_parity_summary: { parity_status: 'failed' },
+    });
+    expect(failed.render_parity_status).toBe('failed');
+    expect(failed.report_parity_status).toBe('failed');
+    expect(failed.blocker_codes).toContain('parity_artefacts_missing');
+    expect(failed.next_required_engineering_tasks).toContain('report parity proof');
+
+    const insufficient = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base,
+      emitted_blocked_artefact_ids: ['parity_report'],
+      blocker_codes: ['parity_artefacts_missing'],
+      artefact_status_by_id: { parity_report: 'emitted_blocked' },
+      artefact_level2_spine_satisfaction_by_id: { parity_report: false },
+      report_parity_summary: { parity_status: 'insufficient' },
+    });
+    expect(insufficient.render_parity_status).toBe('insufficient');
+    expect(insufficient.report_parity_status).toBe('insufficient');
+    expect(insufficient.blocker_codes).toContain('parity_artefacts_missing');
+
+    const missing = qaArtifactsModule.buildQAAcceptanceMetrics({
+      ...base,
+      missing_artifacts: ['parity_report'],
+      blocker_codes: ['parity_artefacts_missing'],
+      artefact_status_by_id: { parity_report: 'missing' },
+    });
+    expect(missing.render_parity_status).toBe('missing');
+    expect(missing.report_parity_status).toBe('missing');
+    expect(missing.blocker_codes).toContain('parity_artefacts_missing');
+  });
+
   it('keeps fallback AnalysisEvidenceState summary truthful for emitted and blocked statuses', () => {
     const base: any = {
       run_id: 'r',

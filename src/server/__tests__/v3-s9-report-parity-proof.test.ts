@@ -345,8 +345,11 @@ describe('v3-s9 report parity proof', () => {
     expect(metrics.emitted_artefacts).toContain('no_export_log_proof');
     expect(metrics.emitted_artefacts).toContain('no_export_proof');
     expect(metrics.export_or_no_export_status).toBe('no_export_proof_complete');
+    expect(metrics.render_parity_status).toBe('passed');
+    expect(metrics.report_parity_status).toBe('passed');
     expect(metrics.blocker_codes).not.toContain('parity_artefacts_missing');
     expect(metrics.blocker_codes).not.toContain('no_export_proof_missing');
+    expect(metrics.next_required_engineering_tasks).not.toContain('report parity proof');
     expect(metrics.level2_status).toBe('not_accepted');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
@@ -688,6 +691,8 @@ describe('v3-s9 report parity proof', () => {
     expect(manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_report')?.blocker_code).toBe('parity_artefacts_missing');
     expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
     expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.render_parity_status).toBe('failed');
+    expect(metrics.report_parity_status).toBe('failed');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.parity_report).toBe(false);
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
@@ -734,9 +739,12 @@ describe('v3-s9 report parity proof', () => {
     expect(manifest.artefact_status_by_id.public_report_payload).toBe('emitted');
     expect(metrics.emitted_artefacts).toContain('render_payload');
     expect(metrics.emitted_artefacts).toContain('public_report_payload');
+    expect(metrics.render_parity_status).toBe('passed');
+    expect(metrics.report_parity_status).toBe('passed');
     expect(manifest.artefact_status_by_id.parity_report).toBe('emitted');
     expect(manifest.blocker_codes).not.toContain('parity_artefacts_missing');
     expect(metrics.blocker_codes).not.toContain('parity_artefacts_missing');
+    expect(metrics.next_required_engineering_tasks).not.toContain('report parity proof');
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
@@ -785,9 +793,13 @@ describe('v3-s9 report parity proof', () => {
       emitted_artefact_ids: ['raw_report'],
     });
     const manifest = JSON.parse(await readFile(path.join(root, 'run-ordinary-missing', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'run-ordinary-missing', 'qa', 'acceptance_metrics.json'), 'utf8'));
     expect(manifest.artefact_status_by_id.parity_report).toBe('missing');
     expect(manifest.artefact_status_by_id.parity_comparison).toBe('not_applicable');
     expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.render_parity_status).toBe('missing');
+    expect(metrics.report_parity_status).toBe('missing');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
   });
 
   it('comparison parity requiredness: comparison-invoked runs still require parity_comparison', async () => {
