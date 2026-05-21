@@ -93,6 +93,53 @@ describe('v3-s9 report parity proof', () => {
     expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
   });
 
+  it('S9-17D: preserves bracket-indexed allowed paths when copying render and public report payload fields', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17d-indexed-paths-'));
+    const allowedFieldPaths = [
+      'report_data.items[0].text',
+      'report_data.sections[0].notes[0].text',
+    ];
+    await emitRenderPayloadArtifact({
+      run_id: 'run-indexed-render',
+      analysis_run_id: 'run-indexed-render',
+      take_id: 'tir',
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: {
+        report_data: {
+          items: [{ text: 'First allowed item' }, { text: 'Second omitted item' }],
+          sections: [{ notes: [{ text: 'Nested allowed note' }] }],
+        },
+      },
+      allowed_field_paths: allowedFieldPaths,
+    });
+    const renderPayload = await readRenderPayload(root, 'run-indexed-render', 'tir');
+    expect(renderPayload.render_payload_status).toBe('emitted');
+    expect(renderPayload.allowed_field_status_by_path['report_data.items[0].text'].status).toBe('rendered_allowed');
+    expect(renderPayload.allowed_field_status_by_path['report_data.sections[0].notes[0].text'].status).toBe('rendered_allowed');
+    expect(renderPayload.report_data).toEqual({
+      items: [{ text: 'First allowed item' }],
+      sections: [{ notes: [{ text: 'Nested allowed note' }] }],
+    });
+
+    await emitPublicReportPayloadArtifact({
+      run_id: 'run-indexed-public',
+      analysis_run_id: 'run-indexed-public',
+      take_id: 'tip',
+      internal_qa_emit: true,
+      root_dir: root,
+      render_payload: { report_data: renderPayload.report_data },
+      allowed_field_paths: allowedFieldPaths,
+    });
+    const publicPayload = await readPublicReportPayload(root, 'run-indexed-public', 'tip');
+    expect(publicPayload.public_report_payload_status).toBe('emitted');
+    expect(publicPayload.allowed_field_status_by_path['report_data.items[0].text'].status).toBe('public_safe_allowed');
+    expect(publicPayload.allowed_field_status_by_path['report_data.sections[0].notes[0].text'].status).toBe('public_safe_allowed');
+    expect(publicPayload.forbidden_field_scan.strict_subset_of_render_payload).toBe(true);
+    expect(publicPayload.blocked_field_hits).toEqual([]);
+    expect(publicPayload.report_data).toEqual(renderPayload.report_data);
+  });
+
   it('S9-17C: emits public_report_payload as an internal-only sanitised subset of render payload', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-17c-public-'));
     const renderPayload = {

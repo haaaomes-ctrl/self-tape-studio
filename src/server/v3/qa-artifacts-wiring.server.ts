@@ -991,18 +991,40 @@ function cloneRenderSafeValue(value: unknown, seen: WeakSet<object> = new WeakSe
 
 function setPathValue(target: Record<string, unknown>, path: string, value: unknown): boolean {
   const tokens = tokenizePath(path);
-  if (!tokens || tokens.some((token) => typeof token === 'number')) return false;
-  let current: Record<string, unknown> = target;
+  if (!tokens) return false;
+  let current: unknown = target;
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
-    if (typeof token !== 'string') return false;
+    const nextToken = tokens[i + 1];
     if (i === tokens.length - 1) {
-      current[token] = value;
+      if (typeof token === 'number') {
+        if (!Array.isArray(current)) return false;
+        current[token] = value;
+      } else {
+        if (!isPlainRecord(current)) return false;
+        current[token] = value;
+      }
       return true;
     }
+    if (typeof token === 'number') {
+      if (!Array.isArray(current)) return false;
+      const existing = current[token];
+      if (typeof nextToken === 'number') {
+        if (!Array.isArray(existing)) current[token] = [];
+      } else if (!isPlainRecord(existing)) {
+        current[token] = {};
+      }
+      current = current[token];
+      continue;
+    }
+    if (!isPlainRecord(current)) return false;
     const existing = current[token];
-    if (!isPlainRecord(existing)) current[token] = {};
-    current = current[token] as Record<string, unknown>;
+    if (typeof nextToken === 'number') {
+      if (!Array.isArray(existing)) current[token] = [];
+    } else if (!isPlainRecord(existing)) {
+      current[token] = {};
+    }
+    current = current[token];
   }
   return false;
 }
