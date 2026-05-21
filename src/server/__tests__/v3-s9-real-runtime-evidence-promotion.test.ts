@@ -401,11 +401,17 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     linked_truth_state_ids: [truthIdFor(`${item.evidence_kind ?? 'runtime_fact'}_${index + 1}`)],
     assessability_limitations: [],
     blocker_codes: [],
-    analysis_evidence_state_source_path: item.analysis_evidence_state_source_path ?? `observable_evidence_items[${index}]`,
+    analysis_evidence_state_source_path: `observable_evidence_items[${index}]`,
   }));
   const addFamilyItem = (field: string, item: any) => {
-    payload[field] = [item];
-    payload.observable_evidence_items.push({ ...item, analysis_evidence_state_source_path: `${field}[0]` });
+    const linkedItem = {
+      ...item,
+      linked_truth_state_ids: item.linked_truth_state_ids?.length
+        ? item.linked_truth_state_ids
+        : [truthIdFor(String(item.evidence_kind ?? field))],
+    };
+    payload[field] = [linkedItem];
+    payload.observable_evidence_items.push({ ...linkedItem, analysis_evidence_state_source_path: `${field}[0]` });
   };
   addFamilyItem('video_observable_evidence_items', {
     evidence_item_id: 'aes-video-complete',
@@ -1609,10 +1615,10 @@ describe('S9-14G hardened runEvidencePass persisted Step 1 extractor', () => {
     expect(unavailableKinds).toEqual(expect.arrayContaining([
       'video_observable_evidence_not_extracted',
       'audio_observable_evidence_not_extracted',
-      'material_observable_evidence_not_extracted',
       'performance_observable_evidence_not_extracted',
       'candidate_technique_observable_evidence_not_extracted',
     ]));
+    expect(unavailableKinds).not.toContain('material_observable_evidence_not_extracted');
   });
 
   it('blocks Step 2 dependency when TruthStateMap linkage is missing', async () => {

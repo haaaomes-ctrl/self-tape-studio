@@ -81,6 +81,11 @@ async function emitOrdinaryAnalysisBundle() {
     internal_qa_emit: true,
   });
   expect(anchorsOut.written).toBe(true);
+  expect(analysis.step1_observable_evidence_source_classification).toBeDefined();
+  if (!analysis.step1_observable_evidence_source_classification) {
+    throw new Error('step1_observable_evidence_source_classification_missing');
+  }
+  const step1ObservableEvidenceSourceClassification = analysis.step1_observable_evidence_source_classification;
   await emitQAManifestForAnalysisRun({
     run_id: run,
     analysis_run_id: run,
@@ -91,7 +96,7 @@ async function emitOrdinaryAnalysisBundle() {
     emitted_artefact_ids: [...analysis.emitted_artefact_ids, ...anchorsOut.emitted_artefact_ids],
     emitted_blocked_artefact_ids: analysis.emitted_blocked_artefact_ids,
     artefact_source_classification_by_id: {
-      step1_observable_evidence: analysis.step1_observable_evidence_source_classification,
+      step1_observable_evidence: step1ObservableEvidenceSourceClassification,
       analysis_evidence_state: analysis.source_classification,
       evidence_anchors: anchorsOut.source_classification,
     },
