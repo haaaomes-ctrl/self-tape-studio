@@ -803,6 +803,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ? 'missing'
     : (spineById.validator_trace === true
       || validatorTraceSummary.validator_trace_gate_status === 'satisfied'
+      || validatorTraceSummary.ordinary_l2a_validation_status === 'satisfied'
       || validatorTraceSummary.independent_validation_status === 'independent_validation_satisfying'
       ? 'satisfied'
       : 'insufficient');
@@ -889,12 +890,129 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     : `ordinary_internal_analysis_proof_unsatisfied_gates:${ordinaryL2AUnsatisfiedGateIds.join(',')}`;
   const publicReleaseDependencyStatus = 'blocked';
   const comparisonDependencyStatus = comparisonInvoked ? 'comparison_invoked_separate_gate' : 'ordinary_single_take_comparison_not_applicable';
+  const publicOutputPermissions = gateTraceSummary.public_output_permissions && typeof gateTraceSummary.public_output_permissions === 'object'
+    ? gateTraceSummary.public_output_permissions
+    : {
+      show_overall_score: false,
+      show_public_technique_names: false,
+      show_repertoire_claims: false,
+      show_comparison_recommendation: false,
+      show_public_report: false,
+    };
+  const publicScorePermissionBlocked = publicOutputPermissions.show_overall_score === false;
+  const publicTechniquePermissionBlocked = publicOutputPermissions.show_public_technique_names === false;
+  const publicComparisonPermissionBlocked = publicOutputPermissions.show_comparison_recommendation === false;
+  const reportParityPassed = reportParityStatus === 'passed';
+  const noExportComplete = noExportStatus === 'no_export_proof_complete';
+  const blockedScoreFieldsAbsent = rawReportParitySummary.blocked_score_fields_absent === true
+    || (rawReportParitySummary.blocked_score_fields_absent === undefined && rawReportParitySummary.forbidden_fields_absent === true && rawReportParitySummary.public_output_permissions_checked === true);
+  const blockedTechniqueFieldsAbsent = rawReportParitySummary.blocked_technique_authority_fields_absent === true
+    || (rawReportParitySummary.blocked_technique_authority_fields_absent === undefined && rawReportParitySummary.forbidden_fields_absent === true && rawReportParitySummary.public_output_permissions_checked === true);
+  const blockedComparisonFieldsAbsent = rawReportParitySummary.blocked_comparison_fields_absent === true
+    || (rawReportParitySummary.blocked_comparison_fields_absent === undefined && rawReportParitySummary.forbidden_fields_absent === true && rawReportParitySummary.public_output_permissions_checked === true);
+  const publicOutputUnchanged = manifest.public_output_unchanged !== false;
+  const publicScoreClaimsSuppressed = publicClaimGateStatus === 'sufficient'
+    && Number(publicClaimSummary.unsupported_claim_count ?? 0) === 0
+    && Number(publicClaimSummary.unsafe_or_overclaim_count ?? publicClaimSummary.overclaim_claim_count ?? 0) === 0
+    && Number(publicClaimSummary.rewrite_required_count ?? 0) === 0;
+  const publicTechniqueClaimsSuppressed = publicClaimGateStatus === 'sufficient'
+    && Number(publicClaimSummary.unsupported_claim_count ?? 0) === 0
+    && Number(publicClaimSummary.unsafe_or_overclaim_count ?? publicClaimSummary.overclaim_claim_count ?? 0) === 0
+    && Number(publicClaimSummary.rewrite_required_count ?? 0) === 0;
+  const publicScoringSuppressionBlockerCodes = dedupePreservingOrder([
+    ...(!publicScorePermissionBlocked ? ['public_score_gate_permission_not_blocked'] : []),
+    ...(!reportParityPassed || !blockedScoreFieldsAbsent ? ['public_score_absence_not_validated_by_report_parity'] : []),
+    ...(!publicScoreClaimsSuppressed ? ['public_score_claim_suppression_not_validated'] : []),
+    ...(scoreTraceGateStatus !== 'satisfied' ? ['score_trace_internal_proof_not_satisfied'] : []),
+    ...(!noExportComplete ? ['public_score_no_export_leakage_not_validated'] : []),
+    ...(!publicOutputUnchanged ? ['public_output_changed'] : []),
+  ]);
+  const publicTechniqueSuppressionBlockerCodes = dedupePreservingOrder([
+    ...(!publicTechniquePermissionBlocked ? ['public_technique_gate_permission_not_blocked'] : []),
+    ...(!reportParityPassed || !blockedTechniqueFieldsAbsent ? ['public_technique_absence_not_validated_by_report_parity'] : []),
+    ...(!publicTechniqueClaimsSuppressed ? ['public_technique_claim_suppression_not_validated'] : []),
+    ...(techniqueObservationGateStatus !== 'satisfied' ? ['technique_observation_internal_proof_not_satisfied'] : []),
+    ...(!noExportComplete ? ['public_technique_no_export_leakage_not_validated'] : []),
+    ...(!publicOutputUnchanged ? ['public_output_changed'] : []),
+  ]);
+  const publicComparisonSuppressionBlockerCodes = !comparisonInvoked
+    ? []
+    : dedupePreservingOrder([
+      ...(!publicComparisonPermissionBlocked ? ['public_comparison_gate_permission_not_blocked'] : []),
+      ...(!reportParityPassed || !blockedComparisonFieldsAbsent ? ['public_comparison_absence_not_validated_by_report_parity'] : []),
+      ...(manifest.artefact_status_by_id?.comparison_suppression_trace !== 'emitted' ? ['comparison_suppression_trace_missing'] : []),
+      ...(!noExportComplete ? ['public_comparison_no_export_leakage_not_validated'] : []),
+      ...(!publicOutputUnchanged ? ['public_output_changed'] : []),
+    ]);
+  const publicScoringSuppressionProofStatus = publicScoringSuppressionBlockerCodes.length === 0 ? 'satisfied' : 'insufficient';
+  const publicTechniqueSuppressionProofStatus = publicTechniqueSuppressionBlockerCodes.length === 0 ? 'satisfied' : 'insufficient';
+  const publicComparisonSuppressionProofStatus = !comparisonInvoked
+    ? 'not_applicable'
+    : (publicComparisonSuppressionBlockerCodes.length === 0 ? 'satisfied' : 'insufficient');
+  const comparisonSafetySuppressionProofStatus = publicComparisonSuppressionProofStatus;
+  const suppressionProofBlockerCodes = dedupePreservingOrder([
+    ...publicScoringSuppressionBlockerCodes,
+    ...publicTechniqueSuppressionBlockerCodes,
+    ...publicComparisonSuppressionBlockerCodes,
+  ]);
+  const globalLevel2EvidenceBlockerCodes = dedupePreservingOrder([
+    ...ordinaryL2ABlockerCodes,
+    ...(!reportParityPassed ? ['report_parity_not_passed'] : []),
+    ...(!noExportComplete ? ['no_export_proof_not_complete'] : []),
+    ...suppressionProofBlockerCodes,
+  ]);
+  const globalLevel2EvidenceStatus = globalLevel2EvidenceBlockerCodes.length === 0
+    && ordinaryL2AAnalysisProofStatus === 'satisfied'
+    ? 'satisfied'
+    : 'insufficient';
+  const globalLevel2ReleaseBlockerCodes = ['production_safe_blocked', 'customer_release_blocked'];
+  const globalLevel2FeatureApprovalBlockerCodes = [
+    'public_scoring_feature_approval_blocked',
+    'public_technique_authority_feature_approval_blocked',
+    'public_comparison_recommendation_feature_approval_blocked',
+  ];
+  const globalLevel2ComparisonBlockerCodes = comparisonInvoked && comparisonEvidenceStatus !== 'insufficient'
+    ? ['comparison_runtime_safety_gate_not_reconciled']
+    : [];
+  const globalLevel2AcceptanceStatus = 'not_accepted';
+  const globalLevel2AcceptanceReason = globalLevel2EvidenceStatus === 'satisfied'
+    ? 'global_level2_evidence_and_suppression_satisfied_but_production_customer_release_blocked'
+    : 'global_level2_evidence_or_suppression_incomplete';
+  const globalLevel2BlockerCodesByFamily = {
+    evidence: globalLevel2EvidenceBlockerCodes,
+    suppression: suppressionProofBlockerCodes,
+    comparison: globalLevel2ComparisonBlockerCodes,
+    feature_approval: globalLevel2FeatureApprovalBlockerCodes,
+    release: globalLevel2ReleaseBlockerCodes,
+  };
+  const globalLevel2SuppressionProofGateIds = [
+    'public_scoring_suppression_proof_gate',
+    'public_technique_authority_suppression_proof_gate',
+    'public_comparison_recommendation_suppression_proof_gate',
+  ];
+  const globalLevel2SatisfiedGateIds = dedupePreservingOrder([
+    ...ordinaryL2ASatisfiedGateIds,
+    ...(globalLevel2EvidenceStatus === 'satisfied' ? ['global_level2_evidence_gate'] : []),
+    ...(publicScoringSuppressionProofStatus === 'satisfied' ? ['public_scoring_suppression_proof_gate'] : []),
+    ...(publicTechniqueSuppressionProofStatus === 'satisfied' ? ['public_technique_authority_suppression_proof_gate'] : []),
+    ...(['satisfied', 'not_applicable'].includes(publicComparisonSuppressionProofStatus) ? ['public_comparison_recommendation_suppression_proof_gate'] : []),
+  ]);
+  const globalLevel2UnsatisfiedGateIds = dedupePreservingOrder([
+    ...ordinaryL2AUnsatisfiedGateIds,
+    ...(globalLevel2EvidenceStatus === 'satisfied' ? [] : ['global_level2_evidence_gate']),
+    ...(publicScoringSuppressionProofStatus === 'satisfied' ? [] : ['public_scoring_suppression_proof_gate']),
+    ...(publicTechniqueSuppressionProofStatus === 'satisfied' ? [] : ['public_technique_authority_suppression_proof_gate']),
+    ...(['satisfied', 'not_applicable'].includes(publicComparisonSuppressionProofStatus) ? [] : ['public_comparison_recommendation_suppression_proof_gate']),
+  ]);
+  const globalLevel2BlockedReleaseGateIds = [
+    'production_safe_gate',
+    'customer_release_gate',
+  ];
   const level2BlockerCodes = dedupePreservingOrder([
     ...ordinaryL2ABlockerCodes,
-    'public_scoring_blocked',
-    'public_technique_authority_blocked',
-    'public_comparison_recommendation_blocked',
-    'production_safe_blocked',
+    ...suppressionProofBlockerCodes,
+    ...globalLevel2FeatureApprovalBlockerCodes,
+    ...globalLevel2ReleaseBlockerCodes,
   ]);
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
@@ -947,8 +1065,60 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ordinary_l2a_not_applicable_gate_ids: ordinaryL2ANotApplicableGateIds,
     ordinary_l2a_public_release_dependency_status: publicReleaseDependencyStatus,
     ordinary_l2a_comparison_dependency_status: comparisonDependencyStatus,
+    global_level2_evidence_status: globalLevel2EvidenceStatus,
+    global_level2_release_status: 'blocked',
+    global_level2_acceptance_status: globalLevel2AcceptanceStatus,
+    global_level2_acceptance_reason: globalLevel2AcceptanceReason,
+    global_level2_blocker_codes_by_family: globalLevel2BlockerCodesByFamily,
+    global_level2_satisfied_gate_ids: globalLevel2SatisfiedGateIds,
+    global_level2_unsatisfied_gate_ids: globalLevel2UnsatisfiedGateIds,
+    global_level2_blocked_release_gate_ids: globalLevel2BlockedReleaseGateIds,
+    global_level2_suppression_proof_gate_ids: globalLevel2SuppressionProofGateIds,
     public_comparison_recommendation_status: 'blocked',
+    public_scoring_feature_status: 'blocked',
+    public_scoring_suppression_proof_status: publicScoringSuppressionProofStatus,
+    public_scoring_suppression_reason: publicScoringSuppressionProofStatus === 'satisfied'
+      ? 'public_score_absence_validated_with_gate_permissions_claim_suppression_parity_and_no_export'
+      : `public_score_suppression_blockers:${publicScoringSuppressionBlockerCodes.join(',')}`,
+    public_scoring_suppression_blocker_codes: publicScoringSuppressionBlockerCodes,
+    public_score_fields_absent_from_public_payload: blockedScoreFieldsAbsent,
+    public_score_fields_absent_from_render_payload: blockedScoreFieldsAbsent,
+    public_score_claims_suppressed: publicScoreClaimsSuppressed,
+    public_score_gate_permission: false,
+    public_score_no_export_leakage_status: noExportComplete ? 'satisfied' : 'insufficient',
+    public_scoring_approved_for_release: false,
+    public_technique_authority_feature_status: 'blocked',
+    public_technique_authority_suppression_proof_status: publicTechniqueSuppressionProofStatus,
+    public_technique_authority_suppression_reason: publicTechniqueSuppressionProofStatus === 'satisfied'
+      ? 'public_technique_authority_absence_validated_with_gate_permissions_claim_suppression_parity_and_no_export'
+      : `public_technique_authority_suppression_blockers:${publicTechniqueSuppressionBlockerCodes.join(',')}`,
+    public_technique_authority_suppression_blocker_codes: publicTechniqueSuppressionBlockerCodes,
+    public_named_technique_fields_absent_from_public_payload: blockedTechniqueFieldsAbsent,
+    public_named_technique_claims_suppressed: publicTechniqueClaimsSuppressed,
+    public_technique_gate_permission: false,
+    public_technique_no_export_leakage_status: noExportComplete ? 'satisfied' : 'insufficient',
+    public_technique_authority_approved_for_release: false,
+    public_comparison_recommendation_feature_status: 'blocked',
+    public_comparison_recommendation_suppression_proof_status: publicComparisonSuppressionProofStatus,
+    public_comparison_recommendation_suppression_reason: publicComparisonSuppressionProofStatus === 'not_applicable'
+      ? 'ordinary_single_take_comparison_recommendation_not_applicable'
+      : (publicComparisonSuppressionProofStatus === 'satisfied'
+        ? 'public_comparison_recommendation_absence_validated_with_gate_permissions_suppression_trace_parity_and_no_export'
+        : `public_comparison_recommendation_suppression_blockers:${publicComparisonSuppressionBlockerCodes.join(',')}`),
+    public_comparison_recommendation_suppression_blocker_codes: publicComparisonSuppressionBlockerCodes,
+    public_winner_absent: !comparisonInvoked || blockedComparisonFieldsAbsent,
+    public_recommendation_absent: !comparisonInvoked || blockedComparisonFieldsAbsent,
+    comparison_recommendation_gate_permission: false,
+    comparison_safety_suppression_proof_status: comparisonSafetySuppressionProofStatus,
+    duplicate_same_video_comparison_status: comparisonInvoked ? comparisonEvidenceStatus : 'not_applicable',
+    comparison_no_export_leakage_status: noExportComplete ? 'satisfied' : 'insufficient',
     customer_release_status: 'blocked',
+    customer_release_gate_reason: 'customer_release_requires_separate_authorised_release_approval',
+    customer_release_blocker_codes: ['customer_release_blocked'],
+    production_safe_gate_reason: 'production_safe_requires_separate_authorised_release_approval',
+    production_safe_blocker_codes: ['production_safe_blocked'],
+    release_candidate_status: 'blocked',
+    release_candidate_reason: 'internal_evidence_and_suppression_proof_does_not_approve_customer_release',
     level2_blocker_codes: level2BlockerCodes,
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
@@ -1367,7 +1537,32 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     ordinary_l2a_analysis_proof_blocker_codes: Array.isArray(options.gate_trace_summary?.ordinary_l2a_analysis_proof_blocker_codes)
       ? options.gate_trace_summary.ordinary_l2a_analysis_proof_blocker_codes
       : ['ordinary_l2a_independent_gate_trace_not_satisfied'],
-    qa_acceptance_metrics: { gf01_rt15_status: comparisonGateApplies ? 'blocked' : 'not_applicable', level2_status: 'not_accepted', ordinary_l2a_analysis_proof_status: typeof options.gate_trace_summary?.ordinary_l2a_analysis_proof_status === 'string' ? options.gate_trace_summary.ordinary_l2a_analysis_proof_status : 'insufficient', blocker_codes },
+    public_scoring_suppression_proof_status: typeof options.gate_trace_summary?.public_scoring_suppression_proof_status === 'string'
+      ? options.gate_trace_summary.public_scoring_suppression_proof_status
+      : 'insufficient',
+    public_technique_authority_suppression_proof_status: typeof options.gate_trace_summary?.public_technique_authority_suppression_proof_status === 'string'
+      ? options.gate_trace_summary.public_technique_authority_suppression_proof_status
+      : 'insufficient',
+    public_comparison_recommendation_suppression_proof_status: typeof options.gate_trace_summary?.public_comparison_recommendation_suppression_proof_status === 'string'
+      ? options.gate_trace_summary.public_comparison_recommendation_suppression_proof_status
+      : 'not_applicable',
+    global_level2_evidence_status: typeof options.gate_trace_summary?.global_level2_evidence_status === 'string'
+      ? options.gate_trace_summary.global_level2_evidence_status
+      : 'insufficient',
+    global_level2_release_status: 'blocked',
+    global_level2_acceptance_status: 'not_accepted',
+    qa_acceptance_metrics: {
+      gf01_rt15_status: comparisonGateApplies ? 'blocked' : 'not_applicable',
+      level2_status: 'not_accepted',
+      ordinary_l2a_analysis_proof_status: typeof options.gate_trace_summary?.ordinary_l2a_analysis_proof_status === 'string' ? options.gate_trace_summary.ordinary_l2a_analysis_proof_status : 'insufficient',
+      public_scoring_suppression_proof_status: typeof options.gate_trace_summary?.public_scoring_suppression_proof_status === 'string' ? options.gate_trace_summary.public_scoring_suppression_proof_status : 'insufficient',
+      public_technique_authority_suppression_proof_status: typeof options.gate_trace_summary?.public_technique_authority_suppression_proof_status === 'string' ? options.gate_trace_summary.public_technique_authority_suppression_proof_status : 'insufficient',
+      public_comparison_recommendation_suppression_proof_status: typeof options.gate_trace_summary?.public_comparison_recommendation_suppression_proof_status === 'string' ? options.gate_trace_summary.public_comparison_recommendation_suppression_proof_status : 'not_applicable',
+      global_level2_evidence_status: typeof options.gate_trace_summary?.global_level2_evidence_status === 'string' ? options.gate_trace_summary.global_level2_evidence_status : 'insufficient',
+      global_level2_release_status: 'blocked',
+      global_level2_acceptance_status: 'not_accepted',
+      blocker_codes,
+    },
     gate_statuses: comparisonGateApplies
       ? [{ gate: 'GF-01_same_video_false_winner', status: 'blocked', blocker_code: P0_CODE }, { gate: 'same_video_forced_winner_still_present', status: 'blocked', blocker_code: P0_CODE }]
       : [],

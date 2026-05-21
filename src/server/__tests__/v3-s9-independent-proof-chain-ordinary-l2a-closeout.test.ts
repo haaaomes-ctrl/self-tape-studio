@@ -108,8 +108,22 @@ function completeOrdinaryManifest(overrides: Record<string, unknown> = {}) {
       independent_gate_decision_status: 'independent_gate_satisfying',
       ordinary_l2a_analysis_proof_status: 'satisfied',
       ordinary_l2a_analysis_proof_blocker_codes: [],
+      public_output_permissions: {
+        show_overall_score: false,
+        show_public_technique_names: false,
+        show_repertoire_claims: false,
+        show_comparison_recommendation: false,
+        show_public_report: false,
+      },
     },
-    report_parity_summary: { parity_status: 'passed' },
+    report_parity_summary: {
+      parity_status: 'passed',
+      forbidden_fields_absent: true,
+      blocked_score_fields_absent: true,
+      blocked_technique_authority_fields_absent: true,
+      blocked_comparison_fields_absent: true,
+      public_output_permissions_checked: true,
+    },
     no_export_status: 'no_export_proof_complete',
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
@@ -145,11 +159,18 @@ describe('v3 s9 independent proof-chain ordinary L2A closeout', () => {
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
     expect(metrics.public_comparison_recommendation_status).toBe('blocked');
+    expect(metrics.public_scoring_suppression_proof_status).toBe('satisfied');
+    expect(metrics.public_technique_authority_suppression_proof_status).toBe('satisfied');
+    expect(metrics.public_comparison_recommendation_suppression_proof_status).toBe('not_applicable');
+    expect(metrics.global_level2_evidence_status).toBe('satisfied');
+    expect(metrics.global_level2_release_status).toBe('blocked');
+    expect(metrics.global_level2_acceptance_status).toBe('not_accepted');
     expect(metrics.level2_blocker_codes).toEqual(expect.arrayContaining([
-      'public_scoring_blocked',
-      'public_technique_authority_blocked',
-      'public_comparison_recommendation_blocked',
+      'public_scoring_feature_approval_blocked',
+      'public_technique_authority_feature_approval_blocked',
+      'public_comparison_recommendation_feature_approval_blocked',
       'production_safe_blocked',
+      'customer_release_blocked',
     ]));
   });
 
@@ -257,6 +278,12 @@ describe('v3 s9 independent proof-chain ordinary L2A closeout', () => {
 
     const gatePayload = JSON.parse(await readFile(path.join(root, 'r19d-proof', 'takes', 'take-t1', 'analysis-r19d-proof', 'traces', 'GateTrace.json'), 'utf8'));
     expect(gatePayload.ordinary_l2a_analysis_proof_status).toBe('satisfied');
+    expect(gatePayload.public_scoring_suppression_proof_status).toBe('satisfied');
+    expect(gatePayload.public_technique_authority_suppression_proof_status).toBe('satisfied');
+    expect(gatePayload.public_comparison_recommendation_suppression_proof_status).toBe('not_applicable');
+    expect(gatePayload.global_level2_evidence_status).toBe('satisfied');
+    expect(gatePayload.global_level2_release_status).toBe('blocked');
+    expect(gatePayload.global_level2_acceptance_status).toBe('not_accepted');
     expect(gatePayload.level2_status).toBe('not_accepted');
     expect(gatePayload.public_output_permissions).toEqual({
       show_overall_score: false,
@@ -266,6 +293,10 @@ describe('v3 s9 independent proof-chain ordinary L2A closeout', () => {
       show_public_report: false,
     });
     expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'global_level2_acceptance_gate')?.status).toBe('blocked');
+    expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'global_level2_evidence_gate')?.status).toBe('passed');
+    expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'public_scoring_suppression_proof_gate')?.status).toBe('passed');
+    expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'public_technique_authority_suppression_proof_gate')?.status).toBe('passed');
+    expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'public_comparison_recommendation_suppression_proof_gate')?.status).toBe('not_applicable');
     expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'public_scoring_gate')?.status).toBe('blocked');
     expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'public_technique_authority_gate')?.status).toBe('blocked');
     expect(gatePayload.gate_entries.find((entry: any) => entry.gate_id === 'production_safe_gate')?.status).toBe('blocked');

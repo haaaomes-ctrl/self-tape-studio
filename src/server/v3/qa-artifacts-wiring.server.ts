@@ -8604,9 +8604,105 @@ export async function emitValidatorTraceFirstPass(input: any) {
     blocker_codes: [],
     notes: null,
   });
+  const publicScoringSuppressionSatisfied = input.acceptance_metrics_snapshot.public_scoring_suppression_proof_status === 'satisfied'
+    && input.acceptance_metrics_snapshot.public_score_gate_permission === false
+    && input.acceptance_metrics_snapshot.public_score_fields_absent_from_public_payload === true
+    && input.acceptance_metrics_snapshot.public_score_claims_suppressed === true;
+  const publicTechniqueSuppressionSatisfied = input.acceptance_metrics_snapshot.public_technique_authority_suppression_proof_status === 'satisfied'
+    && input.acceptance_metrics_snapshot.public_technique_gate_permission === false
+    && input.acceptance_metrics_snapshot.public_named_technique_fields_absent_from_public_payload === true
+    && input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed === true;
+  const publicComparisonSuppressionSatisfied = ['satisfied', 'not_applicable'].includes(String(input.acceptance_metrics_snapshot.public_comparison_recommendation_suppression_proof_status))
+    && input.acceptance_metrics_snapshot.comparison_recommendation_gate_permission === false
+    && input.acceptance_metrics_snapshot.public_winner_absent === true
+    && input.acceptance_metrics_snapshot.public_recommendation_absent === true;
+  const globalLevel2TaxonomySatisfied = input.acceptance_metrics_snapshot.global_level2_evidence_status === 'satisfied'
+    && input.acceptance_metrics_snapshot.global_level2_release_status === 'blocked'
+    && input.acceptance_metrics_snapshot.global_level2_acceptance_status === 'not_accepted'
+    && input.acceptance_metrics_snapshot.production_safe_status === 'blocked'
+    && input.acceptance_metrics_snapshot.customer_release_status === 'blocked';
+  entries.push({
+    validation_id: 'public_scoring_suppression_proof_validated',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'public_scoring_suppression_proof',
+    subject: 'public_scoring_suppression_proof_status',
+    status: publicScoringSuppressionSatisfied ? 'pass' : 'fail',
+    expected: 'public_scoring_feature_blocked_but_public_score_absence_satisfied',
+    observed: {
+      public_scoring_suppression_proof_status: input.acceptance_metrics_snapshot.public_scoring_suppression_proof_status,
+      public_score_gate_permission: input.acceptance_metrics_snapshot.public_score_gate_permission,
+      public_score_fields_absent_from_public_payload: input.acceptance_metrics_snapshot.public_score_fields_absent_from_public_payload,
+      public_score_claims_suppressed: input.acceptance_metrics_snapshot.public_score_claims_suppressed,
+    },
+    source_path: 'qa.acceptance_metrics.public_scoring_suppression_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'public_claim_trace', 'score_trace', 'parity_report', 'no_export_proof'],
+    blocker_codes: publicScoringSuppressionSatisfied ? [] : ['public_scoring_suppression_proof_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'public_technique_authority_suppression_proof_validated',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'public_technique_authority_suppression_proof',
+    subject: 'public_technique_authority_suppression_proof_status',
+    status: publicTechniqueSuppressionSatisfied ? 'pass' : 'fail',
+    expected: 'public_technique_authority_feature_blocked_but_public_named_technique_absence_satisfied',
+    observed: {
+      public_technique_authority_suppression_proof_status: input.acceptance_metrics_snapshot.public_technique_authority_suppression_proof_status,
+      public_technique_gate_permission: input.acceptance_metrics_snapshot.public_technique_gate_permission,
+      public_named_technique_fields_absent_from_public_payload: input.acceptance_metrics_snapshot.public_named_technique_fields_absent_from_public_payload,
+      public_named_technique_claims_suppressed: input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed,
+    },
+    source_path: 'qa.acceptance_metrics.public_technique_authority_suppression_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'public_claim_trace', 'technique_observation_trace', 'parity_report', 'no_export_proof'],
+    blocker_codes: publicTechniqueSuppressionSatisfied ? [] : ['public_technique_authority_suppression_proof_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'public_comparison_recommendation_suppression_proof_validated',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'public_comparison_recommendation_suppression_proof',
+    subject: 'public_comparison_recommendation_suppression_proof_status',
+    status: publicComparisonSuppressionSatisfied ? 'pass' : 'fail',
+    expected: 'public_comparison_recommendation_feature_blocked_and_public_winner_recommendation_absent',
+    observed: {
+      public_comparison_recommendation_suppression_proof_status: input.acceptance_metrics_snapshot.public_comparison_recommendation_suppression_proof_status,
+      comparison_recommendation_gate_permission: input.acceptance_metrics_snapshot.comparison_recommendation_gate_permission,
+      public_winner_absent: input.acceptance_metrics_snapshot.public_winner_absent,
+      public_recommendation_absent: input.acceptance_metrics_snapshot.public_recommendation_absent,
+    },
+    source_path: 'qa.acceptance_metrics.public_comparison_recommendation_suppression_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'comparison_suppression_trace', 'parity_report', 'no_export_proof'],
+    blocker_codes: publicComparisonSuppressionSatisfied ? [] : ['public_comparison_recommendation_suppression_proof_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'global_level2_gate_taxonomy_reconciled',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'global_level2_gate_reconciliation',
+    subject: 'global_level2_evidence_release_acceptance_statuses',
+    status: globalLevel2TaxonomySatisfied ? 'pass' : 'fail',
+    expected: 'evidence_suppression_satisfied_release_blocked_global_level2_not_accepted',
+    observed: {
+      global_level2_evidence_status: input.acceptance_metrics_snapshot.global_level2_evidence_status,
+      global_level2_release_status: input.acceptance_metrics_snapshot.global_level2_release_status,
+      global_level2_acceptance_status: input.acceptance_metrics_snapshot.global_level2_acceptance_status,
+      level2_status: input.acceptance_metrics_snapshot.level2_status,
+      production_safe_status: input.acceptance_metrics_snapshot.production_safe_status,
+      customer_release_status: input.acceptance_metrics_snapshot.customer_release_status,
+    },
+    source_path: 'qa.acceptance_metrics.global_level2_acceptance_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'validator_trace'],
+    blocker_codes: globalLevel2TaxonomySatisfied ? [] : ['global_level2_gate_taxonomy_incomplete'],
+    notes: null,
+  });
   const failCount = entries.filter((e) => e.status === 'fail').length;
   const warningCount = entries.filter((e) => e.status === 'warn' || e.status === 'warning').length;
-  const validatorTraceSatisfied = ordinaryDependenciesSatisfied && failCount === 0;
+  const ordinaryValidatorTraceSatisfied = ordinaryDependenciesSatisfied;
+  const suppressionAndReleaseTaxonomySatisfied = publicScoringSuppressionSatisfied
+    && publicTechniqueSuppressionSatisfied
+    && publicComparisonSuppressionSatisfied
+    && globalLevel2TaxonomySatisfied;
+  const validatorTraceSatisfied = ordinaryValidatorTraceSatisfied && failCount === 0;
   const summary = {
     validation_count: entries.length,
     pass_count: entries.filter((e) => e.status === 'pass').length,
@@ -8616,11 +8712,17 @@ export async function emitValidatorTraceFirstPass(input: any) {
     validator_trace_gate_status: validatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
     validator_trace_gate_reason: validatorTraceSatisfied ? 'ordinary_l2a_artifact_derived_validations_passed' as const : 'ordinary_analysis_artifact_checks_missing_or_failed' as const,
     independent_validation_status: validatorTraceSatisfied ? 'independent_validation_satisfying' as const : 'independent_validation_partial' as const,
+    ordinary_l2a_validation_status: ordinaryValidatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    suppression_and_release_taxonomy_validation_status: suppressionAndReleaseTaxonomySatisfied ? 'satisfied' as const : 'insufficient' as const,
     referential_integrity_status: validatorTraceSatisfied ? 'passed' as const : 'partial_snapshot_checks' as const,
-    deterministic_checks_version: 's9-19d-independent-ordinary-l2a-proof-v1' as const,
-    public_private_leakage_validation_status: 'not_independent' as const,
+    deterministic_checks_version: 's9-19e-public-release-suppression-proof-v1' as const,
+    public_private_leakage_validation_status: failCount === 0 ? 'passed' as const : 'partial' as const,
     uk_english_validation_status: 'not_run' as const,
-    render_permission_validation_status: 'not_independent' as const,
+    render_permission_validation_status: publicScoringSuppressionSatisfied && publicTechniqueSuppressionSatisfied && publicComparisonSuppressionSatisfied ? 'passed' as const : 'partial' as const,
+    public_scoring_suppression_validation_status: publicScoringSuppressionSatisfied ? 'passed' as const : 'failed' as const,
+    public_technique_authority_suppression_validation_status: publicTechniqueSuppressionSatisfied ? 'passed' as const : 'failed' as const,
+    public_comparison_recommendation_suppression_validation_status: publicComparisonSuppressionSatisfied ? 'passed' as const : 'failed' as const,
+    global_level2_gate_taxonomy_validation_status: globalLevel2TaxonomySatisfied ? 'passed' as const : 'failed' as const,
   };
   const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: validatorTraceSatisfied ? 'independent_validation_satisfying' : 'internal_validator', trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: !validatorTraceSatisfied, gate_satisfaction_reason: summary.validator_trace_gate_reason, blocker_codes: validatorTraceSatisfied ? ['public_release_gates_blocked'] : ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
   const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ValidatorTrace.json`;
@@ -8640,6 +8742,7 @@ export async function emitGateTraceFirstPass(input: any) {
   assertSafeSegment(analysisRunId, 'analysis_run_id');
   const ordinaryUnsatisfiedGateIds = getStringArray(input.acceptance_metrics_snapshot?.ordinary_l2a_unsatisfied_gate_ids);
   const validatorTraceSatisfied = input.validator_trace_summary?.validator_trace_gate_status === 'satisfied'
+    || input.validator_trace_summary?.ordinary_l2a_validation_status === 'satisfied'
     || input.validator_trace_summary?.independent_validation_status === 'independent_validation_satisfying';
   const ordinaryUnsatisfiedExcludingGate = ordinaryUnsatisfiedGateIds.filter((gateId) => gateId !== 'gate_trace_gate' && gateId !== 'validator_trace_gate');
   const ordinaryL2AGateSatisfied = validatorTraceSatisfied && ordinaryUnsatisfiedExcludingGate.length === 0;
@@ -8647,8 +8750,20 @@ export async function emitGateTraceFirstPass(input: any) {
   const ordinaryL2AReason = ordinaryL2AGateSatisfied
     ? 'ordinary_internal_analysis_proof_chain_satisfied_public_release_gates_separated'
     : `ordinary_internal_analysis_proof_chain_unsatisfied:${ordinaryUnsatisfiedExcludingGate.join(',') || 'validator_trace_gate'}`;
+  const publicScoringSuppressionStatus = String(input.acceptance_metrics_snapshot?.public_scoring_suppression_proof_status ?? 'missing');
+  const publicTechniqueSuppressionStatus = String(input.acceptance_metrics_snapshot?.public_technique_authority_suppression_proof_status ?? 'missing');
+  const publicComparisonSuppressionStatus = String(input.acceptance_metrics_snapshot?.public_comparison_recommendation_suppression_proof_status ?? 'missing');
+  const globalLevel2EvidenceStatus = String(input.acceptance_metrics_snapshot?.global_level2_evidence_status ?? 'insufficient');
+  const globalLevel2AcceptanceStatus = String(input.acceptance_metrics_snapshot?.global_level2_acceptance_status ?? 'not_accepted');
+  const suppressionGateStatus = (status: string) => status === 'satisfied'
+    ? 'passed'
+    : (status === 'not_applicable' ? 'not_applicable' : (status === 'missing' ? 'missing' : 'insufficient'));
   const gate_entries: Array<Record<string, unknown>> = [
     { gate_id: 'ordinary_l2a_analysis_proof_gate', gate_name: 'ordinary_l2a_analysis_proof_gate', gate_family: 'ordinary_l2a_internal_analysis', status: ordinaryL2AGateSatisfied ? 'passed' : 'insufficient', reason: ordinaryL2AReason, required_for_level: 'ordinary_l2a_internal', current_state: ordinaryL2AStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`ordinary_l2a_unsatisfied_gate_ids=${ordinaryUnsatisfiedGateIds.join(',')}`], blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'], dependent_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], evidence_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], validator_rule_ids: ['ordinary_l2a_dependency_gate_validation'], source_paths: ['traces/ValidatorTrace.json', 'traces/GateTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: ordinaryUnsatisfiedGateIds, notes: null },
+    { gate_id: 'global_level2_evidence_gate', gate_name: 'global_level2_evidence_gate', gate_family: 'level2_evidence', status: globalLevel2EvidenceStatus === 'satisfied' ? 'passed' : 'insufficient', reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_evidence_or_suppression_incomplete'), required_for_level: 'L2', current_state: globalLevel2EvidenceStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.global_level2_evidence_status=${globalLevel2EvidenceStatus}`], blocker_codes: globalLevel2EvidenceStatus === 'satisfied' ? [] : ['global_level2_evidence_or_suppression_incomplete'], dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['global_level2_gate_taxonomy_reconciled'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'global_l2_evidence', dependency_gate_ids: ['ordinary_l2a_analysis_proof_gate', 'public_scoring_suppression_proof_gate', 'public_technique_authority_suppression_proof_gate', 'public_comparison_recommendation_suppression_proof_gate'], notes: null },
+    { gate_id: 'public_scoring_suppression_proof_gate', gate_name: 'public_scoring_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicScoringSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_scoring_suppression_reason ?? publicScoringSuppressionStatus), required_for_level: 'L2', current_state: publicScoringSuppressionStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.public_scoring_suppression_proof_status=${publicScoringSuppressionStatus}`, 'public_output_permissions.show_overall_score=false'], blocker_codes: publicScoringSuppressionStatus === 'satisfied' ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_scoring_suppression_blocker_codes), dependent_artefact_ids: ['score_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['score_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json', 'parity/report_parity_result.json', 'export_or_no_export/no_export_proof.json'], public_effect: 'proves_public_score_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_scoring_gate'], notes: null },
+    { gate_id: 'public_technique_authority_suppression_proof_gate', gate_name: 'public_technique_authority_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicTechniqueSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_technique_authority_suppression_reason ?? publicTechniqueSuppressionStatus), required_for_level: 'L2', current_state: publicTechniqueSuppressionStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.public_technique_authority_suppression_proof_status=${publicTechniqueSuppressionStatus}`, 'public_output_permissions.show_public_technique_names=false'], blocker_codes: publicTechniqueSuppressionStatus === 'satisfied' ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_technique_authority_suppression_blocker_codes), dependent_artefact_ids: ['technique_observation_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['technique_observation_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_technique_authority_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json', 'parity/report_parity_result.json', 'export_or_no_export/no_export_proof.json'], public_effect: 'proves_public_named_technique_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_technique_authority_gate'], notes: null },
+    { gate_id: 'public_comparison_recommendation_suppression_proof_gate', gate_name: 'public_comparison_recommendation_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicComparisonSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_comparison_recommendation_suppression_reason ?? publicComparisonSuppressionStatus), required_for_level: 'L2', current_state: publicComparisonSuppressionStatus, expected_state_for_acceptance: 'satisfied_or_not_applicable_for_ordinary_single_take', observed_evidence: [`qa.acceptance_metrics.public_comparison_recommendation_suppression_proof_status=${publicComparisonSuppressionStatus}`, 'public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['satisfied', 'not_applicable'].includes(publicComparisonSuppressionStatus) ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_comparison_recommendation_suppression_blocker_codes), dependent_artefact_ids: ['comparison_suppression_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['comparison_suppression_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_comparison_recommendation_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'proves_public_comparison_recommendation_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_comparison_recommendation_gate'], notes: null },
     { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'global_l2', dependency_gate_ids: ['production_safe_gate', 'public_scoring_gate', 'public_technique_authority_gate', 'public_comparison_recommendation_gate'], notes: null },
     { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: validatorTraceSatisfied ? 'passed' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: validatorTraceSatisfied ? 'independent_validation_satisfying' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing'), expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [`validator_trace_summary.independent_validation_status=${String(input.validator_trace_summary?.independent_validation_status ?? 'missing')}`], blocker_codes: validatorTraceSatisfied ? [] : ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], evidence_artefact_ids: ['validator_trace'], validator_rule_ids: [], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
     { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? 'passed' : (input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? (input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing')), expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [`qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status=${String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? 'missing')}`], blocker_codes: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? [] : ['ModelRunTrace_independent_proof_partial'], dependent_artefact_ids: ['model_run_trace'], evidence_artefact_ids: ['model_run_trace'], validator_rule_ids: ['model_run_per_stage_proof_status_recorded'], source_paths: ['traces/ModelRunTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
@@ -8656,8 +8771,11 @@ export async function emitGateTraceFirstPass(input: any) {
     { gate_id: 'public_scoring_gate', gate_name: 'public_scoring_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_overall_score=false'], blocker_codes: ['public_scoring_blocked'], dependent_artefact_ids: ['score_trace', 'gate_trace'], evidence_artefact_ids: ['score_trace', 'gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_scores', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
     { gate_id: 'public_technique_authority_gate', gate_name: 'public_technique_authority_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_public_technique_names=false'], blocker_codes: ['public_technique_authority_blocked'], dependent_artefact_ids: ['technique_observation_trace', 'gate_trace'], evidence_artefact_ids: ['technique_observation_trace', 'gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_named_techniques', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
     { gate_id: 'public_comparison_recommendation_gate', gate_name: 'public_comparison_recommendation_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['public_comparison_recommendation_blocked'], dependent_artefact_ids: ['comparison_raw', 'gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_scoring_feature_approval_gate', gate_name: 'public_scoring_feature_approval_gate', gate_family: 'feature_approval', status: 'blocked', required_for_level: 'public_release', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_scoring_feature_status=blocked'], blocker_codes: ['public_scoring_feature_approval_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_public_scores_feature_approval', required_maturity_level: 'public_release', dependency_gate_ids: ['public_scoring_suppression_proof_gate'], notes: null },
+    { gate_id: 'public_technique_authority_feature_approval_gate', gate_name: 'public_technique_authority_feature_approval_gate', gate_family: 'feature_approval', status: 'blocked', required_for_level: 'public_release', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_technique_authority_feature_status=blocked'], blocker_codes: ['public_technique_authority_feature_approval_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: ['public_technique_authority_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_public_technique_authority_feature_approval', required_maturity_level: 'public_release', dependency_gate_ids: ['public_technique_authority_suppression_proof_gate'], notes: null },
+    { gate_id: 'public_comparison_recommendation_feature_approval_gate', gate_name: 'public_comparison_recommendation_feature_approval_gate', gate_family: 'feature_approval', status: 'blocked', required_for_level: 'public_release', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_comparison_recommendation_feature_status=blocked'], blocker_codes: ['public_comparison_recommendation_feature_approval_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: ['public_comparison_recommendation_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation_feature_approval', required_maturity_level: 'public_release', dependency_gate_ids: ['public_comparison_recommendation_suppression_proof_gate'], notes: null },
     { gate_id: 'customer_release_gate', gate_name: 'customer_release_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['production_safe_status=blocked'], blocker_codes: ['customer_release_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_customer_release', required_maturity_level: 'public_release', dependency_gate_ids: ['production_safe_gate'], notes: null },
-    { gate_id: 'global_level2_acceptance_gate', gate_name: 'global_level2_acceptance_gate', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['level2_status=not_accepted'], blocker_codes: ['global_level2_public_release_gates_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_global_level2_acceptance', required_maturity_level: 'global_l2', dependency_gate_ids: ['ordinary_l2a_analysis_proof_gate', 'production_safe_gate', 'public_scoring_gate', 'public_technique_authority_gate', 'public_comparison_recommendation_gate'], notes: null },
+    { gate_id: 'global_level2_acceptance_gate', gate_name: 'global_level2_acceptance_gate', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: globalLevel2AcceptanceStatus, expected_state_for_acceptance: 'accepted', observed_evidence: [`global_level2_evidence_status=${globalLevel2EvidenceStatus}`, `global_level2_acceptance_status=${globalLevel2AcceptanceStatus}`], blocker_codes: ['global_level2_public_release_gates_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: ['global_level2_gate_taxonomy_reconciled'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_global_level2_acceptance', required_maturity_level: 'global_l2', dependency_gate_ids: ['global_level2_evidence_gate', 'production_safe_gate', 'customer_release_gate'], notes: null },
   ];
   const metricStatus = (key: string, fallback = 'missing') => String(input.acceptance_metrics_snapshot?.[key] ?? fallback);
   const addOrdinaryGate = (args: { gate_id: string; gate_family: string; metric_key: string; expected_state_for_acceptance: string; dependent_artefact_ids: string[]; source_paths: string[]; blocker_codes: string[]; public_effect?: string; satisfiedValues?: string[]; notApplicableValues?: string[] }) => {
@@ -8709,9 +8827,25 @@ export async function emitGateTraceFirstPass(input: any) {
     ordinary_l2a_analysis_proof_reason: ordinaryL2AReason,
     ordinary_l2a_analysis_proof_blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'],
     ordinary_l2a_satisfied_gate_ids: gate_entries.filter((g) => ['passed', 'satisfied', 'not_applicable'].includes(String(g.status))).map((g) => String(g.gate_id)),
-    ordinary_l2a_unsatisfied_gate_ids: gate_entries.filter((g) => !['passed', 'satisfied', 'not_applicable'].includes(String(g.status)) && !['public_output_permission', 'release', 'level2'].includes(String(g.gate_family))).map((g) => String(g.gate_id)),
+    ordinary_l2a_unsatisfied_gate_ids: gate_entries.filter((g) => !['passed', 'satisfied', 'not_applicable'].includes(String(g.status)) && !['public_output_permission', 'release', 'level2', 'level2_evidence', 'suppression_proof', 'feature_approval'].includes(String(g.gate_family))).map((g) => String(g.gate_id)),
     ordinary_l2a_public_release_dependency_status: 'blocked' as const,
     ordinary_l2a_comparison_dependency_status: 'ordinary_single_take_comparison_not_applicable' as const,
+    public_scoring_feature_status: 'blocked' as const,
+    public_scoring_suppression_proof_status: publicScoringSuppressionStatus,
+    public_technique_authority_feature_status: 'blocked' as const,
+    public_technique_authority_suppression_proof_status: publicTechniqueSuppressionStatus,
+    public_comparison_recommendation_feature_status: 'blocked' as const,
+    public_comparison_recommendation_suppression_proof_status: publicComparisonSuppressionStatus,
+    comparison_safety_suppression_proof_status: String(input.acceptance_metrics_snapshot?.comparison_safety_suppression_proof_status ?? publicComparisonSuppressionStatus),
+    global_level2_evidence_status: globalLevel2EvidenceStatus,
+    global_level2_release_status: String(input.acceptance_metrics_snapshot?.global_level2_release_status ?? 'blocked'),
+    global_level2_acceptance_status: globalLevel2AcceptanceStatus,
+    global_level2_acceptance_reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_not_accepted_public_release_blocked'),
+    global_level2_blocker_codes_by_family: input.acceptance_metrics_snapshot?.global_level2_blocker_codes_by_family ?? {},
+    global_level2_satisfied_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_satisfied_gate_ids),
+    global_level2_unsatisfied_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_unsatisfied_gate_ids),
+    global_level2_blocked_release_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_blocked_release_gate_ids),
+    global_level2_suppression_proof_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_suppression_proof_gate_ids),
     public_output_permissions: BLOCKED_PUBLIC_OUTPUT_PERMISSIONS,
   };
   const payload = {
