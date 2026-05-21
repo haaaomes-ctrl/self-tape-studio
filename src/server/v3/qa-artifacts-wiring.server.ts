@@ -4723,6 +4723,14 @@ function supportClassificationForStatus(status: PublicClaimSupportStatus, blocke
   if (status === 'not_applicable') return 'not_applicable';
   return 'unsupported';
 }
+function safePublicClaimPossibleForStatus(status: PublicClaimSupportStatus | string): boolean {
+  return [
+    'supported',
+    'limitation_only_supported',
+    'unsupported_overclaim',
+    'rewrite_required',
+  ].includes(status);
+}
 
 function normalizeCandidateBlockedCategory(category: unknown): string | null {
   return typeof category === 'string' && category.trim() ? category.trim() : null;
@@ -4879,7 +4887,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       public_authority_category: publicAuthority.category,
       public_authority_status: publicAuthority.status,
       suppress_public_claim: Boolean(candidate.suppress_public_claim === true || currentClaimSuppressed || publicAuthority.status === 'blocked'),
-      safe_public_claim_possible: ['supported', 'limitation_only_supported'].includes(supportStatus) || supportStatus === 'unsupported_overclaim' || supportStatus === 'rewrite_required',
+      safe_public_claim_possible: safePublicClaimPossibleForStatus(supportStatus),
       reason: supportClassification,
       blocker_codes: dedupePreservingOrder(blockerCodes),
       evidence_support_summary: realLinkedAnchors.length > 0
@@ -5094,7 +5102,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       public_authority_category: publicAuthority.category,
       public_authority_status: publicAuthority.status,
       suppress_public_claim: suppressPublicClaim,
-      safe_public_claim_possible: ['supported', 'limitation_only_supported'].includes(supportStatus) || supportStatus === 'unsupported_overclaim' || supportStatus === 'rewrite_required',
+      safe_public_claim_possible: safePublicClaimPossibleForStatus(supportStatus),
       reason: supportClassification,
       blocker_codes: blockerCodes,
       public_display_status: 'not_rendered_internal_candidate',
@@ -7624,7 +7632,36 @@ export async function emitGateTraceFirstPass(input: any) {
     gate_registry_version: 's9-18h-internal-gate-registry-v1' as const,
     public_output_permissions: BLOCKED_PUBLIC_OUTPUT_PERMISSIONS,
   };
-  const payload = { schema_version: 'tapecoach_v3_gate_trace_first_pass_v1', artefact_type: 'gate_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: 'internal_gate_trace', trace_mode: 'first_pass_internal_gate_snapshot', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], gate_registry_version: summary.gate_registry_version, public_output_permissions: BLOCKED_PUBLIC_OUTPUT_PERMISSIONS, ...summary, gate_entries, gate_trace_summary: summary, cannot_satisfy_level2_gate_trace_gate: true, gate_satisfaction_reason: 'internal_gate_snapshot_not_independent_runtime_v3_proof', blocker_codes: ['GateTrace_internal_only'], level2_status: 'not_accepted', production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', public_output_unchanged: true, ...resolveQADeploymentProvenance() };
+  const payload = {
+    schema_version: 'tapecoach_v3_gate_trace_first_pass_v1',
+    artefact_type: 'gate_trace',
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    take_id: input.take_id,
+    generated_at: new Date().toISOString(),
+    source_module: input.source_module,
+    source_stage: input.source_stage,
+    source_classification: 'internal_gate_trace',
+    trace_mode: 'first_pass_internal_gate_snapshot',
+    validated_snapshot_stage: 'pre_finalisation_snapshot',
+    final_manifest_rewrite_expected: true,
+    self_inclusion_validated: false,
+    intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'],
+    ...summary,
+    gate_entries,
+    gate_trace_summary: summary,
+    cannot_satisfy_level2_gate_trace_gate: true,
+    gate_satisfaction_reason: 'internal_gate_snapshot_not_independent_runtime_v3_proof',
+    blocker_codes: ['GateTrace_internal_only'],
+    level2_status: 'not_accepted',
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    public_output_unchanged: true,
+    ...resolveQADeploymentProvenance(),
+  };
   const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/GateTrace.json`;
   const w = await writeInternalJson(input.root_dir ?? DEFAULT_ROOT, input.run_id, relPath, payload, 'gate_trace');
   if (!w.written) return { written: false, emitted_artefact_ids: [] as string[] };

@@ -47,6 +47,9 @@ async function emitStep1Bundle(options: { filteredStep1?: Record<string, unknown
     root_dir: root,
     internal_qa_emit: true,
   });
+  const step1SourceClassification = analysis.step1_observable_evidence_source_classification;
+  expect(step1SourceClassification).toBeDefined();
+  if (!step1SourceClassification) throw new Error('step1_observable_evidence_source_classification_missing');
   await emitQAManifestForAnalysisRun({
     run_id: run,
     analysis_run_id: run,
@@ -57,7 +60,7 @@ async function emitStep1Bundle(options: { filteredStep1?: Record<string, unknown
     emitted_artefact_ids: analysis.emitted_artefact_ids,
     emitted_blocked_artefact_ids: analysis.emitted_blocked_artefact_ids,
     artefact_source_classification_by_id: {
-      step1_observable_evidence: analysis.step1_observable_evidence_source_classification,
+      step1_observable_evidence: step1SourceClassification,
       analysis_evidence_state: analysis.source_classification,
     },
     artefact_level2_spine_satisfaction_by_id: {
@@ -283,11 +286,20 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     });
     const base = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`);
     const step1 = JSON.parse(await readFile(path.join(base, 'analysis', 'Step1ObservableEvidence.json'), 'utf8'));
-    const linkedIds = [...new Set(step1.observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []))].sort();
-    const explicitIds = [...new Set((resolver.truth_state_map.truth_state_ids ?? []) as string[])].sort();
+    const linkedIdValues = step1.observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []);
+    expect(linkedIdValues.every((id: unknown) => typeof id === 'string')).toBe(true);
+    const linkedIds = [...new Set(linkedIdValues.filter((id: unknown): id is string => typeof id === 'string'))].sort();
+    expect(resolver.truth_state_map).toBeDefined();
+    if (!resolver.truth_state_map) throw new Error('truth_state_map_missing');
+    const truthStateIdValues = resolver.truth_state_map.truth_state_ids ?? [];
+    expect(Array.isArray(truthStateIdValues)).toBe(true);
+    expect(truthStateIdValues.every((id: unknown) => typeof id === 'string')).toBe(true);
+    const explicitIds = [...new Set(truthStateIdValues.filter((id: unknown): id is string => typeof id === 'string'))].sort();
     const missingExplicitIds = linkedIds.filter((id) => !explicitIds.includes(id));
     expect(linkedIds.length).toBeGreaterThan(0);
     expect(missingExplicitIds).toEqual([]);
+    expect(analysis.step1_observable_evidence_summary).toBeDefined();
+    if (!analysis.step1_observable_evidence_summary) throw new Error('step1_observable_evidence_summary_missing');
     expect(analysis.step1_observable_evidence_summary.step1_truth_unlinked_evidence_item_count).toBe(0);
     expect(step1.truth_state_linkage_status).toBe('partial');
   });
