@@ -57,6 +57,22 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_internal_only');
   });
 
+  it('keeps score and technique traces in legacy/internal strategy posture until real proof exists', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const score = map.find((x) => x.artefact_id === 'score_trace');
+    const technique = map.find((x) => x.artefact_id === 'technique_observation_trace');
+
+    expect(score?.current_manifest_status).toBe('emitted');
+    expect(score?.source_classification).toBe('legacy_adapter');
+    expect(score?.blocker_code).toBe('ScoreTrace_legacy_only');
+    expect(score?.next_implementation_step).toMatch(/real_runtime_v3/);
+
+    expect(technique?.current_manifest_status).toBe('emitted');
+    expect(technique?.source_classification).toBe('legacy_adapter');
+    expect(technique?.blocker_code).toBe('technique_observation_trace_legacy_insufficient');
+    expect(technique?.next_implementation_step).toMatch(/real_runtime_v3/);
+  });
+
   it('uses PascalCase expected paths for validator and gate traces', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     expect(map.find((x) => x.artefact_id === 'validator_trace')?.expected_path).toBe('traces/ValidatorTrace.json');
