@@ -2558,6 +2558,8 @@ Level 2 remains not_accepted due remaining evidence-spine and proof-chain blocke
 
 S9-18 is the next recommended workstream. It should address the remaining Level 2 evidence-spine blockers without changing public output or unblocking public/production gates prematurely.
 
+S9-18A is the design contract for this workstream. It recommends introducing `analysis/Step1ObservableEvidence.json` as the extractor output container feeding the canonical `analysis/AnalysisEvidenceState.json` gate/handoff aggregate. Raw reports, render payloads, public report payloads, report parity results, legacy ScoreTrace entries and legacy TechniqueObservationTrace entries must not satisfy Step 1 observable evidence.
+
 Suggested S9-18 scope:
 
 ```text

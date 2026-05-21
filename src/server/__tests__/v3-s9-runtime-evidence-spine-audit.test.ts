@@ -11,10 +11,10 @@ describe('v3 s9 runtime evidence spine audit map', () => {
   it('contains every required artefact exactly once with expected cardinality', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const ids = map.map((x) => x.artefact_id);
-    expect(ids.length).toBe(26);
-    expect(new Set(ids).size).toBe(26);
+    expect(ids.length).toBe(27);
+    expect(new Set(ids).size).toBe(27);
     expect(getRequiredRuntimeEvidenceArtefactIds()).toEqual(ids);
-    expect(assertRuntimeEvidenceSpineInventoryComplete()).toEqual({ ok: true, count: 26 });
+    expect(assertRuntimeEvidenceSpineInventoryComplete()).toEqual({ ok: true, count: 27 });
   });
 
   it('uses only approved manifest statuses and never blocked_not_executed', () => {
@@ -57,6 +57,22 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(map.find((x) => x.artefact_id === 'model_run_trace')?.blocker_code).toBe('ModelRunTrace_internal_only');
   });
 
+  it('keeps score and technique traces in legacy/internal strategy posture until real proof exists', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const score = map.find((x) => x.artefact_id === 'score_trace');
+    const technique = map.find((x) => x.artefact_id === 'technique_observation_trace');
+
+    expect(score?.current_manifest_status).toBe('emitted');
+    expect(score?.source_classification).toBe('legacy_adapter');
+    expect(score?.blocker_code).toBe('ScoreTrace_legacy_only');
+    expect(score?.next_implementation_step).toMatch(/real_runtime_v3/);
+
+    expect(technique?.current_manifest_status).toBe('emitted');
+    expect(technique?.source_classification).toBe('legacy_adapter');
+    expect(technique?.blocker_code).toBe('technique_observation_trace_legacy_insufficient');
+    expect(technique?.next_implementation_step).toMatch(/real_runtime_v3/);
+  });
+
   it('uses PascalCase expected paths for validator and gate traces', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     expect(map.find((x) => x.artefact_id === 'validator_trace')?.expected_path).toBe('traces/ValidatorTrace.json');
@@ -84,6 +100,22 @@ describe('v3 s9 runtime evidence spine audit map', () => {
       const item = map.find((x) => x.artefact_id === id);
       expect(item?.can_emit_without_invention).toBe(true);
     }
+  });
+
+  it('tracks Step1ObservableEvidence as emitted partial container without completing the spine', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const step1 = map.find((x) => x.artefact_id === 'step1_observable_evidence');
+    expect(step1?.expected_path).toBe('analysis/Step1ObservableEvidence.json');
+    expect(step1?.current_manifest_status).toBe('emitted');
+    expect(step1?.source_classification).toBe('real_runtime_v3_partial');
+    expect(step1?.blocker_code).toBe('Step1ObservableEvidence_partial');
+    expect(step1?.can_emit_without_invention).toBe(true);
+
+    const statuses: Record<string, 'emitted' | 'missing' | 'deferred' | 'not_applicable' | 'emitted_blocked'> = Object.fromEntries(
+      map.map((item) => [item.artefact_id, 'emitted']),
+    );
+    statuses.evidence_anchors = 'missing';
+    expect(isV3EvidenceSpineCompleteFromStatuses(statuses)).toBe(false);
   });
 
   it('keeps qa_acceptance_metrics emitted and comparison traces internal/missing by default', () => {
@@ -141,6 +173,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
 
     const allowedClassifications = new Set([
       'real_runtime_v3',
+      'real_runtime_v3_partial',
       'legacy_adapter',
       'source_only_stub',
       'emitted_not_wired',

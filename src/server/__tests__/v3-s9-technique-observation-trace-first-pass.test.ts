@@ -51,6 +51,48 @@ describe('S9 technique observation trace first pass non-array extraction', () =>
     await rm(root, { recursive: true, force: true });
   });
 
+  it('keeps report-derived and supplied-brief technique wording non-satisfying for public technique authority', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 's9-tech-'));
+    const out = await emitTechniqueObservationTraceFirstPass({
+      run_id: 'r7',
+      analysis_run_id: 'r7',
+      submission_id: 's1',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      root_dir: root,
+      internal_qa_emit: true,
+      raw_report_data: {
+        report_data: {
+          brief_adherence_breakdown: { note: 'The supplied brief names Meisner repetition as context.' },
+          category_notes: { acting: 'Meisner repetition is mentioned in the report snapshot.' },
+          scores: { acting: 91 },
+        },
+      },
+      evidence_anchors_data: {
+        anchors: [{ evidence_anchor_id: 'ea-real-technique', source_family: 'real_runtime_v3', linked_truth_state_ids: ['r7:truth_state:media_readiness'] }],
+      },
+      public_claim_trace_data: { claims: [] },
+      truth_state_map_data: {
+        truth_state_entries: [{ truth_state_entry_id: 'r7:truth_state:media_readiness', key: 'media_readiness', state: 'known' }],
+      },
+    } as any);
+    expect(out.written).toBe(true);
+    expect(out.level2_satisfies).toBe(false);
+    expect(out.source_family_summary.real_runtime_v3).toBe(0);
+    const payload = JSON.parse(await readFile(path.join(root, 'r7', 'takes', 'take-t1', 'analysis-r7', 'traces', 'TechniqueObservationTrace.json'), 'utf8'));
+    expect(payload.cannot_satisfy_technique_observation_gate).toBe(true);
+    expect(payload.gate_satisfaction_reason).toBe('legacy_report_snapshot_not_real_runtime_technique_evidence');
+    expect(payload.blocker_codes).toContain('TechniqueObservation_legacy_only');
+    expect(payload.observations.every((observation: any) => observation.source_artefact_id === 'raw_report')).toBe(true);
+    expect(payload.observations.every((observation: any) => observation.observable_basis === 'legacy_report_snapshot')).toBe(true);
+    expect(payload.observations.every((observation: any) => observation.public_technique_authority_status === 'blocked')).toBe(true);
+    expect(payload.observations.every((observation: any) => observation.linked_truth_state_ids.length === 0)).toBe(true);
+    expect(payload.observations.every((observation: any) => observation.cannot_satisfy_v3_gate === true)).toBe(true);
+    expect(payload.observations.map((observation: any) => observation.source_path)).not.toContain('report_data.scores.acting');
+    await rm(root, { recursive: true, force: true });
+  });
+
   it('no placeholders: blank/malformed/numeric-only data does not emit', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 's9-tech-'));
     const out = await emitTechniqueObservationTraceFirstPass({

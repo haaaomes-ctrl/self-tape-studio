@@ -61,6 +61,9 @@ export interface QAArtifactEmitterOptions {
     missing_evidence_count?: number;
     missing_truth_link_count?: number;
     blocked_claim_count?: number;
+    limitation_only_claim_count?: number;
+    suppressed_claim_count?: number;
+    overclaim_claim_count?: number;
     public_claim_gate_status?: string;
     public_claim_gate_reason?: string;
     source_classification?: string;
@@ -74,6 +77,10 @@ export interface QAArtifactEmitterOptions {
     blocked_candidate_count?: number;
     rewrite_required_count?: number;
     unsupported_candidate_count?: number;
+    supported_candidate_count?: number;
+    unsafe_candidate_count?: number;
+    limitation_only_candidate_count?: number;
+    suppressed_candidate_count?: number;
     safe_candidate_count?: number;
     claim_candidate_gate_status?: 'missing' | 'insufficient';
     claim_candidate_gate_reason?: string;
@@ -114,11 +121,71 @@ export interface QAArtifactEmitterOptions {
     evidence_state_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | 'blocked';
     source_classification?: string;
     observable_evidence_item_count?: number;
+    deterministic_runtime_evidence_count?: number;
+    brief_material_evidence_count?: number;
+    video_observable_evidence_count?: number;
+    audio_observable_evidence_count?: number;
+    media_assessability_limit_count?: number;
+    timestamped_media_observation_count?: number;
+    rejected_media_observable_source_count?: number;
+    media_observable_evidence_family_summary?: Record<string, unknown>;
+    media_observable_evidence_gate_status?: string;
+    media_observable_evidence_gate_reason?: string;
+    step1_truth_linked_evidence_item_count?: number;
+    step1_truth_unlinked_evidence_item_count?: number;
+    deterministic_truth_linked_count?: number;
+    supplied_context_truth_linked_count?: number;
+    media_observable_truth_linked_count?: number;
+    limitation_only_truth_entry_count?: number;
+    missing_truth_state_linkage_count?: number;
+    truth_state_linkage_status?: string;
+    truth_state_linkage_gate_reason?: string;
+    truth_state_linkage_blocker_codes?: string[];
+    step1_observable_evidence_item_count?: number;
+    step1_observable_evidence_family_summary?: Record<string, unknown>;
+    supplied_context_fact_count?: number;
+    supplied_context_unavailable_count?: number;
     unsupported_or_unavailable_evidence_count?: number;
     analysis_evidence_state_gate_status?: 'missing' | 'insufficient' | 'satisfied';
     analysis_evidence_state_gate_reason?: string;
     qa_persistence_status?: 'written' | 'failed_emission' | 'unavailable' | 'skipped' | 'fallback_logged';
     qa_persistence_warning?: string | null;
+  };
+  step1_observable_evidence_summary?: {
+    extraction_status?: 'partial' | 'unavailable' | 'not_extracted' | 'failed' | 'blocked' | 'complete' | string;
+    source_classification?: string;
+    observable_evidence_item_count?: number;
+    deterministic_runtime_evidence_count?: number;
+    brief_material_evidence_count?: number;
+    video_observable_evidence_count?: number;
+    audio_observable_evidence_count?: number;
+    media_assessability_limit_count?: number;
+    timestamped_media_observation_count?: number;
+    rejected_media_observable_source_count?: number;
+    media_observable_evidence_family_summary?: Record<string, unknown>;
+    media_observable_evidence_gate_status?: string;
+    media_observable_evidence_gate_reason?: string;
+    step1_truth_linked_evidence_item_count?: number;
+    step1_truth_unlinked_evidence_item_count?: number;
+    deterministic_truth_linked_count?: number;
+    supplied_context_truth_linked_count?: number;
+    media_observable_truth_linked_count?: number;
+    limitation_only_truth_entry_count?: number;
+    missing_truth_state_linkage_count?: number;
+    truth_state_linkage_status?: string;
+    truth_state_linkage_gate_reason?: string;
+    truth_state_linkage_blocker_codes?: string[];
+    supplied_context_fact_count?: number;
+    supplied_context_unavailable_count?: number;
+    unsupported_or_unavailable_evidence_count?: number;
+    rejected_or_filtered_field_count?: number;
+    step1_observable_evidence_gate_status?: 'missing' | 'insufficient' | 'satisfied' | string;
+    step1_observable_evidence_gate_reason?: string;
+    blocker_codes?: string[];
+    forbidden_sources_rejected?: boolean;
+    allowed_source_artefact_ids?: string[];
+    internal_only?: boolean;
+    public_output_unchanged?: boolean;
   };
   media_identity_summary?: {
     media_identity_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | string;
@@ -257,9 +324,11 @@ const NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS = new Set([
   'qa_acceptance_metrics',
   'claim_candidate_trace',
   'media_identity',
+  'step1_observable_evidence',
 ]);
 const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
   'legacy_adapter',
+  'real_runtime_v3_partial',
   'source_scaffold',
   'first_pass_internal',
   'report_snapshot',
@@ -512,6 +581,10 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const spineById = manifest.artefact_level2_spine_satisfaction_by_id ?? {};
   const analysisEvidenceStateStatus = manifest.artefact_status_by_id?.analysis_evidence_state ?? 'missing';
   const analysisEvidenceStateGateStatus = analysisEvidenceStateStatus === 'missing' ? 'missing' : (spineById.analysis_evidence_state === true && sourceClassById.analysis_evidence_state === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
+  const step1ObservableEvidenceStatus = manifest.artefact_status_by_id?.step1_observable_evidence ?? 'missing';
+  const step1ObservableEvidenceGateStatus = step1ObservableEvidenceStatus === 'missing'
+    ? 'missing'
+    : (spineById.step1_observable_evidence === true && sourceClassById.step1_observable_evidence === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
   const evidenceAnchorStatus = manifest.artefact_status_by_id?.evidence_anchors ?? 'missing';
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
   const claimCandidateStatus = manifest.artefact_status_by_id?.claim_candidate_trace ?? 'missing';
@@ -538,6 +611,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     legacy_untraced_claim_count: 0,
     unsafe_or_overclaim_count: 0,
     rewrite_required_count: 0,
+    limitation_only_claim_count: 0,
+    suppressed_claim_count: 0,
+    overclaim_claim_count: 0,
   };
   const claimCandidateSummary = manifest.claim_candidate_trace_summary ?? {
     claim_candidate_count: 0,
@@ -552,6 +628,10 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     blocked_candidate_count: 0,
     rewrite_required_count: 0,
     unsupported_candidate_count: 0,
+    supported_candidate_count: 0,
+    unsafe_candidate_count: 0,
+    limitation_only_candidate_count: 0,
+    suppressed_candidate_count: 0,
     safe_candidate_count: 0,
     claim_candidate_gate_status: claimCandidateGateStatus,
     claim_candidate_gate_reason: claimCandidateStatus === 'missing' ? 'trace_not_emitted' : 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
@@ -570,6 +650,20 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     unsupported_or_unavailable_evidence_count: analysisEvidenceStateStatus === 'missing' ? 1 : 0,
     analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
     analysis_evidence_state_gate_reason: analysisEvidenceStateStatus === 'missing' ? 'analysis_evidence_state_not_emitted' : 'analysis_evidence_state_not_real_runtime_v3',
+  };
+  const step1ObservableEvidenceSummary = manifest.step1_observable_evidence_summary ?? {
+    extraction_status: step1ObservableEvidenceStatus === 'missing' ? 'unavailable' : 'partial',
+    source_classification: sourceClassById.step1_observable_evidence ?? 'missing',
+    observable_evidence_item_count: 0,
+    unsupported_or_unavailable_evidence_count: step1ObservableEvidenceStatus === 'missing' ? 1 : 0,
+    rejected_or_filtered_field_count: 0,
+    step1_observable_evidence_gate_status: step1ObservableEvidenceGateStatus,
+    step1_observable_evidence_gate_reason: step1ObservableEvidenceStatus === 'missing'
+      ? 'step1_observable_evidence_not_emitted'
+      : 'step1_observable_evidence_container_partial_extractors_unavailable',
+    forbidden_sources_rejected: step1ObservableEvidenceStatus !== 'missing',
+    internal_only: true,
+    public_output_unchanged: true,
   };
 
   const scoreTraceSummary = manifest.score_trace_summary ?? {
@@ -606,9 +700,41 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     model_run_fallback_count: 0,
     model_run_trace_gate_status: modelRunTraceGateStatus,
     model_run_trace_gate_reason: modelRunTraceStatus === 'missing' ? 'trace_not_emitted' : 'runtime_metadata_without_independent_model_proof_chain',
+    independent_model_proof_status: modelRunTraceStatus === 'missing' ? 'missing' : 'metadata_only_insufficient',
+    per_stage_model_proof_status: modelRunTraceStatus === 'missing' ? 'missing' : 'partial_metadata_only',
+    raw_prompt_or_response_stored: false,
+    secrets_or_signed_urls_stored: false,
+    forbidden_payload_fields_absent: true,
   };
-  const validatorTraceSummary = manifest.validator_trace_summary ?? {};
-  const gateTraceSummary = manifest.gate_trace_summary ?? {};
+  const validatorTraceSummary = manifest.validator_trace_summary ?? {
+    validation_count: 0,
+    pass_count: 0,
+    warning_count: 0,
+    fail_count: 0,
+    blocked_count: 0,
+    validator_trace_gate_status: validatorTraceStatus === 'missing' ? 'missing' : 'insufficient',
+    validator_trace_gate_reason: validatorTraceStatus === 'missing' ? 'trace_not_emitted' : 'internal_bundle_validator_not_independent_runtime_v3_proof',
+    independent_validation_status: validatorTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient',
+    referential_integrity_status: validatorTraceStatus === 'missing' ? 'missing' : 'not_run',
+  };
+  const gateTraceSummary = manifest.gate_trace_summary ?? {
+    gate_count: 0,
+    passed_gate_count: 0,
+    blocked_gate_count: 0,
+    insufficient_gate_count: 0,
+    missing_gate_count: 0,
+    not_applicable_gate_count: 0,
+    gate_trace_gate_status: gateTraceStatus === 'missing' ? 'missing' : 'insufficient',
+    gate_trace_gate_reason: gateTraceStatus === 'missing' ? 'trace_not_emitted' : 'internal_gate_snapshot_not_independent_runtime_v3_proof',
+    independent_gate_decision_status: gateTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient',
+    public_output_permissions: {
+      show_overall_score: false,
+      show_public_technique_names: false,
+      show_repertoire_claims: false,
+      show_comparison_recommendation: false,
+      show_public_report: false,
+    },
+  };
   const validatorTraceGateStatus: 'missing' | 'insufficient' | 'satisfied' = validatorTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const gateTraceGateStatus: 'missing' | 'insufficient' | 'satisfied' = gateTraceStatus === 'missing' ? 'missing' : 'insufficient';
   const mediaIdentityStatus = manifest.artefact_status_by_id?.media_identity ?? 'missing';
@@ -649,6 +775,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     : (noExportNeedsWork ? 'no-export proof' : (reportParityNeedsWork ? 'report parity proof' : null));
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
+    ...(step1ObservableEvidenceStatus !== 'missing' && step1ObservableEvidenceGateStatus !== 'satisfied' ? ['implement real Step1ObservableEvidence extractors and truth linkage'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
     ...(tracesEmitted && (evidenceAnchorGateStatus !== 'sufficient' || publicClaimGateStatus !== 'sufficient') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
     ...(techniqueObservationStatus === 'missing' ? ['TechniqueObservationTrace'] : []),
@@ -734,6 +861,23 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
         ? 'analysis_evidence_state_not_emitted'
         : String(analysisEvidenceStateSummary.analysis_evidence_state_gate_reason ?? 'analysis_evidence_state_not_real_runtime_v3')),
     analysis_evidence_state_summary: analysisEvidenceStateSummary,
+    step1_observable_evidence_status: step1ObservableEvidenceStatus,
+    step1_observable_evidence_source_classification: sourceClassById.step1_observable_evidence ?? 'missing',
+    step1_observable_evidence_gate_status: step1ObservableEvidenceGateStatus,
+    step1_observable_evidence_gate_reason: step1ObservableEvidenceGateStatus === 'satisfied'
+      ? 'real_runtime_v3_step1_observable_evidence_present'
+      : (step1ObservableEvidenceStatus === 'missing'
+        ? 'step1_observable_evidence_not_emitted'
+        : String(step1ObservableEvidenceSummary.step1_observable_evidence_gate_reason ?? 'step1_observable_evidence_container_partial_extractors_unavailable')),
+    step1_observable_evidence_summary: step1ObservableEvidenceSummary,
+    step1_truth_linked_evidence_item_count: Number(step1ObservableEvidenceSummary.step1_truth_linked_evidence_item_count ?? analysisEvidenceStateSummary.step1_truth_linked_evidence_item_count ?? 0),
+    step1_truth_unlinked_evidence_item_count: Number(step1ObservableEvidenceSummary.step1_truth_unlinked_evidence_item_count ?? analysisEvidenceStateSummary.step1_truth_unlinked_evidence_item_count ?? 0),
+    deterministic_truth_linked_count: Number(step1ObservableEvidenceSummary.deterministic_truth_linked_count ?? analysisEvidenceStateSummary.deterministic_truth_linked_count ?? 0),
+    supplied_context_truth_linked_count: Number(step1ObservableEvidenceSummary.supplied_context_truth_linked_count ?? analysisEvidenceStateSummary.supplied_context_truth_linked_count ?? 0),
+    media_observable_truth_linked_count: Number(step1ObservableEvidenceSummary.media_observable_truth_linked_count ?? analysisEvidenceStateSummary.media_observable_truth_linked_count ?? 0),
+    limitation_only_truth_entry_count: Number(step1ObservableEvidenceSummary.limitation_only_truth_entry_count ?? analysisEvidenceStateSummary.limitation_only_truth_entry_count ?? 0),
+    missing_truth_state_linkage_count: Number(step1ObservableEvidenceSummary.missing_truth_state_linkage_count ?? analysisEvidenceStateSummary.missing_truth_state_linkage_count ?? 0),
+    truth_state_linkage_status: String(step1ObservableEvidenceSummary.truth_state_linkage_status ?? analysisEvidenceStateSummary.truth_state_linkage_status ?? 'missing'),
     evidence_anchor_trace_status: evidenceAnchorStatus,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_source_family_summary: evidenceAnchorSourceSummary,
@@ -745,6 +889,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     public_claim_trace_status: publicClaimStatus,
     public_claim_gate_status: publicClaimGateStatus,
     public_claim_trace_summary: publicClaimSummary,
+    public_claim_supported_count: Number(publicClaimSummary.supported_claim_count ?? 0),
+    public_claim_unsupported_count: Number(publicClaimSummary.unsupported_claim_count ?? 0),
+    public_claim_blocked_count: Number(publicClaimSummary.blocked_claim_count ?? 0),
+    public_claim_rewrite_required_count: Number(publicClaimSummary.rewrite_required_count ?? 0),
+    public_claim_limitation_only_count: Number(publicClaimSummary.limitation_only_claim_count ?? 0),
+    public_claim_suppressed_count: Number(publicClaimSummary.suppressed_claim_count ?? 0),
+    public_claim_overclaim_count: Number(publicClaimSummary.overclaim_claim_count ?? 0),
     public_claim_gate_reason: publicClaimGateStatus === 'sufficient'
       ? String(publicClaimSummary.public_claim_gate_reason ?? 'real_runtime_v3_claim_support_present')
       : (publicClaimStatus === 'missing'
@@ -755,6 +906,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claim_candidate_source_classification: sourceClassById.claim_candidate_trace ?? 'missing',
     claim_candidate_source_summary: claimCandidateSummary.claim_candidate_source_summary,
     claim_candidate_trace_summary: claimCandidateSummary,
+    claim_candidate_supported_count: Number(claimCandidateSummary.supported_candidate_count ?? 0),
+    claim_candidate_unsupported_count: Number(claimCandidateSummary.unsupported_candidate_count ?? 0),
+    claim_candidate_blocked_count: Number(claimCandidateSummary.blocked_candidate_count ?? 0),
+    claim_candidate_rewrite_required_count: Number(claimCandidateSummary.rewrite_required_count ?? 0),
+    claim_candidate_limitation_only_count: Number(claimCandidateSummary.limitation_only_candidate_count ?? 0),
+    claim_candidate_suppressed_count: Number(claimCandidateSummary.suppressed_candidate_count ?? 0),
+    claim_candidate_unsafe_count: Number(claimCandidateSummary.unsafe_candidate_count ?? 0),
     claim_candidate_gate_reason: claimCandidateStatus === 'missing'
       ? 'trace_not_emitted'
       : String(claimCandidateSummary.claim_candidate_gate_reason ?? 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence'),
@@ -783,6 +941,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     validator_trace_warning_count: Number(validatorTraceSummary.warning_count ?? 0),
     validator_trace_fail_count: Number(validatorTraceSummary.fail_count ?? 0),
     validator_trace_blocked_count: Number(validatorTraceSummary.blocked_count ?? 0),
+    validator_trace_independent_validation_status: String(validatorTraceSummary.independent_validation_status ?? (validatorTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient')),
+    validator_trace_referential_integrity_status: String(validatorTraceSummary.referential_integrity_status ?? (validatorTraceStatus === 'missing' ? 'missing' : 'not_run')),
+    validator_trace_deterministic_checks_version: validatorTraceSummary.deterministic_checks_version ?? null,
+    validator_trace_public_private_leakage_validation_status: validatorTraceSummary.public_private_leakage_validation_status ?? null,
+    validator_trace_uk_english_validation_status: validatorTraceSummary.uk_english_validation_status ?? null,
+    validator_trace_render_permission_validation_status: validatorTraceSummary.render_permission_validation_status ?? null,
     validator_trace_summary: validatorTraceSummary,
     gate_trace_status: gateTraceStatus,
     gate_trace_gate_status: gateTraceGateStatus,
@@ -793,6 +957,14 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     gate_trace_insufficient_gate_count: Number(gateTraceSummary.insufficient_gate_count ?? 0),
     gate_trace_missing_gate_count: Number(gateTraceSummary.missing_gate_count ?? 0),
     gate_trace_not_applicable_gate_count: Number(gateTraceSummary.not_applicable_gate_count ?? 0),
+    gate_trace_independent_gate_decision_status: String(gateTraceSummary.independent_gate_decision_status ?? (gateTraceStatus === 'missing' ? 'missing' : 'internal_snapshot_only_insufficient')),
+    gate_trace_public_output_permissions: gateTraceSummary.public_output_permissions ?? {
+      show_overall_score: false,
+      show_public_technique_names: false,
+      show_repertoire_claims: false,
+      show_comparison_recommendation: false,
+      show_public_report: false,
+    },
     gate_trace_summary: gateTraceSummary,
     model_run_trace_status: modelRunTraceStatus,
     model_run_trace_gate_status: modelRunTraceGateStatus,
@@ -802,6 +974,11 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     model_run_failed_count: Number(modelRunTraceSummary.model_run_failed_count ?? 0),
     model_run_timeout_count: Number(modelRunTraceSummary.model_run_timeout_count ?? 0),
     model_run_fallback_count: Number(modelRunTraceSummary.model_run_fallback_count ?? 0),
+    model_run_trace_independent_model_proof_status: String(modelRunTraceSummary.independent_model_proof_status ?? (modelRunTraceStatus === 'missing' ? 'missing' : 'metadata_only_insufficient')),
+    model_run_trace_per_stage_model_proof_status: String(modelRunTraceSummary.per_stage_model_proof_status ?? (modelRunTraceStatus === 'missing' ? 'missing' : 'partial_metadata_only')),
+    model_run_raw_prompt_or_response_stored: Boolean(modelRunTraceSummary.raw_prompt_or_response_stored ?? false),
+    model_run_secrets_or_signed_urls_stored: Boolean(modelRunTraceSummary.secrets_or_signed_urls_stored ?? false),
+    model_run_forbidden_payload_fields_absent: modelRunTraceSummary.forbidden_payload_fields_absent ?? true,
     model_run_trace_summary: modelRunTraceSummary,
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
@@ -933,6 +1110,16 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     runtime_evidence_blocked_by_id.add('media_identity');
     real_v3_spine_artefact_ids.delete('media_identity');
   }
+  if (artefact_status_by_id.step1_observable_evidence === 'emitted' || artefact_status_by_id.step1_observable_evidence === 'emitted_blocked') {
+    if (!artefact_source_classification_by_id.step1_observable_evidence) {
+      artefact_source_classification_by_id.step1_observable_evidence =
+        options.step1_observable_evidence_summary?.source_classification ?? 'real_runtime_v3_partial';
+    }
+    artefact_level2_spine_satisfaction_by_id.step1_observable_evidence = false;
+    runtime_evidence_accepted_by_id.delete('step1_observable_evidence');
+    runtime_evidence_blocked_by_id.add('step1_observable_evidence');
+    real_v3_spine_artefact_ids.delete('step1_observable_evidence');
+  }
   for (const artefactId of BASE_REAL_RUNTIME_V3_ARTEFACT_IDS) {
     if (artefact_status_by_id[artefactId] !== 'emitted' || !real_v3_spine_artefact_ids.has(artefactId)) continue;
     if (!artefact_source_classification_by_id[artefactId]) artefact_source_classification_by_id[artefactId] = 'real_runtime_v3';
@@ -1001,6 +1188,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
     media_identity_summary: options.media_identity_summary ?? undefined,
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
+    step1_observable_evidence_summary: options.step1_observable_evidence_summary ?? undefined,
     report_parity_summary: options.report_parity_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,

@@ -38,6 +38,52 @@ describe('v3 s9 score trace first pass', () => {
     expect(payload.score_trace_summary.discipline_attribute_score_trace_status).toBe('internal_trace_only');
   });
 
+  it('keeps raw-report score fields as legacy-only and non-satisfying even when support artefacts exist', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
+    const run = 'r7';
+    const raw = { report_data: { overall_score: 91, scores: { acting: 88 } } };
+    const claims = await emitPublicClaimTraceFirstPass({ run_id: run, analysis_run_id: run, submission_id: 's', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: raw, internal_qa_emit: true, root_dir: root });
+    const out = await emitScoreTraceFirstPass({
+      run_id: run,
+      analysis_run_id: run,
+      submission_id: 's',
+      take_id: 't1',
+      source_module: 'test',
+      source_stage: 'unit',
+      raw_report_data: raw,
+      public_claim_trace_data: { claims: claims.claims ?? [] },
+      evidence_anchors_data: {
+        run_id: run,
+        analysis_run_id: run,
+        take_id: 't1',
+        evidence_anchor_gate_status: 'sufficient',
+        anchors: [{ evidence_anchor_id: 'ea-real-score', source_family: 'real_runtime_v3', linked_truth_state_ids: [`${run}:truth_state:selected_level`] }],
+      },
+      truth_state_map_data: {
+        run_id: run,
+        analysis_run_id: run,
+        take_id: 't1',
+        truth_state_entries: [{ truth_state_entry_id: `${run}:truth_state:selected_level`, key: 'selected_level', state: 'known' }],
+      },
+      internal_qa_emit: true,
+      root_dir: root,
+    } as any);
+    expect(out.written).toBe(true);
+    expect(out.source_classification).toBe('legacy_adapter');
+    expect(out.level2_satisfies).toBe(false);
+    const payload = JSON.parse(await readFile(path.join(root, run, 'takes', 'take-t1', `analysis-${run}`, 'traces', 'ScoreTrace.json'), 'utf8'));
+    expect(payload.cannot_satisfy_score_gate).toBe(true);
+    expect(payload.overall_readiness_public_score_status).toBe('blocked');
+    expect(payload.score_trace_summary.source_family_summary.real_runtime_v3).toBe(0);
+    expect(payload.score_trace_summary.score_trace_gate_status).toBe('insufficient');
+    expect(payload.score_trace_summary.score_trace_gate_reason).toBe('legacy_report_snapshot_not_real_runtime_score_trace');
+    expect(payload.score_entries.every((entry: any) => entry.source_artefact_id === 'raw_report')).toBe(true);
+    expect(payload.score_entries.every((entry: any) => entry.source_family === 'legacy_adapter')).toBe(true);
+    expect(payload.score_entries.every((entry: any) => entry.linked_evidence_anchor_ids.length === 0)).toBe(true);
+    expect(payload.score_entries.every((entry: any) => entry.linked_truth_state_ids.length === 0)).toBe(true);
+    expect(payload.score_entries.every((entry: any) => entry.cannot_satisfy_v3_gate === true)).toBe(true);
+  });
+
   it('skips invalid component weights safely', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-score-'));
     const out = await emitScoreTraceFirstPass({ run_id: 'r3', analysis_run_id: 'r3', submission_id: 's', take_id: 't1', source_module: 'test', source_stage: 'unit', raw_report_data: { report_data: { detected_components: [{ type: 'song', weight: 1.2 }, { type: 'slate', weight: -0.1 }, { type: 'acting_scene', weight: '0.5' }] } }, internal_qa_emit: true, root_dir: root });

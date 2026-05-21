@@ -1351,6 +1351,7 @@ Status:
 - `reports/render_payload.json`, `reports/public_report_payload.json` and `parity/report_parity_result.json` now define the internal report parity proof path.
 - `qa_acceptance_metrics` reflects passed report parity when the final parity artefact passes.
 - S9-17 is not Level 2 acceptance and does not unblock public or production gates.
+- S9-18A defines the next architecture contract: real Step 1 observable evidence extraction, `Step1ObservableEvidence` to `AnalysisEvidenceState` projection, truth-state linkage and public-claim support rules. It is design-only and does not accept Level 2.
 
 Scope:
 
@@ -1363,6 +1364,18 @@ Scope:
 - keep public output unchanged until separately approved;
 - keep public scoring and public technique authority blocked;
 - keep Level 2 not accepted until every required gate truly satisfies.
+
+Recommended S9-18 delivery sequence:
+
+- **S9-18A - real Step 1 evidence and public-claim support contract:** define source boundaries, anti-fake evidence rules and the `Step1ObservableEvidence` to `AnalysisEvidenceState` architecture.
+- **S9-18B - Step1ObservableEvidence / AnalysisEvidenceState extractor container:** emit the internal structured Step 1 evidence container and project accepted items into the canonical handoff aggregate.
+- **S9-18C - deterministic metadata and brief/material evidence extraction:** populate safe non-model runtime facts and material/component presence evidence.
+- **S9-18D - media observable extraction plan or first narrow extractor:** introduce or fully design a narrow video/audio observable extractor without public scoring or technique authority.
+- **S9-18E - EvidenceAnchors and TruthStateMap linkage:** add stable truth IDs and link real observable anchors.
+- **S9-18F - ClaimCandidateTrace and PublicClaimTrace support classification:** support public-safe factual and limitation claims from real anchors while keeping score, technique and market-fit claims blocked.
+- **S9-18G - ScoreTrace / TechniqueObservationTrace strategy or deferral audit:** decide whether these remain S9 blockers or move to a later sequence.
+- **S9-18H - Validator/Gate/ModelRun independent proof chain:** define or implement independent proof for metadata-only trace families.
+- **S9-18I - real-runtime retest and Level 2 blocker audit:** determine whether Level 2 remains blocked and why.
 
 ### Why this comes next
 
