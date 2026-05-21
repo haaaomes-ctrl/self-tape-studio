@@ -1911,7 +1911,8 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
     expect(anchors.real_runtime_anchor_count).toBeGreaterThan(0);
     expect(anchors.anchors.some((anchor: any) => anchor.source_family === 'real_runtime_v3')).toBe(true);
     expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
-    expect(anchors.evidence_anchor_trace_summary.blocker_codes).toEqual(expect.arrayContaining(['partial_step1_evidence_coverage', 'missing_candidate_technique_evidence']));
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).toEqual(expect.arrayContaining(['missing_candidate_technique_evidence']));
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('partial_step1_evidence_coverage');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.evidence_anchors).toBe(false);
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
   });
@@ -1945,7 +1946,7 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
     for (const [family, expectedReason] of [
       ['video', 'missing_video_observable_evidence'],
       ['audio', 'missing_audio_observable_evidence'],
-      ['material', 'missing_material_observable_evidence'],
+      ['material', 'missing_material_specific_performance_evidence'],
       ['candidate_technique', 'missing_candidate_technique_evidence'],
     ] as const) {
       const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
@@ -1964,7 +1965,7 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
     const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied', materialPresence: 'absent' });
     completeAnalysisEvidenceStateForAggregate(bundle.payload, { materialNotApplicable: true });
     const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
-    expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('missing_material_observable_evidence');
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('missing_material_specific_performance_evidence');
     expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
   });
 

@@ -220,16 +220,16 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     expect(mediaItems.every((item: any) => item.linked_truth_state_ids.every((id: string) => id.includes(':truth_state:')))).toBe(true);
     expect(mediaItems.some((item: any) => item.blocker_codes.includes('missing_truth_state_linkage'))).toBe(false);
     expect(mediaItems.filter((item: any) => item.timestamp).map((item: any) => item.timestamp)).toEqual(['00:05', '00:12']);
-    expect(step1.evidence_family_coverage.video_observable).toBe('partial');
-    expect(step1.evidence_family_coverage.audio_observable).toBe('partial');
+    expect(step1.evidence_family_coverage.video_observable).toBe('complete');
+    expect(step1.evidence_family_coverage.audio_observable).toBe('complete');
     expect(step1.evidence_family_coverage.performance_observable).toBe('not_extracted');
     expect(step1.evidence_family_coverage.candidate_technique).toBe('not_extracted');
     expect(step1.video_observable_evidence_count).toBeGreaterThan(0);
     expect(step1.audio_observable_evidence_count).toBeGreaterThan(0);
     expect(step1.timestamped_media_observation_count).toBe(2);
     expect(aes.media_observable_evidence_family_summary).toMatchObject({
-      video_observable: 'partial',
-      audio_observable: 'partial',
+      video_observable: 'complete',
+      audio_observable: 'complete',
       performance_observable: 'not_extracted',
       candidate_technique: 'not_extracted',
     });

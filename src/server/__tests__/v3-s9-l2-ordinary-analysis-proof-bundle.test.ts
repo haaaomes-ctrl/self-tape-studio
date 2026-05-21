@@ -97,7 +97,7 @@ async function emitOrdinaryAnalysisBundle() {
     },
     artefact_level2_spine_satisfaction_by_id: {
       step1_observable_evidence: false,
-      analysis_evidence_state: false,
+      analysis_evidence_state: analysis.level2_satisfies,
       evidence_anchors: anchorsOut.level2_satisfies,
     },
     step1_observable_evidence_summary: analysis.step1_observable_evidence_summary,
@@ -109,7 +109,7 @@ async function emitOrdinaryAnalysisBundle() {
   return { filtered, step1, aes, anchors, metrics };
 }
 
-describe('S9-19A ordinary analysis proof bundle', () => {
+describe('S9-19 ordinary analysis proof bundle', () => {
   it('projects safe ordinary Step 1 observations while rejecting judgement and authority fields', async () => {
     const { filtered, step1, aes, metrics } = await emitOrdinaryAnalysisBundle();
 
@@ -122,17 +122,22 @@ describe('S9-19A ordinary analysis proof bundle', () => {
     expect(step1.performance_observable_evidence_count).toBeGreaterThan(0);
     expect(step1.material_specific_performance_evidence_count).toBeGreaterThan(0);
     expect(step1.candidate_technique_evidence_count).toBeGreaterThan(0);
-    expect(step1.evidence_family_status_by_id.performance_observable).toBe('partial');
-    expect(step1.evidence_family_status_by_id.candidate_technique).toBe('partial');
+    expect(step1.evidence_family_status_by_id.performance_observable).toBe('complete');
+    expect(step1.evidence_family_status_by_id.candidate_technique).toBe('complete');
+    expect(step1.ordinary_analysis_family_completion_by_id.performance_observable.can_satisfy_family_gate).toBe(true);
+    expect(step1.ordinary_analysis_family_completion_by_id.candidate_technique.can_satisfy_family_gate).toBe(true);
     expect(step1.cannot_satisfy_v3_gate).toBe(true);
 
     expect(aes.performance_observable_evidence_count).toBeGreaterThan(0);
     expect(aes.candidate_technique_evidence_count).toBeGreaterThan(0);
-    expect(aes.ordinary_analysis_proof_bundle_status).toBe('partial');
+    expect(aes.evidence_state_status).toBe('complete');
+    expect(aes.analysis_evidence_state_gate_status).toBe('satisfied');
+    expect(aes.cannot_satisfy_v3_gate).toBe(false);
+    expect(aes.ordinary_analysis_proof_bundle_status).toBe('step1_families_complete_proof_chain_blocked');
     expect(aes.ordinary_analysis_proof_bundle_gate_status).toBe('insufficient');
-    expect(aes.cannot_satisfy_v3_gate).toBe(true);
 
-    expect(metrics.ordinary_analysis_proof_bundle_status).toBe('partial');
+    expect(metrics.analysis_evidence_state_gate_status).toBe('satisfied');
+    expect(metrics.ordinary_analysis_proof_bundle_status).toBe('step1_families_complete_proof_chain_blocked');
     expect(metrics.ordinary_analysis_proof_bundle_gate_status).toBe('insufficient');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
@@ -149,7 +154,8 @@ describe('S9-19A ordinary analysis proof bundle', () => {
     expect(techniqueAnchor).toMatchObject({ source_family: 'real_runtime_v3', cannot_satisfy_v3_gate: false });
     expect(anchors.evidence_anchor_trace_summary.real_runtime_anchor_count).toBeGreaterThan(0);
     expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
-    expect(anchors.evidence_anchor_trace_summary.blocker_codes).toContain('partial_step1_evidence_coverage');
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('partial_step1_evidence_coverage');
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).toContain('anchor_cannot_satisfy_v3_gate');
     expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
     expect(metrics.public_claim_gate_status).not.toBe('sufficient');
   });
