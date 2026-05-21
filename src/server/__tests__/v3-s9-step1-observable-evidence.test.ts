@@ -2,12 +2,13 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { filterRunEvidencePassForStep1 } from '@/server/evidence-pass.server';
 import {
   emitAnalysisEvidenceStatePrerequisite,
   emitQAManifestForAnalysisRun,
 } from '@/server/v3/qa-artifacts-wiring.server';
 
-async function emitStep1Bundle() {
+async function emitStep1Bundle(options: { filteredStep1?: Record<string, unknown> | null } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s918b-step1-'));
   const run = `run-s918b-${Math.random().toString(36).slice(2)}`;
   const take = 't1';
@@ -41,6 +42,7 @@ async function emitStep1Bundle() {
     duration_confidence: 'known',
     resolver_output_available: true,
     truth_state_map_available: true,
+    filtered_run_evidence_pass_step1: options.filteredStep1,
     root_dir: root,
     internal_qa_emit: true,
   });
@@ -70,6 +72,27 @@ async function emitStep1Bundle() {
   const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
   const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
   return { analysis, step1, aes, manifest, metrics };
+}
+
+function filteredMediaProjection(overrides: Record<string, unknown> = {}) {
+  return filterRunEvidencePassForStep1({
+    presentation_evidence: ['Framing keeps the performer visible from shoulders up.'],
+    timestamped_evidence: [
+      { timestamp: '00:05', observation: 'Audio drops slightly on the opening word.', linked_category: 'audio' },
+      { timestamp: '00:12', observation: 'Framing remains visible during the opening slate.', linked_category: 'technical' },
+    ],
+    evidence_sufficiency: {
+      audio_assessable: true,
+      video_assessable: true,
+      acting_assessable: true,
+      vocal_assessable: true,
+      movement_assessable: true,
+      brief_assessable: true,
+      role_fit_assessable: false,
+      notes: 'Assessability notes only',
+    },
+    ...overrides,
+  }, { model: 'test-model', durationSeconds: 60 }) as unknown as Record<string, unknown>;
 }
 
 describe('S9-18B Step1ObservableEvidence container', () => {
@@ -175,6 +198,69 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     expect(serialised).not.toContain('role fit');
     expect(serialised).not.toContain('winner');
     expect(serialised).not.toContain('recommendation');
+  });
+
+  it('emits first narrow video/audio media-observable items from safe filtered Step 1 projection only', async () => {
+    const { step1, aes, metrics } = await emitStep1Bundle({ filteredStep1: filteredMediaProjection() });
+    const mediaItems = step1.observable_evidence_items.filter((item: any) =>
+      ['video_observable', 'audio_observable', 'assessability_limit'].includes(item.evidence_family)
+      && ['video', 'audio'].includes(item.evidence_modality)
+    );
+    expect(mediaItems.map((item: any) => item.evidence_kind)).toEqual(expect.arrayContaining([
+      'framing_state_observed',
+      'timestamped_video_observation',
+      'timestamped_audio_observation',
+    ]));
+    expect(mediaItems.every((item: any) => item.source_artefact_id === 'step1_observable_evidence')).toBe(true);
+    expect(mediaItems.every((item: any) => String(item.source_path).startsWith('observable_evidence_items['))).toBe(true);
+    expect(mediaItems.every((item: any) => item.blocker_codes.includes('missing_truth_state_linkage'))).toBe(true);
+    expect(mediaItems.filter((item: any) => item.timestamp).map((item: any) => item.timestamp)).toEqual(['00:05', '00:12']);
+    expect(step1.evidence_family_coverage.video_observable).toBe('partial');
+    expect(step1.evidence_family_coverage.audio_observable).toBe('partial');
+    expect(step1.evidence_family_coverage.performance_observable).toBe('not_extracted');
+    expect(step1.evidence_family_coverage.candidate_technique).toBe('not_extracted');
+    expect(step1.video_observable_evidence_count).toBeGreaterThan(0);
+    expect(step1.audio_observable_evidence_count).toBeGreaterThan(0);
+    expect(step1.timestamped_media_observation_count).toBe(2);
+    expect(aes.media_observable_evidence_family_summary).toMatchObject({
+      video_observable: 'partial',
+      audio_observable: 'partial',
+      performance_observable: 'not_extracted',
+      candidate_technique: 'not_extracted',
+    });
+    expect(aes.cannot_satisfy_v3_gate).toBe(true);
+    expect(metrics.step1_observable_evidence_summary.video_observable_evidence_count).toBeGreaterThan(0);
+    expect(metrics.step1_observable_evidence_summary.audio_observable_evidence_count).toBeGreaterThan(0);
+  });
+
+  it('rejects unsafe media-observable projection fields instead of promoting report-like judgement', async () => {
+    const { step1 } = await emitStep1Bundle({
+      filteredStep1: filteredMediaProjection({
+        presentation_evidence: ['Strong performance with professional quality.'],
+        timestamped_evidence: [
+          { timestamp: '00:20', observation: 'Audio is audible before the line.', linked_category: 'audio' },
+          { timestamp: '00:10', observation: 'Framing remains visible after the audio cue.', linked_category: 'technical' },
+        ],
+        evidence_sufficiency: {
+          audio_assessable: true,
+          video_assessable: true,
+          acting_assessable: true,
+          vocal_assessable: true,
+          movement_assessable: true,
+          brief_assessable: true,
+          role_fit_assessable: true,
+          notes: 'Assessability notes only',
+        },
+      }),
+    });
+    const serialisedMedia = JSON.stringify(step1.observable_evidence_items).toLowerCase();
+    expect(serialisedMedia).not.toContain('strong performance');
+    expect(serialisedMedia).not.toContain('professional quality');
+    expect(serialisedMedia).not.toContain('ready to submit');
+    expect(step1.rejected_or_filtered_fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source_family: 'runEvidencePass_filtered_media_observable' }),
+    ]));
+    expect(step1.step1_observable_evidence_summary.rejected_media_observable_source_count).toBeGreaterThan(0);
   });
 
   it('links Step1ObservableEvidence into AnalysisEvidenceState while keeping Step 2 limited and Level 2 blocked', async () => {

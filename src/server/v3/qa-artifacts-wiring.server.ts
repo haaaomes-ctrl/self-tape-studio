@@ -1723,6 +1723,7 @@ type Step1ObservableEvidenceItem = {
   cannot_satisfy_v3_gate: boolean;
 };
 const STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS = new Set([
+  'step1_observable_evidence',
   'analysis_input_record',
   'analysis_submission',
   'analysis_take',
@@ -1730,6 +1731,15 @@ const STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS = new Set([
   'truth_state_map',
   'media_readiness',
 ]);
+const STEP1_MEDIA_OBSERVABLE_ALLOWED_SOURCE_PATHS = [
+  'timestamped_evidence[',
+  'presentation_evidence[',
+  'evidence_sufficiency.video_assessable',
+  'evidence_sufficiency.audio_assessable',
+  'evidence_sufficiency.movement_assessable',
+] as const;
+const STEP1_MEDIA_OBSERVABLE_FORBIDDEN_TEXT_RE =
+  /\b(good acting|strong performance|brief achieved|technique demonstrated|professional quality|castable|bookable|marketable|readiness verdict|numeric score|score band|role fit|public technique authority|ready to submit|not ready|fix first|priority fix|winner|recommendation)\b/i;
 const STEP1_FORBIDDEN_SATISFYING_SOURCE_REFS = [
   { source_family: 'raw_report', source_path: 'reports/raw_report.json', blocker_code: 'raw_report_forbidden_as_step1_observable_evidence', reason: 'raw_report_prose_forbidden_as_satisfying_step1_observable_evidence' },
   { source_family: 'render_payload', source_path: 'reports/render_payload.json', blocker_code: 'render_payload_forbidden_as_step1_observable_evidence', reason: 'render_payload_forbidden_as_satisfying_step1_observable_evidence' },
@@ -1755,6 +1765,150 @@ function normaliseSafeStep1Value(value: unknown): string {
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'unknown';
   if (typeof value === 'string') return value.trim() || 'unknown';
   return 'unknown';
+}
+function parseStep1TimestampSeconds(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(?:(\d+):)?([0-5]?\d):([0-5]\d)$/.exec(value.trim());
+  if (!match) return null;
+  const hours = match[1] ? Number(match[1]) : 0;
+  const minutes = Number(match[2]);
+  const seconds = Number(match[3]);
+  if (![hours, minutes, seconds].every((part) => Number.isFinite(part) && part >= 0)) return null;
+  return hours * 3600 + minutes * 60 + seconds;
+}
+function step1TimestampedEvidenceIndex(sourcePath: string): number | null {
+  const match = /^timestamped_evidence\[(\d+)]/.exec(sourcePath);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}
+function isAllowedMediaObservableEvidenceSource(item: Record<string, unknown>): boolean {
+  if (item.source_artefact_id !== 'run_evidence_pass') return false;
+  const sourcePath = typeof item.source_path === 'string' ? item.source_path : '';
+  return STEP1_MEDIA_OBSERVABLE_ALLOWED_SOURCE_PATHS.some((prefix) => sourcePath.startsWith(prefix));
+}
+function classifyVideoAssessabilityKind(summary: string, sourcePath: string): string | null {
+  const text = summary.toLowerCase();
+  if (sourcePath.startsWith('evidence_sufficiency.video_assessable')) return 'video_observable_evidence_unavailable';
+  if (sourcePath.startsWith('evidence_sufficiency.movement_assessable')) return 'movement_visibility_limitation_observed';
+  if (sourcePath.startsWith('timestamped_evidence[')) return 'timestamped_video_observation';
+  if (/\b(framing|frame|crop|cropped)\b/.test(text)) return 'framing_state_observed';
+  if (/\b(light|lighting|visibility|visible|visual|see|read)\b/.test(text)) return 'video_visibility_observed';
+  if (/\bfocus\b/.test(text)) return 'focus_visibility_limitation_observed';
+  if (/\bmovement\b/.test(text)) return 'movement_visibility_limitation_observed';
+  return null;
+}
+function classifyAudioAssessabilityKind(summary: string, sourcePath: string): string | null {
+  const text = summary.toLowerCase();
+  if (sourcePath.startsWith('evidence_sufficiency.audio_assessable')) return 'audio_observable_evidence_unavailable';
+  if (sourcePath.startsWith('timestamped_evidence[')) return 'timestamped_audio_observation';
+  if (/\b(audio|audible|heard|hear|sound|speech|lyric|voice|vocal)\b/.test(text)) return 'audio_presence_observed';
+  if (/\b(intelligib|clarity|clear)\b/.test(text)) return 'speech_or_lyric_intelligibility_limitation_observed';
+  if (/\b(volume|balance)\b/.test(text)) return 'volume_balance_limitation_observed';
+  if (/\b(clipping|noise|distortion)\b/.test(text)) return 'clipping_or_noise_limitation_observed';
+  return null;
+}
+function mediaObservableFamilyForKind(kind: string, modality: 'video' | 'audio'): Step1ObservableEvidenceFamily {
+  if (kind.endsWith('_unavailable') || kind.includes('limitation')) return 'assessability_limit';
+  return modality === 'video' ? 'video_observable' : 'audio_observable';
+}
+function buildMediaObservableStep1EvidenceItems(args: {
+  videoItems: Array<Record<string, unknown>>;
+  audioItems: Array<Record<string, unknown>>;
+}): {
+  items: Step1ObservableEvidenceItem[];
+  rejected: Array<{ source_path: string; reason: string; blocker_codes: string[] }>;
+  videoCount: number;
+  audioCount: number;
+  timestampedCount: number;
+  limitationCount: number;
+} {
+  const projected: Step1ObservableEvidenceItem[] = [];
+  const rejected: Array<{ source_path: string; reason: string; blocker_codes: string[] }> = [];
+  let lastTimestampSeconds = -1;
+  const reject = (sourcePath: string, reason: string, blockerCode: string) => {
+    rejected.push({ source_path: sourcePath || 'unknown_media_observable_source', reason, blocker_codes: [blockerCode] });
+  };
+  const project = (rawItem: Record<string, unknown>, modality: 'video' | 'audio') => {
+    const sourcePath = typeof rawItem.source_path === 'string' ? rawItem.source_path : '';
+    const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
+    if (!isAllowedMediaObservableEvidenceSource(rawItem)) {
+      reject(sourcePath, 'media_observable_source_not_allowed_for_s9_18d', 'media_observable_source_not_allowed');
+      return;
+    }
+    if (!summary || STEP1_MEDIA_OBSERVABLE_FORBIDDEN_TEXT_RE.test(summary) || hasForbiddenEvidenceSourceRef(rawItem)) {
+      reject(sourcePath, 'media_observable_summary_failed_anti_fake_guard', 'media_observable_summary_rejected');
+      return;
+    }
+    const isTimestamped = sourcePath.startsWith('timestamped_evidence[');
+    const timestamp = typeof rawItem.timestamp === 'string' ? rawItem.timestamp : null;
+    const timestampSeconds = isTimestamped ? parseStep1TimestampSeconds(timestamp) : null;
+    if (isTimestamped) {
+      if (timestampSeconds == null || rawItem.timestamp_source !== 'runEvidencePass_validated_timestamp') {
+        reject(sourcePath, 'timestamped_media_observation_timestamp_invalid_or_untrusted', 'timestamped_media_observation_invalid_timestamp');
+        return;
+      }
+      if (timestampSeconds < lastTimestampSeconds) {
+        reject(sourcePath, 'timestamped_media_observation_not_chronological', 'timestamped_media_observation_not_chronological');
+        return;
+      }
+      lastTimestampSeconds = timestampSeconds;
+    }
+    const evidenceKind = modality === 'video'
+      ? classifyVideoAssessabilityKind(summary, sourcePath)
+      : classifyAudioAssessabilityKind(summary, sourcePath);
+    if (!evidenceKind) {
+      reject(sourcePath, 'media_observable_kind_not_in_s9_18d_allow_list', 'media_observable_kind_not_allowed');
+      return;
+    }
+    const rawLimitations = Array.isArray(rawItem.assessability_limitations) ? rawItem.assessability_limitations.filter((x): x is string => typeof x === 'string' && x.length > 0) : [];
+    const limitationOnly = evidenceKind.endsWith('_unavailable') || evidenceKind.includes('limitation') || rawLimitations.length > 0;
+    const blockerCodes = [
+      ...(limitationOnly ? ['media_assessability_limitation_only'] : []),
+      'missing_truth_state_linkage',
+    ];
+    projected.push({
+      evidence_item_id: 'step1-media-pending',
+      evidence_family: mediaObservableFamilyForKind(evidenceKind, modality),
+      evidence_modality: modality,
+      evidence_kind: evidenceKind,
+      safe_evidence_summary: summary,
+      source_artefact_id: 'step1_observable_evidence',
+      source_path: 'observable_evidence_items[pending]',
+      timestamp: isTimestamped ? timestamp : null,
+      timestamp_range: null,
+      timestamp_source: isTimestamped ? 'runEvidencePass_validated_timestamp' : 'not_timestamped_media_observable',
+      component_id: typeof rawItem.component_id === 'string' ? rawItem.component_id : null,
+      linked_truth_state_ids: [],
+      assessability_limitations: dedupePreservingOrder(rawLimitations),
+      confidence_or_strength: typeof rawItem.confidence_or_strength === 'string' ? rawItem.confidence_or_strength : 'runEvidencePass_filtered_media_observable',
+      public_display_status: 'internal_only',
+      blocker_codes: blockerCodes,
+      cannot_satisfy_v3_gate: true,
+    });
+  };
+  const mediaItems = [
+    ...args.videoItems.map((item) => ({ item, modality: 'video' as const })),
+    ...args.audioItems.map((item) => ({ item, modality: 'audio' as const })),
+  ].sort((a, b) => {
+    const aSourcePath = typeof a.item.source_path === 'string' ? a.item.source_path : '';
+    const bSourcePath = typeof b.item.source_path === 'string' ? b.item.source_path : '';
+    const aIndex = step1TimestampedEvidenceIndex(aSourcePath);
+    const bIndex = step1TimestampedEvidenceIndex(bSourcePath);
+    if (aIndex == null && bIndex == null) return 0;
+    if (aIndex == null) return 1;
+    if (bIndex == null) return -1;
+    return aIndex - bIndex;
+  });
+  mediaItems.forEach(({ item, modality }) => project(item, modality));
+  return {
+    items: projected,
+    rejected,
+    videoCount: projected.filter((item) => item.evidence_family === 'video_observable').length,
+    audioCount: projected.filter((item) => item.evidence_family === 'audio_observable').length,
+    timestampedCount: projected.filter((item) => item.evidence_kind.startsWith('timestamped_')).length,
+    limitationCount: projected.filter((item) => item.evidence_family === 'assessability_limit').length,
+  };
 }
 type PresenceValue = 'supplied' | 'absent' | 'unknown';
 function normalisePresenceTruthState(value: PresenceValue | null | undefined, source: string | null | undefined): { value: PresenceValue; source: string; status: 'known' | 'unknown' | 'unavailable' } {
@@ -6420,11 +6574,30 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const evidenceStateStatus: 'partial' | 'unavailable' | 'blocked' = filteredStep1?.extraction_status === 'blocked'
     ? 'blocked'
     : (observable_evidence_items.length > 0 ? 'partial' : 'unavailable');
-  const step1ObservableEvidenceItems = observable_evidence_items.flatMap((item) => {
+  const deterministicStep1ObservableEvidenceItems = observable_evidence_items.flatMap((item) => {
     const sourceArtefactId = step1SourceArtefactIdForItem(item);
     return sourceArtefactId ? [toStep1ObservableEvidenceItem(item, 0, sourceArtefactId)] : [];
-  }).map((item, index) => ({ ...item, evidence_item_id: `step1-${String(index + 1).padStart(4, '0')}` }));
+  });
+  const mediaObservableProjection = buildMediaObservableStep1EvidenceItems({
+    videoItems: step1VideoItems,
+    audioItems: step1AudioItems,
+  });
+  const step1ObservableEvidenceItems = [
+    ...deterministicStep1ObservableEvidenceItems,
+    ...mediaObservableProjection.items,
+  ].map((item, index) => ({
+    ...item,
+    evidence_item_id: `step1-${String(index + 1).padStart(4, '0')}`,
+    source_path: item.source_artefact_id === 'step1_observable_evidence'
+      ? `observable_evidence_items[${index}]`
+      : item.source_path,
+  }));
   const deterministicRuntimeEvidenceCount = step1ObservableEvidenceItems.filter((item) => ['deterministic_runtime_fact', 'resolver_truth_fact'].includes(item.evidence_family)).length;
+  const videoObservableEvidenceCount = mediaObservableProjection.videoCount;
+  const audioObservableEvidenceCount = mediaObservableProjection.audioCount;
+  const mediaAssessabilityLimitCount = mediaObservableProjection.limitationCount;
+  const timestampedMediaObservationCount = mediaObservableProjection.timestampedCount;
+  const rejectedMediaObservableSourceCount = mediaObservableProjection.rejected.length;
   const briefMaterialEvidenceKinds = new Set([
     'brief_presence',
     'brief_presence_source_resolved',
@@ -6474,8 +6647,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const step1Coverage = {
     deterministic_runtime_facts: observable_evidence_items.some((item) => ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'media_readiness'].includes(item.source_artefact_id)) ? 'partial' : 'missing',
     resolver_truth_facts: resolverOutputAvailable && truthStateMapAvailable ? 'complete' : (resolverOutputAvailable || truthStateMapAvailable ? 'partial' : 'missing'),
-    video_observable: 'not_extracted',
-    audio_observable: 'not_extracted',
+    video_observable: videoObservableEvidenceCount > 0 ? 'partial' : 'not_extracted',
+    audio_observable: audioObservableEvidenceCount > 0 ? 'partial' : 'not_extracted',
     material_specific: hasSuppliedContextMaterialFact ? 'partial' : 'not_extracted',
     performance_observable: 'not_extracted',
     candidate_technique: 'not_extracted',
@@ -6490,7 +6663,12 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     candidate_technique: step1Coverage.candidate_technique,
   };
   const step1UnsupportedSource = [
-    ...performanceUnavailable,
+    ...performanceUnavailable.filter((item) => {
+      const kind = String(item.evidence_kind ?? '');
+      if (videoObservableEvidenceCount > 0 && kind.includes('video_observable')) return false;
+      if (audioObservableEvidenceCount > 0 && kind.includes('audio_observable')) return false;
+      return true;
+    }),
     ...filteredUnsupported.filter((item) => {
       const kind = String(item.evidence_kind ?? '');
       return !performanceUnavailable.some((fallback) => fallback.evidence_kind === kind);
@@ -6527,6 +6705,12 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       source_path,
       reason: 'filtered_step1_source_field_rejected_or_redacted',
       blocker_codes: ['runEvidencePass_prohibited_fields_filtered'],
+    })),
+    ...mediaObservableProjection.rejected.map((item) => ({
+      source_family: 'runEvidencePass_filtered_media_observable',
+      source_path: item.source_path,
+      reason: item.reason,
+      blocker_codes: item.blocker_codes,
     })),
     {
       source_family: 'raw_report',
@@ -6582,6 +6766,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     observable_evidence_item_count: step1ObservableEvidenceItems.length,
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
+    video_observable_evidence_count: videoObservableEvidenceCount,
+    audio_observable_evidence_count: audioObservableEvidenceCount,
+    media_assessability_limit_count: mediaAssessabilityLimitCount,
+    timestamped_media_observation_count: timestampedMediaObservationCount,
+    rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
+    media_observable_evidence_family_summary: {
+      video_observable: step1FamilyStatusById.video_observable,
+      audio_observable: step1FamilyStatusById.audio_observable,
+      performance_observable: step1FamilyStatusById.performance_observable,
+      candidate_technique: step1FamilyStatusById.candidate_technique,
+    },
+    media_observable_evidence_gate_status: 'insufficient' as const,
+    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     supplied_context_fact_count: briefMaterialEvidenceCount,
     supplied_context_unavailable_count: suppliedContextUnavailableCount,
     unsupported_or_unavailable_evidence_count: step1Unsupported.length,
@@ -6600,6 +6797,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     observable_evidence_item_count: observable_evidence_items.length,
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
+    video_observable_evidence_count: videoObservableEvidenceCount,
+    audio_observable_evidence_count: audioObservableEvidenceCount,
+    media_assessability_limit_count: mediaAssessabilityLimitCount,
+    timestamped_media_observation_count: timestampedMediaObservationCount,
+    rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
+    media_observable_evidence_family_summary: {
+      video_observable: step1FamilyStatusById.video_observable,
+      audio_observable: step1FamilyStatusById.audio_observable,
+      performance_observable: step1FamilyStatusById.performance_observable,
+      candidate_technique: step1FamilyStatusById.candidate_technique,
+    },
+    media_observable_evidence_gate_status: 'insufficient' as const,
+    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
     step1_observable_evidence_family_summary: step1FamilyStatusById,
     supplied_context_fact_count: briefMaterialEvidenceCount,
@@ -6654,6 +6864,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     observable_evidence_items: step1ObservableEvidenceItems,
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
+    video_observable_evidence_count: videoObservableEvidenceCount,
+    audio_observable_evidence_count: audioObservableEvidenceCount,
+    media_assessability_limit_count: mediaAssessabilityLimitCount,
+    timestamped_media_observation_count: timestampedMediaObservationCount,
+    rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
+    media_observable_evidence_family_summary: {
+      video_observable: step1FamilyStatusById.video_observable,
+      audio_observable: step1FamilyStatusById.audio_observable,
+      performance_observable: step1FamilyStatusById.performance_observable,
+      candidate_technique: step1FamilyStatusById.candidate_technique,
+    },
+    media_observable_evidence_gate_status: 'insufficient' as const,
+    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     supplied_context_fact_count: briefMaterialEvidenceCount,
     supplied_context_unavailable_count: suppliedContextUnavailableCount,
     deterministic_evidence_source_refs: {
@@ -6727,6 +6950,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     },
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
+    video_observable_evidence_count: videoObservableEvidenceCount,
+    audio_observable_evidence_count: audioObservableEvidenceCount,
+    media_assessability_limit_count: mediaAssessabilityLimitCount,
+    timestamped_media_observation_count: timestampedMediaObservationCount,
+    rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
+    media_observable_evidence_family_summary: {
+      video_observable: step1FamilyStatusById.video_observable,
+      audio_observable: step1FamilyStatusById.audio_observable,
+      performance_observable: step1FamilyStatusById.performance_observable,
+      candidate_technique: step1FamilyStatusById.candidate_technique,
+    },
+    media_observable_evidence_gate_status: 'insufficient' as const,
+    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
     step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
     step1_observable_evidence_family_summary: step1FamilyStatusById,
     deterministic_evidence_source_refs: {
