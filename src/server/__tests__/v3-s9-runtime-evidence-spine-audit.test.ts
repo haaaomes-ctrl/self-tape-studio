@@ -99,7 +99,35 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
-  
+  it('marks report parity as wired while preserving physical-emission-only non-acceptance', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const parity = map.find((x) => x.artefact_id === 'parity_report');
+    expect(parity?.current_manifest_status).toBe('emitted');
+    expect(parity?.source_classification).toBe('internal_report_parity_proof');
+    expect(parity?.expected_path).toBe('parity/report_parity_result.json');
+    expect(parity?.can_emit_without_invention).toBe(true);
+    expect(parity?.blocker_code).toBeUndefined();
+    expect(parity?.next_implementation_step).toMatch(/do not accept Level 2/i);
+  });
+
+  it('marks no-export proof family as emitted internal proof artefacts', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const expected = new Map([
+      ['no_export_proof', 'internal_no_export_proof_bundle'],
+      ['no_export_source_proof', 'internal_no_export_source_proof'],
+      ['no_export_config_proof', 'internal_no_export_config_proof'],
+      ['no_export_ui_proof', 'internal_no_export_ui_proof'],
+      ['no_export_log_proof', 'internal_no_export_log_proof'],
+    ]);
+
+    for (const [id, classification] of expected) {
+      const item = map.find((x) => x.artefact_id === id);
+      expect(item?.current_manifest_status).toBe('emitted');
+      expect(item?.source_classification).toBe(classification);
+      expect(item?.can_emit_without_invention).toBe(true);
+      expect(item?.blocker_code).toBeUndefined();
+    }
+  });
 
   it('uses allowed source classification for qa_acceptance_metrics and appears exactly once', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
@@ -111,13 +139,35 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(qaEntries[0]?.expected_path).toBe('qa/acceptance_metrics.json');
     expect(qaEntries[0]?.can_emit_without_invention).toBe(true);
 
-    const allowedClassifications = new Set(['real_runtime_v3','legacy_adapter','source_only_stub','emitted_not_wired','missing','deferred','not_applicable','emitted_blocked','internal_validator','internal_gate_trace','internal_model_run_trace','internal_comparison_runtime','internal_comparison_report','internal_comparison_trace']);
+    const allowedClassifications = new Set([
+      'real_runtime_v3',
+      'legacy_adapter',
+      'source_only_stub',
+      'emitted_not_wired',
+      'missing',
+      'deferred',
+      'not_applicable',
+      'emitted_blocked',
+      'internal_validator',
+      'internal_gate_trace',
+      'internal_model_run_trace',
+      'internal_comparison_runtime',
+      'internal_comparison_report',
+      'internal_comparison_trace',
+      'internal_report_parity_proof',
+      'internal_no_export_proof_bundle',
+      'internal_no_export_source_proof',
+      'internal_no_export_config_proof',
+      'internal_no_export_ui_proof',
+      'internal_no_export_log_proof',
+    ]);
     for (const item of map) {
       expect(allowedClassifications.has(item.source_classification)).toBe(true);
       expect(item.source_classification).not.toBe('runtime_v3');
     }
   });
-it('preserves blocked/not accepted implications for current release state', () => {
+
+  it('preserves blocked/not accepted implications for current release state', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const hasBlockedComparisonEvidence = map.some((x) => x.category === 'comparison' && x.current_manifest_status === 'missing');
     const hasRequiredMissingEvidence = map.some((x) => x.required_for_level === 'L2' && x.current_manifest_status === 'missing');

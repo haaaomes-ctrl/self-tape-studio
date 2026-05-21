@@ -12,8 +12,8 @@ This note implements the first internal-only QA artefact emitter foundation for 
 - Generated run artefacts are not public output and must not be exposed via public routes.
 - MP4 media files are not required for manifest emission and should not be committed as QA output evidence.
 - Rendered page-print PDFs are treated as rendered/manual evidence only, not raw trace or parity proof.
-- No-export status remains blocked (`no_export_proof_missing`) unless four-lane proof files exist (source/config/UI/log).
-- Level 2 QA is not accepted until raw JSON, trace, validator, and parity artefacts are emitted by the pipeline.
+- No-export status is complete only when the four-lane proof files exist (source/config/UI/log); otherwise it remains blocked with `no_export_proof_missing`.
+- Level 2 QA is not accepted from physical artefact emission alone; all required trace, validator, gate, model, parity and public-boundary gates must truly satisfy.
 
 ## Pipeline wiring status
 
@@ -22,8 +22,8 @@ This note implements the first internal-only QA artefact emitter foundation for 
 - Output remains internal-only and best-effort. Current sink layout stores files under `qa-artifacts/<run_id>/...` while manifest metadata provides stable take/comparison identity roots.
 - Manifest emission is best-effort and non-blocking for user-facing analysis completion; failures are logged as internal warnings.
 - Public response/report/comparison payloads are unchanged by wiring.
-- Level 2 QA remains not accepted because raw reports, comparison raw JSON, full traces, parity, and no-export four-lane proof files are still missing unless separately emitted.
-- S8-23/S8-24 should wire raw report/comparison JSON emitters and trace/parity/no-export proof lanes into the same run context.
+- Level 2 QA remains not accepted while evidence-spine and proof-chain blockers remain. S9-17 report parity and the no-export proof family can emit, but they do not accept Level 2 by themselves.
+- S9-17 closes the internal render/public report parity path; S9-18 should focus on the remaining real Step 1 evidence extraction and public-claim support blockers.
 
 ## S8-23 raw report and comparison raw emitter status
 
@@ -45,8 +45,8 @@ This note implements the first internal-only QA artefact emitter foundation for 
   - per-take raw report JSON from analysis path when enabled;
   - manifest JSON with emitted-vs-missing status;
   - comparison raw JSON via helper/integration tests only.
-- Current artefacts still missing:
-  - resolver output, TruthStateMap, EvidenceAnchors, PublicClaimTrace, TechniqueObservationTrace, ScoreTrace, ModelRunTrace, comparison suppression traces, route variance trace, repeatability trace, parity, no-export four-lane proof.
+- Current artefacts still missing or non-satisfying for Level 2:
+  - incomplete EvidenceAnchors/PublicClaimTrace support, legacy/internal ScoreTrace and TechniqueObservationTrace support, non-independent ValidatorTrace/GateTrace/ModelRunTrace proof chains, and comparison parity for invoked duplicate/same-video runs without decisive evidence-delta/no-material-difference proof.
 - Blockers cleared:
   - `raw_JSON_missing` only when raw report emitter writes and manifest is passed `raw_report` in emitted artefact IDs.
   - `comparison_JSON_missing` only when comparison raw emitter writes and manifest is passed `comparison_raw` in emitted artefact IDs.
@@ -60,7 +60,7 @@ This note implements the first internal-only QA artefact emitter foundation for 
 - PR merge:
   - mergeable as dark-mode QA-emitter foundation if targeted tests pass, no public-output change, and full-suite failures are classified.
 - Level 2 QA:
-  - still not accepted because traces/parity/redaction/leakage/no-export proof lanes are incomplete.
+  - still not accepted because remaining evidence-spine and proof-chain gates are incomplete, even when report parity and no-export proof lanes emit.
 
 ## Runtime sink policy
 
