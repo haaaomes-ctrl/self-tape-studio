@@ -2,13 +2,155 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emitQAManifestForAnalysisRun, emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
+import { emitQAManifestForAnalysisRun, emitRenderPayloadArtifact, emitReportParityProof } from '@/server/v3/qa-artifacts-wiring.server';
 
 async function readParity(root: string, run: string, take: string) {
   return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'parity', 'report_parity_result.json'), 'utf8'));
 }
 
+async function readRenderPayload(root: string, run: string, take: string) {
+  return JSON.parse(await readFile(path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`, 'reports', 'render_payload.json'), 'utf8'));
+}
+
 describe('v3-s9 report parity proof', () => {
+  it('S9-17B: emits render_payload as an internal-only QA shadow artefact with the allowed report surface only', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17b-render-'));
+    const raw = {
+      report_data: {
+        schema_version: 'tapecoach-v3-report',
+        submission_verdict: 'not_yet_ready',
+        fix_first: 'Keep the eyeline active.',
+        priority_fixes: ['Clarify the first beat.'],
+        strengths: ['Clear text ownership.'],
+        next_take_plan: { steps: ['Retake with a steadier frame.'] },
+        feedback_reliability: { status: 'partial' },
+        overall_score: 91,
+        scores: { acting: 90 },
+        technique_authority: { unsafe: true },
+        comparison: { winner: 'take-2' },
+        raw_prompt: 'private prompt text',
+        signed_url: 'https://storage.example/video.mp4?signature=secret',
+      },
+    };
+    const out = await emitRenderPayloadArtifact({
+      run_id: 'run-render-1',
+      analysis_run_id: 'run-render-1',
+      take_id: 'tr1',
+      submission_id: 'sub1',
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: raw,
+    });
+    expect(out.written).toBe(true);
+    const payload = await readRenderPayload(root, 'run-render-1', 'tr1');
+    expect(payload.artefact_type).toBe('render_payload');
+    expect(payload.internal_only).toBe(true);
+    expect(payload.privacy_classification).toBe('internal_private');
+    expect(payload.public_output_unchanged).toBe(true);
+    expect(payload.production_safe_status).toBe('blocked');
+    expect(payload.public_scoring_status).toBe('blocked');
+    expect(payload.public_technique_authority_status).toBe('blocked');
+    expect(payload.cannot_satisfy_level2_by_itself).toBe(true);
+    expect(payload.report_data).toEqual({
+      schema_version: 'tapecoach-v3-report',
+      submission_verdict: 'not_yet_ready',
+      fix_first: 'Keep the eyeline active.',
+      priority_fixes: ['Clarify the first beat.'],
+      strengths: ['Clear text ownership.'],
+      next_take_plan: { steps: ['Retake with a steadier frame.'] },
+      feedback_reliability: { status: 'partial' },
+    });
+    expect(JSON.stringify(payload.report_data)).not.toMatch(/overall_score|scores|technique_authority|comparison|winner|raw_prompt|signature=secret|signed_url/);
+    expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
+    expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.technique_authority')).toBe(true);
+    expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.comparison')).toBe(true);
+    expect(payload.forbidden_field_scan.blocked_field_hit_count).toBe(0);
+    expect(payload.blocked_field_hits).toEqual([]);
+  });
+
+  it('S9-17B: forbidden allowed render fields are blocked and omitted from the render payload report data', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17b-render-blocked-'));
+    await emitRenderPayloadArtifact({
+      run_id: 'run-render-blocked',
+      analysis_run_id: 'run-render-blocked',
+      take_id: 'trb',
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: { report_data: { schema_version: 'v3', overall_score: 99, fix_first: 'Safe text' } },
+      allowed_field_paths: ['report_data.schema_version', 'report_data.overall_score', 'report_data.fix_first'],
+    });
+    const payload = await readRenderPayload(root, 'run-render-blocked', 'trb');
+    expect(payload.render_payload_status).toBe('emitted_blocked');
+    expect(payload.blocker_codes).toContain('render_payload_forbidden_field_present');
+    expect(payload.forbidden_field_scan.blocked_allowed_field_count).toBe(1);
+    expect(payload.allowed_field_status_by_path['report_data.overall_score'].status).toBe('rendered_but_forbidden');
+    expect(payload.report_data.overall_score).toBeUndefined();
+    expect(payload.report_data.fix_first).toBe('Safe text');
+    expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
+  });
+
+  it('S9-17B: manifest finalisation auto-emits render_payload and parity remains insufficient until public_report_payload exists', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-17b-manifest-'));
+    await emitQAManifestForAnalysisRun({
+      run_id: 'run-s917b',
+      analysis_run_id: 'run-s917b',
+      take_id: 'trp',
+      submission_id: 'sub1',
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ['raw_report'],
+      artefact_source_classification_by_id: { raw_report: 'legacy_adapter' },
+      artefact_level2_spine_satisfaction_by_id: { raw_report: false },
+      report_parity_input: {
+        raw_report_data: {
+          report_data: {
+            schema_version: 'v3',
+            submission_verdict: 'not_yet_ready',
+            fix_first: 'Retake with a clearer first beat.',
+            priority_fixes: ['Clarify the first beat.'],
+            strengths: ['Text is clear.'],
+            next_take_plan: ['Retake once.'],
+            feedback_reliability: { status: 'partial' },
+          },
+        },
+        public_report_payload: null,
+        allowed_public_fields: [
+          'report_data.schema_version',
+          'report_data.submission_verdict',
+          'report_data.fix_first',
+          'report_data.priority_fixes',
+          'report_data.strengths',
+          'report_data.next_take_plan',
+          'report_data.feedback_reliability',
+        ],
+      },
+    });
+    const renderPayload = await readRenderPayload(root, 'run-s917b', 'trp');
+    expect(renderPayload.render_payload_status).toBe('emitted');
+    const parity = await readParity(root, 'run-s917b', 'trp');
+    expect(parity.render_payload_available).toBe(true);
+    expect(parity.render_payload_checked).toBe(true);
+    expect(parity.checked_surfaces).toContain('render_payload');
+    expect(parity.mismatches.some((m: any) => m.mismatch_type === 'render_payload_missing')).toBe(false);
+    expect(parity.public_report_payload_available).toBe(false);
+    expect(parity.mismatches.some((m: any) => m.mismatch_type === 'public_report_payload_missing')).toBe(true);
+    expect(parity.parity_status).toBe('insufficient');
+    const manifest = JSON.parse(await readFile(path.join(root, 'run-s917b', 'manifest.json'), 'utf8'));
+    const metrics = JSON.parse(await readFile(path.join(root, 'run-s917b', 'qa', 'acceptance_metrics.json'), 'utf8'));
+    expect(manifest.artefact_status_by_id.render_payload).toBe('emitted');
+    expect(manifest.artefact_source_classification_by_id.render_payload).toBe('internal_render_payload');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.render_payload).toBe(false);
+    expect(manifest.artefact_status_by_id.parity_report).toBe('emitted_blocked');
+    expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.emitted_artefacts).toContain('render_payload');
+    expect(metrics.emitted_blocked_artefacts).toContain('parity_report');
+    expect(metrics.blocker_codes).toContain('parity_artefacts_missing');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+  });
+
   it('A/B: detects value drift on both public_report_payload and render_payload surfaces', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-13c-a-'));
     await emitReportParityProof({ run_id: 'run-a1', analysis_run_id: 'run-a1', take_id: 't1', internal_qa_emit: true, root_dir: root, raw_report_data: { summary: 'A' }, public_report_payload: { summary: 'B' }, allowed_public_fields: ['summary'] });
@@ -349,7 +491,7 @@ describe('v3-s9 report parity proof', () => {
     expect(metrics.public_technique_authority_status).toBe('blocked');
   });
 
-  it('J: ordinary runtime with missing render/public payload emits insufficient report parity', async () => {
+  it('J/S9-17B: ordinary runtime emits render payload and keeps report parity insufficient while public payload is missing', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-16e-report-parity-missing-surfaces-'));
     await emitQAManifestForAnalysisRun({
       run_id: 'run-s916e-report-missing',
@@ -373,10 +515,16 @@ describe('v3-s9 report parity proof', () => {
     const parity = JSON.parse(await readFile(path.join(root, 'run-s916e-report-missing', 'takes', 'take-t-report', 'analysis-run-s916e-report-missing', 'parity', 'report_parity_result.json'), 'utf8'));
 
     expect(parity.parity_status).toBe('insufficient');
-    expect(parity.mismatches).toEqual(expect.arrayContaining([
+    expect(parity.render_payload_available).toBe(true);
+    expect(parity.render_payload_checked).toBe(true);
+    expect(parity.mismatches).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ mismatch_type: 'render_payload_missing' }),
+    ]));
+    expect(parity.mismatches).toEqual(expect.arrayContaining([
       expect.objectContaining({ mismatch_type: 'public_report_payload_missing' }),
     ]));
+    expect(manifest.artefact_status_by_id.render_payload).toBe('emitted');
+    expect(metrics.emitted_artefacts).toContain('render_payload');
     expect(manifest.artefact_status_by_id.parity_report).toBe('emitted_blocked');
     expect(manifest.blocker_codes).toContain('parity_artefacts_missing');
     expect(metrics.blocker_codes).toContain('parity_artefacts_missing');

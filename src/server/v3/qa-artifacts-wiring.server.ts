@@ -733,6 +733,291 @@ export interface ReportParityProofEmitterInput {
   internal_qa_emit?: boolean;
 }
 
+export interface RenderPayloadEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  take_id?: string | null;
+  submission_id?: string;
+  source_module?: string;
+  source_stage?: string;
+  raw_report_data?: Record<string, unknown> | null;
+  render_report_data?: Record<string, unknown> | null;
+  allowed_field_paths?: string[];
+  blocked_field_paths?: string[];
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+
+const INITIAL_RENDER_PAYLOAD_ALLOWED_FIELDS = [
+  'report_data.schema_version',
+  'report_data.submission_verdict',
+  'report_data.fix_first',
+  'report_data.priority_fixes',
+  'report_data.strengths',
+  'report_data.next_take_plan',
+  'report_data.feedback_reliability',
+];
+
+const DEFAULT_REPORT_FORBIDDEN_FIELD_PATHS = [
+  'internal_qa',
+  'internal_qa.*',
+  'qa_private',
+  'qa_private.*',
+  'internal_only',
+  'report_data.internal_only',
+  'qa_trace',
+  'qa_trace.*',
+  'report_data.qa_trace',
+  'report_data.qa_trace.*',
+  'raw_prompt',
+  'raw_prompts',
+  'prompt',
+  'prompts',
+  'raw_model_response',
+  'raw_model_responses',
+  'model_response',
+  'model_responses',
+  'request',
+  'request_body',
+  'response',
+  'response_body',
+  'auth_header',
+  'authorization',
+  'api_key',
+  'token',
+  'tokens',
+  'secret',
+  'secrets',
+  'signed_url',
+  'signed_urls',
+  'mux_url',
+  'mux_urls',
+  'storage_url',
+  'storage_urls',
+  'raw_url',
+  'raw_urls',
+  'score',
+  'scores',
+  'overall_score',
+  'overall_score_final',
+  'overall_score_model',
+  'overall_readiness',
+  'overall_readiness_score',
+  'readiness_score',
+  'score_trace',
+  'score_trace.*',
+  'public_score',
+  'public_scoring',
+  'technique_authority',
+  'technique_authority.*',
+  'public_technique_authority',
+  'public_technique_authority.*',
+  'technique_observation_trace',
+  'technique_observation_trace.*',
+  'castability',
+  'bookability',
+  'marketability',
+  'casting_headline',
+  'casting_insight',
+  'comparison',
+  'comparison.*',
+  'comparison_raw',
+  'comparison_raw.*',
+  'comparison_report_internal',
+  'comparison_report_internal.*',
+  'selected_take_id',
+  'selected_winner',
+  'winner',
+  'recommendation',
+  'report_data.internal_qa',
+  'report_data.internal_qa.*',
+  'report_data.qa_private',
+  'report_data.qa_private.*',
+  'report_data.raw_prompt',
+  'report_data.raw_prompts',
+  'report_data.prompt',
+  'report_data.prompts',
+  'report_data.raw_model_response',
+  'report_data.raw_model_responses',
+  'report_data.model_response',
+  'report_data.model_responses',
+  'report_data.request',
+  'report_data.request_body',
+  'report_data.response',
+  'report_data.response_body',
+  'report_data.auth_header',
+  'report_data.authorization',
+  'report_data.api_key',
+  'report_data.token',
+  'report_data.tokens',
+  'report_data.secret',
+  'report_data.secrets',
+  'report_data.signed_url',
+  'report_data.signed_urls',
+  'report_data.mux_url',
+  'report_data.mux_urls',
+  'report_data.storage_url',
+  'report_data.storage_urls',
+  'report_data.raw_url',
+  'report_data.raw_urls',
+  'report_data.score',
+  'report_data.score.*',
+  'report_data.scores',
+  'report_data.scores.*',
+  'report_data.overall_score',
+  'report_data.overall_score_final',
+  'report_data.overall_score_model',
+  'report_data.overall_readiness',
+  'report_data.overall_readiness_score',
+  'report_data.readiness_score',
+  'report_data.score_trace',
+  'report_data.score_trace.*',
+  'report_data.public_score',
+  'report_data.public_scoring',
+  'report_data.technique_authority',
+  'report_data.technique_authority.*',
+  'report_data.public_technique_authority',
+  'report_data.public_technique_authority.*',
+  'report_data.technique_observation_trace',
+  'report_data.technique_observation_trace.*',
+  'report_data.castability',
+  'report_data.bookability',
+  'report_data.marketability',
+  'report_data.casting_headline',
+  'report_data.casting_insight',
+  'report_data.comparison',
+  'report_data.comparison.*',
+  'report_data.comparison_raw',
+  'report_data.comparison_raw.*',
+  'report_data.comparison_report_internal',
+  'report_data.comparison_report_internal.*',
+  'report_data.selected_take_id',
+  'report_data.selected_winner',
+  'report_data.winner',
+  'report_data.recommendation',
+];
+
+function diagnosticValueSummary(value: unknown): Record<string, unknown> {
+  if (value === null) return { type: 'null' };
+  if (Array.isArray(value)) return { type: 'array', item_count: value.length };
+  if (typeof value === 'string') return { type: 'string', length: value.length };
+  if (typeof value === 'number') return { type: 'number', finite: Number.isFinite(value) };
+  if (typeof value === 'boolean') return { type: 'boolean' };
+  if (typeof value === 'object' && value) return { type: 'object', key_count: Object.keys(value as Record<string, unknown>).length };
+  return { type: typeof value };
+}
+
+function isUnsafeRenderString(value: string): boolean {
+  const text = value.toLowerCase();
+  return /https?:\/\//i.test(value)
+    && (
+      text.includes('signature=')
+      || text.includes('token=')
+      || text.includes('x-amz-')
+      || text.includes('mux.com')
+      || text.includes('storage')
+      || text.includes('supabase')
+    );
+}
+
+function cloneRenderSafeValue(value: unknown, seen: WeakSet<object> = new WeakSet()): { safe: boolean; value?: unknown; reason?: string } {
+  if (value === undefined) return { safe: false, reason: 'undefined_value_omitted' };
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') return { safe: true, value };
+  if (typeof value === 'string') {
+    if (isUnsafeRenderString(value)) return { safe: false, reason: 'unsafe_url_or_token_like_string_redacted' };
+    return { safe: true, value };
+  }
+  if (typeof value === 'bigint' || typeof value === 'symbol' || typeof value === 'function') return { safe: false, reason: 'non_json_value_omitted' };
+  if (!value || typeof value !== 'object') return { safe: false, reason: 'unsupported_value_omitted' };
+  if (seen.has(value as object)) return { safe: false, reason: 'circular_value_omitted' };
+  seen.add(value as object);
+  if (Array.isArray(value)) {
+    const arr: unknown[] = [];
+    for (const item of value) {
+      const cloned = cloneRenderSafeValue(item, seen);
+      if (cloned.safe) arr.push(cloned.value);
+    }
+    seen.delete(value as object);
+    return { safe: true, value: arr };
+  }
+  if (!isPlainRecord(value)) {
+    seen.delete(value as object);
+    return { safe: false, reason: 'non_plain_object_omitted' };
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    const cloned = cloneRenderSafeValue(child, seen);
+    if (cloned.safe) out[key] = cloned.value;
+  }
+  seen.delete(value as object);
+  return { safe: true, value: out };
+}
+
+function setPathValue(target: Record<string, unknown>, path: string, value: unknown): boolean {
+  const tokens = tokenizePath(path);
+  if (!tokens || tokens.some((token) => typeof token === 'number')) return false;
+  let current: Record<string, unknown> = target;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (typeof token !== 'string') return false;
+    if (i === tokens.length - 1) {
+      current[token] = value;
+      return true;
+    }
+    const existing = current[token];
+    if (!isPlainRecord(existing)) current[token] = {};
+    current = current[token] as Record<string, unknown>;
+  }
+  return false;
+}
+
+function collectCandidatePaths(value: unknown, pathPrefix = ''): string[] {
+  const out: string[] = [];
+  const active = new WeakSet<object>();
+  const walk = (node: unknown, currentPath: string) => {
+    if (!node || typeof node !== 'object') return;
+    if (active.has(node as object)) return;
+    active.add(node as object);
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => {
+        const next = `${currentPath}[${index}]`;
+        out.push(next);
+        walk(item, next);
+      });
+      active.delete(node as object);
+      return;
+    }
+    if (!isPlainRecord(node)) {
+      active.delete(node as object);
+      return;
+    }
+    for (const [key, child] of Object.entries(node)) {
+      const next = currentPath ? `${currentPath}.${key}` : key;
+      out.push(next);
+      walk(child, next);
+    }
+    active.delete(node as object);
+  };
+  walk(value, pathPrefix);
+  return out;
+}
+
+function collectBlockedFieldHits(surface: unknown, blockedPaths: string[]): Array<{ path: string; matched_blocked_path: string; value_summary: Record<string, unknown> }> {
+  const hits: Array<{ path: string; matched_blocked_path: string; value_summary: Record<string, unknown> }> = [];
+  const seen = new Set<string>();
+  for (const candidate of collectCandidatePaths(surface)) {
+    const blockedPath = blockedPaths.find((path) => matchesBlockedPath(candidate, path));
+    if (!blockedPath || seen.has(candidate)) continue;
+    seen.add(candidate);
+    hits.push({
+      path: candidate,
+      matched_blocked_path: blockedPath,
+      value_summary: diagnosticValueSummary(getPathValue(surface, candidate).value),
+    });
+  }
+  return hits;
+}
+
 function tokenizePath(path: string): Array<string | number> | null {
   const tokens: Array<string | number> = [];
   let i = 0;
@@ -957,8 +1242,7 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     ? allowedFieldsInput.filter((entry) => typeof entry !== 'string').length
     : 0;
   const droppedAllowedPublicFieldCount = Math.max(0, allowedInputCount - checked.length);
-  const defaultBlockedFieldPaths = ['internal_qa','qa_private','scores','score','overall_score','overall_score_final','overall_readiness','overall_readiness_score','readiness_score','score_value','score_entries','category_scores','discipline_scores','attribute_scores','public_score','public_scores','report_data.overall_score','report_data.overall_score_final','report_data.overall_score_model','report_data.overall_score_model.*','report_data.overall_readiness','report_data.overall_readiness_score','report_data.overall_readiness_score.*','report_data.readiness_score','report_data.readiness_score.*','report_data.scores','report_data.scores.*','report_data.score','report_data.score.*','report_data.score_summary','report_data.score_summary.*','report_data.score_breakdown','report_data.score_breakdown.*','report_data.category_scores','report_data.category_scores.*','report_data.discipline_scores','report_data.discipline_scores.*','report_data.attribute_scores','report_data.attribute_scores.*','report_data.score_entries','report_data.score_value','report_data.public_score','report_data.public_scores','report_data.public_scores.*','comparison','winner','recommendation','technique_authority','technique_authority.*','public_technique_authority','public_technique_authority.*','report_data.technique_authority','report_data.technique_authority.*','report_data.public_technique_authority','report_data.public_technique_authority.*','castability','bookability','marketability'];
-  const blocked = [...new Set([...defaultBlockedFieldPaths, ...normaliseParityPathList(input.blocked_field_paths)])];
+  const blocked = [...new Set([...DEFAULT_REPORT_FORBIDDEN_FIELD_PATHS, ...defaultBlockedScoreFieldPaths, ...normaliseParityPathList(input.blocked_field_paths)])];
   const blockedScorePaths = normaliseParityPathList(input.blocked_score_field_paths);
   const checkedSurfaces = [
     ...(renderAvail ? [{ name: 'render_payload' as const, value: render }] : []),
@@ -1339,6 +1623,149 @@ function unwrapRawReportData(raw: unknown): Record<string, unknown> {
   const nested = isRecord(wrapper.report_data) ? wrapper.report_data : null;
   return nested ?? wrapper;
 }
+
+export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
+    return { written: false as const, emitted_artefact_ids: [] as string[] };
+  }
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const source = input.render_report_data ?? input.raw_report_data ?? null;
+  const sourceReportData = unwrapRawReportData(source);
+  const sourceSurface = { report_data: sourceReportData };
+  const allowedFieldPaths = normaliseParityPathList(input.allowed_field_paths ?? INITIAL_RENDER_PAYLOAD_ALLOWED_FIELDS);
+  const blockedFieldPaths = [...new Set([...DEFAULT_REPORT_FORBIDDEN_FIELD_PATHS, ...defaultBlockedScoreFieldPaths, ...normaliseParityPathList(input.blocked_field_paths)])];
+  const reportData: Record<string, unknown> = {};
+  const allowedFieldStatusByPath: Record<string, Record<string, unknown>> = {};
+  const deferredOrExcludedRenderFields: Array<Record<string, unknown>> = [];
+
+  for (const path of allowedFieldPaths) {
+    const sourceField = getPathValue(sourceSurface, path);
+    if (!sourceField.present) {
+      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path };
+      continue;
+    }
+    const blockedPath = blockedFieldPaths.find((candidate) => matchesBlockedPath(path, candidate));
+    if (blockedPath) {
+      allowedFieldStatusByPath[path] = { status: 'rendered_but_forbidden', source_path: path, matched_blocked_path: blockedPath };
+      deferredOrExcludedRenderFields.push({
+        field_path: path,
+        classification: 'rendered_but_forbidden',
+        reason: 'field_matches_forbidden_render_payload_path',
+        matched_blocked_path: blockedPath,
+        value_summary: diagnosticValueSummary(sourceField.value),
+      });
+      continue;
+    }
+    const cloned = cloneRenderSafeValue(sourceField.value);
+    if (!cloned.safe) {
+      allowedFieldStatusByPath[path] = { status: 'redacted', source_path: path, reason: cloned.reason ?? 'unsafe_value_redacted' };
+      deferredOrExcludedRenderFields.push({
+        field_path: path,
+        classification: 'internal_only',
+        reason: cloned.reason ?? 'unsafe_value_redacted',
+        value_summary: diagnosticValueSummary(sourceField.value),
+      });
+      continue;
+    }
+    setPathValue(reportData, path.replace(/^report_data\./, ''), cloned.value);
+    allowedFieldStatusByPath[path] = { status: 'rendered_allowed', source_path: path };
+  }
+
+  const sourceBlockedFieldHits = collectBlockedFieldHits(sourceSurface, blockedFieldPaths)
+    .filter((hit) => !allowedFieldPaths.includes(hit.path));
+  for (const hit of sourceBlockedFieldHits) {
+    deferredOrExcludedRenderFields.push({
+      field_path: hit.path,
+      classification: 'rendered_but_deferred_for_parity',
+      reason: 'source_field_excluded_from_initial_s9_17_render_payload_allow_list',
+      matched_blocked_path: hit.matched_blocked_path,
+      value_summary: hit.value_summary,
+    });
+  }
+
+  const payloadSurface = { report_data: reportData };
+  const blockedFieldHits = collectBlockedFieldHits(payloadSurface, blockedFieldPaths);
+  const blockedAllowedFieldCount = Object.values(allowedFieldStatusByPath)
+    .filter((entry) => entry.status === 'rendered_but_forbidden')
+    .length;
+  const hasAllowedContent = Object.keys(reportData).length > 0;
+  const renderPayloadStatus = blockedFieldHits.length > 0 || blockedAllowedFieldCount > 0
+    ? 'emitted_blocked'
+    : (hasAllowedContent ? 'emitted' : 'insufficient');
+  const blockerCodes = [
+    ...(blockedFieldHits.length > 0 || blockedAllowedFieldCount > 0 ? ['render_payload_forbidden_field_present'] : []),
+    ...(!hasAllowedContent ? ['render_payload_allowed_fields_unavailable'] : []),
+  ];
+  const payload = {
+    schema_version: 'tapecoach_v3_render_payload_v1',
+    artefact_type: 'render_payload',
+    run_id: input.run_id,
+    take_id: input.take_id ?? null,
+    analysis_run_id: analysisRunId,
+    submission_id: input.submission_id ?? null,
+    generated_at: new Date().toISOString(),
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    source_stage: input.source_stage ?? 'emitRenderPayloadArtifact',
+    source_module: input.source_module ?? 'src/server/v3/qa-artifacts-wiring.server.ts',
+    render_payload_status: renderPayloadStatus,
+    render_source_kind: input.render_report_data ? 'explicit_render_report_data' : 'raw_report_report_data_shadow',
+    render_source_refs: {
+      raw_report_available: Boolean(input.raw_report_data && typeof input.raw_report_data === 'object'),
+      explicit_render_report_data_available: Boolean(input.render_report_data && typeof input.render_report_data === 'object'),
+      source_artefact_id: input.render_report_data ? 'render_report_data_input' : 'raw_report',
+      source_path: input.render_report_data ? 'render_report_data' : 'reports/raw_report.json.report_data',
+    },
+    report_data: reportData,
+    allowed_field_paths: allowedFieldPaths,
+    allowed_field_status_by_path: allowedFieldStatusByPath,
+    deferred_or_excluded_render_fields: deferredOrExcludedRenderFields,
+    forbidden_field_scan: {
+      scanned_surface: 'report_data',
+      forbidden_fields_absent: blockedFieldHits.length === 0,
+      blocked_field_hit_count: blockedFieldHits.length,
+      blocked_allowed_field_count: blockedAllowedFieldCount,
+      source_forbidden_or_deferred_field_count: deferredOrExcludedRenderFields.length,
+      scanner_match_mode: 'path_segment_exact_or_configured_wildcard',
+    },
+    blocked_field_hits: blockedFieldHits,
+    redaction_notes: [
+      'Internal QA shadow payload only.',
+      'Only S9-17A allowed fields are copied into report_data.',
+      'Raw prompts, model responses, secrets, signed URLs and raw media URLs are omitted or recorded as unavailable.',
+    ],
+    public_output_unchanged: true,
+    production_safe_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    cannot_satisfy_level2_by_itself: true,
+    blocker_codes: blockerCodes,
+  };
+
+  const takeId = input.take_id ?? null;
+  if (takeId !== null) {
+    try { assertSafeSegment(takeId, 'take_id'); } catch {
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], render_payload_status: 'failed_emission' as const, parity_payload: null };
+    }
+    if (!isSafeTakeIdSegment(takeId)) {
+      return { written: false as boolean, emitted_artefact_ids: [] as string[], render_payload_status: 'failed_emission' as const, parity_payload: null };
+    }
+  }
+  const relative = takeId ? `takes/take-${takeId}/analysis-${analysisRunId}/reports/render_payload.json` : 'reports/render_payload.json';
+  const result = await writeInternalJson(root, input.run_id, relative, payload, 'render_payload');
+  return {
+    written: result.written as boolean,
+    emitted_artefact_ids: result.written ? ['render_payload'] : [],
+    render_payload_status: renderPayloadStatus,
+    blocker_codes: blockerCodes,
+    parity_payload: payloadSurface,
+    payload,
+    path: result.path ?? result.storage_path,
+    warning: result.warning ?? null,
+  };
+}
+
 function getTimestampedNoteText(row: Record<string, unknown>): string | null {
   const note = typeof row.note === 'string' ? row.note.trim() : '';
   const text = typeof row.text === 'string' ? row.text.trim() : '';
@@ -2596,6 +3023,34 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     }}
 
     if (metadata.report_parity_input) {
+      let renderPayloadForParity = metadata.report_parity_input?.render_payload ?? null;
+      if (!renderPayloadForParity && metadata.report_parity_input?.raw_report_data) {
+        const renderPayloadWrite = await emitRenderPayloadArtifact({
+          run_id: metadata.run_id,
+          analysis_run_id: baseOptions.analysis_run_id,
+          take_id: takeIdForFirstPassTraces ?? undefined,
+          submission_id: metadata.submission_id,
+          source_module: 'src/server/v3/qa-artifacts-wiring.server.ts',
+          source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
+          raw_report_data: metadata.report_parity_input.raw_report_data,
+          allowed_field_paths: metadata.report_parity_input.allowed_public_fields,
+          blocked_field_paths: metadata.report_parity_input.blocked_field_paths,
+          root_dir: metadata.root_dir,
+          internal_qa_emit: true,
+        });
+        if (renderPayloadWrite.written) {
+          renderPayloadForParity = renderPayloadWrite.parity_payload;
+          artefactSourceClassificationById.render_payload = 'internal_render_payload';
+          artefactLevel2ById.render_payload = false;
+          if (renderPayloadWrite.render_payload_status === 'emitted') {
+            emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'render_payload'])];
+            emittedBlockedWithInternalTraces = emittedBlockedWithInternalTraces.filter((id) => id !== 'render_payload');
+          } else {
+            emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'render_payload');
+            emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'render_payload'])];
+          }
+        }
+      }
       const parityWrite = await emitReportParityProof({
         run_id: metadata.run_id,
         analysis_run_id: baseOptions.analysis_run_id,
@@ -2604,7 +3059,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         source_module: 'src/server/v3/qa-artifacts-wiring.server.ts',
         source_stage: 'emitQAManifestForAnalysisRun.pre_finalisation',
         raw_report_data: metadata.report_parity_input?.raw_report_data,
-        render_payload: metadata.report_parity_input?.render_payload,
+        render_payload: renderPayloadForParity,
         public_report_payload: metadata.report_parity_input?.public_report_payload,
         allowed_public_fields: metadata.report_parity_input?.allowed_public_fields,
         blocked_field_paths: metadata.report_parity_input?.blocked_field_paths,
