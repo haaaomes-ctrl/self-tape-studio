@@ -125,6 +125,19 @@ export interface QAArtifactEmitterOptions {
     brief_material_evidence_count?: number;
     video_observable_evidence_count?: number;
     audio_observable_evidence_count?: number;
+    performance_observable_evidence_count?: number;
+    material_specific_performance_evidence_count?: number;
+    candidate_technique_evidence_count?: number;
+    accepted_observation_field_count?: number;
+    rejected_judgement_field_count?: number;
+    required_evidence_family_completion_count?: number;
+    required_evidence_family_partial_count?: number;
+    required_evidence_family_missing_count?: number;
+    ordinary_analysis_proof_bundle_status?: string;
+    ordinary_analysis_proof_bundle_gate_status?: string;
+    ordinary_analysis_proof_bundle_gate_reason?: string;
+    ordinary_analysis_proof_bundle_blocker_codes?: string[];
+    ordinary_analysis_evidence_family_summary?: Record<string, unknown>;
     media_assessability_limit_count?: number;
     timestamped_media_observation_count?: number;
     rejected_media_observable_source_count?: number;
@@ -159,6 +172,19 @@ export interface QAArtifactEmitterOptions {
     brief_material_evidence_count?: number;
     video_observable_evidence_count?: number;
     audio_observable_evidence_count?: number;
+    performance_observable_evidence_count?: number;
+    material_specific_performance_evidence_count?: number;
+    candidate_technique_evidence_count?: number;
+    accepted_observation_field_count?: number;
+    rejected_judgement_field_count?: number;
+    required_evidence_family_completion_count?: number;
+    required_evidence_family_partial_count?: number;
+    required_evidence_family_missing_count?: number;
+    ordinary_analysis_proof_bundle_status?: string;
+    ordinary_analysis_proof_bundle_gate_status?: string;
+    ordinary_analysis_proof_bundle_gate_reason?: string;
+    ordinary_analysis_proof_bundle_blocker_codes?: string[];
+    ordinary_analysis_evidence_family_summary?: Record<string, unknown>;
     media_assessability_limit_count?: number;
     timestamped_media_observation_count?: number;
     rejected_media_observable_source_count?: number;
@@ -861,6 +887,19 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
         ? 'analysis_evidence_state_not_emitted'
         : String(analysisEvidenceStateSummary.analysis_evidence_state_gate_reason ?? 'analysis_evidence_state_not_real_runtime_v3')),
     analysis_evidence_state_summary: analysisEvidenceStateSummary,
+    ordinary_analysis_proof_bundle_status: String(analysisEvidenceStateSummary.ordinary_analysis_proof_bundle_status ?? step1ObservableEvidenceSummary.ordinary_analysis_proof_bundle_status ?? 'blocked'),
+    ordinary_analysis_proof_bundle_gate_status: String(analysisEvidenceStateSummary.ordinary_analysis_proof_bundle_gate_status ?? step1ObservableEvidenceSummary.ordinary_analysis_proof_bundle_gate_status ?? 'insufficient'),
+    ordinary_analysis_proof_bundle_gate_reason: String(analysisEvidenceStateSummary.ordinary_analysis_proof_bundle_gate_reason ?? step1ObservableEvidenceSummary.ordinary_analysis_proof_bundle_gate_reason ?? 'ordinary_analysis_step1_projection_unavailable'),
+    ordinary_analysis_required_family_completion_count: Number(analysisEvidenceStateSummary.required_evidence_family_completion_count ?? step1ObservableEvidenceSummary.required_evidence_family_completion_count ?? 0),
+    ordinary_analysis_required_family_partial_count: Number(analysisEvidenceStateSummary.required_evidence_family_partial_count ?? step1ObservableEvidenceSummary.required_evidence_family_partial_count ?? 0),
+    ordinary_analysis_required_family_missing_count: Number(analysisEvidenceStateSummary.required_evidence_family_missing_count ?? step1ObservableEvidenceSummary.required_evidence_family_missing_count ?? 0),
+    ordinary_analysis_accepted_observation_field_count: Number(analysisEvidenceStateSummary.accepted_observation_field_count ?? step1ObservableEvidenceSummary.accepted_observation_field_count ?? 0),
+    ordinary_analysis_rejected_judgement_field_count: Number(analysisEvidenceStateSummary.rejected_judgement_field_count ?? step1ObservableEvidenceSummary.rejected_judgement_field_count ?? 0),
+    ordinary_analysis_evidence_family_summary: analysisEvidenceStateSummary.ordinary_analysis_evidence_family_summary ?? step1ObservableEvidenceSummary.ordinary_analysis_evidence_family_summary ?? {},
+    performance_observable_evidence_count: Number(analysisEvidenceStateSummary.performance_observable_evidence_count ?? step1ObservableEvidenceSummary.performance_observable_evidence_count ?? 0),
+    material_specific_performance_evidence_count: Number(analysisEvidenceStateSummary.material_specific_performance_evidence_count ?? step1ObservableEvidenceSummary.material_specific_performance_evidence_count ?? 0),
+    candidate_technique_evidence_count: Number(analysisEvidenceStateSummary.candidate_technique_evidence_count ?? step1ObservableEvidenceSummary.candidate_technique_evidence_count ?? 0),
+    ordinary_analysis_proof_bundle_blocker_codes: analysisEvidenceStateSummary.ordinary_analysis_proof_bundle_blocker_codes ?? step1ObservableEvidenceSummary.ordinary_analysis_proof_bundle_blocker_codes ?? [],
     step1_observable_evidence_status: step1ObservableEvidenceStatus,
     step1_observable_evidence_source_classification: sourceClassById.step1_observable_evidence ?? 'missing',
     step1_observable_evidence_gate_status: step1ObservableEvidenceGateStatus,
