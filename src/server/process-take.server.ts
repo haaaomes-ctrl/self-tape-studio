@@ -4054,7 +4054,7 @@ export async function runProcessTake(
         public_claim_trace_summary: publicClaimTrace.summary,
         claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
         evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
-        technique_observation_trace_summary: techniqueObservationTrace.written ? (techniqueObservationTrace.technique_observation_trace_summary ?? techniqueObservationTrace.source_family_summary) : undefined,
+        technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.technique_observation_trace_summary : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
         model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
         analysis_evidence_state_summary: analysisEvidenceStatePayloadAvailable ? {

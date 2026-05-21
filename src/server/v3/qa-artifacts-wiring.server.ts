@@ -680,6 +680,7 @@ export interface ClaimCandidateTraceEmitterInput {
   internal_qa_emit?: boolean;
 }
 export interface TechniqueObservationTraceEmitterInput extends PublicClaimTraceEmitterInput {
+  analysis_evidence_state_data?: Record<string, unknown> | null;
   public_claim_trace_data?: { claims?: Array<Record<string, unknown>> } | null;
 }
 
@@ -728,6 +729,21 @@ export interface ModelRunTraceEmitterInput {
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
+type TechniqueObservationSourceFamilySummary = {
+  legacy_adapter: number;
+  report_snapshot: number;
+  real_runtime_v3: number;
+  input_artifact: number;
+  resolver_truth_state: number;
+};
+type TechniqueObservationTraceFirstPassResult = {
+  written: boolean;
+  emitted_artefact_ids: string[];
+  source_classification?: string;
+  source_family_summary?: TechniqueObservationSourceFamilySummary;
+  technique_observation_trace_summary?: NonNullable<QAArtifactEmitterOptions['technique_observation_trace_summary']>;
+  level2_satisfies?: boolean;
+};
 
 const BLOCKED_PUBLIC_OUTPUT_PERMISSIONS = {
   show_overall_score: false,
@@ -5203,8 +5219,14 @@ function classifyPublicClaimSupportFromCandidates(input: {
   const hasLegacy = (sourceSummary.legacy_adapter ?? 0) > 0 || (sourceSummary.legacy_or_unsupported ?? 0) > 0 || claims.some((claim) => claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
   const hasReal = (sourceSummary.real_runtime_v3 ?? 0) > 0;
   const requiredLegacyClaims = requiredClaims.filter((claim) => ['legacy_adapter', 'legacy_or_unsupported'].includes(String(claim.source_family)) || claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
-  const requiredRewriteClaims = requiredClaims.filter((claim) => claim.rewrite_required === true || claim.support_status === 'rewrite_required' || claim.support_status === 'unsupported_overclaim' || claim.support_status === 'overclaim');
-  const requiredUnsafeClaims = requiredClaims.filter((claim) => claim.support_status === 'unsafe' || claim.public_safety_status === 'unsafe_or_overclaim');
+  const requiredRewriteClaims = requiredClaims.filter((claim) => {
+    const supportStatus = String(claim.support_status ?? '');
+    const supportClassification = String(claim.support_classification ?? '');
+    return claim.rewrite_required === true
+      || ['rewrite_required', 'unsupported_overclaim'].includes(supportStatus)
+      || supportClassification === 'overclaim';
+  });
+  const requiredUnsafeClaims = requiredClaims.filter((claim) => String(claim.support_status ?? '') === 'unsafe' || claim.public_safety_status === 'unsafe_or_overclaim');
   const requiredUnsupportedClaims = requiredClaims.filter((claim) => ['unsupported', 'missing_evidence', 'missing_truth_link', 'legacy_or_unsupported', 'partially_supported'].includes(String(claim.support_status)));
   const requiredBlockedClaims = requiredClaims.filter((claim) => claim.support_status === 'blocked' || getStringArray(claim.blocker_codes).some((code) => ['public_scoring_blocked', 'public_technique_authority_blocked', 'public_comparison_result_blocked'].includes(code)));
   const sourceClassification = publicClaimGateStatus === 'sufficient'
@@ -5969,14 +5991,14 @@ function getStructuredScoreEntries(scoreData: Record<string, unknown>): Array<Re
 
 function getCandidateTechniqueEvidenceItems(analysisEvidenceState: Record<string, unknown> | null): Array<Record<string, unknown>> {
   if (!analysisEvidenceState) return [];
-  const direct = safeRecordArray(analysisEvidenceState.candidate_technique_evidence)
+  const direct: Array<Record<string, unknown>> = safeRecordArray(analysisEvidenceState.candidate_technique_evidence)
     .map((item, index) => ({
       ...item,
       analysis_evidence_state_source_path: typeof item.analysis_evidence_state_source_path === 'string'
         ? item.analysis_evidence_state_source_path
         : `candidate_technique_evidence[${index}]`,
     }));
-  const observable = safeRecordArray(analysisEvidenceState.observable_evidence_items)
+  const observable: Array<Record<string, unknown>> = safeRecordArray(analysisEvidenceState.observable_evidence_items)
     .filter((item) => String(item.evidence_family ?? '') === 'candidate_technique')
     .map((item, index) => ({
       ...item,
@@ -5993,7 +6015,7 @@ function getCandidateTechniqueEvidenceItems(analysisEvidenceState: Record<string
   return [...byPath.values()];
 }
 
-export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObservationTraceEmitterInput) {
+export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObservationTraceEmitterInput): Promise<TechniqueObservationTraceFirstPassResult> {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const root = input.root_dir ?? DEFAULT_ROOT;
@@ -6178,15 +6200,30 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const realRuntimeInternalTechniqueCount = observations.filter((obs) => obs.source_family === 'real_runtime_v3_internal_technique_observation').length;
   const satisfyingInternalTechniqueCount = observations.filter((obs) => obs.can_satisfy_internal_technique_trace_gate === true).length;
   const techniqueGateSatisfied = satisfyingInternalTechniqueCount > 0;
-  const sourceFamilySummary = observations.reduce<Record<string, number>>((acc, obs) => {
+  const sourceFamilySummaryRaw = observations.reduce<Record<string, number>>((acc, obs) => {
     const key = String(obs.source_family);
     if (key === 'real_runtime_v3_internal_technique_observation') acc.real_runtime_v3 = (acc.real_runtime_v3 ?? 0) + 1;
     else acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, { legacy_adapter: 0, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 });
+  const sourceFamilySummary: TechniqueObservationSourceFamilySummary = {
+    legacy_adapter: sourceFamilySummaryRaw.legacy_adapter ?? 0,
+    report_snapshot: sourceFamilySummaryRaw.report_snapshot ?? 0,
+    real_runtime_v3: sourceFamilySummaryRaw.real_runtime_v3 ?? 0,
+    input_artifact: sourceFamilySummaryRaw.input_artifact ?? 0,
+    resolver_truth_state: sourceFamilySummaryRaw.resolver_truth_state ?? 0,
+  };
   const derivedSourceClassification = techniqueGateSatisfied
     ? 'real_runtime_v3_internal_technique_observation'
     : (sourceFamilySummary.report_snapshot > 0 && sourceFamilySummary.legacy_adapter === 0 ? 'report_snapshot' : 'legacy_adapter');
+  const techniqueObservationTraceSummary: NonNullable<QAArtifactEmitterOptions['technique_observation_trace_summary']> = {
+    ...sourceFamilySummary,
+    technique_observation_trace_gate_status: techniqueGateSatisfied ? 'satisfied' : 'insufficient',
+    technique_observation_trace_gate_reason: techniqueGateSatisfied ? 'real_runtime_v3_internal_technique_observations_linked' : 'legacy_report_snapshot_not_real_runtime_technique_evidence',
+    real_runtime_v3_internal_technique_observation_count: realRuntimeInternalTechniqueCount,
+    satisfying_internal_technique_observation_count: satisfyingInternalTechniqueCount,
+    public_technique_authority_status: 'blocked',
+  };
   const payload = {
     schema_version: 'tapecoach_v3_technique_observation_trace_v1', artefact_type: 'technique_observation_trace', internal_only: true, privacy_classification: 'internal_private',
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: [],
@@ -6207,15 +6244,8 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
     written: result.written as boolean,
     emitted_artefact_ids: result.written ? ['technique_observation_trace'] : [],
     source_classification: derivedSourceClassification,
-    source_family_summary: sourceFamilySummary as { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number },
-    technique_observation_trace_summary: {
-      ...sourceFamilySummary,
-      technique_observation_trace_gate_status: techniqueGateSatisfied ? 'satisfied' : 'insufficient',
-      technique_observation_trace_gate_reason: techniqueGateSatisfied ? 'real_runtime_v3_internal_technique_observations_linked' : 'legacy_report_snapshot_not_real_runtime_technique_evidence',
-      real_runtime_v3_internal_technique_observation_count: realRuntimeInternalTechniqueCount,
-      satisfying_internal_technique_observation_count: satisfyingInternalTechniqueCount,
-      public_technique_authority_status: 'blocked',
-    },
+    source_family_summary: sourceFamilySummary,
+    technique_observation_trace_summary: techniqueObservationTraceSummary,
     level2_satisfies: techniqueGateSatisfied,
   };
 }
