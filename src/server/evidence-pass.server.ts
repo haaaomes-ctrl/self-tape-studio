@@ -785,7 +785,7 @@ const PROHIBITED_STEP1_TOP_LEVEL_FIELDS = [
 ] as const;
 
 const PROHIBITED_STEP1_TEXT_RE =
-  /\b(overall score|readiness|ready to submit|not ready|retake|re-take|submit|bookability|marketability|castability|casting fit|role fit|perfect match|winner|recommend|fix first|priority fix|next take|technique authority|diagnosis)\b/i;
+  /\b(overall score|readiness|ready to submit|not ready|retake|re-take|submit|bookability|marketability|castability|casting fit|role fit|perfect match|winner|recommend|fix first|priority fix|next take|technique authority|technique demonstrated|professional quality|strong performance|brief achieved|diagnosis)\b/i;
 
 const UNSAFE_STEP1_TEXT_RE = /\bhttps?:\/\/|token|secret|signed url|signature=|mux_token\b/i;
 
@@ -1071,7 +1071,7 @@ function buildFilteredStep1Result(args: {
     material_observable_evidence_items: args.material,
     performance_observable_evidence_items: args.performance,
     candidate_technique_evidence: args.technique,
-    observable_evidence_items: [...args.video, ...args.audio, ...args.material, ...args.performance],
+    observable_evidence_items: [...args.video, ...args.audio, ...args.material, ...args.performance, ...args.technique],
     unsupported_or_unavailable_evidence,
     rejected_or_filtered_fields: rejectedKeys,
     prohibited_field_filter_summary: {

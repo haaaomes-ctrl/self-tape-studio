@@ -36,14 +36,17 @@ describe('v3 s9 validator gate model-run proof-chain posture', () => {
     const payload = JSON.parse(await readFile(path.join(root, 'run-proof-chain', 'takes', 'take-take-a', 'analysis-run-proof-chain', 'traces', 'ValidatorTrace.json'), 'utf8'));
     expect(payload.source_classification).toBe('internal_validator');
     expect(payload.validator_trace_gate_status).toBe('insufficient');
-    expect(payload.independent_validation_status).toBe('internal_snapshot_only_insufficient');
-    expect(payload.referential_integrity_status).toBe('not_run');
+    expect(payload.independent_validation_status).toBe('independent_validation_partial');
+    expect(payload.referential_integrity_status).toBe('partial_snapshot_checks');
     expect(payload.cannot_satisfy_level2_validator_gate).toBe(true);
     expect(payload.blocker_codes).toContain('ValidatorTrace_internal_only');
     expect(payload.public_scoring_status).toBe('blocked');
     expect(payload.public_technique_authority_status).toBe('blocked');
     expect(payload.production_safe_status).toBe('blocked');
-    expect(payload.validation_entries.every((entry: any) => entry.validation_rule_version === 's9-18h-internal-snapshot-v1')).toBe(true);
+    expect(payload.validation_entries.map((entry: any) => entry.validation_rule_version)).toEqual(expect.arrayContaining([
+      's9-18h-internal-snapshot-v1',
+      's9-19b-ordinary-analysis-proof-chain-v1',
+    ]));
   });
 
   it('keeps internal GateTrace insufficient and blocks public output permissions', async () => {
@@ -54,7 +57,7 @@ describe('v3 s9 validator gate model-run proof-chain posture', () => {
     const payload = JSON.parse(await readFile(path.join(root, 'run-proof-chain', 'takes', 'take-take-a', 'analysis-run-proof-chain', 'traces', 'GateTrace.json'), 'utf8'));
     expect(payload.source_classification).toBe('internal_gate_trace');
     expect(payload.gate_trace_gate_status).toBe('insufficient');
-    expect(payload.independent_gate_decision_status).toBe('internal_snapshot_only_insufficient');
+    expect(payload.independent_gate_decision_status).toBe('independent_gate_partial');
     expect(payload.cannot_satisfy_level2_gate_trace_gate).toBe(true);
     expect(payload.blocker_codes).toContain('GateTrace_internal_only');
     expect(payload.level2_status).toBe('not_accepted');
@@ -71,10 +74,19 @@ describe('v3 s9 validator gate model-run proof-chain posture', () => {
       'public_technique_authority_gate',
       'public_comparison_recommendation_gate',
       'production_safe_gate',
+      'ordinary_analysis_step1_evidence_gate',
+      'analysis_evidence_state_gate',
+      'evidence_anchor_aggregate_gate',
+      'public_claim_support_gate',
+      'score_trace_gate',
+      'technique_observation_trace_gate',
+      'report_parity_gate',
+      'no_export_gate',
+      'ordinary_comparison_not_applicable_gate',
     ]));
   });
 
-  it('keeps metadata-only ModelRunTrace insufficient and stores no raw prompts or responses', async () => {
+  it('keeps partial ModelRunTrace insufficient and stores no raw prompts or responses', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-modelrun-'));
     const out = await emitModelRunTraceFirstPass({
       run_id: 'run-proof-chain',
@@ -99,16 +111,21 @@ describe('v3 s9 validator gate model-run proof-chain posture', () => {
     expect(out.written).toBe(true);
 
     const payload = JSON.parse(await readFile(path.join(root, 'run-proof-chain', 'takes', 'take-take-a', 'analysis-run-proof-chain', 'traces', 'ModelRunTrace.json'), 'utf8'));
-    expect(payload.source_classification).toBe('internal_model_run_trace');
+    expect(payload.source_classification).toBe('model_run_metadata_partial');
     expect(payload.model_run_trace_summary.model_run_trace_gate_status).toBe('insufficient');
-    expect(payload.independent_model_proof_status).toBe('metadata_only_insufficient');
-    expect(payload.per_stage_model_proof_status).toBe('partial_metadata_only');
+    expect(payload.independent_model_proof_status).toBe('independent_model_proof_partial');
+    expect(payload.per_stage_model_proof_status).toBe('partial_missing_stage_boundaries');
     expect(payload.raw_prompt_or_response_stored).toBe(false);
     expect(payload.secrets_or_signed_urls_stored).toBe(false);
     expect(payload.forbidden_fields_absent).toBe(true);
     expect(payload.model_run_entries.some((entry: any) => 'raw_prompt' in entry || 'raw_response' in entry || 'request_body' in entry)).toBe(false);
     expect(payload.model_run_entries.every((entry: any) => entry.raw_prompt_or_response_stored === false)).toBe(true);
-    expect(payload.model_run_entries.every((entry: any) => entry.independent_model_proof_status === 'metadata_only_insufficient')).toBe(true);
+    expect(payload.model_run_entries.map((entry: any) => entry.stage)).toEqual(expect.arrayContaining([
+      'analysis_step_1_evidence_mapping',
+      'analysis_step_2_judgement_or_report_generation',
+      'validator',
+    ]));
+    expect(payload.model_run_entries.some((entry: any) => entry.independent_model_proof_status === 'per_stage_metadata_partial')).toBe(true);
     expect(payload.cannot_satisfy_model_run_gate).toBe(true);
   });
 

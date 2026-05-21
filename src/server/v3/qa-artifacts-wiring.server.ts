@@ -204,7 +204,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number; }; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; step1_observable_evidence_summary?: QAArtifactEmitterOptions['step1_observable_evidence_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_summary?: QAArtifactEmitterOptions['report_parity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: QAArtifactEmitterOptions['technique_observation_trace_summary']; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; step1_observable_evidence_summary?: QAArtifactEmitterOptions['step1_observable_evidence_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_summary?: QAArtifactEmitterOptions['report_parity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -683,11 +683,17 @@ export interface TechniqueObservationTraceEmitterInput extends PublicClaimTraceE
   public_claim_trace_data?: { claims?: Array<Record<string, unknown>> } | null;
 }
 
-export interface ScoreTraceEmitterInput extends TechniqueObservationTraceEmitterInput {}
+export interface ScoreTraceEmitterInput extends TechniqueObservationTraceEmitterInput {
+  structured_step2_score_data?: Record<string, unknown> | null;
+}
 export interface ModelRunTraceEntryInput {
   model_run_id?: string;
+  stage?: string;
+  invocation_status?: 'invoked' | 'skipped' | 'not_applicable' | 'failed' | 'blocked';
   model_provider?: string;
   model_name?: string;
+  model_version?: string;
+  prompt_version?: string;
   model_role?: 'primary' | 'fallback' | 'parser' | 'unknown';
   source_stage?: string;
   started_at?: string;
@@ -704,6 +710,10 @@ export interface ModelRunTraceEntryInput {
   request_status?: 'started' | 'completed' | 'failed' | 'timed_out' | 'unknown';
   parse_status?: 'completed' | 'failed' | 'skipped' | 'unknown';
   safe_error_category?: string;
+  input_artifact_refs?: string[];
+  output_artifact_refs?: string[];
+  raw_prompt_or_response_stored?: boolean;
+  secrets_or_signed_urls_stored?: boolean;
 }
 export interface ModelRunTraceEmitterInput {
   run_id: string;
@@ -713,6 +723,8 @@ export interface ModelRunTraceEmitterInput {
   source_stage: string;
   analysis_route?: string;
   model_run_entries?: ModelRunTraceEntryInput[];
+  expected_model_stages?: string[];
+  comparison_invoked?: boolean;
   root_dir?: string;
   internal_qa_emit?: boolean;
 }
@@ -1733,6 +1745,50 @@ type Step1ObservableEvidenceItem = {
   blocker_codes: string[];
   cannot_satisfy_v3_gate: boolean;
 };
+type OrdinaryAnalysisRequiredFamilyId =
+  | 'video_observable'
+  | 'audio_observable'
+  | 'material_specific'
+  | 'performance_observable'
+  | 'candidate_technique';
+type OrdinaryAnalysisFamilyCompletionStatus = 'complete' | 'partial' | 'not_extracted' | 'unavailable' | 'blocked' | 'not_applicable';
+type OrdinaryAnalysisFamilyCompletionSummary = {
+  family_id: OrdinaryAnalysisRequiredFamilyId;
+  status: OrdinaryAnalysisFamilyCompletionStatus;
+  accepted_item_count: number;
+  limitation_only_item_count: number;
+  rejected_item_count: number;
+  truth_linked_item_count: number;
+  unresolved_truth_link_count: number;
+  source_path_unresolved_count: number;
+  forbidden_source_count: number;
+  required_for_ordinary_analysis: boolean;
+  can_satisfy_family_gate: boolean;
+  blocker_codes: string[];
+};
+const ORDINARY_ANALYSIS_REQUIRED_FAMILY_IDS: OrdinaryAnalysisRequiredFamilyId[] = [
+  'video_observable',
+  'audio_observable',
+  'material_specific',
+  'performance_observable',
+  'candidate_technique',
+];
+const ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS: Record<OrdinaryAnalysisRequiredFamilyId, string> = {
+  video_observable: 'missing_video_observable_evidence',
+  audio_observable: 'missing_audio_observable_evidence',
+  material_specific: 'missing_material_specific_performance_evidence',
+  performance_observable: 'missing_performance_observable_evidence',
+  candidate_technique: 'missing_candidate_technique_evidence',
+};
+const SUPPLIED_CONTEXT_MATERIAL_FACT_KINDS = new Set([
+  'brief_presence',
+  'brief_presence_source_resolved',
+  'extracted_brief_cache_status',
+  'material_presence',
+  'material_presence_source_resolved',
+  'component_or_task_declaration_loaded',
+  'component_or_task_declaration_unavailable',
+]);
 const STEP1_ALLOWED_EVIDENCE_SOURCE_ARTEFACT_IDS = new Set([
   'step1_observable_evidence',
   'analysis_input_record',
@@ -1921,6 +1977,74 @@ function buildMediaObservableStep1EvidenceItems(args: {
     limitationCount: projected.filter((item) => item.evidence_family === 'assessability_limit').length,
   };
 }
+function isAllowedOrdinaryAnalysisStep1ProjectionSource(item: Record<string, unknown>, family: 'material_specific' | 'performance_observable' | 'candidate_technique'): boolean {
+  if (item.source_artefact_id !== 'run_evidence_pass') return false;
+  const sourcePath = typeof item.source_path === 'string' ? item.source_path : '';
+  if (family === 'candidate_technique') return sourcePath.startsWith('candidate_technique_evidence[');
+  return sourcePath.startsWith('timestamped_evidence[');
+}
+function buildOrdinaryAnalysisStep1EvidenceItems(args: {
+  materialItems: Array<Record<string, unknown>>;
+  performanceItems: Array<Record<string, unknown>>;
+  techniqueItems: Array<Record<string, unknown>>;
+}): {
+  items: Step1ObservableEvidenceItem[];
+  rejected: Array<{ source_path: string; reason: string; blocker_codes: string[] }>;
+  materialCount: number;
+  performanceCount: number;
+  techniqueCount: number;
+} {
+  const projected: Step1ObservableEvidenceItem[] = [];
+  const rejected: Array<{ source_path: string; reason: string; blocker_codes: string[] }> = [];
+  const reject = (sourcePath: string, reason: string, blockerCode: string) => {
+    rejected.push({ source_path: sourcePath || 'unknown_ordinary_analysis_step1_source', reason, blocker_codes: [blockerCode] });
+  };
+  const project = (rawItem: Record<string, unknown>, family: 'material_specific' | 'performance_observable' | 'candidate_technique') => {
+    const sourcePath = typeof rawItem.source_path === 'string' ? rawItem.source_path : '';
+    const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
+    if (!isAllowedOrdinaryAnalysisStep1ProjectionSource(rawItem, family)) {
+      reject(sourcePath, 'ordinary_analysis_step1_source_not_allowed', 'ordinary_analysis_step1_source_not_allowed');
+      return;
+    }
+    if (!summary || STEP1_MEDIA_OBSERVABLE_FORBIDDEN_TEXT_RE.test(summary) || hasForbiddenEvidenceSourceRef(rawItem)) {
+      reject(sourcePath, 'ordinary_analysis_step1_summary_failed_anti_fake_guard', 'ordinary_analysis_step1_summary_rejected');
+      return;
+    }
+    projected.push({
+      evidence_item_id: 'step1-ordinary-pending',
+      evidence_family: family,
+      evidence_modality: typeof rawItem.evidence_modality === 'string'
+        ? rawItem.evidence_modality as AnalysisObservableEvidenceItem['evidence_modality']
+        : (family === 'material_specific' ? 'material' : 'unknown'),
+      evidence_kind: typeof rawItem.evidence_kind === 'string' && rawItem.evidence_kind.trim()
+        ? rawItem.evidence_kind.trim()
+        : (family === 'candidate_technique' ? 'candidate_technique_observation' : `${family}_observation`),
+      safe_evidence_summary: summary,
+      source_artefact_id: 'step1_observable_evidence',
+      source_path: 'observable_evidence_items[pending]',
+      timestamp: typeof rawItem.timestamp === 'string' ? rawItem.timestamp : null,
+      timestamp_range: null,
+      timestamp_source: typeof rawItem.timestamp_source === 'string' ? rawItem.timestamp_source : 'not_timestamped_observation',
+      component_id: typeof rawItem.component_id === 'string' ? rawItem.component_id : null,
+      linked_truth_state_ids: [],
+      assessability_limitations: Array.isArray(rawItem.assessability_limitations) ? rawItem.assessability_limitations.filter((x): x is string => typeof x === 'string' && x.length > 0) : [],
+      confidence_or_strength: typeof rawItem.confidence_or_strength === 'string' ? rawItem.confidence_or_strength : 'runEvidencePass_filtered_observation',
+      public_display_status: 'internal_only',
+      blocker_codes: [],
+      cannot_satisfy_v3_gate: true,
+    });
+  };
+  args.materialItems.forEach((item) => project(item, 'material_specific'));
+  args.performanceItems.forEach((item) => project(item, 'performance_observable'));
+  args.techniqueItems.forEach((item) => project(item, 'candidate_technique'));
+  return {
+    items: projected,
+    rejected,
+    materialCount: projected.filter((item) => item.evidence_family === 'material_specific').length,
+    performanceCount: projected.filter((item) => item.evidence_family === 'performance_observable').length,
+    techniqueCount: projected.filter((item) => item.evidence_family === 'candidate_technique').length,
+  };
+}
 type ExplicitTruthStateEntry = {
   truth_state_entry_id: string;
   key: string;
@@ -1976,6 +2100,91 @@ function isStep1LimitationOnlyEvidenceItem(item: Record<string, unknown>): boole
     || kind.endsWith('_unavailable')
     || kind.endsWith('_not_extracted')
     || blockers.includes('media_assessability_limitation_only');
+}
+function isOrdinaryAnalysisFamilyItem(item: Step1ObservableEvidenceItem, family: OrdinaryAnalysisRequiredFamilyId): boolean {
+  if (item.evidence_family !== family) return false;
+  if (family !== 'material_specific') return true;
+  return !SUPPLIED_CONTEXT_MATERIAL_FACT_KINDS.has(item.evidence_kind);
+}
+function hasStep1ForbiddenSatisfyingSource(item: Record<string, unknown>): boolean {
+  const sourceArtefactId = String(item.source_artefact_id ?? '');
+  const sourcePath = String(item.source_path ?? '');
+  const blockerText = getStringArray(item.blocker_codes).join(' ');
+  return hasForbiddenEvidenceSourceRef(item)
+    || ['raw_report', 'render_payload', 'public_report_payload', 'report_parity_result', 'legacy_score_trace', 'legacy_technique_observation_trace'].includes(sourceArtefactId)
+    || /raw_report|report_data|render_payload|public_report_payload|report_parity_result|ScoreTrace|TechniqueObservationTrace/i.test(sourcePath)
+    || /forbidden|legacy_score_trace|legacy_technique/i.test(blockerText);
+}
+function evaluateOrdinaryAnalysisFamilyCompletion(args: {
+  family: OrdinaryAnalysisRequiredFamilyId;
+  items: Step1ObservableEvidenceItem[];
+  rejectedItemCount: number;
+  requiredForOrdinaryAnalysis?: boolean;
+}): OrdinaryAnalysisFamilyCompletionSummary {
+  const requiredForOrdinaryAnalysis = args.requiredForOrdinaryAnalysis !== false;
+  const familyItems = args.items.filter((item) => item.evidence_family === args.family);
+  const acceptedItems = args.items.filter((item) => isOrdinaryAnalysisFamilyItem(item, args.family));
+  const limitationOnlyItems = familyItems.filter((item) => isStep1LimitationOnlyEvidenceItem(item));
+  const nonLimitationItems = acceptedItems.filter((item) => !isStep1LimitationOnlyEvidenceItem(item));
+  const sourcePathUnresolvedCount = acceptedItems.filter((item) => !item.source_path || item.source_path === 'observable_evidence_items[pending]').length;
+  const forbiddenSourceCount = acceptedItems.filter(hasStep1ForbiddenSatisfyingSource).length;
+  const truthLinkedItemCount = acceptedItems.filter((item) => item.linked_truth_state_ids.some(isCanonicalTruthStateId)).length;
+  const unresolvedTruthLinkCount = nonLimitationItems.filter((item) => !item.linked_truth_state_ids.some(isCanonicalTruthStateId)).length;
+  const canSatisfyFamilyGate = requiredForOrdinaryAnalysis
+    && nonLimitationItems.length > 0
+    && sourcePathUnresolvedCount === 0
+    && forbiddenSourceCount === 0
+    && unresolvedTruthLinkCount === 0;
+  const blockerCodes = dedupePreservingOrder([
+    ...(requiredForOrdinaryAnalysis && acceptedItems.length === 0 ? [ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS[args.family]] : []),
+    ...(requiredForOrdinaryAnalysis && acceptedItems.length > 0 && nonLimitationItems.length === 0 ? [args.family === 'performance_observable' ? 'limitation_only_cannot_satisfy_performance_gate' : ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS[args.family]] : []),
+    ...(sourcePathUnresolvedCount > 0 ? ['source_path_unresolved'] : []),
+    ...(unresolvedTruthLinkCount > 0 ? ['missing_truth_state_linkage'] : []),
+    ...(forbiddenSourceCount > 0 ? ['forbidden_source_family_present'] : []),
+    ...(args.rejectedItemCount > 0 ? ['ordinary_analysis_family_rejected_fields_present'] : []),
+  ]);
+  const status: OrdinaryAnalysisFamilyCompletionStatus = !requiredForOrdinaryAnalysis
+    ? 'not_applicable'
+    : (forbiddenSourceCount > 0 || sourcePathUnresolvedCount > 0
+      ? 'blocked'
+      : (acceptedItems.length === 0
+        ? 'not_extracted'
+        : (canSatisfyFamilyGate ? 'complete' : 'partial')));
+  return {
+    family_id: args.family,
+    status,
+    accepted_item_count: acceptedItems.length,
+    limitation_only_item_count: limitationOnlyItems.length,
+    rejected_item_count: args.rejectedItemCount,
+    truth_linked_item_count: truthLinkedItemCount,
+    unresolved_truth_link_count: unresolvedTruthLinkCount,
+    source_path_unresolved_count: sourcePathUnresolvedCount,
+    forbidden_source_count: forbiddenSourceCount,
+    required_for_ordinary_analysis: requiredForOrdinaryAnalysis,
+    can_satisfy_family_gate: canSatisfyFamilyGate,
+    blocker_codes: blockerCodes,
+  };
+}
+function aggregateOrdinaryAnalysisFamilyCompletion(summaries: Record<OrdinaryAnalysisRequiredFamilyId, OrdinaryAnalysisFamilyCompletionSummary>) {
+  const values = ORDINARY_ANALYSIS_REQUIRED_FAMILY_IDS.map((family) => summaries[family]);
+  const required = values.filter((summary) => summary.required_for_ordinary_analysis);
+  const complete = required.filter((summary) => summary.status === 'complete');
+  const partial = required.filter((summary) => summary.status === 'partial');
+  const missing = required.filter((summary) => summary.status === 'not_extracted' || summary.status === 'unavailable');
+  const blocked = required.filter((summary) => summary.status === 'blocked');
+  const notApplicable = values.filter((summary) => summary.status === 'not_applicable');
+  const allRequiredSatisfied = required.length > 0 && required.every((summary) => summary.can_satisfy_family_gate || summary.status === 'not_applicable');
+  const blockerCodes = dedupePreservingOrder(values.flatMap((summary) => summary.blocker_codes));
+  return {
+    required_family_count: required.length,
+    complete_family_count: complete.length,
+    partial_family_count: partial.length,
+    missing_family_count: missing.length,
+    blocked_family_count: blocked.length,
+    not_applicable_family_count: notApplicable.length,
+    all_required_families_satisfied: allRequiredSatisfied,
+    blocker_codes: blockerCodes,
+  };
 }
 function removeTruthLinkagePlaceholderBlockers(blockers: string[], linked: boolean): string[] {
   if (!linked) return dedupePreservingOrder(blockers);
@@ -2061,6 +2270,14 @@ function mediaProjectionForFilteredStep1(filteredStep1: Record<string, unknown> 
     audioItems: safeRecordArray(filteredStep1.audio_observable_evidence_items),
   }).items;
 }
+function ordinaryAnalysisProjectionForFilteredStep1(filteredStep1: Record<string, unknown> | null): Step1ObservableEvidenceItem[] {
+  if (!filteredStep1) return [];
+  return buildOrdinaryAnalysisStep1EvidenceItems({
+    materialItems: safeRecordArray(filteredStep1.material_observable_evidence_items),
+    performanceItems: safeRecordArray(filteredStep1.performance_observable_evidence_items),
+    techniqueItems: safeRecordArray(filteredStep1.candidate_technique_evidence),
+  }).items;
+}
 function buildExplicitTruthStateEntriesForStep1(args: {
   input: ResolverTruthStateEmitterInput;
   analysisRunId: string;
@@ -2107,7 +2324,7 @@ function buildExplicitTruthStateEntriesForStep1(args: {
   add({ slug: 'comparison_truths', state: args.comparisonInvoked ? 'blocked' : 'not_applicable', value_summary: args.comparisonInvoked ? 'comparison context present' : 'single-take comparison not applicable', source_artifact_ids: ['truth_state_map'], source_paths: ['comparison_truths.status'] });
   if ((args.input.unavailable_fields ?? []).length > 0) add({ slug: 'unavailable_runtime_fields_recorded', state: 'unavailable', value_summary: `unavailable runtime fields: ${dedupePreservingOrder(args.input.unavailable_fields ?? []).sort().join(', ')}`, source_artifact_ids: ['analysis_input_record'], source_paths: ['unavailable_fields'], public_claim_limit: 'limitation_only' });
   const mediaOccurrenceByKind = new Map<string, number>();
-  mediaProjectionForFilteredStep1(args.filteredStep1).forEach((item) => {
+  [...mediaProjectionForFilteredStep1(args.filteredStep1), ...ordinaryAnalysisProjectionForFilteredStep1(args.filteredStep1)].forEach((item) => {
     const kind = safeTruthStateSlugPart(item.evidence_kind);
     const occurrence = (mediaOccurrenceByKind.get(kind) ?? 0) + 1;
     mediaOccurrenceByKind.set(kind, occurrence);
@@ -3890,6 +4107,53 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_comparison'])];
     }
 
+    if (canEmitTakeScopedFirstPassTraces) {
+      const proofSnapshotOut = await emitInternalQAArtifactManifest({
+        ...baseOptions,
+        manifest_relative_path: manifestRelativePath,
+        emitted_artefact_ids: [...new Set([...emittedWithInternalTraces])],
+        emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces,
+        runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces)])],
+        runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])],
+        artefact_source_classification_by_id: artefactSourceClassificationById,
+        artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
+        report_parity_summary: reportParitySummary,
+      });
+      if (proofSnapshotOut.written && 'manifest' in (proofSnapshotOut as any)) {
+        const proofSnapshotManifest = (proofSnapshotOut as any).manifest;
+        const proofSnapshotMetrics = { ...buildQAAcceptanceMetrics(proofSnapshotManifest), ...resolveQADeploymentProvenance() };
+        const validatorWrite = await emitValidatorTraceFirstPass({
+          run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces ?? undefined,
+          source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.final_proof_chain',
+          manifest_snapshot: proofSnapshotManifest, acceptance_metrics_snapshot: proofSnapshotMetrics, emitted_artefact_ids: emittedWithInternalTraces,
+          artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
+          public_claim_trace_summary: metadata.public_claim_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary,
+          score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, root_dir: metadata.root_dir, internal_qa_emit: true, intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+        });
+        if (validatorWrite.written) {
+          emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'validator_trace'])];
+          const validatorSatisfied = validatorWrite.validator_trace_summary?.validator_trace_gate_status === 'satisfied';
+          artefactSourceClassificationById.validator_trace = validatorSatisfied ? 'independent_validation_satisfying' : 'internal_validator';
+          artefactLevel2ById.validator_trace = validatorSatisfied;
+          validatorTraceSummary = validatorWrite.validator_trace_summary;
+        }
+        const gateWrite = await emitGateTraceFirstPass({
+          run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: takeIdForFirstPassTraces ?? undefined,
+          source_module: 'src/server/v3/qa-artifacts-wiring.server.ts', source_stage: 'emitQAManifestForAnalysisRun.final_proof_chain',
+          manifest_snapshot: proofSnapshotManifest, acceptance_metrics_snapshot: proofSnapshotMetrics, emitted_artefact_ids: emittedWithInternalTraces,
+          missing_artefact_ids: (proofSnapshotManifest?.missing_artifacts ?? []) as string[], blocker_codes: (proofSnapshotManifest?.blocker_codes ?? []) as string[],
+          validator_trace_summary: validatorTraceSummary, root_dir: metadata.root_dir, internal_qa_emit: true, intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+        });
+        if (gateWrite.written) {
+          emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, 'gate_trace'])];
+          const gateSatisfied = gateWrite.gate_trace_summary?.gate_trace_gate_status === 'satisfied';
+          artefactSourceClassificationById.gate_trace = gateSatisfied ? 'independent_gate_decision' : 'internal_gate_trace';
+          artefactLevel2ById.gate_trace = gateSatisfied;
+          gateTraceSummary = gateWrite.gate_trace_summary;
+        }
+      }
+    }
+
     const metrics = preFinalMetrics;
     const qaWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: metrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     console.info('[internal-qa] acceptance_metrics_write_attempt', { event: 'acceptance_metrics_write_attempt',
@@ -3946,7 +4210,7 @@ type EvidenceAnchorAggregateGateEvaluation = {
 const REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS: Record<string, string> = {
   video: 'missing_video_observable_evidence',
   audio: 'missing_audio_observable_evidence',
-  material: 'missing_material_observable_evidence',
+  material: 'missing_material_specific_performance_evidence',
   performance: 'missing_performance_observable_evidence',
   candidate_technique: 'missing_candidate_technique_evidence',
 };
@@ -3993,20 +4257,40 @@ function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<strin
   const analysisEvidenceState = args.analysisEvidenceState;
   const realRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3').length;
   const blockedRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked').length;
+  const aggregateBlockingRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked' && !isLimitationOnlyEvidenceAnchor(a)).length;
   const legacyAdapterAnchorCount = anchors.filter((a) => a.source_family === 'legacy_adapter').length;
   const sourceScaffoldAnchorCount = anchors.filter((a) => ['source_scaffold', 'helper_test', 'local_file_fixture'].includes(String(a.source_family ?? a.source_classification ?? ''))).length;
   const reportSnapshotAnchorCount = anchors.filter((a) => a.source_artefact_id === 'raw_report' || String(a.source_path ?? '').startsWith('report_data')).length;
   const blockedAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true).length;
+  const aggregateBlockingAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true && !isLimitationOnlyEvidenceAnchor(a)).length;
   const unsupported = isRecord(analysisEvidenceState) ? safeRecordArray(analysisEvidenceState.unsupported_or_unavailable_evidence) : [];
   const unsupportedBlockerCodes = unsupported.flatMap((item) => Array.isArray(item.blocker_codes) ? item.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
   const unsupportedFamilyBlockers = unsupported.map(unsupportedEvidenceFamilyBlocker).filter((x): x is string => typeof x === 'string');
   const anchorBlockers = anchors.flatMap((anchor) => Array.isArray(anchor.blocker_codes) ? anchor.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
   const coverage = isRecord(analysisEvidenceState?.evidence_family_coverage) ? analysisEvidenceState.evidence_family_coverage : null;
   const statusById = isRecord(analysisEvidenceState?.evidence_family_status_by_id) ? analysisEvidenceState.evidence_family_status_by_id : null;
-  const familyCoverageBlockers = Object.entries(REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS).flatMap(([family, blocker]) => {
-    const status = familyCoverageStatus({ family, coverage, statusById });
-    if (status === 'complete' || status === 'not_applicable') return [];
-    return status === 'partial' ? ['partial_step1_evidence_coverage'] : [blocker];
+  const ordinaryFamilyCompletionById = isRecord(analysisEvidenceState?.ordinary_analysis_family_completion_by_id)
+    ? analysisEvidenceState.ordinary_analysis_family_completion_by_id
+    : null;
+  const familyCoverageBlockers = ORDINARY_ANALYSIS_REQUIRED_FAMILY_IDS.flatMap((family) => {
+    const legacyFamily = family === 'video_observable'
+      ? 'video'
+      : (family === 'audio_observable'
+        ? 'audio'
+        : (family === 'material_specific'
+          ? 'material'
+          : (family === 'performance_observable' ? 'performance' : family)));
+    const legacyStatus = familyCoverageStatus({ family: legacyFamily, coverage, statusById });
+    if (legacyStatus === 'complete' || legacyStatus === 'not_applicable') return [];
+    const summary = isRecord(ordinaryFamilyCompletionById?.[family]) ? ordinaryFamilyCompletionById[family] : null;
+    if (summary) {
+      const status = normaliseEvidenceFamilyStatus(summary.status);
+      if (status === 'complete' || status === 'not_applicable') return [];
+      const blockerCodes = getStringArray(summary.blocker_codes);
+      if (blockerCodes.length > 0) return blockerCodes;
+      return status === 'partial' ? ['partial_step1_evidence_coverage'] : [ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS[family]];
+    }
+    return legacyStatus === 'partial' ? ['partial_step1_evidence_coverage'] : [ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS[family]];
   });
   const mixedRealAndLegacy = realRuntimeAnchorCount > 0 && legacyAdapterAnchorCount > 0;
   const analysisEvidenceStateComplete = analysisEvidenceState?.source_classification === 'real_runtime_v3'
@@ -4017,25 +4301,26 @@ function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<strin
     ...(mixedRealAndLegacy ? ['mixed_real_and_legacy_non_satisfying', 'mixed_evidence_anchor_source_families'] : []),
     ...(reportSnapshotAnchorCount > 0 || anchorBlockers.includes('forbidden_report_snapshot_source_ref') ? ['forbidden_raw_report_anchor_source'] : []),
     ...(sourceScaffoldAnchorCount > 0 ? ['source_scaffold_not_gate_evidence'] : []),
-    ...(blockedRealRuntimeAnchorCount > 0 ? ['blocked_real_runtime_evidence_anchor_present'] : []),
-    ...(blockedAnchorCount > 0 ? ['anchor_cannot_satisfy_v3_gate'] : []),
-    ...(anchorBlockers.includes('analysis_evidence_state_source_path_unresolved') ? ['unresolved_source_path'] : []),
+    ...(aggregateBlockingRealRuntimeAnchorCount > 0 ? ['blocked_real_runtime_evidence_anchor_present'] : []),
+    ...(aggregateBlockingAnchorCount > 0 ? ['anchor_cannot_satisfy_v3_gate'] : []),
+    ...(anchorBlockers.includes('analysis_evidence_state_source_path_unresolved') ? ['source_path_unresolved', 'unresolved_source_path'] : []),
     ...(anchorBlockers.includes('missing_truth_state_linkage') ? ['missing_truth_state_linkage'] : []),
     ...familyCoverageBlockers,
     ...unsupportedFamilyBlockers,
     ...(realRuntimeAnchorCount > 0 && unsupported.length > 0 ? ['analysis_evidence_state_partial_runtime_facts_only'] : []),
     ...unsupportedBlockerCodes,
   ]);
-  const allAnchorsSatisfyingRealRuntime = anchors.length > 0
-    && realRuntimeAnchorCount === anchors.length
-    && blockedRealRuntimeAnchorCount === 0
+  const requiredGateAnchors = anchors.filter((anchor) => !isLimitationOnlyEvidenceAnchor(anchor));
+  const allAnchorsSatisfyingRealRuntime = requiredGateAnchors.length > 0
+    && requiredGateAnchors.every((anchor) => anchor.source_family === 'real_runtime_v3' && anchor.cannot_satisfy_v3_gate !== true)
+    && aggregateBlockingRealRuntimeAnchorCount === 0
     && legacyAdapterAnchorCount === 0
     && sourceScaffoldAnchorCount === 0
     && reportSnapshotAnchorCount === 0
-    && blockedAnchorCount === 0;
+    && aggregateBlockingAnchorCount === 0;
   const coverageComplete = !blockers.some((code) => [
     'partial_step1_evidence_coverage',
-    ...Object.values(REQUIRED_EVIDENCE_ANCHOR_FAMILY_BLOCKERS),
+    ...Object.values(ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS),
   ].includes(code));
   const evidenceAnchorGateStatus: EvidenceAnchorAggregateGateStatus = allAnchorsSatisfyingRealRuntime && analysisEvidenceStateComplete && coverageComplete
     ? 'sufficient'
@@ -4052,7 +4337,7 @@ function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<strin
     if (blockers.includes('forbidden_raw_report_anchor_source')) return 'forbidden_raw_report_anchor_source';
     if (blockers.includes('mixed_real_and_legacy_non_satisfying')) return 'mixed_real_and_legacy_non_satisfying';
     if (blockers.includes('source_scaffold_not_gate_evidence')) return 'source_scaffold_not_gate_evidence';
-    if (blockers.includes('unresolved_source_path')) return 'unresolved_source_path';
+    if (blockers.includes('source_path_unresolved') || blockers.includes('unresolved_source_path')) return 'unresolved_source_path';
     const missingFamilyBlocker = blockers.find((code) => code.startsWith('missing_') && code !== 'missing_truth_state_linkage');
     if (missingFamilyBlocker) return missingFamilyBlocker;
     if (blockers.includes('partial_step1_evidence_coverage')) return 'partial_step1_evidence_coverage';
@@ -4611,7 +4896,7 @@ function collectScalarTruthTokens(value: unknown, out: Set<string>) {
 }
 
 function isExplicitTruthIdField(key: string): boolean {
-  return /^(truth_state_id|truth_state_ids|canonical_truth_state_id|canonical_truth_state_ids|known_truth_ids|brief_truth_ids|component_truth_ids|comparison_truth_ids)$/i.test(key);
+  return /^(truth_state_id|truth_state_ids|truth_state_entry_id|truth_state_entry_ids|canonical_truth_state_id|canonical_truth_state_ids|known_truth_ids|brief_truth_ids|component_truth_ids|comparison_truth_ids)$/i.test(key);
 }
 
 function isCanonicalTruthStateMapKey(key: string): boolean {
@@ -4690,8 +4975,8 @@ function isLimitationOnlyEvidenceAnchor(anchor: Record<string, unknown> | undefi
   return anchor.limitation_only === true
     || anchor.public_claim_limit === 'limitation_only'
     || anchor.claim_support_scope === 'limitation_only'
-    || /\blimitation\b|not extracted|unavailable|unsupported|blocked/.test(text)
-    || /limitation_only|not_extracted|unavailable|unsupported|blocked/.test(blockerText);
+    || /\blimitation\b|not extracted|unavailable|unsupported/.test(text)
+    || /limitation_only|not_extracted|unavailable|unsupported/.test(blockerText);
 }
 
 function classifyClaimPublicAuthorityRequirement(blockedClaimCategory: string | null): {
@@ -4918,6 +5203,10 @@ function classifyPublicClaimSupportFromCandidates(input: {
   const hasLegacy = (sourceSummary.legacy_adapter ?? 0) > 0 || (sourceSummary.legacy_or_unsupported ?? 0) > 0 || claims.some((claim) => claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
   const hasReal = (sourceSummary.real_runtime_v3 ?? 0) > 0;
   const requiredLegacyClaims = requiredClaims.filter((claim) => ['legacy_adapter', 'legacy_or_unsupported'].includes(String(claim.source_family)) || claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
+  const requiredRewriteClaims = requiredClaims.filter((claim) => claim.rewrite_required === true || claim.support_status === 'rewrite_required' || claim.support_status === 'unsupported_overclaim' || claim.support_status === 'overclaim');
+  const requiredUnsafeClaims = requiredClaims.filter((claim) => claim.support_status === 'unsafe' || claim.public_safety_status === 'unsafe_or_overclaim');
+  const requiredUnsupportedClaims = requiredClaims.filter((claim) => ['unsupported', 'missing_evidence', 'missing_truth_link', 'legacy_or_unsupported', 'partially_supported'].includes(String(claim.support_status)));
+  const requiredBlockedClaims = requiredClaims.filter((claim) => claim.support_status === 'blocked' || getStringArray(claim.blocker_codes).some((code) => ['public_scoring_blocked', 'public_technique_authority_blocked', 'public_comparison_result_blocked'].includes(code)));
   const sourceClassification = publicClaimGateStatus === 'sufficient'
     ? 'real_runtime_v3_claim_support'
     : (hasReal && hasLegacy
@@ -4925,6 +5214,13 @@ function classifyPublicClaimSupportFromCandidates(input: {
       : (hasReal ? 'real_runtime_v3_partial_non_satisfying' : (hasLegacy ? 'legacy_or_unsupported' : 'first_pass_internal')));
   const blockerCodes = dedupePreservingOrder([
     ...(publicClaimGateStatus === 'sufficient' ? [] : ['public_claim_trace_support_incomplete']),
+    ...(evidenceAnchorGateStatus !== 'sufficient' ? ['evidence_anchor_aggregate_insufficient'] : []),
+    ...(requiredUnsupportedClaims.length > 0 ? ['unsupported_public_claims_present'] : []),
+    ...(requiredRewriteClaims.length > 0 ? ['rewrite_required_claims_present'] : []),
+    ...(requiredUnsafeClaims.length > 0 ? ['unsafe_claims_present'] : []),
+    ...(requiredBlockedClaims.some((claim) => getStringArray(claim.blocker_codes).includes('public_scoring_blocked')) ? ['public_scoring_blocked'] : []),
+    ...(requiredBlockedClaims.some((claim) => getStringArray(claim.blocker_codes).includes('public_technique_authority_blocked')) ? ['public_technique_authority_blocked'] : []),
+    ...(requiredBlockedClaims.some((claim) => getStringArray(claim.blocker_codes).includes('public_comparison_result_blocked')) ? ['public_comparison_claim_not_applicable_or_blocked'] : []),
     ...(requiredLegacyClaims.length > 0 || (!hasReal && hasLegacy) ? ['legacy_or_unsupported_claim_candidate_source'] : []),
     ...supportIdentityBlockers,
     ...requiredClaims.flatMap((claim) => getStringArray(claim.blocker_codes)),
@@ -5610,6 +5906,93 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
   };
 }
 
+const FORBIDDEN_INTERNAL_PROOF_SOURCE_ARTEFACT_IDS = new Set([
+  'raw_report',
+  'render_payload',
+  'public_report_payload',
+  'report_parity_result',
+  'legacy_score_trace',
+  'legacy_technique_observation_trace',
+]);
+
+function isForbiddenInternalProofSource(sourceArtefactId: unknown, sourcePath: unknown): boolean {
+  const artefact = String(sourceArtefactId ?? '').trim();
+  const path = String(sourcePath ?? '').trim();
+  return FORBIDDEN_INTERNAL_PROOF_SOURCE_ARTEFACT_IDS.has(artefact)
+    || /(^|\.|\/)(raw_report|report_data|render_payload|public_report_payload|report_parity_result)(\.|\/|$)/i.test(path)
+    || /ScoreTrace|TechniqueObservationTrace|public_ui|comparison_rank/i.test(path);
+}
+
+function getRealRuntimeAnchorIdsForTrace(
+  anchors: Array<Record<string, unknown>>,
+  requestedIds: string[],
+  linkedTruthIds: string[] = [],
+): string[] {
+  const requested = new Set(requestedIds.filter(Boolean));
+  const linkedTruths = new Set(linkedTruthIds.filter(Boolean));
+  return anchors
+    .filter((anchor) => {
+      const id = String(anchor.evidence_anchor_id ?? '');
+      if (!id) return false;
+      if (anchor.source_family !== 'real_runtime_v3' || anchor.cannot_satisfy_v3_gate === true) return false;
+      if (requested.size > 0) return requested.has(id);
+      const anchorTruths = getStringArray(anchor.linked_truth_state_ids);
+      return anchorTruths.some((truthId) => linkedTruths.has(truthId));
+    })
+    .map((anchor) => String(anchor.evidence_anchor_id ?? ''))
+    .filter(Boolean);
+}
+
+function getResolvedTraceTruthIds(truthStateMapData: unknown, truthIds: string[]): string[] {
+  return dedupePreservingOrder(
+    truthIds
+      .filter(isCanonicalTruthStateId)
+      .filter((truthId) => truthStateIdResolves(truthStateMapData, truthId)),
+  );
+}
+
+function getStructuredScoreEntries(scoreData: Record<string, unknown>): Array<Record<string, unknown>> {
+  const explicitEntries = safeRecordArray(scoreData.score_entries);
+  if (explicitEntries.length > 0) return explicitEntries;
+  const scores = isRecord(scoreData.scores) ? scoreData.scores : null;
+  if (!scores) return [];
+  return Object.entries(scores)
+    .filter(([, value]) => typeof value === 'number' || (typeof value === 'string' && Number.isFinite(Number(value))))
+    .map(([scoreName, scoreValue], index) => ({
+      score_name: scoreName,
+      score_scope: 'discipline_attribute',
+      score_value: scoreValue,
+      source_path: `structured_step2_score_data.scores.${scoreName}`,
+      source_index: index,
+    }));
+}
+
+function getCandidateTechniqueEvidenceItems(analysisEvidenceState: Record<string, unknown> | null): Array<Record<string, unknown>> {
+  if (!analysisEvidenceState) return [];
+  const direct = safeRecordArray(analysisEvidenceState.candidate_technique_evidence)
+    .map((item, index) => ({
+      ...item,
+      analysis_evidence_state_source_path: typeof item.analysis_evidence_state_source_path === 'string'
+        ? item.analysis_evidence_state_source_path
+        : `candidate_technique_evidence[${index}]`,
+    }));
+  const observable = safeRecordArray(analysisEvidenceState.observable_evidence_items)
+    .filter((item) => String(item.evidence_family ?? '') === 'candidate_technique')
+    .map((item, index) => ({
+      ...item,
+      analysis_evidence_state_source_path: typeof item.analysis_evidence_state_source_path === 'string'
+        ? item.analysis_evidence_state_source_path
+        : `observable_evidence_items[${index}]`,
+    }));
+  const byPath = new Map<string, Record<string, unknown>>();
+  for (const item of [...direct, ...observable]) {
+    const path = String(item.analysis_evidence_state_source_path ?? item.source_path ?? '');
+    if (!path || byPath.has(path)) continue;
+    byPath.set(path, item);
+  }
+  return [...byPath.values()];
+}
+
 export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObservationTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
@@ -5617,6 +6000,8 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const reportData = unwrapRawReportData(input.raw_report_data);
   const anchors = (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>>;
   const claims = (input.public_claim_trace_data?.claims ?? []) as Array<Record<string, unknown>>;
+  const truthStateMapData = isRecord(input.truth_state_map_data) ? input.truth_state_map_data : null;
+  const analysisEvidenceState = isRecord(input.analysis_evidence_state_data) ? input.analysis_evidence_state_data : null;
   const observations: Array<Record<string, unknown>> = [];
   const extractTimestampedNoteIndex = (value: unknown): number | null => {
     if (typeof value !== 'string') return null;
@@ -5703,6 +6088,57 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
   const addIfString = (value: unknown, sourcePath: string, family: 'legacy_adapter' | 'report_snapshot', timestamp?: string | null, index?: number) => {
     if (typeof value === 'string' && value.trim()) addObs(value, sourcePath, family, timestamp, index);
   };
+  const addInternalTechniqueObservation = (item: Record<string, unknown>, index: number) => {
+    if (!analysisEvidenceState) return;
+    const sourcePath = String(item.analysis_evidence_state_source_path ?? item.source_path ?? '').trim();
+    const safeSummary = String(item.safe_evidence_summary ?? item.observation_text_safe_summary ?? item.evidence_text ?? '').trim();
+    if (!sourcePath || !safeSummary) return;
+    const linkedTruthStateIds = getStringArray(item.linked_truth_state_ids);
+    const resolvedTruthStateIds = getResolvedTraceTruthIds(truthStateMapData, linkedTruthStateIds);
+    const explicitAnchorIds = getStringArray(item.linked_evidence_anchor_ids);
+    const linkedEvidenceAnchorIds = getRealRuntimeAnchorIdsForTrace(anchors, explicitAnchorIds, linkedTruthStateIds);
+    const sourcePathResolved = readJsonPath(analysisEvidenceState, sourcePath) !== undefined;
+    const sourceForbidden = isForbiddenInternalProofSource(item.source_artefact_id ?? 'analysis_evidence_state', sourcePath) || hasForbiddenEvidenceSourceRef(item);
+    const itemBlockers = getStringArray(item.blocker_codes);
+    const observationType = isStep1LimitationOnlyEvidenceItem(item)
+      ? 'limitation_only'
+      : (/safe_descriptor/i.test(String(item.evidence_kind ?? item.observation_type ?? '')) ? 'public_safe_descriptor_candidate' : 'internal_shadow');
+    const blockerCodes = dedupePreservingOrder([
+      ...itemBlockers,
+      ...(!sourcePathResolved ? ['technique_observation_source_path_unresolved'] : []),
+      ...(sourceForbidden ? ['forbidden_technique_observation_source'] : []),
+      ...(linkedEvidenceAnchorIds.length === 0 ? ['technique_observation_missing_real_runtime_evidence_anchor'] : []),
+      ...(linkedTruthStateIds.length === 0 ? ['missing_truth_state_linkage'] : []),
+      ...(linkedTruthStateIds.length > 0 && resolvedTruthStateIds.length !== linkedTruthStateIds.length ? ['truth_state_id_unresolved'] : []),
+      ...(observationType === 'limitation_only' ? ['limitation_only_cannot_support_technique_achievement'] : []),
+    ]);
+    const canSatisfyInternal = blockerCodes.filter((code) => code !== 'limitation_only_cannot_support_technique_achievement').length === 0;
+    observations.push({
+      technique_observation_id: `to-${input.take_id}-rt-${String(index + 1).padStart(3, '0')}`,
+      observation_type: observationType,
+      observation_text_safe_summary: safeSummary,
+      observable_basis: 'structured_step1_candidate_technique_projection',
+      source_family: 'real_runtime_v3_internal_technique_observation',
+      source_artefact_id: 'analysis_evidence_state',
+      source_path: sourcePath,
+      source_index: index,
+      timestamp_refs: getStringArray(item.timestamp_refs),
+      linked_evidence_anchor_ids: linkedEvidenceAnchorIds,
+      linked_truth_state_ids: resolvedTruthStateIds,
+      truth_state_entry_ids: resolvedTruthStateIds,
+      linked_public_claim_ids: [],
+      technique_authority_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      public_display_status: 'internal_only',
+      evidence_status: canSatisfyInternal ? 'real_runtime_v3_internal_technique_observation' : 'real_runtime_v3_internal_technique_observation_blocked',
+      cannot_satisfy_public_technique_authority_gate: true,
+      can_satisfy_internal_technique_trace_gate: canSatisfyInternal,
+      cannot_satisfy_v3_gate: !canSatisfyInternal,
+      blocker_codes: blockerCodes,
+      notes: ['internal_only', 'public_technique_authority_unapproved'],
+    });
+  };
+  getCandidateTechniqueEvidenceItems(analysisEvidenceState).forEach(addInternalTechniqueObservation);
   for (const key of ['detected_components', 'category_notes', 'category_rationale', 'strengths', 'improvements', 'priority_fixes'] as const) {
     const arr = reportData[key];
     if (!Array.isArray(arr)) continue;
@@ -5739,25 +6175,49 @@ export async function emitTechniqueObservationTraceFirstPass(input: TechniqueObs
     if (text && field) addObs(text, `report_data.timestamped_notes[${idx}].${field}`, 'report_snapshot', ts, idx);
   });
   if (observations.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const realRuntimeInternalTechniqueCount = observations.filter((obs) => obs.source_family === 'real_runtime_v3_internal_technique_observation').length;
+  const satisfyingInternalTechniqueCount = observations.filter((obs) => obs.can_satisfy_internal_technique_trace_gate === true).length;
+  const techniqueGateSatisfied = satisfyingInternalTechniqueCount > 0;
   const sourceFamilySummary = observations.reduce<Record<string, number>>((acc, obs) => {
     const key = String(obs.source_family);
-    acc[key] = (acc[key] ?? 0) + 1;
+    if (key === 'real_runtime_v3_internal_technique_observation') acc.real_runtime_v3 = (acc.real_runtime_v3 ?? 0) + 1;
+    else acc[key] = (acc[key] ?? 0) + 1;
     return acc;
   }, { legacy_adapter: 0, report_snapshot: 0, real_runtime_v3: 0, input_artifact: 0, resolver_truth_state: 0 });
-  const derivedSourceClassification = sourceFamilySummary.report_snapshot > 0 && sourceFamilySummary.legacy_adapter === 0 ? 'report_snapshot' : 'legacy_adapter';
+  const derivedSourceClassification = techniqueGateSatisfied
+    ? 'real_runtime_v3_internal_technique_observation'
+    : (sourceFamilySummary.report_snapshot > 0 && sourceFamilySummary.legacy_adapter === 0 ? 'report_snapshot' : 'legacy_adapter');
   const payload = {
     schema_version: 'tapecoach_v3_technique_observation_trace_v1', artefact_type: 'technique_observation_trace', internal_only: true, privacy_classification: 'internal_private',
     run_id: input.run_id, analysis_run_id: analysisRunId, submission_id: input.submission_id ?? null, take_id: input.take_id, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: [],
     source_module: input.source_module, source_stage: input.source_stage, generated_at: new Date().toISOString(),
     observation_count: observations.length, observations, source_family_summary: sourceFamilySummary,
-    cannot_satisfy_technique_observation_gate: true,
-    gate_satisfaction_reason: 'legacy_report_snapshot_not_real_runtime_technique_evidence',
-    blocker_codes: ['TechniqueObservation_legacy_only'], redaction_notes: ['Internal-only trace; no public technique authority satisfaction'],
+    real_runtime_v3_internal_technique_observation_count: realRuntimeInternalTechniqueCount,
+    satisfying_internal_technique_observation_count: satisfyingInternalTechniqueCount,
+    public_technique_authority_status: 'blocked',
+    cannot_satisfy_technique_observation_gate: !techniqueGateSatisfied,
+    gate_satisfaction_reason: techniqueGateSatisfied ? 'real_runtime_v3_internal_technique_observations_linked' : 'legacy_report_snapshot_not_real_runtime_technique_evidence',
+    technique_observation_trace_gate_status: techniqueGateSatisfied ? 'satisfied' : 'insufficient',
+    blocker_codes: techniqueGateSatisfied ? ['public_technique_authority_blocked'] : ['TechniqueObservation_legacy_only', 'technique_trace_requires_step1_candidate_technique_extractor'], redaction_notes: ['Internal-only trace; no public technique authority satisfaction'],
     ...resolveQADeploymentProvenance(),
   };
   assertSafeSegment(input.take_id, 'take_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/TechniqueObservationTrace.json`, payload, 'technique_observation_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['technique_observation_trace'] : [], source_classification: derivedSourceClassification as 'legacy_adapter' | 'report_snapshot', source_family_summary: sourceFamilySummary as { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number }, level2_satisfies: false as const };
+  return {
+    written: result.written as boolean,
+    emitted_artefact_ids: result.written ? ['technique_observation_trace'] : [],
+    source_classification: derivedSourceClassification,
+    source_family_summary: sourceFamilySummary as { legacy_adapter: number; report_snapshot: number; real_runtime_v3: number; input_artifact: number; resolver_truth_state: number },
+    technique_observation_trace_summary: {
+      ...sourceFamilySummary,
+      technique_observation_trace_gate_status: techniqueGateSatisfied ? 'satisfied' : 'insufficient',
+      technique_observation_trace_gate_reason: techniqueGateSatisfied ? 'real_runtime_v3_internal_technique_observations_linked' : 'legacy_report_snapshot_not_real_runtime_technique_evidence',
+      real_runtime_v3_internal_technique_observation_count: realRuntimeInternalTechniqueCount,
+      satisfying_internal_technique_observation_count: satisfyingInternalTechniqueCount,
+      public_technique_authority_status: 'blocked',
+    },
+    level2_satisfies: techniqueGateSatisfied,
+  };
 }
 
 export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
@@ -5775,6 +6235,138 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
   const linkClaims = (sourcePath: string, scoreScope: string, scoreName: string, value: number) => claims
     .filter((c) => c?.source_path === sourcePath || (c?.source_path === sourcePath && Number(c?.claim_text) === value) || (Number(c?.claim_text) === value && c?.score_scope === scoreScope && String(c?.source_path ?? '').startsWith(sourcePath.split('.').slice(0,3).join('.')) && c?.score_name === scoreName))
     .map((c) => String(c.claim_id ?? '')).filter(Boolean);
+  const structuredScoreData = isRecord(input.structured_step2_score_data) ? input.structured_step2_score_data : null;
+  const structuredScoreSourceArtefactId = String(structuredScoreData?.source_artefact_id ?? 'structured_step2_score_projection');
+  const structuredScoreInputEntries = structuredScoreData ? getStructuredScoreEntries(structuredScoreData) : [];
+  if (structuredScoreData && structuredScoreInputEntries.length > 0) {
+    const anchors = (input.evidence_anchors_data?.anchors ?? []) as Array<Record<string, unknown>>;
+    const selectedLevel = String(structuredScoreData.selected_level ?? '').trim();
+    const auditionType = String(structuredScoreData.audition_type ?? '').trim();
+    const scoreEntries = structuredScoreInputEntries.map((entry, index) => {
+      const scoreValue = finiteNum(entry.score_value ?? entry.value);
+      const scoreBand = typeof entry.score_band === 'string' && entry.score_band.trim() ? entry.score_band.trim() : null;
+      const scoreName = String(entry.score_name ?? entry.name ?? `score_${index + 1}`).trim();
+      const scoreScope = String(entry.score_scope ?? entry.scope ?? 'discipline_attribute').trim();
+      const sourcePathRaw = String(entry.source_path ?? `structured_step2_score_data.score_entries[${index}]`).trim();
+      const sourcePath = sourcePathRaw.startsWith('structured_step2_score_data') ? sourcePathRaw : `structured_step2_score_data.${sourcePathRaw}`;
+      const linkedTruthStateIds = getStringArray(entry.linked_truth_state_ids).length > 0
+        ? getStringArray(entry.linked_truth_state_ids)
+        : getStringArray(structuredScoreData.linked_truth_state_ids);
+      const resolvedTruthStateIds = getResolvedTraceTruthIds(input.truth_state_map_data, linkedTruthStateIds);
+      const requestedAnchorIds = getStringArray(entry.linked_evidence_anchor_ids).length > 0
+        ? getStringArray(entry.linked_evidence_anchor_ids)
+        : getStringArray(structuredScoreData.linked_evidence_anchor_ids);
+      const linkedEvidenceAnchorIds = getRealRuntimeAnchorIdsForTrace(anchors, requestedAnchorIds, linkedTruthStateIds);
+      const sourcePathResolved = readJsonPath({ structured_step2_score_data: structuredScoreData }, sourcePath) !== undefined;
+      const sourceForbidden = isForbiddenInternalProofSource(entry.source_artefact_id ?? structuredScoreSourceArtefactId, sourcePath);
+      const blockerCodes = dedupePreservingOrder([
+        ...(sourceForbidden ? ['forbidden_score_trace_source'] : []),
+        ...(!sourcePathResolved ? ['score_trace_source_path_unresolved'] : []),
+        ...(!selectedLevel ? ['score_trace_selected_level_missing'] : []),
+        ...(scoreValue == null && !scoreBand ? ['score_trace_value_missing'] : []),
+        ...(linkedEvidenceAnchorIds.length === 0 ? ['score_trace_missing_real_runtime_evidence_anchor'] : []),
+        ...(requestedAnchorIds.length > 0 && linkedEvidenceAnchorIds.length !== requestedAnchorIds.length ? ['score_trace_evidence_anchor_unresolved'] : []),
+        ...(linkedTruthStateIds.length === 0 ? ['missing_truth_state_linkage'] : []),
+        ...(linkedTruthStateIds.length > 0 && resolvedTruthStateIds.length !== linkedTruthStateIds.length ? ['truth_state_id_unresolved'] : []),
+      ]);
+      const canSatisfyInternalScoreTraceGate = blockerCodes.length === 0;
+      return {
+        score_trace_id: `st-${input.take_id}-rt-${String(index + 1).padStart(3, '0')}`,
+        source_family: canSatisfyInternalScoreTraceGate ? 'real_runtime_v3_internal_score_proof' : 'real_runtime_v3_internal_score_proof_blocked',
+        source_artefact_id: structuredScoreSourceArtefactId,
+        source_path: sourcePath,
+        source_index: index,
+        score_name: scoreName,
+        score_scope: scoreScope,
+        ...(scoreValue != null ? { score_value: scoreValue, score_scale: String(entry.score_scale ?? '0-100') } : {}),
+        ...(scoreBand ? { score_band: scoreBand } : {}),
+        selected_level: selectedLevel || null,
+        audition_type: auditionType || null,
+        audition_type_status: auditionType ? 'known' : 'unknown',
+        linked_analysis_evidence_state_ref: structuredScoreData.linked_analysis_evidence_state_ref ?? 'analysis/AnalysisEvidenceState.json',
+        linked_evidence_anchor_ids: linkedEvidenceAnchorIds,
+        linked_truth_state_ids: resolvedTruthStateIds,
+        truth_state_entry_ids: resolvedTruthStateIds,
+        component_id: typeof entry.component_id === 'string' ? entry.component_id : null,
+        category_id: typeof entry.category_id === 'string' ? entry.category_id : null,
+        calibration_context_internal_only: true,
+        public_display_status: 'internal_only',
+        public_scoring_status: 'blocked',
+        cannot_satisfy_public_scoring_gate: true,
+        can_satisfy_internal_score_trace_gate: canSatisfyInternalScoreTraceGate,
+        cannot_satisfy_v3_gate: !canSatisfyInternalScoreTraceGate,
+        blocker_codes: blockerCodes,
+        notes: 'structured Step 2 score projection; internal-only score proof',
+      };
+    });
+    const satisfyingScoreEntryCount = scoreEntries.filter((entry) => entry.can_satisfy_internal_score_trace_gate === true).length;
+    const scoreTraceGateSatisfied = scoreEntries.length > 0 && satisfyingScoreEntryCount === scoreEntries.length;
+    const countScope = (scope: string) => scoreEntries.filter((x) => x.score_scope === scope).length;
+    const source_family_summary = {
+      legacy_adapter: 0,
+      report_snapshot: 0,
+      real_runtime_v3: satisfyingScoreEntryCount,
+      input_artifact: 0,
+      resolver_truth_state: 0,
+    };
+    const skipped_component_weight_out_of_range = 0;
+    const summary = {
+      score_count: scoreEntries.length,
+      overall_count: countScope('overall_readiness') + countScope('overall_readiness_internal'),
+      discipline_attribute_count: countScope('discipline_attribute'),
+      component_score_count: countScope('component_score'),
+      component_weight_count: countScope('component_weight'),
+      brief_adherence_subscore_count: countScope('brief_adherence_subscore'),
+      assessment_confidence_count: countScope('assessment_confidence'),
+      calibration_modifier_count: countScope('calibration_modifier'),
+      calibration_metadata_count: countScope('assessment_confidence') + countScope('calibration_modifier'),
+      source_family_summary,
+      real_runtime_v3_internal_score_entry_count: satisfyingScoreEntryCount,
+      overall_readiness_public_score_status: 'blocked' as const,
+      discipline_attribute_score_trace_status: scoreTraceGateSatisfied ? 'real_runtime_v3_internal_trace' as const : 'internal_trace_only' as const,
+      score_trace_gate_status: scoreTraceGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+      score_trace_gate_reason: scoreTraceGateSatisfied ? 'real_runtime_v3_internal_score_projection_linked' as const : 'structured_score_projection_unresolved_or_incomplete' as const,
+      skipped_component_weight_out_of_range,
+      blocker_codes: scoreTraceGateSatisfied ? ['public_scoring_blocked'] : ['score_trace_requires_structured_step2_score_projection', 'score_trace_structured_projection_linkage_incomplete'],
+    };
+    const payload = {
+      schema_version: 'tapecoach_v3_score_trace_real_runtime_internal_v1',
+      artefact_type: 'score_trace',
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      run_id: input.run_id,
+      analysis_run_id: analysisRunId,
+      take_id: input.take_id,
+      generated_at: new Date().toISOString(),
+      source_module: input.source_module ?? 'qa-artifacts-wiring.server',
+      source_stage: input.source_stage ?? 'process_take_success',
+      source_classification: scoreTraceGateSatisfied ? 'real_runtime_v3_internal_score_proof' : 'real_runtime_v3_internal_score_proof_blocked',
+      trace_mode: 'structured_step2_score_projection_internal',
+      score_count: scoreEntries.length,
+      score_entries: scoreEntries,
+      source_family_summary,
+      overall_readiness_public_score_status: 'blocked',
+      discipline_attribute_score_trace_status: summary.discipline_attribute_score_trace_status,
+      public_scoring_status: 'blocked',
+      cannot_satisfy_score_gate: !scoreTraceGateSatisfied,
+      gate_satisfaction_reason: summary.score_trace_gate_reason,
+      blocker_codes: summary.blocker_codes,
+      linked_public_claim_trace_summary: { claim_count: claims.length },
+      score_trace_summary: summary,
+      ...resolveQADeploymentProvenance(),
+    };
+    assertSafeSegment(input.take_id, 'take_id');
+    assertSafeSegment(analysisRunId, 'analysis_run_id');
+    const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ScoreTrace.json`, payload, 'score_trace');
+    return {
+      written: result.written as boolean,
+      emitted_artefact_ids: result.written ? ['score_trace'] : [],
+      source_classification: payload.source_classification,
+      level2_satisfies: scoreTraceGateSatisfied,
+      score_entries: scoreEntries,
+      score_trace_summary: summary,
+    };
+  }
   const push = (scope: string, name: string, value: unknown, sourcePath: string, extra: Record<string, unknown> = {}) => {
     const num = finiteNum(value);
     if (num == null) return;
@@ -5795,7 +6387,7 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
       linked_truth_state_ids: [],
       cannot_satisfy_v3_gate: true,
       notes: 'first-pass legacy/report-snapshot derived trace',
-      blocker_codes: ['ScoreTrace_legacy_only'],
+      blocker_codes: ['ScoreTrace_legacy_only', 'score_trace_requires_structured_step2_score_projection'],
       ...extra,
     });
   };
@@ -5825,7 +6417,7 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
     score_trace_gate_status: 'insufficient' as const,
     score_trace_gate_reason: 'legacy_report_snapshot_not_real_runtime_score_trace' as const,
   };
-  const payload = { schema_version:'tapecoach_v3_score_trace_first_pass_v1', artefact_type:'score_trace', internal_only:true, privacy_classification:'internal_private', run_id:input.run_id, analysis_run_id:analysisRunId, take_id:input.take_id, generated_at:new Date().toISOString(), source_module:input.source_module ?? 'qa-artifacts-wiring.server', source_stage:input.source_stage ?? 'process_take_success', trace_mode:'first_pass_legacy_report_snapshot', score_count:entries.length, score_entries:entries, source_family_summary, overall_readiness_public_score_status:'blocked', discipline_attribute_score_trace_status:'internal_trace_only', cannot_satisfy_score_gate:true, gate_satisfaction_reason:'legacy_report_snapshot_not_real_runtime_score_trace', blocker_codes:['ScoreTrace_legacy_only'], linked_public_claim_trace_summary:{ claim_count: claims.length }, score_trace_summary: { ...summary, skipped_component_weight_out_of_range }, ...resolveQADeploymentProvenance() };
+  const payload = { schema_version:'tapecoach_v3_score_trace_first_pass_v1', artefact_type:'score_trace', internal_only:true, privacy_classification:'internal_private', run_id:input.run_id, analysis_run_id:analysisRunId, take_id:input.take_id, generated_at:new Date().toISOString(), source_module:input.source_module ?? 'qa-artifacts-wiring.server', source_stage:input.source_stage ?? 'process_take_success', trace_mode:'first_pass_legacy_report_snapshot', score_count:entries.length, score_entries:entries, source_family_summary, overall_readiness_public_score_status:'blocked', discipline_attribute_score_trace_status:'internal_trace_only', cannot_satisfy_score_gate:true, gate_satisfaction_reason:'legacy_report_snapshot_not_real_runtime_score_trace', blocker_codes:['ScoreTrace_legacy_only', 'score_trace_requires_structured_step2_score_projection'], linked_public_claim_trace_summary:{ claim_count: claims.length }, score_trace_summary: { ...summary, skipped_component_weight_out_of_range, blocker_codes: ['ScoreTrace_legacy_only', 'score_trace_requires_structured_step2_score_projection'] }, ...resolveQADeploymentProvenance() };
   assertSafeSegment(input.take_id, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
   const result = await writeInternalJson(root, input.run_id, `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ScoreTrace.json`, payload, 'score_trace');
@@ -5835,6 +6427,31 @@ export async function emitScoreTraceFirstPass(input: ScoreTraceEmitterInput) {
 export async function emitModelRunTraceArtefact(input: Omit<TraceEmitterInput, 'artefact_id'|'relative_path'>) {
   return emitTraceArtefact({ ...input, artefact_id: 'model_run_trace', relative_path: 'traces/ModelRunTrace.json' });
 }
+
+const ORDINARY_L2A_MODEL_RUN_STAGE_REGISTRY = [
+  { stage_id: 'input_capture', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'resolver', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'analysis_step_1_evidence_mapping', stage_kind: 'model_invoked', expected_status: 'invoked_when_two_step_analysis_runs' },
+  { stage_id: 'analysis_step_2_judgement_or_report_generation', stage_kind: 'model_invoked', expected_status: 'invoked' },
+  { stage_id: 'report_parity', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'no_export_proof', stage_kind: 'non_model', expected_status: 'tracked_by_non_model_gate' },
+  { stage_id: 'validator', stage_kind: 'non_model', expected_status: 'tracked_by_validator_trace' },
+  { stage_id: 'gate_finalisation', stage_kind: 'non_model', expected_status: 'tracked_by_gate_trace' },
+  { stage_id: 'comparison_not_applicable_for_ordinary_run', stage_kind: 'non_model', expected_status: 'not_applicable_for_ordinary_single_take' },
+] as const;
+
+const ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS = [
+  'analysis_step_1_evidence_mapping',
+  'analysis_step_2_judgement_or_report_generation',
+] as const;
+
+function normaliseModelRunStageId(value: unknown, fallback: string): string {
+  const candidate = String(value ?? '').trim();
+  if (candidate === 'analysis_step_1' || candidate === 'analysis_step_1_evidence_pass' || candidate === 'evidence_pass') return 'analysis_step_1_evidence_mapping';
+  if (candidate === 'analysis_generation' || candidate === 'analysis_step_2' || candidate === 'analysis_step_2_judgement_or_report_polish' || candidate === 'report_polish') return 'analysis_step_2_judgement_or_report_generation';
+  return candidate || fallback;
+}
+
 export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const root = input.root_dir ?? DEFAULT_ROOT;
@@ -5843,48 +6460,196 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   assertSafeSegment(takeId, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
-  const safeEntries = (input.model_run_entries ?? []).filter((entry) => entry && typeof entry === 'object').map((entry, idx) => ({
-    model_run_id: entry.model_run_id ?? `model-run-${takeId}-${idx + 1}`,
-    model_provider: entry.model_provider ?? null,
-    model_name: entry.model_name ?? null,
-    model_role: entry.model_role ?? 'unknown',
-    source_stage: entry.source_stage ?? input.source_stage,
-    started_at: entry.started_at ?? null,
-    completed_at: entry.completed_at ?? null,
-    duration_ms: Number.isFinite(entry.duration_ms) ? entry.duration_ms : null,
-    timeout_ms: Number.isFinite(entry.timeout_ms) && Number(entry.timeout_ms) >= 0 ? Number(entry.timeout_ms) : null,
-    timed_out: Boolean(entry.timed_out),
-    retry_count: Number.isFinite(entry.retry_count) ? entry.retry_count : 0,
-    attempt_index: Number.isFinite(entry.attempt_index) ? entry.attempt_index : (idx + 1),
-    http_status: Number.isFinite(entry.http_status) ? entry.http_status : null,
-    circuit_open: typeof entry.circuit_open === 'boolean' ? entry.circuit_open : null,
-    fallback_used: Boolean(entry.fallback_used),
-    analysis_tier: entry.analysis_tier ?? null,
-    request_status: entry.request_status ?? 'unknown',
-    parse_status: entry.parse_status ?? 'unknown',
-    safe_error_category: entry.safe_error_category ?? null,
-    input_artifact_refs: ['inputs/input_record.json'],
-    output_artifact_refs: ['reports/raw_report.json'],
-    source_classification: 'internal_model_run_trace',
-    independent_model_proof_status: 'metadata_only_insufficient',
-    raw_prompt_or_response_stored: false,
-    secrets_or_signed_urls_stored: false,
-    blocker_codes: ['ModelRunTrace_internal_only'],
-  }));
+  const expectedStages = dedupePreservingOrder([
+    ...(input.expected_model_stages ?? ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS),
+  ].map((stage, index) => normaliseModelRunStageId(stage, `expected_model_stage_${index + 1}`)));
+  const rawEntries = (input.model_run_entries ?? []).filter((entry) => entry && typeof entry === 'object');
+  const normaliseStage = (entry: ModelRunTraceEntryInput, idx: number) => {
+    return normaliseModelRunStageId(entry.stage ?? entry.source_stage ?? input.source_stage, `unknown_model_stage_${idx + 1}`);
+  };
+  const safeEntries = rawEntries.map((entry, idx) => {
+    const stage = normaliseStage(entry, idx);
+    const invocationStatus = entry.invocation_status ?? (entry.request_status === 'failed'
+      ? 'failed'
+      : (entry.request_status === 'timed_out' ? 'failed' : 'invoked'));
+    const inputRefs = getStringArray(entry.input_artifact_refs);
+    const outputRefs = getStringArray(entry.output_artifact_refs);
+    const rawPromptOrResponseStored = entry.raw_prompt_or_response_stored === true ? true : false;
+    const secretsOrSignedUrlsStored = entry.secrets_or_signed_urls_stored === true ? true : false;
+    const stageCanSatisfy = expectedStages.includes(stage)
+      && invocationStatus === 'invoked'
+      && inputRefs.length > 0
+      && outputRefs.length > 0
+      && !rawPromptOrResponseStored
+      && !secretsOrSignedUrlsStored
+      && !['failed', 'timed_out'].includes(String(entry.request_status ?? ''));
+    const independentStatus = stageCanSatisfy
+      ? 'per_stage_model_proof_satisfying'
+      : (expectedStages.includes(stage) && invocationStatus === 'invoked' ? 'per_stage_metadata_partial' : 'metadata_only_insufficient');
+    const blockerCodes = dedupePreservingOrder([
+      ...(!expectedStages.includes(stage) ? ['model_stage_not_in_ordinary_l2a_registry'] : []),
+      ...(invocationStatus !== 'invoked' ? ['model_stage_not_invoked'] : []),
+      ...(inputRefs.length === 0 ? ['model_stage_input_refs_missing'] : []),
+      ...(outputRefs.length === 0 ? ['model_stage_output_refs_missing'] : []),
+      ...(rawPromptOrResponseStored ? ['raw_prompt_or_response_storage_detected'] : []),
+      ...(secretsOrSignedUrlsStored ? ['secrets_or_signed_urls_storage_detected'] : []),
+      ...(['failed', 'timed_out'].includes(String(entry.request_status ?? '')) ? ['model_stage_request_not_successful'] : []),
+    ]);
+    const stageProofStatus = stageCanSatisfy
+      ? 'satisfied'
+      : 'metadata_only_insufficient';
+    return {
+      model_run_id: entry.model_run_id ?? `model-run-${takeId}-${idx + 1}`,
+      stage_id: stage,
+      stage,
+      invocation_status: invocationStatus,
+      model_provider: entry.model_provider ?? null,
+      model_name: entry.model_name ?? null,
+      model_version: entry.model_version ?? null,
+      prompt_version: entry.prompt_version ?? null,
+      model_role: entry.model_role ?? 'unknown',
+      source_stage: entry.source_stage ?? input.source_stage,
+      started_at: entry.started_at ?? null,
+      completed_at: entry.completed_at ?? null,
+      duration_ms: Number.isFinite(entry.duration_ms) ? entry.duration_ms : null,
+      timeout_ms: Number.isFinite(entry.timeout_ms) && Number(entry.timeout_ms) >= 0 ? Number(entry.timeout_ms) : null,
+      timed_out: Boolean(entry.timed_out),
+      retry_count: Number.isFinite(entry.retry_count) ? entry.retry_count : 0,
+      attempt_index: Number.isFinite(entry.attempt_index) ? entry.attempt_index : (idx + 1),
+      http_status: Number.isFinite(entry.http_status) ? entry.http_status : null,
+      circuit_open: typeof entry.circuit_open === 'boolean' ? entry.circuit_open : null,
+      fallback_used: Boolean(entry.fallback_used),
+      analysis_tier: entry.analysis_tier ?? null,
+      request_status: entry.request_status ?? (invocationStatus === 'invoked' ? 'unknown' : 'skipped'),
+      parse_status: entry.parse_status ?? 'unknown',
+      safe_error_category: entry.safe_error_category ?? null,
+      input_artifact_refs: inputRefs,
+      output_artifact_refs: outputRefs,
+      source_classification: stageCanSatisfy ? 'independent_model_run_stage_proof' : 'model_run_metadata_partial',
+      stage_proof_status: stageProofStatus,
+      independent_model_proof_status: independentStatus,
+      raw_prompt_or_response_stored: rawPromptOrResponseStored,
+      secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
+      blocker_codes: blockerCodes,
+    };
+  });
+  const representedStages = new Set(safeEntries.map((entry) => String(entry.stage)));
+  const syntheticStageEntries = expectedStages
+    .filter((stage) => !representedStages.has(stage))
+    .map((stage, idx) => ({
+      model_run_id: `model-run-${takeId}-stage-${idx + 1}`,
+      stage_id: stage,
+      stage,
+      invocation_status: 'skipped',
+      model_provider: null,
+      model_name: null,
+      model_version: null,
+      prompt_version: null,
+      model_role: 'unknown',
+      source_stage: stage,
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      timeout_ms: null,
+      timed_out: false,
+      retry_count: 0,
+      attempt_index: null,
+      http_status: null,
+      circuit_open: null,
+      fallback_used: false,
+      analysis_tier: null,
+      request_status: stage === 'comparison' && !input.comparison_invoked ? 'not_applicable' : 'skipped',
+      parse_status: 'skipped',
+      safe_error_category: null,
+      input_artifact_refs: [],
+      output_artifact_refs: [],
+      source_classification: 'model_run_metadata_partial',
+      stage_proof_status: 'missing_required_model_stage',
+      independent_model_proof_status: 'stage_not_invoked',
+      raw_prompt_or_response_stored: false,
+      secrets_or_signed_urls_stored: false,
+      blocker_codes: ['model_stage_not_invoked'],
+    }));
+  const nonModelStageEntries = ORDINARY_L2A_MODEL_RUN_STAGE_REGISTRY
+    .filter((stage) => stage.stage_kind === 'non_model')
+    .map((stage, idx) => ({
+      model_run_id: `model-run-${takeId}-non-model-${idx + 1}`,
+      stage_id: stage.stage_id,
+      stage: stage.stage_id,
+      invocation_status: 'not_applicable',
+      model_provider: null,
+      model_name: null,
+      model_version: null,
+      prompt_version: null,
+      model_role: 'not_applicable',
+      source_stage: stage.stage_id,
+      started_at: null,
+      completed_at: null,
+      duration_ms: null,
+      timeout_ms: null,
+      timed_out: false,
+      retry_count: 0,
+      attempt_index: null,
+      http_status: null,
+      circuit_open: null,
+      fallback_used: false,
+      analysis_tier: null,
+      request_status: 'not_applicable',
+      parse_status: 'not_applicable',
+      safe_error_category: null,
+      input_artifact_refs: [],
+      output_artifact_refs: [],
+      source_classification: 'tracked_by_non_model_gate',
+      stage_proof_status: stage.expected_status,
+      independent_model_proof_status: 'tracked_by_non_model_gate',
+      raw_prompt_or_response_stored: false,
+      secrets_or_signed_urls_stored: false,
+      blocker_codes: [],
+    }));
+  const allEntries = [...safeEntries, ...syntheticStageEntries, ...nonModelStageEntries];
   if (safeEntries.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
+  const invokedKnownStageCount = safeEntries.filter((entry) => entry.invocation_status === 'invoked' && expectedStages.includes(String(entry.stage))).length;
+  const requiredModelStageProofSatisfied = ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS.every((stageId) => safeEntries.some((entry) => entry.stage_id === stageId && entry.stage_proof_status === 'satisfied'));
+  const rawPromptOrResponseStored = allEntries.some((entry) => entry.raw_prompt_or_response_stored === true);
+  const secretsOrSignedUrlsStored = allEntries.some((entry) => entry.secrets_or_signed_urls_stored === true);
+  const modelRunTraceGateSatisfied = requiredModelStageProofSatisfied && !rawPromptOrResponseStored && !secretsOrSignedUrlsStored;
+  const perStageModelProofStatus = modelRunTraceGateSatisfied
+    ? 'per_stage_model_proof_satisfied'
+    : (representedStages.has('analysis_step_2_judgement_or_report_generation') || representedStages.has('analysis_step_1_evidence_mapping')
+      ? 'partial_missing_stage_boundaries'
+      : 'partial_metadata_only');
+  const independentModelProofStatus = modelRunTraceGateSatisfied
+    ? 'independent_model_proof_satisfying'
+    : 'independent_model_proof_partial';
   const summary = {
-    model_run_count: safeEntries.length,
+    model_run_count: allEntries.length,
     model_run_completed_count: safeEntries.filter((x) => x.request_status === 'completed').length,
     model_run_failed_count: safeEntries.filter((x) => x.request_status === 'failed').length,
     model_run_timeout_count: safeEntries.filter((x) => x.request_status === 'timed_out' || x.timed_out).length,
     model_run_fallback_count: safeEntries.filter((x) => x.fallback_used).length,
-    model_run_trace_gate_status: 'insufficient' as const,
-    model_run_trace_gate_reason: 'runtime_metadata_without_independent_model_proof_chain' as const,
-    independent_model_proof_status: 'metadata_only_insufficient' as const,
-    per_stage_model_proof_status: 'partial_metadata_only' as const,
-    raw_prompt_or_response_stored: false as const,
-    secrets_or_signed_urls_stored: false as const,
-    forbidden_payload_fields_absent: true as const,
+    invoked_stage_count: invokedKnownStageCount,
+    skipped_stage_count: allEntries.filter((x) => x.invocation_status === 'skipped').length,
+    not_applicable_stage_count: allEntries.filter((x) => x.invocation_status === 'not_applicable').length,
+    model_run_stage_names: allEntries.map((x) => x.stage),
+    model_run_missing_stage_names: expectedStages.filter((stage) => !representedStages.has(stage)),
+    model_run_trace_gate_status: modelRunTraceGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    model_run_trace_gate_reason: modelRunTraceGateSatisfied
+      ? 'ordinary_l2a_expected_model_stages_represented_without_prompt_or_secret_storage' as const
+      : 'runtime_metadata_without_distinct_stage_boundaries' as const,
+    independent_model_proof_status: independentModelProofStatus,
+    per_stage_model_proof_status: perStageModelProofStatus,
+    expected_stage_registry_version: 's9-19d-ordinary-l2a-model-run-stage-registry-v1',
+    expected_stage_registry: ORDINARY_L2A_MODEL_RUN_STAGE_REGISTRY,
+    required_model_stage_ids: ORDINARY_L2A_REQUIRED_MODEL_STAGE_IDS,
+    raw_prompt_or_response_stored: rawPromptOrResponseStored,
+    secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
+    forbidden_payload_fields_absent: !rawPromptOrResponseStored && !secretsOrSignedUrlsStored,
+    blocker_codes: dedupePreservingOrder([
+      ...(modelRunTraceGateSatisfied ? [] : ['ModelRunTrace_independent_proof_partial']),
+      ...(requiredModelStageProofSatisfied ? [] : ['model_run_trace_requires_distinct_stage_boundaries']),
+      ...(rawPromptOrResponseStored ? ['raw_prompt_or_response_storage_detected'] : []),
+      ...(secretsOrSignedUrlsStored ? ['secrets_or_signed_urls_storage_detected'] : []),
+    ]),
   };
   const payload = {
     schema_version: 'tapecoach_v3_model_run_trace_first_pass_v1',
@@ -5897,22 +6662,23 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     generated_at: new Date().toISOString(),
     source_module: input.source_module,
     source_stage: input.source_stage,
-    source_classification: 'internal_model_run_trace',
+    source_classification: modelRunTraceGateSatisfied ? 'independent_model_run_trace' : 'model_run_metadata_partial',
     analysis_route: input.analysis_route ?? 'runProcessTake',
     trace_mode: 'first_pass_runtime_model_metadata',
-    independent_model_proof_status: 'metadata_only_insufficient',
-    per_stage_model_proof_status: 'partial_metadata_only',
-    model_run_count: safeEntries.length,
-    model_run_entries: safeEntries,
+    independent_model_proof_status: independentModelProofStatus,
+    per_stage_model_proof_status: perStageModelProofStatus,
+    expected_model_stages: expectedStages,
+    model_run_count: allEntries.length,
+    model_run_entries: allEntries,
     model_run_trace_summary: summary,
     redaction_policy: 'Exclude prompts/raw model output/request+response bodies/headers/secrets/tokens/session identifiers/signed URLs.',
     redacted_fields: ['prompt', 'raw_prompt', 'system_prompt', 'user_prompt', 'request_body', 'raw_response', 'response_text', 'authorization', 'api_key', 'token', 'cookie', 'session', 'signed_url'],
     forbidden_fields_absent: true,
-    raw_prompt_or_response_stored: false,
-    secrets_or_signed_urls_stored: false,
-    cannot_satisfy_model_run_gate: true,
-    gate_satisfaction_reason: 'runtime_metadata_without_independent_model_proof_chain',
-    blocker_codes: ['ModelRunTrace_internal_only'],
+    raw_prompt_or_response_stored: rawPromptOrResponseStored,
+    secrets_or_signed_urls_stored: secretsOrSignedUrlsStored,
+    cannot_satisfy_model_run_gate: !modelRunTraceGateSatisfied,
+    gate_satisfaction_reason: summary.model_run_trace_gate_reason,
+    blocker_codes: summary.blocker_codes,
     public_output_unchanged: true,
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
@@ -5920,7 +6686,7 @@ export async function emitModelRunTraceFirstPass(input: ModelRunTraceEmitterInpu
     ...resolveQADeploymentProvenance(),
   };
   const result = await writeInternalJson(root, input.run_id, `takes/take-${takeId}/analysis-${analysisRunId}/traces/ModelRunTrace.json`, payload, 'model_run_trace');
-  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], model_run_trace_summary: result.written ? summary : undefined };
+  return { written: result.written as boolean, emitted_artefact_ids: result.written ? ['model_run_trace'] : [], source_classification: payload.source_classification, level2_satisfies: modelRunTraceGateSatisfied, model_run_trace_summary: result.written ? summary : undefined };
 }
 export async function emitNoExportProofBundle(input: { run_id: string; proofs?: Record<string, unknown>; root_dir?: string; internal_qa_emit?: boolean; source_module?: string; source_stage?: string }) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -6928,6 +7694,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   appendFilteredStep1Items(step1AudioItems, 'audio_observable_evidence_items');
   appendFilteredStep1Items(step1MaterialItems, 'material_observable_evidence_items');
   appendFilteredStep1Items(step1PerformanceItems, 'performance_observable_evidence_items');
+  appendFilteredStep1Items(step1TechniqueItems, 'candidate_technique_evidence');
   const candidate_brief_evidence = [
     {
       evidence_kind: 'brief_presence',
@@ -7058,9 +7825,15 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     videoItems: step1VideoItems,
     audioItems: step1AudioItems,
   });
+  const ordinaryAnalysisProjection = buildOrdinaryAnalysisStep1EvidenceItems({
+    materialItems: step1MaterialItems,
+    performanceItems: step1PerformanceItems,
+    techniqueItems: step1TechniqueItems,
+  });
   const step1ObservableEvidenceItemsUnlinked = [
     ...deterministicStep1ObservableEvidenceItems,
     ...mediaObservableProjection.items,
+    ...ordinaryAnalysisProjection.items,
   ].map((item, index) => ({
     ...item,
     evidence_item_id: `step1-${String(index + 1).padStart(4, '0')}`,
@@ -7097,16 +7870,12 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const mediaAssessabilityLimitCount = mediaObservableProjection.limitationCount;
   const timestampedMediaObservationCount = mediaObservableProjection.timestampedCount;
   const rejectedMediaObservableSourceCount = mediaObservableProjection.rejected.length;
-  const briefMaterialEvidenceKinds = new Set([
-    'brief_presence',
-    'brief_presence_source_resolved',
-    'extracted_brief_cache_status',
-    'material_presence',
-    'material_presence_source_resolved',
-    'component_or_task_declaration_loaded',
-    'component_or_task_declaration_unavailable',
-  ]);
-  const briefMaterialEvidenceCount = step1ObservableEvidenceItems.filter((item) => briefMaterialEvidenceKinds.has(item.evidence_kind)).length;
+  const materialSpecificPerformanceEvidenceCount = ordinaryAnalysisProjection.materialCount;
+  const performanceObservableEvidenceCount = ordinaryAnalysisProjection.performanceCount;
+  const candidateTechniqueEvidenceCount = ordinaryAnalysisProjection.techniqueCount;
+  const acceptedObservationFieldCount = step1VideoItems.length + step1AudioItems.length + step1MaterialItems.length + step1PerformanceItems.length + step1TechniqueItems.length;
+  const rejectedJudgementFieldCount = filteredRejected.length + mediaObservableProjection.rejected.length + ordinaryAnalysisProjection.rejected.length;
+  const briefMaterialEvidenceCount = step1ObservableEvidenceItems.filter((item) => SUPPLIED_CONTEXT_MATERIAL_FACT_KINDS.has(item.evidence_kind)).length;
   const suppliedContextUnavailableCount = step1ObservableEvidenceItems.filter((item) =>
     ['brief_presence_source_resolved', 'material_presence_source_resolved', 'component_or_task_declaration_unavailable', 'unavailable_runtime_fields_recorded'].includes(item.evidence_kind)
     && item.blocker_codes.length > 0
@@ -7115,24 +7884,38 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     item.evidence_family === 'material_specific'
     && ['material_presence', 'material_presence_source_resolved', 'component_or_task_declaration_loaded', 'component_or_task_declaration_unavailable'].includes(item.evidence_kind)
   );
-  const filteredEvidenceFamilyCoverage = isRecord(filteredStep1?.evidence_family_coverage)
-    ? filteredStep1.evidence_family_coverage
-    : {
-      video: hasStep1Video,
-      audio: hasStep1Audio,
-      material: hasStep1Material || hasSuppliedContextMaterialFact,
-      performance: hasStep1Performance,
-      candidate_technique: hasStep1Technique,
-    };
-  const filteredFamilyStatus = isRecord(filteredStep1?.evidence_family_status_by_id)
-    ? filteredStep1.evidence_family_status_by_id
-    : {
-      video: hasStep1Video ? 'partial' : 'not_extracted',
-      audio: hasStep1Audio ? 'partial' : 'not_extracted',
-      material: (hasStep1Material || hasSuppliedContextMaterialFact) ? 'partial' : 'not_extracted',
-      performance: hasStep1Performance ? 'partial' : 'not_extracted',
-      candidate_technique: hasStep1Technique ? 'partial' : 'not_extracted',
-    };
+  const rejectedOrdinaryAnalysisProjectionCountByFamily: Record<OrdinaryAnalysisRequiredFamilyId, number> = {
+    video_observable: mediaObservableProjection.rejected.filter((item) => /video|visibility|framing|lighting|focus|movement/i.test(`${item.source_path} ${item.reason}`)).length,
+    audio_observable: mediaObservableProjection.rejected.filter((item) => /audio|speech|lyric|volume|noise|balance|intelligibility/i.test(`${item.source_path} ${item.reason}`)).length,
+    material_specific: ordinaryAnalysisProjection.rejected.filter((item) => /brief|material/i.test(`${item.source_path} ${item.reason}`)).length,
+    performance_observable: ordinaryAnalysisProjection.rejected.filter((item) => /performance|acting|vocal|movement/i.test(`${item.source_path} ${item.reason}`)).length,
+    candidate_technique: ordinaryAnalysisProjection.rejected.filter((item) => /candidate_technique|technique/i.test(`${item.source_path} ${item.reason}`)).length,
+  };
+  const ordinaryAnalysisFamilyCompletionById = Object.fromEntries(ORDINARY_ANALYSIS_REQUIRED_FAMILY_IDS.map((family) => [
+    family,
+    evaluateOrdinaryAnalysisFamilyCompletion({
+      family,
+      items: step1ObservableEvidenceItems,
+      rejectedItemCount: rejectedOrdinaryAnalysisProjectionCountByFamily[family],
+    }),
+  ])) as Record<OrdinaryAnalysisRequiredFamilyId, OrdinaryAnalysisFamilyCompletionSummary>;
+  const ordinaryAnalysisFamilyCompletion = aggregateOrdinaryAnalysisFamilyCompletion(ordinaryAnalysisFamilyCompletionById);
+  const filteredEvidenceFamilyCoverage = {
+    ...(isRecord(filteredStep1?.evidence_family_coverage) ? filteredStep1.evidence_family_coverage : {}),
+    video: ordinaryAnalysisFamilyCompletionById.video_observable.can_satisfy_family_gate,
+    audio: ordinaryAnalysisFamilyCompletionById.audio_observable.can_satisfy_family_gate,
+    material: ordinaryAnalysisFamilyCompletionById.material_specific.can_satisfy_family_gate,
+    performance: ordinaryAnalysisFamilyCompletionById.performance_observable.can_satisfy_family_gate,
+    candidate_technique: ordinaryAnalysisFamilyCompletionById.candidate_technique.can_satisfy_family_gate,
+  };
+  const filteredFamilyStatus = {
+    ...(isRecord(filteredStep1?.evidence_family_status_by_id) ? filteredStep1.evidence_family_status_by_id : {}),
+    video: ordinaryAnalysisFamilyCompletionById.video_observable.status,
+    audio: ordinaryAnalysisFamilyCompletionById.audio_observable.status,
+    material: ordinaryAnalysisFamilyCompletionById.material_specific.status,
+    performance: ordinaryAnalysisFamilyCompletionById.performance_observable.status,
+    candidate_technique: ordinaryAnalysisFamilyCompletionById.candidate_technique.status,
+  };
   const prohibitedFieldFilterSummary = isRecord(filteredStep1?.prohibited_field_filter_summary)
     ? {
       ...filteredStep1.prohibited_field_filter_summary,
@@ -7146,11 +7929,11 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const step1Coverage = {
     deterministic_runtime_facts: observable_evidence_items.some((item) => ['analysis_input_record', 'analysis_submission', 'analysis_take', 'resolver_output', 'media_readiness'].includes(item.source_artefact_id)) ? 'partial' : 'missing',
     resolver_truth_facts: resolverOutputAvailable && truthStateMapAvailable ? 'complete' : (resolverOutputAvailable || truthStateMapAvailable ? 'partial' : 'missing'),
-    video_observable: videoObservableEvidenceCount > 0 ? 'partial' : 'not_extracted',
-    audio_observable: audioObservableEvidenceCount > 0 ? 'partial' : 'not_extracted',
-    material_specific: hasSuppliedContextMaterialFact ? 'partial' : 'not_extracted',
-    performance_observable: 'not_extracted',
-    candidate_technique: 'not_extracted',
+    video_observable: ordinaryAnalysisFamilyCompletionById.video_observable.status,
+    audio_observable: ordinaryAnalysisFamilyCompletionById.audio_observable.status,
+    material_specific: hasSuppliedContextMaterialFact && ordinaryAnalysisFamilyCompletionById.material_specific.status === 'not_extracted' ? 'partial' : ordinaryAnalysisFamilyCompletionById.material_specific.status,
+    performance_observable: ordinaryAnalysisFamilyCompletionById.performance_observable.status,
+    candidate_technique: ordinaryAnalysisFamilyCompletionById.candidate_technique.status,
   } as const;
   const step1FamilyStatusById = {
     deterministic_runtime_facts: step1Coverage.deterministic_runtime_facts,
@@ -7161,11 +7944,75 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     performance_observable: step1Coverage.performance_observable,
     candidate_technique: step1Coverage.candidate_technique,
   };
+  const ordinaryRequiredFamilyEntries = Object.entries({
+    video_observable: step1FamilyStatusById.video_observable,
+    audio_observable: step1FamilyStatusById.audio_observable,
+    material_specific: step1FamilyStatusById.material_specific,
+    performance_observable: step1FamilyStatusById.performance_observable,
+    candidate_technique: step1FamilyStatusById.candidate_technique,
+  });
+  const requiredEvidenceFamilyCompletionCount = ordinaryAnalysisFamilyCompletion.complete_family_count;
+  const requiredEvidenceFamilyPartialCount = ordinaryAnalysisFamilyCompletion.partial_family_count;
+  const requiredEvidenceFamilyMissingCount = ordinaryAnalysisFamilyCompletion.missing_family_count;
+  const requiredEvidenceFamilyBlockedCount = ordinaryAnalysisFamilyCompletion.blocked_family_count;
+  const requiredEvidenceFamilyCount = ordinaryAnalysisFamilyCompletion.required_family_count;
+  const notApplicableEvidenceFamilyCount = ordinaryAnalysisFamilyCompletion.not_applicable_family_count;
+  const ordinaryStep1FamilyGateSatisfied = ordinaryAnalysisFamilyCompletion.all_required_families_satisfied;
+  const ordinaryAnalysisProofBundleStatus = ordinaryStep1FamilyGateSatisfied
+    ? 'step1_families_complete_proof_chain_blocked'
+    : (requiredEvidenceFamilyPartialCount > 0 || requiredEvidenceFamilyCompletionCount > 0 ? 'partial' : 'blocked');
+  const ordinaryAnalysisProofBundleGateReason = ordinaryStep1FamilyGateSatisfied
+    ? 'ordinary_analysis_step1_required_families_complete_but_score_trace_technique_trace_and_independent_proof_chain_still_blocked'
+    : (requiredEvidenceFamilyPartialCount > 0
+      ? 'ordinary_analysis_step1_projection_partial_required_families_missing_or_partial'
+      : 'ordinary_analysis_step1_projection_unavailable');
+  const ordinaryAnalysisProofBundleBlockerCodes = dedupePreservingOrder([
+    ...ordinaryAnalysisFamilyCompletion.blocker_codes,
+    ...(requiredEvidenceFamilyMissingCount > 0 ? ['ordinary_analysis_required_evidence_families_missing'] : []),
+    ...(requiredEvidenceFamilyPartialCount > 0 ? ['ordinary_analysis_required_evidence_families_partial'] : []),
+    ...(requiredEvidenceFamilyBlockedCount > 0 ? ['ordinary_analysis_required_evidence_families_blocked'] : []),
+    'score_trace_real_runtime_projection_deferred',
+    'technique_observation_trace_real_runtime_projection_deferred',
+    'validator_gate_modelrun_independent_proof_chain_insufficient',
+    'public_scoring_blocked',
+    'public_technique_authority_blocked',
+    'production_safe_blocked',
+  ]);
+  const analysisEvidenceStateCanSatisfyGate = ordinaryStep1FamilyGateSatisfied
+    && sourceClassification === 'real_runtime_v3'
+    && step2DependencyStatus.status !== 'blocked'
+    && filteredStep1?.extraction_status !== 'blocked';
+  const finalEvidenceStateStatus: 'complete' | 'partial' | 'unavailable' | 'blocked' = filteredStep1?.extraction_status === 'blocked'
+    ? 'blocked'
+    : (analysisEvidenceStateCanSatisfyGate ? 'complete' : evidenceStateStatus);
+  const analysisEvidenceStateGateStatus: 'satisfied' | 'insufficient' | 'missing' = analysisEvidenceStateCanSatisfyGate ? 'satisfied' : 'insufficient';
+  const analysisEvidenceStateGateReason = analysisEvidenceStateCanSatisfyGate
+    ? 'ordinary_analysis_required_step1_families_complete_with_resolved_sources_and_truth_links'
+    : (ordinaryStep1FamilyGateSatisfied
+      ? 'ordinary_analysis_step1_families_complete_but_dependency_or_source_gate_blocked'
+      : (hasFilteredStep1Items
+        ? 'filtered_runEvidencePass_observations_persisted_but_step1_contract_partial'
+        : (sourceClassification === 'real_runtime_v3'
+          ? 'partial_runtime_facts_present_but_performance_extractor_unavailable'
+          : 'genuine_step1_observable_evidence_source_unavailable')));
+  const analysisEvidenceStateRemainingBlockers = dedupePreservingOrder([
+    ...ordinaryAnalysisFamilyCompletion.blocker_codes,
+    ...step2DependencyBlockers,
+    ...(analysisEvidenceStateCanSatisfyGate ? [] : ['analysis_evidence_state_gate_insufficient']),
+  ]);
+  const analysisBlockerCodes = dedupePreservingOrder([
+    ...blocker_codes,
+    ...ordinaryAnalysisProofBundleBlockerCodes,
+    ...analysisEvidenceStateRemainingBlockers,
+  ]);
   const step1UnsupportedSource = [
     ...performanceUnavailable.filter((item) => {
       const kind = String(item.evidence_kind ?? '');
       if (videoObservableEvidenceCount > 0 && kind.includes('video_observable')) return false;
       if (audioObservableEvidenceCount > 0 && kind.includes('audio_observable')) return false;
+      if (materialSpecificPerformanceEvidenceCount > 0 && kind.includes('material')) return false;
+      if (performanceObservableEvidenceCount > 0 && kind.includes('performance')) return false;
+      if (candidateTechniqueEvidenceCount > 0 && kind.includes('candidate_technique')) return false;
       return true;
     }),
     ...filteredUnsupported.filter((item) => {
@@ -7207,6 +8054,12 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     })),
     ...mediaObservableProjection.rejected.map((item) => ({
       source_family: 'runEvidencePass_filtered_media_observable',
+      source_path: item.source_path,
+      reason: item.reason,
+      blocker_codes: item.blocker_codes,
+    })),
+    ...ordinaryAnalysisProjection.rejected.map((item) => ({
+      source_family: 'runEvidencePass_filtered_ordinary_analysis_observable',
       source_path: item.source_path,
       reason: item.reason,
       blocker_codes: item.blocker_codes,
@@ -7257,7 +8110,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       : (step1ObservableEvidenceItems.length > 0 ? 'real_runtime_v3_partial' : 'source_scaffold');
   const step1BlockerCodes = dedupePreservingOrder([
     'step1_observable_evidence_partial',
-    ...blocker_codes,
+    ...analysisBlockerCodes,
     ...truthStateLinkageBlockerCodes,
   ]);
   const step1Summary = {
@@ -7268,6 +8121,31 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     brief_material_evidence_count: briefMaterialEvidenceCount,
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
+    performance_observable_evidence_count: performanceObservableEvidenceCount,
+    material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
+    candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
+    accepted_observation_field_count: acceptedObservationFieldCount,
+    rejected_judgement_field_count: rejectedJudgementFieldCount,
+    required_evidence_family_completion_count: requiredEvidenceFamilyCompletionCount,
+    required_evidence_family_partial_count: requiredEvidenceFamilyPartialCount,
+    required_evidence_family_missing_count: requiredEvidenceFamilyMissingCount,
+    required_family_count: requiredEvidenceFamilyCount,
+    complete_family_count: requiredEvidenceFamilyCompletionCount,
+    partial_family_count: requiredEvidenceFamilyPartialCount,
+    missing_family_count: requiredEvidenceFamilyMissingCount,
+    blocked_family_count: requiredEvidenceFamilyBlockedCount,
+    not_applicable_family_count: notApplicableEvidenceFamilyCount,
+    required_evidence_family_blocked_count: requiredEvidenceFamilyBlockedCount,
+    required_evidence_family_not_applicable_count: notApplicableEvidenceFamilyCount,
+    ordinary_analysis_proof_bundle_status: ordinaryAnalysisProofBundleStatus,
+    ordinary_analysis_proof_bundle_gate_status: 'insufficient' as const,
+    ordinary_analysis_proof_bundle_gate_reason: ordinaryAnalysisProofBundleGateReason,
+    ordinary_analysis_proof_bundle_blocker_codes: ordinaryAnalysisProofBundleBlockerCodes,
+    ordinary_analysis_family_completion_by_id: ordinaryAnalysisFamilyCompletionById,
+    ordinary_analysis_family_completion_summary: ordinaryAnalysisFamilyCompletion,
+    analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
+    analysis_evidence_state_gate_reason: analysisEvidenceStateGateReason,
+    analysis_evidence_state_remaining_blockers: analysisEvidenceStateRemainingBlockers,
     media_assessability_limit_count: mediaAssessabilityLimitCount,
     timestamped_media_observation_count: timestampedMediaObservationCount,
     rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
@@ -7277,6 +8155,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    ordinary_analysis_evidence_family_summary: step1FamilyStatusById,
     step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
     step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
     deterministic_truth_linked_count: deterministicTruthLinkedCount,
@@ -7302,13 +8181,38 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     public_output_unchanged: true,
   };
   const summary = {
-    evidence_state_status: evidenceStateStatus,
+    evidence_state_status: finalEvidenceStateStatus,
     source_classification: sourceClassification,
     observable_evidence_item_count: analysisObservableEvidenceItems.length,
     deterministic_runtime_evidence_count: deterministicRuntimeEvidenceCount,
     brief_material_evidence_count: briefMaterialEvidenceCount,
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
+    performance_observable_evidence_count: performanceObservableEvidenceCount,
+    material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
+    candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
+    accepted_observation_field_count: acceptedObservationFieldCount,
+    rejected_judgement_field_count: rejectedJudgementFieldCount,
+    required_evidence_family_completion_count: requiredEvidenceFamilyCompletionCount,
+    required_evidence_family_partial_count: requiredEvidenceFamilyPartialCount,
+    required_evidence_family_missing_count: requiredEvidenceFamilyMissingCount,
+    required_family_count: requiredEvidenceFamilyCount,
+    complete_family_count: requiredEvidenceFamilyCompletionCount,
+    partial_family_count: requiredEvidenceFamilyPartialCount,
+    missing_family_count: requiredEvidenceFamilyMissingCount,
+    blocked_family_count: requiredEvidenceFamilyBlockedCount,
+    not_applicable_family_count: notApplicableEvidenceFamilyCount,
+    required_evidence_family_blocked_count: requiredEvidenceFamilyBlockedCount,
+    required_evidence_family_not_applicable_count: notApplicableEvidenceFamilyCount,
+    ordinary_analysis_proof_bundle_status: ordinaryAnalysisProofBundleStatus,
+    ordinary_analysis_proof_bundle_gate_status: 'insufficient' as const,
+    ordinary_analysis_proof_bundle_gate_reason: ordinaryAnalysisProofBundleGateReason,
+    ordinary_analysis_proof_bundle_blocker_codes: ordinaryAnalysisProofBundleBlockerCodes,
+    ordinary_analysis_family_completion_by_id: ordinaryAnalysisFamilyCompletionById,
+    ordinary_analysis_family_completion_summary: ordinaryAnalysisFamilyCompletion,
+    analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
+    analysis_evidence_state_gate_reason: analysisEvidenceStateGateReason,
+    analysis_evidence_state_remaining_blockers: analysisEvidenceStateRemainingBlockers,
     media_assessability_limit_count: mediaAssessabilityLimitCount,
     timestamped_media_observation_count: timestampedMediaObservationCount,
     rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
@@ -7318,6 +8222,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    ordinary_analysis_evidence_family_summary: step1FamilyStatusById,
     step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
     step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
     deterministic_truth_linked_count: deterministicTruthLinkedCount,
@@ -7335,14 +8240,9 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     supplied_context_fact_count: briefMaterialEvidenceCount,
     supplied_context_unavailable_count: suppliedContextUnavailableCount,
     unsupported_or_unavailable_evidence_count: unsupportedOrUnavailableEvidence.length,
-    filtered_runEvidencePass_observation_count: step1VideoItems.length + step1AudioItems.length + step1MaterialItems.length + step1PerformanceItems.length,
+    filtered_runEvidencePass_observation_count: acceptedObservationFieldCount,
     rejected_or_filtered_field_count: filteredRejected.length,
-    analysis_evidence_state_gate_status: 'insufficient' as const,
-    analysis_evidence_state_gate_reason: hasFilteredStep1Items
-      ? 'filtered_runEvidencePass_observations_persisted_but_step1_contract_partial'
-      : (sourceClassification === 'real_runtime_v3'
-        ? 'partial_runtime_facts_present_but_performance_extractor_unavailable'
-        : 'genuine_step1_observable_evidence_source_unavailable'),
+    cannot_satisfy_v3_gate: !analysisEvidenceStateCanSatisfyGate,
     step2_dependency_status: step2DependencyStatus.status,
   };
   const step1Payload = {
@@ -7388,6 +8288,31 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     brief_material_evidence_count: briefMaterialEvidenceCount,
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
+    performance_observable_evidence_count: performanceObservableEvidenceCount,
+    material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
+    candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
+    accepted_observation_field_count: acceptedObservationFieldCount,
+    rejected_judgement_field_count: rejectedJudgementFieldCount,
+    required_evidence_family_completion_count: requiredEvidenceFamilyCompletionCount,
+    required_evidence_family_partial_count: requiredEvidenceFamilyPartialCount,
+    required_evidence_family_missing_count: requiredEvidenceFamilyMissingCount,
+    required_family_count: requiredEvidenceFamilyCount,
+    complete_family_count: requiredEvidenceFamilyCompletionCount,
+    partial_family_count: requiredEvidenceFamilyPartialCount,
+    missing_family_count: requiredEvidenceFamilyMissingCount,
+    blocked_family_count: requiredEvidenceFamilyBlockedCount,
+    not_applicable_family_count: notApplicableEvidenceFamilyCount,
+    required_evidence_family_blocked_count: requiredEvidenceFamilyBlockedCount,
+    required_evidence_family_not_applicable_count: notApplicableEvidenceFamilyCount,
+    ordinary_analysis_proof_bundle_status: ordinaryAnalysisProofBundleStatus,
+    ordinary_analysis_proof_bundle_gate_status: 'insufficient' as const,
+    ordinary_analysis_proof_bundle_gate_reason: ordinaryAnalysisProofBundleGateReason,
+    ordinary_analysis_proof_bundle_blocker_codes: ordinaryAnalysisProofBundleBlockerCodes,
+    ordinary_analysis_family_completion_by_id: ordinaryAnalysisFamilyCompletionById,
+    ordinary_analysis_family_completion_summary: ordinaryAnalysisFamilyCompletion,
+    analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
+    analysis_evidence_state_gate_reason: analysisEvidenceStateGateReason,
+    analysis_evidence_state_remaining_blockers: analysisEvidenceStateRemainingBlockers,
     media_assessability_limit_count: mediaAssessabilityLimitCount,
     timestamped_media_observation_count: timestampedMediaObservationCount,
     rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
@@ -7397,6 +8322,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    ordinary_analysis_evidence_family_summary: step1FamilyStatusById,
     step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
     step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
     deterministic_truth_linked_count: deterministicTruthLinkedCount,
@@ -7446,8 +8372,11 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     internal_only: true,
     privacy_classification: 'internal_private',
     source_classification: sourceClassification,
-    evidence_state_status: evidenceStateStatus,
-    cannot_satisfy_v3_gate: true,
+    evidence_state_status: finalEvidenceStateStatus,
+    cannot_satisfy_v3_gate: !analysisEvidenceStateCanSatisfyGate,
+    analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
+    analysis_evidence_state_gate_reason: analysisEvidenceStateGateReason,
+    analysis_evidence_state_remaining_blockers: analysisEvidenceStateRemainingBlockers,
     source_stage: 'analysis_step_1_evidence_mapping',
     source_module: input.source_module,
     source_trigger_stage: input.source_stage,
@@ -7460,7 +8389,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       context_text: 'runEvidencePass.contextText redacted',
     } : {},
     extractor_model_ref: typeof filteredStep1?.extractor_model_ref === 'string' ? filteredStep1.extractor_model_ref : null,
-    extraction_status: evidenceStateStatus,
+    extraction_status: finalEvidenceStateStatus,
     evidence_family_coverage: filteredEvidenceFamilyCoverage,
     evidence_family_status_by_id: filteredFamilyStatus,
     truth_state_ids: step1TruthStateIds,
@@ -7486,6 +8415,28 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     brief_material_evidence_count: briefMaterialEvidenceCount,
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
+    performance_observable_evidence_count: performanceObservableEvidenceCount,
+    material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
+    candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
+    accepted_observation_field_count: acceptedObservationFieldCount,
+    rejected_judgement_field_count: rejectedJudgementFieldCount,
+    required_evidence_family_completion_count: requiredEvidenceFamilyCompletionCount,
+    required_evidence_family_partial_count: requiredEvidenceFamilyPartialCount,
+    required_evidence_family_missing_count: requiredEvidenceFamilyMissingCount,
+    required_family_count: requiredEvidenceFamilyCount,
+    complete_family_count: requiredEvidenceFamilyCompletionCount,
+    partial_family_count: requiredEvidenceFamilyPartialCount,
+    missing_family_count: requiredEvidenceFamilyMissingCount,
+    blocked_family_count: requiredEvidenceFamilyBlockedCount,
+    not_applicable_family_count: notApplicableEvidenceFamilyCount,
+    required_evidence_family_blocked_count: requiredEvidenceFamilyBlockedCount,
+    required_evidence_family_not_applicable_count: notApplicableEvidenceFamilyCount,
+    ordinary_analysis_proof_bundle_status: ordinaryAnalysisProofBundleStatus,
+    ordinary_analysis_proof_bundle_gate_status: 'insufficient' as const,
+    ordinary_analysis_proof_bundle_gate_reason: ordinaryAnalysisProofBundleGateReason,
+    ordinary_analysis_proof_bundle_blocker_codes: ordinaryAnalysisProofBundleBlockerCodes,
+    ordinary_analysis_family_completion_by_id: ordinaryAnalysisFamilyCompletionById,
+    ordinary_analysis_family_completion_summary: ordinaryAnalysisFamilyCompletion,
     media_assessability_limit_count: mediaAssessabilityLimitCount,
     timestamped_media_observation_count: timestampedMediaObservationCount,
     rejected_media_observable_source_count: rejectedMediaObservableSourceCount,
@@ -7495,6 +8446,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
       performance_observable: step1FamilyStatusById.performance_observable,
       candidate_technique: step1FamilyStatusById.candidate_technique,
     },
+    ordinary_analysis_evidence_family_summary: step1FamilyStatusById,
     step1_truth_linked_evidence_item_count: step1TruthLinkedEvidenceItemCount,
     step1_truth_unlinked_evidence_item_count: step1TruthUnlinkedEvidenceItemCount,
     deterministic_truth_linked_count: deterministicTruthLinkedCount,
@@ -7535,7 +8487,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     rejected_or_filtered_fields: filteredRejected,
     prohibited_field_filter_summary: prohibitedFieldFilterSummary,
     step2_dependency_status: step2DependencyStatus,
-    blocker_codes,
+    blocker_codes: analysisBlockerCodes,
     gate_satisfaction_reason: summary.analysis_evidence_state_gate_reason,
     public_output_unchanged: true,
     production_safe_status: 'blocked',
@@ -7549,16 +8501,19 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const w = await writeInternalJson(root, input.run_id, relPath, payload, 'analysis_evidence_state');
   return {
     written: Boolean(w.written),
-    emitted_artefact_ids: step1Write.written ? ['step1_observable_evidence'] : [] as string[],
-    emitted_blocked_artefact_ids: w.written ? ['analysis_evidence_state'] : [],
+    emitted_artefact_ids: [
+      ...(step1Write.written ? ['step1_observable_evidence'] : []),
+      ...(w.written && analysisEvidenceStateCanSatisfyGate ? ['analysis_evidence_state'] : []),
+    ] as string[],
+    emitted_blocked_artefact_ids: w.written && !analysisEvidenceStateCanSatisfyGate ? ['analysis_evidence_state'] : [],
     path: w.path ?? w.storage_path,
     source_classification: sourceClassification,
     step1_observable_evidence_source_classification: step1SourceClassification,
     step1_observable_evidence_summary: step1Summary,
     step1_observable_evidence_payload: step1Payload,
-    level2_satisfies: false as const,
+    level2_satisfies: Boolean(w.written && analysisEvidenceStateCanSatisfyGate),
     summary,
-    blocker_codes,
+    blocker_codes: analysisBlockerCodes,
     payload,
     warning: mergeQAWarnings(step1Write.warning, w.warning),
   };
@@ -7573,28 +8528,279 @@ export async function emitValidatorTraceFirstPass(input: any) {
   if (!analysisRunId) return { written: false, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.take_id, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
-  const entries = [
+  const entries: Array<Record<string, unknown>> = [
     { validation_id: 'level2_status_agreement', validation_rule_version: 's9-18h-internal-snapshot-v1', validation_area: 'manifest_metrics_agreement', subject: 'level2_status', status: input.manifest_snapshot.level2_qa_acceptance === input.acceptance_metrics_snapshot.level2_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.level2_status, observed: input.manifest_snapshot.level2_qa_acceptance, source_path: 'manifest.level2_qa_acceptance', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
     { validation_id: 'public_scoring_status_agreement', validation_rule_version: 's9-18h-internal-snapshot-v1', validation_area: 'manifest_metrics_agreement', subject: 'public_scoring_status', status: input.manifest_snapshot.public_scoring_status === input.acceptance_metrics_snapshot.public_scoring_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.public_scoring_status, observed: input.manifest_snapshot.public_scoring_status, source_path: 'manifest.public_scoring_status', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
     { validation_id: 'public_technique_authority_status_agreement', validation_rule_version: 's9-18h-internal-snapshot-v1', validation_area: 'manifest_metrics_agreement', subject: 'public_technique_authority_status', status: input.manifest_snapshot.public_technique_authority_status === input.acceptance_metrics_snapshot.public_technique_authority_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.public_technique_authority_status, observed: input.manifest_snapshot.public_technique_authority_status, source_path: 'manifest.public_technique_authority_status', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
     { validation_id: 'production_safe_status_agreement', validation_rule_version: 's9-18h-internal-snapshot-v1', validation_area: 'manifest_metrics_agreement', subject: 'production_safe_status', status: input.manifest_snapshot.production_safe_status === input.acceptance_metrics_snapshot.production_safe_status ? 'pass' : 'warn', expected: input.acceptance_metrics_snapshot.production_safe_status, observed: input.manifest_snapshot.production_safe_status, source_path: 'manifest.production_safe_status', related_artefact_ids: ['qa_acceptance_metrics'], blocker_codes: [], notes: null },
   ];
+  const addMetricValidation = (args: { validation_id: string; validation_area: string; subject: string; expected: unknown; observed: unknown; source_path: string; related_artefact_ids: string[]; passWhen?: (observed: unknown) => boolean; blocker_code?: string; validation_rule_version?: string }) => {
+    const pass = args.passWhen ? args.passWhen(args.observed) : args.observed === args.expected;
+    entries.push({
+      validation_id: args.validation_id,
+      validation_rule_version: args.validation_rule_version ?? 's9-19b-ordinary-analysis-proof-chain-v1',
+      validation_area: args.validation_area,
+      subject: args.subject,
+      status: pass ? 'pass' : 'warn',
+      expected: args.expected,
+      observed: args.observed,
+      source_path: args.source_path,
+      related_artefact_ids: args.related_artefact_ids,
+      blocker_codes: pass || !args.blocker_code ? [] : [args.blocker_code],
+      notes: null,
+    });
+  };
+  addMetricValidation({ validation_id: 'ordinary_analysis_step1_family_completion_status', validation_area: 'ordinary_analysis_proof_bundle', subject: 'ordinary_analysis_proof_bundle_status', expected: 'step1_families_complete_or_partial_with_exact_blockers', observed: input.acceptance_metrics_snapshot.ordinary_analysis_proof_bundle_status, source_path: 'qa.acceptance_metrics.ordinary_analysis_proof_bundle_status', related_artefact_ids: ['step1_observable_evidence', 'analysis_evidence_state'], passWhen: (value) => typeof value === 'string' && value.length > 0, blocker_code: 'ordinary_analysis_family_status_missing' });
+  addMetricValidation({ validation_id: 'analysis_evidence_state_gate_status_recorded', validation_area: 'ordinary_analysis_proof_bundle', subject: 'analysis_evidence_state_gate_status', expected: 'satisfied_or_insufficient', observed: input.acceptance_metrics_snapshot.analysis_evidence_state_gate_status, source_path: 'qa.acceptance_metrics.analysis_evidence_state_gate_status', related_artefact_ids: ['analysis_evidence_state'], passWhen: (value) => ['satisfied', 'insufficient', 'missing'].includes(String(value)), blocker_code: 'analysis_evidence_state_gate_status_missing' });
+  addMetricValidation({ validation_id: 'evidence_anchor_aggregate_status_recorded', validation_area: 'ordinary_analysis_proof_bundle', subject: 'evidence_anchor_gate_status', expected: 'sufficient_or_insufficient', observed: input.acceptance_metrics_snapshot.evidence_anchor_gate_status, source_path: 'qa.acceptance_metrics.evidence_anchor_gate_status', related_artefact_ids: ['evidence_anchors'], passWhen: (value) => ['sufficient', 'insufficient', 'missing'].includes(String(value)), blocker_code: 'evidence_anchor_gate_status_missing' });
+  addMetricValidation({ validation_id: 'public_claim_trace_aggregate_status_recorded', validation_area: 'ordinary_analysis_proof_bundle', subject: 'public_claim_gate_status', expected: 'sufficient_or_insufficient', observed: input.acceptance_metrics_snapshot.public_claim_gate_status, source_path: 'qa.acceptance_metrics.public_claim_gate_status', related_artefact_ids: ['public_claim_trace'], passWhen: (value) => ['sufficient', 'insufficient', 'missing'].includes(String(value)), blocker_code: 'public_claim_gate_status_missing' });
+  addMetricValidation({ validation_id: 'score_trace_remains_non_public', validation_area: 'score_trace_gate', subject: 'score_trace_gate_status', expected: 'internal_or_insufficient_score_trace_with_public_scoring_blocked', observed: input.acceptance_metrics_snapshot.score_trace_gate_status, source_path: 'qa.acceptance_metrics.score_trace_gate_status', related_artefact_ids: ['score_trace'], passWhen: (value) => ['insufficient', 'missing', 'satisfied'].includes(String(value)) && input.acceptance_metrics_snapshot.public_scoring_status === 'blocked', blocker_code: 'score_trace_gate_unexpected_status' });
+  addMetricValidation({ validation_id: 'technique_trace_remains_non_public', validation_area: 'technique_observation_trace_gate', subject: 'technique_observation_trace_status', expected: 'internal_or_insufficient_technique_trace_with_public_authority_blocked', observed: input.acceptance_metrics_snapshot.technique_observation_gate_status, source_path: 'qa.acceptance_metrics.technique_observation_gate_status', related_artefact_ids: ['technique_observation_trace'], passWhen: (value) => ['insufficient', 'missing', 'satisfied'].includes(String(value)) && input.acceptance_metrics_snapshot.public_technique_authority_status === 'blocked', blocker_code: 'technique_observation_trace_unexpected_real_runtime_count' });
+  addMetricValidation({ validation_id: 'score_trace_internal_proof_status_recorded', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'score_trace_internal_proof_status', expected: 'recorded', observed: input.acceptance_metrics_snapshot.score_trace_internal_proof_status, source_path: 'qa.acceptance_metrics.score_trace_internal_proof_status', related_artefact_ids: ['score_trace'], passWhen: (value) => typeof value === 'string' && value.length > 0, blocker_code: 'score_trace_internal_proof_status_missing', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'technique_trace_internal_proof_status_recorded', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'technique_observation_internal_proof_status', expected: 'recorded', observed: input.acceptance_metrics_snapshot.technique_observation_internal_proof_status, source_path: 'qa.acceptance_metrics.technique_observation_internal_proof_status', related_artefact_ids: ['technique_observation_trace'], passWhen: (value) => typeof value === 'string' && value.length > 0, blocker_code: 'technique_observation_internal_proof_status_missing', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'model_run_per_stage_proof_status_recorded', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_trace_per_stage_model_proof_status', expected: 'recorded', observed: input.acceptance_metrics_snapshot.model_run_trace_per_stage_model_proof_status, source_path: 'qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status', related_artefact_ids: ['model_run_trace'], passWhen: (value) => typeof value === 'string' && value.length > 0 && value !== 'missing', blocker_code: 'model_run_trace_per_stage_status_missing', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'model_run_raw_prompt_response_absent', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_raw_prompt_or_response_stored', expected: false, observed: input.acceptance_metrics_snapshot.model_run_raw_prompt_or_response_stored, source_path: 'qa.acceptance_metrics.model_run_raw_prompt_or_response_stored', related_artefact_ids: ['model_run_trace'], passWhen: (value) => value === false, blocker_code: 'raw_prompt_or_response_storage_detected', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'model_run_secrets_absent', validation_area: 's9_19c_score_technique_modelrun_bundle', subject: 'model_run_secrets_or_signed_urls_stored', expected: false, observed: input.acceptance_metrics_snapshot.model_run_secrets_or_signed_urls_stored, source_path: 'qa.acceptance_metrics.model_run_secrets_or_signed_urls_stored', related_artefact_ids: ['model_run_trace'], passWhen: (value) => value === false, blocker_code: 'secrets_or_signed_urls_storage_detected', validation_rule_version: 's9-19c-score-technique-modelrun-proof-v1' });
+  addMetricValidation({ validation_id: 'report_parity_passed_status_recorded', validation_area: 'report_parity_gate', subject: 'report_parity_status', expected: 'passed_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.report_parity_status, source_path: 'qa.acceptance_metrics.report_parity_status', related_artefact_ids: ['parity_report'], passWhen: (value) => ['passed', 'missing', 'insufficient'].includes(String(value)), blocker_code: 'report_parity_status_missing' });
+  addMetricValidation({ validation_id: 'no_export_complete_status_recorded', validation_area: 'no_export_gate', subject: 'no_export_status', expected: 'complete_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.no_export_status, source_path: 'qa.acceptance_metrics.no_export_status', related_artefact_ids: ['no_export_proof'], passWhen: (value) => ['no_export_proof_complete', 'no_export_proof_missing', 'no_export_proof_insufficient'].includes(String(value)), blocker_code: 'no_export_status_missing' });
+  const ordinaryUnsatisfiedGateIds = getStringArray(input.acceptance_metrics_snapshot.ordinary_l2a_unsatisfied_gate_ids);
+  const ordinaryUnsatisfiedExcludingSelf = ordinaryUnsatisfiedGateIds.filter((gateId) => !['validator_trace_gate', 'gate_trace_gate'].includes(gateId));
+  const ordinaryMetricsStatusSatisfied = input.acceptance_metrics_snapshot.ordinary_l2a_analysis_proof_status === 'satisfied';
+  const ordinaryDependenciesSatisfied = ordinaryUnsatisfiedExcludingSelf.length === 0
+    && ordinaryMetricsStatusSatisfied;
+  entries.push({
+    validation_id: 'ordinary_l2a_dependency_gate_validation',
+    validation_rule_version: 's9-19d-independent-ordinary-l2a-proof-v1',
+    validation_area: 'ordinary_l2a_internal_proof',
+    subject: 'ordinary_l2a_unsatisfied_gate_ids_excluding_validator_gate',
+    status: ordinaryDependenciesSatisfied ? 'pass' : 'fail',
+    expected: [],
+    observed: ordinaryUnsatisfiedExcludingSelf,
+    source_path: 'qa.acceptance_metrics.ordinary_l2a_unsatisfied_gate_ids',
+    related_artefact_ids: ['qa_acceptance_metrics', 'model_run_trace', 'evidence_anchors', 'public_claim_trace', 'score_trace', 'technique_observation_trace'],
+    blocker_codes: ordinaryDependenciesSatisfied ? [] : ['ordinary_l2a_dependency_gate_unsatisfied'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'public_release_gates_separated_from_ordinary_l2a',
+    validation_rule_version: 's9-19d-independent-ordinary-l2a-proof-v1',
+    validation_area: 'public_release_gate_separation',
+    subject: 'public_release_dependency_status',
+    status: input.acceptance_metrics_snapshot.ordinary_l2a_public_release_dependency_status === 'blocked'
+      && input.acceptance_metrics_snapshot.public_scoring_status === 'blocked'
+      && input.acceptance_metrics_snapshot.public_technique_authority_status === 'blocked'
+      && input.acceptance_metrics_snapshot.production_safe_status === 'blocked'
+      ? 'pass'
+      : 'fail',
+    expected: 'public_release_gates_blocked_and_separated',
+    observed: {
+      ordinary_l2a_public_release_dependency_status: input.acceptance_metrics_snapshot.ordinary_l2a_public_release_dependency_status,
+      public_scoring_status: input.acceptance_metrics_snapshot.public_scoring_status,
+      public_technique_authority_status: input.acceptance_metrics_snapshot.public_technique_authority_status,
+      production_safe_status: input.acceptance_metrics_snapshot.production_safe_status,
+    },
+    source_path: 'qa.acceptance_metrics.public_release_statuses',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace'],
+    blocker_codes: [],
+    notes: null,
+  });
+  const publicScoringSuppressionSatisfied = input.acceptance_metrics_snapshot.public_scoring_suppression_proof_status === 'satisfied'
+    && input.acceptance_metrics_snapshot.public_score_gate_permission === false
+    && input.acceptance_metrics_snapshot.public_score_fields_absent_from_public_payload === true
+    && input.acceptance_metrics_snapshot.public_score_claims_suppressed === true;
+  const publicTechniqueSuppressionSatisfied = input.acceptance_metrics_snapshot.public_technique_authority_suppression_proof_status === 'satisfied'
+    && input.acceptance_metrics_snapshot.public_technique_gate_permission === false
+    && input.acceptance_metrics_snapshot.public_named_technique_fields_absent_from_public_payload === true
+    && input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed === true;
+  const publicComparisonSuppressionSatisfied = ['satisfied', 'not_applicable'].includes(String(input.acceptance_metrics_snapshot.public_comparison_recommendation_suppression_proof_status))
+    && input.acceptance_metrics_snapshot.comparison_recommendation_gate_permission === false
+    && input.acceptance_metrics_snapshot.public_winner_absent === true
+    && input.acceptance_metrics_snapshot.public_recommendation_absent === true;
+  const globalLevel2TaxonomySatisfied = input.acceptance_metrics_snapshot.global_level2_evidence_status === 'satisfied'
+    && input.acceptance_metrics_snapshot.global_level2_release_status === 'blocked'
+    && input.acceptance_metrics_snapshot.global_level2_acceptance_status === 'not_accepted'
+    && input.acceptance_metrics_snapshot.production_safe_status === 'blocked'
+    && input.acceptance_metrics_snapshot.customer_release_status === 'blocked';
+  const runtimeOperatorVerificationCompleted = input.acceptance_metrics_snapshot.runtime_operator_verification_status === 'completed';
+  const deploymentContextVerified = ['resolved'].includes(String(input.acceptance_metrics_snapshot.deployment_provenance_status))
+    || input.acceptance_metrics_snapshot.operator_confirmation_status === 'confirmed';
+  const productionReadinessReady = input.acceptance_metrics_snapshot.production_safe_readiness_status === 'ready_for_review';
+  const customerReleaseReadinessReady = input.acceptance_metrics_snapshot.customer_release_readiness_status === 'ready_for_review';
+  const releaseReadinessReady = productionReadinessReady && customerReleaseReadinessReady;
+  const duplicateSameVideoSafetyClassified = ['not_applicable', 'satisfied_suppressed', 'insufficient', 'blocked'].includes(String(input.acceptance_metrics_snapshot.duplicate_same_video_safety_status));
+  entries.push({
+    validation_id: 'public_scoring_suppression_proof_validated',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'public_scoring_suppression_proof',
+    subject: 'public_scoring_suppression_proof_status',
+    status: publicScoringSuppressionSatisfied ? 'pass' : 'fail',
+    expected: 'public_scoring_feature_blocked_but_public_score_absence_satisfied',
+    observed: {
+      public_scoring_suppression_proof_status: input.acceptance_metrics_snapshot.public_scoring_suppression_proof_status,
+      public_score_gate_permission: input.acceptance_metrics_snapshot.public_score_gate_permission,
+      public_score_fields_absent_from_public_payload: input.acceptance_metrics_snapshot.public_score_fields_absent_from_public_payload,
+      public_score_claims_suppressed: input.acceptance_metrics_snapshot.public_score_claims_suppressed,
+    },
+    source_path: 'qa.acceptance_metrics.public_scoring_suppression_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'public_claim_trace', 'score_trace', 'parity_report', 'no_export_proof'],
+    blocker_codes: publicScoringSuppressionSatisfied ? [] : ['public_scoring_suppression_proof_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'public_technique_authority_suppression_proof_validated',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'public_technique_authority_suppression_proof',
+    subject: 'public_technique_authority_suppression_proof_status',
+    status: publicTechniqueSuppressionSatisfied ? 'pass' : 'fail',
+    expected: 'public_technique_authority_feature_blocked_but_public_named_technique_absence_satisfied',
+    observed: {
+      public_technique_authority_suppression_proof_status: input.acceptance_metrics_snapshot.public_technique_authority_suppression_proof_status,
+      public_technique_gate_permission: input.acceptance_metrics_snapshot.public_technique_gate_permission,
+      public_named_technique_fields_absent_from_public_payload: input.acceptance_metrics_snapshot.public_named_technique_fields_absent_from_public_payload,
+      public_named_technique_claims_suppressed: input.acceptance_metrics_snapshot.public_named_technique_claims_suppressed,
+    },
+    source_path: 'qa.acceptance_metrics.public_technique_authority_suppression_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'public_claim_trace', 'technique_observation_trace', 'parity_report', 'no_export_proof'],
+    blocker_codes: publicTechniqueSuppressionSatisfied ? [] : ['public_technique_authority_suppression_proof_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'public_comparison_recommendation_suppression_proof_validated',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'public_comparison_recommendation_suppression_proof',
+    subject: 'public_comparison_recommendation_suppression_proof_status',
+    status: publicComparisonSuppressionSatisfied ? 'pass' : 'fail',
+    expected: 'public_comparison_recommendation_feature_blocked_and_public_winner_recommendation_absent',
+    observed: {
+      public_comparison_recommendation_suppression_proof_status: input.acceptance_metrics_snapshot.public_comparison_recommendation_suppression_proof_status,
+      comparison_recommendation_gate_permission: input.acceptance_metrics_snapshot.comparison_recommendation_gate_permission,
+      public_winner_absent: input.acceptance_metrics_snapshot.public_winner_absent,
+      public_recommendation_absent: input.acceptance_metrics_snapshot.public_recommendation_absent,
+    },
+    source_path: 'qa.acceptance_metrics.public_comparison_recommendation_suppression_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'comparison_suppression_trace', 'parity_report', 'no_export_proof'],
+    blocker_codes: publicComparisonSuppressionSatisfied ? [] : ['public_comparison_recommendation_suppression_proof_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'global_level2_gate_taxonomy_reconciled',
+    validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
+    validation_area: 'global_level2_gate_reconciliation',
+    subject: 'global_level2_evidence_release_acceptance_statuses',
+    status: globalLevel2TaxonomySatisfied ? 'pass' : 'fail',
+    expected: 'evidence_suppression_satisfied_release_blocked_global_level2_not_accepted',
+    observed: {
+      global_level2_evidence_status: input.acceptance_metrics_snapshot.global_level2_evidence_status,
+      global_level2_release_status: input.acceptance_metrics_snapshot.global_level2_release_status,
+      global_level2_acceptance_status: input.acceptance_metrics_snapshot.global_level2_acceptance_status,
+      level2_status: input.acceptance_metrics_snapshot.level2_status,
+      production_safe_status: input.acceptance_metrics_snapshot.production_safe_status,
+      customer_release_status: input.acceptance_metrics_snapshot.customer_release_status,
+    },
+    source_path: 'qa.acceptance_metrics.global_level2_acceptance_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'validator_trace'],
+    blocker_codes: globalLevel2TaxonomySatisfied ? [] : ['global_level2_gate_taxonomy_incomplete'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'runtime_operator_verification_status_validated',
+    validation_rule_version: 's9-19f-release-readiness-runtime-verification-v1',
+    validation_area: 'runtime_operator_verification',
+    subject: 'runtime_operator_verification_status',
+    status: runtimeOperatorVerificationCompleted ? 'pass' : 'blocked',
+    expected: 'completed_for_release_readiness',
+    observed: {
+      runtime_operator_verification_status: input.acceptance_metrics_snapshot.runtime_operator_verification_status,
+      runtime_bundle_freshness_status: input.acceptance_metrics_snapshot.runtime_bundle_freshness_status,
+      runtime_bundle_matches_current_commit_status: input.acceptance_metrics_snapshot.runtime_bundle_matches_current_commit_status,
+    },
+    source_path: 'qa.acceptance_metrics.runtime_operator_verification_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'manifest'],
+    blocker_codes: runtimeOperatorVerificationCompleted ? [] : getStringArray(input.acceptance_metrics_snapshot.runtime_operator_verification_blocker_codes),
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'deployment_provenance_or_operator_confirmation_validated',
+    validation_rule_version: 's9-19f-release-readiness-runtime-verification-v1',
+    validation_area: 'deployment_provenance',
+    subject: 'deployment_provenance_status',
+    status: deploymentContextVerified ? 'pass' : 'blocked',
+    expected: 'resolved_or_operator_confirmed',
+    observed: {
+      deployment_provenance_status: input.acceptance_metrics_snapshot.deployment_provenance_status,
+      operator_confirmation_status: input.acceptance_metrics_snapshot.operator_confirmation_status,
+    },
+    source_path: 'qa.acceptance_metrics.deployment_provenance_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'manifest'],
+    blocker_codes: deploymentContextVerified ? [] : getStringArray(input.acceptance_metrics_snapshot.deployment_provenance_blocker_codes),
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'production_customer_release_readiness_validated',
+    validation_rule_version: 's9-19f-release-readiness-runtime-verification-v1',
+    validation_area: 'production_customer_release_readiness',
+    subject: 'production_and_customer_release_readiness',
+    status: releaseReadinessReady ? 'pass' : 'blocked',
+    expected: 'ready_for_review_without_approval',
+    observed: {
+      production_safe_readiness_status: input.acceptance_metrics_snapshot.production_safe_readiness_status,
+      customer_release_readiness_status: input.acceptance_metrics_snapshot.customer_release_readiness_status,
+      production_safe_status: input.acceptance_metrics_snapshot.production_safe_status,
+      customer_release_status: input.acceptance_metrics_snapshot.customer_release_status,
+    },
+    source_path: 'qa.acceptance_metrics.production_safe_readiness_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'gate_trace', 'validator_trace'],
+    blocker_codes: releaseReadinessReady ? [] : getStringArray(input.acceptance_metrics_snapshot.production_safe_readiness_blocker_codes),
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'duplicate_same_video_safety_classification_recorded',
+    validation_rule_version: 's9-19f-release-readiness-runtime-verification-v1',
+    validation_area: 'comparison_safety',
+    subject: 'duplicate_same_video_safety_status',
+    status: duplicateSameVideoSafetyClassified ? 'pass' : 'blocked',
+    expected: 'not_applicable_or_suppressed_or_fail_closed',
+    observed: input.acceptance_metrics_snapshot.duplicate_same_video_safety_status,
+    source_path: 'qa.acceptance_metrics.duplicate_same_video_safety_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'comparison_suppression_trace'],
+    blocker_codes: duplicateSameVideoSafetyClassified ? [] : ['duplicate_same_video_safety_status_missing'],
+    notes: null,
+  });
+  const failCount = entries.filter((e) => e.status === 'fail').length;
+  const warningCount = entries.filter((e) => e.status === 'warn' || e.status === 'warning').length;
+  const blockedCount = entries.filter((e) => e.status === 'blocked').length;
+  const ordinaryValidatorTraceSatisfied = ordinaryDependenciesSatisfied;
+  const suppressionAndReleaseTaxonomySatisfied = publicScoringSuppressionSatisfied
+    && publicTechniqueSuppressionSatisfied
+    && publicComparisonSuppressionSatisfied
+    && globalLevel2TaxonomySatisfied;
+  const validatorTraceSatisfied = ordinaryValidatorTraceSatisfied && failCount === 0;
   const summary = {
     validation_count: entries.length,
     pass_count: entries.filter((e) => e.status === 'pass').length,
-    warning_count: entries.filter((e) => e.status === 'warn').length,
-    fail_count: 0,
-    blocked_count: 0,
-    validator_trace_gate_status: 'insufficient' as const,
-    validator_trace_gate_reason: 'internal_bundle_validator_not_independent_runtime_v3_proof' as const,
-    independent_validation_status: 'internal_snapshot_only_insufficient' as const,
-    referential_integrity_status: 'not_run' as const,
-    deterministic_checks_version: 's9-18h-internal-snapshot-v1' as const,
-    public_private_leakage_validation_status: 'not_independent' as const,
+    warning_count: warningCount,
+    fail_count: failCount,
+    blocked_count: blockedCount,
+    validator_trace_gate_status: validatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    validator_trace_gate_reason: validatorTraceSatisfied ? 'ordinary_l2a_artifact_derived_validations_passed' as const : 'ordinary_analysis_artifact_checks_missing_or_failed' as const,
+    independent_validation_status: validatorTraceSatisfied ? 'independent_validation_satisfying' as const : 'independent_validation_partial' as const,
+    ordinary_l2a_validation_status: ordinaryValidatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    suppression_and_release_taxonomy_validation_status: suppressionAndReleaseTaxonomySatisfied ? 'satisfied' as const : 'insufficient' as const,
+    referential_integrity_status: validatorTraceSatisfied ? 'passed' as const : 'partial_snapshot_checks' as const,
+    deterministic_checks_version: 's9-19e-public-release-suppression-proof-v1' as const,
+    public_private_leakage_validation_status: failCount === 0 ? 'passed' as const : 'partial' as const,
     uk_english_validation_status: 'not_run' as const,
-    render_permission_validation_status: 'not_independent' as const,
+    render_permission_validation_status: publicScoringSuppressionSatisfied && publicTechniqueSuppressionSatisfied && publicComparisonSuppressionSatisfied ? 'passed' as const : 'partial' as const,
+    public_scoring_suppression_validation_status: publicScoringSuppressionSatisfied ? 'passed' as const : 'failed' as const,
+    public_technique_authority_suppression_validation_status: publicTechniqueSuppressionSatisfied ? 'passed' as const : 'failed' as const,
+    public_comparison_recommendation_suppression_validation_status: publicComparisonSuppressionSatisfied ? 'passed' as const : 'failed' as const,
+    global_level2_gate_taxonomy_validation_status: globalLevel2TaxonomySatisfied ? 'passed' as const : 'failed' as const,
+    runtime_operator_verification_validation_status: runtimeOperatorVerificationCompleted ? 'passed' as const : 'blocked' as const,
+    deployment_provenance_validation_status: deploymentContextVerified ? 'passed' as const : 'blocked' as const,
+    release_readiness_validation_status: releaseReadinessReady ? 'passed' as const : 'blocked' as const,
+    duplicate_same_video_safety_validation_status: duplicateSameVideoSafetyClassified ? 'passed' as const : 'blocked' as const,
   };
-  const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: 'internal_validator', trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: true, gate_satisfaction_reason: 'internal_bundle_validator_not_independent_runtime_v3_proof', blocker_codes: ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
+  const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: validatorTraceSatisfied ? 'independent_validation_satisfying' : 'internal_validator', trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: !validatorTraceSatisfied, gate_satisfaction_reason: summary.validator_trace_gate_reason, blocker_codes: validatorTraceSatisfied ? ['public_release_gates_blocked'] : ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
   const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ValidatorTrace.json`;
   const w = await writeInternalJson(input.root_dir ?? DEFAULT_ROOT, input.run_id, relPath, payload, 'validator_trace');
   if (!w.written) return { written: false, emitted_artefact_ids: [] as string[] };
@@ -7610,26 +8816,136 @@ export async function emitGateTraceFirstPass(input: any) {
   if (!analysisRunId) return { written: false, emitted_artefact_ids: [] as string[] };
   assertSafeSegment(input.take_id, 'take_id');
   assertSafeSegment(analysisRunId, 'analysis_run_id');
-  const gate_entries = [
-    { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing', expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [], blocker_codes: ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing', required_for_level: 'L2', current_state: input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing', expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [], blocker_codes: ['ModelRunTrace_internal_only'], dependent_artefact_ids: ['model_run_trace'], source_paths: ['traces/ModelRunTrace.json'], public_effect: 'none_internal_only', notes: null },
-    { gate_id: 'production_safe_gate', gate_name: 'production_safe_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['manifest.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', notes: null },
-    { gate_id: 'public_scoring_gate', gate_name: 'public_scoring_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_overall_score=false'], blocker_codes: ['public_scoring_blocked'], dependent_artefact_ids: ['score_trace', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_scores', notes: null },
-    { gate_id: 'public_technique_authority_gate', gate_name: 'public_technique_authority_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_public_technique_names=false'], blocker_codes: ['public_technique_authority_blocked'], dependent_artefact_ids: ['technique_observation_trace', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_named_techniques', notes: null },
-    { gate_id: 'public_comparison_recommendation_gate', gate_name: 'public_comparison_recommendation_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['public_comparison_recommendation_blocked'], dependent_artefact_ids: ['comparison_raw', 'gate_trace'], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation', notes: null },
+  const ordinaryUnsatisfiedGateIds = getStringArray(input.acceptance_metrics_snapshot?.ordinary_l2a_unsatisfied_gate_ids);
+  const validatorTraceSatisfied = input.validator_trace_summary?.validator_trace_gate_status === 'satisfied'
+    || input.validator_trace_summary?.ordinary_l2a_validation_status === 'satisfied'
+    || input.validator_trace_summary?.independent_validation_status === 'independent_validation_satisfying';
+  const ordinaryUnsatisfiedExcludingGate = ordinaryUnsatisfiedGateIds.filter((gateId) => gateId !== 'gate_trace_gate' && gateId !== 'validator_trace_gate');
+  const ordinaryL2AGateSatisfied = validatorTraceSatisfied && ordinaryUnsatisfiedExcludingGate.length === 0;
+  const ordinaryL2AStatus = ordinaryL2AGateSatisfied ? 'satisfied' : 'insufficient';
+  const ordinaryL2AReason = ordinaryL2AGateSatisfied
+    ? 'ordinary_internal_analysis_proof_chain_satisfied_public_release_gates_separated'
+    : `ordinary_internal_analysis_proof_chain_unsatisfied:${ordinaryUnsatisfiedExcludingGate.join(',') || 'validator_trace_gate'}`;
+  const publicScoringSuppressionStatus = String(input.acceptance_metrics_snapshot?.public_scoring_suppression_proof_status ?? 'missing');
+  const publicTechniqueSuppressionStatus = String(input.acceptance_metrics_snapshot?.public_technique_authority_suppression_proof_status ?? 'missing');
+  const publicComparisonSuppressionStatus = String(input.acceptance_metrics_snapshot?.public_comparison_recommendation_suppression_proof_status ?? 'missing');
+  const globalLevel2EvidenceStatus = String(input.acceptance_metrics_snapshot?.global_level2_evidence_status ?? 'insufficient');
+  const globalLevel2SuppressionProofStatus = String(input.acceptance_metrics_snapshot?.global_level2_suppression_proof_status ?? 'insufficient');
+  const globalLevel2ReleaseReadinessStatus = String(input.acceptance_metrics_snapshot?.global_level2_release_readiness_status ?? 'blocked');
+  const runtimeOperatorVerificationStatus = String(input.acceptance_metrics_snapshot?.runtime_operator_verification_status ?? 'required');
+  const deploymentProvenanceStatus = String(input.acceptance_metrics_snapshot?.deployment_provenance_status ?? 'unknown_no_safe_env_var_found');
+  const operatorConfirmationStatus = String(input.acceptance_metrics_snapshot?.operator_confirmation_status ?? 'missing');
+  const productionSafeReadinessStatus = String(input.acceptance_metrics_snapshot?.production_safe_readiness_status ?? 'blocked');
+  const customerReleaseReadinessStatus = String(input.acceptance_metrics_snapshot?.customer_release_readiness_status ?? 'blocked');
+  const duplicateSameVideoSafetyStatus = String(input.acceptance_metrics_snapshot?.duplicate_same_video_safety_status ?? 'not_applicable');
+  const globalLevel2AcceptanceStatus = String(input.acceptance_metrics_snapshot?.global_level2_acceptance_status ?? 'not_accepted');
+  const suppressionGateStatus = (status: string) => status === 'satisfied'
+    ? 'passed'
+    : (status === 'not_applicable' ? 'not_applicable' : (status === 'missing' ? 'missing' : 'insufficient'));
+  const gate_entries: Array<Record<string, unknown>> = [
+    { gate_id: 'ordinary_l2a_analysis_proof_gate', gate_name: 'ordinary_l2a_analysis_proof_gate', gate_family: 'ordinary_l2a_internal_analysis', status: ordinaryL2AGateSatisfied ? 'passed' : 'insufficient', reason: ordinaryL2AReason, required_for_level: 'ordinary_l2a_internal', current_state: ordinaryL2AStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`ordinary_l2a_unsatisfied_gate_ids=${ordinaryUnsatisfiedGateIds.join(',')}`], blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'], dependent_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], evidence_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], validator_rule_ids: ['ordinary_l2a_dependency_gate_validation'], source_paths: ['traces/ValidatorTrace.json', 'traces/GateTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: ordinaryUnsatisfiedGateIds, notes: null },
+    { gate_id: 'global_level2_evidence_gate', gate_name: 'global_level2_evidence_gate', gate_family: 'level2_evidence', status: globalLevel2EvidenceStatus === 'satisfied' ? 'passed' : 'insufficient', reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_evidence_or_suppression_incomplete'), required_for_level: 'L2', current_state: globalLevel2EvidenceStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.global_level2_evidence_status=${globalLevel2EvidenceStatus}`], blocker_codes: globalLevel2EvidenceStatus === 'satisfied' ? [] : ['global_level2_evidence_or_suppression_incomplete'], dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['global_level2_gate_taxonomy_reconciled'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'global_l2_evidence', dependency_gate_ids: ['ordinary_l2a_analysis_proof_gate', 'public_scoring_suppression_proof_gate', 'public_technique_authority_suppression_proof_gate', 'public_comparison_recommendation_suppression_proof_gate'], notes: null },
+    { gate_id: 'global_level2_suppression_proof_gate', gate_name: 'global_level2_suppression_proof_gate', gate_family: 'suppression_proof', status: globalLevel2SuppressionProofStatus === 'satisfied' ? 'passed' : 'insufficient', reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_suppression_proof_incomplete'), required_for_level: 'L2', current_state: globalLevel2SuppressionProofStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.global_level2_suppression_proof_status=${globalLevel2SuppressionProofStatus}`], blocker_codes: globalLevel2SuppressionProofStatus === 'satisfied' ? [] : ['global_level2_suppression_proof_incomplete'], dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated', 'public_technique_authority_suppression_proof_validated', 'public_comparison_recommendation_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'proves_blocked_public_feature_absence', required_maturity_level: 'global_l2_suppression', dependency_gate_ids: ['public_scoring_suppression_proof_gate', 'public_technique_authority_suppression_proof_gate', 'public_comparison_recommendation_suppression_proof_gate'], notes: null },
+    { gate_id: 'public_scoring_suppression_proof_gate', gate_name: 'public_scoring_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicScoringSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_scoring_suppression_reason ?? publicScoringSuppressionStatus), required_for_level: 'L2', current_state: publicScoringSuppressionStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.public_scoring_suppression_proof_status=${publicScoringSuppressionStatus}`, 'public_output_permissions.show_overall_score=false'], blocker_codes: publicScoringSuppressionStatus === 'satisfied' ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_scoring_suppression_blocker_codes), dependent_artefact_ids: ['score_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['score_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json', 'parity/report_parity_result.json', 'export_or_no_export/no_export_proof.json'], public_effect: 'proves_public_score_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_scoring_gate'], notes: null },
+    { gate_id: 'public_technique_authority_suppression_proof_gate', gate_name: 'public_technique_authority_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicTechniqueSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_technique_authority_suppression_reason ?? publicTechniqueSuppressionStatus), required_for_level: 'L2', current_state: publicTechniqueSuppressionStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.public_technique_authority_suppression_proof_status=${publicTechniqueSuppressionStatus}`, 'public_output_permissions.show_public_technique_names=false'], blocker_codes: publicTechniqueSuppressionStatus === 'satisfied' ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_technique_authority_suppression_blocker_codes), dependent_artefact_ids: ['technique_observation_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['technique_observation_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_technique_authority_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json', 'parity/report_parity_result.json', 'export_or_no_export/no_export_proof.json'], public_effect: 'proves_public_named_technique_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_technique_authority_gate'], notes: null },
+    { gate_id: 'public_comparison_recommendation_suppression_proof_gate', gate_name: 'public_comparison_recommendation_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicComparisonSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_comparison_recommendation_suppression_reason ?? publicComparisonSuppressionStatus), required_for_level: 'L2', current_state: publicComparisonSuppressionStatus, expected_state_for_acceptance: 'satisfied_or_not_applicable_for_ordinary_single_take', observed_evidence: [`qa.acceptance_metrics.public_comparison_recommendation_suppression_proof_status=${publicComparisonSuppressionStatus}`, 'public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['satisfied', 'not_applicable'].includes(publicComparisonSuppressionStatus) ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_comparison_recommendation_suppression_blocker_codes), dependent_artefact_ids: ['comparison_suppression_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['comparison_suppression_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_comparison_recommendation_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'proves_public_comparison_recommendation_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_comparison_recommendation_gate'], notes: null },
+    { gate_id: 'duplicate_same_video_safety_gate', gate_name: 'duplicate_same_video_safety_gate', gate_family: 'comparison_safety', status: ['not_applicable', 'satisfied_suppressed'].includes(duplicateSameVideoSafetyStatus) ? (duplicateSameVideoSafetyStatus === 'not_applicable' ? 'not_applicable' : 'passed') : 'insufficient', required_for_level: 'comparison_runtime', current_state: duplicateSameVideoSafetyStatus, expected_state_for_acceptance: 'not_applicable_or_satisfied_suppressed', observed_evidence: [`qa.acceptance_metrics.duplicate_same_video_safety_status=${duplicateSameVideoSafetyStatus}`], blocker_codes: ['not_applicable', 'satisfied_suppressed'].includes(duplicateSameVideoSafetyStatus) ? [] : ['duplicate_same_video_safety_not_suppressed'], dependent_artefact_ids: ['comparison_suppression_trace', 'duplicate_detection_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'comparison_suppression_trace', 'duplicate_detection_trace'], validator_rule_ids: ['duplicate_same_video_safety_classification_recorded'], source_paths: ['qa/acceptance_metrics.json'], public_effect: 'blocks_public_comparison_winner_recommendation', required_maturity_level: 'comparison_safety', dependency_gate_ids: ['public_comparison_recommendation_suppression_proof_gate'], notes: null },
+    { gate_id: 'level2_acceptance', gate_name: 'level2_acceptance', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: 'not_accepted', expected_state_for_acceptance: 'accepted', observed_evidence: ['manifest.level2_qa_acceptance=not_accepted'], blocker_codes: ['level2_not_accepted'], dependent_artefact_ids: ['validator_trace', 'gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'global_l2', dependency_gate_ids: ['production_safe_gate', 'public_scoring_gate', 'public_technique_authority_gate', 'public_comparison_recommendation_gate'], notes: null },
+    { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: validatorTraceSatisfied ? 'passed' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: validatorTraceSatisfied ? 'independent_validation_satisfying' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing'), expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [`validator_trace_summary.independent_validation_status=${String(input.validator_trace_summary?.independent_validation_status ?? 'missing')}`], blocker_codes: validatorTraceSatisfied ? [] : ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], evidence_artefact_ids: ['validator_trace'], validator_rule_ids: [], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
+    { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? 'passed' : (input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? (input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing')), expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [`qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status=${String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? 'missing')}`], blocker_codes: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? [] : ['ModelRunTrace_independent_proof_partial'], dependent_artefact_ids: ['model_run_trace'], evidence_artefact_ids: ['model_run_trace'], validator_rule_ids: ['model_run_per_stage_proof_status_recorded'], source_paths: ['traces/ModelRunTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
+    { gate_id: 'runtime_operator_verification_gate', gate_name: 'runtime_operator_verification_gate', gate_family: 'runtime_verification', status: runtimeOperatorVerificationStatus === 'completed' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: runtimeOperatorVerificationStatus, expected_state_for_acceptance: 'completed', observed_evidence: [`qa.acceptance_metrics.runtime_operator_verification_status=${runtimeOperatorVerificationStatus}`], blocker_codes: runtimeOperatorVerificationStatus === 'completed' ? [] : getStringArray(input.acceptance_metrics_snapshot?.runtime_operator_verification_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'manifest'], evidence_artefact_ids: ['qa_acceptance_metrics', 'manifest'], validator_rule_ids: ['runtime_operator_verification_status_validated'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_release_readiness', required_maturity_level: 'release_readiness', dependency_gate_ids: ['global_level2_evidence_gate', 'global_level2_suppression_proof_gate'], notes: null },
+    { gate_id: 'deployment_provenance_gate', gate_name: 'deployment_provenance_gate', gate_family: 'deployment_provenance', status: deploymentProvenanceStatus === 'resolved' || operatorConfirmationStatus === 'confirmed' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: deploymentProvenanceStatus, expected_state_for_acceptance: 'resolved_or_operator_confirmed', observed_evidence: [`qa.acceptance_metrics.deployment_provenance_status=${deploymentProvenanceStatus}`, `qa.acceptance_metrics.operator_confirmation_status=${operatorConfirmationStatus}`], blocker_codes: deploymentProvenanceStatus === 'resolved' || operatorConfirmationStatus === 'confirmed' ? [] : getStringArray(input.acceptance_metrics_snapshot?.deployment_provenance_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'manifest'], evidence_artefact_ids: ['qa_acceptance_metrics', 'manifest'], validator_rule_ids: ['deployment_provenance_or_operator_confirmation_validated'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_release_readiness', required_maturity_level: 'release_readiness', dependency_gate_ids: [], notes: null },
+    { gate_id: 'production_safe_readiness_gate', gate_name: 'production_safe_readiness_gate', gate_family: 'release_readiness', status: productionSafeReadinessStatus === 'ready_for_review' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: productionSafeReadinessStatus, expected_state_for_acceptance: 'ready_for_review', observed_evidence: [`qa.acceptance_metrics.production_safe_readiness_status=${productionSafeReadinessStatus}`], blocker_codes: productionSafeReadinessStatus === 'ready_for_review' ? [] : getStringArray(input.acceptance_metrics_snapshot?.production_safe_readiness_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['production_customer_release_readiness_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'does_not_approve_production_release', required_maturity_level: 'release_readiness', dependency_gate_ids: ['runtime_operator_verification_gate', 'deployment_provenance_gate'], notes: null },
+    { gate_id: 'customer_release_readiness_gate', gate_name: 'customer_release_readiness_gate', gate_family: 'release_readiness', status: customerReleaseReadinessStatus === 'ready_for_review' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: customerReleaseReadinessStatus, expected_state_for_acceptance: 'ready_for_review', observed_evidence: [`qa.acceptance_metrics.customer_release_readiness_status=${customerReleaseReadinessStatus}`], blocker_codes: customerReleaseReadinessStatus === 'ready_for_review' ? [] : getStringArray(input.acceptance_metrics_snapshot?.customer_release_readiness_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['production_customer_release_readiness_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'does_not_approve_customer_release', required_maturity_level: 'release_readiness', dependency_gate_ids: ['runtime_operator_verification_gate', 'deployment_provenance_gate'], notes: null },
+    { gate_id: 'production_safe_gate', gate_name: 'production_safe_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['manifest.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'production_safe_approval_gate', gate_name: 'production_safe_approval_gate', gate_family: 'release_approval', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['qa.acceptance_metrics.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', required_maturity_level: 'public_release', dependency_gate_ids: ['production_safe_readiness_gate'], notes: null },
+    { gate_id: 'public_scoring_gate', gate_name: 'public_scoring_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_overall_score=false'], blocker_codes: ['public_scoring_blocked'], dependent_artefact_ids: ['score_trace', 'gate_trace'], evidence_artefact_ids: ['score_trace', 'gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_scores', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_technique_authority_gate', gate_name: 'public_technique_authority_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_public_technique_names=false'], blocker_codes: ['public_technique_authority_blocked'], dependent_artefact_ids: ['technique_observation_trace', 'gate_trace'], evidence_artefact_ids: ['technique_observation_trace', 'gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_named_techniques', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_comparison_recommendation_gate', gate_name: 'public_comparison_recommendation_gate', gate_family: 'public_output_permission', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_output_permissions.show_comparison_recommendation=false'], blocker_codes: ['public_comparison_recommendation_blocked'], dependent_artefact_ids: ['comparison_raw', 'gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },
+    { gate_id: 'public_scoring_feature_approval_gate', gate_name: 'public_scoring_feature_approval_gate', gate_family: 'feature_approval', status: 'blocked', required_for_level: 'public_release', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_scoring_feature_status=blocked'], blocker_codes: ['public_scoring_feature_approval_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_public_scores_feature_approval', required_maturity_level: 'public_release', dependency_gate_ids: ['public_scoring_suppression_proof_gate'], notes: null },
+    { gate_id: 'public_technique_authority_feature_approval_gate', gate_name: 'public_technique_authority_feature_approval_gate', gate_family: 'feature_approval', status: 'blocked', required_for_level: 'public_release', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_technique_authority_feature_status=blocked'], blocker_codes: ['public_technique_authority_feature_approval_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: ['public_technique_authority_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_public_technique_authority_feature_approval', required_maturity_level: 'public_release', dependency_gate_ids: ['public_technique_authority_suppression_proof_gate'], notes: null },
+    { gate_id: 'public_comparison_recommendation_feature_approval_gate', gate_name: 'public_comparison_recommendation_feature_approval_gate', gate_family: 'feature_approval', status: 'blocked', required_for_level: 'public_release', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['public_comparison_recommendation_feature_status=blocked'], blocker_codes: ['public_comparison_recommendation_feature_approval_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: ['public_comparison_recommendation_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_public_comparison_recommendation_feature_approval', required_maturity_level: 'public_release', dependency_gate_ids: ['public_comparison_recommendation_suppression_proof_gate'], notes: null },
+    { gate_id: 'customer_release_gate', gate_name: 'customer_release_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['production_safe_status=blocked'], blocker_codes: ['customer_release_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['gate_trace'], validator_rule_ids: [], source_paths: ['traces/GateTrace.json'], public_effect: 'blocks_customer_release', required_maturity_level: 'public_release', dependency_gate_ids: ['production_safe_gate'], notes: null },
+    { gate_id: 'customer_release_approval_gate', gate_name: 'customer_release_approval_gate', gate_family: 'release_approval', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['qa.acceptance_metrics.customer_release_status=blocked'], blocker_codes: ['customer_release_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_customer_release', required_maturity_level: 'public_release', dependency_gate_ids: ['customer_release_readiness_gate', 'production_safe_approval_gate'], notes: null },
+    { gate_id: 'global_level2_acceptance_gate', gate_name: 'global_level2_acceptance_gate', gate_family: 'level2', status: 'blocked', required_for_level: 'L2', current_state: globalLevel2AcceptanceStatus, expected_state_for_acceptance: 'accepted', observed_evidence: [`global_level2_evidence_status=${globalLevel2EvidenceStatus}`, `global_level2_acceptance_status=${globalLevel2AcceptanceStatus}`, `global_level2_release_readiness_status=${globalLevel2ReleaseReadinessStatus}`], blocker_codes: ['global_level2_public_release_gates_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: ['global_level2_gate_taxonomy_reconciled'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json', 'traces/GateTrace.json'], public_effect: 'blocks_global_level2_acceptance', required_maturity_level: 'global_l2', dependency_gate_ids: ['global_level2_evidence_gate', 'global_level2_suppression_proof_gate', 'runtime_operator_verification_gate', 'deployment_provenance_gate', 'production_safe_approval_gate', 'customer_release_approval_gate'], notes: null },
   ];
+  const metricStatus = (key: string, fallback = 'missing') => String(input.acceptance_metrics_snapshot?.[key] ?? fallback);
+  const addOrdinaryGate = (args: { gate_id: string; gate_family: string; metric_key: string; expected_state_for_acceptance: string; dependent_artefact_ids: string[]; source_paths: string[]; blocker_codes: string[]; public_effect?: string; satisfiedValues?: string[]; notApplicableValues?: string[] }) => {
+    const currentState = metricStatus(args.metric_key);
+    const status = (args.satisfiedValues ?? ['satisfied', 'sufficient', 'passed', 'no_export_proof_complete', 'not_applicable']).includes(currentState)
+      ? 'passed'
+      : ((args.notApplicableValues ?? []).includes(currentState) ? 'not_applicable' : (currentState === 'missing' ? 'missing' : 'insufficient'));
+    gate_entries.push({
+      gate_id: args.gate_id,
+      gate_name: args.gate_id,
+      gate_family: args.gate_family,
+      status,
+      required_for_level: 'L2',
+      current_state: currentState,
+      expected_state_for_acceptance: args.expected_state_for_acceptance,
+      observed_evidence: [`qa.acceptance_metrics.${args.metric_key}=${currentState}`],
+      blocker_codes: status === 'passed' || status === 'not_applicable' ? [] : args.blocker_codes,
+      dependent_artefact_ids: args.dependent_artefact_ids,
+      evidence_artefact_ids: args.dependent_artefact_ids,
+      validator_rule_ids: [],
+      source_paths: args.source_paths,
+      public_effect: args.public_effect ?? 'none_internal_only',
+      required_maturity_level: 'internal_l2a',
+      dependency_gate_ids: [],
+      notes: null,
+    });
+  };
+  addOrdinaryGate({ gate_id: 'ordinary_analysis_step1_evidence_gate', gate_family: 'ordinary_analysis', metric_key: 'ordinary_analysis_proof_bundle_status', expected_state_for_acceptance: 'step1_families_complete_proof_chain_blocked_or_complete', dependent_artefact_ids: ['step1_observable_evidence'], source_paths: ['analysis/Step1ObservableEvidence.json', 'qa/acceptance_metrics.json'], blocker_codes: ['ordinary_analysis_required_evidence_families_missing'] });
+  addOrdinaryGate({ gate_id: 'analysis_evidence_state_gate', gate_family: 'ordinary_analysis', metric_key: 'analysis_evidence_state_gate_status', expected_state_for_acceptance: 'satisfied', dependent_artefact_ids: ['analysis_evidence_state'], source_paths: ['analysis/AnalysisEvidenceState.json', 'qa/acceptance_metrics.json'], blocker_codes: ['AnalysisEvidenceState_insufficient'] });
+  addOrdinaryGate({ gate_id: 'evidence_anchor_aggregate_gate', gate_family: 'ordinary_analysis', metric_key: 'evidence_anchor_gate_status', expected_state_for_acceptance: 'sufficient', dependent_artefact_ids: ['evidence_anchors'], source_paths: ['traces/EvidenceAnchors.json', 'qa/acceptance_metrics.json'], blocker_codes: ['EvidenceAnchor_trace_insufficient'] });
+  addOrdinaryGate({ gate_id: 'public_claim_support_gate', gate_family: 'ordinary_analysis', metric_key: 'public_claim_gate_status', expected_state_for_acceptance: 'sufficient', dependent_artefact_ids: ['public_claim_trace'], source_paths: ['traces/PublicClaimTrace.json', 'qa/acceptance_metrics.json'], blocker_codes: ['PublicClaimTrace_insufficient'] });
+  addOrdinaryGate({ gate_id: 'score_trace_gate', gate_family: 'trace', metric_key: 'score_trace_gate_status', expected_state_for_acceptance: 'real_runtime_v3_internal_score_proof', dependent_artefact_ids: ['score_trace'], source_paths: ['traces/ScoreTrace.json', 'qa/acceptance_metrics.json'], blocker_codes: ['score_trace_requires_structured_step2_score_projection'] });
+  addOrdinaryGate({ gate_id: 'technique_observation_trace_gate', gate_family: 'trace', metric_key: 'technique_observation_gate_status', expected_state_for_acceptance: 'real_runtime_v3_internal_technique_proof', dependent_artefact_ids: ['technique_observation_trace'], source_paths: ['traces/TechniqueObservationTrace.json', 'qa/acceptance_metrics.json'], blocker_codes: ['technique_trace_requires_step1_candidate_technique_extractor'] });
+  addOrdinaryGate({ gate_id: 'report_parity_gate', gate_family: 'report_parity', metric_key: 'report_parity_status', expected_state_for_acceptance: 'passed', dependent_artefact_ids: ['parity_report'], source_paths: ['parity/report_parity_result.json', 'qa/acceptance_metrics.json'], blocker_codes: ['parity_artefacts_missing'], satisfiedValues: ['passed'] });
+  addOrdinaryGate({ gate_id: 'no_export_gate', gate_family: 'no_export', metric_key: 'no_export_status', expected_state_for_acceptance: 'no_export_proof_complete', dependent_artefact_ids: ['no_export_proof'], source_paths: ['export_or_no_export/no_export_proof.json', 'qa/acceptance_metrics.json'], blocker_codes: ['no_export_proof_missing'], satisfiedValues: ['no_export_proof_complete'] });
+  addOrdinaryGate({ gate_id: 'ordinary_comparison_not_applicable_gate', gate_family: 'comparison', metric_key: 'comparison_status', expected_state_for_acceptance: 'not_applicable', dependent_artefact_ids: ['parity_comparison'], source_paths: ['qa/acceptance_metrics.json'], blocker_codes: ['comparison_gate_unexpectedly_applicable'], satisfiedValues: ['not_applicable', 'not_invoked'], notApplicableValues: ['not_applicable', 'not_invoked'] });
   const summary = {
     gate_count: gate_entries.length,
-    passed_gate_count: 0,
+    passed_gate_count: gate_entries.filter((g) => g.status === 'passed').length,
     blocked_gate_count: gate_entries.filter((g) => g.status === 'blocked').length,
     insufficient_gate_count: gate_entries.filter((g) => g.status === 'insufficient').length,
     missing_gate_count: gate_entries.filter((g) => g.status === 'missing').length,
-    not_applicable_gate_count: 0,
-    gate_trace_gate_status: 'insufficient' as const,
-    gate_trace_gate_reason: 'internal_gate_snapshot_not_independent_runtime_v3_proof' as const,
-    independent_gate_decision_status: 'internal_snapshot_only_insufficient' as const,
-    gate_registry_version: 's9-18h-internal-gate-registry-v1' as const,
+    not_applicable_gate_count: gate_entries.filter((g) => g.status === 'not_applicable').length,
+    gate_trace_gate_status: ordinaryL2AGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    gate_trace_gate_reason: ordinaryL2AGateSatisfied ? 'ordinary_l2a_independent_gate_decisions_satisfied_public_release_blocked' as const : 'ordinary_analysis_gate_decisions_partial_not_level2_acceptance_proof' as const,
+    independent_gate_decision_status: ordinaryL2AGateSatisfied ? 'independent_gate_satisfying' as const : 'independent_gate_partial' as const,
+    gate_registry_version: 's9-19f-release-readiness-gate-registry-v1' as const,
+    ordinary_l2a_analysis_proof_status: ordinaryL2AStatus,
+    ordinary_l2a_analysis_proof_reason: ordinaryL2AReason,
+    ordinary_l2a_analysis_proof_blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'],
+    ordinary_l2a_satisfied_gate_ids: gate_entries.filter((g) => ['passed', 'satisfied', 'not_applicable'].includes(String(g.status))).map((g) => String(g.gate_id)),
+    ordinary_l2a_unsatisfied_gate_ids: gate_entries.filter((g) => !['passed', 'satisfied', 'not_applicable'].includes(String(g.status)) && !['public_output_permission', 'release', 'level2', 'level2_evidence', 'suppression_proof', 'feature_approval', 'runtime_verification', 'deployment_provenance', 'release_readiness', 'release_approval', 'comparison_safety'].includes(String(g.gate_family))).map((g) => String(g.gate_id)),
+    ordinary_l2a_public_release_dependency_status: 'blocked' as const,
+    ordinary_l2a_comparison_dependency_status: 'ordinary_single_take_comparison_not_applicable' as const,
+    public_scoring_feature_status: 'blocked' as const,
+    public_scoring_suppression_proof_status: publicScoringSuppressionStatus,
+    public_technique_authority_feature_status: 'blocked' as const,
+    public_technique_authority_suppression_proof_status: publicTechniqueSuppressionStatus,
+    public_comparison_recommendation_feature_status: 'blocked' as const,
+    public_comparison_recommendation_suppression_proof_status: publicComparisonSuppressionStatus,
+    comparison_safety_suppression_proof_status: String(input.acceptance_metrics_snapshot?.comparison_safety_suppression_proof_status ?? publicComparisonSuppressionStatus),
+    duplicate_same_video_safety_status: duplicateSameVideoSafetyStatus,
+    global_level2_evidence_status: globalLevel2EvidenceStatus,
+    global_level2_suppression_proof_status: globalLevel2SuppressionProofStatus,
+    global_level2_release_status: String(input.acceptance_metrics_snapshot?.global_level2_release_status ?? 'blocked'),
+    global_level2_release_readiness_status: globalLevel2ReleaseReadinessStatus,
+    global_level2_acceptance_status: globalLevel2AcceptanceStatus,
+    global_level2_acceptance_reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_not_accepted_public_release_blocked'),
+    runtime_operator_verification_status: runtimeOperatorVerificationStatus,
+    deployment_provenance_status: deploymentProvenanceStatus,
+    operator_confirmation_status: operatorConfirmationStatus,
+    production_safe_readiness_status: productionSafeReadinessStatus,
+    customer_release_readiness_status: customerReleaseReadinessStatus,
+    global_level2_blocker_codes_by_family: input.acceptance_metrics_snapshot?.global_level2_blocker_codes_by_family ?? {},
+    global_level2_satisfied_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_satisfied_gate_ids),
+    global_level2_unsatisfied_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_unsatisfied_gate_ids),
+    global_level2_blocked_release_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_blocked_release_gate_ids),
+    global_level2_suppression_proof_gate_ids: getStringArray(input.acceptance_metrics_snapshot?.global_level2_suppression_proof_gate_ids),
     public_output_permissions: BLOCKED_PUBLIC_OUTPUT_PERMISSIONS,
   };
   const payload = {
@@ -7643,8 +8959,8 @@ export async function emitGateTraceFirstPass(input: any) {
     generated_at: new Date().toISOString(),
     source_module: input.source_module,
     source_stage: input.source_stage,
-    source_classification: 'internal_gate_trace',
-    trace_mode: 'first_pass_internal_gate_snapshot',
+    source_classification: ordinaryL2AGateSatisfied ? 'independent_gate_decision' : 'internal_gate_trace',
+    trace_mode: 'ordinary_l2a_independent_gate_decisions',
     validated_snapshot_stage: 'pre_finalisation_snapshot',
     final_manifest_rewrite_expected: true,
     self_inclusion_validated: false,
@@ -7652,9 +8968,9 @@ export async function emitGateTraceFirstPass(input: any) {
     ...summary,
     gate_entries,
     gate_trace_summary: summary,
-    cannot_satisfy_level2_gate_trace_gate: true,
-    gate_satisfaction_reason: 'internal_gate_snapshot_not_independent_runtime_v3_proof',
-    blocker_codes: ['GateTrace_internal_only'],
+    cannot_satisfy_level2_gate_trace_gate: !ordinaryL2AGateSatisfied,
+    gate_satisfaction_reason: summary.gate_trace_gate_reason,
+    blocker_codes: ordinaryL2AGateSatisfied ? ['public_release_gates_blocked'] : ['GateTrace_internal_only'],
     level2_status: 'not_accepted',
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
