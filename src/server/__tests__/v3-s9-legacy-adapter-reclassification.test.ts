@@ -59,7 +59,7 @@ describe('v3 s9 legacy adapter reclassification', () => {
   });
 
   it('keeps audit map complete and raw_report insufficient for v3 spine completion', () => {
-    expect(assertRuntimeEvidenceSpineInventoryComplete()).toEqual({ ok: true, count: 26 });
+    expect(assertRuntimeEvidenceSpineInventoryComplete()).toEqual({ ok: true, count: 27 });
     const map = getRuntimeEvidenceSpineAuditMap();
     expect(map.find((x) => x.artefact_id === 'raw_report')?.source_classification).toBe('legacy_adapter');
     const statuses = Object.fromEntries(map.map((item) => [item.artefact_id, item.artefact_id === 'raw_report' ? 'emitted' : 'missing'])) as Record<string, 'emitted'|'missing'|'deferred'|'not_applicable'|'emitted_blocked'>;

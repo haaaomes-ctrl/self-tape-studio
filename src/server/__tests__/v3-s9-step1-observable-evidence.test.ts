@@ -1,0 +1,155 @@
+import { mkdtemp, readFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
+  emitAnalysisEvidenceStatePrerequisite,
+  emitQAManifestForAnalysisRun,
+} from '@/server/v3/qa-artifacts-wiring.server';
+
+async function emitStep1Bundle() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'qa-s918b-step1-'));
+  const run = `run-s918b-${Math.random().toString(36).slice(2)}`;
+  const take = 't1';
+  const analysis = await emitAnalysisEvidenceStatePrerequisite({
+    run_id: run,
+    analysis_run_id: run,
+    submission_id: 'sub1',
+    take_id: take,
+    compared_take_ids: [take],
+    source_stage: 'unit',
+    source_module: 'test',
+    analysis_route: 'unit',
+    route_or_model_marker: 'unit',
+    audition_type: 'screen',
+    selected_level: 'pro',
+    brief_presence: 'supplied',
+    brief_presence_source: 'audition.brief',
+    material_presence: 'supplied',
+    material_presence_source: 'loaded_runtime_field',
+    mux_playback_id: 'safe-playback-ref',
+    mux_asset_or_upload_id_present: true,
+    take_created_at: '2026-05-21T09:00:00.000Z',
+    take_updated_at: '2026-05-21T09:01:00.000Z',
+    component_or_task_declaration_status: 'unknown',
+    component_or_task_declaration_source: 'not_loaded',
+    media_readiness_state: 'ready',
+    media_duration_seconds: 42,
+    duration_confidence: 'known',
+    resolver_output_available: true,
+    truth_state_map_available: true,
+    root_dir: root,
+    internal_qa_emit: true,
+  });
+  await emitQAManifestForAnalysisRun({
+    run_id: run,
+    analysis_run_id: run,
+    take_id: take,
+    submission_id: 'sub1',
+    root_dir: root,
+    internal_qa_emit: true,
+    emitted_artefact_ids: analysis.emitted_artefact_ids,
+    emitted_blocked_artefact_ids: analysis.emitted_blocked_artefact_ids,
+    artefact_source_classification_by_id: {
+      step1_observable_evidence: analysis.step1_observable_evidence_source_classification,
+      analysis_evidence_state: analysis.source_classification,
+    },
+    artefact_level2_spine_satisfaction_by_id: {
+      step1_observable_evidence: false,
+      analysis_evidence_state: false,
+    },
+    step1_observable_evidence_summary: analysis.step1_observable_evidence_summary,
+    analysis_evidence_state_summary: analysis.summary,
+  });
+  const base = path.join(root, run, 'takes', `take-${take}`, `analysis-${run}`);
+  const step1 = JSON.parse(await readFile(path.join(base, 'analysis', 'Step1ObservableEvidence.json'), 'utf8'));
+  const aes = JSON.parse(await readFile(path.join(base, 'analysis', 'AnalysisEvidenceState.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(path.join(root, run, 'manifest.json'), 'utf8'));
+  const metrics = JSON.parse(await readFile(path.join(root, run, 'qa', 'acceptance_metrics.json'), 'utf8'));
+  return { analysis, step1, aes, manifest, metrics };
+}
+
+describe('S9-18B Step1ObservableEvidence container', () => {
+  it('emits an internal-only partial Step1ObservableEvidence artefact without public gate promotion', async () => {
+    const { step1 } = await emitStep1Bundle();
+    expect(step1).toMatchObject({
+      schema_version: 'tapecoach_v3_step1_observable_evidence_v1',
+      artefact_type: 'step1_observable_evidence',
+      internal_only: true,
+      privacy_classification: 'internal_private',
+      public_output_unchanged: true,
+      production_safe_status: 'blocked',
+      public_scoring_status: 'blocked',
+      public_technique_authority_status: 'blocked',
+      public_comparison_output_status: 'blocked',
+      extraction_status: 'partial',
+      source_classification: 'real_runtime_v3_partial',
+      cannot_satisfy_v3_gate: true,
+    });
+    expect(step1.observable_evidence_items.length).toBeGreaterThan(0);
+    expect(step1.step1_observable_evidence_summary.step1_observable_evidence_gate_status).toBe('insufficient');
+  });
+
+  it('records unavailable extractor families and rejects forbidden satisfying sources', async () => {
+    const { step1 } = await emitStep1Bundle();
+    const unavailableKinds = step1.unsupported_or_unavailable_evidence.map((item: any) => item.evidence_kind);
+    expect(unavailableKinds).toEqual(expect.arrayContaining([
+      'video_observable_performance_evidence_not_extracted',
+      'audio_observable_performance_evidence_not_extracted',
+      'material_specific_performance_evidence_not_extracted',
+      'performance_observable_evidence_not_extracted',
+      'candidate_technique_evidence_not_extracted',
+    ]));
+    expect(step1.anti_fake_evidence_guard).toMatchObject({
+      raw_report_prose_rejected: true,
+      render_payload_rejected: true,
+      public_report_payload_rejected: true,
+      report_parity_result_rejected: true,
+      legacy_score_trace_rejected: true,
+      legacy_technique_observation_trace_rejected: true,
+      public_report_ui_rejected: true,
+      model_text_without_structured_provenance_rejected: true,
+    });
+    const sourceIds = step1.observable_evidence_items.map((item: any) => item.source_artefact_id);
+    expect(sourceIds).not.toEqual(expect.arrayContaining([
+      'raw_report',
+      'render_payload',
+      'public_report_payload',
+      'report_parity_result',
+      'score_trace',
+      'technique_observation_trace',
+    ]));
+  });
+
+  it('links Step1ObservableEvidence into AnalysisEvidenceState while keeping Step 2 limited and Level 2 blocked', async () => {
+    const { aes } = await emitStep1Bundle();
+    expect(aes.step1_observable_evidence_ref).toContain('/analysis/Step1ObservableEvidence.json');
+    expect(aes.step1_observable_evidence_ref_status).toBe('written');
+    expect(aes.step1_observable_evidence_source_classification).toBe('real_runtime_v3_partial');
+    expect(aes.step1_observable_evidence_gate_status).toBe('insufficient');
+    expect(aes.step1_observable_evidence_blocker_codes).toContain('step1_observable_evidence_partial');
+    expect(aes.step2_dependency_status).toMatchObject({ status: 'ready_with_limitations', can_run_step2: true });
+    expect(aes.evidence_state_status).toBe('partial');
+    expect(aes.cannot_satisfy_v3_gate).toBe(true);
+  });
+
+  it('classifies the container in manifest and acceptance metrics without accepting Level 2', async () => {
+    const { manifest, metrics } = await emitStep1Bundle();
+    expect(manifest.emitted_artifacts).toContain('step1_observable_evidence');
+    expect(manifest.artefact_status_by_id.step1_observable_evidence).toBe('emitted');
+    expect(manifest.artefact_source_classification_by_id.step1_observable_evidence).toBe('real_runtime_v3_partial');
+    expect(manifest.artefact_level2_spine_satisfaction_by_id.step1_observable_evidence).toBe(false);
+    expect(manifest.runtime_evidence_accepted_by_id).not.toContain('step1_observable_evidence');
+    expect(manifest.runtime_evidence_blocked_by_id).toContain('step1_observable_evidence');
+    expect(manifest.level2_qa_acceptance).toBe('not_accepted');
+
+    expect(metrics.step1_observable_evidence_status).toBe('emitted');
+    expect(metrics.step1_observable_evidence_gate_status).toBe('insufficient');
+    expect(metrics.step1_observable_evidence_summary.forbidden_sources_rejected).toBe(true);
+    expect(metrics.next_required_engineering_tasks).toContain('implement real Step1ObservableEvidence extractors and truth linkage');
+    expect(metrics.level2_status).toBe('not_accepted');
+    expect(metrics.public_scoring_status).toBe('blocked');
+    expect(metrics.public_technique_authority_status).toBe('blocked');
+    expect(metrics.production_safe_status).toBe('blocked');
+  });
+});

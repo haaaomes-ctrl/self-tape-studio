@@ -120,6 +120,19 @@ export interface QAArtifactEmitterOptions {
     qa_persistence_status?: 'written' | 'failed_emission' | 'unavailable' | 'skipped' | 'fallback_logged';
     qa_persistence_warning?: string | null;
   };
+  step1_observable_evidence_summary?: {
+    extraction_status?: 'partial' | 'unavailable' | 'not_extracted' | 'failed' | 'blocked' | 'complete' | string;
+    source_classification?: string;
+    observable_evidence_item_count?: number;
+    unsupported_or_unavailable_evidence_count?: number;
+    rejected_or_filtered_field_count?: number;
+    step1_observable_evidence_gate_status?: 'missing' | 'insufficient' | 'satisfied' | string;
+    step1_observable_evidence_gate_reason?: string;
+    blocker_codes?: string[];
+    forbidden_sources_rejected?: boolean;
+    internal_only?: boolean;
+    public_output_unchanged?: boolean;
+  };
   media_identity_summary?: {
     media_identity_status?: 'complete' | 'partial' | 'unavailable' | 'failed' | string;
     available_signal_count?: number;
@@ -257,9 +270,11 @@ const NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS = new Set([
   'qa_acceptance_metrics',
   'claim_candidate_trace',
   'media_identity',
+  'step1_observable_evidence',
 ]);
 const NON_ACCEPTED_SOURCE_CLASSIFICATION_PATTERNS = [
   'legacy_adapter',
+  'real_runtime_v3_partial',
   'source_scaffold',
   'first_pass_internal',
   'report_snapshot',
@@ -512,6 +527,10 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const spineById = manifest.artefact_level2_spine_satisfaction_by_id ?? {};
   const analysisEvidenceStateStatus = manifest.artefact_status_by_id?.analysis_evidence_state ?? 'missing';
   const analysisEvidenceStateGateStatus = analysisEvidenceStateStatus === 'missing' ? 'missing' : (spineById.analysis_evidence_state === true && sourceClassById.analysis_evidence_state === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
+  const step1ObservableEvidenceStatus = manifest.artefact_status_by_id?.step1_observable_evidence ?? 'missing';
+  const step1ObservableEvidenceGateStatus = step1ObservableEvidenceStatus === 'missing'
+    ? 'missing'
+    : (spineById.step1_observable_evidence === true && sourceClassById.step1_observable_evidence === 'real_runtime_v3' ? 'satisfied' : 'insufficient');
   const evidenceAnchorStatus = manifest.artefact_status_by_id?.evidence_anchors ?? 'missing';
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
   const claimCandidateStatus = manifest.artefact_status_by_id?.claim_candidate_trace ?? 'missing';
@@ -570,6 +589,20 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     unsupported_or_unavailable_evidence_count: analysisEvidenceStateStatus === 'missing' ? 1 : 0,
     analysis_evidence_state_gate_status: analysisEvidenceStateGateStatus,
     analysis_evidence_state_gate_reason: analysisEvidenceStateStatus === 'missing' ? 'analysis_evidence_state_not_emitted' : 'analysis_evidence_state_not_real_runtime_v3',
+  };
+  const step1ObservableEvidenceSummary = manifest.step1_observable_evidence_summary ?? {
+    extraction_status: step1ObservableEvidenceStatus === 'missing' ? 'unavailable' : 'partial',
+    source_classification: sourceClassById.step1_observable_evidence ?? 'missing',
+    observable_evidence_item_count: 0,
+    unsupported_or_unavailable_evidence_count: step1ObservableEvidenceStatus === 'missing' ? 1 : 0,
+    rejected_or_filtered_field_count: 0,
+    step1_observable_evidence_gate_status: step1ObservableEvidenceGateStatus,
+    step1_observable_evidence_gate_reason: step1ObservableEvidenceStatus === 'missing'
+      ? 'step1_observable_evidence_not_emitted'
+      : 'step1_observable_evidence_container_partial_extractors_unavailable',
+    forbidden_sources_rejected: step1ObservableEvidenceStatus !== 'missing',
+    internal_only: true,
+    public_output_unchanged: true,
   };
 
   const scoreTraceSummary = manifest.score_trace_summary ?? {
@@ -649,6 +682,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     : (noExportNeedsWork ? 'no-export proof' : (reportParityNeedsWork ? 'report parity proof' : null));
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
+    ...(step1ObservableEvidenceStatus !== 'missing' && step1ObservableEvidenceGateStatus !== 'satisfied' ? ['implement real Step1ObservableEvidence extractors and truth linkage'] : []),
     ...(!tracesEmitted ? ['S9-06 EvidenceAnchors and PublicClaimTrace'] : []),
     ...(tracesEmitted && (evidenceAnchorGateStatus !== 'sufficient' || publicClaimGateStatus !== 'sufficient') ? ['promote trace gates from legacy_adapter to real_runtime_v3 where supported'] : []),
     ...(techniqueObservationStatus === 'missing' ? ['TechniqueObservationTrace'] : []),
@@ -734,6 +768,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
         ? 'analysis_evidence_state_not_emitted'
         : String(analysisEvidenceStateSummary.analysis_evidence_state_gate_reason ?? 'analysis_evidence_state_not_real_runtime_v3')),
     analysis_evidence_state_summary: analysisEvidenceStateSummary,
+    step1_observable_evidence_status: step1ObservableEvidenceStatus,
+    step1_observable_evidence_source_classification: sourceClassById.step1_observable_evidence ?? 'missing',
+    step1_observable_evidence_gate_status: step1ObservableEvidenceGateStatus,
+    step1_observable_evidence_gate_reason: step1ObservableEvidenceGateStatus === 'satisfied'
+      ? 'real_runtime_v3_step1_observable_evidence_present'
+      : (step1ObservableEvidenceStatus === 'missing'
+        ? 'step1_observable_evidence_not_emitted'
+        : String(step1ObservableEvidenceSummary.step1_observable_evidence_gate_reason ?? 'step1_observable_evidence_container_partial_extractors_unavailable')),
+    step1_observable_evidence_summary: step1ObservableEvidenceSummary,
     evidence_anchor_trace_status: evidenceAnchorStatus,
     evidence_anchor_gate_status: evidenceAnchorGateStatus,
     evidence_anchor_source_family_summary: evidenceAnchorSourceSummary,
@@ -933,6 +976,16 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     runtime_evidence_blocked_by_id.add('media_identity');
     real_v3_spine_artefact_ids.delete('media_identity');
   }
+  if (artefact_status_by_id.step1_observable_evidence === 'emitted' || artefact_status_by_id.step1_observable_evidence === 'emitted_blocked') {
+    if (!artefact_source_classification_by_id.step1_observable_evidence) {
+      artefact_source_classification_by_id.step1_observable_evidence =
+        options.step1_observable_evidence_summary?.source_classification ?? 'real_runtime_v3_partial';
+    }
+    artefact_level2_spine_satisfaction_by_id.step1_observable_evidence = false;
+    runtime_evidence_accepted_by_id.delete('step1_observable_evidence');
+    runtime_evidence_blocked_by_id.add('step1_observable_evidence');
+    real_v3_spine_artefact_ids.delete('step1_observable_evidence');
+  }
   for (const artefactId of BASE_REAL_RUNTIME_V3_ARTEFACT_IDS) {
     if (artefact_status_by_id[artefactId] !== 'emitted' || !real_v3_spine_artefact_ids.has(artefactId)) continue;
     if (!artefact_source_classification_by_id[artefactId]) artefact_source_classification_by_id[artefactId] = 'real_runtime_v3';
@@ -1001,6 +1054,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     model_run_trace_summary: options.model_run_trace_summary ?? undefined,
     media_identity_summary: options.media_identity_summary ?? undefined,
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
+    step1_observable_evidence_summary: options.step1_observable_evidence_summary ?? undefined,
     report_parity_summary: options.report_parity_summary ?? undefined,
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,

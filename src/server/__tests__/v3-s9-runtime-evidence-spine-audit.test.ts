@@ -11,10 +11,10 @@ describe('v3 s9 runtime evidence spine audit map', () => {
   it('contains every required artefact exactly once with expected cardinality', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const ids = map.map((x) => x.artefact_id);
-    expect(ids.length).toBe(26);
-    expect(new Set(ids).size).toBe(26);
+    expect(ids.length).toBe(27);
+    expect(new Set(ids).size).toBe(27);
     expect(getRequiredRuntimeEvidenceArtefactIds()).toEqual(ids);
-    expect(assertRuntimeEvidenceSpineInventoryComplete()).toEqual({ ok: true, count: 26 });
+    expect(assertRuntimeEvidenceSpineInventoryComplete()).toEqual({ ok: true, count: 27 });
   });
 
   it('uses only approved manifest statuses and never blocked_not_executed', () => {
@@ -86,6 +86,22 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     }
   });
 
+  it('tracks Step1ObservableEvidence as emitted partial container without completing the spine', () => {
+    const map = getRuntimeEvidenceSpineAuditMap();
+    const step1 = map.find((x) => x.artefact_id === 'step1_observable_evidence');
+    expect(step1?.expected_path).toBe('analysis/Step1ObservableEvidence.json');
+    expect(step1?.current_manifest_status).toBe('emitted');
+    expect(step1?.source_classification).toBe('real_runtime_v3_partial');
+    expect(step1?.blocker_code).toBe('Step1ObservableEvidence_partial');
+    expect(step1?.can_emit_without_invention).toBe(true);
+
+    const statuses: Record<string, 'emitted' | 'missing' | 'deferred' | 'not_applicable' | 'emitted_blocked'> = Object.fromEntries(
+      map.map((item) => [item.artefact_id, 'emitted']),
+    );
+    statuses.evidence_anchors = 'missing';
+    expect(isV3EvidenceSpineCompleteFromStatuses(statuses)).toBe(false);
+  });
+
   it('keeps qa_acceptance_metrics emitted and comparison traces internal/missing by default', () => {
     const map = getRuntimeEvidenceSpineAuditMap();
     const qaMetrics = map.find((x) => x.artefact_id === 'qa_acceptance_metrics');
@@ -141,6 +157,7 @@ describe('v3 s9 runtime evidence spine audit map', () => {
 
     const allowedClassifications = new Set([
       'real_runtime_v3',
+      'real_runtime_v3_partial',
       'legacy_adapter',
       'source_only_stub',
       'emitted_not_wired',

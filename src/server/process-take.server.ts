@@ -3849,6 +3849,7 @@ export async function runProcessTake(
         analysis_run_id: `take-${takeId}`,
         emitted_artefact_ids_before_manifest: qaArtefactIds,
         emitted_blocked_artefact_ids_before_manifest: qaBlockedArtefactIds,
+        includes_step1_observable_evidence: qaArtefactIds.includes('step1_observable_evidence') || qaBlockedArtefactIds.includes('step1_observable_evidence'),
         includes_analysis_evidence_state: qaArtefactIds.includes('analysis_evidence_state') || qaBlockedArtefactIds.includes('analysis_evidence_state'),
         includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors') || qaBlockedArtefactIds.includes('evidence_anchors'),
         includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace') || qaBlockedArtefactIds.includes('public_claim_trace'),
@@ -3869,6 +3870,7 @@ export async function runProcessTake(
         emitted_blocked_artefact_ids: qaBlockedArtefactIds,
         artefact_source_classification_by_id: {
           raw_report: 'legacy_adapter',
+          ...(qaArtefactIds.includes('step1_observable_evidence') ? { step1_observable_evidence: analysisEvidenceState.step1_observable_evidence_source_classification ?? 'real_runtime_v3_partial' } : {}),
           ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: analysisEvidenceState.source_classification } : {}),
           ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
           ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: claimCandidateTrace.source_classification } : {}),
@@ -3880,6 +3882,7 @@ export async function runProcessTake(
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
+          ...(qaArtefactIds.includes('step1_observable_evidence') ? { step1_observable_evidence: false } : {}),
           ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: false } : {}),
           ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.written ? evidenceAnchors.level2_satisfies : false } : {}),
           ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: false } : {}),
@@ -3896,7 +3899,7 @@ export async function runProcessTake(
           ...(techniqueObservationTrace.written ? ['technique_observation_trace'] : []),
           ...(scoreTrace.written ? ['score_trace'] : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'step1_observable_evidence', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
         public_claim_trace_summary: publicClaimTrace.summary,
         claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
         evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
@@ -3908,6 +3911,7 @@ export async function runProcessTake(
           qa_persistence_status: analysisEvidenceState.written ? 'written' : 'failed_emission',
           qa_persistence_warning: analysisEvidenceState.warning ?? null,
         } : undefined,
+        step1_observable_evidence_summary: analysisEvidenceState.step1_observable_evidence_summary,
         media_identity_summary: inputArtefacts.media_identity_summary,
         report_parity_input: {
           raw_report_data: rawReportPayload,
