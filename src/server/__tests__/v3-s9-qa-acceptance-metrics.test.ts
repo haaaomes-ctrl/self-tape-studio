@@ -498,6 +498,7 @@ describe('v3 s9 qa acceptance metrics', () => {
       .mockResolvedValueOnce({ written: true, manifest })
       .mockResolvedValueOnce({ written: true, manifest });
     vi.spyOn(qaSinkModule, 'writeQAArtifact')
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
       .mockResolvedValueOnce({ written: false, warning: 'metrics storage write failed' } as any)
       .mockResolvedValueOnce({ written: true, warning: null } as any);
     const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
@@ -513,6 +514,7 @@ describe('v3 s9 qa acceptance metrics', () => {
       .mockResolvedValueOnce({ written: true, manifest })
       .mockResolvedValueOnce({ written: true, manifest });
     vi.spyOn(qaSinkModule, 'writeQAArtifact')
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
       .mockResolvedValueOnce({ written: false } as any)
       .mockResolvedValueOnce({ written: true, warning: null } as any);
     const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
@@ -552,6 +554,7 @@ it('returns warning from final manifest write failure and never returns written:
       .mockResolvedValueOnce({ written: true, manifest });
     vi.spyOn(qaSinkModule, 'writeQAArtifact')
       .mockResolvedValueOnce({ written: true, warning: null } as any)
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
       .mockResolvedValueOnce({ written: false, warning: 'final metrics storage failure' } as any);
     const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
     expect(out.warning).toContain('final metrics storage failure');
@@ -565,6 +568,7 @@ it('returns warning from final manifest write failure and never returns written:
       .mockResolvedValueOnce({ written: true, manifest })
       .mockResolvedValueOnce({ written: true, manifest });
     vi.spyOn(qaSinkModule, 'writeQAArtifact')
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
       .mockResolvedValueOnce({ written: true, warning: null } as any)
       .mockResolvedValueOnce({ written: false } as any);
     const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });
@@ -588,6 +592,7 @@ it('keeps warning null when final manifest succeeds without warnings', async () 
       .mockResolvedValueOnce({ written: true, manifest })
       .mockResolvedValueOnce({ written: true, manifest });
     vi.spyOn(qaSinkModule, 'writeQAArtifact')
+      .mockResolvedValueOnce({ written: true, warning: null } as any)
       .mockResolvedValueOnce({ written: true, warning: 'metrics sink warn' } as any)
       .mockResolvedValueOnce({ written: true, warning: null } as any);
     const out = await emitQAManifestForAnalysisRun({ run_id: 'r', take_id: 't', submission_id: 's', internal_qa_emit: true });

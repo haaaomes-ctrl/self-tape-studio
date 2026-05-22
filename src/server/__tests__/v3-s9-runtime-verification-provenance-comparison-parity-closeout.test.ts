@@ -112,7 +112,7 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
     expect(metrics.customer_release_status).toBe('blocked');
   });
 
-  it('preserves supplied runtime verification summaries without rewriting a default trace', async () => {
+  it('preserves supplied runtime verification summaries when emitting the runtime trace', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-19j-runtime-summary-'));
     const out = await emitQAManifestForAnalysisRun({
       run_id: 'run-runtime-summary',
@@ -134,9 +134,10 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
     expect(out.written).toBe(true);
     const manifest = await readJson(path.join(root, 'run-runtime-summary', 'manifest.json'));
     const metrics = await readJson(path.join(root, 'run-runtime-summary', 'qa', 'acceptance_metrics.json'));
+    const trace = await readJson(path.join(root, 'run-runtime-summary', 'takes', 'take-ta', 'analysis-run-runtime-summary', 'analysis', 'RuntimeVerificationTrace.json'));
     expect(manifest.runtime_verification_trace_summary.runtime_operator_verification_status).toBe('completed');
     expect(metrics.runtime_operator_verification_status).toBe('completed');
-    await expect(readFile(path.join(root, 'run-runtime-summary', 'takes', 'take-ta', 'analysis-run-runtime-summary', 'analysis', 'RuntimeVerificationTrace.json'), 'utf8')).rejects.toThrow();
+    expect(trace.runtime_operator_verification_status).toBe('completed');
   });
 
   it('classifies intentionally absent same-video public output as suppressed, not missing parity artefacts', async () => {
