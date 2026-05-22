@@ -225,7 +225,6 @@ describe('S9-19L material performance, public claim gate, ordinary L2-A closure'
       },
       claim_candidate_trace_summary: claimCandidates.summary,
       public_claim_trace_summary: publicClaims.summary,
-      public_output_unchanged: true,
       internal_qa_emit: true,
     });
     const manifestPath = path.join(root, run, 'manifest.json');
@@ -242,9 +241,10 @@ describe('S9-19L material performance, public claim gate, ordinary L2-A closure'
       && candidate.excluded_from_public_claim_gate === true
       && candidate.cannot_satisfy_public_claim_gate === false
     ))).toBe(true);
-    expect(publicClaims.summary?.public_claim_gate_status).toBe('sufficient');
-    expect(publicClaims.summary?.required_rendered_public_claim_count).toBe(0);
-    expect(publicClaims.summary?.excluded_internal_claim_count).toBeGreaterThan(0);
+    const publicClaimSummary = publicClaims.summary as Record<string, unknown>;
+    expect(publicClaimSummary.public_claim_gate_status).toBe('sufficient');
+    expect(publicClaimSummary.required_rendered_public_claim_count).toBe(0);
+    expect(Number(publicClaimSummary.excluded_internal_claim_count ?? 0)).toBeGreaterThan(0);
     expect(metrics.claim_candidate_gate_status).toBe('satisfied');
     expect(metrics.claim_candidate_gate_reason).toBe('not_rendered_internal_candidates_excluded_from_public_claim_gate');
     expect(metrics.blocker_codes).not.toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
