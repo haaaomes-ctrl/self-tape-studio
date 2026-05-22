@@ -103,3 +103,23 @@ Brief achievement is omitted until a separate explicit public payload/parity pat
 ### Safety Boundary
 
 Normalisation is view-only and reads only the existing allowed public-safe field names. It does not consume raw report internals, QA artefacts, scores, category scores, named technique authority, comparison winner/recommendation, castability, bookability, marketability, employability or role-fit claims. Fallback copy must not invent feedback or turn assessability limitations into performer criticism.
+
+## R10.1C Public Payload Alignment Note
+
+R10.1C keeps the same seven public-safe field paths and aligns their payload shapes before the readiness-first shell receives them. It does not add brief achievement, scores, named technique authority, comparison recommendation, role-fit, release or S9 evidence-spine fields.
+
+### Existing Public Payload Availability
+
+- `schema_version` is copied as the public report schema marker when present.
+- `submission_verdict` is usually a string or small object and can be unavailable on sparse artefacts.
+- `fix_first` may be a string or object-like action row; only one safe item should reach the shell.
+- `priority_fixes`, `strengths` and `next_take_plan` can be strings, arrays or object-like rows and can be empty, malformed or over-populated.
+- `feedback_reliability` is allowed but can be missing from current artefacts. It can be surfaced only from existing public-safe reliability or limitation text, or as a concise unavailable state.
+
+### Payload Usefulness
+
+The existing allowed fields can support the minimum readiness-first value when normalised consistently: a readiness posture, one fix-first action, up to three priority actions, preserve guidance, next-take steps and a reliability/limitations note. Missing source values remain unavailable rather than being invented.
+
+### Safety Boundary
+
+Public payload alignment must not copy raw report-only material into new public fields, must not read internal QA artefacts as display sources, and must filter score, category-score, named technique, comparison, castability, bookability, marketability, employability, role-fit, internal ID, storage URL, signed URL, prompt, response, trace, gate and blocker-code language from the allowed field values.

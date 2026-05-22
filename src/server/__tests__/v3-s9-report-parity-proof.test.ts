@@ -93,7 +93,7 @@ describe('v3-s9 report parity proof', () => {
     expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
   });
 
-  it('S9-17D: blocks forbidden fields nested inside allowed render and public report objects', async () => {
+  it('S9-17D/R10.1C: redacts forbidden fields nested inside allowed render and public report objects', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-17d-nested-forbidden-'));
     const raw = {
       report_data: {
@@ -114,12 +114,11 @@ describe('v3-s9 report parity proof', () => {
       allowed_field_paths: ['report_data.next_take_plan'],
     });
     const renderPayload = await readRenderPayload(root, 'run-nested-render', 'tnr');
-    expect(renderPayload.render_payload_status).toBe('emitted_blocked');
-    expect(renderPayload.blocker_codes).toContain('render_payload_forbidden_field_present');
-    expect(renderPayload.blocked_field_hits).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'report_data.next_take_plan.raw_prompt' }),
-      expect.objectContaining({ path: 'report_data.next_take_plan.safe_nested.token' }),
-    ]));
+    expect(renderPayload.render_payload_status).toBe('emitted');
+    expect(renderPayload.blocker_codes).not.toContain('render_payload_forbidden_field_present');
+    expect(renderPayload.report_data.next_take_plan).toEqual({ steps: ['Retake once.'] });
+    expect(JSON.stringify(renderPayload.report_data)).not.toMatch(/raw_prompt|secret-token|safe_nested/);
+    expect(renderPayload.blocked_field_hits).toEqual([]);
 
     await emitPublicReportPayloadArtifact({
       run_id: 'run-nested-public',
@@ -131,12 +130,11 @@ describe('v3-s9 report parity proof', () => {
       allowed_field_paths: ['report_data.next_take_plan'],
     });
     const publicPayload = await readPublicReportPayload(root, 'run-nested-public', 'tnp');
-    expect(publicPayload.public_report_payload_status).toBe('emitted_blocked');
-    expect(publicPayload.blocker_codes).toContain('public_report_payload_forbidden_field_present');
-    expect(publicPayload.blocked_field_hits).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: 'report_data.next_take_plan.raw_prompt' }),
-      expect.objectContaining({ path: 'report_data.next_take_plan.safe_nested.token' }),
-    ]));
+    expect(publicPayload.public_report_payload_status).toBe('emitted');
+    expect(publicPayload.blocker_codes).not.toContain('public_report_payload_forbidden_field_present');
+    expect(publicPayload.report_data.next_take_plan).toEqual({ steps: ['Retake once.'] });
+    expect(JSON.stringify(publicPayload.report_data)).not.toMatch(/raw_prompt|secret-token|safe_nested/);
+    expect(publicPayload.blocked_field_hits).toEqual([]);
   });
 
   it('S9-17D: preserves bracket-indexed allowed paths when copying render and public report payload fields', async () => {

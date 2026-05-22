@@ -1228,6 +1228,246 @@ function isUnsafeRenderString(value: string): boolean {
     );
 }
 
+const READINESS_FIRST_PUBLIC_FIELD_PATHS = new Set([
+  'report_data.submission_verdict',
+  'report_data.fix_first',
+  'report_data.priority_fixes',
+  'report_data.strengths',
+  'report_data.next_take_plan',
+  'report_data.feedback_reliability',
+]);
+
+const UNSAFE_READINESS_PUBLIC_TEXT_RE =
+  /\b(overall score|category score|readiness score|score value|score_value|category_scores|score_breakdown|castability|castable|bookability|bookable|marketability|marketable|employability|role fit|role-fit|recall likelihood|booking prediction|comparison winner|winner|recommendation:\s*choose|choose take|public_technique_authority|technique authority|stanislavski|meisner|laban|uta hagen|chekhov|alexander technique|linklater|estill)\b/i;
+
+const READINESS_SCORE_VALUE_RE =
+  /\b(?:score|readiness|acting|technical|vocal|audio|brief adherence|presentation)\s*[:=]?\s*\d{1,3}\b|\b\d{1,3}\s*(?:\/100|out of 100|%)\b/i;
+
+const READINESS_INTERNAL_TRACE_RE =
+  /\b(raw_report|raw prompt|raw_prompt|raw response|raw_response|signed url|signed_url|playback url|playback_url|storage path|storage_path|storage key|storage_key|branch name|branch_name|run_id|model trace|model_trace|evidence_anchor|truth_state|truth linkage|model_run_trace|score_trace|technique_observation_trace|runtime_verification_trace|public_claim_trace|claim_candidate_trace|analysis_evidence_state|step1observableevidence|gate trace|gatetrace|validator trace|validatortrace|blocker code|blocker_codes|blocker|candidate_technique)\b/i;
+
+const READINESS_INTERNAL_ID_RE =
+  /\b(?:run|take|comparison)-[0-9a-f]{8,}(?:-[0-9a-f]{4,}){1,}\b/i;
+
+const GENERIC_READINESS_PUBLIC_TEXT_RE =
+  /^(good job|great job|nice work|be more confident|work on your acting|try harder|good performance|strong performance|great performance|excellent performance)$/i;
+
+type ReadinessPublicAlignmentResult = {
+  present: boolean;
+  value?: unknown;
+  reason?: string;
+};
+
+function compactReadinessPublicText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function clampReadinessPublicText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function safeReadinessPublicText(value: unknown, maxLength = 220): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = compactReadinessPublicText(value);
+  if (!trimmed) return null;
+  if (/https?:\/\//i.test(trimmed)) return null;
+  if (isUnsafeRenderString(trimmed)) return null;
+  if (UNSAFE_READINESS_PUBLIC_TEXT_RE.test(trimmed)) return null;
+  if (READINESS_SCORE_VALUE_RE.test(trimmed)) return null;
+  if (READINESS_INTERNAL_TRACE_RE.test(trimmed)) return null;
+  if (READINESS_INTERNAL_ID_RE.test(trimmed)) return null;
+  if (GENERIC_READINESS_PUBLIC_TEXT_RE.test(trimmed.replace(/[.!?]+$/g, ''))) return null;
+  return clampReadinessPublicText(trimmed, maxLength);
+}
+
+function readinessListInput(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') return [value];
+  return [];
+}
+
+function readinessObjectListInput(value: Record<string, unknown>, keys: string[]): unknown[] {
+  for (const key of keys) {
+    const list = readinessListInput(value[key]);
+    if (list.length > 0) return list;
+  }
+  return [];
+}
+
+function firstSafeReadinessText(values: unknown[], maxLength?: number): string | null {
+  for (const value of values) {
+    const text = safeReadinessPublicText(value, maxLength);
+    if (text) return text;
+  }
+  return null;
+}
+
+function safeReadinessActionText(value: unknown, maxLength = 180): string | null {
+  if (typeof value === 'string') return safeReadinessPublicText(value, maxLength);
+  if (!isPlainRecord(value)) return null;
+  return firstSafeReadinessText(
+    [
+      value.headline,
+      value.title,
+      value.fix,
+      value.action,
+      value.item,
+      value.summary,
+      value.point,
+      value.text,
+    ],
+    maxLength,
+  );
+}
+
+function normaliseReadinessSubmissionVerdict(value: unknown, sourcePresent: boolean): ReadinessPublicAlignmentResult {
+  const unavailable = {
+    status: 'unavailable',
+    label: 'Readiness guidance is not available in the current report.',
+  };
+  if (!sourcePresent) return { present: true, value: unavailable, reason: 'readiness_first_submission_verdict_unavailable' };
+  const text = safeReadinessPublicText(value, 180);
+  if (text) return { present: true, value: text };
+  if (!isPlainRecord(value)) {
+    return { present: true, value: unavailable, reason: 'readiness_first_submission_verdict_unavailable_after_normalisation' };
+  }
+  const output: Record<string, string> = {};
+  const keyMap: Array<[string, unknown, number]> = [
+    ['recommendation', value.recommendation, 180],
+    ['submit_recommendation', value.submit_recommendation, 180],
+    ['label', value.label, 180],
+    ['status', value.status, 120],
+    ['verdict', value.verdict, 180],
+    ['reason', value.reason, 260],
+    ['summary', value.summary, 260],
+    ['rationale', value.rationale, 260],
+  ];
+  for (const [key, raw, maxLength] of keyMap) {
+    const safe = safeReadinessPublicText(raw, maxLength);
+    if (safe) output[key] = safe;
+  }
+  if (Object.keys(output).length > 0) return { present: true, value: output };
+  return { present: true, value: unavailable, reason: 'readiness_first_submission_verdict_unavailable_after_normalisation' };
+}
+
+function normaliseReadinessFixFirst(value: unknown): ReadinessPublicAlignmentResult {
+  const text = safeReadinessActionText(value, 180);
+  if (!text) return { present: false, reason: 'readiness_first_fix_first_unavailable_after_normalisation' };
+  return { present: true, value: text };
+}
+
+function normaliseReadinessPriorityFixes(value: unknown): ReadinessPublicAlignmentResult {
+  const items = isPlainRecord(value)
+    ? readinessObjectListInput(value, ['items', 'fixes', 'priority_fixes'])
+    : readinessListInput(value);
+  const output = items
+    .map((item) => safeReadinessActionText(item, 170))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 3);
+  if (output.length === 0) return { present: false, reason: 'readiness_first_priority_fixes_unavailable_after_normalisation' };
+  return { present: true, value: output };
+}
+
+function normaliseReadinessStrengths(value: unknown): ReadinessPublicAlignmentResult {
+  const items = isPlainRecord(value)
+    ? readinessObjectListInput(value, ['items', 'strengths', 'preserve'])
+    : readinessListInput(value);
+  const output = items
+    .map((item) => {
+      if (typeof item === 'string') return safeReadinessPublicText(item, 160);
+      if (!isPlainRecord(item)) return null;
+      return firstSafeReadinessText([item.point, item.headline, item.strength, item.summary, item.text], 160);
+    })
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 4);
+  if (output.length === 0) return { present: false, reason: 'readiness_first_strengths_unavailable_after_normalisation' };
+  return { present: true, value: output };
+}
+
+function normaliseReadinessNextTakePlan(value: unknown): ReadinessPublicAlignmentResult {
+  const steps: string[] = [];
+  if (typeof value === 'string') {
+    const step = safeReadinessPublicText(value, 180);
+    if (step) steps.push(step);
+  } else if (isPlainRecord(value)) {
+    const flat = readinessObjectListInput(value, ['steps', 'items', 'checklist'])
+      .map((item) => safeReadinessActionText(item, 180))
+      .filter((item): item is string => Boolean(item));
+    const grouped = readinessListInput(value.groups).flatMap((group) => {
+      if (!isPlainRecord(group)) return [];
+      return readinessListInput(group.steps)
+        .map((item) => safeReadinessActionText(item, 180))
+        .filter((item): item is string => Boolean(item));
+    });
+    const safeGroups: Array<{ title?: string; steps: string[] }> = readinessListInput(value.groups)
+      .map((group) => {
+        if (!isPlainRecord(group)) return null;
+        const groupSteps = readinessListInput(group.steps)
+          .map((item) => safeReadinessActionText(item, 180))
+          .filter((item): item is string => Boolean(item))
+          .slice(0, 6);
+        if (groupSteps.length === 0) return null;
+        const title = firstSafeReadinessText([group.title, group.label, group.heading], 120);
+        return title ? { title, steps: groupSteps } : { steps: groupSteps };
+      })
+      .filter((group): group is { title?: string; steps: string[] } => Boolean(group))
+      .slice(0, 3);
+    const output: Record<string, unknown> = {};
+    if (flat.length > 0) output.steps = flat.slice(0, 6);
+    if (safeGroups.length > 0) output.groups = safeGroups;
+    if (Object.keys(output).length === 0 && grouped.length > 0) output.steps = grouped.slice(0, 6);
+    if (Object.keys(output).length === 0) return { present: false, reason: 'readiness_first_next_take_plan_unavailable_after_normalisation' };
+    return { present: true, value: output };
+  } else {
+    steps.push(...readinessListInput(value)
+      .map((item) => safeReadinessActionText(item, 180))
+      .filter((item): item is string => Boolean(item)));
+  }
+  const output = steps.slice(0, 6);
+  if (output.length === 0) return { present: false, reason: 'readiness_first_next_take_plan_unavailable_after_normalisation' };
+  return { present: true, value: output };
+}
+
+function normaliseReadinessFeedbackReliability(value: unknown, sourcePresent: boolean): ReadinessPublicAlignmentResult {
+  const unavailable = {
+    status: 'unavailable',
+    reason: 'Feedback reliability is not available in the current report.',
+  };
+  if (!sourcePresent || value === null || value === undefined) {
+    return { present: true, value: unavailable, reason: 'readiness_first_feedback_reliability_unavailable' };
+  }
+  const text = safeReadinessPublicText(value, 180);
+  if (text) return { present: true, value: { status: text } };
+  if (!isPlainRecord(value)) {
+    return { present: true, value: unavailable, reason: 'readiness_first_feedback_reliability_unavailable_after_normalisation' };
+  }
+  const output: Record<string, unknown> = {};
+  const status = firstSafeReadinessText([value.status, value.label, value.level, value.rating], 120);
+  const reason = firstSafeReadinessText([value.reason, value.summary, value.assessability_note, value.note], 240);
+  const limitations = readinessListInput(value.limitations ?? value.not_assessable ?? value.unavailable)
+    .map((item) => safeReadinessActionText(item, 180))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 4);
+  if (status) output.status = status;
+  if (reason) output.reason = reason;
+  if (limitations.length > 0) output.limitations = limitations;
+  if (Object.keys(output).length > 0) return { present: true, value: output };
+  return { present: true, value: unavailable, reason: 'readiness_first_feedback_reliability_unavailable_after_normalisation' };
+}
+
+function alignReadinessFirstPublicField(path: string, value: unknown, sourcePresent: boolean): ReadinessPublicAlignmentResult {
+  if (!READINESS_FIRST_PUBLIC_FIELD_PATHS.has(path)) return sourcePresent ? { present: true, value } : { present: false };
+  if (path === 'report_data.submission_verdict') return normaliseReadinessSubmissionVerdict(value, sourcePresent);
+  if (path === 'report_data.feedback_reliability') return normaliseReadinessFeedbackReliability(value, sourcePresent);
+  if (!sourcePresent) return { present: false, reason: 'readiness_first_public_field_unavailable' };
+  if (path === 'report_data.fix_first') return normaliseReadinessFixFirst(value);
+  if (path === 'report_data.priority_fixes') return normaliseReadinessPriorityFixes(value);
+  if (path === 'report_data.strengths') return normaliseReadinessStrengths(value);
+  if (path === 'report_data.next_take_plan') return normaliseReadinessNextTakePlan(value);
+  return { present: true, value };
+}
+
 function cloneRenderSafeValue(value: unknown, seen: WeakSet<object> = new WeakSet()): { safe: boolean; value?: unknown; reason?: string } {
   if (value === undefined) return { safe: false, reason: 'undefined_value_omitted' };
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return { safe: true, value };
@@ -2745,7 +2985,20 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
   for (const path of allowedFieldPaths) {
     const sourceField = getPathValue(sourceSurface, path);
     if (!sourceField.present) {
-      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path };
+      const aligned = alignReadinessFirstPublicField(path, undefined, false);
+      if (aligned.present) {
+        const cloned = cloneRenderSafeValue(aligned.value);
+        if (cloned.safe) {
+          setPathValue(reportData, path.replace(/^report_data\./, ''), cloned.value);
+          allowedFieldStatusByPath[path] = {
+            status: 'rendered_allowed',
+            source_path: path,
+            normalisation_reason: aligned.reason ?? 'readiness_first_unavailable_fallback',
+          };
+          continue;
+        }
+      }
+      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path, reason: aligned.reason ?? 'source_field_unavailable' };
       continue;
     }
     const blockedPath = blockedFieldPaths.find((candidate) => matchesBlockedPath(path, candidate));
@@ -2760,7 +3013,18 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
       });
       continue;
     }
-    const cloned = cloneRenderSafeValue(sourceField.value);
+    const aligned = alignReadinessFirstPublicField(path, sourceField.value, true);
+    if (!aligned.present) {
+      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path, reason: aligned.reason ?? 'readiness_first_public_value_unavailable_after_normalisation' };
+      deferredOrExcludedRenderFields.push({
+        field_path: path,
+        classification: 'internal_only',
+        reason: aligned.reason ?? 'readiness_first_public_value_unavailable_after_normalisation',
+        value_summary: diagnosticValueSummary(sourceField.value),
+      });
+      continue;
+    }
+    const cloned = cloneRenderSafeValue(aligned.value);
     if (!cloned.safe) {
       allowedFieldStatusByPath[path] = { status: 'redacted', source_path: path, reason: cloned.reason ?? 'unsafe_value_redacted' };
       deferredOrExcludedRenderFields.push({
@@ -2772,7 +3036,11 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
       continue;
     }
     setPathValue(reportData, path.replace(/^report_data\./, ''), cloned.value);
-    allowedFieldStatusByPath[path] = { status: 'rendered_allowed', source_path: path };
+    allowedFieldStatusByPath[path] = {
+      status: 'rendered_allowed',
+      source_path: path,
+      ...(aligned.reason ? { normalisation_reason: aligned.reason } : {}),
+    };
   }
 
   const sourceBlockedFieldHits = collectBlockedFieldHits(sourceSurface, blockedFieldPaths)
@@ -2891,7 +3159,20 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     const sourceField = getPathValue(sourceSurface, path);
     const renderField = getPathValue(renderSurface, path);
     if (!sourceField.present) {
-      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path };
+      const aligned = alignReadinessFirstPublicField(path, undefined, false);
+      if (aligned.present && renderField.present) {
+        const cloned = cloneRenderSafeValue(aligned.value);
+        if (cloned.safe) {
+          setPathValue(reportData, path.replace(/^report_data\./, ''), cloned.value);
+          allowedFieldStatusByPath[path] = {
+            status: 'public_safe_allowed',
+            source_path: path,
+            normalisation_reason: aligned.reason ?? 'readiness_first_unavailable_fallback',
+          };
+          continue;
+        }
+      }
+      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path, reason: aligned.reason ?? 'source_field_unavailable' };
       continue;
     }
     const blockedPath = blockedFieldPaths.find((candidate) => matchesBlockedPath(path, candidate));
@@ -2902,6 +3183,17 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
         classification: 'forbidden',
         reason: 'field_matches_forbidden_public_report_payload_path',
         matched_blocked_path: blockedPath,
+        value_summary: diagnosticValueSummary(sourceField.value),
+      });
+      continue;
+    }
+    const aligned = alignReadinessFirstPublicField(path, sourceField.value, true);
+    if (!aligned.present) {
+      allowedFieldStatusByPath[path] = { status: 'unavailable', source_path: path, reason: aligned.reason ?? 'readiness_first_public_value_unavailable_after_normalisation' };
+      excludedFieldPaths.push({
+        field_path: path,
+        classification: 'redacted',
+        reason: aligned.reason ?? 'readiness_first_public_value_unavailable_after_normalisation',
         value_summary: diagnosticValueSummary(sourceField.value),
       });
       continue;
@@ -2920,7 +3212,7 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
       });
       continue;
     }
-    const cloned = cloneRenderSafeValue(sourceField.value);
+    const cloned = cloneRenderSafeValue(aligned.value);
     if (!cloned.safe) {
       allowedFieldStatusByPath[path] = { status: 'redacted', source_path: path, reason: cloned.reason ?? 'unsafe_value_redacted' };
       excludedFieldPaths.push({
@@ -2932,7 +3224,11 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
       continue;
     }
     setPathValue(reportData, path.replace(/^report_data\./, ''), cloned.value);
-    allowedFieldStatusByPath[path] = { status: 'public_safe_allowed', source_path: path };
+    allowedFieldStatusByPath[path] = {
+      status: 'public_safe_allowed',
+      source_path: path,
+      ...(aligned.reason ? { normalisation_reason: aligned.reason } : {}),
+    };
   }
 
   const sourceBlockedFieldHits = collectBlockedFieldHits(sourceSurface, blockedFieldPaths)
