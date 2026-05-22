@@ -47,6 +47,8 @@ function applyComparisonParityManifestState(input: {
   manifest: Record<string, any>;
   written: boolean;
   parity_status: ComparisonParityStatus;
+  blocker_codes?: string[];
+  comparison_parity_summary?: Record<string, unknown> | null;
 }) {
   const manifest = JSON.parse(JSON.stringify(input.manifest ?? {}));
   const emittedSet = new Set<string>(manifest.emitted_artifacts ?? []);
@@ -60,6 +62,7 @@ function applyComparisonParityManifestState(input: {
   const statusById = { ...(manifest.artefact_status_by_id ?? {}) };
   const srcById = { ...(manifest.artefact_source_classification_by_id ?? {}) };
   const l2ById = { ...(manifest.artefact_level2_spine_satisfaction_by_id ?? {}) };
+  const parityBlockerCode = getStringArray(input.blocker_codes).find(Boolean) ?? 'parity_artefacts_missing';
   const hasOtherParityBlocker = Array.isArray(manifest.required_artifacts)
     ? manifest.required_artifacts.some((artefact: any) => (
       artefact?.artefact_id !== 'parity_comparison'
@@ -94,11 +97,13 @@ function applyComparisonParityManifestState(input: {
   } else if (status === 'emitted_blocked') {
     emittedBlockedSet.add('parity_comparison');
     blockedSet.add('parity_comparison');
-    blockerSet.add('parity_artefacts_missing');
+    blockerSet.add(parityBlockerCode);
+    if (parityBlockerCode !== 'parity_artefacts_missing') blockerSet.delete('parity_artefacts_missing');
   } else if (status === 'missing') {
     missingSet.add('parity_comparison');
     blockedSet.add('parity_comparison');
-    blockerSet.add('parity_artefacts_missing');
+    blockerSet.add(parityBlockerCode);
+    if (parityBlockerCode !== 'parity_artefacts_missing') blockerSet.delete('parity_artefacts_missing');
   } else {
     notApplicableSet.add('parity_comparison');
   }
@@ -118,7 +123,7 @@ function applyComparisonParityManifestState(input: {
       return {
         ...artefact,
         status,
-        blocker_code: status === 'emitted' || status === 'not_applicable' ? undefined : 'parity_artefacts_missing',
+        blocker_code: status === 'emitted' || status === 'not_applicable' ? undefined : parityBlockerCode,
         reason,
       };
     })
@@ -138,6 +143,7 @@ function applyComparisonParityManifestState(input: {
     artefact_status_by_id: statusById,
     artefact_source_classification_by_id: srcById,
     artefact_level2_spine_satisfaction_by_id: l2ById,
+    comparison_parity_summary: input.comparison_parity_summary ?? manifest.comparison_parity_summary,
   };
 }
 
@@ -204,7 +210,7 @@ export function reconcileComparisonManifestState(input: {
   };
 }
 type QAScoreTraceSummary = NonNullable<QAArtifactEmitterOptions['score_trace_summary']>;
-export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: QAArtifactEmitterOptions['technique_observation_trace_summary']; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; step1_observable_evidence_summary?: QAArtifactEmitterOptions['step1_observable_evidence_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_summary?: QAArtifactEmitterOptions['report_parity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
+export interface QARuntimeMetadata { run_id: string; fixture_id?: string; submission_id?: string; take_ids?: string[]; take_id?: string; compared_take_ids?: string[]; comparison_run_id?: string | null; analysis_run_id?: string; mux_playback_ids?: Record<string, string>; route_module?: string; commit_sha?: string; branch_name?: string; internal_qa_emit?: boolean; root_dir?: string; source_scope_file?: string; runtime_operator_verification_status?: string; runtime_bundle_freshness_status?: string; runtime_bundle_matches_current_commit_status?: string; runtime_bundle_matches_current_implementation_status?: string; runtime_verified_take_ids?: string[]; runtime_verified_comparison_run_ids?: string[]; runtime_verified_deployment_ref?: string; runtime_verified_at?: string; runtime_verified_by_role?: string; operator_confirmation_status?: string; operator_confirmed_pr_or_commit?: string; operator_confirmation_reason?: string; emitted_artefact_ids?: string[]; emitted_blocked_artefact_ids?: string[]; deferred_artefact_ids?: string[]; not_applicable_artefact_ids?: string[]; runtime_evidence_accepted_by_id?: string[]; runtime_evidence_blocked_by_id?: string[]; artefact_source_classification_by_id?: Record<string, string>; artefact_level2_spine_satisfaction_by_id?: Record<string, boolean>; legacy_adapter_artefact_ids?: string[]; real_v3_spine_artefact_ids?: string[]; defect_risk_ids?: string[]; public_claim_trace_summary?: QAArtifactEmitterOptions['public_claim_trace_summary']; claim_candidate_trace_summary?: QAArtifactEmitterOptions['claim_candidate_trace_summary']; evidence_anchor_trace_summary?: QAArtifactEmitterOptions['evidence_anchor_trace_summary']; technique_observation_trace_summary?: QAArtifactEmitterOptions['technique_observation_trace_summary']; score_trace_summary?: QAScoreTraceSummary; model_run_trace_summary?: Record<string, unknown>; analysis_evidence_state_summary?: QAArtifactEmitterOptions['analysis_evidence_state_summary']; step1_observable_evidence_summary?: QAArtifactEmitterOptions['step1_observable_evidence_summary']; media_identity_summary?: QAArtifactEmitterOptions['media_identity_summary']; report_parity_summary?: QAArtifactEmitterOptions['report_parity_summary']; runtime_verification_trace_summary?: QAArtifactEmitterOptions['runtime_verification_trace_summary']; comparison_parity_summary?: QAArtifactEmitterOptions['comparison_parity_summary']; report_parity_input?: { raw_report_data?: Record<string, unknown> | null; render_payload?: Record<string, unknown> | null; public_report_payload?: Record<string, unknown> | null; allowed_public_fields?: string[]; blocked_field_paths?: string[]; blocked_score_field_paths?: string[]; }; comparison_parity_input?: { comparison_payloads?: unknown; public_comparison_surface_paths?: string[]; }; }
 
 const COMPARISON_RISK_FIELDS = [
   'forced_winner_risk', 'false_winner_risk', 'false_winner_prevention_status',
@@ -599,11 +605,81 @@ export async function emitComparisonParityProof(input: {
         ? 'failed'
         : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable || !publicSurfaceScanSafe || !riskSourceScanSafe || !comparisonRiskContextAvailable || duplicateDetectionInsufficient ? 'insufficient' : 'passed')
     );
-  const blocker_codes = (parityStatus === 'passed' || parityStatus === 'not_applicable') ? [] : ['parity_artefacts_missing'];
+  const duplicateSameVideoSuppressed = Boolean(
+    (duplicateDetectionStatus === 'detected' || duplicateDetectionStatus === 'likely_duplicate')
+    && duplicateSuppressionApplied
+  );
+  const comparisonPublicOutputStatus = !input.comparison_invoked
+    ? 'not_applicable'
+    : (!publicSurfaceScanSafe || !forbiddenPublicComparisonFieldsAbsent
+      ? 'emitted_unsafe'
+      : (publicSurfaces.length > 0
+        ? 'emitted_public_safe'
+        : (duplicateSameVideoSuppressed && hasPublicOutputAbsenceEvidence ? 'not_emitted_suppressed' : 'missing_unexpected')));
+  const comparisonPublicOutputAbsenceProofStatus = (
+    ['not_emitted_suppressed', 'emitted_public_safe'].includes(comparisonPublicOutputStatus)
+    && publicWinnerAbsent
+    && publicRecommendationAbsent
+    && forbiddenPublicComparisonFieldsAbsent
+    && publicSurfaceScanSafe
+  ) ? 'satisfied' : (input.comparison_invoked ? 'insufficient' : 'not_applicable');
+  const comparisonSuppressionSafetySatisfied = Boolean(
+    requiredOk
+    && duplicateSameVideoSuppressed
+    && comparisonPublicOutputAbsenceProofStatus === 'satisfied'
+    && comparisonRiskContextAvailable
+    && riskSourceScanSafe
+    && !failedRiskOrLeakDetected
+  );
+  const comparisonSuppressionSafetyStatus = comparisonSuppressionSafetySatisfied
+    ? 'satisfied_suppressed'
+    : (input.comparison_invoked ? (failedRiskOrLeakDetected ? 'blocked' : 'insufficient') : 'not_applicable');
+  const evidenceDeltaOrNoMaterialDifferenceStatus = !input.comparison_invoked
+    ? 'not_applicable'
+    : (decisiveEvidenceDelta ? 'decisive' : (duplicateSameVideoSuppressed ? 'non_decisive' : 'unavailable'));
+  const comparisonParityStatus = parityStatus === 'passed' || parityStatus === 'not_applicable'
+    ? parityStatus
+    : (comparisonSuppressionSafetySatisfied && !decisiveEvidenceDelta
+      ? 'fail_closed'
+      : parityStatus);
+  const comparisonParityReason = (() => {
+    if (parityStatus === 'passed') return 'comparison_parity_passed';
+    if (comparisonParityStatus === 'fail_closed') return 'duplicate_same_video_suppression_safety_satisfied_but_decisive_evidence_delta_missing';
+    if (parityStatus === 'failed') return 'forbidden_public_comparison_field_present_or_duplicate_without_suppression';
+    if (duplicateDetectionBlocker) return duplicateDetectionBlocker;
+    if (!comparisonPayloadsAvailable) return 'comparison_parity_payload_missing';
+    if (!publicSurfaceContextAvailable) return 'comparison_public_surface_context_missing';
+    if (!publicSurfaceScanSafe) return 'comparison_public_surface_uninspectable';
+    if (!riskSourceScanSafe) return 'comparison_risk_source_uninspectable';
+    if (!comparisonRiskContextAvailable) return 'comparison_risk_context_missing';
+    return 'comparison_evidence_missing_or_unresolved';
+  })();
+  const blocker_codes = (parityStatus === 'passed' || parityStatus === 'not_applicable')
+    ? []
+    : (comparisonSuppressionSafetySatisfied && !decisiveEvidenceDelta
+      ? ['duplicate_same_video_suppressed_without_decisive_evidence_delta']
+      : ['parity_artefacts_missing']);
+  const comparison_parity_summary = {
+    parity_status: parityStatus,
+    comparison_parity_status: comparisonParityStatus,
+    comparison_parity_reason: comparisonParityReason,
+    comparison_parity_blocker_codes: blocker_codes,
+    comparison_public_output_status: comparisonPublicOutputStatus,
+    comparison_public_output_absence_proof_status: comparisonPublicOutputAbsenceProofStatus,
+    comparison_suppression_safety_status: comparisonSuppressionSafetyStatus,
+    comparison_checked_surface_refs: publicSurfaces.map((s) => s.key),
+    comparison_checked_risk_trace_refs: riskSources.map((s) => s.source),
+    comparison_public_winner_absent: publicWinnerAbsent,
+    comparison_public_recommendation_absent: publicRecommendationAbsent,
+    comparison_recommendation_permission: false,
+    evidence_delta_or_no_material_difference_status: evidenceDeltaOrNoMaterialDifferenceStatus,
+    duplicate_same_video_safety_status: comparisonSuppressionSafetyStatus,
+  };
   if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
   const outPayload = {
     schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0, comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true,
-    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), duplicate_detection_trace_available: Boolean(evidence.duplicate_detection_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), duplicate_detection_status: duplicateDetectionStatus ?? 'missing', duplicate_detection_context_available: duplicateDetectionContextAvailable, duplicate_detection_blocker: duplicateDetectionBlocker, duplicate_detection_suppression_applied: duplicateSuppressionApplied, duplicate_detection_evidence_delta_decisive: decisiveEvidenceDelta, comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, comparison_risk_context_available: comparisonRiskContextAvailable, same_video_risk_context_available: sameVideoRiskContextAvailable, route_variance_risk_context_available: routeVarianceRiskContextAvailable, forced_false_winner_risk_context_available: forcedFalseWinnerRiskContextAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits.map(comparisonRiskFieldDiagnostic), mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: parityStatus === 'passed' ? 'comparison_parity_passed' : (parityStatus === 'failed' ? 'forbidden_public_comparison_field_present_or_duplicate_without_suppression' : (duplicateDetectionBlocker ? duplicateDetectionBlocker : (!comparisonPayloadsAvailable ? 'comparison_parity_payload_missing' : (!publicSurfaceContextAvailable ? 'comparison_public_surface_context_missing' : (!publicSurfaceScanSafe ? 'comparison_public_surface_uninspectable' : (!riskSourceScanSafe ? 'comparison_risk_source_uninspectable' : (!comparisonRiskContextAvailable ? 'comparison_risk_context_missing' : 'comparison_evidence_missing_or_unresolved'))))))), production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
+    ...comparison_parity_summary,
+    comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), duplicate_detection_trace_available: Boolean(evidence.duplicate_detection_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), duplicate_detection_status: duplicateDetectionStatus ?? 'missing', duplicate_detection_context_available: duplicateDetectionContextAvailable, duplicate_detection_blocker: duplicateDetectionBlocker, duplicate_detection_suppression_applied: duplicateSuppressionApplied, duplicate_detection_evidence_delta_decisive: decisiveEvidenceDelta, comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, comparison_risk_context_available: comparisonRiskContextAvailable, same_video_risk_context_available: sameVideoRiskContextAvailable, route_variance_risk_context_available: routeVarianceRiskContextAvailable, forced_false_winner_risk_context_available: forcedFalseWinnerRiskContextAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits.map(comparisonRiskFieldDiagnostic), mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: comparisonParityReason, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
   };
   if (!comparisonParityIdentityIsSafe({
     run_id: input.run_id,
@@ -616,11 +692,162 @@ export async function emitComparisonParityProof(input: {
       emitted_artefact_ids: [] as string[],
       parity_status: 'insufficient' as const,
       blocker_codes: ['parity_artefacts_missing'],
+      comparison_parity_summary: { ...comparison_parity_summary, parity_status: 'insufficient', comparison_parity_status: 'insufficient', comparison_parity_blocker_codes: ['parity_artefacts_missing'] },
     };
   }
   const relative = input.take_id ? `takes/take-${input.take_id}/analysis-${analysisRunId}/parity/comparison_parity.json` : 'parity/comparison_parity.json';
   const result = await writeInternalJson(root, input.run_id, relative, outPayload, 'parity_comparison');
-  return { written: Boolean(result.written), emitted_artefact_ids: result.written ? ['parity_comparison'] : [], parity_status: parityStatus, blocker_codes };
+  return { written: Boolean(result.written), emitted_artefact_ids: result.written ? ['parity_comparison'] : [], parity_status: parityStatus, blocker_codes, comparison_parity_summary };
+}
+
+export interface RuntimeVerificationTraceEmitterInput {
+  run_id: string;
+  analysis_run_id?: string;
+  take_id?: string | null;
+  comparison_run_id?: string | null;
+  verification_scope?: 'ordinary_single_take' | 'duplicate_same_video_comparison' | 'release_readiness';
+  runtime_operator_verification_status?: string;
+  runtime_operator_verification_reason?: string;
+  runtime_bundle_freshness_status?: string;
+  runtime_bundle_matches_current_commit_status?: string;
+  runtime_bundle_matches_current_implementation_status?: string;
+  runtime_verified_take_ids?: string[];
+  runtime_verified_comparison_run_ids?: string[];
+  runtime_verified_artefact_ids?: string[];
+  runtime_verified_deployment_ref?: string | null;
+  runtime_verified_at?: string;
+  runtime_verified_by_role?: string | null;
+  operator_confirmation_status?: string;
+  operator_confirmation_reason?: string;
+  operator_confirmed_runtime_build_ref?: string | null;
+  operator_confirmed_runtime_pr_or_slice?: string | null;
+  operator_confirmation_source?: 'explicit_operator_runtime_message' | 'deployment_dashboard' | 'safe_env_var' | 'unknown';
+  public_output_unchanged?: boolean;
+  blocker_codes?: string[];
+  root_dir?: string;
+  internal_qa_emit?: boolean;
+}
+
+export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTraceEmitterInput) {
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
+    return { written: false as const, emitted_artefact_ids: [] as string[], runtime_verification_trace_summary: null };
+  }
+  const analysisRunId = input.analysis_run_id ?? input.run_id;
+  try {
+    assertSafeSegment(analysisRunId, 'analysis_run_id');
+    if (input.take_id) assertSafeSegment(input.take_id, 'take_id');
+  } catch {
+    return {
+      written: false as const,
+      emitted_artefact_ids: [] as string[],
+      runtime_verification_trace_summary: {
+        runtime_operator_verification_status: 'blocked',
+        runtime_operator_verification_reason: 'runtime_verification_identity_unsafe',
+        runtime_operator_verification_blocker_codes: ['runtime_verification_identity_unsafe'],
+        blocker_codes: ['runtime_verification_identity_unsafe'],
+      },
+      blocker_codes: ['runtime_verification_identity_unsafe'],
+    };
+  }
+  const root = input.root_dir ?? DEFAULT_ROOT;
+  const provenance = resolveQADeploymentProvenance();
+  const runtimeVerifiedTakeIds = getStringArray(input.runtime_verified_take_ids);
+  const runtimeVerifiedComparisonRunIds = getStringArray(input.runtime_verified_comparison_run_ids);
+  const runtimeVerifiedArtefactIds = getStringArray(input.runtime_verified_artefact_ids);
+  const runtimeBundleFreshnessStatus = input.runtime_bundle_freshness_status ?? 'unknown';
+  const runtimeBundleMatchesCurrentImplementationStatus = input.runtime_bundle_matches_current_implementation_status
+    ?? input.runtime_bundle_matches_current_commit_status
+    ?? 'unknown';
+  const runtimeBundleMatchesCurrentCommitStatus = input.runtime_bundle_matches_current_commit_status
+    ?? runtimeBundleMatchesCurrentImplementationStatus;
+  const operatorConfirmationStatus = input.operator_confirmation_status ?? 'missing';
+  const deploymentProvenanceStatus = provenance.deployment_provenance_status ?? 'unknown_no_safe_env_var_found';
+  const deploymentContextSatisfied = deploymentProvenanceStatus === 'resolved'
+    || operatorConfirmationStatus === 'confirmed'
+    || operatorConfirmationStatus === 'provided';
+  const bundleFresh = ['fresh', 'verified_fresh', 'current'].includes(runtimeBundleFreshnessStatus);
+  const bundleMatches = ['matched', 'matches', 'matches_current_commit', 'current_commit_matched', 'matches_current_implementation', 'current_implementation_matched', 'operator_confirmed'].includes(runtimeBundleMatchesCurrentImplementationStatus)
+    || ['matched', 'matches', 'matches_current_commit', 'current_commit_matched', 'operator_confirmed'].includes(runtimeBundleMatchesCurrentCommitStatus);
+  const runtimeContextPresent = input.verification_scope === 'duplicate_same_video_comparison'
+    ? runtimeVerifiedComparisonRunIds.length > 0
+    : runtimeVerifiedTakeIds.length > 0;
+  const requestedStatus = input.runtime_operator_verification_status ?? 'required';
+  const computedCompleted = requestedStatus === 'completed'
+    && bundleFresh
+    && bundleMatches
+    && deploymentContextSatisfied
+    && runtimeContextPresent
+    && runtimeVerifiedArtefactIds.length > 0;
+  const runtimeOperatorVerificationStatus = computedCompleted
+    ? 'completed'
+    : (requestedStatus === 'blocked' ? 'blocked' : (requestedStatus === 'completed' ? 'incomplete' : 'required'));
+  const blockerCodes = dedupePreservingOrder([
+    ...(input.blocker_codes ?? []),
+    ...(runtimeOperatorVerificationStatus === 'completed' ? [] : ['runtime_operator_verification_required']),
+    ...(!bundleFresh ? ['runtime_bundle_freshness_required'] : []),
+    ...(!bundleMatches ? ['runtime_bundle_current_implementation_required'] : []),
+    ...(!deploymentContextSatisfied ? ['deployment_provenance_or_operator_confirmation_required'] : []),
+    ...(!runtimeContextPresent ? ['runtime_verified_runtime_scope_required'] : []),
+    ...(runtimeVerifiedArtefactIds.length > 0 ? [] : ['runtime_verified_artefact_required']),
+  ]);
+  const runtimeVerificationTraceSummary = {
+    runtime_operator_verification_status: runtimeOperatorVerificationStatus,
+    runtime_operator_verification_reason: runtimeOperatorVerificationStatus === 'completed'
+      ? 'fresh_runtime_bundle_matches_current_implementation_with_deployment_context'
+      : (input.runtime_operator_verification_reason ?? `runtime_operator_verification_blockers:${blockerCodes.join(',')}`),
+    runtime_operator_verification_blocker_codes: blockerCodes,
+    runtime_bundle_freshness_status: runtimeBundleFreshnessStatus,
+    runtime_bundle_matches_current_commit_status: runtimeBundleMatchesCurrentCommitStatus,
+    runtime_bundle_matches_current_implementation_status: runtimeBundleMatchesCurrentImplementationStatus,
+    runtime_verified_take_ids: runtimeVerifiedTakeIds,
+    runtime_verified_comparison_run_ids: runtimeVerifiedComparisonRunIds,
+    runtime_verified_artefact_ids: runtimeVerifiedArtefactIds,
+    runtime_verified_deployment_ref: input.runtime_verified_deployment_ref ?? provenance.deployment_revision ?? provenance.build_commit_sha ?? null,
+    runtime_verified_at: input.runtime_verified_at ?? 'unknown',
+    runtime_verified_by_role: input.runtime_verified_by_role ?? null,
+    operator_confirmation_status: operatorConfirmationStatus,
+    operator_confirmation_reason: input.operator_confirmation_reason ?? (deploymentContextSatisfied ? 'deployment_context_confirmed_without_release_approval' : 'operator_confirmation_missing'),
+    operator_confirmed_runtime_build_ref: input.operator_confirmed_runtime_build_ref ?? null,
+    operator_confirmed_runtime_pr_or_slice: input.operator_confirmed_runtime_pr_or_slice ?? null,
+    operator_confirmation_source: input.operator_confirmation_source ?? 'unknown',
+    deployment_provenance_status: deploymentProvenanceStatus,
+    deployment_provenance_reason: provenance.deployment_provenance_reason ?? null,
+    deployment_provenance_blocker_codes: deploymentProvenanceStatus === 'resolved' ? [] : ['deployment_provenance_or_operator_confirmation_required'],
+    public_output_unchanged: input.public_output_unchanged !== false,
+    secrets_or_signed_urls_stored: false,
+    raw_prompt_or_response_stored: false,
+    blocker_codes: blockerCodes,
+  };
+  const payload = {
+    schema_version: 'tapecoach_v3_runtime_verification_trace_v1',
+    artefact_type: 'runtime_verification_trace',
+    run_id: input.run_id,
+    analysis_run_id: analysisRunId,
+    take_id: input.take_id ?? null,
+    comparison_run_id: input.comparison_run_id ?? null,
+    verification_scope: input.verification_scope ?? 'ordinary_single_take',
+    generated_at: new Date().toISOString(),
+    internal_only: true,
+    privacy_classification: 'internal_private',
+    ...runtimeVerificationTraceSummary,
+    production_safe_status: 'blocked',
+    customer_release_status: 'blocked',
+    public_scoring_status: 'blocked',
+    public_technique_authority_status: 'blocked',
+    public_comparison_recommendation_status: 'blocked',
+    ...provenance,
+  };
+  const relative = input.take_id
+    ? `takes/take-${input.take_id}/analysis-${analysisRunId}/analysis/RuntimeVerificationTrace.json`
+    : `analysis-${analysisRunId}/analysis/RuntimeVerificationTrace.json`;
+  const result = await writeInternalJson(root, input.run_id, relative, payload, 'runtime_verification_trace');
+  return {
+    written: Boolean(result.written),
+    emitted_artefact_ids: result.written ? ['runtime_verification_trace'] : [],
+    path: result.path ?? result.storage_path,
+    runtime_verification_trace_summary: runtimeVerificationTraceSummary,
+    blocker_codes: blockerCodes,
+  };
 }
 export interface RawReportEmitterInput { run_id: string; take_id: string; take_index?: number; submission_id?: string; fixture_id?: string; mux_playback_id?: string; report_data: Record<string, unknown>; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
 export interface ComparisonRawEmitterInput { run_id: string; comparison_data: Record<string, unknown>; comparison_id?: string; submission_id?: string; take_ids?: string[]; take_indices?: number[]; mux_playback_ids?: Record<string, string>; fixture_id?: string; source_stage: string; source_module: string; route_or_model_marker?: string; commit_sha?: string; branch_name?: string; root_dir?: string; internal_qa_emit?: boolean; }
@@ -3953,13 +4180,66 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
   try {
     const initialEmitted = [...(metadata.emitted_artefact_ids ?? [])].filter((id) => id !== 'qa_acceptance_metrics');
     const normalisedComparedTakeIds = normaliseUniqueTakeCores(metadata.compared_take_ids ?? metadata.take_ids);
-    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, claim_candidate_trace_summary: metadata.claim_candidate_trace_summary, evidence_anchor_trace_summary: metadata.evidence_anchor_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary, step1_observable_evidence_summary: metadata.step1_observable_evidence_summary, media_identity_summary: metadata.media_identity_summary, report_parity_summary: metadata.report_parity_summary };
+    const baseOptions = { internal_qa_emit: true, run_id: metadata.run_id, analysis_run_id: metadata.analysis_run_id ?? metadata.run_id, comparison_run_id: metadata.comparison_run_id, take_id: metadata.take_id ?? metadata.take_ids?.[0], submission_id: metadata.submission_id, compared_take_ids: normalisedComparedTakeIds, fixture_id: metadata.fixture_id, commit_sha: metadata.commit_sha, branch_name: metadata.branch_name, root_dir: metadata.root_dir, ...(metadata.source_scope_file ? { source_scope_file: metadata.source_scope_file } : {}), input_refs: metadata.submission_id ? [`submission:${metadata.submission_id}`] : [], take_refs: metadata.take_ids ?? [], mux_playback_ids: metadata.mux_playback_ids, fixture_refs: metadata.route_module ? [`route:${metadata.route_module}`] : [], emitted_artefact_ids: initialEmitted, emitted_blocked_artefact_ids: metadata.emitted_blocked_artefact_ids ?? [], deferred_artefact_ids: metadata.deferred_artefact_ids ?? [], not_applicable_artefact_ids: metadata.not_applicable_artefact_ids ?? [], runtime_operator_verification_status: metadata.runtime_operator_verification_status, runtime_bundle_freshness_status: metadata.runtime_bundle_freshness_status, runtime_bundle_matches_current_commit_status: metadata.runtime_bundle_matches_current_commit_status, runtime_bundle_matches_current_implementation_status: metadata.runtime_bundle_matches_current_implementation_status, runtime_verified_take_ids: metadata.runtime_verified_take_ids, runtime_verified_comparison_run_ids: metadata.runtime_verified_comparison_run_ids, runtime_verified_deployment_ref: metadata.runtime_verified_deployment_ref, runtime_verified_at: metadata.runtime_verified_at, runtime_verified_by_role: metadata.runtime_verified_by_role, operator_confirmation_status: metadata.operator_confirmation_status, operator_confirmed_pr_or_commit: metadata.operator_confirmed_pr_or_commit, operator_confirmation_reason: metadata.operator_confirmation_reason, runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id, runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id, artefact_source_classification_by_id: metadata.artefact_source_classification_by_id, artefact_level2_spine_satisfaction_by_id: metadata.artefact_level2_spine_satisfaction_by_id, legacy_adapter_artefact_ids: metadata.legacy_adapter_artefact_ids, real_v3_spine_artefact_ids: metadata.real_v3_spine_artefact_ids, defect_risk_ids: metadata.defect_risk_ids, public_claim_trace_summary: metadata.public_claim_trace_summary, claim_candidate_trace_summary: metadata.claim_candidate_trace_summary, evidence_anchor_trace_summary: metadata.evidence_anchor_trace_summary, technique_observation_trace_summary: metadata.technique_observation_trace_summary, score_trace_summary: metadata.score_trace_summary, model_run_trace_summary: metadata.model_run_trace_summary, analysis_evidence_state_summary: metadata.analysis_evidence_state_summary, step1_observable_evidence_summary: metadata.step1_observable_evidence_summary, media_identity_summary: metadata.media_identity_summary, report_parity_summary: metadata.report_parity_summary, runtime_verification_trace_summary: metadata.runtime_verification_trace_summary, comparison_parity_summary: metadata.comparison_parity_summary };
     const manifestRelativePath = shouldUseExpandedManifestPaths()
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'manifest.json' })
       : 'manifest.json';
     const metricsRelativePath = shouldUseExpandedManifestPaths()
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'qa/acceptance_metrics.json' })
       : 'qa/acceptance_metrics.json';
+
+    const shouldEmitRuntimeVerificationTrace = Boolean(
+      metadata.runtime_operator_verification_status
+      || metadata.runtime_bundle_freshness_status
+      || metadata.runtime_bundle_matches_current_commit_status
+      || metadata.runtime_bundle_matches_current_implementation_status
+      || metadata.runtime_verified_deployment_ref
+      || metadata.runtime_verified_at
+      || metadata.runtime_verified_by_role
+      || metadata.operator_confirmation_status
+      || metadata.operator_confirmed_pr_or_commit
+      || metadata.operator_confirmation_reason
+      || (metadata.runtime_verified_take_ids?.length ?? 0) > 0
+      || (metadata.runtime_verified_comparison_run_ids?.length ?? 0) > 0
+    );
+    const runtimeVerificationTraceWrite = shouldEmitRuntimeVerificationTrace
+      ? await emitRuntimeVerificationTrace({
+        run_id: metadata.run_id,
+        analysis_run_id: baseOptions.analysis_run_id,
+        take_id: baseOptions.take_id ?? null,
+        comparison_run_id: metadata.comparison_run_id ?? null,
+        verification_scope: metadata.comparison_run_id || normalisedComparedTakeIds.length > 1 ? 'duplicate_same_video_comparison' : 'ordinary_single_take',
+        runtime_operator_verification_status: metadata.runtime_operator_verification_status,
+        runtime_bundle_freshness_status: metadata.runtime_bundle_freshness_status,
+        runtime_bundle_matches_current_commit_status: metadata.runtime_bundle_matches_current_commit_status,
+        runtime_bundle_matches_current_implementation_status: metadata.runtime_bundle_matches_current_implementation_status,
+        runtime_verified_take_ids: metadata.runtime_verified_take_ids,
+        runtime_verified_comparison_run_ids: metadata.runtime_verified_comparison_run_ids,
+        runtime_verified_artefact_ids: initialEmitted,
+        runtime_verified_deployment_ref: metadata.runtime_verified_deployment_ref,
+        runtime_verified_at: metadata.runtime_verified_at,
+        runtime_verified_by_role: metadata.runtime_verified_by_role,
+        operator_confirmation_status: metadata.operator_confirmation_status,
+        operator_confirmation_reason: metadata.operator_confirmation_reason,
+        operator_confirmed_runtime_build_ref: metadata.operator_confirmed_pr_or_commit,
+        public_output_unchanged: true,
+        root_dir: metadata.root_dir,
+        internal_qa_emit: true,
+      })
+      : { written: false as const, emitted_artefact_ids: [] as string[], runtime_verification_trace_summary: metadata.runtime_verification_trace_summary ?? null };
+    if (runtimeVerificationTraceWrite.written) {
+      initialEmitted.push('runtime_verification_trace');
+      baseOptions.emitted_artefact_ids = [...new Set(initialEmitted)];
+      baseOptions.runtime_verification_trace_summary = runtimeVerificationTraceWrite.runtime_verification_trace_summary ?? undefined;
+      baseOptions.artefact_source_classification_by_id = {
+        ...(baseOptions.artefact_source_classification_by_id ?? {}),
+        runtime_verification_trace: 'runtime_verification_trace',
+      };
+      baseOptions.artefact_level2_spine_satisfaction_by_id = {
+        ...(baseOptions.artefact_level2_spine_satisfaction_by_id ?? {}),
+        runtime_verification_trace: false,
+      };
+    }
 
     console.info('[internal-qa] manifest_write_attempt', { event: 'manifest_write_attempt', run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: baseOptions.take_id ?? null, artefact_id: 'manifest', relative_path: manifestRelativePath, resolved_storage_path: null, sink: process.env.QA_ARTIFACT_SINK ?? 'file', bucket: process.env.QA_ARTIFACTS_BUCKET ?? null, emitted_artefact_ids: initialEmitted, timestamp: new Date().toISOString() });
     const out = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath });
@@ -3986,6 +4266,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     let artefactSourceClassificationById = { ...(metadata.artefact_source_classification_by_id ?? {}) };
     let artefactLevel2ById = { ...(metadata.artefact_level2_spine_satisfaction_by_id ?? {}) };
     let reportParitySummary = metadata.report_parity_summary;
+    let comparisonParitySummary = metadata.comparison_parity_summary;
     const noExportSourceById: Record<string, string> = {
       no_export_source_proof: 'internal_no_export_source_proof',
       no_export_config_proof: 'internal_no_export_config_proof',
@@ -4169,6 +4450,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       emittedWithInternalTraces = emittedWithInternalTraces.filter((id) => id !== 'parity_comparison');
       emittedBlockedWithInternalTraces = [...new Set([...emittedBlockedWithInternalTraces, 'parity_comparison'])];
     }
+    comparisonParitySummary = comparisonParityWrite.comparison_parity_summary ?? comparisonParitySummary;
 
     if (canEmitTakeScopedFirstPassTraces) {
       const proofSnapshotOut = await emitInternalQAArtifactManifest({
@@ -4181,6 +4463,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         artefact_source_classification_by_id: artefactSourceClassificationById,
         artefact_level2_spine_satisfaction_by_id: artefactLevel2ById,
         report_parity_summary: reportParitySummary,
+        comparison_parity_summary: comparisonParitySummary,
       });
       if (proofSnapshotOut.written && 'manifest' in (proofSnapshotOut as any)) {
         const proofSnapshotManifest = (proofSnapshotOut as any).manifest;
@@ -4227,7 +4510,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       warning: getQAWriteWarning(qaWrite),
     });
     console.info('[internal-qa] acceptance_metrics_write_result', { event: 'acceptance_metrics_write_result', written: Boolean(qaWrite.written), warning: getQAWriteWarning(qaWrite), sink_warning: (qaWrite as any)?.sink_warning ?? null, resolved_storage_path: qaWrite.storage_path ?? qaWrite.path ?? null });
-    const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces, runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, report_parity_summary: reportParitySummary, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
+    const finalOut = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath, emitted_artefact_ids: [...new Set([...emittedWithInternalTraces, 'qa_acceptance_metrics'])], emitted_blocked_artefact_ids: emittedBlockedWithInternalTraces, runtime_evidence_accepted_by_id: [...new Set([...(metadata.runtime_evidence_accepted_by_id ?? emittedWithInternalTraces), 'qa_acceptance_metrics'])], runtime_evidence_blocked_by_id: [...new Set([...(metadata.runtime_evidence_blocked_by_id ?? emittedBlockedWithInternalTraces), ...emittedBlockedWithInternalTraces])], artefact_source_classification_by_id: artefactSourceClassificationById, artefact_level2_spine_satisfaction_by_id: artefactLevel2ById, report_parity_summary: reportParitySummary, comparison_parity_summary: comparisonParitySummary, validator_trace_summary: validatorTraceSummary, gate_trace_summary: gateTraceSummary });
     let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
     if (finalOut.written && 'manifest' in (finalOut as any)) {
       const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };
@@ -7122,6 +7405,8 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
     manifest: reconciledComparisonManifest,
     written: Boolean(comparisonParityWrite.written),
     parity_status: comparisonParityWrite.parity_status as ComparisonParityStatus,
+    blocker_codes: comparisonParityWrite.blocker_codes,
+    comparison_parity_summary: comparisonParityWrite.comparison_parity_summary ?? null,
   });
   const mw = await writeQAArtifact({ root_dir: root, run_id: identity.canonical_qa_run_id, relative_path: identity.manifest_relative_path, payload: reconciledManifest, artefact_id: 'manifest' });
   const metrics = { ...buildQAAcceptanceMetrics(reconciledManifest), ...resolveQADeploymentProvenance() };
@@ -8853,6 +9138,10 @@ export async function emitValidatorTraceFirstPass(input: any) {
   const customerReleaseReadinessReady = input.acceptance_metrics_snapshot.customer_release_readiness_status === 'ready_for_review';
   const releaseReadinessReady = productionReadinessReady && customerReleaseReadinessReady;
   const duplicateSameVideoSafetyClassified = ['not_applicable', 'satisfied_suppressed', 'insufficient', 'blocked'].includes(String(input.acceptance_metrics_snapshot.duplicate_same_video_safety_status));
+  const comparisonPublicOutputAbsenceClassified = ['not_applicable', 'satisfied', 'insufficient', 'blocked'].includes(String(input.acceptance_metrics_snapshot.comparison_public_output_absence_proof_status));
+  const comparisonSuppressionSafetyClassified = ['not_applicable', 'satisfied_suppressed', 'insufficient', 'blocked'].includes(String(input.acceptance_metrics_snapshot.comparison_suppression_safety_status));
+  const comparisonParityClassified = ['not_applicable', 'passed', 'failed', 'fail_closed', 'satisfied_suppression_only', 'insufficient'].includes(String(input.acceptance_metrics_snapshot.comparison_parity_status));
+  const evidenceDeltaClassified = ['not_applicable', 'decisive', 'non_decisive', 'unavailable', 'insufficient'].includes(String(input.acceptance_metrics_snapshot.evidence_delta_or_no_material_difference_status));
   entries.push({
     validation_id: 'public_scoring_suppression_proof_validated',
     validation_rule_version: 's9-19e-public-release-suppression-proof-v1',
@@ -8992,6 +9281,55 @@ export async function emitValidatorTraceFirstPass(input: any) {
     blocker_codes: duplicateSameVideoSafetyClassified ? [] : ['duplicate_same_video_safety_status_missing'],
     notes: null,
   });
+  entries.push({
+    validation_id: 'comparison_public_output_absence_validated',
+    validation_rule_version: 's9-19j-runtime-verification-comparison-parity-v1',
+    validation_area: 'comparison_safety',
+    subject: 'comparison_public_output_absence_proof_status',
+    status: comparisonPublicOutputAbsenceClassified ? 'pass' : 'blocked',
+    expected: 'not_applicable_or_satisfied_or_exact_blocker',
+    observed: {
+      comparison_public_output_status: input.acceptance_metrics_snapshot.comparison_public_output_status,
+      comparison_public_output_absence_proof_status: input.acceptance_metrics_snapshot.comparison_public_output_absence_proof_status,
+      public_winner_absent: input.acceptance_metrics_snapshot.public_winner_absent,
+      public_recommendation_absent: input.acceptance_metrics_snapshot.public_recommendation_absent,
+    },
+    source_path: 'qa.acceptance_metrics.comparison_public_output_absence_proof_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'parity_comparison', 'comparison_suppression_trace'],
+    blocker_codes: comparisonPublicOutputAbsenceClassified ? [] : ['comparison_public_output_absence_status_missing'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'comparison_suppression_safety_validated',
+    validation_rule_version: 's9-19j-runtime-verification-comparison-parity-v1',
+    validation_area: 'comparison_safety',
+    subject: 'comparison_suppression_safety_status',
+    status: comparisonSuppressionSafetyClassified ? 'pass' : 'blocked',
+    expected: 'not_applicable_or_satisfied_suppressed_or_fail_closed',
+    observed: input.acceptance_metrics_snapshot.comparison_suppression_safety_status,
+    source_path: 'qa.acceptance_metrics.comparison_suppression_safety_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'parity_comparison', 'duplicate_detection_trace', 'comparison_suppression_trace'],
+    blocker_codes: comparisonSuppressionSafetyClassified ? [] : ['comparison_suppression_safety_status_missing'],
+    notes: null,
+  });
+  entries.push({
+    validation_id: 'comparison_parity_classification_validated',
+    validation_rule_version: 's9-19j-runtime-verification-comparison-parity-v1',
+    validation_area: 'comparison_parity',
+    subject: 'comparison_parity_status',
+    status: comparisonParityClassified && evidenceDeltaClassified ? 'pass' : 'blocked',
+    expected: 'passed_or_fail_closed_with_exact_evidence_delta_status',
+    observed: {
+      comparison_parity_status: input.acceptance_metrics_snapshot.comparison_parity_status,
+      comparison_parity_reason: input.acceptance_metrics_snapshot.comparison_parity_reason,
+      evidence_delta_or_no_material_difference_status: input.acceptance_metrics_snapshot.evidence_delta_or_no_material_difference_status,
+      comparison_parity_blocker_codes: input.acceptance_metrics_snapshot.comparison_parity_blocker_codes,
+    },
+    source_path: 'qa.acceptance_metrics.comparison_parity_status',
+    related_artefact_ids: ['qa_acceptance_metrics', 'parity_comparison', 'duplicate_detection_trace'],
+    blocker_codes: comparisonParityClassified && evidenceDeltaClassified ? [] : ['comparison_parity_status_missing'],
+    notes: null,
+  });
   const failCount = entries.filter((e) => e.status === 'fail').length;
   const warningCount = entries.filter((e) => e.status === 'warn' || e.status === 'warning').length;
   const blockedCount = entries.filter((e) => e.status === 'blocked').length;
@@ -9025,6 +9363,9 @@ export async function emitValidatorTraceFirstPass(input: any) {
     deployment_provenance_validation_status: deploymentContextVerified ? 'passed' as const : 'blocked' as const,
     release_readiness_validation_status: releaseReadinessReady ? 'passed' as const : 'blocked' as const,
     duplicate_same_video_safety_validation_status: duplicateSameVideoSafetyClassified ? 'passed' as const : 'blocked' as const,
+    comparison_public_output_absence_validation_status: comparisonPublicOutputAbsenceClassified ? 'passed' as const : 'blocked' as const,
+    comparison_suppression_safety_validation_status: comparisonSuppressionSafetyClassified ? 'passed' as const : 'blocked' as const,
+    comparison_parity_classification_validation_status: comparisonParityClassified && evidenceDeltaClassified ? 'passed' as const : 'blocked' as const,
   };
   const payload = { schema_version: 'tapecoach_v3_validator_trace_first_pass_v1', artefact_type: 'validator_trace', internal_only: true, privacy_classification: 'internal_private', run_id: input.run_id, analysis_run_id: analysisRunId, take_id: input.take_id, generated_at: new Date().toISOString(), source_module: input.source_module, source_stage: input.source_stage, source_classification: validatorTraceSatisfied ? 'independent_validation_satisfying' : 'internal_validator', trace_mode: 'first_pass_internal_bundle_validator', validated_snapshot_stage: 'pre_finalisation_snapshot', final_manifest_rewrite_expected: true, self_inclusion_validated: false, intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? ['validator_trace', 'gate_trace'], ...summary, validation_entries: entries, validator_trace_summary: summary, cannot_satisfy_level2_validator_gate: !validatorTraceSatisfied, gate_satisfaction_reason: summary.validator_trace_gate_reason, blocker_codes: validatorTraceSatisfied ? ['public_release_gates_blocked'] : ['ValidatorTrace_internal_only'], public_output_unchanged: true, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', ...resolveQADeploymentProvenance() };
   const relPath = `takes/take-${input.take_id}/analysis-${analysisRunId}/traces/ValidatorTrace.json`;
@@ -9059,11 +9400,17 @@ export async function emitGateTraceFirstPass(input: any) {
   const globalLevel2SuppressionProofStatus = String(input.acceptance_metrics_snapshot?.global_level2_suppression_proof_status ?? 'insufficient');
   const globalLevel2ReleaseReadinessStatus = String(input.acceptance_metrics_snapshot?.global_level2_release_readiness_status ?? 'blocked');
   const runtimeOperatorVerificationStatus = String(input.acceptance_metrics_snapshot?.runtime_operator_verification_status ?? 'required');
+  const runtimeBundleFreshnessStatus = String(input.acceptance_metrics_snapshot?.runtime_bundle_freshness_status ?? 'unknown');
+  const runtimeBundleMatchesCurrentImplementationStatus = String(input.acceptance_metrics_snapshot?.runtime_bundle_matches_current_implementation_status ?? input.acceptance_metrics_snapshot?.runtime_bundle_matches_current_commit_status ?? 'unknown');
   const deploymentProvenanceStatus = String(input.acceptance_metrics_snapshot?.deployment_provenance_status ?? 'unknown_no_safe_env_var_found');
   const operatorConfirmationStatus = String(input.acceptance_metrics_snapshot?.operator_confirmation_status ?? 'missing');
   const productionSafeReadinessStatus = String(input.acceptance_metrics_snapshot?.production_safe_readiness_status ?? 'blocked');
   const customerReleaseReadinessStatus = String(input.acceptance_metrics_snapshot?.customer_release_readiness_status ?? 'blocked');
   const duplicateSameVideoSafetyStatus = String(input.acceptance_metrics_snapshot?.duplicate_same_video_safety_status ?? 'not_applicable');
+  const comparisonPublicOutputAbsenceProofStatus = String(input.acceptance_metrics_snapshot?.comparison_public_output_absence_proof_status ?? 'not_applicable');
+  const comparisonSuppressionSafetyStatus = String(input.acceptance_metrics_snapshot?.comparison_suppression_safety_status ?? 'not_applicable');
+  const comparisonParityStatus = String(input.acceptance_metrics_snapshot?.comparison_parity_status ?? 'not_applicable');
+  const evidenceDeltaOrNoMaterialDifferenceStatus = String(input.acceptance_metrics_snapshot?.evidence_delta_or_no_material_difference_status ?? 'not_applicable');
   const globalLevel2AcceptanceStatus = String(input.acceptance_metrics_snapshot?.global_level2_acceptance_status ?? 'not_accepted');
   const suppressionGateStatus = (status: string) => status === 'satisfied'
     ? 'passed'
@@ -9080,7 +9427,14 @@ export async function emitGateTraceFirstPass(input: any) {
     { gate_id: 'validator_trace_gate', gate_name: 'validator_trace_gate', gate_family: 'trace', status: validatorTraceSatisfied ? 'passed' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: validatorTraceSatisfied ? 'independent_validation_satisfying' : (input.emitted_artefact_ids?.includes('validator_trace') ? 'emitted_internal_only' : 'missing'), expected_state_for_acceptance: 'independent_runtime_v3', observed_evidence: [`validator_trace_summary.independent_validation_status=${String(input.validator_trace_summary?.independent_validation_status ?? 'missing')}`], blocker_codes: validatorTraceSatisfied ? [] : ['ValidatorTrace_internal_only'], dependent_artefact_ids: ['validator_trace'], evidence_artefact_ids: ['validator_trace'], validator_rule_ids: [], source_paths: ['traces/ValidatorTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
     { gate_id: 'model_run_trace_gate', gate_name: 'model_run_trace_gate', gate_family: 'trace', status: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? 'passed' : (input.emitted_artefact_ids?.includes('model_run_trace') ? 'insufficient' : 'missing'), required_for_level: 'ordinary_l2a_internal', current_state: String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? (input.emitted_artefact_ids?.includes('model_run_trace') ? 'emitted_metadata_only' : 'missing')), expected_state_for_acceptance: 'independent_model_run_proof_chain', observed_evidence: [`qa.acceptance_metrics.model_run_trace_per_stage_model_proof_status=${String(input.acceptance_metrics_snapshot?.model_run_trace_per_stage_model_proof_status ?? 'missing')}`], blocker_codes: input.acceptance_metrics_snapshot?.model_run_trace_gate_status === 'satisfied' ? [] : ['ModelRunTrace_independent_proof_partial'], dependent_artefact_ids: ['model_run_trace'], evidence_artefact_ids: ['model_run_trace'], validator_rule_ids: ['model_run_per_stage_proof_status_recorded'], source_paths: ['traces/ModelRunTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: [], notes: null },
     { gate_id: 'runtime_operator_verification_gate', gate_name: 'runtime_operator_verification_gate', gate_family: 'runtime_verification', status: runtimeOperatorVerificationStatus === 'completed' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: runtimeOperatorVerificationStatus, expected_state_for_acceptance: 'completed', observed_evidence: [`qa.acceptance_metrics.runtime_operator_verification_status=${runtimeOperatorVerificationStatus}`], blocker_codes: runtimeOperatorVerificationStatus === 'completed' ? [] : getStringArray(input.acceptance_metrics_snapshot?.runtime_operator_verification_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'manifest'], evidence_artefact_ids: ['qa_acceptance_metrics', 'manifest'], validator_rule_ids: ['runtime_operator_verification_status_validated'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_release_readiness', required_maturity_level: 'release_readiness', dependency_gate_ids: ['global_level2_evidence_gate', 'global_level2_suppression_proof_gate'], notes: null },
+    { gate_id: 'runtime_bundle_freshness_gate', gate_name: 'runtime_bundle_freshness_gate', gate_family: 'runtime_verification', status: ['fresh', 'verified_fresh', 'current'].includes(runtimeBundleFreshnessStatus) ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: runtimeBundleFreshnessStatus, expected_state_for_acceptance: 'fresh', observed_evidence: [`qa.acceptance_metrics.runtime_bundle_freshness_status=${runtimeBundleFreshnessStatus}`], blocker_codes: ['fresh', 'verified_fresh', 'current'].includes(runtimeBundleFreshnessStatus) ? [] : ['runtime_bundle_freshness_required'], dependent_artefact_ids: ['runtime_verification_trace', 'qa_acceptance_metrics', 'manifest'], evidence_artefact_ids: ['runtime_verification_trace', 'qa_acceptance_metrics', 'manifest'], validator_rule_ids: ['runtime_operator_verification_status_validated'], source_paths: ['analysis/RuntimeVerificationTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_release_readiness', required_maturity_level: 'release_readiness', dependency_gate_ids: [], notes: null },
+    { gate_id: 'runtime_bundle_matches_current_implementation_gate', gate_name: 'runtime_bundle_matches_current_implementation_gate', gate_family: 'runtime_verification', status: ['matched', 'matches', 'matches_current_commit', 'current_commit_matched', 'matches_current_implementation', 'current_implementation_matched', 'operator_confirmed'].includes(runtimeBundleMatchesCurrentImplementationStatus) ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: runtimeBundleMatchesCurrentImplementationStatus, expected_state_for_acceptance: 'matches_current_implementation', observed_evidence: [`qa.acceptance_metrics.runtime_bundle_matches_current_implementation_status=${runtimeBundleMatchesCurrentImplementationStatus}`], blocker_codes: ['matched', 'matches', 'matches_current_commit', 'current_commit_matched', 'matches_current_implementation', 'current_implementation_matched', 'operator_confirmed'].includes(runtimeBundleMatchesCurrentImplementationStatus) ? [] : ['runtime_bundle_current_implementation_required'], dependent_artefact_ids: ['runtime_verification_trace', 'qa_acceptance_metrics', 'manifest'], evidence_artefact_ids: ['runtime_verification_trace', 'qa_acceptance_metrics', 'manifest'], validator_rule_ids: ['runtime_operator_verification_status_validated'], source_paths: ['analysis/RuntimeVerificationTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_release_readiness', required_maturity_level: 'release_readiness', dependency_gate_ids: [], notes: null },
     { gate_id: 'deployment_provenance_gate', gate_name: 'deployment_provenance_gate', gate_family: 'deployment_provenance', status: deploymentProvenanceStatus === 'resolved' || operatorConfirmationStatus === 'confirmed' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: deploymentProvenanceStatus, expected_state_for_acceptance: 'resolved_or_operator_confirmed', observed_evidence: [`qa.acceptance_metrics.deployment_provenance_status=${deploymentProvenanceStatus}`, `qa.acceptance_metrics.operator_confirmation_status=${operatorConfirmationStatus}`], blocker_codes: deploymentProvenanceStatus === 'resolved' || operatorConfirmationStatus === 'confirmed' ? [] : getStringArray(input.acceptance_metrics_snapshot?.deployment_provenance_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'manifest'], evidence_artefact_ids: ['qa_acceptance_metrics', 'manifest'], validator_rule_ids: ['deployment_provenance_or_operator_confirmation_validated'], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_release_readiness', required_maturity_level: 'release_readiness', dependency_gate_ids: [], notes: null },
+    { gate_id: 'operator_confirmation_gate', gate_name: 'operator_confirmation_gate', gate_family: 'deployment_provenance', status: operatorConfirmationStatus === 'confirmed' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: operatorConfirmationStatus, expected_state_for_acceptance: 'confirmed_if_safe_env_absent', observed_evidence: [`qa.acceptance_metrics.operator_confirmation_status=${operatorConfirmationStatus}`], blocker_codes: operatorConfirmationStatus === 'confirmed' ? [] : ['operator_confirmation_missing'], dependent_artefact_ids: ['runtime_verification_trace', 'qa_acceptance_metrics'], evidence_artefact_ids: ['runtime_verification_trace', 'qa_acceptance_metrics'], validator_rule_ids: ['deployment_provenance_or_operator_confirmation_validated'], source_paths: ['analysis/RuntimeVerificationTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'does_not_approve_release', required_maturity_level: 'release_readiness', dependency_gate_ids: [], notes: null },
+    { gate_id: 'comparison_public_output_absence_gate', gate_name: 'comparison_public_output_absence_gate', gate_family: 'comparison_safety', status: ['satisfied', 'not_applicable'].includes(comparisonPublicOutputAbsenceProofStatus) ? (comparisonPublicOutputAbsenceProofStatus === 'not_applicable' ? 'not_applicable' : 'passed') : 'insufficient', required_for_level: 'comparison_runtime', current_state: comparisonPublicOutputAbsenceProofStatus, expected_state_for_acceptance: 'satisfied_or_not_applicable', observed_evidence: [`qa.acceptance_metrics.comparison_public_output_absence_proof_status=${comparisonPublicOutputAbsenceProofStatus}`], blocker_codes: ['satisfied', 'not_applicable'].includes(comparisonPublicOutputAbsenceProofStatus) ? [] : ['comparison_public_output_absence_not_proven'], dependent_artefact_ids: ['parity_comparison', 'comparison_suppression_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'parity_comparison', 'comparison_suppression_trace'], validator_rule_ids: ['comparison_public_output_absence_validated'], source_paths: ['parity/comparison_parity.json', 'qa/acceptance_metrics.json'], public_effect: 'prevents_public_comparison_winner_recommendation', required_maturity_level: 'comparison_safety', dependency_gate_ids: ['public_comparison_recommendation_gate'], notes: null },
+    { gate_id: 'comparison_suppression_safety_gate', gate_name: 'comparison_suppression_safety_gate', gate_family: 'comparison_safety', status: ['satisfied_suppressed', 'not_applicable'].includes(comparisonSuppressionSafetyStatus) ? (comparisonSuppressionSafetyStatus === 'not_applicable' ? 'not_applicable' : 'passed') : 'insufficient', required_for_level: 'comparison_runtime', current_state: comparisonSuppressionSafetyStatus, expected_state_for_acceptance: 'satisfied_suppressed_or_not_applicable', observed_evidence: [`qa.acceptance_metrics.comparison_suppression_safety_status=${comparisonSuppressionSafetyStatus}`], blocker_codes: ['satisfied_suppressed', 'not_applicable'].includes(comparisonSuppressionSafetyStatus) ? [] : ['comparison_suppression_safety_not_satisfied'], dependent_artefact_ids: ['parity_comparison', 'duplicate_detection_trace', 'comparison_suppression_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'parity_comparison', 'duplicate_detection_trace', 'comparison_suppression_trace'], validator_rule_ids: ['comparison_suppression_safety_validated'], source_paths: ['parity/comparison_parity.json', 'qa/acceptance_metrics.json'], public_effect: 'prevents_public_comparison_winner_recommendation', required_maturity_level: 'comparison_safety', dependency_gate_ids: ['comparison_public_output_absence_gate'], notes: null },
+    { gate_id: 'comparison_parity_gate', gate_name: 'comparison_parity_gate', gate_family: 'comparison_parity', status: ['passed', 'not_applicable'].includes(comparisonParityStatus) ? (comparisonParityStatus === 'not_applicable' ? 'not_applicable' : 'passed') : (comparisonParityStatus === 'fail_closed' ? 'blocked' : 'insufficient'), required_for_level: 'comparison_l2', current_state: comparisonParityStatus, expected_state_for_acceptance: 'passed_or_not_applicable', observed_evidence: [`qa.acceptance_metrics.comparison_parity_status=${comparisonParityStatus}`], blocker_codes: ['passed', 'not_applicable'].includes(comparisonParityStatus) ? [] : getStringArray(input.acceptance_metrics_snapshot?.comparison_parity_blocker_codes), dependent_artefact_ids: ['parity_comparison'], evidence_artefact_ids: ['qa_acceptance_metrics', 'parity_comparison'], validator_rule_ids: ['comparison_parity_classification_validated'], source_paths: ['parity/comparison_parity.json', 'qa/acceptance_metrics.json'], public_effect: 'does_not_approve_public_recommendation', required_maturity_level: 'comparison_l2', dependency_gate_ids: ['comparison_suppression_safety_gate', 'evidence_delta_or_no_material_difference_gate'], notes: null },
+    { gate_id: 'evidence_delta_or_no_material_difference_gate', gate_name: 'evidence_delta_or_no_material_difference_gate', gate_family: 'comparison_parity', status: ['decisive', 'not_applicable'].includes(evidenceDeltaOrNoMaterialDifferenceStatus) ? (evidenceDeltaOrNoMaterialDifferenceStatus === 'not_applicable' ? 'not_applicable' : 'passed') : 'blocked', required_for_level: 'comparison_l2', current_state: evidenceDeltaOrNoMaterialDifferenceStatus, expected_state_for_acceptance: 'decisive_or_not_applicable', observed_evidence: [`qa.acceptance_metrics.evidence_delta_or_no_material_difference_status=${evidenceDeltaOrNoMaterialDifferenceStatus}`], blocker_codes: ['decisive', 'not_applicable'].includes(evidenceDeltaOrNoMaterialDifferenceStatus) ? [] : ['duplicate_same_video_suppressed_without_decisive_evidence_delta'], dependent_artefact_ids: ['duplicate_detection_trace', 'parity_comparison'], evidence_artefact_ids: ['qa_acceptance_metrics', 'duplicate_detection_trace', 'parity_comparison'], validator_rule_ids: ['comparison_parity_classification_validated'], source_paths: ['comparison/duplicate_detection_trace.json', 'parity/comparison_parity.json', 'qa/acceptance_metrics.json'], public_effect: 'keeps_comparison_level2_fail_closed', required_maturity_level: 'comparison_l2', dependency_gate_ids: ['duplicate_same_video_safety_gate'], notes: null },
     { gate_id: 'production_safe_readiness_gate', gate_name: 'production_safe_readiness_gate', gate_family: 'release_readiness', status: productionSafeReadinessStatus === 'ready_for_review' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: productionSafeReadinessStatus, expected_state_for_acceptance: 'ready_for_review', observed_evidence: [`qa.acceptance_metrics.production_safe_readiness_status=${productionSafeReadinessStatus}`], blocker_codes: productionSafeReadinessStatus === 'ready_for_review' ? [] : getStringArray(input.acceptance_metrics_snapshot?.production_safe_readiness_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['production_customer_release_readiness_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'does_not_approve_production_release', required_maturity_level: 'release_readiness', dependency_gate_ids: ['runtime_operator_verification_gate', 'deployment_provenance_gate'], notes: null },
     { gate_id: 'customer_release_readiness_gate', gate_name: 'customer_release_readiness_gate', gate_family: 'release_readiness', status: customerReleaseReadinessStatus === 'ready_for_review' ? 'passed' : 'blocked', required_for_level: 'release_readiness', current_state: customerReleaseReadinessStatus, expected_state_for_acceptance: 'ready_for_review', observed_evidence: [`qa.acceptance_metrics.customer_release_readiness_status=${customerReleaseReadinessStatus}`], blocker_codes: customerReleaseReadinessStatus === 'ready_for_review' ? [] : getStringArray(input.acceptance_metrics_snapshot?.customer_release_readiness_blocker_codes), dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['production_customer_release_readiness_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'does_not_approve_customer_release', required_maturity_level: 'release_readiness', dependency_gate_ids: ['runtime_operator_verification_gate', 'deployment_provenance_gate'], notes: null },
     { gate_id: 'production_safe_gate', gate_name: 'production_safe_gate', gate_family: 'release', status: 'blocked', required_for_level: 'L2', current_state: 'blocked', expected_state_for_acceptance: 'approved', observed_evidence: ['manifest.production_safe_status=blocked'], blocker_codes: ['production_safe_blocked'], dependent_artefact_ids: ['gate_trace'], evidence_artefact_ids: ['manifest', 'qa_acceptance_metrics', 'gate_trace'], validator_rule_ids: [], source_paths: ['manifest.json', 'qa/acceptance_metrics.json'], public_effect: 'blocks_production_release', required_maturity_level: 'public_release', dependency_gate_ids: [], notes: null },

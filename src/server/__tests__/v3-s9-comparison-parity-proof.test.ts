@@ -287,7 +287,12 @@ describe('v3-s9 comparison parity proof', () => {
         },
       },
     });
-    expectInsufficientBlocked(out);
+    expect(out.parity.parity_status).toBe('insufficient');
+    expect(out.parity.comparison_parity_status).toBe('fail_closed');
+    expect(out.manifest.artefact_status_by_id.parity_comparison).toBe('emitted_blocked');
+    expect(out.manifest.required_artifacts.find((a:any)=>a.artefact_id==='parity_comparison')?.blocker_code).toBe('duplicate_same_video_suppressed_without_decisive_evidence_delta');
+    expect(out.manifest.blocker_codes).toContain('duplicate_same_video_suppressed_without_decisive_evidence_delta');
+    expect(out.metrics.blocker_codes).toContain('duplicate_same_video_suppressed_without_decisive_evidence_delta');
     expect(out.parity.duplicate_detection_blocker).toBe('duplicate_detection_suppressed_without_evidence_delta');
   });
 
