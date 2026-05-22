@@ -798,7 +798,7 @@ describe('S9-14A legacy containment and current-state guardrail', () => {
     expect(claims.cannot_satisfy_public_claim_gate).toBe(true);
     expect(metrics.public_claim_trace_status).toBe('emitted');
     expect(metrics.public_claim_gate_status).toBe('insufficient');
-    expect(metrics.public_claim_gate_reason).toBe('legacy_or_unsupported_claim_support_only');
+    expect(metrics.public_claim_gate_reason).toBe('legacy_report_snapshot_only_or_unsupported_claims');
   });
 
   it('keeps public claims with no evidence anchor support blocked for rewrite', async () => {
