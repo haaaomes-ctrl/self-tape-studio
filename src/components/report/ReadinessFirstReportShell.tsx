@@ -15,11 +15,24 @@ type PublicReportData = {
   strengths?: unknown;
   next_take_plan?: unknown;
   feedback_reliability?: unknown;
+  brief_requirements?: unknown;
 };
 
 type TextItem = {
   headline: string;
   detail: string | null;
+};
+
+type BriefRequirementStatus =
+  | "observed"
+  | "not_observed"
+  | "not_assessable"
+  | "not_applicable";
+
+type BriefRequirementItem = {
+  label: string;
+  status: BriefRequirementStatus;
+  note: string | null;
 };
 
 const UNSAFE_PUBLIC_TEXT_RE =
@@ -29,13 +42,16 @@ const SCORE_VALUE_RE =
   /\b(?:score|readiness|acting|technical|vocal|audio|brief adherence|presentation)\s*[:=]?\s*\d{1,3}\b|\b\d{1,3}\s*(?:\/100|out of 100|%)\b/i;
 
 const INTERNAL_TRACE_RE =
-  /\b(raw_report|raw_prompt|raw_response|signed url|signed_url|playback url|playback_url|storage path|storage key|branch name|branch_name|run_id|model trace|evidence_anchor|truth_state|model_run_trace|score_trace|technique_observation_trace|runtime_verification_trace|public_claim_trace|claim_candidate_trace|analysis_evidence_state|step1observableevidence)\b/i;
+  /\b(raw_report|raw_prompt|raw_response|signed url|signed_url|playback url|playback_url|storage path|storage key|branch name|branch_name|run_id|model trace|evidence_anchor|truth_state|truth linkage|model_run_trace|score_trace|technique_observation_trace|runtime_verification_trace|public_claim_trace|claim_candidate_trace|analysis_evidence_state|step1observableevidence|gate trace|gatetrace|validator trace|validatortrace|blocker code|blocker_codes|blocker|candidate_technique)\b/i;
 
 const INTERNAL_ID_RE =
   /\b(?:run|take|comparison)-[0-9a-f]{8,}(?:-[0-9a-f]{4,}){1,}\b/i;
 
 const GENERIC_PUBLIC_TEXT_RE =
   /^(good job|great job|nice work|be more confident|work on your acting|try harder|good performance|strong performance|great performance|excellent performance)$/i;
+
+const UNSAFE_BRIEF_REQUIREMENT_TEXT_RE =
+  /\b(failed the brief|bad brief match|not castable|passed|failed|achieved|excellent|weak|good|bad|score|scored)\b/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -95,6 +111,7 @@ function reportData(report: PublicReport): PublicReportData {
     strengths: source.strengths,
     next_take_plan: source.next_take_plan,
     feedback_reliability: source.feedback_reliability,
+    brief_requirements: source.brief_requirements,
   };
 }
 
@@ -236,6 +253,87 @@ function extractFeedbackReliability(value: unknown): {
   };
 }
 
+function safeBriefText(value: unknown, maxLength = 180): string | null {
+  const text = safeStr(value, maxLength);
+  if (!text) return null;
+  if (UNSAFE_BRIEF_REQUIREMENT_TEXT_RE.test(text)) return null;
+  return text;
+}
+
+function firstSafeBriefText(values: unknown[], maxLength?: number): string | null {
+  for (const value of values) {
+    const text = safeBriefText(value, maxLength);
+    if (text) return text;
+  }
+  return null;
+}
+
+function normaliseBriefRequirementStatus(value: unknown): BriefRequirementStatus {
+  const text = safeStr(value, 80)?.toLowerCase().replace(/[\s-]+/g, "_") ?? "";
+  if (["observed", "seen", "present", "confirmed", "represented"].includes(text)) {
+    return "observed";
+  }
+  if (["not_observed", "not_seen", "missing", "absent", "unconfirmed", "not_confirmed"].includes(text)) {
+    return "not_observed";
+  }
+  if (["not_applicable", "na", "n_a"].includes(text)) {
+    return "not_applicable";
+  }
+  return "not_assessable";
+}
+
+function briefStatusLabel(status: BriefRequirementStatus): string {
+  if (status === "observed") return "Observed";
+  if (status === "not_observed") return "Not observed";
+  if (status === "not_applicable") return "Not applicable";
+  return "Not assessable";
+}
+
+function extractBriefRequirementItem(value: unknown): BriefRequirementItem | null {
+  if (typeof value === "string") {
+    const label = safeBriefText(value, 120);
+    return label ? { label, status: "not_assessable", note: null } : null;
+  }
+  if (!isRecord(value)) return null;
+  const label = firstSafeBriefText(
+    [value.label, value.requirement, value.title, value.item, value.text, value.name],
+    120,
+  );
+  if (!label) return null;
+  return {
+    label,
+    status: normaliseBriefRequirementStatus(value.status ?? value.state ?? value.outcome ?? value.result),
+    note: firstSafeBriefText([value.note, value.summary, value.reason, value.detail], 180),
+  };
+}
+
+function extractBriefRequirements(value: unknown): {
+  shouldRender: boolean;
+  status: "available" | "unavailable" | "not_applicable";
+  summary: string | null;
+  items: BriefRequirementItem[];
+} {
+  if (!isRecord(value)) {
+    return { shouldRender: false, status: "unavailable", summary: null, items: [] };
+  }
+  const rawStatus = safeStr(value.status, 80)?.toLowerCase().replace(/[\s-]+/g, "_");
+  const status =
+    rawStatus === "available" || rawStatus === "unavailable" || rawStatus === "not_applicable"
+      ? rawStatus
+      : "available";
+  const items = objectListInput(value, ["items", "requirements", "brief_requirements", "checklist"])
+    .map((item) => extractBriefRequirementItem(item))
+    .filter((item): item is BriefRequirementItem => Boolean(item))
+    .slice(0, 8);
+  const summary = firstSafeBriefText([value.summary, value.note, value.reason], 240);
+  return {
+    shouldRender: items.length > 0 || status === "unavailable" || status === "not_applicable" || Boolean(summary),
+    status,
+    summary,
+    items,
+  };
+}
+
 function isReadyText(value: string | null): boolean {
   return Boolean(
     value &&
@@ -286,6 +384,7 @@ export function ReadinessFirstReportShell({
   const strengths = extractStrengths(data.strengths);
   const nextTakeSteps = extractNextTakeSteps(data.next_take_plan);
   const reliability = extractFeedbackReliability(data.feedback_reliability);
+  const briefRequirements = extractBriefRequirements(data.brief_requirements);
 
   const readinessText =
     verdict.readiness ?? "Readiness guidance is not available in this report.";
@@ -349,6 +448,36 @@ export function ReadinessFirstReportShell({
           </p>
         )}
       </ShellSection>
+
+      {briefRequirements.shouldRender && (
+        <ShellSection title="Brief requirements">
+          <p className="text-sm text-muted-foreground">
+            {briefRequirements.summary ??
+              (briefRequirements.status === "not_applicable"
+                ? "Brief requirements do not apply to this report."
+                : briefRequirements.status === "unavailable"
+                  ? "Brief requirements are not available in this report."
+                  : "Brief requirements are shown only where they can be stated safely.")}
+          </p>
+          {briefRequirements.items.length > 0 && (
+            <ul className="mt-4 space-y-3 text-sm">
+              {briefRequirements.items.map((item, index) => (
+                <li key={`${item.label}-${index}`} className="rounded-md border border-border bg-background/60 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="font-medium text-foreground">{item.label}</span>
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+                      {briefStatusLabel(item.status)}
+                    </Badge>
+                  </div>
+                  {item.note && (
+                    <p className="mt-2 text-xs text-muted-foreground">{item.note}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </ShellSection>
+      )}
 
       <ShellSection title="Keep / preserve">
         {strengths.length > 0 ? (

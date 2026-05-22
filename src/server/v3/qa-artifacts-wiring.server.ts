@@ -1044,6 +1044,7 @@ const INITIAL_RENDER_PAYLOAD_ALLOWED_FIELDS = [
   'report_data.strengths',
   'report_data.next_take_plan',
   'report_data.feedback_reliability',
+  'report_data.brief_requirements',
 ];
 
 const INITIAL_PUBLIC_REPORT_PAYLOAD_ALLOWED_FIELDS = INITIAL_RENDER_PAYLOAD_ALLOWED_FIELDS;
@@ -1235,6 +1236,7 @@ const READINESS_FIRST_PUBLIC_FIELD_PATHS = new Set([
   'report_data.strengths',
   'report_data.next_take_plan',
   'report_data.feedback_reliability',
+  'report_data.brief_requirements',
 ]);
 
 const UNSAFE_READINESS_PUBLIC_TEXT_RE =
@@ -1252,11 +1254,16 @@ const READINESS_INTERNAL_ID_RE =
 const GENERIC_READINESS_PUBLIC_TEXT_RE =
   /^(good job|great job|nice work|be more confident|work on your acting|try harder|good performance|strong performance|great performance|excellent performance)$/i;
 
+const UNSAFE_BRIEF_REQUIREMENT_TEXT_RE =
+  /\b(failed the brief|bad brief match|not castable|passed|failed|achieved|excellent|weak|good|bad|score|scored)\b/i;
+
 type ReadinessPublicAlignmentResult = {
   present: boolean;
   value?: unknown;
   reason?: string;
 };
+
+type PublicBriefRequirementStatus = 'observed' | 'not_observed' | 'not_assessable' | 'not_applicable';
 
 function compactReadinessPublicText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
@@ -1279,6 +1286,21 @@ function safeReadinessPublicText(value: unknown, maxLength = 220): string | null
   if (READINESS_INTERNAL_ID_RE.test(trimmed)) return null;
   if (GENERIC_READINESS_PUBLIC_TEXT_RE.test(trimmed.replace(/[.!?]+$/g, ''))) return null;
   return clampReadinessPublicText(trimmed, maxLength);
+}
+
+function safeBriefRequirementText(value: unknown, maxLength = 180): string | null {
+  const text = safeReadinessPublicText(value, maxLength);
+  if (!text) return null;
+  if (UNSAFE_BRIEF_REQUIREMENT_TEXT_RE.test(text)) return null;
+  return text;
+}
+
+function firstSafeBriefRequirementText(values: unknown[], maxLength?: number): string | null {
+  for (const value of values) {
+    const text = safeBriefRequirementText(value, maxLength);
+    if (text) return text;
+  }
+  return null;
 }
 
 function readinessListInput(value: unknown): unknown[] {
@@ -1456,10 +1478,133 @@ function normaliseReadinessFeedbackReliability(value: unknown, sourcePresent: bo
   return { present: true, value: unavailable, reason: 'readiness_first_feedback_reliability_unavailable_after_normalisation' };
 }
 
+function normaliseBriefRequirementEnvelopeStatus(value: unknown): 'available' | 'unavailable' | 'not_applicable' | null {
+  const text = safeReadinessPublicText(value, 80)?.toLowerCase().replace(/[\s-]+/g, '_');
+  if (!text) return null;
+  if (text === 'available') return 'available';
+  if (text === 'unavailable' || text === 'not_available') return 'unavailable';
+  if (text === 'not_applicable' || text === 'na' || text === 'n_a') return 'not_applicable';
+  return null;
+}
+
+function normaliseBriefRequirementItemStatus(value: unknown): PublicBriefRequirementStatus {
+  const text = safeReadinessPublicText(value, 80)?.toLowerCase().replace(/[\s-]+/g, '_') ?? '';
+  if (['observed', 'seen', 'present', 'confirmed', 'represented'].includes(text)) return 'observed';
+  if (['not_observed', 'not_seen', 'missing', 'absent', 'unconfirmed', 'not_confirmed'].includes(text)) return 'not_observed';
+  if (['not_applicable', 'na', 'n_a'].includes(text)) return 'not_applicable';
+  return 'not_assessable';
+}
+
+function normaliseBriefRequirementItem(value: unknown): { label: string; status: PublicBriefRequirementStatus; note: string | null } | null {
+  if (typeof value === 'string') {
+    const label = safeBriefRequirementText(value, 120);
+    return label ? { label, status: 'not_assessable', note: null } : null;
+  }
+  if (!isPlainRecord(value)) return null;
+  const label = firstSafeReadinessText(
+    [value.label, value.requirement, value.title, value.item, value.text, value.name],
+    120,
+  );
+  const safeLabel = safeBriefRequirementText(label, 120);
+  if (!safeLabel) return null;
+  return {
+    label: safeLabel,
+    status: normaliseBriefRequirementItemStatus(value.status ?? value.state ?? value.outcome ?? value.result),
+    note: firstSafeBriefRequirementText([value.note, value.summary, value.reason, value.detail], 180),
+  };
+}
+
+function normaliseReadinessBriefRequirements(value: unknown, sourcePresent: boolean): ReadinessPublicAlignmentResult {
+  if (!sourcePresent) {
+    return { present: false, reason: 'readiness_first_brief_requirements_unavailable' };
+  }
+
+  const unavailable = {
+    status: 'unavailable',
+    summary: 'Brief requirements are not available in the current report.',
+    items: [],
+  };
+
+  if (value === null || value === undefined) {
+    return {
+      present: true,
+      value: unavailable,
+      reason: 'readiness_first_brief_requirements_unavailable_after_normalisation',
+    };
+  }
+
+  if (typeof value === 'string') {
+    const summary = safeBriefRequirementText(value, 220);
+    return {
+      present: true,
+      value: summary ? { status: 'unavailable', summary, items: [] } : unavailable,
+      reason: 'readiness_first_brief_requirements_summary_only',
+    };
+  }
+
+  const rawItems = isPlainRecord(value)
+    ? readinessObjectListInput(value, ['items', 'requirements', 'brief_requirements', 'checklist'])
+    : readinessListInput(value);
+  const items = rawItems
+    .map((item) => normaliseBriefRequirementItem(item))
+    .filter((item): item is { label: string; status: PublicBriefRequirementStatus; note: string | null } => Boolean(item))
+    .slice(0, 8);
+
+  if (isPlainRecord(value)) {
+    const status = normaliseBriefRequirementEnvelopeStatus(value.status) ?? (items.length > 0 ? 'available' : null);
+    const summary = firstSafeBriefRequirementText([value.summary, value.note, value.reason], 240);
+    if (items.length > 0) {
+      return {
+        present: true,
+        value: {
+          status: status ?? 'available',
+          summary: summary ?? null,
+          items,
+        },
+      };
+    }
+    if (status === 'unavailable' || status === 'not_applicable') {
+      return {
+        present: true,
+        value: {
+          status,
+          summary: summary ?? (status === 'not_applicable'
+            ? 'Brief requirements do not apply to this report.'
+            : 'Brief requirements are not available in the current report.'),
+          items: [],
+        },
+        reason: 'readiness_first_brief_requirements_status_only',
+      };
+    }
+    if (summary) {
+      return {
+        present: true,
+        value: { status: 'unavailable', summary, items: [] },
+        reason: 'readiness_first_brief_requirements_summary_only',
+      };
+    }
+    return {
+      present: true,
+      value: unavailable,
+      reason: 'readiness_first_brief_requirements_unavailable_after_normalisation',
+    };
+  }
+
+  if (items.length > 0) {
+    return { present: true, value: { status: 'available', summary: null, items } };
+  }
+  return {
+    present: true,
+    value: unavailable,
+    reason: 'readiness_first_brief_requirements_unavailable_after_normalisation',
+  };
+}
+
 function alignReadinessFirstPublicField(path: string, value: unknown, sourcePresent: boolean): ReadinessPublicAlignmentResult {
   if (!READINESS_FIRST_PUBLIC_FIELD_PATHS.has(path)) return sourcePresent ? { present: true, value } : { present: false };
   if (path === 'report_data.submission_verdict') return normaliseReadinessSubmissionVerdict(value, sourcePresent);
   if (path === 'report_data.feedback_reliability') return normaliseReadinessFeedbackReliability(value, sourcePresent);
+  if (path === 'report_data.brief_requirements') return normaliseReadinessBriefRequirements(value, sourcePresent);
   if (!sourcePresent) return { present: false, reason: 'readiness_first_public_field_unavailable' };
   if (path === 'report_data.fix_first') return normaliseReadinessFixFirst(value);
   if (path === 'report_data.priority_fixes') return normaliseReadinessPriorityFixes(value);
@@ -3103,7 +3248,7 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
     blocked_field_hits: blockedFieldHits,
     redaction_notes: [
       'Internal QA shadow payload only.',
-      'Only S9-17A allowed fields are copied into report_data.',
+      'Only current public-safe allowed fields are copied into report_data.',
       'Raw prompts, model responses, secrets, signed URLs and raw media URLs are omitted or recorded as unavailable.',
     ],
     public_output_unchanged: true,
@@ -3326,7 +3471,7 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     blocked_field_hits: blockedFieldHits,
     redaction_notes: [
       'Internal QA public-safe report payload proof only.',
-      'Only S9-17A allowed fields are copied into report_data.',
+      'Only current public-safe allowed fields are copied into report_data.',
       'The payload is constrained to a subset of the render payload and omits raw prompts, model responses, secrets, signed URLs and raw media URLs.',
     ],
     public_output_unchanged: true,

@@ -39,6 +39,18 @@ describe("readiness-first locked-down report shell", () => {
           { text: "Clean the first consonant" },
           { headline: "Fourth item should not render" },
         ],
+        brief_requirements: {
+          status: "available",
+          summary: "Brief checks are limited to public-safe requirements.",
+          items: [
+            { label: "Slate requirement", status: "observed", note: "Ident is present." },
+            {
+              label: "Accent requirement",
+              status: "not_assessable",
+              note: "Not enough public-safe evidence.",
+            },
+          ],
+        },
         strengths: {
           items: [
             "The opening intention is clear.",
@@ -62,6 +74,7 @@ describe("readiness-first locked-down report shell", () => {
       "Readiness",
       "Fix first",
       "Priority fixes",
+      "Brief requirements",
       "Keep / preserve",
       "Next take plan",
       "Reliability / limitations",
@@ -71,6 +84,11 @@ describe("readiness-first locked-down report shell", () => {
     expect(html).toContain("Hold the final beat");
     expect(html).toContain("Keep the eyeline steady");
     expect(html).toContain("Clean the first consonant");
+    expect(html).toContain("Brief checks are limited to public-safe requirements.");
+    expect(html).toContain("Slate requirement");
+    expect(html).toContain("Observed");
+    expect(html).toContain("Accent requirement");
+    expect(html).toContain("Not assessable");
     expect(html).toContain("The opening intention is clear.");
     expect(html).toContain("Run the ending twice.");
     expect(html).toContain("Fine facial detail is not fully assessable.");
@@ -89,10 +107,16 @@ describe("readiness-first locked-down report shell", () => {
         strengths: [],
         next_take_plan: null,
         feedback_reliability: null,
+        brief_requirements: {
+          status: "unavailable",
+          summary: "Brief checking is not available from this report.",
+          items: [],
+        },
       },
     });
 
     expect(html).toContain("Worth another take");
+    expect(html).toContain("Brief checking is not available from this report.");
     expect(html).toContain("This report does not include a single fix-first item.");
     expect(html).toContain("This report does not include a priority-fix list.");
     expect(html).toContain("This report does not include preserve guidance.");
@@ -134,6 +158,22 @@ describe("readiness-first locked-down report shell", () => {
           { headline: "Acting: 91" },
           { headline: "Keep the button clearer" },
         ],
+        brief_requirements: {
+          status: "available",
+          summary: "GateTrace confirms missing evidence.",
+          items: [
+            {
+              label: "Score 91 requirement",
+              status: "passed",
+              note: "truth_state:brief_requirement_001 must not render",
+            },
+            {
+              label: "Slate requirement",
+              status: "observed",
+              note: "Ident is visible.",
+            },
+          ],
+        },
         strengths: [
           "Clear public-safe choice.",
           "Evidence anchor take-12345678-1234-1234-1234-123456789abc must not render.",
@@ -169,6 +209,8 @@ describe("readiness-first locked-down report shell", () => {
     expect(html).toContain("Keep the button clearer");
     expect(html).toContain("Clear public-safe choice.");
     expect(html).toContain("Record the full pass.");
+    expect(html).toContain("Slate requirement");
+    expect(html).toContain("Ident is visible.");
 
     const lower = html.toLowerCase();
     expect(lower).not.toContain("overall readiness");
@@ -185,6 +227,9 @@ describe("readiness-first locked-down report shell", () => {
     expect(lower).not.toContain("https://example.com");
     expect(lower).not.toContain("evidence anchor");
     expect(lower).not.toContain("truth_state");
+    expect(lower).not.toContain("score 91 requirement");
+    expect(lower).not.toContain("gatetrace");
+    expect(lower).not.toContain("passed");
     expect(lower).not.toContain("raw report only headline");
   });
 

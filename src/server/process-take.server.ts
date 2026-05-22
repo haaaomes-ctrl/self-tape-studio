@@ -234,6 +234,34 @@ const REPORT_TOOL = {
           },
           maxItems: 8,
         },
+        brief_requirements: {
+          type: "object",
+          description:
+            "Optional public-safe brief/task requirements checklist. Use only neutral observed/not_observed/not_assessable/not_applicable statuses. Do not include scores, technique authority, comparison recommendation, role-fit/casting-market claims, internal evidence IDs, QA gate names, raw blocker codes or raw report/private artefact wording.",
+          properties: {
+            status: {
+              type: "string",
+              enum: ["available", "unavailable", "not_applicable"],
+            },
+            summary: { type: ["string", "null"], maxLength: 260 },
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string", maxLength: 140 },
+                  status: {
+                    type: "string",
+                    enum: ["observed", "not_observed", "not_assessable", "not_applicable"],
+                  },
+                  note: { type: ["string", "null"], maxLength: 220 },
+                },
+                required: ["label", "status"],
+              },
+              maxItems: 8,
+            },
+          },
+        },
         category_rationale: {
           type: "object",
           description:
@@ -517,7 +545,7 @@ Confidence (0–100) — internal signal only, never shown to the user verbatim.
 - 60–74 baseline with no brief.
 - <60 if data is poor.
 
-WRITING RULES (apply to every text field — strengths, improvements, fix_first, priority_fixes, category_rationale, coaching_drills, next_take_plan, casting_headline, casting_insight, category_notes, brief_adherence_breakdown.note):
+WRITING RULES (apply to every text field — strengths, improvements, fix_first, priority_fixes, brief_requirements, category_rationale, coaching_drills, next_take_plan, casting_headline, casting_insight, category_notes, brief_adherence_breakdown.note):
 - Plain English. No technical jargon, no rubric terminology, no acronyms unless universally known. Never use "AI", "model", "confidence score", "rubric", "signal", "metric".
 - Specific, not generic. Never say "good job", "nice work", "be more confident", "work on your acting". Always reference what you actually saw or heard ("Your second chorus opened up — chest voice felt grounded from 'I won't go back'", "Around 0:42 the eyeline drifted off-camera as you turned").
 - Actionable. Every improvement, fix and drill must tell the user what to DO differently next time, in one short sentence.
@@ -4096,6 +4124,7 @@ export async function runProcessTake(
             'report_data.strengths',
             'report_data.next_take_plan',
             'report_data.feedback_reliability',
+            'report_data.brief_requirements',
           ],
         },
       });

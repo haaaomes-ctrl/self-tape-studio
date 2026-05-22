@@ -24,10 +24,11 @@ The current report parity allow-list already permits:
 - `report_data.strengths`
 - `report_data.next_take_plan`
 - `report_data.feedback_reliability`
+- `report_data.brief_requirements`
 
 The existing v2 component renderer can also receive scores, category notes, component scores, risk flags and role-fit fields from the older persisted report shape. Those fields are not needed for R10.1 and are not read by the locked-down shell.
 
-Brief achievement is not yet a separate permitted public path. R10.1B does not render a brief-achievement section until a separate explicit public payload/parity path permits it.
+Brief achievement is not a separate permitted public path. R10.2A permits only the neutral `brief_requirements` checklist shape, not broad brief-achievement prose.
 
 ## Minimum Shell Decision
 
@@ -36,9 +37,10 @@ The shell renders only:
 1. readiness / submit-or-retake summary;
 2. fix first;
 3. priority fixes;
-4. strengths / preserve;
-5. next-take checklist;
-6. feedback reliability / assessability note and limitations.
+4. brief requirements, when the public-safe checklist is present;
+5. strengths / preserve;
+6. next-take checklist;
+7. feedback reliability / assessability note and limitations.
 
 Missing fields do not invent content. They render either nothing or a short locked-down unavailable message.
 
@@ -59,6 +61,7 @@ The current safe field set is sufficient for the minimum shell:
 - `submission_verdict` answers submit/retake when available;
 - `fix_first` answers the highest-priority action;
 - `priority_fixes` gives the top 1-3 action items;
+- `brief_requirements` shows observed / not observed / not assessable brief items where safe;
 - `strengths` gives preserve guidance;
 - `next_take_plan` gives practical next-take steps;
 - `feedback_reliability` and unavailable section copy explain assessability limits.
@@ -123,3 +126,30 @@ The existing allowed fields can support the minimum readiness-first value when n
 ### Safety Boundary
 
 Public payload alignment must not copy raw report-only material into new public fields, must not read internal QA artefacts as display sources, and must filter score, category-score, named technique, comparison, castability, bookability, marketability, employability, role-fit, internal ID, storage URL, signed URL, prompt, response, trace, gate and blocker-code language from the allowed field values.
+
+## R10.2A Public-Safe Brief Requirements Checklist Note
+
+R10.2A adds one narrowly scoped public-safe field path, `report_data.brief_requirements`, so the readiness-first shell can show a neutral checklist when the current public report already contains safe brief/task requirement content. It does not add scores, named technique authority, comparison recommendation, role-fit, repertoire authority, production release or customer release fields.
+
+### Existing Brief Source Availability
+
+- Supplied and structured brief data can exist in the normal analysis pipeline, but the locked-down shell must not display those internal inputs directly.
+- Before R10.2A there was no explicit public payload path for brief requirements, so brief-achievement content remained hidden.
+- Brief requirements are safe only when reduced to short public labels and neutral statuses, without evidence IDs, QA gate names, raw blocker codes or internal artefact references.
+- Current reports may still lack safe brief requirement content; missing source content must remain unavailable rather than being inferred.
+
+### Public-Safe Support
+
+- `observed` is allowed only for a requirement represented by safe public report content.
+- `not_observed` is allowed only when the requirement label is public-safe and the public report has no safe support for it.
+- `not_assessable` is used when the report cannot safely determine the requirement status.
+- `not_applicable` is used when the requirement does not apply to the report context.
+- The checklist must never use passed/failed/achieved/scored language, castability, bookability, marketability, role-fit language, or public technique authority.
+
+### Shell Value
+
+The brief requirements section sits after priority fixes and before keep/preserve guidance. It helps a tester see which task or brief requirements appear observed, missing, or not assessable without turning missing requirements into a quality judgement.
+
+### Safety Boundary
+
+The public payload normaliser and shell filter internal trace names, QA gate names, evidence/truth IDs, run IDs, signed/storage URLs, raw prompts/responses, raw report-only material, score-like text, technique-authority names, comparison winner/recommendation wording and casting-market value claims. If no safe checklist source exists, no checklist items are invented.

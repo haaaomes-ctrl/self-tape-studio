@@ -28,6 +28,11 @@ describe('v3-s9 report parity proof', () => {
         strengths: ['Clear text ownership.'],
         next_take_plan: { steps: ['Retake with a steadier frame.'] },
         feedback_reliability: { status: 'partial' },
+        brief_requirements: {
+          status: 'available',
+          summary: 'Brief requirements are shown only where they can be stated safely.',
+          items: [{ label: 'Slate requirement', status: 'observed', note: 'Ident is present.' }],
+        },
         overall_score: 91,
         scores: { acting: 90 },
         technique_authority: { unsafe: true },
@@ -63,6 +68,11 @@ describe('v3-s9 report parity proof', () => {
       strengths: ['Clear text ownership.'],
       next_take_plan: { steps: ['Retake with a steadier frame.'] },
       feedback_reliability: { status: 'partial' },
+      brief_requirements: {
+        status: 'available',
+        summary: 'Brief requirements are shown only where they can be stated safely.',
+        items: [{ label: 'Slate requirement', status: 'observed', note: 'Ident is present.' }],
+      },
     });
     expect(JSON.stringify(payload.report_data)).not.toMatch(/overall_score|scores|technique_authority|comparison|winner|raw_prompt|signature=secret|signed_url/);
     expect(payload.deferred_or_excluded_render_fields.some((field: any) => field.field_path === 'report_data.overall_score')).toBe(true);
@@ -195,6 +205,11 @@ describe('v3-s9 report parity proof', () => {
         strengths: ['The text is clear.'],
         next_take_plan: ['Record one cleaner take.'],
         feedback_reliability: { status: 'partial' },
+        brief_requirements: {
+          status: 'available',
+          summary: 'Brief requirements are shown only where they can be stated safely.',
+          items: [{ label: 'Slate requirement', status: 'observed', note: 'Ident is present.' }],
+        },
       },
     };
     const out = await emitPublicReportPayloadArtifact({
@@ -294,6 +309,11 @@ describe('v3-s9 report parity proof', () => {
             strengths: ['Text is clear.'],
             next_take_plan: ['Retake once.'],
             feedback_reliability: { status: 'partial' },
+            brief_requirements: {
+              status: 'available',
+              summary: 'Brief requirements are shown only where they can be stated safely.',
+              items: [{ label: 'Slate requirement', status: 'observed', note: 'Ident is present.' }],
+            },
           },
         },
         public_report_payload: null,
@@ -305,6 +325,7 @@ describe('v3-s9 report parity proof', () => {
           'report_data.strengths',
           'report_data.next_take_plan',
           'report_data.feedback_reliability',
+          'report_data.brief_requirements',
         ],
       },
     });
