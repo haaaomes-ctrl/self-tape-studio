@@ -403,19 +403,26 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     blocker_codes: [],
     analysis_evidence_state_source_path: `observable_evidence_items[${index}]`,
   }));
+  payload.step1_family_observable_evidence_items = [];
   const addFamilyItem = (field: string, item: any) => {
     const linkedItem = {
       ...item,
       linked_truth_state_ids: item.linked_truth_state_ids?.length
         ? item.linked_truth_state_ids
         : [truthIdFor(String(item.evidence_kind ?? field))],
+      truth_state_entry_ids: item.truth_state_entry_ids?.length
+        ? item.truth_state_entry_ids
+        : (item.linked_truth_state_ids?.length
+          ? item.linked_truth_state_ids
+          : [truthIdFor(String(item.evidence_kind ?? field))]),
+      analysis_evidence_state_source_path: `${field}[0]`,
     };
     payload[field] = [linkedItem];
-    payload.observable_evidence_items.push({ ...linkedItem, analysis_evidence_state_source_path: `${field}[0]` });
+    payload.step1_family_observable_evidence_items.push(linkedItem);
   };
-  addFamilyItem('video_observable_evidence_items', {
+  addFamilyItem('video_observable_evidence', {
     evidence_item_id: 'aes-video-complete',
-    evidence_family: 'video',
+    evidence_family: 'video_observable',
     evidence_modality: 'video',
     evidence_kind: 'video_visibility_observation',
     safe_evidence_summary: 'Framing and visibility are observable before judgement.',
@@ -431,9 +438,9 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     public_display_status: 'internal_only',
     blocker_codes: [],
   });
-  addFamilyItem('audio_observable_evidence_items', {
+  addFamilyItem('audio_observable_evidence', {
     evidence_item_id: 'aes-audio-complete',
-    evidence_family: 'audio',
+    evidence_family: 'audio_observable',
     evidence_modality: 'audio',
     evidence_kind: 'audio_presence_observation',
     safe_evidence_summary: 'Audio presence is observable before judgement.',
@@ -451,15 +458,16 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
   });
   if (options.materialNotApplicable) {
     payload.material_observable_evidence_items = [];
+    payload.material_specific_performance_evidence = [];
   } else {
-    addFamilyItem('material_observable_evidence_items', {
+    addFamilyItem('material_specific_performance_evidence', {
       evidence_item_id: 'aes-material-complete',
-      evidence_family: 'material',
+      evidence_family: 'material_specific_performance',
       evidence_modality: 'material',
-      evidence_kind: 'material_presence_observation',
-      safe_evidence_summary: 'Supplied material presence is observable before judgement.',
+      evidence_kind: 'material_specific_performance_component_observed',
+      safe_evidence_summary: 'A supplied material component is observed during the tape without judgement.',
       source_artefact_id: 'run_evidence_pass',
-      source_path: 'material_observable_evidence_items[0]',
+      source_path: 'material_specific_performance_evidence[0]',
       timestamp: null,
       timestamp_range: null,
       timestamp_source: 'not_timestamped_material_context',
@@ -471,9 +479,9 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
       blocker_codes: [],
     });
   }
-  addFamilyItem('performance_observable_evidence_items', {
+  addFamilyItem('performance_observable_evidence', {
     evidence_item_id: 'aes-performance-complete',
-    evidence_family: 'performance',
+    evidence_family: 'performance_observable',
     evidence_modality: 'video',
     evidence_kind: 'performance_observable_event',
     safe_evidence_summary: 'A pre-judgement observable performance event is recorded without score or verdict.',
@@ -489,7 +497,7 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     public_display_status: 'internal_only',
     blocker_codes: [],
   });
-  payload.candidate_technique_evidence = [{
+  addFamilyItem('candidate_technique_evidence', {
     evidence_item_id: 'aes-technique-complete',
     evidence_family: 'candidate_technique',
     evidence_modality: 'video',
@@ -506,7 +514,7 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
     confidence_or_strength: 'runtime_observation',
     public_display_status: 'internal_only',
     blocker_codes: [],
-  }];
+  });
   payload.observable_evidence_items = payload.observable_evidence_items.map((item: any, index: number) => ({
     ...item,
     linked_truth_state_ids: [truthIdFor(`${item.evidence_kind ?? 'runtime_fact'}_${index + 1}`)],
@@ -524,26 +532,107 @@ function completeAnalysisEvidenceStateForAggregate(payload: any, options: {
   }));
   const truthIds = [
     ...payload.observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []),
+    ...payload.step1_family_observable_evidence_items.flatMap((item: any) => item.linked_truth_state_ids ?? []),
     ...payload.component_evidence.flatMap((item: any) => item.linked_truth_state_ids ?? []),
     ...payload.candidate_brief_evidence.flatMap((item: any) => item.linked_truth_state_ids ?? []),
   ];
   payload.truth_state_ids = [...new Set(truthIds)];
   payload.canonical_truth_state_ids = Object.fromEntries(payload.truth_state_ids.map((id: string) => [id.split(':truth_state:')[1] ?? id, id]));
+  const coverageInput = options.familyCoverage ?? {};
+  const statusInput = options.familyStatus ?? {};
+  const familyCoverageOverrides = {
+    ...coverageInput,
+    ...(Object.prototype.hasOwnProperty.call(coverageInput, 'video')
+      && !Object.prototype.hasOwnProperty.call(coverageInput, 'video_observable')
+      ? { video_observable: coverageInput.video }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(coverageInput, 'audio')
+      && !Object.prototype.hasOwnProperty.call(coverageInput, 'audio_observable')
+      ? { audio_observable: coverageInput.audio }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(coverageInput, 'material')
+      && !Object.prototype.hasOwnProperty.call(coverageInput, 'material_specific_performance')
+      ? { material_specific_performance: coverageInput.material }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(coverageInput, 'performance')
+      && !Object.prototype.hasOwnProperty.call(coverageInput, 'performance_observable')
+      ? { performance_observable: coverageInput.performance }
+      : {}),
+  };
+  const familyStatusOverrides = {
+    ...statusInput,
+    ...(Object.prototype.hasOwnProperty.call(statusInput, 'video')
+      && !Object.prototype.hasOwnProperty.call(statusInput, 'video_observable')
+      ? { video_observable: statusInput.video }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(statusInput, 'audio')
+      && !Object.prototype.hasOwnProperty.call(statusInput, 'audio_observable')
+      ? { audio_observable: statusInput.audio }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(statusInput, 'material')
+      && !Object.prototype.hasOwnProperty.call(statusInput, 'material_specific_performance')
+      ? { material_specific_performance: statusInput.material }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(statusInput, 'performance')
+      && !Object.prototype.hasOwnProperty.call(statusInput, 'performance_observable')
+      ? { performance_observable: statusInput.performance }
+      : {}),
+  };
   payload.evidence_family_coverage = {
     video: true,
+    video_observable: true,
     audio: true,
+    audio_observable: true,
     material: options.materialNotApplicable ? 'not_applicable' : true,
+    material_specific: true,
+    material_specific_performance: options.materialNotApplicable ? 'not_applicable' : true,
     performance: true,
+    performance_observable: true,
     candidate_technique: true,
-    ...(options.familyCoverage ?? {}),
+    ...familyCoverageOverrides,
   };
   payload.evidence_family_status_by_id = {
     video: 'complete',
+    video_observable: 'complete',
     audio: 'complete',
+    audio_observable: 'complete',
     material: options.materialNotApplicable ? 'not_applicable' : 'complete',
+    material_specific: 'complete',
+    material_specific_performance: options.materialNotApplicable ? 'not_applicable' : 'complete',
     performance: 'complete',
+    performance_observable: 'complete',
     candidate_technique: 'complete',
-    ...(options.familyStatus ?? {}),
+    ...familyStatusOverrides,
+  };
+  payload.ordinary_analysis_family_completion_by_id = {
+    ...(payload.ordinary_analysis_family_completion_by_id ?? {}),
+    video_observable: {
+      status: payload.evidence_family_status_by_id.video_observable,
+      can_satisfy_family_gate: payload.evidence_family_coverage.video_observable === true,
+      blocker_codes: payload.evidence_family_coverage.video_observable === true ? [] : ['missing_video_observable_evidence'],
+    },
+    audio_observable: {
+      status: payload.evidence_family_status_by_id.audio_observable,
+      can_satisfy_family_gate: payload.evidence_family_coverage.audio_observable === true,
+      blocker_codes: payload.evidence_family_coverage.audio_observable === true ? [] : ['missing_audio_observable_evidence'],
+    },
+    material_specific_performance: {
+      status: payload.evidence_family_status_by_id.material_specific_performance,
+      can_satisfy_family_gate: payload.evidence_family_coverage.material_specific_performance === true,
+      blocker_codes: payload.evidence_family_coverage.material_specific_performance === true || payload.evidence_family_coverage.material_specific_performance === 'not_applicable'
+        ? []
+        : ['missing_material_specific_performance_evidence'],
+    },
+    performance_observable: {
+      status: payload.evidence_family_status_by_id.performance_observable,
+      can_satisfy_family_gate: payload.evidence_family_coverage.performance_observable === true,
+      blocker_codes: payload.evidence_family_coverage.performance_observable === true ? [] : ['missing_performance_observable_evidence'],
+    },
+    candidate_technique: {
+      status: payload.evidence_family_status_by_id.candidate_technique,
+      can_satisfy_family_gate: payload.evidence_family_coverage.candidate_technique === true,
+      blocker_codes: payload.evidence_family_coverage.candidate_technique === true ? [] : ['missing_candidate_technique_evidence'],
+    },
   };
 }
 

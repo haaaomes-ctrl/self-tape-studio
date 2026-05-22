@@ -15,7 +15,11 @@
 const DEFAULT_MODEL =
   process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
 
-const COMPACT_STEP1_SCHEMA_VERSION = "tapecoach_step1_observable_evidence_v1";
+const COMPACT_STEP1_SCHEMA_VERSION = "tapecoach_step1_observable_evidence_v2";
+const SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS = new Set([
+  "tapecoach_step1_observable_evidence_v1",
+  COMPACT_STEP1_SCHEMA_VERSION,
+]);
 
 export type EvidencePassProviderContract =
   | "tool_call"
@@ -25,8 +29,10 @@ type CompactStep1Family =
   | "video_observable"
   | "audio_observable"
   | "material_specific"
+  | "material_specific_performance"
   | "performance_observable"
-  | "candidate_technique";
+  | "candidate_technique"
+  | "assessability_limit";
 
 type CompactStep1SourceBasis =
   | "observed_video"
@@ -47,8 +53,9 @@ export type CompactStep1Observation = {
 };
 
 type CompactStep1EvidenceResponse = {
-  schema_version: typeof COMPACT_STEP1_SCHEMA_VERSION;
+  schema_version: string;
   observations: CompactStep1Observation[];
+  unavailable_families?: Array<{ family?: CompactStep1Family; reason?: string }>;
   rejected_or_uncertain?: Array<{ reason?: string; summary?: string }>;
 };
 
@@ -58,10 +65,10 @@ Return ONLY valid JSON. Do not use markdown. Do not call tools.
 
 Schema:
 {
-  "schema_version": "tapecoach_step1_observable_evidence_v1",
+  "schema_version": "tapecoach_step1_observable_evidence_v2",
   "observations": [
     {
-      "family": "video_observable | audio_observable | material_specific | performance_observable | candidate_technique",
+      "family": "video_observable | audio_observable | material_specific | material_specific_performance | performance_observable | candidate_technique | assessability_limit",
       "kind": "short_snake_case_kind",
       "summary": "short, safe, non-judgemental observation",
       "timestamp_start_sec": number | null,
@@ -69,6 +76,12 @@ Schema:
       "source_basis": "observed_video | observed_audio | supplied_context | assessability_limit | internal_shadow",
       "confidence": "low | medium | high",
       "limitations": ["short safe limitation strings"]
+    }
+  ],
+  "unavailable_families": [
+    {
+      "family": "video_observable | audio_observable | material_specific_performance | performance_observable | candidate_technique",
+      "reason": "media_not_available | no_observation_returned | unsafe_judgement_only | insufficient_context | other"
     }
   ],
   "rejected_or_uncertain": [
@@ -79,9 +92,13 @@ Schema:
 Allowed observations:
 - video_observable: framing, orientation, lighting visibility, background visibility, camera stability, slate visibility or visual assessability limitations.
 - audio_observable: voice audibility, music/accompaniment presence, clipping/noise/intelligibility limitations or dialogue/song audio segment presence.
-- material_specific: scene/song/slate/material component presence or supplied task reference.
+- material_specific: supplied or declared scene/song/slate/material component context only.
+- material_specific_performance: observed scene/song/slate/material component occurrence in the tape, stated as a factual event rather than quality judgement.
 - performance_observable: observable action/event, eyeline direction, pause/silence/action timing, expression/movement visibility fact.
 - candidate_technique: internal_shadow, public_safe_descriptor_candidate or limitation-only descriptor. This is internal-only and never public technique authority.
+- assessability_limit: factual limitation that prevents observing one of the above families.
+
+Use the listed family names exactly. Do not use praise or quality judgement. If a family is not observable, place it in unavailable_families with a short safe reason.
 
 Reject and place in rejected_or_uncertain instead of observations: scores, readiness verdicts, role fit, casting fit, bookability, marketability, castability, public named technique authority, "technique demonstrated", "strong performance", "beautiful voice", "ready to submit", public comparison recommendations, report prose, hidden reasoning, URLs, tokens, secrets or signed URLs.`;
 
@@ -686,8 +703,10 @@ function isCompactStep1Family(value: unknown): value is CompactStep1Family {
   return value === "video_observable"
     || value === "audio_observable"
     || value === "material_specific"
+    || value === "material_specific_performance"
     || value === "performance_observable"
-    || value === "candidate_technique";
+    || value === "candidate_technique"
+    || value === "assessability_limit";
 }
 
 function normaliseCompactSourceBasis(value: unknown): CompactStep1SourceBasis | null {
@@ -707,7 +726,8 @@ function normaliseCompactConfidence(value: unknown): "low" | "medium" | "high" {
 export function parseCompactStep1EvidenceContent(content: unknown): CompactStep1EvidenceResponse {
   const text = messageContentToText(content);
   const parsed = parseJsonObjectFromModelText(text);
-  if (parsed.schema_version !== COMPACT_STEP1_SCHEMA_VERSION) {
+  const schemaVersion = typeof parsed.schema_version === "string" ? parsed.schema_version : "";
+  if (!SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS.has(schemaVersion)) {
     throw new SyntaxError("compact_step1_schema_version_mismatch");
   }
   if (!Array.isArray(parsed.observations)) {
@@ -737,10 +757,30 @@ export function parseCompactStep1EvidenceContent(content: unknown): CompactStep1
         : [],
     });
   });
+  const unavailable_families = Array.isArray(parsed.unavailable_families)
+    ? parsed.unavailable_families.slice(0, 12).flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const record = entry as Record<string, unknown>;
+      if (!isCompactStep1Family(record.family)) return [];
+      const reason = safeStep1Text(record.reason);
+      return [{ family: record.family, reason: reason || "no_observation_returned" }];
+    })
+    : [];
+  const rejected_or_uncertain = Array.isArray(parsed.rejected_or_uncertain)
+    ? parsed.rejected_or_uncertain.slice(0, 20).flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const record = entry as Record<string, unknown>;
+      const reason = safeStep1Text(record.reason);
+      const summary = safeStep1Text(record.summary);
+      if (!reason && !summary) return [];
+      return [{ reason: reason || "uncertain", summary: summary || "" }];
+    })
+    : [];
   return {
-    schema_version: COMPACT_STEP1_SCHEMA_VERSION,
+    schema_version: schemaVersion,
     observations,
-    rejected_or_uncertain: [],
+    unavailable_families,
+    rejected_or_uncertain,
   };
 }
 
@@ -1249,11 +1289,14 @@ function compactFamilyToStep1Family(value: unknown): Step1EvidenceFamily | null 
     case "audio_observable":
       return "audio";
     case "material_specific":
+    case "material_specific_performance":
       return "material";
     case "performance_observable":
       return "performance";
     case "candidate_technique":
       return "candidate_technique";
+    case "assessability_limit":
+      return "performance";
     default:
       return null;
   }
@@ -1261,11 +1304,21 @@ function compactFamilyToStep1Family(value: unknown): Step1EvidenceFamily | null 
 
 function compactEvidenceKind(
   family: Step1EvidenceFamily,
+  compactFamily: unknown,
   value: unknown,
 ): string {
   const raw = typeof value === "string" && value.trim()
     ? value.trim().slice(0, 80)
     : `${family}_observable_event`;
+  if (compactFamily === "material_specific_performance" && !raw.includes("material_specific_performance")) {
+    return `material_specific_performance_${raw}`;
+  }
+  if (compactFamily === "material_specific" && !raw.includes("material_specific")) {
+    return `material_specific_${raw}`;
+  }
+  if (compactFamily === "assessability_limit" && !raw.includes("assessability")) {
+    return `assessability_limit_${raw}`;
+  }
   return family === "candidate_technique" && !raw.includes("technique")
     ? `candidate_technique_${raw}`
     : raw;
@@ -1363,7 +1416,7 @@ export function filterRunEvidencePassForStep1(
 
   const compactObservations = Array.isArray(input.step1_observations)
     ? input.step1_observations
-    : (input.schema_version === COMPACT_STEP1_SCHEMA_VERSION && Array.isArray(input.observations) ? input.observations : []);
+    : (typeof input.schema_version === "string" && SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS.has(input.schema_version) && Array.isArray(input.observations) ? input.observations : []);
   compactObservations.forEach((entry, index) => {
     if (!isRecord(entry)) {
       addRejected(rejected, `step1_observations[${index}]`);
@@ -1383,7 +1436,7 @@ export function filterRunEvidencePassForStep1(
     addItem(
       family,
       `step1_observations[${index}].summary`,
-      compactEvidenceKind(family, entry.kind),
+      compactEvidenceKind(family, entry.family, entry.kind),
       summary,
       timestamp,
       [
