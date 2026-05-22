@@ -458,6 +458,14 @@ describe('v3 s9 qa acceptance metrics', () => {
     const manifest = JSON.parse(await readFile(path.join(base, 'manifest.json'), 'utf8'));
     expect(metrics.artefact_type).toBe('qa_acceptance_metrics');
     expect(metrics.internal_only).toBe(true);
+    expect(metrics.qa_spine_reconciliation_version).toBe('s9_19o_minimum_v1');
+    expect(manifest.qa_spine_reconciliation_version).toBe('s9_19o_minimum_v1');
+    expect(manifest.qa_acceptance_metrics.qa_spine_reconciliation_version).toBe('s9_19o_minimum_v1');
+    expect(manifest.ordinary_internal_proof_status).toBe(metrics.ordinary_internal_proof_status);
+    expect(manifest.ordinary_internal_blockers).toEqual(metrics.ordinary_internal_blockers);
+    expect(manifest.release_blockers).toEqual(metrics.release_blockers);
+    expect(manifest.comparison_blockers).toEqual(metrics.comparison_blockers);
+    expect(manifest.acceptance_decision).toBe(metrics.acceptance_decision);
     expect(metrics.required_artefact_counts.emitted).toBe(manifest.emitted_artifacts.length);
     expect(manifest.artefact_status_by_id.qa_acceptance_metrics).toBe('emitted');
     expect(manifest.emitted_artifacts).toContain('qa_acceptance_metrics');

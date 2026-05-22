@@ -170,8 +170,8 @@ describe('v3 s9 independent proof-chain ordinary L2A closeout', () => {
       'public_scoring_feature_approval_blocked',
       'public_technique_authority_feature_approval_blocked',
       'public_comparison_recommendation_feature_approval_blocked',
-      'production_safe_blocked',
-      'customer_release_blocked',
+      'production_public_authority_gates_blocked',
+      'customer_release_gates_blocked',
     ]));
   });
 
@@ -192,7 +192,7 @@ describe('v3 s9 independent proof-chain ordinary L2A closeout', () => {
 
     expect(metrics.ordinary_l2a_analysis_proof_status).toBe('insufficient');
     expect(metrics.ordinary_l2a_unsatisfied_gate_ids).toContain('model_run_trace_gate');
-    expect(metrics.ordinary_l2a_analysis_proof_blocker_codes).toContain('ModelRunTrace_independent_proof_partial');
+    expect(metrics.ordinary_l2a_analysis_proof_blocker_codes).toContain('model_run_gate_blocked');
   });
 
   it('finalises ModelRunTrace only when expected invoked model stages have refs and no prompt or secret storage', async () => {

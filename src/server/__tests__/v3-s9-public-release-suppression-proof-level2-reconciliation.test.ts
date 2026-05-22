@@ -187,7 +187,12 @@ describe('v3 s9 public release suppression proof and Level 2 reconciliation', ()
     expect(metrics.global_level2_blocker_codes_by_family).toMatchObject({
       evidence: [],
       suppression: [],
-      release: ['production_safe_blocked', 'customer_release_blocked'],
+      release: expect.arrayContaining([
+        'runtime_operator_verification_required',
+        'deployment_provenance_or_operator_confirmation_required',
+        'production_public_authority_gates_blocked',
+        'customer_release_gates_blocked',
+      ]),
     });
   });
 
