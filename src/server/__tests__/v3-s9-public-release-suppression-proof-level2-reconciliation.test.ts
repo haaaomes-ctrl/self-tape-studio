@@ -205,7 +205,9 @@ describe('v3 s9 public release suppression proof and Level 2 reconciliation', ()
 
     expect(metrics.public_scoring_suppression_proof_status).toBe('insufficient');
     expect(metrics.public_scoring_suppression_blocker_codes).toContain('public_score_absence_not_validated_by_report_parity');
-    expect(metrics.global_level2_evidence_status).toBe('insufficient');
+    expect(metrics.global_level2_evidence_status).toBe('satisfied');
+    expect(metrics.global_level2_suppression_proof_status).toBe('insufficient');
+    expect(metrics.global_level2_blocker_codes_by_family.suppression).toContain('public_score_absence_not_validated_by_report_parity');
   });
 
   it('lets ordinary single-take comparison suppression be not applicable while feature approval stays blocked', () => {
