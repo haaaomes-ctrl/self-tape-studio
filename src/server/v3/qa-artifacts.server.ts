@@ -92,6 +92,8 @@ export interface QAArtifactEmitterOptions {
 	    blocked_public_technique_authority_claim_count?: number;
 	    unsuppressed_public_technique_authority_claim_count?: number;
 	    public_technique_authority_claim_suppression_status?: string;
+	    required_rendered_public_claim_count?: number;
+	    excluded_internal_claim_count?: number;
 	  };
 	  claim_candidate_trace_summary?: {
 	    claim_candidate_count?: number;
