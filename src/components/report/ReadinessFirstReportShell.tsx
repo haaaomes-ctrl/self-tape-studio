@@ -8,133 +8,211 @@ import { Badge } from "@/components/ui/badge";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PublicReport = any;
 
+type PublicReportData = {
+  submission_verdict?: unknown;
+  fix_first?: unknown;
+  priority_fixes?: unknown;
+  strengths?: unknown;
+  next_take_plan?: unknown;
+  feedback_reliability?: unknown;
+};
+
+type TextItem = {
+  headline: string;
+  detail: string | null;
+};
+
 const UNSAFE_PUBLIC_TEXT_RE =
-  /\b(overall score|category score|readiness score|score value|score_value|castability|castable|bookability|bookable|marketability|marketable|employability|role fit|recall likelihood|booking prediction|comparison winner|winner|recommendation: choose|public_technique_authority|technique authority|stanislavski|meisner|laban|uta hagen|chekhov|alexander technique|linklater|estill)\b/i;
+  /\b(overall score|category score|readiness score|score value|score_value|category_scores|score_breakdown|castability|castable|bookability|bookable|marketability|marketable|employability|role fit|role-fit|recall likelihood|booking prediction|comparison winner|winner|recommendation:\s*choose|choose take|public_technique_authority|technique authority|stanislavski|meisner|laban|uta hagen|chekhov|alexander technique|linklater|estill)\b/i;
+
+const SCORE_VALUE_RE =
+  /\b(?:score|readiness|acting|technical|vocal|audio|brief adherence|presentation)\s*[:=]?\s*\d{1,3}\b|\b\d{1,3}\s*(?:\/100|out of 100|%)\b/i;
 
 const INTERNAL_TRACE_RE =
-  /\b(raw_prompt|raw_response|signed url|signed_url|playback url|playback_url|storage path|storage key|evidence_anchor|truth_state|model_run_trace|score_trace|technique_observation_trace|runtime_verification_trace|public_claim_trace|claim_candidate_trace|analysis_evidence_state|step1observableevidence)\b/i;
+  /\b(raw_report|raw_prompt|raw_response|signed url|signed_url|playback url|playback_url|storage path|storage key|branch name|branch_name|run_id|model trace|evidence_anchor|truth_state|model_run_trace|score_trace|technique_observation_trace|runtime_verification_trace|public_claim_trace|claim_candidate_trace|analysis_evidence_state|step1observableevidence)\b/i;
 
 const INTERNAL_ID_RE =
   /\b(?:run|take|comparison)-[0-9a-f]{8,}(?:-[0-9a-f]{4,}){1,}\b/i;
+
+const GENERIC_PUBLIC_TEXT_RE =
+  /^(good job|great job|nice work|be more confident|work on your acting|try harder|good performance|strong performance|great performance|excellent performance)$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function safeStr(value: unknown): string | null {
+function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function clampText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function safeStr(value: unknown, maxLength = 220): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim();
+  const trimmed = compactWhitespace(value);
   if (!trimmed) return null;
   if (/https?:\/\//i.test(trimmed)) return null;
   if (UNSAFE_PUBLIC_TEXT_RE.test(trimmed)) return null;
+  if (SCORE_VALUE_RE.test(trimmed)) return null;
   if (INTERNAL_TRACE_RE.test(trimmed)) return null;
   if (INTERNAL_ID_RE.test(trimmed)) return null;
-  return trimmed;
+  if (GENERIC_PUBLIC_TEXT_RE.test(trimmed.replace(/[.!?]+$/g, ""))) return null;
+  return clampText(trimmed, maxLength);
 }
 
-function safeArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
+function listInput(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") return [value];
+  return [];
 }
 
-function reportData(report: PublicReport): Record<string, unknown> {
-  if (isRecord(report?.report_data)) return report.report_data;
-  return isRecord(report) ? report : {};
+function objectListInput(value: Record<string, unknown>, keys: string[]): unknown[] {
+  for (const key of keys) {
+    const list = listInput(value[key]);
+    if (list.length > 0) return list;
+  }
+  return [];
 }
 
-function firstSafeText(values: unknown[]): string | null {
+function reportData(report: PublicReport): PublicReportData {
+  const source = isRecord(report?.report_data)
+    ? report.report_data
+    : isRecord(report?.public_report_payload?.report_data)
+      ? report.public_report_payload.report_data
+      : isRecord(report?.render_payload?.report_data)
+        ? report.render_payload.report_data
+        : isRecord(report)
+          ? report
+          : {};
+
+  return {
+    submission_verdict: source.submission_verdict,
+    fix_first: source.fix_first,
+    priority_fixes: source.priority_fixes,
+    strengths: source.strengths,
+    next_take_plan: source.next_take_plan,
+    feedback_reliability: source.feedback_reliability,
+  };
+}
+
+function firstSafeText(values: unknown[], maxLength?: number): string | null {
   for (const value of values) {
-    const text = safeStr(value);
+    const text = safeStr(value, maxLength);
     if (text) return text;
   }
   return null;
 }
 
+function extractActionText(value: unknown, maxLength = 180): string | null {
+  if (typeof value === "string") return safeStr(value, maxLength);
+  if (!isRecord(value)) return null;
+  return firstSafeText(
+    [
+      value.headline,
+      value.title,
+      value.fix,
+      value.action,
+      value.item,
+      value.summary,
+      value.point,
+      value.text,
+    ],
+    maxLength,
+  );
+}
+
 function extractVerdict(verdict: unknown): {
-  label: string | null;
-  recommendation: string | null;
+  readiness: string | null;
   reason: string | null;
-  briefSummary: string | null;
-  missingRequirements: string[];
 } {
-  const fallback = safeStr(verdict);
+  const fallback = safeStr(verdict, 180);
   if (!isRecord(verdict)) {
-    return {
-      label: fallback,
-      recommendation: fallback,
-      reason: null,
-      briefSummary: null,
-      missingRequirements: [],
-    };
+    return { readiness: fallback, reason: null };
   }
 
   return {
-    label: firstSafeText([verdict.label, verdict.status, verdict.verdict]),
-    recommendation: firstSafeText([
-      verdict.recommendation,
-      verdict.submit_recommendation,
-      verdict.label,
-      verdict.status,
-    ]),
-    reason: firstSafeText([verdict.reason, verdict.summary, verdict.rationale]),
-    briefSummary: firstSafeText([
-      verdict.brief_achievement_summary,
-      verdict.brief_summary,
-      verdict.brief_status,
-    ]),
-    missingRequirements: safeArray(
-      verdict.missing_requirements ?? verdict.missing_brief_requirements,
-    )
-      .map((item) => safeStr(item))
-      .filter((item): item is string => Boolean(item))
-      .slice(0, 3),
+    readiness: firstSafeText(
+      [
+        verdict.recommendation,
+        verdict.submit_recommendation,
+        verdict.label,
+        verdict.status,
+        verdict.verdict,
+      ],
+      180,
+    ),
+    reason: firstSafeText([verdict.reason, verdict.summary, verdict.rationale], 260),
   };
 }
 
-function extractPriorityFixes(value: unknown): Array<{ headline: string; rationale: string | null }> {
-  return safeArray(value)
+function extractPriorityFixes(value: unknown): TextItem[] {
+  const items = isRecord(value)
+    ? objectListInput(value, ["items", "fixes", "priority_fixes"])
+    : listInput(value);
+
+  return items
     .map((item) => {
       if (typeof item === "string") {
-        const headline = safeStr(item);
-        return headline ? { headline, rationale: null } : null;
+        const headline = safeStr(item, 150);
+        return headline ? { headline, detail: null } : null;
       }
       if (!isRecord(item)) return null;
-      const headline = firstSafeText([item.headline, item.title, item.fix, item.point]);
+      const headline = firstSafeText(
+        [item.headline, item.title, item.fix, item.action, item.point, item.text],
+        150,
+      );
       if (!headline) return null;
       return {
         headline,
-        rationale: firstSafeText([item.rationale, item.why_now, item.reason]),
+        detail: firstSafeText([item.rationale, item.why_now, item.reason, item.detail], 180),
       };
     })
-    .filter((item): item is { headline: string; rationale: string | null } => Boolean(item))
+    .filter((item): item is TextItem => Boolean(item))
     .slice(0, 3);
 }
 
 function extractStrengths(value: unknown): string[] {
-  return safeArray(value)
+  const items = isRecord(value)
+    ? objectListInput(value, ["items", "strengths", "preserve"])
+    : listInput(value);
+
+  return items
     .map((item) => {
-      if (typeof item === "string") return safeStr(item);
+      if (typeof item === "string") return safeStr(item, 160);
       if (!isRecord(item)) return null;
-      return firstSafeText([item.point, item.headline, item.strength, item.summary]);
+      return firstSafeText(
+        [item.point, item.headline, item.strength, item.summary, item.text],
+        160,
+      );
     })
     .filter((item): item is string => Boolean(item))
     .slice(0, 4);
 }
 
 function extractNextTakeSteps(value: unknown): string[] {
+  if (typeof value === "string") {
+    const step = safeStr(value, 180);
+    return step ? [step] : [];
+  }
+
   if (isRecord(value)) {
-    const flat = safeArray(value.steps)
-      .map((item) => safeStr(item))
+    const flat = objectListInput(value, ["steps", "items", "checklist"])
+      .map((item) => extractActionText(item, 180))
       .filter((item): item is string => Boolean(item));
-    const grouped = safeArray(value.groups).flatMap((group) => {
+    const grouped = listInput(value.groups).flatMap((group) => {
       if (!isRecord(group)) return [];
-      return safeArray(group.steps)
-        .map((item) => safeStr(item))
+      return listInput(group.steps)
+        .map((item) => extractActionText(item, 180))
         .filter((item): item is string => Boolean(item));
     });
     return [...flat, ...grouped].slice(0, 6);
   }
-  return safeArray(value)
-    .map((item) => safeStr(item))
+
+  return listInput(value)
+    .map((item) => extractActionText(item, 180))
     .filter((item): item is string => Boolean(item))
     .slice(0, 6);
 }
@@ -144,22 +222,28 @@ function extractFeedbackReliability(value: unknown): {
   reason: string | null;
   limitations: string[];
 } {
-  const text = safeStr(value);
+  const text = safeStr(value, 120);
   if (!isRecord(value)) {
     return { label: text, reason: null, limitations: [] };
   }
   return {
-    label: firstSafeText([value.label, value.status, value.level, value.rating]),
-    reason: firstSafeText([value.reason, value.summary, value.assessability_note]),
-    limitations: safeArray(value.limitations ?? value.not_assessable ?? value.unavailable)
-      .map((item) => safeStr(item))
+    label: firstSafeText([value.label, value.status, value.level, value.rating], 120),
+    reason: firstSafeText([value.reason, value.summary, value.assessability_note, value.note], 220),
+    limitations: listInput(value.limitations ?? value.not_assessable ?? value.unavailable)
+      .map((item) => extractActionText(item, 180))
       .filter((item): item is string => Boolean(item))
       .slice(0, 4),
   };
 }
 
 function isReadyText(value: string | null): boolean {
-  return Boolean(value && /(ready|submit|send)/i.test(value) && !/(not ready|retake|re-record|rerecord)/i.test(value));
+  return Boolean(
+    value &&
+      /(ready|submit|send)/i.test(value) &&
+      !/(not ready|retake|re-record|rerecord|worth another|before submitting|after one more|needs|fix first)/i.test(
+        value,
+      ),
+  );
 }
 
 function ShellSection({
@@ -197,16 +281,14 @@ export function ReadinessFirstReportShell({
 }) {
   const data = reportData(report);
   const verdict = extractVerdict(data.submission_verdict);
-  const fixFirst = safeStr(data.fix_first);
+  const fixFirst = extractActionText(data.fix_first);
   const priorityFixes = extractPriorityFixes(data.priority_fixes);
   const strengths = extractStrengths(data.strengths);
   const nextTakeSteps = extractNextTakeSteps(data.next_take_plan);
   const reliability = extractFeedbackReliability(data.feedback_reliability);
 
   const readinessText =
-    verdict.recommendation ??
-    verdict.label ??
-    "Readiness summary is not available in the locked-down public payload.";
+    verdict.readiness ?? "Readiness guidance is not available in this report.";
   const ready = isReadyText(readinessText);
 
   return (
@@ -228,7 +310,7 @@ export function ReadinessFirstReportShell({
           </Badge>
         </div>
         <p className="mt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Should I submit this tape?
+          Readiness
         </p>
         <h2 className="mt-1 font-display text-2xl font-semibold leading-tight">
           {readinessText}
@@ -240,11 +322,11 @@ export function ReadinessFirstReportShell({
 
       <ShellSection title="Fix first" tone="primary">
         <p className="font-display text-xl font-semibold leading-snug">
-          {fixFirst ?? "No single first fix is available in the locked-down public payload."}
+          {fixFirst ?? "This report does not include a single fix-first item."}
         </p>
       </ShellSection>
 
-      <ShellSection title="Top action items">
+      <ShellSection title="Priority fixes">
         {priorityFixes.length > 0 ? (
           <ol className="space-y-3 text-sm">
             {priorityFixes.map((fix, index) => (
@@ -254,8 +336,8 @@ export function ReadinessFirstReportShell({
                 </span>
                 <span>
                   <span className="block font-medium text-foreground">{fix.headline}</span>
-                  {fix.rationale && (
-                    <span className="mt-1 block text-xs text-muted-foreground">{fix.rationale}</span>
+                  {fix.detail && (
+                    <span className="mt-1 block text-xs text-muted-foreground">{fix.detail}</span>
                   )}
                 </span>
               </li>
@@ -263,34 +345,12 @@ export function ReadinessFirstReportShell({
           </ol>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No priority-fix list is available; use the first fix and next-take plan if present.
+            This report does not include a priority-fix list.
           </p>
         )}
       </ShellSection>
 
-      <ShellSection title="Brief achievement">
-        {verdict.briefSummary || verdict.missingRequirements.length > 0 ? (
-          <div className="space-y-3 text-sm">
-            {verdict.briefSummary && <p>{verdict.briefSummary}</p>}
-            {verdict.missingRequirements.length > 0 && (
-              <ul className="space-y-1.5">
-                {verdict.missingRequirements.map((item, index) => (
-                  <li key={`${item}-${index}`} className="flex gap-2">
-                    <span className="text-warning">-</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Brief achievement detail is not available in this locked-down shell yet.
-          </p>
-        )}
-      </ShellSection>
-
-      <ShellSection title="Preserve this">
+      <ShellSection title="Keep / preserve">
         {strengths.length > 0 ? (
           <ul className="space-y-2 text-sm">
             {strengths.map((strength, index) => (
@@ -302,12 +362,12 @@ export function ReadinessFirstReportShell({
           </ul>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No preserve guidance is available in the locked-down public payload.
+            This report does not include preserve guidance.
           </p>
         )}
       </ShellSection>
 
-      <ShellSection title="Next-take checklist">
+      <ShellSection title="Next take plan">
         {nextTakeSteps.length > 0 ? (
           <ul className="space-y-2 text-sm">
             {nextTakeSteps.map((step, index) => (
@@ -319,14 +379,20 @@ export function ReadinessFirstReportShell({
           </ul>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No next-take steps are available in the locked-down public payload.
+            This report does not include next-take steps.
           </p>
         )}
       </ShellSection>
 
-      <ShellSection title="Not assessable / limitations" tone="muted">
+      <ShellSection title="Reliability / limitations" tone="muted">
+        <p className="text-sm">
+          {reliability.label ?? "This report does not include a feedback reliability note."}
+        </p>
+        {reliability.reason && (
+          <p className="mt-2 text-xs text-muted-foreground">{reliability.reason}</p>
+        )}
         {reliability.limitations.length > 0 ? (
-          <ul className="space-y-2 text-sm">
+          <ul className="mt-3 space-y-2 text-sm">
             {reliability.limitations.map((item, index) => (
               <li key={`${item}-${index}`} className="flex gap-2">
                 <span className="text-muted-foreground">-</span>
@@ -335,18 +401,9 @@ export function ReadinessFirstReportShell({
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No specific not-assessable items were provided in the locked-down public payload.
+          <p className="mt-2 text-xs text-muted-foreground">
+            No specific limitations were included.
           </p>
-        )}
-      </ShellSection>
-
-      <ShellSection title="Feedback reliability" tone="muted">
-        <p className="text-sm">
-          {reliability.label ?? "Feedback reliability was not provided in the locked-down public payload."}
-        </p>
-        {reliability.reason && (
-          <p className="mt-2 text-xs text-muted-foreground">{reliability.reason}</p>
         )}
       </ShellSection>
     </div>

@@ -21,7 +21,7 @@ function expectInOrder(html: string, labels: string[]) {
 }
 
 describe("readiness-first locked-down report shell", () => {
-  it("renders the permitted public-safe fields in readiness-first order", () => {
+  it("normalises the permitted public-safe fields in readiness-first order", () => {
     const html = render({
       report_data: {
         schema_version: "tapecoach_public_report_v1",
@@ -31,19 +31,24 @@ describe("readiness-first locked-down report shell", () => {
           brief_achievement_summary: "The central brief is partly achieved.",
           missing_requirements: ["Clarify the final button."],
         },
-        fix_first: "Land the final thought before cutting.",
+        fix_first: { action: "Land the final thought before cutting." },
         priority_fixes: [
           { headline: "Hold the final beat", rationale: "It currently cuts off the story." },
-          { headline: "Keep the eyeline steady", rationale: "It helps the reader relationship." },
-          { headline: "Clean the first consonant", rationale: "It makes the opening easier to catch." },
+          "",
+          { action: "Keep the eyeline steady", reason: "It helps the reader relationship." },
+          { text: "Clean the first consonant" },
           { headline: "Fourth item should not render" },
         ],
-        strengths: [
-          "The opening intention is clear.",
-          { point: "The reader relationship is easy to follow." },
-        ],
+        strengths: {
+          items: [
+            "The opening intention is clear.",
+            { point: "The reader relationship is easy to follow." },
+            "Good job",
+          ],
+        },
         next_take_plan: {
-          steps: ["Run the ending twice.", "Record one complete pass without stopping."],
+          steps: ["Run the ending twice."],
+          groups: [{ steps: ["Record one complete pass without stopping."] }],
         },
         feedback_reliability: {
           label: "Medium",
@@ -54,38 +59,66 @@ describe("readiness-first locked-down report shell", () => {
     });
 
     expectInOrder(html, [
-      "Should I submit this tape?",
+      "Readiness",
       "Fix first",
-      "Top action items",
-      "Brief achievement",
-      "Preserve this",
-      "Next-take checklist",
-      "Not assessable / limitations",
-      "Feedback reliability",
+      "Priority fixes",
+      "Keep / preserve",
+      "Next take plan",
+      "Reliability / limitations",
     ]);
     expect(html).toContain("Retake before submitting");
     expect(html).toContain("Land the final thought before cutting.");
     expect(html).toContain("Hold the final beat");
+    expect(html).toContain("Keep the eyeline steady");
+    expect(html).toContain("Clean the first consonant");
     expect(html).toContain("The opening intention is clear.");
     expect(html).toContain("Run the ending twice.");
     expect(html).toContain("Fine facial detail is not fully assessable.");
     expect(html).not.toContain("Fourth item should not render");
+    expect(html).not.toContain("Good job");
+    expect(html).not.toContain("Brief achievement");
+    expect(html).not.toContain("central brief is partly achieved");
+    expect(html).not.toContain("Clarify the final button");
   });
 
-  it("uses safe fallbacks when optional public-safe fields are unavailable", () => {
+  it("uses safe fallbacks without inventing report content", () => {
     const html = render({
       report_data: {
         submission_verdict: { label: "Worth another take" },
+        priority_fixes: ["", null, { headline: "" }],
+        strengths: [],
+        next_take_plan: null,
+        feedback_reliability: null,
       },
     });
 
     expect(html).toContain("Worth another take");
-    expect(html).toContain("No single first fix is available");
-    expect(html).toContain("No priority-fix list is available");
-    expect(html).toContain("Brief achievement detail is not available");
-    expect(html).toContain("No preserve guidance is available");
-    expect(html).toContain("No next-take steps are available");
-    expect(html).toContain("Feedback reliability was not provided");
+    expect(html).toContain("This report does not include a single fix-first item.");
+    expect(html).toContain("This report does not include a priority-fix list.");
+    expect(html).toContain("This report does not include preserve guidance.");
+    expect(html).toContain("This report does not include next-take steps.");
+    expect(html).toContain("This report does not include a feedback reliability note.");
+    expect(html).toContain("No specific limitations were included.");
+  });
+
+  it("supports string and malformed allowed fields without crashing", () => {
+    const html = render({
+      report_data: {
+        submission_verdict: "Submit after one more clean pass",
+        fix_first: "Keep the opening thought active.",
+        priority_fixes: "Sharpen the last line.",
+        strengths: "The story is easy to follow.",
+        next_take_plan: "Record one complete pass without stopping.",
+        feedback_reliability: "Partial",
+      },
+    });
+
+    expect(html).toContain("Submit after one more clean pass");
+    expect(html).toContain("Keep the opening thought active.");
+    expect(html).toContain("Sharpen the last line.");
+    expect(html).toContain("The story is easy to follow.");
+    expect(html).toContain("Record one complete pass without stopping.");
+    expect(html).toContain("Partial");
   });
 
   it("does not render blocked scores, authority, comparison, role-fit or internal artefact data", () => {
@@ -98,16 +131,18 @@ describe("readiness-first locked-down report shell", () => {
         fix_first: "This safe first fix should render.",
         priority_fixes: [
           { headline: "Avoid Stanislavski technique language" },
+          { headline: "Acting: 91" },
           { headline: "Keep the button clearer" },
         ],
         strengths: [
-          "Strong public-safe choice.",
+          "Clear public-safe choice.",
           "Evidence anchor take-12345678-1234-1234-1234-123456789abc must not render.",
         ],
         next_take_plan: {
           steps: [
             "Record the full pass.",
             "Use signed URL https://example.com/video.mp4",
+            "Readiness 92",
           ],
         },
         feedback_reliability: {
@@ -132,12 +167,13 @@ describe("readiness-first locked-down report shell", () => {
     expect(html).toContain("This safe reason should render.");
     expect(html).toContain("This safe first fix should render.");
     expect(html).toContain("Keep the button clearer");
-    expect(html).toContain("Strong public-safe choice.");
+    expect(html).toContain("Clear public-safe choice.");
     expect(html).toContain("Record the full pass.");
 
     const lower = html.toLowerCase();
     expect(lower).not.toContain("overall readiness");
     expect(lower).not.toContain("acting: 91");
+    expect(lower).not.toContain("readiness 92");
     expect(lower).not.toContain("category score");
     expect(lower).not.toContain("stanislavski");
     expect(lower).not.toContain("role fit");

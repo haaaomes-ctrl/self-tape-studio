@@ -27,7 +27,7 @@ The current report parity allow-list already permits:
 
 The existing v2 component renderer can also receive scores, category notes, component scores, risk flags and role-fit fields from the older persisted report shape. Those fields are not needed for R10.1 and are not read by the locked-down shell.
 
-Brief achievement is not yet a separate permitted public path. R10.1 may show a brief-achievement summary only if it is safely nested inside the permitted `submission_verdict` object. Otherwise the shell shows a concise unavailable state.
+Brief achievement is not yet a separate permitted public path. R10.1B does not render a brief-achievement section until a separate explicit public payload/parity path permits it.
 
 ## Minimum Shell Decision
 
@@ -36,11 +36,9 @@ The shell renders only:
 1. readiness / submit-or-retake summary;
 2. fix first;
 3. priority fixes;
-4. brief achievement / missing requirements when available, otherwise a safe unavailable state;
-5. strengths / preserve;
-6. next-take checklist;
-7. limitations / not assessable;
-8. feedback reliability / assessability note.
+4. strengths / preserve;
+5. next-take checklist;
+6. feedback reliability / assessability note and limitations.
 
 Missing fields do not invent content. They render either nothing or a short locked-down unavailable message.
 
@@ -75,3 +73,33 @@ R10.1 does not change release posture:
 - public scoring remains blocked;
 - public named technique authority remains blocked;
 - public comparison recommendation remains blocked.
+
+## R10.1B Payload Normalisation Note
+
+R10.1B keeps the same public-safe field set and does not add brief-achievement, score, technique-authority, comparison, role-fit or release fields.
+
+### Existing Payload Shape
+
+- `submission_verdict` can be a string or object-like value with labels, status and reason fields.
+- `fix_first` is usually a string, but the shell defensively accepts a small object-like action shape.
+- `priority_fixes` and `strengths` can be arrays of strings or object-like rows; empty, generic or unsafe rows are ignored.
+- `next_take_plan` can be an array, a single string, or an object with `steps` / `groups`.
+- `feedback_reliability` can be a string or object-like value with a label, reason and limitation list.
+- Any of those fields can be missing, null, empty or malformed, so display must fail closed to concise unavailable copy.
+
+### Shell Usability
+
+The R10.1B shell is ordered around the minimum tester questions:
+
+1. readiness;
+2. fix first;
+3. priority fixes;
+4. keep / preserve;
+5. next take plan;
+6. reliability / limitations.
+
+Brief achievement is omitted until a separate explicit public payload/parity path permits it. The shell remains useful through readiness, fix-first, priority, preserve, next-take and reliability fields.
+
+### Safety Boundary
+
+Normalisation is view-only and reads only the existing allowed public-safe field names. It does not consume raw report internals, QA artefacts, scores, category scores, named technique authority, comparison winner/recommendation, castability, bookability, marketability, employability or role-fit claims. Fallback copy must not invent feedback or turn assessability limitations into performer criticism.
