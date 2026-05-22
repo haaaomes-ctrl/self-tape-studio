@@ -252,6 +252,8 @@ describe('v3 s9 acceptance metrics global reason final reconciliation', () => {
     const metrics = buildQAAcceptanceMetrics(completeOrdinaryManifest());
 
     expect(metrics.ordinary_internal_proof_status).toBe('satisfied');
+    expect(metrics.qa_spine_reconciliation_version).toBe('s9_19o_minimum_v1');
+    expect(metrics.ordinary_internal_blockers).toEqual([]);
     expect(metrics.ordinary_l2a_analysis_proof_status).toBe('satisfied');
     expect(metrics.global_level2_evidence_status).toBe('satisfied');
     expect(metrics.global_level2_suppression_proof_status).toBe('satisfied');
@@ -261,18 +263,25 @@ describe('v3 s9 acceptance metrics global reason final reconciliation', () => {
     expect(metrics.acceptance_reasons).not.toContain('ordinary internal analysis proof incomplete');
     expect(metrics.acceptance_reasons).not.toContain('qa_acceptance_metrics emitted but does not satisfy evidence gates');
     expect(metrics.acceptance_reasons).not.toContain('raw_report is legacy_adapter where applicable');
+    expect(metrics.release_blockers).toEqual(expect.arrayContaining([
+      'runtime_operator_verification_required',
+      'deployment_provenance_or_operator_confirmation_required',
+      'production_public_authority_gates_blocked',
+      'customer_release_gates_blocked',
+    ]));
     expect(metrics.release_blocker_reasons).toEqual(expect.arrayContaining([
       'runtime/operator verification required',
       'deployment provenance or operator confirmation required',
       'production/public authority gates blocked',
       'customer release gates blocked',
     ]));
+    expect(metrics.comparison_blockers).toEqual([]);
     expect(metrics.diagnostic_reasons).toEqual(expect.arrayContaining([
       'raw_report legacy_adapter emitted as diagnostic only; not used as v3 evidence spine',
-      'qa_acceptance_metrics emitted as reconciliation summary; not satisfying evidence by itself',
+      'qa_acceptance_metrics_projection_used',
     ]));
     expect(metrics.non_satisfying_artefact_summary.raw_report).toBe('legacy_adapter_diagnostic_only_not_v3_evidence');
-    expect(metrics.non_satisfying_artefact_summary.qa_acceptance_metrics).toBe('reconciliation_summary_not_satisfying_evidence_source');
+    expect(metrics.non_satisfying_artefact_summary.qa_acceptance_metrics).toBe('reconciliation_projection_not_satisfying_evidence_source');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.customer_release_status).toBe('blocked');
     expect(metrics.public_scoring_status).toBe('blocked');
@@ -314,14 +323,20 @@ describe('v3 s9 acceptance metrics global reason final reconciliation', () => {
     const metrics = buildQAAcceptanceMetrics(manifest);
 
     expect(metrics.ordinary_internal_proof_status).toBe('insufficient');
+    expect(metrics.ordinary_internal_blockers).toEqual(expect.arrayContaining([
+      'analysis_evidence_state_gate_insufficient',
+      'evidence_anchor_aggregate_insufficient',
+      'missing_performance_observable_evidence',
+    ]));
     expect(metrics.ordinary_l2a_analysis_proof_status).toBe('insufficient');
     expect(metrics.ordinary_internal_proof_reasons).toContain('ordinary internal analysis proof incomplete');
     expect(metrics.acceptance_reasons).toContain('ordinary internal analysis proof incomplete');
     expect(metrics.ordinary_l2a_analysis_proof_blocker_codes).toEqual(expect.arrayContaining([
-      'AnalysisEvidenceState_insufficient',
-      'EvidenceAnchor_trace_insufficient',
+      'analysis_evidence_state_gate_insufficient',
+      'evidence_anchor_aggregate_insufficient',
+      'missing_performance_observable_evidence',
     ]));
     expect(metrics.acceptance_reasons).not.toContain('qa_acceptance_metrics emitted but does not satisfy evidence gates');
-    expect(metrics.diagnostic_reasons).toContain('qa_acceptance_metrics emitted as reconciliation summary; not satisfying evidence by itself');
+    expect(metrics.diagnostic_reasons).toContain('qa_acceptance_metrics_projection_used');
   });
 });
