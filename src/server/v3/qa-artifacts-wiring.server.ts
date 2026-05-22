@@ -2068,6 +2068,10 @@ const ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS: Record<OrdinaryAnalysisRequired
   performance_observable: 'missing_performance_observable_evidence',
   candidate_technique: 'missing_candidate_technique_evidence',
 };
+const ORDINARY_ANALYSIS_FAMILY_EVENT_BLOCKERS: Partial<Record<OrdinaryAnalysisRequiredFamilyId, string>> = {
+  material_specific_performance: 'material_specific_performance_requires_safe_step1_event_observation',
+  performance_observable: 'performance_observable_requires_safe_step1_event_observation',
+};
 const SUPPLIED_CONTEXT_MATERIAL_FACT_KINDS = new Set([
   'brief_presence',
   'brief_presence_source_resolved',
@@ -2274,11 +2278,14 @@ function isAllowedOrdinaryAnalysisStep1ProjectionSource(item: Record<string, unk
   return sourcePath.startsWith('timestamped_evidence[');
 }
 function materialStep1FamilyForRawItem(rawItem: Record<string, unknown>): 'material_specific' | 'material_specific_performance' {
-  const kind = String(rawItem.evidence_kind ?? '').toLowerCase();
-  const sourcePath = String(rawItem.source_path ?? '');
-  if (kind.includes('material_specific_performance')) return 'material_specific_performance';
-  if (sourcePath.startsWith('timestamped_evidence[')) return 'material_specific_performance';
+  if (isMaterialSpecificPerformanceEvent(rawItem)) return 'material_specific_performance';
   return 'material_specific';
+}
+function isContextOnlyMaterialSummary(summary: string): boolean {
+  const text = summary.trim().toLowerCase();
+  if (!text) return true;
+  return /\b(brief supplied|material supplied|role context|context supplied|component declaration|task declaration|material presence|brief presence|source resolved|cache status|supplied|reference|references|referenced|declared|loaded|unloaded|unknown|unavailable)\b/.test(text)
+    && !/\b(occurs|occurred|present in the take|observed event|is performed|performed before|segment occurs|section is performed|component is delivered|delivered|begins|continues|transition)\b/.test(text);
 }
 function isSafePerformanceEventSummary(summary: string): boolean {
   const text = summary.trim().toLowerCase();
@@ -2286,6 +2293,18 @@ function isSafePerformanceEventSummary(summary: string): boolean {
   if (STEP1_MEDIA_OBSERVABLE_FORBIDDEN_TEXT_RE.test(text)) return false;
   if (/\b(strong|good|excellent|compelling|beautiful|ready|role fit|castable|bookable|marketable|score|rating|winner|recommendation)\b/.test(text)) return false;
   return /\b(performance|performer|scene|song|slate|segment|transition|pause|beat|action|task|component|delivered|begins|continues|occurs|present)\b/.test(text);
+}
+function isMaterialSpecificPerformanceEvent(rawItem: Record<string, unknown>): boolean {
+  if (rawItem.source_artefact_id !== 'run_evidence_pass') return false;
+  const sourcePath = typeof rawItem.source_path === 'string' ? rawItem.source_path : '';
+  if (!sourcePath.startsWith('step1_observations[') && !sourcePath.startsWith('timestamped_evidence[')) return false;
+  if (hasForbiddenEvidenceSourceRef(rawItem)) return false;
+  const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
+  if (!summary || isContextOnlyMaterialSummary(summary)) return false;
+  const kind = String(rawItem.evidence_kind ?? '').toLowerCase();
+  const text = `${summary} ${kind}`.toLowerCase();
+  if (!isSafePerformanceEventSummary(text)) return false;
+  return /\b(scene|song|slate|monologue|dialogue|material|task|component|segment|audition|performance|performer|delivered|occurs|present)\b/.test(text);
 }
 function canDerivePerformanceObservableFromMaterialStep1Item(rawItem: Record<string, unknown>): boolean {
   const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
@@ -2470,6 +2489,7 @@ function evaluateOrdinaryAnalysisFamilyCompletion(args: {
     && unresolvedTruthLinkCount === 0;
   const blockerCodes = dedupePreservingOrder([
     ...(requiredForOrdinaryAnalysis && acceptedItems.length === 0 ? [ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS[args.family]] : []),
+    ...(requiredForOrdinaryAnalysis && acceptedItems.length === 0 && ORDINARY_ANALYSIS_FAMILY_EVENT_BLOCKERS[args.family] ? [ORDINARY_ANALYSIS_FAMILY_EVENT_BLOCKERS[args.family] as string] : []),
     ...(requiredForOrdinaryAnalysis && acceptedItems.length > 0 && nonLimitationItems.length === 0 ? [args.family === 'performance_observable' ? 'limitation_only_cannot_satisfy_performance_gate' : ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS[args.family]] : []),
     ...(sourcePathUnresolvedCount > 0 ? ['source_path_unresolved'] : []),
     ...(unresolvedTruthLinkCount > 0 ? ['missing_truth_state_linkage'] : []),
@@ -4642,18 +4662,28 @@ function safeUnsupportedEvidenceForAnchorHandoff(value: unknown): Array<Record<s
 
 function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<string, unknown>>; analysisEvidenceState: Record<string, unknown> | null }): EvidenceAnchorAggregateGateEvaluation {
   const anchors = args.anchors.filter((anchor) => anchor.excluded_from_evidence_anchor_gate !== true);
+  const isRequiredOrdinaryFamilyAnchor = (anchor: Record<string, unknown>) => ORDINARY_ANALYSIS_REQUIRED_FAMILY_IDS.includes(String(anchor.evidence_family ?? '') as OrdinaryAnalysisRequiredFamilyId);
   const excludedLegacyDiagnosticAnchorCount = args.anchors.filter((anchor) => anchor.excluded_from_evidence_anchor_gate === true && anchor.source_family === 'legacy_adapter').length;
   const analysisEvidenceState = args.analysisEvidenceState;
   const realRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3').length;
   const blockedRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked').length;
-  const aggregateBlockingRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked' && !isLimitationOnlyEvidenceAnchor(a)).length;
+  const aggregateBlockingRealRuntimeAnchorCount = anchors.filter((a) => a.source_family === 'real_runtime_v3_blocked' && !isLimitationOnlyEvidenceAnchor(a) && isRequiredOrdinaryFamilyAnchor(a)).length;
   const legacyAdapterAnchorCount = anchors.filter((a) => a.source_family === 'legacy_adapter').length;
   const sourceScaffoldAnchorCount = anchors.filter((a) => ['source_scaffold', 'helper_test', 'local_file_fixture'].includes(String(a.source_family ?? a.source_classification ?? ''))).length;
   const reportSnapshotAnchorCount = anchors.filter((a) => a.source_artefact_id === 'raw_report' || String(a.source_path ?? '').startsWith('report_data')).length;
   const blockedAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true).length;
-  const aggregateBlockingAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true && !isLimitationOnlyEvidenceAnchor(a)).length;
+  const aggregateBlockingAnchorCount = anchors.filter((a) => a.cannot_satisfy_v3_gate === true && !isLimitationOnlyEvidenceAnchor(a) && isRequiredOrdinaryFamilyAnchor(a)).length;
   const unsupported = isRecord(analysisEvidenceState) ? safeRecordArray(analysisEvidenceState.unsupported_or_unavailable_evidence) : [];
   const unsupportedBlockerCodes = unsupported.flatMap((item) => Array.isArray(item.blocker_codes) ? item.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
+  const ordinaryFamilyBlockerCodeSet = new Set([
+    ...Object.values(ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS),
+    ...Object.values(ORDINARY_ANALYSIS_FAMILY_EVENT_BLOCKERS).filter((x): x is string => typeof x === 'string'),
+    'partial_step1_evidence_coverage',
+    'missing_truth_state_linkage',
+    'source_path_unresolved',
+    'forbidden_source_family_present',
+  ]);
+  const unsupportedOrdinaryBlockerCodes = unsupportedBlockerCodes.filter((code) => ordinaryFamilyBlockerCodeSet.has(code));
   const unsupportedFamilyBlockers = unsupported.map(unsupportedEvidenceFamilyBlocker).filter((x): x is string => typeof x === 'string');
   const anchorBlockers = anchors.flatMap((anchor) => Array.isArray(anchor.blocker_codes) ? anchor.blocker_codes.filter((x): x is string => typeof x === 'string') : []);
   const coverage = isRecord(analysisEvidenceState?.evidence_family_coverage) ? analysisEvidenceState.evidence_family_coverage : null;
@@ -4696,10 +4726,10 @@ function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<strin
     ...(anchorBlockers.includes('missing_truth_state_linkage') ? ['missing_truth_state_linkage'] : []),
     ...familyCoverageBlockers,
     ...unsupportedFamilyBlockers,
-    ...(realRuntimeAnchorCount > 0 && unsupported.length > 0 ? ['analysis_evidence_state_partial_runtime_facts_only'] : []),
-    ...unsupportedBlockerCodes,
+    ...(realRuntimeAnchorCount > 0 && (unsupportedFamilyBlockers.length > 0 || unsupportedOrdinaryBlockerCodes.length > 0) ? ['analysis_evidence_state_partial_runtime_facts_only'] : []),
+    ...unsupportedOrdinaryBlockerCodes,
   ]);
-  const requiredGateAnchors = anchors.filter((anchor) => !isLimitationOnlyEvidenceAnchor(anchor));
+  const requiredGateAnchors = anchors.filter((anchor) => !isLimitationOnlyEvidenceAnchor(anchor) && isRequiredOrdinaryFamilyAnchor(anchor));
   const allAnchorsSatisfyingRealRuntime = requiredGateAnchors.length > 0
     && requiredGateAnchors.every((anchor) => anchor.source_family === 'real_runtime_v3' && anchor.cannot_satisfy_v3_gate !== true)
     && aggregateBlockingRealRuntimeAnchorCount === 0
@@ -4710,6 +4740,7 @@ function evaluateEvidenceAnchorAggregateGate(args: { anchors: Array<Record<strin
   const coverageComplete = !blockers.some((code) => [
     'partial_step1_evidence_coverage',
     ...Object.values(ORDINARY_ANALYSIS_FAMILY_MISSING_BLOCKERS),
+    ...Object.values(ORDINARY_ANALYSIS_FAMILY_EVENT_BLOCKERS).filter((x): x is string => typeof x === 'string'),
   ].includes(code));
   const evidenceAnchorGateStatus: EvidenceAnchorAggregateGateStatus = allAnchorsSatisfyingRealRuntime && analysisEvidenceStateComplete && coverageComplete
     ? 'sufficient'
@@ -5388,10 +5419,12 @@ function isPublicClaimGateExcludedDisplayStatus(value: unknown): boolean {
     || status === 'internal_only'
     || status === 'suppressed_internal'
     || status === 'not_public_output'
-    || status === 'not_public';
+    || status === 'not_public'
+    || status === 'internal_diagnostic_only';
 }
 
 function isCandidateRequiredForPublicClaimGate(candidate: Record<string, unknown>): boolean {
+  if (isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status)) return false;
   if (candidate.excluded_from_public_claim_gate === true) return false;
   if (candidate.public_claim_support_required === false) return false;
   if (candidate.required_for_public_claim_gate === false) return false;
@@ -5500,6 +5533,9 @@ function classifyPublicClaimSupportFromCandidates(input: {
     const sourceFamily = String(candidate.source_family ?? 'legacy_or_unsupported');
     const sourceArtefactId = String(candidate.source_artefact_id ?? 'unknown');
     const sourcePath = String(candidate.source_path ?? '');
+    const candidatePublicDisplayStatus = typeof candidate.public_display_status === 'string' && candidate.public_display_status.trim()
+      ? candidate.public_display_status.trim()
+      : 'not_rendered_internal_trace';
     const linkedEvidenceAnchorIds = getStringArray(candidate.linked_evidence_anchor_ids);
     const linkedTruthStateIds = getStringArray(candidate.linked_truth_state_ids);
     const safety = classifyClaimCandidateSafety({ text: candidateSummary, claimType, claimFamily, sourcePath });
@@ -5627,7 +5663,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
         linked_truth_state_count: linkedTruthStateIds.length,
         unresolved_truth_state_ids: unresolvedTruthStateIds,
       },
-      public_display_status: 'not_rendered_internal_trace',
+      public_display_status: candidateRequiredForGate ? candidatePublicDisplayStatus : 'not_rendered_internal_trace',
       public_claim_support_required: candidateRequiredForGate,
       required_for_public_claim_gate: candidateRequiredForGate,
       excluded_from_public_claim_gate: !candidateRequiredForGate,
@@ -5788,10 +5824,10 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     const publicAuthority = classifyClaimPublicAuthorityRequirement(normalizeCandidateBlockedCategory(safety.blocked_claim_category));
     const isLegacy = args.sourceFamily === 'legacy_adapter';
     const publicDisplayStatus = args.publicDisplayStatus ?? 'not_rendered_internal_candidate';
-    const explicitlyRequiredForGate = args.excludedFromPublicClaimGate === false || args.publicClaimSupportRequired === true;
+    const excludedDisplayStatus = isPublicClaimGateExcludedDisplayStatus(publicDisplayStatus);
     const excludedFromGate = args.excludedFromPublicClaimGate === true
       || args.publicClaimSupportRequired === false
-      || (!explicitlyRequiredForGate && isPublicClaimGateExcludedDisplayStatus(publicDisplayStatus));
+      || excludedDisplayStatus;
     const eligible = !excludedFromGate && args.sourceFamily === 'real_runtime_v3' && safety.public_safety_status !== 'blocked';
     const linkedEvidenceAnchorIds = args.linkedEvidenceAnchorIds ?? [];
     const linkedTruthStateIds = args.linkedTruthStateIds ?? [];
@@ -5818,11 +5854,10 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       ...(args.sourceFamily === 'report_candidate_requires_support' ? ['report_candidate_requires_support'] : []),
       ...(!excludedFromGate && !eligible && !isLegacy && safety.public_safety_status !== 'blocked' ? ['claim_candidate_not_eligible_for_support_check'] : []),
       ...(args.extraBlockerCodes ?? []),
-      ...(!excludedFromGate ? ['claim_candidate_trace_internal_only_not_public_claim_gate_evidence'] : []),
     ]);
-    const cannotSatisfyPublicClaimGate = !['supported', 'limitation_only_supported'].includes(supportStatus)
+    const cannotSatisfyPublicClaimGate = !excludedFromGate && (!['supported', 'limitation_only_supported'].includes(supportStatus)
       || isLegacy
-      || publicAuthority.status === 'blocked';
+      || publicAuthority.status === 'blocked');
     candidates.push({
       claim_candidate_id: `cc-${input.take_id}-${candidates.length + 1}`,
       safe_candidate_summary: clean,
@@ -5880,7 +5915,6 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
         ? explicitLinkedEvidenceAnchorIds
         : findSameRunAnchorIdsForAnalysisEvidencePath(anchors, itemPath);
       const linkedTruthStateIds = Array.isArray(item.linked_truth_state_ids) ? item.linked_truth_state_ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
-      const hasAnchorSupport = linkedEvidenceAnchorIds.length > 0;
       addCandidate({
         summary,
         claimType: 'factual_or_limitation_status',
@@ -5893,8 +5927,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
         linkedTruthStateIds,
         requiredEvidenceAnchorFamily: String(item.evidence_kind ?? 'runtime_fact'),
         requiredTruthStateFamily: linkedTruthStateIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact',
-        publicClaimSupportRequired: hasAnchorSupport,
-        excludedFromPublicClaimGate: !hasAnchorSupport,
+        publicClaimSupportRequired: false,
+        excludedFromPublicClaimGate: true,
       });
     });
     const unsupportedItems = Array.isArray(analysisEvidenceState.unsupported_or_unavailable_evidence)
@@ -5965,6 +5999,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       linkedTruthStateIds: truthIds,
       requiredEvidenceAnchorFamily: String(anchor.evidence_modality ?? anchor.evidence_kind ?? 'runtime_anchor'),
       requiredTruthStateFamily: limitationOnlyAnchor ? 'not_required_for_limitation_candidate' : (truthIds.length > 0 ? 'linked_truth_state_ids' : 'not_required_for_runtime_fact'),
+      publicClaimSupportRequired: false,
+      excludedFromPublicClaimGate: true,
     });
   });
 
@@ -6044,7 +6080,7 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
   const unsupportedRequiredCandidateCount = candidates.filter((candidate) => candidate.required_for_public_claim_gate !== false && candidate.excluded_from_public_claim_gate !== true && !['supported', 'limitation_only_supported'].includes(String(candidate.support_status))).length;
   const unsupportedInternalOnlyCandidateCount = candidates.filter((candidate) => isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status) && !['supported', 'limitation_only_supported', 'not_applicable'].includes(String(candidate.support_status))).length;
   const internalOnlyNotPublicGateEvidence = candidates.some((candidate) => isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status));
-  const claimCandidateGateStatus = !internalOnlyNotPublicGateEvidence && (requiredCandidateCount === 0 || unsupportedRequiredCandidateCount === 0) ? 'satisfied' as const : 'insufficient' as const;
+  const claimCandidateGateStatus = requiredCandidateCount === 0 || unsupportedRequiredCandidateCount === 0 ? 'satisfied' as const : 'insufficient' as const;
   const blockedCandidateCount = candidates.filter((candidate) => candidate.public_safety_status === 'blocked').length;
   const rewriteRequiredCount = candidates.filter((candidate) => candidate.rewrite_required === true).length;
 	  const unsupportedCandidateCount = candidates.filter((candidate) => ['legacy_or_unsupported', 'requires_support'].includes(String(candidate.candidate_support_precheck_status))).length;
@@ -6054,9 +6090,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
 	  const unsafeCandidateCount = candidates.filter((candidate) => ['unsafe', 'unsafe_or_overclaim'].includes(String(candidate.public_safety_status)) || getStringArray(candidate.blocker_codes).some((code) => /unsafe|redacted/.test(code))).length;
 	  const suppressedCandidateCount = candidates.filter((candidate) => candidate.suppress_public_claim === true).length;
 	  const publicFeatureSuppressionClaimSummary = buildPublicFeatureSuppressionClaimSummary(candidates);
-	  const blockerCodes = dedupePreservingOrder([
+  const blockerCodes = dedupePreservingOrder([
     ...(claimCandidateGateStatus === 'satisfied' ? [] : ['claim_candidate_trace_required_rendered_candidate_support_incomplete']),
-    ...(internalOnlyNotPublicGateEvidence ? ['claim_candidate_trace_internal_only_not_public_claim_gate_evidence'] : []),
     ...(renderedCandidateCount > 0 && unsupportedRenderedCandidateCount > 0 ? ['unsupported_rendered_claim_candidate_present'] : []),
     ...(unsupportedRequiredCandidateCount > 0 ? ['unsupported_required_claim_candidate_present'] : []),
     ...candidates

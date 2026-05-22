@@ -2129,7 +2129,7 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
   it('blocks aggregate satisfaction on unresolved AnalysisEvidenceState source paths', async () => {
     const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
     completeAnalysisEvidenceStateForAggregate(bundle.payload);
-    bundle.payload.observable_evidence_items[0].analysis_evidence_state_source_path = 'observable_evidence_items[999]';
+    bundle.payload.performance_observable_evidence[0].analysis_evidence_state_source_path = 'performance_observable_evidence[999]';
     const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
     expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
     expect(metrics.evidence_anchor_gate_reason).toBe('unresolved_source_path');
@@ -2139,7 +2139,7 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
   it('blocks aggregate satisfaction when required truth linkage is missing', async () => {
     const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
     completeAnalysisEvidenceStateForAggregate(bundle.payload);
-    const truthItem = bundle.payload.observable_evidence_items.find((item: any) => item.source_artefact_id === 'truth_state_map');
+    const truthItem = bundle.payload.performance_observable_evidence[0];
     truthItem.linked_truth_state_ids = [];
     const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
     expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
@@ -2149,7 +2149,7 @@ describe('S9-14H EvidenceAnchors aggregate promotion audit', () => {
   it('does not count anchors whose cannot_satisfy_v3_gate remains true', async () => {
     const bundle = await emitAnalysisEvidenceStateBundle({ duration: 42, componentStatus: 'supplied' });
     completeAnalysisEvidenceStateForAggregate(bundle.payload);
-    bundle.payload.observable_evidence_items[0].blocker_codes = ['caller_marked_anchor_blocked'];
+    bundle.payload.performance_observable_evidence[0].blocker_codes = ['caller_marked_anchor_blocked'];
     const { anchors, metrics } = await emitAnchorsAndManifestFromAnalysisState(bundle);
     expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
     expect(anchors.blocker_codes).toContain('anchor_cannot_satisfy_v3_gate');
@@ -2331,16 +2331,16 @@ async function emitClaimCandidateBundle(options: {
 }
 
 describe('S9-14K v3 ClaimCandidate artefact', () => {
-  it('emits an internal-only ClaimCandidateTrace artefact without satisfying the public claim gate', async () => {
+  it('emits an internal-only ClaimCandidateTrace artefact without promoting candidates into public output', async () => {
     const { claimCandidateTrace, manifest, metrics } = await emitClaimCandidateBundle();
     expect(claimCandidateTrace.artefact_type).toBe('claim_candidate_trace');
     expect(claimCandidateTrace.internal_only).toBe(true);
     expect(claimCandidateTrace.privacy_classification).toBe('internal_private');
-    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(false);
     expect(claimCandidateTrace.public_render_permission_status).toBe('not_evaluated_or_blocked');
     expect(manifest.artefact_status_by_id.claim_candidate_trace).toBe('emitted');
     expect(manifest.artefact_level2_spine_satisfaction_by_id.claim_candidate_trace).toBe(false);
-    expect(metrics.claim_candidate_gate_status).toBe('insufficient');
+    expect(metrics.claim_candidate_gate_status).toBe('satisfied');
   });
 
   it('does not let caller metadata override canonical ClaimCandidateTrace fields', async () => {
@@ -2363,8 +2363,8 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     expect(claimCandidateTrace.analysis_run_id).not.toBe('wrong');
     expect(claimCandidateTrace.internal_only).toBe(true);
     expect(claimCandidateTrace.privacy_classification).toBe('internal_private');
-    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(true);
-    expect(claimCandidateTrace.blocker_codes).toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
+    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(false);
+    expect(claimCandidateTrace.blocker_codes).not.toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
   });
 
   it('creates factual status candidates from AnalysisEvidenceState without rendering them', async () => {
@@ -2374,7 +2374,10 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     expect(selectedLevel).toMatchObject({
       source_artefact_id: 'analysis_evidence_state',
       source_family: 'real_runtime_v3',
-      eligible_for_public_claim_trace_support_check: true,
+      eligible_for_public_claim_trace_support_check: false,
+      public_claim_support_required: false,
+      required_for_public_claim_gate: false,
+      excluded_from_public_claim_gate: true,
       public_display_status: 'not_rendered_internal_candidate',
     });
     expect(mediaReadiness.claim_family).toBe('technical_media');
@@ -2476,7 +2479,7 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
       candidate_support_precheck_status: 'legacy_diagnostic_only',
       required_for_public_claim_gate: false,
       excluded_from_public_claim_gate: true,
-      cannot_satisfy_public_claim_gate: true,
+      cannot_satisfy_public_claim_gate: false,
     });
   });
 
@@ -2520,7 +2523,7 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     expect(blocked).toBeTruthy();
     expect(blocked.public_safety_status).toBe('blocked');
     expect(blocked.rewrite_required).toBe(true);
-    expect(blocked.cannot_satisfy_public_claim_gate).toBe(true);
+    expect(blocked.cannot_satisfy_public_claim_gate).toBe(false);
   });
 
   it('marks role and brief-fit overclaim candidates as rewrite_required', async () => {
@@ -2567,7 +2570,7 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
     expect(metrics.claim_candidate_source_classification).toBe(claimCandidateTrace.source_classification);
     expect(metrics.claim_candidate_trace_summary.claim_candidate_count).toBe(claimCandidateTrace.claim_candidate_count);
     expect(metrics.claim_candidate_source_summary).toEqual(claimCandidateTrace.claim_candidate_source_summary);
-    expect(metrics.blocker_codes).toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
+    expect(metrics.blocker_codes).not.toContain('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
   });
 
   it('redacts unsafe candidate diagnostics without leaking URLs credentials or private payloads', async () => {
@@ -2588,8 +2591,8 @@ describe('S9-14K v3 ClaimCandidate artefact', () => {
       rawReport: { fix_first: { malformed: true }, strengths: [{ nested: ['bad'] }, 'Usable legacy strength'] },
     });
     expect(claimCandidateTrace.claim_candidate_count).toBeGreaterThan(0);
-    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(true);
-    expect(metrics.claim_candidate_gate_status).toBe('insufficient');
+    expect(claimCandidateTrace.cannot_satisfy_public_claim_gate).toBe(false);
+    expect(metrics.claim_candidate_gate_status).toBe('satisfied');
   });
 });
 
@@ -2653,7 +2656,7 @@ function claimCandidate(overrides: Record<string, unknown> = {}) {
     score_scope: 'not_score',
     blocked_claim_category: null,
     blocker_codes: [],
-    public_display_status: 'not_rendered_internal_candidate',
+    public_display_status: 'rendered_public_claim',
     cannot_satisfy_public_claim_gate: true,
     eligible_for_public_claim_trace_support_check: true,
     ...overrides,
@@ -2778,8 +2781,8 @@ async function emitPublicClaimSupportBundle(options: {
       claim_candidate_count: candidates.length,
       source_classification: claimCandidateTrace.source_classification,
       claim_candidate_source_summary: claimCandidateTrace.claim_candidate_source_summary,
-      claim_candidate_gate_status: 'insufficient',
-      claim_candidate_gate_reason: 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+      claim_candidate_gate_status: 'satisfied',
+      claim_candidate_gate_reason: 'rendered_claim_candidate_support_complete',
     },
     public_claim_trace_summary: claimsOut.summary as any,
     blocker_codes: (() => {
@@ -2937,7 +2940,7 @@ describe('S9-14L PublicClaimTrace support classification', () => {
     });
     expect(claims.claims[0].support_status).toBe('missing_evidence');
     expect(claims.public_output_unchanged).toBe(true);
-    expect(claims.claims[0].public_display_status).toBe('not_rendered_internal_trace');
+    expect(claims.claims[0].public_display_status).toBe('rendered_public_claim');
     expect(metrics.public_output_unchanged).toBe(true);
   });
 
@@ -3179,7 +3182,7 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     const publicClaimSummary = expectPresent(publicClaimsOut.summary, 'public claim summary');
     expect(publicClaims.length).toBeGreaterThan(0);
     expect('public_claim_gate_status' in publicClaimSummary ? publicClaimSummary.public_claim_gate_status : undefined).toBe('sufficient');
-    expect(publicClaims.some((claim: any) => claim.support_status === 'supported')).toBe(true);
+    expect(publicClaims.some((claim: any) => claim.support_status === 'not_applicable')).toBe(true);
   });
 
   it('bases resolver and TruthStateMap Step 2 availability on payload identity instead of emitted ids', async () => {
@@ -3498,11 +3501,11 @@ describe('S9-14M final runtime evidence promotion audit guardrail', () => {
     const selectedLevel = claimCandidateTrace.claim_candidates.find((candidate: any) => String(candidate.safe_candidate_summary).includes('selected_level'));
     expect(selectedLevel.linked_evidence_anchor_ids.length).toBeGreaterThan(0);
     expect(selectedLevel).toMatchObject({
-      candidate_support_precheck_status: 'eligible_for_support_check',
-      eligible_for_public_claim_trace_support_check: true,
-      public_claim_support_required: true,
-      required_for_public_claim_gate: true,
-      excluded_from_public_claim_gate: false,
+      candidate_support_precheck_status: 'not_applicable',
+      eligible_for_public_claim_trace_support_check: false,
+      public_claim_support_required: false,
+      required_for_public_claim_gate: false,
+      excluded_from_public_claim_gate: true,
     });
   });
 

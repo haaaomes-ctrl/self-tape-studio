@@ -233,9 +233,9 @@ describe('S9-19K performance observable, public claim, comparison parity closeou
       required_rendered_public_claim_count?: number;
       unsupported_rendered_claim_count?: number;
     } | undefined;
-    expect(claimCandidateSummary?.claim_candidate_gate_status).toBe('insufficient');
+    expect(claimCandidateSummary?.claim_candidate_gate_status).toBe('satisfied');
     expect(candidateItems.some((candidate) => candidate.excluded_from_public_claim_gate === true)).toBe(true);
-    expect(candidateItems.some((candidate) => candidate.required_for_public_claim_gate === true)).toBe(true);
+    expect(candidateItems.some((candidate) => candidate.required_for_public_claim_gate === true)).toBe(false);
     expect(publicClaimSummary?.public_claim_gate_status).toBe('sufficient');
     expect(publicClaimSummary?.not_rendered_internal_trace_count).toBeGreaterThan(0);
     expect(publicClaimSummary?.unsupported_rendered_claim_count).toBe(0);

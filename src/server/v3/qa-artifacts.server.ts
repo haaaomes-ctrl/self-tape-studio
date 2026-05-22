@@ -774,7 +774,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     suppressed_candidate_count: 0,
     safe_candidate_count: 0,
     claim_candidate_gate_status: claimCandidateGateStatus,
-    claim_candidate_gate_reason: claimCandidateStatus === 'missing' ? 'trace_not_emitted' : 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+    claim_candidate_gate_reason: claimCandidateStatus === 'missing' ? 'trace_not_emitted' : 'not_rendered_internal_candidates_excluded_from_public_claim_gate',
   };
   const fallbackAnalysisEvidenceStateStatus = (() => {
     if (analysisEvidenceStateStatus === 'missing') return 'unavailable';
@@ -1578,7 +1578,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claim_candidate_unsafe_count: Number(claimCandidateSummary.unsafe_candidate_count ?? 0),
     claim_candidate_gate_reason: claimCandidateStatus === 'missing'
       ? 'trace_not_emitted'
-      : String(claimCandidateSummary.claim_candidate_gate_reason ?? 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence'),
+      : String(claimCandidateSummary.claim_candidate_gate_reason ?? 'not_rendered_internal_candidates_excluded_from_public_claim_gate'),
     technique_observation_trace_status: techniqueObservationStatus,
     technique_observation_gate_status: techniqueObservationGateStatus,
     technique_observation_source_family_summary: techniqueObservationSourceSummary,
@@ -1824,11 +1824,16 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     }
   }
   if (artefact_status_by_id.claim_candidate_trace === 'emitted' || artefact_status_by_id.claim_candidate_trace === 'emitted_blocked') {
+    const claimCandidateGateSatisfied = options.claim_candidate_trace_summary?.claim_candidate_gate_status === 'satisfied';
     artefact_level2_spine_satisfaction_by_id.claim_candidate_trace = false;
     runtime_evidence_accepted_by_id.delete('claim_candidate_trace');
-    runtime_evidence_blocked_by_id.add('claim_candidate_trace');
     real_v3_spine_artefact_ids.delete('claim_candidate_trace');
-    if (!blocker_codes.includes('claim_candidate_trace_internal_only_not_public_claim_gate_evidence')) blocker_codes.push('claim_candidate_trace_internal_only_not_public_claim_gate_evidence');
+    if (claimCandidateGateSatisfied) {
+      runtime_evidence_blocked_by_id.delete('claim_candidate_trace');
+    } else {
+      runtime_evidence_blocked_by_id.add('claim_candidate_trace');
+      if (!blocker_codes.includes('claim_candidate_trace_required_rendered_candidate_support_incomplete')) blocker_codes.push('claim_candidate_trace_required_rendered_candidate_support_incomplete');
+    }
   }
   const isAcceptedRuntimeEvidence = (artefactId: string) => {
     if (NEVER_ACCEPTED_RUNTIME_EVIDENCE_IDS.has(artefactId)) return false;
