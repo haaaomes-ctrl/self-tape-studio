@@ -105,7 +105,7 @@ export interface QAArtifactEmitterOptions {
     limitation_only_candidate_count?: number;
     suppressed_candidate_count?: number;
 	    safe_candidate_count?: number;
-	    claim_candidate_gate_status?: 'missing' | 'insufficient';
+	    claim_candidate_gate_status?: 'missing' | 'insufficient' | 'satisfied';
 	    claim_candidate_gate_reason?: string;
 	    blocker_codes?: string[];
 	    public_score_claim_count?: number;
@@ -723,9 +723,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const evidenceAnchorStatus = manifest.artefact_status_by_id?.evidence_anchors ?? 'missing';
   const publicClaimStatus = manifest.artefact_status_by_id?.public_claim_trace ?? 'missing';
   const claimCandidateStatus = manifest.artefact_status_by_id?.claim_candidate_trace ?? 'missing';
+  const manifestClaimCandidateSummary = manifest.claim_candidate_trace_summary ?? {};
   const evidenceAnchorGateStatus = evidenceAnchorStatus === 'missing' ? 'missing' : (spineById.evidence_anchors === true && sourceClassById.evidence_anchors === 'real_runtime_v3' ? 'sufficient' : 'insufficient');
   const publicClaimGateStatus = publicClaimStatus === 'missing' ? 'missing' : (spineById.public_claim_trace === true && ['real_runtime_v3', 'real_runtime_v3_claim_support'].includes(String(sourceClassById.public_claim_trace)) ? 'sufficient' : 'insufficient');
-  const claimCandidateGateStatus = claimCandidateStatus === 'missing' ? 'missing' : 'insufficient';
+  const claimCandidateGateStatus = claimCandidateStatus === 'missing'
+    ? 'missing'
+    : (typeof manifestClaimCandidateSummary.claim_candidate_gate_status === 'string' ? manifestClaimCandidateSummary.claim_candidate_gate_status : 'insufficient');
 
   const techniqueObservationStatus = manifest.artefact_status_by_id?.technique_observation_trace ?? 'missing';
   const scoreTraceStatus = manifest.artefact_status_by_id?.score_trace ?? 'missing';
@@ -1504,6 +1507,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     audio_observable_evidence_count: Number(analysisEvidenceStateSummary.audio_observable_evidence_count ?? step1ObservableEvidenceSummary.audio_observable_evidence_count ?? 0),
     material_specific_evidence_count: Number(analysisEvidenceStateSummary.material_specific_evidence_count ?? step1ObservableEvidenceSummary.material_specific_evidence_count ?? 0),
     performance_observable_evidence_count: Number(analysisEvidenceStateSummary.performance_observable_evidence_count ?? step1ObservableEvidenceSummary.performance_observable_evidence_count ?? 0),
+    performance_observable_derivation_count: Number(analysisEvidenceStateSummary.performance_observable_derivation_count ?? step1ObservableEvidenceSummary.performance_observable_derivation_count ?? 0),
     material_specific_performance_evidence_count: Number(analysisEvidenceStateSummary.material_specific_performance_evidence_count ?? step1ObservableEvidenceSummary.material_specific_performance_evidence_count ?? 0),
     candidate_technique_evidence_count: Number(analysisEvidenceStateSummary.candidate_technique_evidence_count ?? step1ObservableEvidenceSummary.candidate_technique_evidence_count ?? 0),
     ordinary_analysis_proof_bundle_blocker_codes: analysisEvidenceStateSummary.ordinary_analysis_proof_bundle_blocker_codes ?? step1ObservableEvidenceSummary.ordinary_analysis_proof_bundle_blocker_codes ?? [],
@@ -1534,8 +1538,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
         : String(evidenceAnchorTraceSummary.evidence_anchor_gate_reason ?? (evidenceAnchorHasPartialRealRuntime ? 'partial_runtime_facts_present_but_extractor_coverage_incomplete' : 'legacy_or_non_v3_support_only'))),
     public_claim_trace_status: publicClaimStatus,
     public_claim_gate_status: publicClaimGateStatus,
-    public_claim_trace_summary: publicClaimSummary,
-    public_claim_supported_count: Number(publicClaimSummary.supported_claim_count ?? 0),
+	    public_claim_trace_summary: publicClaimSummary,
+	    required_rendered_public_claim_count: Number(publicClaimSummary.required_rendered_public_claim_count ?? 0),
+	    rendered_public_claim_count: Number(publicClaimSummary.rendered_public_claim_count ?? 0),
+	    not_rendered_internal_trace_count: Number(publicClaimSummary.not_rendered_internal_trace_count ?? 0),
+	    not_rendered_internal_candidate_count: Number(publicClaimSummary.not_rendered_internal_candidate_count ?? 0),
+	    excluded_internal_claim_count: Number(publicClaimSummary.excluded_internal_claim_count ?? 0),
+	    unsupported_rendered_claim_count: Number(publicClaimSummary.unsupported_rendered_claim_count ?? 0),
+	    unsupported_internal_only_claim_count: Number(publicClaimSummary.unsupported_internal_only_claim_count ?? 0),
+	    public_claim_supported_count: Number(publicClaimSummary.supported_claim_count ?? 0),
     public_claim_unsupported_count: Number(publicClaimSummary.unsupported_claim_count ?? 0),
     public_claim_blocked_count: Number(publicClaimSummary.blocked_claim_count ?? 0),
     public_claim_rewrite_required_count: Number(publicClaimSummary.rewrite_required_count ?? 0),
@@ -1550,9 +1561,15 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     claim_candidate_trace_status: claimCandidateStatus,
     claim_candidate_gate_status: claimCandidateGateStatus,
     claim_candidate_source_classification: sourceClassById.claim_candidate_trace ?? 'missing',
-    claim_candidate_source_summary: claimCandidateSummary.claim_candidate_source_summary,
-    claim_candidate_trace_summary: claimCandidateSummary,
-    claim_candidate_supported_count: Number(claimCandidateSummary.supported_candidate_count ?? 0),
+	    claim_candidate_source_summary: claimCandidateSummary.claim_candidate_source_summary,
+	    claim_candidate_trace_summary: claimCandidateSummary,
+	    claim_candidate_required_rendered_public_claim_count: Number(claimCandidateSummary.required_rendered_public_claim_count ?? 0),
+	    claim_candidate_rendered_public_claim_count: Number(claimCandidateSummary.rendered_public_claim_count ?? 0),
+	    claim_candidate_not_rendered_internal_candidate_count: Number(claimCandidateSummary.not_rendered_internal_candidate_count ?? 0),
+	    claim_candidate_excluded_internal_claim_count: Number(claimCandidateSummary.excluded_internal_claim_count ?? 0),
+	    claim_candidate_unsupported_rendered_claim_count: Number(claimCandidateSummary.unsupported_rendered_claim_count ?? 0),
+	    claim_candidate_unsupported_internal_only_claim_count: Number(claimCandidateSummary.unsupported_internal_only_claim_count ?? 0),
+	    claim_candidate_supported_count: Number(claimCandidateSummary.supported_candidate_count ?? 0),
     claim_candidate_unsupported_count: Number(claimCandidateSummary.unsupported_candidate_count ?? 0),
     claim_candidate_blocked_count: Number(claimCandidateSummary.blocked_candidate_count ?? 0),
     claim_candidate_rewrite_required_count: Number(claimCandidateSummary.rewrite_required_count ?? 0),

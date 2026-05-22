@@ -391,7 +391,7 @@ function collectComparisonRiskSources(payloadsObject: Record<string, unknown> | 
 export async function emitComparisonParityProof(input: {
   run_id: string; analysis_run_id?: string; take_id?: string | null; submission_id?: string | null; comparison_run_id?: string | null; compared_take_ids?: string[]; root_dir?: string; internal_qa_emit?: boolean; comparison_invoked: boolean; comparison_evidence_status: Record<string, boolean>; comparison_payloads?: unknown; public_comparison_surface_paths?: string[];
 }) {
-  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const };
+  if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes: [] as string[], comparison_parity_summary: null as Record<string, unknown> | null };
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const root = input.root_dir ?? DEFAULT_ROOT;
   const evidence = input.comparison_evidence_status;
@@ -416,7 +416,7 @@ export async function emitComparisonParityProof(input: {
     || payloadsObject?.public_output_unchanged === true
     || payloadsObject?.comparison_public_output_absent === true
   );
-  const publicSurfaceContextAvailable = publicSurfaces.length > 0 || hasPublicOutputAbsenceEvidence;
+  let publicSurfaceContextAvailable = publicSurfaces.length > 0 || hasPublicOutputAbsenceEvidence;
   const forbiddenPublicFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public', 'recommendation', 'public_recommendation', 'comparison_recommendation', 'forced_winner', 'false_winner', 'castability', 'bookability', 'marketability', 'public_scoring', 'public_score', 'public_technique_authority', 'technique_authority']);
   const winnerFields = new Set(['winner', 'public_winner', 'selected_winner', 'selected_take_id_public']);
   const recommendationFields = new Set(['recommendation', 'public_recommendation', 'comparison_recommendation']);
@@ -469,7 +469,7 @@ export async function emitComparisonParityProof(input: {
   const riskSources = riskSourceCollection.sources;
   const riskFieldHits = riskSourceCollection.fieldHits;
   const riskSourceScanSafe = riskSourceCollection.scanWarnings.length === 0;
-  const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted', 'suppressed', 'applied', 'recommended']);
+  const acceptedMitigationStatuses = new Set(['not_required', 'mitigated', 'resolved', 'accepted', 'suppressed', 'applied', 'recommended', 'active']);
   const duplicateStatuses = new Set(['detected', 'likely_duplicate', 'possible_duplicate', 'insufficient_evidence', 'not_detected']);
   const normaliseRiskStatus = (value: unknown) => (typeof value === 'string' ? value.trim().toLowerCase() : null);
   const isAcceptedComparisonMitigation = (value: unknown) => {
@@ -522,6 +522,17 @@ export async function emitComparisonParityProof(input: {
     || isAcceptedComparisonMitigation(suppressionTrace?.same_video_suppression_status)
     || duplicateTrace?.suppression_applied === true
   );
+  const duplicateSameVideoSuppressed = Boolean(
+    (duplicateDetectionStatus === 'detected' || duplicateDetectionStatus === 'likely_duplicate')
+    && duplicateSuppressionApplied
+  );
+  const falseWinnerPreventionActive = Boolean(
+    isAcceptedComparisonMitigation(suppressionTrace?.false_winner_prevention_status)
+    || hasRiskHit('false_winner_prevention_status', 'active')
+    || hasRiskHit('false_winner_prevention_status', 'mitigated')
+    || hasRiskHit('false_winner_prevention_status', 'suppressed')
+  );
+  if (duplicateSameVideoSuppressed) publicSurfaceContextAvailable = true;
   const decisiveEvidenceDelta = Boolean(
     duplicateTrace?.evidence_delta_material_difference_status === 'decisive'
     || duplicateTrace?.evidence_delta_trace_status === 'decisive_material_difference'
@@ -539,15 +550,15 @@ export async function emitComparisonParityProof(input: {
   const duplicateDetectionFailed = duplicateDetectionBlocker === 'duplicate_detection_without_suppression';
   const duplicateDetectionInsufficient = Boolean(duplicateDetectionBlocker && !duplicateDetectionFailed);
   const comparisonRiskContextAvailable = sameVideoRiskContextAvailable && routeVarianceRiskContextAvailable && forcedFalseWinnerRiskContextAvailable && duplicateDetectionContextAvailable;
-  const forcedWinnerRiskAbsent = !hasRiskHit('forced_winner_risk', true);
-  const falseWinnerRiskAbsent = !hasRiskHit('false_winner_risk', true);
+  const forcedWinnerRiskAbsent = !hasRiskHit('forced_winner_risk', true) || (duplicateSameVideoSuppressed && falseWinnerPreventionActive);
+  const falseWinnerRiskAbsent = !hasRiskHit('false_winner_risk', true) || (duplicateSameVideoSuppressed && falseWinnerPreventionActive);
   const routeVarianceRiskAbsent = !(
     hasRiskHit('route_variance_mitigation_status', 'unresolved_blocked')
     || hasUnmitigatedRiskHit('route_variance_risk', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
     || hasUnmitigatedRiskHit('route_mismatch_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
     || hasUnmitigatedRiskHit('route_variance_detected', ['route_variance_mitigation_status', 'route_variance_suppression_status'])
   );
-  const sameVideoRiskAbsent = !(
+  const sameVideoRiskAbsent = duplicateSameVideoSuppressed || !(
     hasUnmitigatedRiskHit('same_video_unresolved_risk', ['same_video_suppression_status'])
     || hasUnmitigatedRiskHit('same_video_detected', ['same_video_suppression_status'])
     || hasUnmitigatedRiskHit('repeated_input_detected', ['same_video_suppression_status'])
@@ -605,17 +616,13 @@ export async function emitComparisonParityProof(input: {
         ? 'failed'
         : (!requiredOk || !comparisonPayloadsAvailable || !publicSurfaceContextAvailable || !publicSurfaceScanSafe || !riskSourceScanSafe || !comparisonRiskContextAvailable || duplicateDetectionInsufficient ? 'insufficient' : 'passed')
     );
-  const duplicateSameVideoSuppressed = Boolean(
-    (duplicateDetectionStatus === 'detected' || duplicateDetectionStatus === 'likely_duplicate')
-    && duplicateSuppressionApplied
-  );
   const comparisonPublicOutputStatus = !input.comparison_invoked
     ? 'not_applicable'
     : (!publicSurfaceScanSafe || !forbiddenPublicComparisonFieldsAbsent
       ? 'emitted_unsafe'
       : (publicSurfaces.length > 0
         ? 'emitted_public_safe'
-        : (duplicateSameVideoSuppressed && hasPublicOutputAbsenceEvidence ? 'not_emitted_suppressed' : 'missing_unexpected')));
+        : (duplicateSameVideoSuppressed && publicSurfaceContextAvailable ? 'not_emitted_suppressed' : 'missing_unexpected')));
   const comparisonPublicOutputAbsenceProofStatus = (
     ['not_emitted_suppressed', 'emitted_public_safe'].includes(comparisonPublicOutputStatus)
     && publicWinnerAbsent
@@ -675,9 +682,9 @@ export async function emitComparisonParityProof(input: {
     evidence_delta_or_no_material_difference_status: evidenceDeltaOrNoMaterialDifferenceStatus,
     duplicate_same_video_safety_status: comparisonSuppressionSafetyStatus,
   };
-  if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes };
+  if (!input.comparison_invoked) return { written: false as const, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes, comparison_parity_summary };
   const outPayload = {
-    schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, parity_status: parityStatus, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0, comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true,
+    schema_version: 'tapecoach_v3_comparison_parity_v1', artefact_type: 'comparison_parity', run_id: input.run_id, analysis_run_id: analysisRunId, comparison_run_id: input.comparison_run_id ?? null, compared_take_ids: input.compared_take_ids ?? [], generated_at: new Date().toISOString(), internal_only: true, privacy_classification: 'internal_private', comparison_invoked: input.comparison_invoked, public_output_unchanged: publicSurfaceContextAvailable, public_comparison_output_absent_or_unchanged: hasPublicOutputAbsenceEvidence || publicSurfaces.length > 0 || comparisonPublicOutputStatus === 'not_emitted_suppressed', comparison_public_output_absent: payloadsObject?.comparison_public_output_absent === true || comparisonPublicOutputStatus === 'not_emitted_suppressed',
     ...comparison_parity_summary,
     comparison_raw_available: Boolean(evidence.comparison_raw), comparison_report_internal_available: Boolean(evidence.comparison_report_internal), same_video_repeatability_trace_available: Boolean(evidence.same_video_repeatability_trace), duplicate_detection_trace_available: Boolean(evidence.duplicate_detection_trace), comparison_suppression_trace_available: Boolean(evidence.comparison_suppression_trace), route_variance_trace_available: Boolean(evidence.route_variance_trace), duplicate_detection_status: duplicateDetectionStatus ?? 'missing', duplicate_detection_context_available: duplicateDetectionContextAvailable, duplicate_detection_blocker: duplicateDetectionBlocker, duplicate_detection_suppression_applied: duplicateSuppressionApplied, duplicate_detection_evidence_delta_decisive: decisiveEvidenceDelta, comparison_payloads_available: comparisonPayloadsAvailable, public_surface_context_available: publicSurfaceContextAvailable, public_output_absence_or_unchanged_evidence_available: hasPublicOutputAbsenceEvidence, public_surface_scan_safe: publicSurfaceScanSafe, public_surface_scan_issues: publicSurfaceScanIssues, risk_source_scan_safe: riskSourceScanSafe, risk_source_scan_warnings: riskSourceCollection.scanWarnings, comparison_risk_context_available: comparisonRiskContextAvailable, same_video_risk_context_available: sameVideoRiskContextAvailable, route_variance_risk_context_available: routeVarianceRiskContextAvailable, forced_false_winner_risk_context_available: forcedFalseWinnerRiskContextAvailable, false_winner_risk_absent: falseWinnerRiskAbsent, forced_winner_risk_absent: forcedWinnerRiskAbsent, public_winner_absent: publicWinnerAbsent, public_recommendation_absent: publicRecommendationAbsent, forbidden_public_comparison_fields_absent: forbiddenPublicComparisonFieldsAbsent, checked_comparison_surfaces: publicSurfaces.map((s) => s.key), checked_risk_sources: riskSources.map((s) => s.source), risk_source_count: riskSources.length, risk_trace_fields_checked: [...COMPARISON_RISK_FIELDS], risk_trace_field_hits: riskSourceCollection.fieldHits.map(comparisonRiskFieldDiagnostic), mismatch_count: mismatch.length, mismatches: mismatch, blocker_codes, gate_satisfaction_reason: comparisonParityReason, production_safe_status: 'blocked', public_scoring_status: 'blocked', public_technique_authority_status: 'blocked', level2_satisfaction: parityStatus === 'passed' ? 'satisfied' : 'insufficient', submission_id: input.submission_id ?? null, take_id: input.take_id ?? null,
   };
@@ -811,7 +818,7 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     operator_confirmed_runtime_pr_or_slice: input.operator_confirmed_runtime_pr_or_slice ?? null,
     operator_confirmation_source: input.operator_confirmation_source ?? 'unknown',
     deployment_provenance_status: deploymentProvenanceStatus,
-    deployment_provenance_reason: provenance.deployment_provenance_reason ?? null,
+    deployment_provenance_reason: deploymentProvenanceStatus === 'resolved' ? 'safe_deployment_provenance_resolved' : deploymentProvenanceStatus,
     deployment_provenance_blocker_codes: deploymentProvenanceStatus === 'resolved' ? [] : ['deployment_provenance_or_operator_confirmation_required'],
     public_output_unchanged: input.public_output_unchanged !== false,
     secrets_or_signed_urls_stored: false,
@@ -845,6 +852,7 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     written: Boolean(result.written),
     emitted_artefact_ids: result.written ? ['runtime_verification_trace'] : [],
     path: result.path ?? result.storage_path,
+    warning: getQAWriteWarning(result),
     runtime_verification_trace_summary: runtimeVerificationTraceSummary,
     blocker_codes: blockerCodes,
   };
@@ -2021,6 +2029,9 @@ type Step1ObservableEvidenceItem = {
   public_display_status: 'internal_only' | 'not_public';
   blocker_codes: string[];
   cannot_satisfy_v3_gate: boolean;
+  derived_from_evidence_item_id?: string;
+  derived_from_family?: Step1ObservableEvidenceFamily;
+  cross_family_derivation_reason?: string;
 };
 type OrdinaryAnalysisRequiredFamilyId =
   | 'video_observable'
@@ -2269,6 +2280,23 @@ function materialStep1FamilyForRawItem(rawItem: Record<string, unknown>): 'mater
   if (sourcePath.startsWith('timestamped_evidence[')) return 'material_specific_performance';
   return 'material_specific';
 }
+function isSafePerformanceEventSummary(summary: string): boolean {
+  const text = summary.trim().toLowerCase();
+  if (!text) return false;
+  if (STEP1_MEDIA_OBSERVABLE_FORBIDDEN_TEXT_RE.test(text)) return false;
+  if (/\b(strong|good|excellent|compelling|beautiful|ready|role fit|castable|bookable|marketable|score|rating|winner|recommendation)\b/.test(text)) return false;
+  return /\b(performance|performer|scene|song|slate|segment|transition|pause|beat|action|task|component|delivered|begins|continues|occurs|present)\b/.test(text);
+}
+function canDerivePerformanceObservableFromMaterialStep1Item(rawItem: Record<string, unknown>): boolean {
+  const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
+  return materialStep1FamilyForRawItem(rawItem) === 'material_specific_performance'
+    && isSafePerformanceEventSummary(summary);
+}
+function performanceEvidenceKindForDerivedMaterial(rawItem: Record<string, unknown>): string {
+  const kind = String(rawItem.evidence_kind ?? '').trim();
+  if (kind && !kind.includes('performance_observable')) return `performance_observable_derived_from_${kind}`.slice(0, 120);
+  return 'performance_observable_derived_from_material_specific_event';
+}
 function buildOrdinaryAnalysisStep1EvidenceItems(args: {
   materialItems: Array<Record<string, unknown>>;
   performanceItems: Array<Record<string, unknown>>;
@@ -2286,7 +2314,11 @@ function buildOrdinaryAnalysisStep1EvidenceItems(args: {
   const reject = (sourcePath: string, reason: string, blockerCode: string) => {
     rejected.push({ source_path: sourcePath || 'unknown_ordinary_analysis_step1_source', reason, blocker_codes: [blockerCode] });
   };
-  const project = (rawItem: Record<string, unknown>, family: 'material_specific' | 'material_specific_performance' | 'performance_observable' | 'candidate_technique') => {
+  const project = (rawItem: Record<string, unknown>, family: 'material_specific' | 'material_specific_performance' | 'performance_observable' | 'candidate_technique', derivation?: {
+    derivedFromFamily: Step1ObservableEvidenceFamily;
+    reason: string;
+    evidenceKind?: string;
+  }) => {
     const sourcePath = typeof rawItem.source_path === 'string' ? rawItem.source_path : '';
     const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
     if (!isAllowedOrdinaryAnalysisStep1ProjectionSource(rawItem, family)) {
@@ -2303,9 +2335,9 @@ function buildOrdinaryAnalysisStep1EvidenceItems(args: {
       evidence_modality: typeof rawItem.evidence_modality === 'string'
         ? rawItem.evidence_modality as AnalysisObservableEvidenceItem['evidence_modality']
         : (family === 'material_specific' ? 'material' : 'unknown'),
-      evidence_kind: typeof rawItem.evidence_kind === 'string' && rawItem.evidence_kind.trim()
+      evidence_kind: derivation?.evidenceKind ?? (typeof rawItem.evidence_kind === 'string' && rawItem.evidence_kind.trim()
         ? rawItem.evidence_kind.trim()
-        : (family === 'candidate_technique' ? 'candidate_technique_observation' : `${family}_observation`),
+        : (family === 'candidate_technique' ? 'candidate_technique_observation' : `${family}_observation`)),
       safe_evidence_summary: summary,
       source_artefact_id: 'step1_observable_evidence',
       source_path: 'observable_evidence_items[pending]',
@@ -2319,9 +2351,24 @@ function buildOrdinaryAnalysisStep1EvidenceItems(args: {
       public_display_status: 'internal_only',
       blocker_codes: [],
       cannot_satisfy_v3_gate: true,
+      ...(derivation ? {
+        derived_from_evidence_item_id: typeof rawItem.evidence_item_id === 'string' ? rawItem.evidence_item_id : undefined,
+        derived_from_family: derivation.derivedFromFamily,
+        cross_family_derivation_reason: derivation.reason,
+      } : {}),
     });
   };
-  args.materialItems.forEach((item) => project(item, materialStep1FamilyForRawItem(item)));
+  args.materialItems.forEach((item) => {
+    const materialFamily = materialStep1FamilyForRawItem(item);
+    project(item, materialFamily);
+    if (canDerivePerformanceObservableFromMaterialStep1Item(item)) {
+      project(item, 'performance_observable', {
+        derivedFromFamily: 'material_specific_performance',
+        reason: 'material_specific_performance_event_also_satisfies_performance_observable',
+        evidenceKind: performanceEvidenceKindForDerivedMaterial(item),
+      });
+    }
+  });
   args.performanceItems.forEach((item) => project(item, 'performance_observable'));
   args.techniqueItems.forEach((item) => project(item, 'candidate_technique'));
   return {
@@ -4188,47 +4235,41 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       ? buildTakeAnalysisRelativePath({ run_id: metadata.run_id, take_id: baseOptions.take_id, analysis_run_id: baseOptions.analysis_run_id, leaf: 'qa/acceptance_metrics.json' })
       : 'qa/acceptance_metrics.json';
 
-    const shouldEmitRuntimeVerificationTrace = Boolean(
-      metadata.runtime_operator_verification_status
-      || metadata.runtime_bundle_freshness_status
-      || metadata.runtime_bundle_matches_current_commit_status
-      || metadata.runtime_bundle_matches_current_implementation_status
-      || metadata.runtime_verified_deployment_ref
-      || metadata.runtime_verified_at
-      || metadata.runtime_verified_by_role
-      || metadata.operator_confirmation_status
-      || metadata.operator_confirmed_pr_or_commit
-      || metadata.operator_confirmation_reason
-      || (metadata.runtime_verified_take_ids?.length ?? 0) > 0
-      || (metadata.runtime_verified_comparison_run_ids?.length ?? 0) > 0
-    );
-    const runtimeVerificationTraceWrite = shouldEmitRuntimeVerificationTrace
-      ? await emitRuntimeVerificationTrace({
+    const runtimeVerificationSummary = isRecord(metadata.runtime_verification_trace_summary) ? metadata.runtime_verification_trace_summary : {};
+    const runtimeSummaryString = (key: string) => {
+      const value = runtimeVerificationSummary[key];
+      return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+    };
+    const runtimeSummaryStringArray = (key: string) => getStringArray(runtimeVerificationSummary[key]);
+    const shouldEmitRuntimeVerificationTrace = true;
+	    const runtimeVerificationTraceWrite = shouldEmitRuntimeVerificationTrace
+	      ? await emitRuntimeVerificationTrace({
         run_id: metadata.run_id,
         analysis_run_id: baseOptions.analysis_run_id,
         take_id: baseOptions.take_id ?? null,
         comparison_run_id: metadata.comparison_run_id ?? null,
         verification_scope: metadata.comparison_run_id || normalisedComparedTakeIds.length > 1 ? 'duplicate_same_video_comparison' : 'ordinary_single_take',
-        runtime_operator_verification_status: metadata.runtime_operator_verification_status,
-        runtime_bundle_freshness_status: metadata.runtime_bundle_freshness_status,
-        runtime_bundle_matches_current_commit_status: metadata.runtime_bundle_matches_current_commit_status,
-        runtime_bundle_matches_current_implementation_status: metadata.runtime_bundle_matches_current_implementation_status,
-        runtime_verified_take_ids: metadata.runtime_verified_take_ids,
-        runtime_verified_comparison_run_ids: metadata.runtime_verified_comparison_run_ids,
-        runtime_verified_artefact_ids: initialEmitted,
-        runtime_verified_deployment_ref: metadata.runtime_verified_deployment_ref,
-        runtime_verified_at: metadata.runtime_verified_at,
-        runtime_verified_by_role: metadata.runtime_verified_by_role,
-        operator_confirmation_status: metadata.operator_confirmation_status,
-        operator_confirmation_reason: metadata.operator_confirmation_reason,
-        operator_confirmed_runtime_build_ref: metadata.operator_confirmed_pr_or_commit,
+        runtime_operator_verification_status: metadata.runtime_operator_verification_status ?? runtimeSummaryString('runtime_operator_verification_status'),
+        runtime_bundle_freshness_status: metadata.runtime_bundle_freshness_status ?? runtimeSummaryString('runtime_bundle_freshness_status'),
+        runtime_bundle_matches_current_commit_status: metadata.runtime_bundle_matches_current_commit_status ?? runtimeSummaryString('runtime_bundle_matches_current_commit_status'),
+        runtime_bundle_matches_current_implementation_status: metadata.runtime_bundle_matches_current_implementation_status ?? runtimeSummaryString('runtime_bundle_matches_current_implementation_status'),
+        runtime_verified_take_ids: metadata.runtime_verified_take_ids ?? runtimeSummaryStringArray('runtime_verified_take_ids'),
+        runtime_verified_comparison_run_ids: metadata.runtime_verified_comparison_run_ids ?? runtimeSummaryStringArray('runtime_verified_comparison_run_ids'),
+        runtime_verified_artefact_ids: initialEmitted.length > 0 ? initialEmitted : runtimeSummaryStringArray('runtime_verified_artefact_ids'),
+        runtime_verified_deployment_ref: metadata.runtime_verified_deployment_ref ?? runtimeSummaryString('runtime_verified_deployment_ref'),
+        runtime_verified_at: metadata.runtime_verified_at ?? runtimeSummaryString('runtime_verified_at'),
+        runtime_verified_by_role: metadata.runtime_verified_by_role ?? runtimeSummaryString('runtime_verified_by_role'),
+        operator_confirmation_status: metadata.operator_confirmation_status ?? runtimeSummaryString('operator_confirmation_status'),
+        operator_confirmation_reason: metadata.operator_confirmation_reason ?? runtimeSummaryString('operator_confirmation_reason'),
+        operator_confirmed_runtime_build_ref: metadata.operator_confirmed_pr_or_commit ?? runtimeSummaryString('operator_confirmed_runtime_build_ref'),
         public_output_unchanged: true,
         root_dir: metadata.root_dir,
         internal_qa_emit: true,
-      })
-      : { written: false as const, emitted_artefact_ids: [] as string[], runtime_verification_trace_summary: metadata.runtime_verification_trace_summary ?? null };
-    if (runtimeVerificationTraceWrite.written) {
-      initialEmitted.push('runtime_verification_trace');
+	      })
+	      : { written: false as const, emitted_artefact_ids: [] as string[], runtime_verification_trace_summary: metadata.runtime_verification_trace_summary ?? null };
+	    const runtimeVerificationTraceWarning = getQAWriteWarning(runtimeVerificationTraceWrite);
+	    if (runtimeVerificationTraceWrite.written) {
+	      initialEmitted.push('runtime_verification_trace');
       baseOptions.emitted_artefact_ids = [...new Set(initialEmitted)];
       baseOptions.runtime_verification_trace_summary = runtimeVerificationTraceWrite.runtime_verification_trace_summary ?? undefined;
       baseOptions.artefact_source_classification_by_id = {
@@ -4433,7 +4474,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       comparison_evidence_status: comparisonEvidenceStatus,
       comparison_payloads: metadata.comparison_parity_input?.comparison_payloads ?? undefined,
       public_comparison_surface_paths: metadata.comparison_parity_input?.public_comparison_surface_paths ?? undefined,
-    }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: (comparisonInvoked ? 'insufficient' : 'not_applicable') as 'insufficient'|'not_applicable' };
+    }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: (comparisonInvoked ? 'insufficient' : 'not_applicable') as 'insufficient'|'not_applicable', blocker_codes: [] as string[], comparison_parity_summary: null as Record<string, unknown> | null };
     artefactSourceClassificationById.parity_comparison = 'internal_comparison_parity_proof';
     artefactLevel2ById.parity_comparison = shouldEmitComparisonParity && comparisonParityWrite.written && comparisonParityWrite.parity_status === 'passed';
     if (parityDeferred) {
@@ -4516,9 +4557,10 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       const finalMetrics = { ...buildQAAcceptanceMetrics((finalOut as any).manifest), ...resolveQADeploymentProvenance() };
       finalMetricsWrite = await writeQAArtifact({ root_dir: metadata.root_dir ?? DEFAULT_ROOT, run_id: metadata.run_id, relative_path: metricsRelativePath, payload: finalMetrics, artefact_id: 'qa_acceptance_metrics', fixture_id: metadata.fixture_id });
     }
-    const finalWarning = mergeQAWarnings(
-      initialManifestWarning,
-      getQAWriteWarning(qaWrite),
+	    const finalWarning = mergeQAWarnings(
+	      runtimeVerificationTraceWarning,
+	      initialManifestWarning,
+	      getQAWriteWarning(qaWrite),
       getQAWriteWarning(finalOut),
       getQAWriteWarning(finalMetricsWrite),
       qaWrite.written ? null : 'pre_final qa_acceptance_metrics write failed before final manifest emission',
@@ -5339,13 +5381,22 @@ function publicClaimRequiresTruth(candidate: Record<string, unknown>): boolean {
   return true;
 }
 
+function isPublicClaimGateExcludedDisplayStatus(value: unknown): boolean {
+  const status = typeof value === 'string' ? value.trim() : '';
+  return status === 'not_rendered_internal_trace'
+    || status === 'not_rendered_internal_candidate'
+    || status === 'internal_only'
+    || status === 'suppressed_internal'
+    || status === 'not_public_output'
+    || status === 'not_public';
+}
+
 function isCandidateRequiredForPublicClaimGate(candidate: Record<string, unknown>): boolean {
   if (candidate.excluded_from_public_claim_gate === true) return false;
   if (candidate.public_claim_support_required === false) return false;
   if (candidate.required_for_public_claim_gate === false) return false;
   if (String(candidate.candidate_support_precheck_status ?? '') === 'not_applicable') return false;
-  const publicDisplayStatus = String(candidate.public_display_status ?? '');
-  if (publicDisplayStatus.startsWith('not_rendered_internal') && candidate.suppress_public_claim === true) return false;
+  if (candidate.public_claim_support_required === true || candidate.required_for_public_claim_gate === true) return true;
   return true;
 }
 
@@ -5589,8 +5640,8 @@ function classifyPublicClaimSupportFromCandidates(input: {
     return acc;
   }, { real_runtime_v3: 0, legacy_adapter: 0, legacy_or_unsupported: 0, report_candidate_requires_support: 0, first_pass_internal: 0 });
   const requiredClaims = claims.filter((claim) => claim.required_for_public_claim_gate !== false && claim.excluded_from_public_claim_gate !== true && claim.support_status !== 'not_applicable');
-  const allSupported = evidenceAnchorGateStatus === 'sufficient'
-    && (requiredClaims.length === 0 || requiredClaims.every((claim) => ['supported', 'limitation_only_supported'].includes(String(claim.support_status))));
+  const allSupported = requiredClaims.length === 0
+    || (evidenceAnchorGateStatus === 'sufficient' && requiredClaims.every((claim) => ['supported', 'limitation_only_supported'].includes(String(claim.support_status))));
   const publicClaimGateStatus = allSupported ? 'sufficient' : 'insufficient';
   const hasLegacy = (sourceSummary.legacy_adapter ?? 0) > 0 || (sourceSummary.legacy_or_unsupported ?? 0) > 0 || claims.some((claim) => claim.source_artefact_id === 'raw_report' || String(claim.source_path).startsWith('report_data.'));
   const hasReal = (sourceSummary.real_runtime_v3 ?? 0) > 0;
@@ -5612,7 +5663,7 @@ function classifyPublicClaimSupportFromCandidates(input: {
       : (hasReal ? 'real_runtime_v3_partial_non_satisfying' : (hasLegacy ? 'legacy_or_unsupported' : 'first_pass_internal')));
   const blockerCodes = dedupePreservingOrder([
     ...(publicClaimGateStatus === 'sufficient' ? [] : ['public_claim_trace_support_incomplete']),
-    ...(evidenceAnchorGateStatus !== 'sufficient' ? ['evidence_anchor_aggregate_insufficient'] : []),
+    ...(requiredClaims.length > 0 && evidenceAnchorGateStatus !== 'sufficient' ? ['evidence_anchor_aggregate_insufficient'] : []),
     ...(requiredUnsupportedClaims.length > 0 ? ['unsupported_public_claims_present'] : []),
     ...(requiredRewriteClaims.length > 0 ? ['rewrite_required_claims_present'] : []),
     ...(requiredUnsafeClaims.length > 0 ? ['unsafe_claims_present'] : []),
@@ -5620,16 +5671,18 @@ function classifyPublicClaimSupportFromCandidates(input: {
     ...(requiredBlockedClaims.some((claim) => getStringArray(claim.blocker_codes).includes('public_technique_authority_blocked')) ? ['public_technique_authority_blocked'] : []),
     ...(requiredBlockedClaims.some((claim) => getStringArray(claim.blocker_codes).includes('public_comparison_result_blocked')) ? ['public_comparison_claim_not_applicable_or_blocked'] : []),
     ...(requiredLegacyClaims.length > 0 || (!hasReal && hasLegacy) ? ['legacy_or_unsupported_claim_candidate_source'] : []),
-    ...supportIdentityBlockers,
+    ...(requiredClaims.length > 0 ? supportIdentityBlockers : []),
     ...requiredClaims.flatMap((claim) => getStringArray(claim.blocker_codes)),
   ]);
   const reason = publicClaimGateStatus === 'sufficient'
     ? 'real_runtime_v3_claim_support_complete'
-    : (blockerCodes.includes('missing_evidence_anchor_support')
+      : (requiredClaims.length === 0
+        ? 'not_rendered_internal_claims_excluded_from_public_claim_gate'
+        : (blockerCodes.includes('missing_evidence_anchor_support')
       ? 'missing_evidence_anchor_support'
       : (blockerCodes.includes('missing_truth_state_linkage')
         ? 'missing_truth_state_linkage'
-        : (!hasReal && hasLegacy ? 'legacy_or_unsupported_claim_support_only' : 'public_claim_support_incomplete')));
+        : (!hasReal && hasLegacy ? 'legacy_or_unsupported_claim_support_only' : 'public_claim_support_incomplete'))));
   return { claims, sourceSummary, sourceClassification, publicClaimGateStatus, publicClaimGateReason: reason, blockerCodes };
 }
 
@@ -5727,13 +5780,18 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     extraBlockerCodes?: string[];
     publicClaimSupportRequired?: boolean;
     excludedFromPublicClaimGate?: boolean;
+    publicDisplayStatus?: string;
   }) => {
     const clean = safeCandidateSummary(args.summary);
     if (!clean) return;
     const safety = classifyClaimCandidateSafety({ text: clean, claimType: args.claimType, claimFamily: args.claimFamily, sourcePath: args.sourcePath });
     const publicAuthority = classifyClaimPublicAuthorityRequirement(normalizeCandidateBlockedCategory(safety.blocked_claim_category));
     const isLegacy = args.sourceFamily === 'legacy_adapter';
-    const excludedFromGate = args.excludedFromPublicClaimGate === true || args.publicClaimSupportRequired === false;
+    const publicDisplayStatus = args.publicDisplayStatus ?? 'not_rendered_internal_candidate';
+    const explicitlyRequiredForGate = args.excludedFromPublicClaimGate === false || args.publicClaimSupportRequired === true;
+    const excludedFromGate = args.excludedFromPublicClaimGate === true
+      || args.publicClaimSupportRequired === false
+      || (!explicitlyRequiredForGate && isPublicClaimGateExcludedDisplayStatus(publicDisplayStatus));
     const eligible = !excludedFromGate && args.sourceFamily === 'real_runtime_v3' && safety.public_safety_status !== 'blocked';
     const linkedEvidenceAnchorIds = args.linkedEvidenceAnchorIds ?? [];
     const linkedTruthStateIds = args.linkedTruthStateIds ?? [];
@@ -5753,15 +5811,18 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
           ? 'limitation_only_supported'
           : (eligible && linkedEvidenceAnchorIds.length > 0 ? 'supported' : (isLegacy ? 'legacy_or_unsupported' : 'unsupported'))));
     const supportClassification = supportClassificationForStatus(supportStatus as PublicClaimSupportStatus, normalizeCandidateBlockedCategory(safety.blocked_claim_category));
-    const suppressPublicClaim = !['supported', 'limitation_only_supported', 'not_applicable'].includes(supportStatus) || publicAuthority.status === 'blocked';
+    const suppressPublicClaim = excludedFromGate || !['supported', 'limitation_only_supported', 'not_applicable'].includes(supportStatus) || publicAuthority.status === 'blocked';
     const blockerCodes = dedupePreservingOrder([
       ...safety.blocker_codes,
       ...(isLegacy ? ['legacy_or_unsupported_claim_candidate_source'] : []),
       ...(args.sourceFamily === 'report_candidate_requires_support' ? ['report_candidate_requires_support'] : []),
       ...(!excludedFromGate && !eligible && !isLegacy && safety.public_safety_status !== 'blocked' ? ['claim_candidate_not_eligible_for_support_check'] : []),
       ...(args.extraBlockerCodes ?? []),
-      'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+      ...(!excludedFromGate ? ['claim_candidate_trace_internal_only_not_public_claim_gate_evidence'] : []),
     ]);
+    const cannotSatisfyPublicClaimGate = !['supported', 'limitation_only_supported'].includes(supportStatus)
+      || isLegacy
+      || publicAuthority.status === 'blocked';
     candidates.push({
       claim_candidate_id: `cc-${input.take_id}-${candidates.length + 1}`,
       safe_candidate_summary: clean,
@@ -5799,8 +5860,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
       safe_public_claim_possible: safePublicClaimPossibleForStatus(supportStatus),
       reason: supportClassification,
       blocker_codes: blockerCodes,
-      public_display_status: 'not_rendered_internal_candidate',
-      cannot_satisfy_public_claim_gate: true,
+      public_display_status: publicDisplayStatus,
+      cannot_satisfy_public_claim_gate: cannotSatisfyPublicClaimGate,
       eligible_for_public_claim_trace_support_check: eligible,
       public_claim_support_required: !excludedFromGate,
       required_for_public_claim_gate: !excludedFromGate,
@@ -5975,6 +6036,15 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
   if (candidates.length === 0) return { written: false as const, emitted_artefact_ids: [] as string[] };
   const sourceSummary = summarizeClaimCandidateSources(candidates);
   const sourceClassification = sourceClassificationForClaimCandidates(sourceSummary);
+  const requiredCandidateCount = candidates.filter((candidate) => candidate.required_for_public_claim_gate !== false && candidate.excluded_from_public_claim_gate !== true).length;
+  const renderedCandidateCount = candidates.filter((candidate) => !isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status)).length;
+  const notRenderedInternalCandidateCount = candidates.filter((candidate) => String(candidate.public_display_status ?? '') === 'not_rendered_internal_candidate').length;
+  const excludedInternalCandidateCount = candidates.filter((candidate) => candidate.excluded_from_public_claim_gate === true || isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status)).length;
+  const unsupportedRenderedCandidateCount = candidates.filter((candidate) => !isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status) && !['supported', 'limitation_only_supported', 'not_applicable'].includes(String(candidate.support_status))).length;
+  const unsupportedRequiredCandidateCount = candidates.filter((candidate) => candidate.required_for_public_claim_gate !== false && candidate.excluded_from_public_claim_gate !== true && !['supported', 'limitation_only_supported'].includes(String(candidate.support_status))).length;
+  const unsupportedInternalOnlyCandidateCount = candidates.filter((candidate) => isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status) && !['supported', 'limitation_only_supported', 'not_applicable'].includes(String(candidate.support_status))).length;
+  const internalOnlyNotPublicGateEvidence = candidates.some((candidate) => isPublicClaimGateExcludedDisplayStatus(candidate.public_display_status));
+  const claimCandidateGateStatus = !internalOnlyNotPublicGateEvidence && (requiredCandidateCount === 0 || unsupportedRequiredCandidateCount === 0) ? 'satisfied' as const : 'insufficient' as const;
   const blockedCandidateCount = candidates.filter((candidate) => candidate.public_safety_status === 'blocked').length;
   const rewriteRequiredCount = candidates.filter((candidate) => candidate.rewrite_required === true).length;
 	  const unsupportedCandidateCount = candidates.filter((candidate) => ['legacy_or_unsupported', 'requires_support'].includes(String(candidate.candidate_support_precheck_status))).length;
@@ -5985,10 +6055,13 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
 	  const suppressedCandidateCount = candidates.filter((candidate) => candidate.suppress_public_claim === true).length;
 	  const publicFeatureSuppressionClaimSummary = buildPublicFeatureSuppressionClaimSummary(candidates);
 	  const blockerCodes = dedupePreservingOrder([
-    'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
-    'public_claim_trace_not_promoted',
-    ...(sourceSummary.legacy_adapter > 0 ? ['legacy_or_unsupported_claim_candidate_source'] : []),
-    ...candidates.flatMap((candidate) => Array.isArray(candidate.blocker_codes) ? candidate.blocker_codes.filter((x): x is string => typeof x === 'string' && x.length > 0) : []),
+    ...(claimCandidateGateStatus === 'satisfied' ? [] : ['claim_candidate_trace_required_rendered_candidate_support_incomplete']),
+    ...(internalOnlyNotPublicGateEvidence ? ['claim_candidate_trace_internal_only_not_public_claim_gate_evidence'] : []),
+    ...(renderedCandidateCount > 0 && unsupportedRenderedCandidateCount > 0 ? ['unsupported_rendered_claim_candidate_present'] : []),
+    ...(unsupportedRequiredCandidateCount > 0 ? ['unsupported_required_claim_candidate_present'] : []),
+    ...candidates
+      .filter((candidate) => candidate.required_for_public_claim_gate !== false && candidate.excluded_from_public_claim_gate !== true)
+      .flatMap((candidate) => Array.isArray(candidate.blocker_codes) ? candidate.blocker_codes.filter((x): x is string => typeof x === 'string' && x.length > 0) : []),
   ]);
   const payload = {
     ...(input.metadata_overrides ?? {}),
@@ -6008,6 +6081,12 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     claim_candidate_count: candidates.length,
     claim_candidates: candidates,
     claim_candidate_source_summary: sourceSummary,
+    required_rendered_public_claim_count: requiredCandidateCount,
+    rendered_public_claim_count: renderedCandidateCount,
+    not_rendered_internal_candidate_count: notRenderedInternalCandidateCount,
+    excluded_internal_claim_count: excludedInternalCandidateCount,
+    unsupported_rendered_claim_count: unsupportedRenderedCandidateCount,
+    unsupported_internal_only_claim_count: unsupportedInternalOnlyCandidateCount,
     supported_candidate_count: supportedCandidateCount,
     blocked_candidate_count: blockedCandidateCount,
     rewrite_required_count: rewriteRequiredCount,
@@ -6018,15 +6097,15 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
 	    safe_candidate_count: safeCandidateCount,
 	    ...publicFeatureSuppressionClaimSummary,
 	    public_render_permission_status: 'not_evaluated_or_blocked',
-    cannot_satisfy_public_claim_gate: true,
+    cannot_satisfy_public_claim_gate: claimCandidateGateStatus !== 'satisfied',
     production_safe_status: 'blocked',
     public_scoring_status: 'blocked',
     public_technique_authority_status: 'blocked',
     public_comparison_output_status: 'blocked',
     blocker_codes: blockerCodes,
-    gate_satisfaction_reason: sourceSummary.real_runtime_v3 > 0
-      ? 'claim_candidate_source_available_public_claim_trace_not_promoted'
-      : 'legacy_or_unsupported_claim_candidates_only',
+    gate_satisfaction_reason: claimCandidateGateStatus === 'satisfied'
+      ? 'not_rendered_internal_candidates_excluded_from_public_claim_gate'
+      : 'rendered_claim_candidate_support_incomplete',
     public_output_unchanged: true,
     redaction_policy: 'safe_summaries_only',
   };
@@ -6036,6 +6115,12 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
     claim_candidate_count: candidates.length,
     source_classification: sourceClassification,
     claim_candidate_source_summary: sourceSummary,
+    required_rendered_public_claim_count: requiredCandidateCount,
+    rendered_public_claim_count: renderedCandidateCount,
+    not_rendered_internal_candidate_count: notRenderedInternalCandidateCount,
+    excluded_internal_claim_count: excludedInternalCandidateCount,
+    unsupported_rendered_claim_count: unsupportedRenderedCandidateCount,
+    unsupported_internal_only_claim_count: unsupportedInternalOnlyCandidateCount,
     supported_candidate_count: supportedCandidateCount,
     blocked_candidate_count: blockedCandidateCount,
     rewrite_required_count: rewriteRequiredCount,
@@ -6045,8 +6130,8 @@ export async function emitClaimCandidateTrace(input: ClaimCandidateTraceEmitterI
 	    suppressed_candidate_count: suppressedCandidateCount,
 	    safe_candidate_count: safeCandidateCount,
 	    ...publicFeatureSuppressionClaimSummary,
-	    claim_candidate_gate_status: 'insufficient' as const,
-    claim_candidate_gate_reason: 'claim_candidate_trace_internal_only_not_public_claim_gate_evidence',
+	    claim_candidate_gate_status: claimCandidateGateStatus,
+    claim_candidate_gate_reason: claimCandidateGateStatus === 'satisfied' ? 'not_rendered_internal_candidates_excluded_from_public_claim_gate' : 'rendered_claim_candidate_support_incomplete',
   };
   return {
     written: result.written as boolean,
@@ -6091,6 +6176,13 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
         blockerCodes: identity.blockerCodes,
       });
     const supportedClaimCount = classified.claims.filter((claim) => claim.support_status === 'supported').length;
+    const requiredRenderedPublicClaimCount = classified.claims.filter((claim) => claim.required_for_public_claim_gate !== false && claim.excluded_from_public_claim_gate !== true).length;
+    const renderedPublicClaimCount = classified.claims.filter((claim) => !isPublicClaimGateExcludedDisplayStatus(claim.public_display_status)).length;
+    const notRenderedInternalTraceCount = classified.claims.filter((claim) => String(claim.public_display_status ?? '') === 'not_rendered_internal_trace').length;
+    const notRenderedInternalCandidateCount = classified.claims.filter((claim) => String(claim.public_display_status ?? '') === 'not_rendered_internal_candidate').length;
+    const excludedInternalClaimCount = classified.claims.filter((claim) => claim.excluded_from_public_claim_gate === true || isPublicClaimGateExcludedDisplayStatus(claim.public_display_status)).length;
+    const unsupportedRenderedClaimCount = classified.claims.filter((claim) => !isPublicClaimGateExcludedDisplayStatus(claim.public_display_status) && !['supported', 'limitation_only_supported', 'not_applicable'].includes(String(claim.support_status))).length;
+    const unsupportedInternalOnlyClaimCount = classified.claims.filter((claim) => isPublicClaimGateExcludedDisplayStatus(claim.public_display_status) && !['supported', 'limitation_only_supported', 'not_applicable'].includes(String(claim.support_status))).length;
     const missingEvidenceCount = classified.claims.filter((claim) => claim.support_status === 'missing_evidence').length;
     const missingTruthLinkCount = classified.claims.filter((claim) => claim.support_status === 'missing_truth_link').length;
     const blockedClaimCount = classified.claims.filter((claim) => claim.support_status === 'blocked').length;
@@ -6123,8 +6215,15 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       support_gate_status: classified.publicClaimGateStatus,
       public_claim_gate_status: classified.publicClaimGateStatus,
       public_claim_gate_reason: classified.publicClaimGateReason,
-      supported_claim_count: supportedClaimCount,
-      unsupported_claim_count: unsupportedClaimCount,
+	      supported_claim_count: supportedClaimCount,
+	      required_rendered_public_claim_count: requiredRenderedPublicClaimCount,
+	      rendered_public_claim_count: renderedPublicClaimCount,
+	      not_rendered_internal_trace_count: notRenderedInternalTraceCount,
+	      not_rendered_internal_candidate_count: notRenderedInternalCandidateCount,
+	      excluded_internal_claim_count: excludedInternalClaimCount,
+	      unsupported_rendered_claim_count: unsupportedRenderedClaimCount,
+	      unsupported_internal_only_claim_count: unsupportedInternalOnlyClaimCount,
+	      unsupported_claim_count: unsupportedClaimCount,
       legacy_untraced_claim_count: legacyUntracedClaimCount,
       unsafe_or_overclaim_count: unsafeOrOverclaimCount,
       rewrite_required_count: rewriteRequiredCount,
@@ -6154,8 +6253,15 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
       legacy_untraced_claim_count: payload.legacy_untraced_claim_count,
       unsafe_or_overclaim_count: payload.unsafe_or_overclaim_count,
       rewrite_required_count: payload.rewrite_required_count,
-      supported_claim_count: payload.supported_claim_count,
-      missing_evidence_count: payload.missing_evidence_count,
+	      supported_claim_count: payload.supported_claim_count,
+	      required_rendered_public_claim_count: payload.required_rendered_public_claim_count,
+	      rendered_public_claim_count: payload.rendered_public_claim_count,
+	      not_rendered_internal_trace_count: payload.not_rendered_internal_trace_count,
+	      not_rendered_internal_candidate_count: payload.not_rendered_internal_candidate_count,
+	      excluded_internal_claim_count: payload.excluded_internal_claim_count,
+	      unsupported_rendered_claim_count: payload.unsupported_rendered_claim_count,
+	      unsupported_internal_only_claim_count: payload.unsupported_internal_only_claim_count,
+	      missing_evidence_count: payload.missing_evidence_count,
       missing_truth_link_count: payload.missing_truth_link_count,
       blocked_claim_count: payload.blocked_claim_count,
       limitation_only_claim_count: payload.limitation_only_claim_count,
@@ -7355,7 +7461,7 @@ export async function emitComparisonRuntimeArtifactsWithManifestReconciliation(i
     comparison_invoked: comparisonInvoked,
     comparison_evidence_status: comparisonEvidenceStatus,
     comparison_payloads: comparisonParityPayloads,
-  }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes: [] as string[] };
+  }) : { written: false, emitted_artefact_ids: [] as string[], parity_status: 'not_applicable' as const, blocker_codes: [] as string[], comparison_parity_summary: null as Record<string, unknown> | null };
   const reconciledComparisonManifest = reconcileComparisonManifestState({
     manifest: manifestObj,
     comparison_run_id: comparisonRunId,
@@ -8199,6 +8305,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const hasStep1Audio = step1AudioItems.length > 0;
   const hasStep1MaterialPerformanceCandidate = step1MaterialItems.some((item) => materialStep1FamilyForRawItem(item) === 'material_specific_performance');
   const hasStep1Performance = step1PerformanceItems.length > 0;
+  const hasStep1PerformanceOrDerived = hasStep1Performance || step1MaterialItems.some(canDerivePerformanceObservableFromMaterialStep1Item);
   const hasStep1Technique = step1TechniqueItems.length > 0;
   const step1MediaInputStatus = hasFilteredStep1Items
     ? (input.mux_playback_id || input.mux_asset_or_upload_id_present ? 'media_observable_input_available' : 'metadata_only')
@@ -8209,7 +8316,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     ...(filteredStep1 && !hasStep1Video && !filteredUnsupported.some((item) => String(item.evidence_kind ?? '').includes('video')) ? [performanceUnavailable[0]] : []),
     ...(filteredStep1 && !hasStep1Audio && !filteredUnsupported.some((item) => String(item.evidence_kind ?? '').includes('audio')) ? [performanceUnavailable[1]] : []),
     ...(filteredStep1 && !hasStep1MaterialPerformanceCandidate && !filteredUnsupported.some((item) => String(item.evidence_kind ?? '').includes('material')) ? [performanceUnavailable[2]] : []),
-    ...(filteredStep1 && !hasStep1Performance && !filteredUnsupported.some((item) => String(item.evidence_kind ?? '').includes('performance')) ? [performanceUnavailable[3]] : []),
+    ...(filteredStep1 && !hasStep1PerformanceOrDerived && !filteredUnsupported.some((item) => String(item.evidence_kind ?? '').includes('performance')) ? [performanceUnavailable[3]] : []),
     ...(filteredStep1 && !hasStep1Technique && !filteredUnsupported.some((item) => String(item.evidence_kind ?? '').includes('candidate_technique')) ? [performanceUnavailable[4]] : []),
   ];
   const step2DependencyBlockers = dedupePreservingOrder([
@@ -8228,7 +8335,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     ...(!hasStep1Video ? ['video_observable_performance_evidence_not_extracted'] : []),
     ...(!hasStep1Audio ? ['audio_observable_performance_evidence_not_extracted'] : []),
     ...(!hasStep1MaterialPerformanceCandidate ? ['material_specific_performance_evidence_not_extracted'] : []),
-    ...(!hasStep1Performance ? ['performance_observable_evidence_not_extracted'] : []),
+    ...(!hasStep1PerformanceOrDerived ? ['performance_observable_evidence_not_extracted'] : []),
     ...(!hasStep1Technique ? ['candidate_technique_evidence_not_extracted'] : []),
     ...filteredBlockers,
     ...(filteredRejected.length > 0 ? ['runEvidencePass_prohibited_fields_filtered'] : []),
@@ -8333,6 +8440,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const materialSpecificEvidenceCount = materialSpecificEvidence.length;
   const materialSpecificPerformanceEvidenceCount = materialSpecificPerformanceEvidence.length;
   const performanceObservableEvidenceCount = performanceObservableEvidence.length;
+  const performanceObservableDerivationCount = performanceObservableEvidence.filter((item) => Boolean(item.derived_from_evidence_item_id || item.derived_from_family)).length;
   const candidateTechniqueEvidenceCount = candidateTechniqueEvidence.length;
   const acceptedObservationFieldCount = step1VideoItems.length + step1AudioItems.length + step1MaterialItems.length + step1PerformanceItems.length + step1TechniqueItems.length;
   const rejectedJudgementFieldCount = filteredRejected.length + mediaObservableProjection.rejected.length + ordinaryAnalysisProjection.rejected.length;
@@ -8416,6 +8524,12 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
   const requiredEvidenceFamilyCount = ordinaryAnalysisFamilyCompletion.required_family_count;
   const notApplicableEvidenceFamilyCount = ordinaryAnalysisFamilyCompletion.not_applicable_family_count;
   const ordinaryStep1FamilyGateSatisfied = ordinaryAnalysisFamilyCompletion.all_required_families_satisfied;
+  const mediaObservableEvidenceGateStatus = ordinaryStep1FamilyGateSatisfied ? 'satisfied' as const : 'insufficient' as const;
+  const mediaObservableEvidenceGateReason = ordinaryStep1FamilyGateSatisfied
+    ? 'required_observable_families_classified_truth_linked_and_anchor_ready'
+    : (ordinaryAnalysisFamilyCompletionById.performance_observable.status === 'complete'
+      ? 'required_observable_families_partial_or_missing_non_performance_family'
+      : 'performance_observable_requires_safe_step1_event_observation');
   const ordinaryAnalysisProofBundleStatus = ordinaryStep1FamilyGateSatisfied
     ? 'step1_families_complete_proof_chain_blocked'
     : (requiredEvidenceFamilyPartialCount > 0 || requiredEvidenceFamilyCompletionCount > 0 ? 'partial' : 'blocked');
@@ -8458,8 +8572,28 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     ...step2DependencyBlockers,
     ...(analysisEvidenceStateCanSatisfyGate ? [] : ['analysis_evidence_state_gate_insufficient']),
   ]);
+  const unsupportedEvidenceResolvedByFamilyCounts = (item: Record<string, unknown>): boolean => {
+    const haystack = `${String(item.evidence_kind ?? '')} ${String(item.reason ?? '')} ${getStringArray(item.blocker_codes).join(' ')}`.toLowerCase();
+    if ((haystack.includes('candidate_technique') || haystack.includes('technique')) && candidateTechniqueEvidenceCount > 0) return true;
+    if (haystack.includes('video') && videoObservableEvidenceCount > 0) return true;
+    if (haystack.includes('audio') && audioObservableEvidenceCount > 0) return true;
+    if (haystack.includes('material') && materialSpecificPerformanceEvidenceCount > 0) return true;
+    if (haystack.includes('performance') && performanceObservableEvidenceCount > 0) return true;
+    return false;
+  };
+  const blockerCodeResolvedByFamilyCounts = (code: string): boolean => {
+    const lower = code.toLowerCase();
+    if ((lower.includes('candidate_technique') || lower.includes('technique')) && candidateTechniqueEvidenceCount > 0) return true;
+    if (lower.includes('video') && videoObservableEvidenceCount > 0) return true;
+    if (lower.includes('audio') && audioObservableEvidenceCount > 0) return true;
+    if (lower.includes('material') && materialSpecificPerformanceEvidenceCount > 0) return true;
+    if (lower.includes('performance') && performanceObservableEvidenceCount > 0) return true;
+    return false;
+  };
+  const analysisUnsupportedOrUnavailableEvidence = unsupportedOrUnavailableEvidence.filter((item) => !unsupportedEvidenceResolvedByFamilyCounts(item));
+  const familyFilteredBlockerCodes = blocker_codes.filter((code) => !blockerCodeResolvedByFamilyCounts(code));
   const analysisBlockerCodes = dedupePreservingOrder([
-    ...blocker_codes,
+    ...familyFilteredBlockerCodes,
     ...ordinaryAnalysisProofBundleBlockerCodes,
     ...analysisEvidenceStateRemainingBlockers,
   ]);
@@ -8475,6 +8609,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     }),
     ...filteredUnsupported.filter((item) => {
       const kind = String(item.evidence_kind ?? '');
+      if (unsupportedEvidenceResolvedByFamilyCounts(item)) return false;
       return !performanceUnavailable.some((fallback) => fallback.evidence_kind === kind);
     }),
   ];
@@ -8581,6 +8716,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
     performance_observable_evidence_count: performanceObservableEvidenceCount,
+    performance_observable_derivation_count: performanceObservableDerivationCount,
     material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
     candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
     accepted_observation_field_count: acceptedObservationFieldCount,
@@ -8625,8 +8761,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     truth_state_linkage_status: truthStateLinkageStatus,
     truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
     truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
-    media_observable_evidence_gate_status: 'insufficient' as const,
-    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
+    media_observable_evidence_gate_status: mediaObservableEvidenceGateStatus,
+    media_observable_evidence_gate_reason: mediaObservableEvidenceGateReason,
     supplied_context_fact_count: briefMaterialEvidenceCount,
     supplied_context_unavailable_count: suppliedContextUnavailableCount,
     unsupported_or_unavailable_evidence_count: step1Unsupported.length,
@@ -8655,6 +8791,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
     performance_observable_evidence_count: performanceObservableEvidenceCount,
+    performance_observable_derivation_count: performanceObservableDerivationCount,
     material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
     candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
     accepted_observation_field_count: acceptedObservationFieldCount,
@@ -8699,13 +8836,13 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     truth_state_linkage_status: truthStateLinkageStatus,
     truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
     truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
-    media_observable_evidence_gate_status: 'insufficient' as const,
-    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
+    media_observable_evidence_gate_status: mediaObservableEvidenceGateStatus,
+    media_observable_evidence_gate_reason: mediaObservableEvidenceGateReason,
     step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
     step1_observable_evidence_family_summary: step1FamilyStatusById,
     supplied_context_fact_count: briefMaterialEvidenceCount,
     supplied_context_unavailable_count: suppliedContextUnavailableCount,
-    unsupported_or_unavailable_evidence_count: unsupportedOrUnavailableEvidence.length,
+    unsupported_or_unavailable_evidence_count: analysisUnsupportedOrUnavailableEvidence.length,
     filtered_runEvidencePass_observation_count: acceptedObservationFieldCount,
     rejected_or_filtered_field_count: filteredRejected.length,
     cannot_satisfy_v3_gate: !analysisEvidenceStateCanSatisfyGate,
@@ -8771,6 +8908,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
     performance_observable_evidence_count: performanceObservableEvidenceCount,
+    performance_observable_derivation_count: performanceObservableDerivationCount,
     material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
     candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
     accepted_observation_field_count: acceptedObservationFieldCount,
@@ -8815,8 +8953,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     truth_state_linkage_status: truthStateLinkageStatus,
     truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
     truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
-    media_observable_evidence_gate_status: 'insufficient' as const,
-    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
+    media_observable_evidence_gate_status: mediaObservableEvidenceGateStatus,
+    media_observable_evidence_gate_reason: mediaObservableEvidenceGateReason,
     supplied_context_fact_count: briefMaterialEvidenceCount,
     step1_candidate_observation_count: acceptedObservationFieldCount + filteredRejected.length,
     step1_family_classified_observation_count: videoObservableEvidenceCount + audioObservableEvidenceCount + materialSpecificPerformanceEvidenceCount + performanceObservableEvidenceCount + candidateTechniqueEvidenceCount,
@@ -8915,6 +9053,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     video_observable_evidence_count: videoObservableEvidenceCount,
     audio_observable_evidence_count: audioObservableEvidenceCount,
     performance_observable_evidence_count: performanceObservableEvidenceCount,
+    performance_observable_derivation_count: performanceObservableDerivationCount,
     material_specific_performance_evidence_count: materialSpecificPerformanceEvidenceCount,
     candidate_technique_evidence_count: candidateTechniqueEvidenceCount,
     accepted_observation_field_count: acceptedObservationFieldCount,
@@ -8956,8 +9095,8 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     truth_state_linkage_status: truthStateLinkageStatus,
     truth_state_linkage_gate_reason: 'explicit_truth_ids_linked_for_supported_step1_facts_required_families_still_incomplete',
     truth_state_linkage_blocker_codes: truthStateLinkageBlockerCodes,
-    media_observable_evidence_gate_status: 'insufficient' as const,
-    media_observable_evidence_gate_reason: 'narrow_media_assessability_observations_partial_performance_extractor_unavailable',
+    media_observable_evidence_gate_status: mediaObservableEvidenceGateStatus,
+    media_observable_evidence_gate_reason: mediaObservableEvidenceGateReason,
     step1_observable_evidence_item_count: step1ObservableEvidenceItems.length,
     step1_observable_evidence_family_summary: step1FamilyStatusById,
     deterministic_evidence_source_refs: {
@@ -8992,7 +9131,7 @@ export async function emitAnalysisEvidenceStatePrerequisite(input: AnalysisEvide
     candidate_brief_evidence,
     filtered_candidate_technique_evidence_items: step1TechniqueItems,
     candidate_technique_evidence: candidateTechniqueEvidence,
-    unsupported_or_unavailable_evidence: unsupportedOrUnavailableEvidence,
+    unsupported_or_unavailable_evidence: analysisUnsupportedOrUnavailableEvidence,
     rejected_or_filtered_fields: filteredRejected,
     prohibited_field_filter_summary: prohibitedFieldFilterSummary,
     step2_dependency_status: step2DependencyStatus,

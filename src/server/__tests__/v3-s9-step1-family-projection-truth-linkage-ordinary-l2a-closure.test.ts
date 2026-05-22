@@ -113,9 +113,9 @@ function completeCommon(root: string, run: string, take: string, filteredStep1: 
     take_created_at: '2026-05-22T09:00:00.000Z',
     take_updated_at: '2026-05-22T09:01:00.000Z',
     take_index: 1,
-    take_index_source: 'loaded_take_row',
+    take_index_source: 'loaded_take_index' as const,
     component_or_task_declaration_status: 'supplied' as const,
-    component_or_task_declaration_source: 'audition.brief' as const,
+    component_or_task_declaration_source: 'loaded_runtime_field' as const,
     media_readiness_state: 'ready',
     video_duration_seconds: 42,
     media_duration_seconds: 42,
@@ -229,9 +229,10 @@ describe('S9-19I Step 1 family projection, truth linkage, and ordinary L2-A clos
     expect(analysis.payload?.material_specific_performance_evidence).toHaveLength(1);
     expect(analysis.payload?.candidate_technique_evidence[0].linked_truth_state_ids[0]).toContain(':truth_state:');
 
+    const anchorItems = anchors.anchors ?? [];
     expect(anchors.evidence_anchor_gate_status).toBe('sufficient');
-    expect(anchors.anchors.some((anchor) => anchor.evidence_family === 'candidate_technique')).toBe(true);
-    expect(publicClaims.summary?.public_claim_gate_status).toBe('sufficient');
+    expect(anchorItems.some((anchor) => anchor.evidence_family === 'candidate_technique')).toBe(true);
+    expect((publicClaims.summary as { public_claim_gate_status?: string } | undefined)?.public_claim_gate_status).toBe('sufficient');
     expect(technique.technique_observation_trace_summary?.technique_observation_trace_gate_status).toBe('satisfied');
     expect(technique.technique_observation_trace_summary?.public_technique_authority_status).toBe('blocked');
   });
