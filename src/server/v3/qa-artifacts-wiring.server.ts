@@ -6454,6 +6454,11 @@ export async function emitPublicClaimTraceFirstPass(input: PublicClaimTraceEmitt
 	      suppressed_claim_count: payload.suppressed_claim_count,
 	      overclaim_claim_count: payload.overclaim_claim_count,
 	      ...publicFeatureSuppressionClaimSummary,
+	      public_claim_gate_status: 'insufficient' as string,
+	      public_claim_gate_reason: payload.gate_satisfaction_reason,
+	      required_rendered_public_claim_count: 0,
+	      excluded_internal_claim_count: 0,
+	      blocker_codes: payload.blocker_codes,
 	    },
   };
 }
