@@ -3974,6 +3974,7 @@ export async function runProcessTake(
           no_export_source_proof: {
             checked_paths: [
               'src/routes/audition.$auditionId.tsx',
+              'src/components/report/ReadinessFirstReportShell.tsx',
               'src/components/report/V2ReportView.tsx',
               'src/server/process-take.server.ts',
               'src/server/v3/qa-artifacts-wiring.server.ts',
@@ -3993,7 +3994,10 @@ export async function runProcessTake(
           },
           no_export_ui_proof: {
             checked_routes: ['src/routes/audition.$auditionId.tsx', 'src/routes/admin/storage-downloads.tsx'],
-            checked_components_or_files: ['src/components/report/V2ReportView.tsx'],
+            checked_components_or_files: [
+              'src/components/report/ReadinessFirstReportShell.tsx',
+              'src/components/report/V2ReportView.tsx',
+            ],
             admin_internal_surfaces_classified: ['src/routes/admin/storage-downloads.tsx: admin/internal only'],
             unsupported_or_unknown_surfaces: [],
           },

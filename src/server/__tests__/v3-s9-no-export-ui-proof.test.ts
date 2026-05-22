@@ -30,7 +30,10 @@ describe('v3 s9 no-export ui proof emission', () => {
         no_export_log_proof: { checked_log_paths: ['src/server'] },
         no_export_ui_proof: {
           checked_routes: ['src/routes/__root.tsx', 'src/routes/admin/storage-downloads.tsx'],
-          checked_components_or_files: ['src/components/report/V2ReportView.tsx'],
+          checked_components_or_files: [
+            'src/components/report/ReadinessFirstReportShell.tsx',
+            'src/components/report/V2ReportView.tsx',
+          ],
           admin_internal_surfaces_classified: ['src/routes/admin/storage-downloads.tsx: admin/internal only'],
           unsupported_or_unknown_surfaces: [],
           internal_only: false,
@@ -59,6 +62,10 @@ describe('v3 s9 no-export ui proof emission', () => {
     expect(ui.public_download_ui_status).toBe('absent_in_customer_facing_surfaces');
     expect(ui.public_share_ui_status).toBe('absent_in_customer_facing_surfaces');
     expect(ui.public_comparison_output_ui_status).toBe('absent_in_customer_facing_surfaces');
+    expect(ui.checked_components_or_files).toEqual(expect.arrayContaining([
+      'src/components/report/ReadinessFirstReportShell.tsx',
+      'src/components/report/V2ReportView.tsx',
+    ]));
     expect(ui.forbidden_ui_surfaces_absent).toBe(true);
     expect(ui.admin_internal_surfaces_classified).toEqual(expect.arrayContaining(['src/routes/admin/storage-downloads.tsx: admin/internal only']));
     expect(ui.production_safe_status).toBe('blocked');
