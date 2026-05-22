@@ -25,7 +25,8 @@ describe('S9-19H live Step 1 provider contract and suppression validation repair
     expect(request).not.toHaveProperty('tools');
     expect(request).not.toHaveProperty('tool_choice');
     expect(request).not.toHaveProperty('response_format');
-    expect(JSON.stringify(request)).toContain('tapecoach_step1_observable_evidence_v1');
+    expect(JSON.stringify(request)).toContain('tapecoach_step1_observable_evidence_v2');
+    expect(JSON.stringify(request)).toContain('material_specific_performance');
   });
 
   it('parses compact Step 1 JSON into accepted observable families without accepting judgements', () => {

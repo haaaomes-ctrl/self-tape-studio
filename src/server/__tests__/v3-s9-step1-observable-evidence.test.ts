@@ -305,7 +305,7 @@ describe('S9-18B Step1ObservableEvidence container', () => {
     expect(analysis.step1_observable_evidence_summary).toBeDefined();
     if (!analysis.step1_observable_evidence_summary) throw new Error('step1_observable_evidence_summary_missing');
     expect(analysis.step1_observable_evidence_summary.step1_truth_unlinked_evidence_item_count).toBe(0);
-    expect(step1.truth_state_linkage_status).toBe('partial');
+    expect(step1.truth_state_linkage_status).toBe('satisfied');
   });
 
   it('rejects unsafe media-observable projection fields instead of promoting report-like judgement', async () => {

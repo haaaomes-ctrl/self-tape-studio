@@ -131,7 +131,7 @@ describe('S9-19 ordinary analysis proof bundle', () => {
     expect(step1.evidence_family_status_by_id.candidate_technique).toBe('complete');
     expect(step1.ordinary_analysis_family_completion_by_id.performance_observable.can_satisfy_family_gate).toBe(true);
     expect(step1.ordinary_analysis_family_completion_by_id.candidate_technique.can_satisfy_family_gate).toBe(true);
-    expect(step1.cannot_satisfy_v3_gate).toBe(true);
+    expect(step1.cannot_satisfy_v3_gate).toBe(false);
 
     expect(aes.performance_observable_evidence_count).toBeGreaterThan(0);
     expect(aes.candidate_technique_evidence_count).toBeGreaterThan(0);
@@ -139,21 +139,21 @@ describe('S9-19 ordinary analysis proof bundle', () => {
     expect(aes.analysis_evidence_state_gate_status).toBe('satisfied');
     expect(aes.cannot_satisfy_v3_gate).toBe(false);
     expect(aes.ordinary_analysis_proof_bundle_status).toBe('step1_families_complete_proof_chain_blocked');
-    expect(aes.ordinary_analysis_proof_bundle_gate_status).toBe('insufficient');
+    expect(aes.ordinary_analysis_proof_bundle_gate_status).toBe('satisfied');
 
     expect(metrics.analysis_evidence_state_gate_status).toBe('satisfied');
     expect(metrics.ordinary_analysis_proof_bundle_status).toBe('step1_families_complete_proof_chain_blocked');
-    expect(metrics.ordinary_analysis_proof_bundle_gate_status).toBe('insufficient');
+    expect(metrics.ordinary_analysis_proof_bundle_gate_status).toBe('satisfied');
     expect(metrics.public_scoring_status).toBe('blocked');
     expect(metrics.public_technique_authority_status).toBe('blocked');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
-  it('promotes only item-level real runtime anchors and keeps the aggregate gate insufficient', async () => {
+  it('promotes linked Step 1 family anchors while unrelated runtime blockers keep the aggregate insufficient', async () => {
     const { anchors, metrics } = await emitOrdinaryAnalysisBundle();
-    const performanceAnchor = anchors.anchors.find((anchor: any) => anchor.source_path === 'performance_observable_evidence_items[0]');
-    const techniqueAnchor = anchors.anchors.find((anchor: any) => anchor.source_path === 'candidate_technique_evidence[0]');
+    const performanceAnchor = anchors.anchors.find((anchor: any) => anchor.evidence_family === 'performance_observable');
+    const techniqueAnchor = anchors.anchors.find((anchor: any) => anchor.evidence_family === 'candidate_technique');
 
     expect(performanceAnchor).toMatchObject({ source_family: 'real_runtime_v3', cannot_satisfy_v3_gate: false });
     expect(techniqueAnchor).toMatchObject({ source_family: 'real_runtime_v3', cannot_satisfy_v3_gate: false });
