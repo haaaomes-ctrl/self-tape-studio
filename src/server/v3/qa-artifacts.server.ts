@@ -1200,7 +1200,6 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...ordinaryL2ABlockerCodes,
     ...(!reportParityPassed ? ['report_parity_not_passed'] : []),
     ...(!noExportComplete ? ['no_export_proof_not_complete'] : []),
-    ...suppressionProofBlockerCodes,
   ]);
   const globalLevel2EvidenceStatus = globalLevel2EvidenceBlockerCodes.length === 0
     && ordinaryL2AAnalysisProofStatus === 'satisfied'
@@ -1289,6 +1288,56 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...globalLevel2FeatureApprovalBlockerCodes,
     ...globalLevel2ReleaseBlockerCodes,
   ]);
+  const ordinaryInternalProofStatus = ordinaryL2AAnalysisProofStatus;
+  const ordinaryInternalProofReasons = ordinaryInternalProofStatus === 'satisfied'
+    ? []
+    : dedupePreservingOrder([
+      'ordinary internal analysis proof incomplete',
+      ...(ordinaryL2AUnsatisfiedGateIds.length > 0 ? [`ordinary_internal_unsatisfied_gates:${ordinaryL2AUnsatisfiedGateIds.join(',')}`] : []),
+      ...(ordinaryL2ABlockerCodes.length > 0 ? [`ordinary_internal_blockers:${ordinaryL2ABlockerCodes.join(',')}`] : []),
+    ]);
+  const runtimeReleaseBlockerReasons = dedupePreservingOrder([
+    ...(runtimeOperatorVerificationStatus === 'completed' ? [] : ['runtime/operator verification required']),
+    ...(runtimeBundleFresh ? [] : ['runtime bundle freshness required']),
+    ...(runtimeBundleMatchesCurrentCommit ? [] : ['runtime bundle current implementation match required']),
+    ...(deploymentProvenanceResolved ? [] : ['deployment provenance or operator confirmation required']),
+  ]);
+  const globalReleaseBlockerReasons = dedupePreservingOrder([
+    'missing or blocked required global Level 2 release gates',
+    ...runtimeReleaseBlockerReasons,
+    ...(releaseReadinessStatus === 'ready_for_review' ? [] : ['release readiness blocked by runtime/provenance/global gates']),
+    'production/public authority gates blocked',
+    'customer release gates blocked',
+  ]);
+  const comparisonLevel2Status = !comparisonInvoked
+    ? 'not_applicable'
+    : (globalLevel2ComparisonBlockerCodes.length === 0 && ['passed', 'satisfied_suppression_only'].includes(comparisonParityStatus)
+      ? 'satisfied'
+      : 'fail_closed');
+  const comparisonBlockerReasons = !comparisonInvoked
+    ? []
+    : dedupePreservingOrder([
+      ...(comparisonEvidenceStatus === 'missing'
+        ? ['comparison evidence missing']
+        : ['comparison evidence emitted but insufficient for Level 2']),
+      ...(globalLevel2ComparisonBlockerCodes.includes('duplicate_same_video_suppressed_without_decisive_evidence_delta')
+        ? ['duplicate same-video comparison suppressed without decisive evidence delta']
+        : []),
+      ...(comparisonApplies ? ['GF-01 / RT-15 blocked'] : []),
+    ]);
+  const rawReportLegacyDiagnosticReasons = (manifest.legacy_adapter_artefact_ids ?? []).includes('raw_report')
+    || manifest.artefact_source_classification_by_id?.raw_report === 'legacy_adapter'
+    ? ['raw_report legacy_adapter emitted as diagnostic only; not used as v3 evidence spine']
+    : [];
+  const diagnosticReasons = dedupePreservingOrder([
+    ...rawReportLegacyDiagnosticReasons,
+    'qa_acceptance_metrics emitted as reconciliation summary; not satisfying evidence by itself',
+  ]);
+  const acceptanceReasons = dedupePreservingOrder([
+    ...ordinaryInternalProofReasons,
+    ...globalReleaseBlockerReasons,
+    ...comparisonBlockerReasons,
+  ]);
   const nextTasks = [
     ...(analysisEvidenceStateGateStatus !== 'satisfied' ? ['persist real Step 1 AnalysisEvidenceState source'] : []),
     ...(step1ObservableEvidenceStatus !== 'missing' && step1ObservableEvidenceGateStatus !== 'satisfied' ? ['implement real Step1ObservableEvidence extractors and truth linkage'] : []),
@@ -1335,6 +1384,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     level3_status: 'blocked',
     level4_status: 'blocked',
     gf01_rt15_status: gf01Rt15Status,
+    ordinary_internal_proof_status: ordinaryInternalProofStatus,
+    ordinary_internal_proof_reasons: ordinaryInternalProofReasons,
+    ordinary_internal_proof_blocker_codes: ordinaryL2ABlockerCodes,
     ordinary_l2a_analysis_proof_status: ordinaryL2AAnalysisProofStatus,
     ordinary_l2a_analysis_proof_reason: ordinaryL2AAnalysisProofReason,
     ordinary_l2a_analysis_proof_blocker_codes: ordinaryL2ABlockerCodes,
@@ -1347,6 +1399,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     global_level2_suppression_proof_status: globalLevel2SuppressionProofStatus,
     global_level2_release_status: 'blocked',
     global_level2_release_readiness_status: releaseReadinessStatus,
+    global_level2_release_reasons: globalReleaseBlockerReasons,
     global_level2_acceptance_status: globalLevel2AcceptanceStatus,
     global_level2_acceptance_reason: globalLevel2AcceptanceReason,
     global_level2_blocker_codes_by_family: globalLevel2BlockerCodesByFamily,
@@ -1397,6 +1450,8 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     comparison_parity_status: comparisonParityStatus,
     comparison_parity_reason: comparisonParityReason,
     comparison_parity_blocker_codes: comparisonParityBlockerCodes,
+    comparison_level2_status: comparisonLevel2Status,
+    comparison_blocker_reasons: comparisonBlockerReasons,
     duplicate_same_video_safety_status: comparisonInvoked
       ? (comparisonSuppressionSafetyStatus === 'satisfied_suppressed' || publicComparisonSuppressionProofStatus === 'satisfied' ? 'satisfied_suppressed' : 'insufficient')
       : 'not_applicable',
@@ -1670,21 +1725,13 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     input_artefact_status: (manifest.artefact_status_by_id?.analysis_input_record === 'emitted' && manifest.artefact_status_by_id?.analysis_submission === 'emitted' && manifest.artefact_status_by_id?.analysis_take === 'emitted') ? 'emitted' : 'incomplete',
     raw_report_status: manifest.artefact_status_by_id?.raw_report ?? 'missing',
     acceptance_decision: 'not_accepted',
-    acceptance_reasons: [
-      ...(ordinaryL2AAnalysisProofStatus === 'satisfied'
-        ? ['ordinary internal analysis proof satisfied but public/release gates remain blocked']
-        : ['ordinary internal analysis proof incomplete']),
-      'missing or blocked required global Level 2 release gates',
-      'raw_report is legacy_adapter where applicable',
-      ...(comparisonInvoked
-        ? [comparisonEvidenceStatus === 'missing'
-          ? 'comparison evidence missing'
-          : 'comparison evidence emitted but insufficient for Level 2']
-        : []),
-      ...(comparisonApplies ? ['GF-01 / RT-15 blocked'] : []),
-      'production/public authority gates blocked',
-      'qa_acceptance_metrics emitted but does not satisfy evidence gates',
-    ],
+    acceptance_reasons: acceptanceReasons,
+    release_blocker_reasons: globalReleaseBlockerReasons,
+    diagnostic_reasons: diagnosticReasons,
+    non_satisfying_artefact_summary: {
+      raw_report: rawReportLegacyDiagnosticReasons.length > 0 ? 'legacy_adapter_diagnostic_only_not_v3_evidence' : 'not_emitted_or_not_legacy_adapter',
+      qa_acceptance_metrics: 'reconciliation_summary_not_satisfying_evidence_source',
+    },
     build_commit_sha: manifest.build_commit_sha ?? 'unknown',
     deployment_revision: manifest.deployment_revision ?? 'unknown',
     source_branch: manifest.source_branch ?? manifest.branch_name ?? 'unknown',

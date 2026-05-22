@@ -170,6 +170,8 @@ describe('v3 s9 runtime evidence spine audit map', () => {
     expect(qaEntries[0]?.current_manifest_status).toBe('emitted');
     expect(qaEntries[0]?.expected_path).toBe('qa/acceptance_metrics.json');
     expect(qaEntries[0]?.can_emit_without_invention).toBe(true);
+    expect(qaEntries[0]?.expected_source_of_truth).toMatch(/reconciliation summary/i);
+    expect(qaEntries[0]?.next_implementation_step).toMatch(/do not count metrics emission alone/i);
 
     const allowedClassifications = new Set([
       'real_runtime_v3',
