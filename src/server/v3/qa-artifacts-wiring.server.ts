@@ -2292,7 +2292,7 @@ function isSafePerformanceEventSummary(summary: string): boolean {
   if (!text) return false;
   if (STEP1_MEDIA_OBSERVABLE_FORBIDDEN_TEXT_RE.test(text)) return false;
   if (/\b(strong|good|excellent|compelling|beautiful|ready|role fit|castable|bookable|marketable|score|rating|winner|recommendation)\b/.test(text)) return false;
-  return /\b(performance|performer|scene|song|slate|segment|transition|pause|beat|action|task|component|delivered|begins|continues|occurs|present)\b/.test(text);
+  return /\b(performance|performer|scene|song|slate|monologue|dialogue|copy|line|lines|speech|spoken|sung|vocal|material|section|segment|transition|pause|beat|action|task|component|delivery|delivers|delivered|begins|starts|continues|occurs|performed|present in the take|observed in the take)\b/.test(text);
 }
 function isMaterialSpecificPerformanceEvent(rawItem: Record<string, unknown>): boolean {
   if (rawItem.source_artefact_id !== 'run_evidence_pass') return false;
@@ -2304,7 +2304,7 @@ function isMaterialSpecificPerformanceEvent(rawItem: Record<string, unknown>): b
   const kind = String(rawItem.evidence_kind ?? '').toLowerCase();
   const text = `${summary} ${kind}`.toLowerCase();
   if (!isSafePerformanceEventSummary(text)) return false;
-  return /\b(scene|song|slate|monologue|dialogue|material|task|component|segment|audition|performance|performer|delivered|occurs|present)\b/.test(text);
+  return /\b(scene|song|slate|monologue|dialogue|copy|line|lines|speech|spoken|sung|material|task|component|section|segment|audition|performance|performer|delivers|delivered|occurs|performed|present in the take|observed in the take)\b/.test(text);
 }
 function canDerivePerformanceObservableFromMaterialStep1Item(rawItem: Record<string, unknown>): boolean {
   const summary = typeof rawItem.safe_evidence_summary === 'string' ? rawItem.safe_evidence_summary.trim() : '';
@@ -9252,10 +9252,16 @@ export async function emitValidatorTraceFirstPass(input: any) {
   addMetricValidation({ validation_id: 'report_parity_passed_status_recorded', validation_area: 'report_parity_gate', subject: 'report_parity_status', expected: 'passed_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.report_parity_status, source_path: 'qa.acceptance_metrics.report_parity_status', related_artefact_ids: ['parity_report'], passWhen: (value) => ['passed', 'missing', 'insufficient'].includes(String(value)), blocker_code: 'report_parity_status_missing' });
   addMetricValidation({ validation_id: 'no_export_complete_status_recorded', validation_area: 'no_export_gate', subject: 'no_export_status', expected: 'complete_or_missing_when_not_emitted', observed: input.acceptance_metrics_snapshot.no_export_status, source_path: 'qa.acceptance_metrics.no_export_status', related_artefact_ids: ['no_export_proof'], passWhen: (value) => ['no_export_proof_complete', 'no_export_proof_missing', 'no_export_proof_insufficient'].includes(String(value)), blocker_code: 'no_export_status_missing' });
   const ordinaryUnsatisfiedGateIds = getStringArray(input.acceptance_metrics_snapshot.ordinary_l2a_unsatisfied_gate_ids);
-  const ordinaryUnsatisfiedExcludingSelf = ordinaryUnsatisfiedGateIds.filter((gateId) => !['validator_trace_gate', 'gate_trace_gate'].includes(gateId));
-  const ordinaryMetricsStatusSatisfied = input.acceptance_metrics_snapshot.ordinary_l2a_analysis_proof_status === 'satisfied';
+  const ordinarySelfGateIds = ['validator_trace_gate', 'gate_trace_gate'];
+  const ordinaryUnsatisfiedExcludingSelf = ordinaryUnsatisfiedGateIds.filter((gateId) => !ordinarySelfGateIds.includes(gateId));
+  const ordinaryMetricsStatus = String(input.acceptance_metrics_snapshot.ordinary_l2a_analysis_proof_status ?? 'insufficient');
+  const ordinaryMetricsStatusSatisfied = ordinaryMetricsStatus === 'satisfied';
+  const ordinaryMetricsOnlySelfBlocked = ordinaryUnsatisfiedGateIds.length > 0
+    && ordinaryUnsatisfiedExcludingSelf.length === 0
+    && ordinaryUnsatisfiedGateIds.every((gateId) => ordinarySelfGateIds.includes(gateId))
+    && ordinaryMetricsStatus !== 'blocked';
   const ordinaryDependenciesSatisfied = ordinaryUnsatisfiedExcludingSelf.length === 0
-    && ordinaryMetricsStatusSatisfied;
+    && (ordinaryMetricsStatusSatisfied || ordinaryMetricsOnlySelfBlocked);
   entries.push({
     validation_id: 'ordinary_l2a_dependency_gate_validation',
     validation_rule_version: 's9-19d-independent-ordinary-l2a-proof-v1',
@@ -9263,7 +9269,11 @@ export async function emitValidatorTraceFirstPass(input: any) {
     subject: 'ordinary_l2a_unsatisfied_gate_ids_excluding_validator_gate',
     status: ordinaryDependenciesSatisfied ? 'pass' : 'fail',
     expected: [],
-    observed: ordinaryUnsatisfiedExcludingSelf,
+    observed: {
+      ordinary_l2a_analysis_proof_status: ordinaryMetricsStatus,
+      unsatisfied_gate_ids_excluding_validator_and_gate_trace: ordinaryUnsatisfiedExcludingSelf,
+      self_referential_gate_ids: ordinaryUnsatisfiedGateIds.filter((gateId) => ordinarySelfGateIds.includes(gateId)),
+    },
     source_path: 'qa.acceptance_metrics.ordinary_l2a_unsatisfied_gate_ids',
     related_artefact_ids: ['qa_acceptance_metrics', 'model_run_trace', 'evidence_anchors', 'public_claim_trace', 'score_trace', 'technique_observation_trace'],
     blocker_codes: ordinaryDependenciesSatisfied ? [] : ['ordinary_l2a_dependency_gate_unsatisfied'],
@@ -9510,14 +9520,29 @@ export async function emitValidatorTraceFirstPass(input: any) {
     notes: null,
   });
   const failCount = entries.filter((e) => e.status === 'fail').length;
+  const ordinaryInternalFailCount = entries.filter((e) => e.status === 'fail' && ![
+    'global_level2_gate_taxonomy_reconciled',
+  ].includes(String(e.validation_id))).length;
   const warningCount = entries.filter((e) => e.status === 'warn' || e.status === 'warning').length;
   const blockedCount = entries.filter((e) => e.status === 'blocked').length;
   const ordinaryValidatorTraceSatisfied = ordinaryDependenciesSatisfied;
+  const validatorInternalProofSatisfied = ordinaryValidatorTraceSatisfied && ordinaryInternalFailCount === 0;
   const suppressionAndReleaseTaxonomySatisfied = publicScoringSuppressionSatisfied
     && publicTechniqueSuppressionSatisfied
     && publicComparisonSuppressionSatisfied
     && globalLevel2TaxonomySatisfied;
-  const validatorTraceSatisfied = ordinaryValidatorTraceSatisfied && failCount === 0;
+  const validatorTraceSatisfied = validatorInternalProofSatisfied;
+  const validatorInternalBlockerCodes = validatorInternalProofSatisfied ? [] : dedupePreservingOrder([
+    ...(!ordinaryValidatorTraceSatisfied ? ['ordinary_l2a_dependency_gate_unsatisfied'] : []),
+    ...(ordinaryInternalFailCount > 0 ? ['ordinary_internal_validator_checks_failed'] : []),
+  ]);
+  const validatorReleaseBlockerCodes = dedupePreservingOrder([
+    ...(!runtimeOperatorVerificationCompleted ? ['runtime_operator_verification_required'] : []),
+    ...(!deploymentContextVerified ? ['deployment_provenance_unknown_or_unconfirmed'] : []),
+    ...(!releaseReadinessReady ? ['production_customer_release_readiness_blocked'] : []),
+    'production_safe_blocked',
+    'customer_release_blocked',
+  ]);
   const summary = {
     validation_count: entries.length,
     pass_count: entries.filter((e) => e.status === 'pass').length,
@@ -9527,7 +9552,13 @@ export async function emitValidatorTraceFirstPass(input: any) {
     validator_trace_gate_status: validatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
     validator_trace_gate_reason: validatorTraceSatisfied ? 'ordinary_l2a_artifact_derived_validations_passed' as const : 'ordinary_analysis_artifact_checks_missing_or_failed' as const,
     independent_validation_status: validatorTraceSatisfied ? 'independent_validation_satisfying' as const : 'independent_validation_partial' as const,
-    ordinary_l2a_validation_status: ordinaryValidatorTraceSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    validator_trace_internal_proof_status: validatorInternalProofSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    validator_trace_internal_proof_reason: validatorInternalProofSatisfied ? 'ordinary_internal_validation_checks_passed_release_gates_separated' as const : 'ordinary_internal_validation_checks_failed_or_incomplete' as const,
+    validator_trace_public_release_status: 'blocked' as const,
+    validator_trace_internal_blocker_codes: validatorInternalBlockerCodes,
+    validator_trace_release_blocker_codes: validatorReleaseBlockerCodes,
+    ordinary_l2a_validation_status: validatorInternalProofSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    ordinary_l2a_validation_reason: validatorInternalProofSatisfied ? 'ordinary_internal_validation_satisfied_self_referential_trace_placeholders_reconciled' as const : 'ordinary_internal_validation_unsatisfied',
     suppression_and_release_taxonomy_validation_status: suppressionAndReleaseTaxonomySatisfied ? 'satisfied' as const : 'insufficient' as const,
     referential_integrity_status: validatorTraceSatisfied ? 'passed' as const : 'partial_snapshot_checks' as const,
     deterministic_checks_version: 's9-19e-public-release-suppression-proof-v1' as const,
@@ -9595,7 +9626,7 @@ export async function emitGateTraceFirstPass(input: any) {
     ? 'passed'
     : (status === 'not_applicable' ? 'not_applicable' : (status === 'missing' ? 'missing' : 'insufficient'));
   const gate_entries: Array<Record<string, unknown>> = [
-    { gate_id: 'ordinary_l2a_analysis_proof_gate', gate_name: 'ordinary_l2a_analysis_proof_gate', gate_family: 'ordinary_l2a_internal_analysis', status: ordinaryL2AGateSatisfied ? 'passed' : 'insufficient', reason: ordinaryL2AReason, required_for_level: 'ordinary_l2a_internal', current_state: ordinaryL2AStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`ordinary_l2a_unsatisfied_gate_ids=${ordinaryUnsatisfiedGateIds.join(',')}`], blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'], dependent_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], evidence_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], validator_rule_ids: ['ordinary_l2a_dependency_gate_validation'], source_paths: ['traces/ValidatorTrace.json', 'traces/GateTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: ordinaryUnsatisfiedGateIds, notes: null },
+    { gate_id: 'ordinary_l2a_analysis_proof_gate', gate_name: 'ordinary_l2a_analysis_proof_gate', gate_family: 'ordinary_l2a_internal_analysis', status: ordinaryL2AGateSatisfied ? 'passed' : 'insufficient', reason: ordinaryL2AReason, required_for_level: 'ordinary_l2a_internal', current_state: ordinaryL2AStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`ordinary_l2a_unsatisfied_gate_ids=${ordinaryUnsatisfiedGateIds.join(',')}`, `ordinary_l2a_unsatisfied_gate_ids_excluding_self=${ordinaryUnsatisfiedExcludingGate.join(',')}`], blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'], dependent_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], evidence_artefact_ids: ['validator_trace', 'gate_trace', 'model_run_trace', 'qa_acceptance_metrics'], validator_rule_ids: ['ordinary_l2a_dependency_gate_validation'], source_paths: ['traces/ValidatorTrace.json', 'traces/GateTrace.json', 'qa/acceptance_metrics.json'], public_effect: 'none_internal_only', required_maturity_level: 'internal_l2a', dependency_gate_ids: ordinaryUnsatisfiedExcludingGate, notes: null },
     { gate_id: 'global_level2_evidence_gate', gate_name: 'global_level2_evidence_gate', gate_family: 'level2_evidence', status: globalLevel2EvidenceStatus === 'satisfied' ? 'passed' : 'insufficient', reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_evidence_or_suppression_incomplete'), required_for_level: 'L2', current_state: globalLevel2EvidenceStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.global_level2_evidence_status=${globalLevel2EvidenceStatus}`], blocker_codes: globalLevel2EvidenceStatus === 'satisfied' ? [] : ['global_level2_evidence_or_suppression_incomplete'], dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['global_level2_gate_taxonomy_reconciled'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'none_internal_only', required_maturity_level: 'global_l2_evidence', dependency_gate_ids: ['ordinary_l2a_analysis_proof_gate', 'public_scoring_suppression_proof_gate', 'public_technique_authority_suppression_proof_gate', 'public_comparison_recommendation_suppression_proof_gate'], notes: null },
     { gate_id: 'global_level2_suppression_proof_gate', gate_name: 'global_level2_suppression_proof_gate', gate_family: 'suppression_proof', status: globalLevel2SuppressionProofStatus === 'satisfied' ? 'passed' : 'insufficient', reason: String(input.acceptance_metrics_snapshot?.global_level2_acceptance_reason ?? 'global_level2_suppression_proof_incomplete'), required_for_level: 'L2', current_state: globalLevel2SuppressionProofStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.global_level2_suppression_proof_status=${globalLevel2SuppressionProofStatus}`], blocker_codes: globalLevel2SuppressionProofStatus === 'satisfied' ? [] : ['global_level2_suppression_proof_incomplete'], dependent_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], evidence_artefact_ids: ['qa_acceptance_metrics', 'validator_trace', 'gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated', 'public_technique_authority_suppression_proof_validated', 'public_comparison_recommendation_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/ValidatorTrace.json', 'traces/GateTrace.json'], public_effect: 'proves_blocked_public_feature_absence', required_maturity_level: 'global_l2_suppression', dependency_gate_ids: ['public_scoring_suppression_proof_gate', 'public_technique_authority_suppression_proof_gate', 'public_comparison_recommendation_suppression_proof_gate'], notes: null },
     { gate_id: 'public_scoring_suppression_proof_gate', gate_name: 'public_scoring_suppression_proof_gate', gate_family: 'suppression_proof', status: suppressionGateStatus(publicScoringSuppressionStatus), reason: String(input.acceptance_metrics_snapshot?.public_scoring_suppression_reason ?? publicScoringSuppressionStatus), required_for_level: 'L2', current_state: publicScoringSuppressionStatus, expected_state_for_acceptance: 'satisfied', observed_evidence: [`qa.acceptance_metrics.public_scoring_suppression_proof_status=${publicScoringSuppressionStatus}`, 'public_output_permissions.show_overall_score=false'], blocker_codes: publicScoringSuppressionStatus === 'satisfied' ? [] : getStringArray(input.acceptance_metrics_snapshot?.public_scoring_suppression_blocker_codes), dependent_artefact_ids: ['score_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], evidence_artefact_ids: ['score_trace', 'public_claim_trace', 'parity_report', 'no_export_proof', 'gate_trace'], validator_rule_ids: ['public_scoring_suppression_proof_validated'], source_paths: ['qa/acceptance_metrics.json', 'traces/GateTrace.json', 'parity/report_parity_result.json', 'export_or_no_export/no_export_proof.json'], public_effect: 'proves_public_score_absence_without_feature_approval', required_maturity_level: 'public_safety_suppression', dependency_gate_ids: ['public_scoring_gate'], notes: null },
@@ -9631,9 +9662,11 @@ export async function emitGateTraceFirstPass(input: any) {
   const metricStatus = (key: string, fallback = 'missing') => String(input.acceptance_metrics_snapshot?.[key] ?? fallback);
   const addOrdinaryGate = (args: { gate_id: string; gate_family: string; metric_key: string; expected_state_for_acceptance: string; dependent_artefact_ids: string[]; source_paths: string[]; blocker_codes: string[]; public_effect?: string; satisfiedValues?: string[]; notApplicableValues?: string[] }) => {
     const currentState = metricStatus(args.metric_key);
-    const status = (args.satisfiedValues ?? ['satisfied', 'sufficient', 'passed', 'no_export_proof_complete', 'not_applicable']).includes(currentState)
-      ? 'passed'
-      : ((args.notApplicableValues ?? []).includes(currentState) ? 'not_applicable' : (currentState === 'missing' ? 'missing' : 'insufficient'));
+    const status = (args.notApplicableValues ?? []).includes(currentState)
+      ? 'not_applicable'
+      : ((args.satisfiedValues ?? ['satisfied', 'sufficient', 'passed', 'no_export_proof_complete', 'not_applicable']).includes(currentState)
+        ? 'passed'
+        : (currentState === 'missing' ? 'missing' : 'insufficient'));
     gate_entries.push({
       gate_id: args.gate_id,
       gate_name: args.gate_id,
@@ -9654,7 +9687,7 @@ export async function emitGateTraceFirstPass(input: any) {
       notes: null,
     });
   };
-  addOrdinaryGate({ gate_id: 'ordinary_analysis_step1_evidence_gate', gate_family: 'ordinary_analysis', metric_key: 'ordinary_analysis_proof_bundle_status', expected_state_for_acceptance: 'step1_families_complete_proof_chain_blocked_or_complete', dependent_artefact_ids: ['step1_observable_evidence'], source_paths: ['analysis/Step1ObservableEvidence.json', 'qa/acceptance_metrics.json'], blocker_codes: ['ordinary_analysis_required_evidence_families_missing'] });
+  addOrdinaryGate({ gate_id: 'ordinary_analysis_step1_evidence_gate', gate_family: 'ordinary_analysis', metric_key: 'ordinary_analysis_proof_bundle_status', expected_state_for_acceptance: 'step1_families_complete_proof_chain_blocked_or_complete', dependent_artefact_ids: ['step1_observable_evidence'], source_paths: ['analysis/Step1ObservableEvidence.json', 'qa/acceptance_metrics.json'], blocker_codes: ['ordinary_analysis_required_evidence_families_missing'], satisfiedValues: ['satisfied', 'step1_families_complete', 'step1_families_complete_proof_chain_blocked', 'step1_families_complete_proof_chain_satisfied'] });
   addOrdinaryGate({ gate_id: 'analysis_evidence_state_gate', gate_family: 'ordinary_analysis', metric_key: 'analysis_evidence_state_gate_status', expected_state_for_acceptance: 'satisfied', dependent_artefact_ids: ['analysis_evidence_state'], source_paths: ['analysis/AnalysisEvidenceState.json', 'qa/acceptance_metrics.json'], blocker_codes: ['AnalysisEvidenceState_insufficient'] });
   addOrdinaryGate({ gate_id: 'evidence_anchor_aggregate_gate', gate_family: 'ordinary_analysis', metric_key: 'evidence_anchor_gate_status', expected_state_for_acceptance: 'sufficient', dependent_artefact_ids: ['evidence_anchors'], source_paths: ['traces/EvidenceAnchors.json', 'qa/acceptance_metrics.json'], blocker_codes: ['EvidenceAnchor_trace_insufficient'] });
   addOrdinaryGate({ gate_id: 'public_claim_support_gate', gate_family: 'ordinary_analysis', metric_key: 'public_claim_gate_status', expected_state_for_acceptance: 'sufficient', dependent_artefact_ids: ['public_claim_trace'], source_paths: ['traces/PublicClaimTrace.json', 'qa/acceptance_metrics.json'], blocker_codes: ['PublicClaimTrace_insufficient'] });
@@ -9673,6 +9706,11 @@ export async function emitGateTraceFirstPass(input: any) {
     gate_trace_gate_status: ordinaryL2AGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
     gate_trace_gate_reason: ordinaryL2AGateSatisfied ? 'ordinary_l2a_independent_gate_decisions_satisfied_public_release_blocked' as const : 'ordinary_analysis_gate_decisions_partial_not_level2_acceptance_proof' as const,
     independent_gate_decision_status: ordinaryL2AGateSatisfied ? 'independent_gate_satisfying' as const : 'independent_gate_partial' as const,
+    gate_trace_internal_l2a_status: ordinaryL2AGateSatisfied ? 'satisfied' as const : 'insufficient' as const,
+    gate_trace_internal_l2a_reason: ordinaryL2AReason,
+    gate_trace_internal_l2a_blocker_codes: ordinaryL2AGateSatisfied ? [] : ['ordinary_l2a_independent_proof_chain_incomplete'],
+    gate_trace_release_status: 'blocked' as const,
+    gate_trace_release_blocker_codes: ['runtime_operator_verification_required', 'deployment_provenance_unknown_or_unconfirmed', 'production_safe_blocked', 'customer_release_blocked'],
     gate_registry_version: 's9-19f-release-readiness-gate-registry-v1' as const,
     ordinary_l2a_analysis_proof_status: ordinaryL2AStatus,
     ordinary_l2a_analysis_proof_reason: ordinaryL2AReason,
