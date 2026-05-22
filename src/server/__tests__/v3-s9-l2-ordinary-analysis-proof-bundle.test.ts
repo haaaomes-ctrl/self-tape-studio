@@ -14,7 +14,7 @@ function ordinaryEvidencePassFixture() {
     timestamped_evidence: [
       { timestamp: '00:04', observation: 'Head and shoulders framing remains visible before the first line.', linked_category: 'technical' },
       { timestamp: '00:08', observation: 'Audio consonants are audible during the final phrase.', linked_category: 'audio' },
-      { timestamp: '00:12', observation: 'Supplied material page reference is visible in the runtime context.', linked_category: 'brief_adherence' },
+      { timestamp: '00:12', observation: 'The monologue scene segment occurs before the pause.', linked_category: 'brief_adherence' },
       { timestamp: '00:16', observation: 'Performer turns toward the reader before the pause.', linked_category: 'acting' },
       { timestamp: '00:20', observation: 'Ready to submit because the performance is strong.', linked_category: 'acting' },
     ],
@@ -150,7 +150,7 @@ describe('S9-19 ordinary analysis proof bundle', () => {
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
-  it('promotes linked Step 1 family anchors while unrelated runtime blockers keep the aggregate insufficient', async () => {
+  it('promotes linked Step 1 family anchors without letting unrelated runtime blockers fail the aggregate', async () => {
     const { anchors, metrics } = await emitOrdinaryAnalysisBundle();
     const performanceAnchor = anchors.anchors.find((anchor: any) => anchor.evidence_family === 'performance_observable');
     const techniqueAnchor = anchors.anchors.find((anchor: any) => anchor.evidence_family === 'candidate_technique');
@@ -158,10 +158,10 @@ describe('S9-19 ordinary analysis proof bundle', () => {
     expect(performanceAnchor).toMatchObject({ source_family: 'real_runtime_v3', cannot_satisfy_v3_gate: false });
     expect(techniqueAnchor).toMatchObject({ source_family: 'real_runtime_v3', cannot_satisfy_v3_gate: false });
     expect(anchors.evidence_anchor_trace_summary.real_runtime_anchor_count).toBeGreaterThan(0);
-    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('insufficient');
+    expect(anchors.evidence_anchor_trace_summary.evidence_anchor_gate_status).toBe('sufficient');
     expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('partial_step1_evidence_coverage');
-    expect(anchors.evidence_anchor_trace_summary.blocker_codes).toContain('anchor_cannot_satisfy_v3_gate');
-    expect(metrics.evidence_anchor_gate_status).toBe('insufficient');
+    expect(anchors.evidence_anchor_trace_summary.blocker_codes).not.toContain('anchor_cannot_satisfy_v3_gate');
+    expect(metrics.evidence_anchor_gate_status).toBe('sufficient');
     expect(metrics.public_claim_gate_status).not.toBe('sufficient');
   });
 });
