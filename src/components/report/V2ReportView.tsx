@@ -6,10 +6,12 @@
 // role-fit, raw report data and internal QA artefacts.
 
 import { Badge } from "@/components/ui/badge";
+import {
+  createLimitedPublicReportViewModel,
+  projectPublicReportViewModel,
+  type PublicReportViewModel,
+} from "@/lib/public-report-view-model";
 import { cn } from "@/lib/utils";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type V2 = any;
 
 function safeStr(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -221,33 +223,41 @@ export function V2ReportView({
   report,
   takeNumber,
 }: {
-  report: V2;
+  report: unknown;
   takeNumber?: number;
   auditionType?: unknown;
 }) {
-  if (!report || typeof report !== "object") return null;
+  const viewModel: PublicReportViewModel =
+    projectPublicReportViewModel(report) ??
+    createLimitedPublicReportViewModel({
+      reason:
+        "This report could not generate a reliable fix-first item from the available evidence.",
+    });
 
-  const verdict = safeObj(report.submission_verdict);
+  const reportData = viewModel as unknown as Record<string, unknown>;
+  const verdict = safeObj(reportData.submission_verdict);
   const decision = safeStr(verdict?.decision);
-  const verdictLabel = safeStr(verdict?.label) ?? safeStr(report.verdict) ?? "Review carefully";
+  const verdictLabel = safeStr(verdict?.label) ?? "Review carefully";
   const verdictReason = safeStr(verdict?.reason);
-  const why = safeObj(report.why_this_verdict);
+  const why = safeObj(reportData.why_this_verdict);
   const whySummary = safeStr(why?.summary) ?? verdictReason;
   const whyReasons = textList(why?.main_reasons);
   const limitations = textList(why?.limitations);
-  const reliability = safeObj(report.feedback_reliability);
-  const reliabilityLevel = safeStr(reliability?.level) ?? safeStr(report.reliability);
+  const reliability = safeObj(reportData.feedback_reliability);
+  const reliabilityLevel = safeStr(reliability?.level);
   const reliabilitySummary = safeStr(reliability?.summary);
-  const fixes = priorityFixes(report.priority_fixes);
-  const mustFix = textList(report.must_fix_before_submitting);
-  const shouldImprove = textList(report.should_improve_if_retaking);
-  const optionalPolish = textList(report.optional_polish);
+  const fixes = priorityFixes(reportData.priority_fixes);
+  const mustFix = textList(reportData.must_fix_before_submitting);
+  const shouldImprove = textList(reportData.should_improve_if_retaking);
+  const optionalPolish = textList(reportData.optional_polish);
   const preserve =
-    textList(report.preserve).length > 0 ? textList(report.preserve) : textList(report.strengths);
-  const doNotOverfix = textList(report.do_not_overfix);
-  const notAssessable = textList(report.not_assessable);
-  const plan = planSteps(report.next_take_plan);
-  const briefAchievement = safeObj(report.brief_achievement);
+    textList(reportData.preserve).length > 0
+      ? textList(reportData.preserve)
+      : textList(reportData.strengths);
+  const doNotOverfix = textList(reportData.do_not_overfix);
+  const notAssessable = textList(reportData.not_assessable);
+  const plan = planSteps(reportData.next_take_plan);
+  const briefAchievement = safeObj(reportData.brief_achievement);
 
   return (
     <div className="space-y-6">
@@ -317,7 +327,7 @@ export function V2ReportView({
 
       <BriefAchievement achievement={briefAchievement} />
 
-      <BriefRequirements requirements={report.brief_requirements} />
+      <BriefRequirements requirements={reportData.brief_requirements} />
 
       {fixes.length > 0 && (
         <Section title="Prioritised fixes">

@@ -19,24 +19,18 @@ describe("v2 flag-off isolation (Phase 3A)", () => {
   });
 
   it("pipeline only invokes the v2 builder behind the flag", () => {
-    const src = readFileSync(
-      resolve(__dirname, "../process-take.server.ts"),
-      "utf8",
-    );
+    const src = readFileSync(resolve(__dirname, "../process-take.server.ts"), "utf8");
     // Phase 3B: persistence is now flag-gated, but the gate itself must exist.
     expect(src).toContain("future_report_enabled");
-    expect(src).toContain("buildV2Report");
-    expect(src).toContain("validateV2PublicBoundary");
+    expect(src).toContain("buildPublicReportViewModel");
+    expect(src).toContain("public_report_view_model_persisted");
     // score_breakdown must never be the v2 object — that surface stays v1.
     expect(src).not.toMatch(/score_breakdown:\s*v2/);
   });
 
   it("v2 builder is not imported at module top level (pure dynamic import)", () => {
-    const src = readFileSync(
-      resolve(__dirname, "../process-take.server.ts"),
-      "utf8",
-    );
-    // Static import of the builder would defeat dark-launch isolation.
-    expect(src).not.toMatch(/^import .*v2-report-builder/m);
+    const src = readFileSync(resolve(__dirname, "../process-take.server.ts"), "utf8");
+    // Static import of the public report builder would defeat dark-launch isolation.
+    expect(src).not.toMatch(/^import .*public-report-view-model\.server/m);
   });
 });
