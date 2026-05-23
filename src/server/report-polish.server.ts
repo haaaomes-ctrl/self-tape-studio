@@ -760,14 +760,32 @@ function deriveFallbackBriefRequirements(
   const observedSong =
     componentTypes.has("song") ||
     /\b(?:song|singing|sung|music|musical\s+number|vocal)\b/.test(observedMaterialText);
-  const songIncomplete =
-    observedSong &&
-    /\b(?:partial|partly|incomplete|cut\s*off|cuts\s*off|abrupt|does\s+not\s+finish|did\s+not\s+finish|before\s+completion|ends?\s+early)\b/.test(
+  const explicitCompletionGap =
+    /\b(?:partial|partly|incomplete|cut\s*off|cuts\s*off|abrupt|does\s+not\s+finish|did\s+not\s+finish|before\s+completion|ends?\s+early|completion\s+could\s+not\s+be\s+confirmed|package\s+(?:is\s+)?(?:incomplete|not\s+complete|needs\s+completion))\b/.test(
       allEvidence,
     );
+  const explicitSongAbsence =
+    /\b(?:no\s+(?:required\s+)?song|song\s+section\s+(?:missing|absent)|does\s+not\s+(?:include|contain)\s+(?:the\s+)?(?:required\s+)?song|available\s+evidence\s+does\s+not\s+identify\s+(?:a\s+)?song)\b/.test(
+      allEvidence,
+    );
+  const missingRequiredScene =
+    requiresSide &&
+    !observedScene &&
+    (observedSong ||
+      observedMaterialText.length > 0 ||
+      /\b(?:no\s+observed\s+side|side\s*1\s+(?:is\s+)?missing|required\s+acting\s+side\s+is\s+not\s+present|missing\s+(?:required\s+)?side|required\s+material\s+is\s+incomplete)\b/.test(
+        allEvidence,
+      ));
+  const packageIncomplete =
+    explicitCompletionGap ||
+    missingRequiredScene ||
+    /\b(?:required\s+material\s+is\s+incomplete|final\s+edit\s+needs\s+a\s+playback\s+check|package\s+completion\s+could\s+not\s+be\s+confirmed)\b/.test(
+      allEvidence,
+    );
+  const songIncomplete = observedSong && explicitCompletionGap;
   const requirements: FallbackBriefRequirement[] = [];
 
-  if (requiresSide && !observedScene && (observedSong || observedMaterialText.length > 0)) {
+  if (missingRequiredScene) {
     requirements.push({
       source_text: fallbackSourceText(briefText, "side"),
       public_summary: "Include the required Side 1 acting scene.",
@@ -796,9 +814,25 @@ function deriveFallbackBriefRequirements(
         public_evidence_summary:
           "The tape contains a song section, but the evidence indicates it is incomplete or cuts off before completion.",
         assessability_limits: [],
-        next_take_action: "Record the song through to completion without an abrupt cut-off.",
+        next_take_action:
+          "Complete the song section or confirm the song runs through to the end before uploading.",
       });
-    } else if (!observedSong && observedMaterialText.length > 0) {
+    } else if (packageIncomplete) {
+      requirements.push({
+        source_text: fallbackSourceText(briefText, "song"),
+        public_summary: "Complete or confirm the required song section.",
+        category: "mandatory",
+        obligation: "mandatory",
+        requirement_type: "song",
+        achievement_status: "partly_achieved",
+        readiness_impact: "material_gap",
+        public_evidence_summary:
+          "The brief requires a song as part of the package, and the song/package completion could not be fully confirmed from the available evidence.",
+        assessability_limits: [],
+        next_take_action:
+          "Complete the song section or confirm the song runs through to the end before uploading.",
+      });
+    } else if (explicitSongAbsence) {
       requirements.push({
         source_text: fallbackSourceText(briefText, "song"),
         public_summary: "Include the required song section.",
@@ -808,7 +842,7 @@ function deriveFallbackBriefRequirements(
         achievement_status: "not_achieved",
         readiness_impact: "material_gap",
         public_evidence_summary:
-          "The supplied brief asks for a song, but the available evidence does not identify a song section in the submitted tape.",
+          "The available evidence explicitly indicates that the required song section is not present in the submitted tape.",
         assessability_limits: [],
         next_take_action: "Record and include the required song section.",
       });
@@ -830,7 +864,9 @@ function deriveFallbackBriefRequirements(
         "Because required material is missing or incomplete, the final edited package cannot yet be treated as complete.",
       assessability_limits: [],
       next_take_action:
-        "Check that the final edit contains the required material in one continuous video.",
+        requiresSong && requiresSide
+          ? "Check that the song and Side 1 are both present in the final continuous video."
+          : "Check that the final edit contains the required material in one continuous video.",
     });
   }
 
@@ -895,7 +931,10 @@ function fallbackNextTakePlan(requirements: FallbackBriefRequirement[]): string[
     .map((item) => item.next_take_action)
     .filter((item): item is string => typeof item === "string" && item.length > 0);
   if (steps.length === 0) return [];
-  return [...steps, "Do a quick playback check before uploading."].slice(0, 10);
+  return [...steps, "Do a quick playback check before uploading to catch any cut-off."].slice(
+    0,
+    10,
+  );
 }
 
 /**
