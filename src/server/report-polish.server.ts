@@ -9,8 +9,7 @@
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
 
-const DEFAULT_MODEL =
-  process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
+const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
 
 const POLISH_SYSTEM_PROMPT = `You are a UK casting director, agent and acting coach writing a self-tape audition report. You will NOT be given the video. You will be given a LOCKED EVIDENCE block from a prior pass that did watch the tape.
 
@@ -34,6 +33,8 @@ Rules:
 - "Fix this first" must be the SINGLE highest-impact actionable note from the evidence. "Top improvements" must be specific and grounded in evidence_lines.
 - Volume targets (do NOT pad, do NOT artificially shorten when the evidence supports more): strengths 3–8 (max 12), improvements 3–10 (max 15), priority_fixes 2–5 (max 8), next_take_plan items 4–10 (max 15), presentation_notes max 6, timestamped_notes duration-scaled (<60s 3–5; 1–3m 6–10; 3–5m 8–14; 5–10m 12–24; 10m+ 18–36; absolute max 36). Coaching_drills as the schema allows.
 - Populate priority_fixes (2–5 prioritised fixes with kind tag) and next_take_plan (steps[] and optionally groups[]) when the evidence supports them. Do not duplicate improvements verbatim unless that is the clearest formulation.
+- Populate why_this_verdict, must_fix_before_submitting, should_improve_if_retaking, optional_polish, preserve, do_not_overfix, brief_achievement, brief_requirements and not_assessable when the locked evidence supports them. Keep must-fix, retake improvements and optional polish separate so the performer does not read every refinement as a reason to keep retaking.
+- Not assessable is a limitation state, not criticism. Do not collapse not_assessable into not_achieved. Do not invent brief requirements.
 - Populate category_rationale[<key>] for every category whose score is < 100: what_works, why_not_full_score, close_gap. For scores >= 90 also write standout_delta. Discipline-specific language; never generic praise; reserve 98–100 for near-flawless evidence; high scores must NOT reduce feedback volume; a 95 still gets a marginal improvement pathway.
 - Discipline depth: DANCE — cite movement evidence (rhythm/timing, control, spatial pathway, dynamics, performance intention); never invent style/subtype; never claim foot/leg cropping without timestamped evidence; no MT-role/employer language. MT — preserve Acting Scene + Song; cite acting-through-song with lyric/phrase/beat/transition; vocal distinguishes technique from story/style. Never use castability/recall/workshop/live-room/buyer overclaim.
 - Return ONLY via the submit_audition_report tool.`;
@@ -94,9 +95,7 @@ function buildEvidenceBlock(ev: EvidencePass): string {
   )}`;
 }
 
-export async function runReportPolish(
-  args: RunReportPolishArgs,
-): Promise<RunReportPolishResult> {
+export async function runReportPolish(args: RunReportPolishArgs): Promise<RunReportPolishResult> {
   const model = args.model ?? DEFAULT_MODEL;
   const startedAt = Date.now();
 
@@ -264,7 +263,58 @@ export function enforceLockedFields(
 // ---------- Conservative unsupported-claim enforcement ----------
 
 const STOPWORDS = new Set([
-  "the","a","an","and","or","but","of","in","on","to","for","with","at","by","is","are","was","were","be","been","being","this","that","these","those","it","its","as","from","into","over","under","than","then","so","if","when","while","very","more","less","most","least","you","your","they","their","we","our","i","my","me",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "of",
+  "in",
+  "on",
+  "to",
+  "for",
+  "with",
+  "at",
+  "by",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "as",
+  "from",
+  "into",
+  "over",
+  "under",
+  "than",
+  "then",
+  "so",
+  "if",
+  "when",
+  "while",
+  "very",
+  "more",
+  "less",
+  "most",
+  "least",
+  "you",
+  "your",
+  "they",
+  "their",
+  "we",
+  "our",
+  "i",
+  "my",
+  "me",
 ]);
 
 function tokenise(s: string): string[] {
@@ -345,9 +395,7 @@ export function enforceUnsupportedClaims(
   // ---- Strict: submission_risk_flags ----
   if (Array.isArray(report.submission_risk_flags)) {
     const riskCorpus = [
-      ...evidence.risk_evidence.map((r) =>
-        `${r.flag} ${r.why}`.toLowerCase(),
-      ),
+      ...evidence.risk_evidence.map((r) => `${r.flag} ${r.why}`.toLowerCase()),
       ...corpusLower,
     ];
     const filtered = report.submission_risk_flags.filter(
@@ -379,10 +427,7 @@ export function enforceUnsupportedClaims(
   }
 
   // ---- Strict-ish: role_fit_notes ----
-  if (
-    typeof report.role_fit_notes === "string" &&
-    report.role_fit_notes.trim().length > 0
-  ) {
+  if (typeof report.role_fit_notes === "string" && report.role_fit_notes.trim().length > 0) {
     const roleAssessable =
       !!evidence.evidence_sufficiency?.role_fit_assessable &&
       !!evidence.evidence_sufficiency?.brief_assessable;
@@ -571,23 +616,73 @@ export function renderFallbackReport(
   const ba = evidence.brief_adherence_evidence;
 
   const strengths = evidence.core_strengths_evidence
-    .map((s) =>
-      s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
-    )
+    .map((s) => (s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area))
     .filter((x) => typeof x === "string" && x.length > 0)
     .slice(0, 12);
 
   const improvements = evidence.core_improvements_evidence
-    .map((s) =>
-      s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
-    )
+    .map((s) => (s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area))
     .filter((x) => typeof x === "string" && x.length > 0)
     .slice(0, 15);
 
-  const fixFirst =
-    (evidence.fix_first_evidence ?? "").trim() ||
-    improvements[0] ||
-    "";
+  const fixFirst = (evidence.fix_first_evidence ?? "").trim() || improvements[0] || "";
+  const priorityFixes = fixFirst
+    ? [
+        {
+          headline: fixFirst,
+          rationale: "Highest-impact item available from the locked evidence.",
+          kind: "critical_gap",
+        },
+      ]
+    : [];
+  const notAssessable = [
+    ...(!evidence.evidence_sufficiency?.audio_assessable
+      ? ["Audio limits how firmly vocal or spoken detail can be judged."]
+      : []),
+    ...(!evidence.evidence_sufficiency?.video_assessable
+      ? ["Video or framing limits how firmly visual performance detail can be judged."]
+      : []),
+    ...(mode === "brief" && !evidence.evidence_sufficiency?.brief_assessable
+      ? ["Brief achievement could not be fully assessed from the available evidence."]
+      : []),
+  ];
+  const briefAchievement =
+    mode === "brief"
+      ? {
+          overall_status: evidence.evidence_sufficiency?.brief_assessable
+            ? "partly_achieved"
+            : "not_assessable",
+          summary: evidence.evidence_sufficiency?.brief_assessable
+            ? "Brief achievement was derived from the available evidence pass."
+            : "Brief achievement could not be fully assessed from the available evidence pass.",
+          mandatory_requirements_status: evidence.evidence_sufficiency?.brief_assessable
+            ? "Review the itemised brief evidence before submission."
+            : "Mandatory brief requirements could not be confirmed.",
+          mandatory_status: evidence.evidence_sufficiency?.brief_assessable
+            ? "some_gaps"
+            : "not_assessable",
+          readiness_impact: evidence.evidence_sufficiency?.brief_assessable
+            ? "material_gap"
+            : "not_assessable",
+          readiness_effect: evidence.evidence_sufficiency?.brief_assessable
+            ? "Use the itemised brief checks to decide whether the gap needs a retake."
+            : "Treat this as a brief-assessability limitation, not a performance failure.",
+          ...(!evidence.evidence_sufficiency?.brief_assessable
+            ? {
+                not_assessable_summary:
+                  "Brief achievement could not be fully assessed from the available evidence.",
+              }
+            : {}),
+        }
+      : {
+          overall_status: "not_applicable",
+          summary: "No supplied brief was available to assess.",
+          mandatory_requirements_status: "No mandatory brief requirements supplied.",
+          mandatory_status: "not_applicable",
+          readiness_impact: "supports_submission",
+          readiness_effect:
+            "The report uses general submission standards and observable tape evidence only.",
+        };
 
   const timestamped_notes = evidence.timestamped_evidence
     .map((t) => {
@@ -626,8 +721,7 @@ export function renderFallbackReport(
     detected_components: evidence.detected_components,
     consistency_modifier: 0,
     confidence: 60,
-    confidence_reason:
-      "Generated from evidence pass (polish step unavailable).",
+    confidence_reason: "Generated from evidence pass (polish step unavailable).",
     overall_score:
       Math.round(
         ((evidence.raw_scores.technical ?? 0) +
@@ -638,15 +732,13 @@ export function renderFallbackReport(
           5,
       ) || 0,
     casting_headline: "Report generated from observation evidence.",
-    casting_insight:
-      "Polish step unavailable — see strengths and improvements below.",
+    casting_insight: "Polish step unavailable — see strengths and improvements below.",
     scores: { ...evidence.raw_scores },
     brief_adherence_breakdown: {
       material_compliance: ba?.score_material ?? evidence.raw_scores.brief_adherence,
       technical_compliance: ba?.score_technical ?? evidence.raw_scores.brief_adherence,
       instruction_precision: ba?.score_instruction ?? evidence.raw_scores.brief_adherence,
-      professionalism_signals:
-        ba?.score_professional ?? evidence.raw_scores.brief_adherence,
+      professionalism_signals: ba?.score_professional ?? evidence.raw_scores.brief_adherence,
       note:
         [
           ba?.material_compliance,
@@ -665,22 +757,38 @@ export function renderFallbackReport(
       brief_adherence: cn.brief_adherence ?? "",
       professional_presentation: cn.professional_presentation ?? "",
     },
-    strengths:
-      strengths.length > 0 ? strengths : ["Performance captured for review."],
-    improvements:
-      improvements.length > 0 ? improvements : ["Continue refining the take."],
+    strengths: strengths.length > 0 ? strengths : ["Performance captured for review."],
+    preserve:
+      strengths.length > 0 ? strengths : ["Preserve the clearest choices already captured."],
+    improvements: improvements.length > 0 ? improvements : ["Continue refining the take."],
     fix_first: fixFirst,
-    timestamped_notes,
-    coaching_drills: [
-      "Re-run the take with sharper choices on the strongest moment.",
+    priority_fixes: priorityFixes,
+    why_this_verdict: {
+      summary:
+        "Report polish was unavailable, so this recommendation is based on the locked observation evidence and should be reviewed with that limitation in mind.",
+      main_reasons: [
+        fixFirst || "No single public-safe priority fix was available from the evidence pass.",
+      ],
+    },
+    must_fix_before_submitting: submission_risk_flags
+      .filter((flag) => flag.severity === "high")
+      .map((flag) => flag.flag),
+    should_improve_if_retaking: improvements.slice(0, 10),
+    optional_polish: [],
+    do_not_overfix: [
+      "Do not keep retaking just to chase minor polish; re-record only for a clear priority fix.",
     ],
+    brief_requirements: [],
+    brief_achievement: briefAchievement,
+    not_assessable: notAssessable,
+    timestamped_notes,
+    coaching_drills: ["Re-run the take with sharper choices on the strongest moment."],
     submission_risk_flags,
     casting_risk_explanations,
     role_fit_notes,
     role_fit_modifier: 0,
     role_fit_confidence: evidence.role_fit_confidence ?? "low",
     presentation_notes: evidence.presentation_evidence.slice(0, 6),
-    at_risk:
-      evidence.raw_scores.brief_adherence < 40 && mode === "brief",
+    at_risk: evidence.raw_scores.brief_adherence < 40 && mode === "brief",
   };
 }

@@ -126,8 +126,7 @@ const BRIEF_OVERCONFIDENT_PATTERNS: Array<[RegExp, string]> = [
   [/\bspot\s+on\b[^.!?]*[.!?]?/gi, ""],
   [/\bexactly\s+what\s+was\s+requested\b[^.!?]*[.!?]?/gi, ""],
 ];
-const BRIEF_REPLACEMENT =
-  "The submitted material appears consistent with the supplied brief.";
+const BRIEF_REPLACEMENT = "The submitted material appears consistent with the supplied brief.";
 
 // Presentation polish/wardrobe/equipment
 const PRESENTATION_POLISH_TRIGGERS = [
@@ -238,7 +237,13 @@ function cleanProse(
   opts: { allowGeneric?: boolean; presentationField?: boolean } = {},
 ): FieldResult {
   if (!text || typeof text !== "string") {
-    return { text: "", castabilityRemoved: 0, castabilityRewritten: 0, genericRemoved: 0, polishRemoved: 0 };
+    return {
+      text: "",
+      castabilityRemoved: 0,
+      castabilityRewritten: 0,
+      genericRemoved: 0,
+      polishRemoved: 0,
+    };
   }
   let castabilityRemoved = 0;
   let castabilityRewritten = 0;
@@ -265,7 +270,10 @@ function cleanProse(
     }
     kept.push(s);
   }
-  let out = kept.join(" ").replace(/\s{2,}/g, " ").trim();
+  let out = kept
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   // Brief-adherence overconfidence rewrite (always runs across all prose).
   for (const [re] of BRIEF_OVERCONFIDENT_PATTERNS) {
     out = out.replace(re, "");
@@ -294,7 +302,13 @@ function rewriteFrameBreak(text: string): { text: string; rewrites: number } {
       out.push(s);
     }
   }
-  return { text: out.join(" ").replace(/\s{2,}/g, " ").trim(), rewrites };
+  return {
+    text: out
+      .join(" ")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+    rewrites,
+  };
 }
 
 function countBriefRewrites(text: string): number {
@@ -348,10 +362,7 @@ export function enforcePublicReportOutputQuality(
     counters.brief_overconfidence_rewritten += countBriefRewrites(raw);
   };
 
-  const cleanString = (
-    raw: unknown,
-    opts: { presentationField?: boolean } = {},
-  ): string | null => {
+  const cleanString = (raw: unknown, opts: { presentationField?: boolean } = {}): string | null => {
     if (typeof raw !== "string") return null;
     const res = cleanProse(raw, opts);
     tally(res, raw);
@@ -374,10 +385,7 @@ export function enforcePublicReportOutputQuality(
   }
 
   // Strengths / improvements / casting risk explanations / presentation_notes
-  const cleanStringArr = (
-    arr: unknown,
-    opts: { presentationField?: boolean } = {},
-  ): unknown[] => {
+  const cleanStringArr = (arr: unknown, opts: { presentationField?: boolean } = {}): unknown[] => {
     if (!Array.isArray(arr)) return [];
     const out: unknown[] = [];
     for (const item of arr) {
@@ -402,6 +410,16 @@ export function enforcePublicReportOutputQuality(
 
   if (Array.isArray(r.strengths)) r.strengths = cleanStringArr(r.strengths);
   if (Array.isArray(r.improvements)) r.improvements = cleanStringArr(r.improvements);
+  for (const key of [
+    "must_fix_before_submitting",
+    "should_improve_if_retaking",
+    "optional_polish",
+    "preserve",
+    "do_not_overfix",
+    "not_assessable",
+  ]) {
+    if (Array.isArray(r[key])) r[key] = cleanStringArr(r[key]);
+  }
   if (Array.isArray(r.casting_risk_explanations))
     r.casting_risk_explanations = cleanStringArr(r.casting_risk_explanations);
   if (Array.isArray(r.presentation_notes))
@@ -484,12 +502,115 @@ export function enforcePublicReportOutputQuality(
     return out;
   };
 
-  if (r.next_take_plan && typeof r.next_take_plan === "object" && !Array.isArray(r.next_take_plan)) {
+  if (
+    r.next_take_plan &&
+    typeof r.next_take_plan === "object" &&
+    !Array.isArray(r.next_take_plan)
+  ) {
     const ntp = { ...(r.next_take_plan as Record<string, unknown>) };
     if (Array.isArray(ntp.steps)) ntp.steps = cleanSteps(ntp.steps);
     r.next_take_plan = ntp;
   }
   if (Array.isArray(r.coaching_drills)) r.coaching_drills = cleanSteps(r.coaching_drills);
+
+  if (
+    r.why_this_verdict &&
+    typeof r.why_this_verdict === "object" &&
+    !Array.isArray(r.why_this_verdict)
+  ) {
+    const wtv = { ...(r.why_this_verdict as Record<string, unknown>) };
+    if (typeof wtv.summary === "string") {
+      const cleaned = cleanString(wtv.summary);
+      wtv.summary = cleaned ?? "";
+    }
+    if (Array.isArray(wtv.main_reasons)) wtv.main_reasons = cleanSteps(wtv.main_reasons);
+    if (Array.isArray(wtv.limitations)) wtv.limitations = cleanSteps(wtv.limitations);
+    r.why_this_verdict = wtv;
+  }
+
+  if (
+    r.brief_achievement &&
+    typeof r.brief_achievement === "object" &&
+    !Array.isArray(r.brief_achievement)
+  ) {
+    const raw = r.brief_achievement as Record<string, unknown>;
+    const ba: Record<string, unknown> = {};
+    for (const key of [
+      "overall_status",
+      "summary",
+      "mandatory_requirements_status",
+      "mandatory_status",
+      "readiness_impact",
+      "readiness_effect",
+      "not_assessable_summary",
+    ]) {
+      if (key in raw) ba[key] = raw[key];
+    }
+    for (const key of [
+      "summary",
+      "mandatory_requirements_status",
+      "readiness_effect",
+      "not_assessable_summary",
+    ]) {
+      if (typeof ba[key] === "string") {
+        const cleaned = cleanString(ba[key]);
+        ba[key] = cleaned ?? "";
+      }
+    }
+    r.brief_achievement = ba;
+  }
+
+  if (Array.isArray(r.brief_requirements)) {
+    r.brief_requirements = (r.brief_requirements as unknown[])
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+        const raw = item as Record<string, unknown>;
+        const obj: Record<string, unknown> = {};
+        for (const key of [
+          "requirement_id",
+          "source_text",
+          "public_summary",
+          "requirement",
+          "text",
+          "category",
+          "obligation",
+          "requirement_type",
+          "achievement_status",
+          "readiness_impact",
+          "public_evidence_summary",
+          "assessability_limits",
+          "next_take_action",
+        ]) {
+          if (key in raw) obj[key] = raw[key];
+        }
+        for (const key of [
+          "source_text",
+          "public_summary",
+          "requirement",
+          "text",
+          "category",
+          "obligation",
+          "requirement_type",
+          "public_evidence_summary",
+          "next_take_action",
+        ]) {
+          if (typeof obj[key] === "string") {
+            const cleaned = cleanString(obj[key]);
+            obj[key] = cleaned ?? "";
+          }
+        }
+        if (Array.isArray(obj.assessability_limits)) {
+          obj.assessability_limits = cleanSteps(obj.assessability_limits);
+        }
+        const sourceText = typeof obj.source_text === "string" ? obj.source_text.trim() : "";
+        const publicSummary =
+          typeof obj.public_summary === "string" ? obj.public_summary.trim() : "";
+        const requirement = typeof obj.requirement === "string" ? obj.requirement.trim() : "";
+        const text = typeof obj.text === "string" ? obj.text.trim() : "";
+        return sourceText || publicSummary || requirement || text ? obj : null;
+      })
+      .filter((item): item is Record<string, unknown> => item !== null);
+  }
 
   // Apply framing rewrite to improvements/strengths text fields too
   if (ctx.framingFixed) {
@@ -516,6 +637,14 @@ export function enforcePublicReportOutputQuality(
       });
     };
     r.improvements = applyFraming(r.improvements);
+    for (const key of [
+      "must_fix_before_submitting",
+      "should_improve_if_retaking",
+      "optional_polish",
+      "do_not_overfix",
+    ]) {
+      r[key] = applyFraming(r[key]);
+    }
     if (r.fix_first && typeof r.fix_first === "object") {
       const ff = { ...(r.fix_first as Record<string, unknown>) };
       for (const k of ["headline", "why_now"]) {
@@ -603,7 +732,11 @@ export function enforcePublicReportOutputQuality(
   }
 
   // next_take_plan.groups[].items[]
-  if (r.next_take_plan && typeof r.next_take_plan === "object" && !Array.isArray(r.next_take_plan)) {
+  if (
+    r.next_take_plan &&
+    typeof r.next_take_plan === "object" &&
+    !Array.isArray(r.next_take_plan)
+  ) {
     const ntp = { ...(r.next_take_plan as Record<string, unknown>) };
     if (Array.isArray(ntp.groups)) {
       const beforeGroups = (ntp.groups as unknown[]).length;
@@ -624,7 +757,11 @@ export function enforcePublicReportOutputQuality(
   }
 
   // category_rationale walker
-  if (r.category_rationale && typeof r.category_rationale === "object" && !Array.isArray(r.category_rationale)) {
+  if (
+    r.category_rationale &&
+    typeof r.category_rationale === "object" &&
+    !Array.isArray(r.category_rationale)
+  ) {
     const cr = { ...(r.category_rationale as Record<string, unknown>) };
     const scoresObj =
       r.scores && typeof r.scores === "object" && !Array.isArray(r.scores)
@@ -676,7 +813,10 @@ export function enforcePublicReportOutputQuality(
         }
       }
       // Standout delta must not claim perfection.
-      if (typeof obj.standout_delta === "string" && STANDOUT_OVERCLAIM_RE.test(obj.standout_delta)) {
+      if (
+        typeof obj.standout_delta === "string" &&
+        STANDOUT_OVERCLAIM_RE.test(obj.standout_delta)
+      ) {
         obj.standout_delta = "";
         counters.category_rationale_scrubbed++;
       }
@@ -725,10 +865,7 @@ export function enforcePublicReportOutputQuality(
     typeof r.category_notes === "object"
   ) {
     const cn = r.category_notes as Record<string, unknown>;
-    if (
-      typeof cn.brief_adherence === "string" &&
-      cn.brief_adherence.trim().length === 0
-    ) {
+    if (typeof cn.brief_adherence === "string" && cn.brief_adherence.trim().length === 0) {
       cn.brief_adherence = BRIEF_REPLACEMENT;
     }
   }
@@ -742,9 +879,7 @@ export function enforcePublicReportOutputQuality(
   // any unanchored cropping/visibility claim elsewhere in the report is
   // removed, and matching submission_risk_flags are demoted.
   // -------------------------------------------------------------------------
-  const tsNotes = Array.isArray(r.timestamped_notes)
-    ? (r.timestamped_notes as unknown[])
-    : [];
+  const tsNotes = Array.isArray(r.timestamped_notes) ? (r.timestamped_notes as unknown[]) : [];
   const anchoredVisibility = tsNotes.some((n) => {
     if (!n || typeof n !== "object") return false;
     const note = (n as Record<string, unknown>).note;
@@ -765,7 +900,10 @@ export function enforcePublicReportOutputQuality(
         kept.push(s);
       }
       return {
-        text: kept.join(" ").replace(/\s{2,}/g, " ").trim(),
+        text: kept
+          .join(" ")
+          .replace(/\s{2,}/g, " ")
+          .trim(),
         removed,
       };
     };
@@ -829,21 +967,17 @@ export function enforcePublicReportOutputQuality(
   };
   if (Array.isArray(r.submission_risk_flags)) {
     const before = (r.submission_risk_flags as unknown[]).length;
-    r.submission_risk_flags = (r.submission_risk_flags as unknown[]).filter(
-      (f) => !isSoftRisk(f),
-    );
+    r.submission_risk_flags = (r.submission_risk_flags as unknown[]).filter((f) => !isSoftRisk(f));
     counters.submission_risk_demoted += before - (r.submission_risk_flags as unknown[]).length;
   }
   if (Array.isArray(r.casting_risk_explanations)) {
-    r.casting_risk_explanations = (r.casting_risk_explanations as unknown[]).filter(
-      (f) => {
-        if (!f || typeof f !== "object") return true;
-        const flag = (f as Record<string, unknown>).flag;
-        if (typeof flag !== "string") return true;
-        if (!SOFT_RISK_LABEL_RE.test(flag)) return true;
-        return anchoredVisibility;
-      },
-    );
+    r.casting_risk_explanations = (r.casting_risk_explanations as unknown[]).filter((f) => {
+      if (!f || typeof f !== "object") return true;
+      const flag = (f as Record<string, unknown>).flag;
+      if (typeof flag !== "string") return true;
+      if (!SOFT_RISK_LABEL_RE.test(flag)) return true;
+      return anchoredVisibility;
+    });
   }
 
   return { report: r, counters };
@@ -853,9 +987,7 @@ export function enforcePublicReportOutputQuality(
  * Pure helper to detect "fixed framing" briefs — used by callers to decide
  * whether to flip `framingFixed` on the enforcement context.
  */
-export function detectFramingFixed(
-  framingText: string | null | undefined,
-): boolean {
+export function detectFramingFixed(framingText: string | null | undefined): boolean {
   if (!framingText || typeof framingText !== "string") return false;
   return /\b(?:head[-\s]and[-\s]shoulders|fixed|static|close[-\s]up|self[-\s]tape\s+camera[-\s]led)\b/i.test(
     framingText,

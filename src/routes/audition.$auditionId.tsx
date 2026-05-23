@@ -23,11 +23,6 @@ import { cn } from "@/lib/utils";
 import { brandTitle } from "@/config/brand";
 import { readReportSchemaVersion } from "@/lib/report-schema";
 import { V2ReportView } from "@/components/report/V2ReportView";
-import { ReadinessFirstReportShell } from "@/components/report/ReadinessFirstReportShell";
-
-function readinessFirstReportShellEnabled(): boolean {
-  return import.meta.env.VITE_READINESS_FIRST_REPORT_SHELL_ENABLED !== "false";
-}
 
 // Public-safe headline picker for v1 + v2 reports. Mirrors the server-side
 // helper in `report-output-enforcement.server.ts` (kept local to avoid
@@ -865,10 +860,6 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
 
   const r = take.report;
   if (!r) return null;
-
-  if (readinessFirstReportShellEnabled()) {
-    return <ReadinessFirstReportShell report={r} takeNumber={take.take_number} />;
-  }
 
   // Phase 3B — schema-version branch. Only "v2-component" routes to the v2
   // renderer; missing/unknown/v1-legacy continues through the existing v1

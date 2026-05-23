@@ -46,13 +46,26 @@ const futureDimensions: FutureDimensionsResult = {
       start: "00:00",
       end: "02:14",
       confidence: "high",
-      assessability: { component_assessable: true, visibility: "high", audio_balance: "medium", evidence_density: "high" },
+      assessability: {
+        component_assessable: true,
+        visibility: "high",
+        audio_balance: "medium",
+        evidence_density: "high",
+      },
       subtype: "ballad",
       style: "golden_age",
       form: "32_bar",
-      dimensions: { acting_through_song: { value: "present", confidence: "high", supports: ["a1"] } },
+      dimensions: {
+        acting_through_song: { value: "present", confidence: "high", supports: ["a1"] },
+      },
       evidence_anchors: [
-        { id: "a1", kind: "timestamp", note: "lift", supports: ["acting_through_song"], timestamp: "00:42" },
+        {
+          id: "a1",
+          kind: "timestamp",
+          note: "lift",
+          supports: ["acting_through_song"],
+          timestamp: "00:42",
+        },
       ],
     },
   ],
@@ -64,7 +77,14 @@ const futureDimensions: FutureDimensionsResult = {
 // forbidden tokens. Public scores still come from `legacyReport.scores`.
 const leakyLegacy = {
   audition_type: "musical_theatre",
-  scores: { technical: 70, audio: 70, vocal: 70, acting: 70, brief_adherence: 70, professional_presentation: 70 },
+  scores: {
+    technical: 70,
+    audio: 70,
+    vocal: 70,
+    acting: 70,
+    brief_adherence: 70,
+    professional_presentation: 70,
+  },
   shadow_scores: { acting: 80 }, // attacker leak
   qa_counters: { generic_praise_hits: 3 }, // attacker leak
   future_dimensions: { components: [] }, // attacker leak
@@ -72,21 +92,39 @@ const leakyLegacy = {
 
 describe("v2-report-boundary (Phase 3A)", () => {
   it("v2 output contains no forbidden private tokens at any depth", () => {
-    const v2 = buildV2Report({ legacyReport: leakyLegacy, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
+    const v2 = buildV2Report({
+      legacyReport: leakyLegacy,
+      futureDimensions,
+      auditionType: "musical_theatre",
+      mode: "baseline",
+    });
     expect(findForbidden(v2)).toEqual([]);
   });
 
-  it("synthetic public_categories alone is not a forbidden token", () => {
-    const v2 = buildV2Report({ legacyReport: leakyLegacy, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect("public_categories" in v2).toBe(true);
+  it("score-category configuration is omitted while public scoring is blocked", () => {
+    const v2 = buildV2Report({
+      legacyReport: leakyLegacy,
+      futureDimensions,
+      auditionType: "musical_theatre",
+      mode: "baseline",
+    });
+    expect("public_categories" in v2).toBe(false);
+    expect(JSON.stringify(v2)).not.toContain("scores");
   });
 
   it("a synthetic takes row carrying v2 in `report` still fails when private keys are injected", () => {
-    const v2 = buildV2Report({ legacyReport: leakyLegacy, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
+    const v2 = buildV2Report({
+      legacyReport: leakyLegacy,
+      futureDimensions,
+      auditionType: "musical_theatre",
+      mode: "baseline",
+    });
     const row = { id: "t1", report: v2 };
     expect(findForbidden(row)).toEqual([]);
     // Synthetic injection — proves the scanner detects leaks.
-    (row.report as unknown as Record<string, unknown>).future_shadow = { shadow_scores: { acting: 80 } };
+    (row.report as unknown as Record<string, unknown>).future_shadow = {
+      shadow_scores: { acting: 80 },
+    };
     const hits = findForbidden(row);
     expect(hits.some((h) => h.endsWith(".future_shadow"))).toBe(true);
   });
