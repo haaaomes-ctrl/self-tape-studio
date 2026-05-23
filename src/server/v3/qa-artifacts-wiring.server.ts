@@ -31,6 +31,42 @@ function getQAWriteWarning(result: unknown): string | null {
   );
 }
 
+function safeRuntimeCommit(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[a-fA-F0-9]{7,64}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeRuntimeBranch(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9._/-]{1,120}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeRuntimeDeploymentRef(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9._-]{1,120}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeRuntimeToken(value: unknown, maxLength = 120): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return new RegExp(`^[A-Za-z0-9._/-]{1,${maxLength}}$`).test(trimmed) ? trimmed : null;
+}
+
+function safeRuntimeTimestamp(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9:._/-]{1,80}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeRuntimeNote(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[A-Za-z0-9 .,_:/()@-]{1,240}$/.test(trimmed) ? trimmed : null;
+}
+
 const COMPARISON_ARTEFACT_IDS = [
   "comparison_raw",
   "comparison_report_internal",
@@ -309,6 +345,17 @@ export interface QARuntimeMetadata {
   runtime_verified_by_role?: string;
   operator_confirmation_status?: string;
   operator_confirmed_pr_or_commit?: string;
+  operator_confirmed_deployed_commit_sha?: string;
+  operator_confirmed_deployment_reference?: string;
+  operator_confirmed_branch?: string;
+  operator_confirmed_by?: string;
+  operator_confirmed_at?: string;
+  operator_confirmed_take_id?: string;
+  operator_confirmed_analysis_run_id?: string;
+  operator_confirmed_report_surface?: string;
+  operator_confirmation_source?: string;
+  operator_confirmation_scope?: string;
+  operator_confirmation_notes?: string;
   operator_confirmation_reason?: string;
   emitted_artefact_ids?: string[];
   emitted_blocked_artefact_ids?: string[];
@@ -1270,6 +1317,16 @@ export interface RuntimeVerificationTraceEmitterInput {
   operator_confirmation_reason?: string;
   operator_confirmed_runtime_build_ref?: string | null;
   operator_confirmed_runtime_pr_or_slice?: string | null;
+  operator_confirmed_deployed_commit_sha?: string | null;
+  operator_confirmed_deployment_reference?: string | null;
+  operator_confirmed_branch?: string | null;
+  operator_confirmed_by?: string | null;
+  operator_confirmed_at?: string | null;
+  operator_confirmed_take_id?: string | null;
+  operator_confirmed_analysis_run_id?: string | null;
+  operator_confirmed_report_surface?: string | null;
+  operator_confirmation_scope?: string | null;
+  operator_confirmation_notes?: string | null;
   operator_confirmation_source?:
     | "explicit_operator_runtime_message"
     | "deployment_dashboard"
@@ -1308,24 +1365,109 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
   }
   const root = input.root_dir ?? DEFAULT_ROOT;
   const provenance = resolveQADeploymentProvenance();
-  const runtimeVerifiedTakeIds = getStringArray(input.runtime_verified_take_ids);
+  const operatorConfirmedDeployedCommitSha =
+    safeRuntimeCommit(input.operator_confirmed_deployed_commit_sha) ??
+    safeRuntimeCommit(input.operator_confirmed_runtime_build_ref);
+  const operatorConfirmedDeploymentReference =
+    safeRuntimeDeploymentRef(input.operator_confirmed_deployment_reference) ??
+    (operatorConfirmedDeployedCommitSha ? null : safeRuntimeDeploymentRef(input.operator_confirmed_runtime_build_ref)) ??
+    safeRuntimeDeploymentRef(input.runtime_verified_deployment_ref);
+  const operatorConfirmedBranch = safeRuntimeBranch(input.operator_confirmed_branch);
+  const operatorConfirmedBy =
+    safeRuntimeToken(input.operator_confirmed_by, 80) ??
+    safeRuntimeToken(input.runtime_verified_by_role, 80);
+  const operatorConfirmedAt = safeRuntimeTimestamp(
+    input.operator_confirmed_at ?? input.runtime_verified_at,
+  );
+  const operatorConfirmedTakeId = safeRuntimeToken(input.operator_confirmed_take_id ?? input.take_id, 120);
+  const operatorConfirmedAnalysisRunId = safeRuntimeToken(
+    input.operator_confirmed_analysis_run_id ?? analysisRunId,
+    120,
+  );
+  const operatorConfirmedReportSurface = safeRuntimeToken(input.operator_confirmed_report_surface, 80);
+  const operatorConfirmationSource = safeRuntimeToken(
+    input.operator_confirmation_source ?? "unknown",
+    80,
+  ) ?? "unknown";
+  const operatorConfirmationScope =
+    safeRuntimeToken(input.operator_confirmation_scope, 80) ??
+    safeRuntimeToken(input.verification_scope ?? "ordinary_single_take", 80) ??
+    "ordinary_single_take";
+  const operatorConfirmationNotes = safeRuntimeNote(input.operator_confirmation_notes);
+  const operatorStatusRequested = input.operator_confirmation_status ?? "missing";
+  const operatorConfirmationDataPresent = Boolean(
+    operatorStatusRequested !== "missing" ||
+      operatorConfirmedDeployedCommitSha ||
+      operatorConfirmedDeploymentReference ||
+      operatorConfirmedBranch ||
+      operatorConfirmedBy ||
+      input.operator_confirmed_at ||
+      operatorConfirmedReportSurface,
+  );
+  const operatorConfirmationComplete =
+    ["confirmed", "provided"].includes(operatorStatusRequested) &&
+    Boolean(
+      (operatorConfirmedDeployedCommitSha || operatorConfirmedDeploymentReference) &&
+        operatorConfirmedBy &&
+        operatorConfirmedAt &&
+        operatorConfirmedTakeId &&
+        operatorConfirmedAnalysisRunId &&
+        operatorConfirmedReportSurface,
+    );
+  const operatorConfirmationStatus = operatorConfirmationComplete
+    ? "confirmed"
+    : operatorStatusRequested === "confirmed" || operatorStatusRequested === "provided"
+      ? "incomplete"
+      : operatorStatusRequested;
+  const runtimeVerifiedTakeIds = dedupePreservingOrder([
+    ...getStringArray(input.runtime_verified_take_ids),
+    ...(operatorConfirmedTakeId ? [operatorConfirmedTakeId] : []),
+  ]);
   const runtimeVerifiedComparisonRunIds = getStringArray(input.runtime_verified_comparison_run_ids);
   const runtimeVerifiedArtefactIds = getStringArray(input.runtime_verified_artefact_ids);
-  const runtimeBundleFreshnessStatus = input.runtime_bundle_freshness_status ?? "unknown";
+  const envDeploymentContextPresent =
+    provenance.deployment_provenance_status === "resolved" &&
+    (provenance.build_commit_sha !== "unknown" || provenance.deployment_revision !== "unknown");
+  const runtimeBundleFreshnessStatus =
+    input.runtime_bundle_freshness_status ??
+    (operatorConfirmationComplete || envDeploymentContextPresent ? "fresh" : "unknown");
   const runtimeBundleMatchesCurrentImplementationStatus =
     input.runtime_bundle_matches_current_implementation_status ??
     input.runtime_bundle_matches_current_commit_status ??
-    "unknown";
+    (operatorConfirmationComplete
+      ? "operator_confirmed"
+      : envDeploymentContextPresent
+        ? "matches_current_implementation"
+        : "unknown");
   const runtimeBundleMatchesCurrentCommitStatus =
     input.runtime_bundle_matches_current_commit_status ??
     runtimeBundleMatchesCurrentImplementationStatus;
-  const operatorConfirmationStatus = input.operator_confirmation_status ?? "missing";
   const deploymentProvenanceStatus =
     provenance.deployment_provenance_status ?? "unknown_no_safe_env_var_found";
+  const conflictFields = [
+    ...(operatorConfirmedDeployedCommitSha &&
+    provenance.build_commit_sha !== "unknown" &&
+    operatorConfirmedDeployedCommitSha.toLowerCase() !== String(provenance.build_commit_sha).toLowerCase()
+      ? ["commit"]
+      : []),
+    ...(operatorConfirmedBranch &&
+    provenance.source_branch !== "unknown" &&
+    operatorConfirmedBranch !== provenance.source_branch
+      ? ["branch"]
+      : []),
+    ...(operatorConfirmedDeploymentReference &&
+    provenance.deployment_revision !== "unknown" &&
+    operatorConfirmedDeploymentReference !== provenance.deployment_revision
+      ? ["deployment_reference"]
+      : []),
+  ];
+  const runtimeProvenanceConflict = conflictFields.length > 0;
+  const effectiveDeploymentProvenanceStatus = runtimeProvenanceConflict
+    ? "runtime_provenance_conflict"
+    : deploymentProvenanceStatus;
   const deploymentContextSatisfied =
-    deploymentProvenanceStatus === "resolved" ||
-    operatorConfirmationStatus === "confirmed" ||
-    operatorConfirmationStatus === "provided";
+    !runtimeProvenanceConflict &&
+    (envDeploymentContextPresent || operatorConfirmationComplete);
   const bundleFresh = ["fresh", "verified_fresh", "current"].includes(runtimeBundleFreshnessStatus);
   const bundleMatches =
     [
@@ -1373,9 +1515,19 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     ...(!deploymentContextSatisfied
       ? ["deployment_provenance_or_operator_confirmation_required"]
       : []),
+    ...(runtimeProvenanceConflict ? ["runtime_provenance_conflict"] : []),
     ...(!runtimeContextPresent ? ["runtime_verified_runtime_scope_required"] : []),
     ...(runtimeVerifiedArtefactIds.length > 0 ? [] : ["runtime_verified_artefact_required"]),
   ]);
+  const runtimeVerifiedDeploymentRef =
+    input.runtime_verified_deployment_ref ??
+    operatorConfirmedDeploymentReference ??
+    operatorConfirmedDeployedCommitSha ??
+    (envDeploymentContextPresent
+      ? provenance.deployment_revision !== "unknown"
+        ? provenance.deployment_revision
+        : provenance.build_commit_sha
+      : null);
   const runtimeVerificationTraceSummary = {
     runtime_operator_verification_status: runtimeOperatorVerificationStatus,
     runtime_operator_verification_reason:
@@ -1391,31 +1543,51 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     runtime_verified_take_ids: runtimeVerifiedTakeIds,
     runtime_verified_comparison_run_ids: runtimeVerifiedComparisonRunIds,
     runtime_verified_artefact_ids: runtimeVerifiedArtefactIds,
-    runtime_verified_deployment_ref:
-      input.runtime_verified_deployment_ref ??
-      provenance.deployment_revision ??
-      provenance.build_commit_sha ??
-      null,
-    runtime_verified_at: input.runtime_verified_at ?? "unknown",
-    runtime_verified_by_role: input.runtime_verified_by_role ?? null,
+    runtime_verified_deployment_ref: runtimeVerifiedDeploymentRef,
+    runtime_verified_at: input.runtime_verified_at ?? operatorConfirmedAt ?? "unknown",
+    runtime_verified_by_role: input.runtime_verified_by_role ?? operatorConfirmedBy ?? null,
     operator_confirmation_status: operatorConfirmationStatus,
     operator_confirmation_reason:
       input.operator_confirmation_reason ??
-      (deploymentContextSatisfied
-        ? "deployment_context_confirmed_without_release_approval"
-        : "operator_confirmation_missing"),
+      (runtimeProvenanceConflict
+        ? "runtime_provenance_conflict"
+        : operatorConfirmationComplete
+          ? "operator_confirmed_specific_runtime_context"
+          : deploymentContextSatisfied
+            ? "deployment_context_confirmed_without_release_approval"
+            : operatorConfirmationDataPresent
+              ? "operator_confirmation_incomplete"
+              : "operator_confirmation_missing"),
     operator_confirmed_runtime_build_ref: input.operator_confirmed_runtime_build_ref ?? null,
     operator_confirmed_runtime_pr_or_slice: input.operator_confirmed_runtime_pr_or_slice ?? null,
-    operator_confirmation_source: input.operator_confirmation_source ?? "unknown",
-    deployment_provenance_status: deploymentProvenanceStatus,
+    operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
+    operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
+    operator_confirmed_branch: operatorConfirmedBranch,
+    operator_confirmed_by: operatorConfirmedBy,
+    operator_confirmed_at: operatorConfirmedAt,
+    operator_confirmed_take_id: operatorConfirmedTakeId,
+    operator_confirmed_analysis_run_id: operatorConfirmedAnalysisRunId,
+    operator_confirmed_report_surface: operatorConfirmedReportSurface,
+    operator_confirmation_source: operatorConfirmationSource,
+    operator_confirmation_scope: operatorConfirmationScope,
+    operator_confirmation_notes: operatorConfirmationNotes,
+    runtime_provenance_conflict_status: runtimeProvenanceConflict ? "conflict" : "none",
+    runtime_provenance_conflict_fields: conflictFields,
+    deployment_provenance_status: effectiveDeploymentProvenanceStatus,
     deployment_provenance_reason:
-      deploymentProvenanceStatus === "resolved"
-        ? "safe_deployment_provenance_resolved"
-        : deploymentProvenanceStatus,
+      runtimeProvenanceConflict
+        ? "runtime_provenance_conflict"
+        : operatorConfirmationComplete
+          ? "operator_confirmation_confirmed_specific_runtime_context"
+          : envDeploymentContextPresent
+            ? "safe_deployment_provenance_resolved"
+            : deploymentProvenanceStatus,
     deployment_provenance_blocker_codes:
-      deploymentProvenanceStatus === "resolved"
-        ? []
-        : ["deployment_provenance_or_operator_confirmation_required"],
+      runtimeProvenanceConflict
+        ? ["runtime_provenance_conflict"]
+        : deploymentContextSatisfied
+          ? []
+          : ["deployment_provenance_or_operator_confirmation_required"],
     public_output_unchanged: input.public_output_unchanged !== false,
     secrets_or_signed_urls_stored: false,
     raw_prompt_or_response_stored: false,
@@ -1432,13 +1604,13 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     generated_at: new Date().toISOString(),
     internal_only: true,
     privacy_classification: "internal_private",
+    ...provenance,
     ...runtimeVerificationTraceSummary,
     production_safe_status: "blocked",
     customer_release_status: "blocked",
     public_scoring_status: "blocked",
     public_technique_authority_status: "blocked",
     public_comparison_recommendation_status: "blocked",
-    ...provenance,
   };
   const relative = input.take_id
     ? `takes/take-${input.take_id}/analysis-${analysisRunId}/analysis/RuntimeVerificationTrace.json`
@@ -1450,11 +1622,54 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     payload,
     "runtime_verification_trace",
   );
+  let operatorConfirmationResult: Awaited<ReturnType<typeof writeInternalJson>> | null = null;
+  if (operatorConfirmationComplete) {
+    const confirmationPayload = {
+      schema_version: "tapecoach_runtime_operator_confirmation_v1",
+      artefact_type: "runtime_operator_confirmation",
+      internal_only: true,
+      privacy_classification: "internal_private",
+      take_id: operatorConfirmedTakeId ?? "unknown",
+      analysis_run_id: operatorConfirmedAnalysisRunId ?? analysisRunId,
+      report_surface: operatorConfirmedReportSurface ?? "unknown",
+      deployed_commit_sha: operatorConfirmedDeployedCommitSha ?? "unknown",
+      deployment_reference: operatorConfirmedDeploymentReference ?? null,
+      branch: operatorConfirmedBranch ?? null,
+      operator: operatorConfirmedBy ?? "unknown",
+      confirmed_at: operatorConfirmedAt ?? "unknown",
+      confirmation_source: operatorConfirmationSource,
+      confirmation_scope: operatorConfirmationScope,
+      notes: operatorConfirmationNotes ?? undefined,
+      runtime_provenance_conflict_status: runtimeProvenanceConflict ? "conflict" : "none",
+      runtime_provenance_conflict_fields: conflictFields,
+      production_safe_status: "blocked",
+      customer_release_status: "blocked",
+      public_scoring_status: "blocked",
+      public_technique_authority_status: "blocked",
+      public_comparison_recommendation_status: "blocked",
+      secrets_or_signed_urls_stored: false,
+      raw_prompt_or_response_stored: false,
+    };
+    const confirmationRelative = input.take_id
+      ? `takes/take-${input.take_id}/analysis-${analysisRunId}/analysis/runtime_operator_confirmation.json`
+      : `analysis-${analysisRunId}/analysis/runtime_operator_confirmation.json`;
+    operatorConfirmationResult = await writeInternalJson(
+      root,
+      input.run_id,
+      confirmationRelative,
+      confirmationPayload,
+      "runtime_operator_confirmation",
+    );
+  }
+  const emittedArtefactIds = [
+    ...(result.written ? ["runtime_verification_trace"] : []),
+    ...(operatorConfirmationResult?.written ? ["runtime_operator_confirmation"] : []),
+  ];
   return {
     written: Boolean(result.written),
-    emitted_artefact_ids: result.written ? ["runtime_verification_trace"] : [],
+    emitted_artefact_ids: emittedArtefactIds,
     path: result.path ?? result.storage_path,
-    warning: getQAWriteWarning(result),
+    warning: mergeQAWarnings(getQAWriteWarning(result), getQAWriteWarning(operatorConfirmationResult)),
     runtime_verification_trace_summary: runtimeVerificationTraceSummary,
     blocker_codes: blockerCodes,
   };
@@ -6969,6 +7184,17 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       runtime_verified_by_role: metadata.runtime_verified_by_role,
       operator_confirmation_status: metadata.operator_confirmation_status,
       operator_confirmed_pr_or_commit: metadata.operator_confirmed_pr_or_commit,
+      operator_confirmed_deployed_commit_sha: metadata.operator_confirmed_deployed_commit_sha,
+      operator_confirmed_deployment_reference: metadata.operator_confirmed_deployment_reference,
+      operator_confirmed_branch: metadata.operator_confirmed_branch,
+      operator_confirmed_by: metadata.operator_confirmed_by,
+      operator_confirmed_at: metadata.operator_confirmed_at,
+      operator_confirmed_take_id: metadata.operator_confirmed_take_id,
+      operator_confirmed_analysis_run_id: metadata.operator_confirmed_analysis_run_id,
+      operator_confirmed_report_surface: metadata.operator_confirmed_report_surface,
+      operator_confirmation_source: metadata.operator_confirmation_source,
+      operator_confirmation_scope: metadata.operator_confirmation_scope,
+      operator_confirmation_notes: metadata.operator_confirmation_notes,
       operator_confirmation_reason: metadata.operator_confirmation_reason,
       runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id,
       runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id,
@@ -7065,6 +7291,38 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           operator_confirmed_runtime_build_ref:
             metadata.operator_confirmed_pr_or_commit ??
             runtimeSummaryString("operator_confirmed_runtime_build_ref"),
+          operator_confirmed_deployed_commit_sha:
+            metadata.operator_confirmed_deployed_commit_sha ??
+            runtimeSummaryString("operator_confirmed_deployed_commit_sha"),
+          operator_confirmed_deployment_reference:
+            metadata.operator_confirmed_deployment_reference ??
+            runtimeSummaryString("operator_confirmed_deployment_reference"),
+          operator_confirmed_branch:
+            metadata.operator_confirmed_branch ?? runtimeSummaryString("operator_confirmed_branch"),
+          operator_confirmed_by:
+            metadata.operator_confirmed_by ?? runtimeSummaryString("operator_confirmed_by"),
+          operator_confirmed_at:
+            metadata.operator_confirmed_at ?? runtimeSummaryString("operator_confirmed_at"),
+          operator_confirmed_take_id:
+            metadata.operator_confirmed_take_id ?? runtimeSummaryString("operator_confirmed_take_id"),
+          operator_confirmed_analysis_run_id:
+            metadata.operator_confirmed_analysis_run_id ??
+            runtimeSummaryString("operator_confirmed_analysis_run_id"),
+          operator_confirmed_report_surface:
+            metadata.operator_confirmed_report_surface ??
+            runtimeSummaryString("operator_confirmed_report_surface"),
+          operator_confirmation_source:
+            (metadata.operator_confirmation_source ??
+              runtimeSummaryString("operator_confirmation_source")) as
+              | "explicit_operator_runtime_message"
+              | "deployment_dashboard"
+              | "safe_env_var"
+              | "unknown"
+              | undefined,
+          operator_confirmation_scope:
+            metadata.operator_confirmation_scope ?? runtimeSummaryString("operator_confirmation_scope"),
+          operator_confirmation_notes:
+            metadata.operator_confirmation_notes ?? runtimeSummaryString("operator_confirmation_notes"),
           public_output_unchanged: true,
           root_dir: metadata.root_dir,
           internal_qa_emit: true,
@@ -7076,17 +7334,27 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         };
     const runtimeVerificationTraceWarning = getQAWriteWarning(runtimeVerificationTraceWrite);
     if (runtimeVerificationTraceWrite.written) {
-      initialEmitted.push("runtime_verification_trace");
+      initialEmitted.push(...(runtimeVerificationTraceWrite.emitted_artefact_ids ?? []));
       baseOptions.emitted_artefact_ids = [...new Set(initialEmitted)];
       baseOptions.runtime_verification_trace_summary =
         runtimeVerificationTraceWrite.runtime_verification_trace_summary ?? undefined;
       baseOptions.artefact_source_classification_by_id = {
         ...(baseOptions.artefact_source_classification_by_id ?? {}),
         runtime_verification_trace: "runtime_verification_trace",
+        ...(runtimeVerificationTraceWrite.emitted_artefact_ids?.includes(
+          "runtime_operator_confirmation",
+        )
+          ? { runtime_operator_confirmation: "internal_runtime_operator_confirmation" }
+          : {}),
       };
       baseOptions.artefact_level2_spine_satisfaction_by_id = {
         ...(baseOptions.artefact_level2_spine_satisfaction_by_id ?? {}),
         runtime_verification_trace: false,
+        ...(runtimeVerificationTraceWrite.emitted_artefact_ids?.includes(
+          "runtime_operator_confirmation",
+        )
+          ? { runtime_operator_confirmation: false }
+          : {}),
       };
     }
 
@@ -7128,10 +7396,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       };
     }
     const preFinalManifest = (out as any).manifest;
-    const preFinalMetrics = {
-      ...buildQAAcceptanceMetrics(preFinalManifest),
-      ...resolveQADeploymentProvenance(),
-    };
+    const preFinalMetrics = buildQAAcceptanceMetrics(preFinalManifest);
     const intendedSameFinalisationArtefactIds = ["validator_trace", "gate_trace"];
     let emittedWithInternalTraces = [...new Set(initialEmitted)];
     let emittedBlockedWithInternalTraces = [
@@ -7466,10 +7731,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       });
       if (proofSnapshotOut.written && "manifest" in (proofSnapshotOut as any)) {
         const proofSnapshotManifest = (proofSnapshotOut as any).manifest;
-        const proofSnapshotMetrics = {
-          ...buildQAAcceptanceMetrics(proofSnapshotManifest),
-          ...resolveQADeploymentProvenance(),
-        };
+        const proofSnapshotMetrics = buildQAAcceptanceMetrics(proofSnapshotManifest);
         const validatorWrite = await emitValidatorTraceFirstPass({
           run_id: metadata.run_id,
           analysis_run_id: baseOptions.analysis_run_id,
@@ -7580,10 +7842,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
     });
     let finalMetricsWrite: Awaited<ReturnType<typeof writeQAArtifact>> | null = null;
     if (finalOut.written && "manifest" in (finalOut as any)) {
-      const finalMetrics = {
-        ...buildQAAcceptanceMetrics((finalOut as any).manifest),
-        ...resolveQADeploymentProvenance(),
-      };
+      const finalMetrics = buildQAAcceptanceMetrics((finalOut as any).manifest);
       finalMetricsWrite = await writeQAArtifact({
         root_dir: metadata.root_dir ?? DEFAULT_ROOT,
         run_id: metadata.run_id,

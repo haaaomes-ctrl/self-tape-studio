@@ -145,6 +145,10 @@ function runtimeVerifiedOverrides(overrides: Record<string, unknown> = {}) {
     runtime_bundle_matches_current_commit_status: 'matched',
     operator_confirmation_status: 'confirmed',
     operator_confirmed_pr_or_commit: '024c5bbea8acdecc6781e4318094424c13088a9595',
+    operator_confirmed_deployed_commit_sha: '024c5bbea8acdecc6781e4318094424c13088a9595',
+    operator_confirmed_deployment_reference: 'deploy_123',
+    operator_confirmed_branch: 'main',
+    operator_confirmed_report_surface: 'public_report_page',
     operator_confirmation_reason: 'operator_confirmed_pr_runtime_bundle',
     ...overrides,
   };
@@ -173,16 +177,18 @@ describe('v3 s9 production release readiness and runtime verification gates', ()
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
-  it('allows safe operator confirmation to make release readiness ready_for_review without approval', () => {
+  it('allows safe operator confirmation to satisfy runtime proof without release readiness approval', () => {
     const metrics = buildQAAcceptanceMetrics(completeManifest(runtimeVerifiedOverrides()));
 
     expect(metrics.runtime_operator_verification_status).toBe('completed');
     expect(metrics.deployment_provenance_status).toBe('unknown_no_safe_env_var_found');
     expect(metrics.operator_confirmation_status).toBe('confirmed');
-    expect(metrics.production_safe_readiness_status).toBe('ready_for_review');
-    expect(metrics.customer_release_readiness_status).toBe('ready_for_review');
-    expect(metrics.release_candidate_status).toBe('ready_for_review');
-    expect(metrics.global_level2_release_readiness_status).toBe('ready_for_review');
+    expect(metrics.operator_confirmed_deployed_commit_sha).toBe('024c5bbea8acdecc6781e4318094424c13088a9595');
+    expect(metrics.production_safe_readiness_status).toBe('blocked');
+    expect(metrics.customer_release_readiness_status).toBe('blocked');
+    expect(metrics.release_candidate_status).toBe('blocked');
+    expect(metrics.global_level2_release_readiness_status).toBe('blocked');
+    expect(metrics.customer_release_readiness_blocker_codes).toContain('customer_release_readiness_requires_separate_authorised_release_decision');
     expect(metrics.global_level2_release_status).toBe('blocked');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.customer_release_status).toBe('blocked');
@@ -200,7 +206,7 @@ describe('v3 s9 production release readiness and runtime verification gates', ()
     expect(metrics.level2_status).toBe('not_accepted');
   });
 
-  it('records runtime and release readiness separately from release approval in ValidatorTrace and GateTrace', async () => {
+  it('records runtime proof separately from release readiness and release approval in ValidatorTrace and GateTrace', async () => {
     const manifest = completeManifest(runtimeVerifiedOverrides());
     const metrics = buildQAAcceptanceMetrics(manifest);
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-19f-release-gates-'));
@@ -218,20 +224,20 @@ describe('v3 s9 production release readiness and runtime verification gates', ()
     };
 
     const validator = await emitValidatorTraceFirstPass(base);
-    expect(validator.validator_trace_summary?.release_readiness_validation_status).toBe('passed');
+    expect(validator.validator_trace_summary?.release_readiness_validation_status).toBe('blocked');
 
     const gate = await emitGateTraceFirstPass({
       ...base,
       validator_trace_summary: validator.validator_trace_summary,
     });
-    expect(gate.gate_trace_summary?.production_safe_readiness_status).toBe('ready_for_review');
-    expect(gate.gate_trace_summary?.customer_release_readiness_status).toBe('ready_for_review');
+    expect(gate.gate_trace_summary?.production_safe_readiness_status).toBe('blocked');
+    expect(gate.gate_trace_summary?.customer_release_readiness_status).toBe('blocked');
 
     const payload = JSON.parse(await readFile(path.join(root, 'r19f-gates', 'takes', 'take-t1', 'analysis-r19f-gates', 'traces', 'GateTrace.json'), 'utf8'));
     expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'runtime_operator_verification_gate')?.status).toBe('passed');
     expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'deployment_provenance_gate')?.status).toBe('passed');
-    expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'production_safe_readiness_gate')?.status).toBe('passed');
-    expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'customer_release_readiness_gate')?.status).toBe('passed');
+    expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'production_safe_readiness_gate')?.status).toBe('blocked');
+    expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'customer_release_readiness_gate')?.status).toBe('blocked');
     expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'production_safe_approval_gate')?.status).toBe('blocked');
     expect(payload.gate_entries.find((entry: any) => entry.gate_id === 'customer_release_approval_gate')?.status).toBe('blocked');
     expect(payload.global_level2_acceptance_status).toBe('not_accepted');

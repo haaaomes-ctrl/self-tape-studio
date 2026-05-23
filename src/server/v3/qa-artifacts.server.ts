@@ -46,6 +46,17 @@ export interface QAArtifactEmitterOptions {
   runtime_bundle_matches_current_implementation_status?: string;
   operator_confirmation_status?: string;
   operator_confirmed_pr_or_commit?: string;
+  operator_confirmed_deployed_commit_sha?: string;
+  operator_confirmed_deployment_reference?: string;
+  operator_confirmed_branch?: string;
+  operator_confirmed_by?: string;
+  operator_confirmed_at?: string;
+  operator_confirmed_take_id?: string;
+  operator_confirmed_analysis_run_id?: string;
+  operator_confirmed_report_surface?: string;
+  operator_confirmation_source?: string;
+  operator_confirmation_scope?: string;
+  operator_confirmation_notes?: string;
   operator_confirmation_reason?: string;
   mux_playback_ids?: Record<string, string>;
   fixture_refs?: string[];
@@ -495,11 +506,35 @@ function safeOptionalRef(value: unknown): string | null {
   return isCommitLike(trimmed) || isSafeRefLike(trimmed) ? trimmed : null;
 }
 
+function safeOptionalCommit(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return isCommitLike(trimmed) ? trimmed : null;
+}
+
+function safeOptionalDeploymentRef(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return isSafeDeploymentRefLike(trimmed) ? trimmed : null;
+}
+
+function safeOptionalBranchRef(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return isSafeRefLike(trimmed) ? trimmed : null;
+}
+
 function safeOperatorRole(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   return /^[A-Za-z0-9._/-]{1,80}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeOperatorNote(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return isSafeRuntimeNoteLike(trimmed) ? trimmed : null;
 }
 
 function resolveNestedString(source: Record<string, any>, nestedKey: string, topLevelKey: string, fallback = 'unknown'): string {
@@ -647,6 +682,12 @@ function isCommitLike(value: unknown): value is string {
 function isSafeRefLike(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9._/-]{1,120}$/.test(value.trim());
 }
+function isSafeDeploymentRefLike(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9._-]{1,120}$/.test(value.trim());
+}
+function isSafeRuntimeNoteLike(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9 .,_:/()@-]{1,240}$/.test(value.trim());
+}
 
 function firstPresent(env: NodeJS.ProcessEnv, keys: string[]): string | null {
   for (const key of keys) {
@@ -684,7 +725,7 @@ export function resolveQADeploymentProvenance(env: NodeJS.ProcessEnv = process.e
   const deploymentKeys = ['VERCEL_DEPLOYMENT_ID', 'LOVABLE_DEPLOYMENT_ID', 'DEPLOYMENT_REVISION'] as const;
   const commitResolved = firstValidPresent(env, commitKeys, (value) => isCommitLike(value));
   const branchResolved = firstValidPresent(env, branchKeys, (value) => isSafeRefLike(value));
-  const deploymentResolved = firstValidPresent(env, deploymentKeys, (value) => isSafeRefLike(value));
+  const deploymentResolved = firstValidPresent(env, deploymentKeys, (value) => isSafeDeploymentRefLike(value));
   const hasAnySafeValue = SAFE_DEPLOYMENT_PROVENANCE_ENV_KEYS.some((key) => typeof env[key] === 'string' && env[key]?.trim().length);
   const acceptedCommit = commitResolved.value;
   const sourceBranch = branchResolved.value ?? 'unknown';
@@ -1258,6 +1299,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const blockedComparisonFieldsAbsent = rawReportParitySummary.blocked_comparison_fields_absent === true
     || (rawReportParitySummary.blocked_comparison_fields_absent === undefined && rawReportParitySummary.forbidden_fields_absent === true && rawReportParitySummary.public_output_permissions_checked === true);
   const publicOutputUnchanged = manifest.public_output_unchanged !== false;
+  const runtimeVerificationTraceSummary = isRecord(manifest.runtime_verification_trace_summary)
+    ? manifest.runtime_verification_trace_summary
+    : {};
   const runtimeVerificationRawStatus = resolveNestedString(manifest, 'status', 'runtime_operator_verification_status', 'required');
   const runtimeBundleFreshnessStatus = resolveNestedString(manifest, 'bundle_freshness_status', 'runtime_bundle_freshness_status', 'unknown');
   const runtimeBundleMatchesCurrentCommitStatus = resolveNestedString(manifest, 'bundle_matches_current_commit_status', 'runtime_bundle_matches_current_commit_status', 'unknown');
@@ -1267,17 +1311,25 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     'runtime_bundle_matches_current_implementation_status',
     runtimeBundleMatchesCurrentCommitStatus,
   );
-  const runtimeVerifiedDeploymentRef = safeOptionalRef(manifest.runtime_verified_deployment_ref ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.deployment_ref : null));
-  const runtimeVerifiedAt = safeMetricString(manifest.runtime_verified_at ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_at : null), 'unknown');
-  const runtimeVerifiedByRole = safeOperatorRole(manifest.runtime_verified_by_role ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_by_role : null));
-  const runtimeVerifiedTakeIds = safeStringArray(manifest.runtime_verified_take_ids ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_take_ids : null));
-  const runtimeVerifiedComparisonRunIds = safeStringArray(manifest.runtime_verified_comparison_run_ids ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_comparison_run_ids : null));
-  const operatorConfirmedPrOrCommit = safeOptionalRef(manifest.operator_confirmed_pr_or_commit);
-  const operatorConfirmationStatus = operatorConfirmedPrOrCommit && manifest.operator_confirmation_status === 'confirmed'
+  const runtimeVerifiedDeploymentRef = safeOptionalRef(manifest.runtime_verified_deployment_ref ?? runtimeVerificationTraceSummary.runtime_verified_deployment_ref ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.deployment_ref : null));
+  const runtimeVerifiedAt = safeMetricString(manifest.runtime_verified_at ?? runtimeVerificationTraceSummary.runtime_verified_at ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_at : null), 'unknown');
+  const runtimeVerifiedByRole = safeOperatorRole(manifest.runtime_verified_by_role ?? runtimeVerificationTraceSummary.runtime_verified_by_role ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_by_role : null));
+  const runtimeVerifiedTakeIds = safeStringArray(manifest.runtime_verified_take_ids ?? runtimeVerificationTraceSummary.runtime_verified_take_ids ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_take_ids : null));
+  const runtimeVerifiedComparisonRunIds = safeStringArray(manifest.runtime_verified_comparison_run_ids ?? runtimeVerificationTraceSummary.runtime_verified_comparison_run_ids ?? (isRecord(manifest.runtime_operator_verification) ? manifest.runtime_operator_verification.verified_comparison_run_ids : null));
+  const operatorConfirmedDeployedCommitSha = safeOptionalCommit(manifest.operator_confirmed_deployed_commit_sha ?? runtimeVerificationTraceSummary.operator_confirmed_deployed_commit_sha);
+  const operatorConfirmedDeploymentReference = safeOptionalDeploymentRef(manifest.operator_confirmed_deployment_reference ?? runtimeVerificationTraceSummary.operator_confirmed_deployment_reference);
+  const operatorConfirmedBranch = safeOptionalBranchRef(manifest.operator_confirmed_branch ?? runtimeVerificationTraceSummary.operator_confirmed_branch);
+  const operatorConfirmedReportSurface = safeOptionalRef(manifest.operator_confirmed_report_surface ?? runtimeVerificationTraceSummary.operator_confirmed_report_surface);
+  const operatorConfirmedPrOrCommit = safeOptionalRef(manifest.operator_confirmed_pr_or_commit ?? runtimeVerificationTraceSummary.operator_confirmed_runtime_build_ref);
+  const operatorConfirmationRequestedStatus = safeMetricString(manifest.operator_confirmation_status ?? runtimeVerificationTraceSummary.operator_confirmation_status, 'missing');
+  const operatorConfirmationStatus = (operatorConfirmedDeployedCommitSha || operatorConfirmedDeploymentReference || operatorConfirmedPrOrCommit) && operatorConfirmationRequestedStatus === 'confirmed'
     ? 'confirmed'
-    : safeMetricString(manifest.operator_confirmation_status, 'missing');
-  const operatorConfirmationReason = safeMetricString(manifest.operator_confirmation_reason, operatorConfirmationStatus === 'confirmed' ? 'operator_confirmed_safe_deployment_context' : 'operator_confirmation_missing');
+    : operatorConfirmationRequestedStatus;
+  const operatorConfirmationReason = safeMetricString(manifest.operator_confirmation_reason ?? runtimeVerificationTraceSummary.operator_confirmation_reason, operatorConfirmationStatus === 'confirmed' ? 'operator_confirmed_safe_deployment_context' : 'operator_confirmation_missing');
   const deploymentProvenanceStatus = safeMetricString(manifest.deployment_provenance_status, 'unknown_no_safe_env_var_found');
+  const runtimeProvenanceConflict = deploymentProvenanceStatus === 'runtime_provenance_conflict'
+    || safeStringArray(runtimeVerificationTraceSummary.runtime_operator_verification_blocker_codes).includes('runtime_provenance_conflict')
+    || safeStringArray(manifest.runtime_operator_verification_blocker_codes).includes('runtime_provenance_conflict');
   const deploymentProvenanceResolved = deploymentProvenanceStatus === 'resolved' || operatorConfirmationStatus === 'confirmed';
   const runtimeBundleFresh = ['fresh', 'verified_fresh', 'current'].includes(runtimeBundleFreshnessStatus);
   const runtimeBundleMatchesCurrentCommit = ['matched', 'matches_current_commit', 'current_commit_matched', 'matches', 'operator_confirmed'].includes(runtimeBundleMatchesCurrentCommitStatus)
@@ -1288,6 +1340,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     && runtimeBundleFresh
     && runtimeBundleMatchesCurrentCommit
     && runtimeDeploymentContextPresent
+    && !runtimeProvenanceConflict
     && runtimeTakeContextPresent;
   const runtimeOperatorVerificationStatus = runtimeVerificationCompleted
     ? 'completed'
@@ -1299,9 +1352,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ...(!runtimeBundleFresh ? ['runtime_bundle_freshness_required'] : []),
     ...(!runtimeBundleMatchesCurrentCommit ? ['runtime_bundle_current_commit_required'] : []),
     ...(!runtimeDeploymentContextPresent ? ['deployment_provenance_or_operator_confirmation_required'] : []),
+    ...(runtimeProvenanceConflict ? ['runtime_provenance_conflict'] : []),
     ...(!runtimeTakeContextPresent ? ['runtime_verified_take_required'] : []),
   ]);
-  const deploymentProvenanceBlockerCodes = deploymentProvenanceResolved ? [] : ['deployment_provenance_or_operator_confirmation_required'];
+  const deploymentProvenanceBlockerCodes = runtimeProvenanceConflict
+    ? ['runtime_provenance_conflict']
+    : deploymentProvenanceResolved ? [] : ['deployment_provenance_or_operator_confirmation_required'];
   const countFrom = (...values: unknown[]) => {
     for (const value of values) {
       if (value === null || value === undefined || value === '') continue;
@@ -1465,6 +1521,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     ? 'satisfied'
     : 'insufficient';
   const releaseReadinessBlockerCodes = dedupePreservingOrder([
+    'customer_release_readiness_requires_separate_authorised_release_decision',
     ...(globalLevel2EvidenceStatus === 'satisfied' ? [] : ['global_level2_evidence_not_satisfied']),
     ...(globalLevel2SuppressionProofStatus === 'satisfied' ? [] : ['global_level2_suppression_proof_not_satisfied']),
     ...runtimeOperatorVerificationBlockerCodes,
@@ -1743,7 +1800,12 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     runtime_bundle_matches_current_implementation_status: runtimeBundleMatchesCurrentImplementationStatus,
     deployment_provenance_status: deploymentProvenanceStatus,
     deployment_provenance_blocker_codes: deploymentProvenanceBlockerCodes,
+    runtime_provenance_conflict_status: runtimeProvenanceConflict ? 'conflict' : 'none',
     operator_confirmation_status: operatorConfirmationStatus,
+    operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
+    operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
+    operator_confirmed_branch: operatorConfirmedBranch,
+    operator_confirmed_report_surface: operatorConfirmedReportSurface,
     operator_confirmed_pr_or_commit: operatorConfirmedPrOrCommit,
     operator_confirmation_reason: operatorConfirmationReason,
     customer_release_status: 'blocked',
@@ -2213,10 +2275,22 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
       ?? runtimeBundleMatchesCurrentImplementationStatus,
     'unknown',
   );
+  const operatorConfirmedDeployedCommitSha = safeOptionalCommit(options.operator_confirmed_deployed_commit_sha ?? runtimeVerificationTraceSummary.operator_confirmed_deployed_commit_sha);
+  const operatorConfirmedDeploymentReference = safeOptionalDeploymentRef(options.operator_confirmed_deployment_reference ?? runtimeVerificationTraceSummary.operator_confirmed_deployment_reference);
+  const operatorConfirmedBranch = safeOptionalBranchRef(options.operator_confirmed_branch ?? runtimeVerificationTraceSummary.operator_confirmed_branch);
+  const operatorConfirmedBy = safeOperatorRole(options.operator_confirmed_by ?? runtimeVerificationTraceSummary.operator_confirmed_by);
+  const operatorConfirmedAt = safeMetricString(options.operator_confirmed_at ?? runtimeVerificationTraceSummary.operator_confirmed_at, 'unknown');
+  const operatorConfirmedTakeId = safeOptionalRef(options.operator_confirmed_take_id ?? runtimeVerificationTraceSummary.operator_confirmed_take_id);
+  const operatorConfirmedAnalysisRunId = safeOptionalRef(options.operator_confirmed_analysis_run_id ?? runtimeVerificationTraceSummary.operator_confirmed_analysis_run_id);
+  const operatorConfirmedReportSurface = safeOptionalRef(options.operator_confirmed_report_surface ?? runtimeVerificationTraceSummary.operator_confirmed_report_surface);
+  const operatorConfirmationSource = safeOptionalRef(options.operator_confirmation_source ?? runtimeVerificationTraceSummary.operator_confirmation_source);
+  const operatorConfirmationScope = safeOptionalRef(options.operator_confirmation_scope ?? runtimeVerificationTraceSummary.operator_confirmation_scope);
+  const operatorConfirmationNotes = safeOperatorNote(options.operator_confirmation_notes ?? runtimeVerificationTraceSummary.operator_confirmation_notes);
   const operatorConfirmedPrOrCommit = safeOptionalRef(options.operator_confirmed_pr_or_commit ?? runtimeVerificationTraceSummary.operator_confirmed_runtime_build_ref);
-  const operatorConfirmationStatus = operatorConfirmedPrOrCommit && options.operator_confirmation_status === 'confirmed'
+  const operatorConfirmationRequestedStatus = safeMetricString(options.operator_confirmation_status ?? runtimeVerificationTraceSummary.operator_confirmation_status, 'missing');
+  const operatorConfirmationStatus = (operatorConfirmedDeployedCommitSha || operatorConfirmedDeploymentReference || operatorConfirmedPrOrCommit) && operatorConfirmationRequestedStatus === 'confirmed'
     ? 'confirmed'
-    : safeMetricString(options.operator_confirmation_status ?? runtimeVerificationTraceSummary.operator_confirmation_status, 'missing');
+    : operatorConfirmationRequestedStatus;
   const operatorConfirmationReason = safeMetricString(options.operator_confirmation_reason ?? runtimeVerificationTraceSummary.operator_confirmation_reason, operatorConfirmationStatus === 'confirmed' ? 'operator_confirmed_safe_deployment_context' : 'operator_confirmation_missing');
   const manifest = {
     schema_version: options.schema_version ?? DEFAULT_SCHEMA_VERSION, emitter_version: options.emitter_version ?? DEFAULT_EMITTER_VERSION, run_id: options.run_id, analysis_run_id: options.analysis_run_id ?? options.run_id, comparison_run_id: comparisonRunId ?? null, submission_id: options.submission_id ?? null, take_id: options.take_id ?? null, compared_take_ids: comparedTakeIds, fixture_id: options.fixture_id ?? null,
@@ -2265,6 +2339,17 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     runtime_bundle_matches_current_commit_status: runtimeBundleMatchesCurrentCommitStatus,
     runtime_bundle_matches_current_implementation_status: runtimeBundleMatchesCurrentImplementationStatus,
     operator_confirmation_status: operatorConfirmationStatus,
+    operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
+    operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
+    operator_confirmed_branch: operatorConfirmedBranch,
+    operator_confirmed_by: operatorConfirmedBy,
+    operator_confirmed_at: operatorConfirmedAt,
+    operator_confirmed_take_id: operatorConfirmedTakeId,
+    operator_confirmed_analysis_run_id: operatorConfirmedAnalysisRunId,
+    operator_confirmed_report_surface: operatorConfirmedReportSurface,
+    operator_confirmation_source: operatorConfirmationSource,
+    operator_confirmation_scope: operatorConfirmationScope,
+    operator_confirmation_notes: operatorConfirmationNotes,
     operator_confirmed_pr_or_commit: operatorConfirmedPrOrCommit,
     operator_confirmation_reason: operatorConfirmationReason,
     ordinary_l2a_analysis_proof_status: typeof options.gate_trace_summary?.ordinary_l2a_analysis_proof_status === 'string'
@@ -2311,6 +2396,9 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
       runtime_operator_verification_status: runtimeOperatorVerificationStatus,
       deployment_provenance_status: provenance.deployment_provenance_status,
       operator_confirmation_status: operatorConfirmationStatus,
+      operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
+      operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
+      operator_confirmed_report_surface: operatorConfirmedReportSurface,
       runtime_bundle_freshness_status: runtimeBundleFreshnessStatus,
       runtime_bundle_matches_current_commit_status: runtimeBundleMatchesCurrentCommitStatus,
       runtime_bundle_matches_current_implementation_status: runtimeBundleMatchesCurrentImplementationStatus,
@@ -2325,6 +2413,10 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     no_export_status, production_safe_status: BLOCKED_STATUS, public_technique_authority_status: BLOCKED_STATUS, public_scoring_status: BLOCKED_STATUS, export_share_enabled: BLOCKED_STATUS,
     fixture_observations: options.fixture_id === 'GF-01 / RT-15 / MT-same-video-20260511' ? { take_scores: [91, 94, 91], comparison_recommendation: 'Take 2', same_video_operator_confirmation: true } : undefined,
     ...provenance,
+    deployment_provenance_status: safeMetricString(runtimeVerificationTraceSummary.deployment_provenance_status, provenance.deployment_provenance_status),
+    deployment_provenance_blocker_codes: safeStringArray(runtimeVerificationTraceSummary.deployment_provenance_blocker_codes),
+    runtime_provenance_conflict_status: safeMetricString(runtimeVerificationTraceSummary.runtime_provenance_conflict_status, 'none'),
+    runtime_provenance_conflict_fields: safeStringArray(runtimeVerificationTraceSummary.runtime_provenance_conflict_fields),
     level2_qa_acceptance: 'not_accepted',
   };
   const manifestQASpineReconciliation = reconcileQASpineStatus(buildQASpineInputForManifest(manifest, {
