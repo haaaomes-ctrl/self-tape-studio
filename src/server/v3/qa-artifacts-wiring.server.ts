@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import {
+  isPublicReportViewModel,
+  isRejectedPublicReportSourceKind,
+  type PublicReportSourceKind,
+} from "@/lib/public-report-view-model";
+import {
   assertSafeSegment,
   buildQAAcceptanceMetrics,
   DEFAULT_ROOT,
@@ -331,6 +336,9 @@ export interface QARuntimeMetadata {
   report_parity_input?: {
     raw_report_data?: Record<string, unknown> | null;
     render_report_data?: Record<string, unknown> | null;
+    public_report_data?: Record<string, unknown> | null;
+    render_source_kind?: string | null;
+    public_report_source_kind?: string | null;
     render_payload?: Record<string, unknown> | null;
     public_report_payload?: Record<string, unknown> | null;
     allowed_public_fields?: string[];
@@ -1635,6 +1643,8 @@ export interface ReportParityProofEmitterInput {
   raw_report_data?: Record<string, unknown> | null;
   render_payload?: Record<string, unknown> | null;
   public_report_payload?: Record<string, unknown> | null;
+  render_source_kind?: PublicReportSourceKind | null;
+  public_report_source_kind?: PublicReportSourceKind | null;
   allowed_public_fields?: string[];
   blocked_field_paths?: string[];
   blocked_score_field_paths?: string[];
@@ -1651,6 +1661,7 @@ export interface RenderPayloadEmitterInput {
   source_stage?: string;
   raw_report_data?: Record<string, unknown> | null;
   render_report_data?: Record<string, unknown> | null;
+  render_source_kind?: PublicReportSourceKind | null;
   allowed_field_paths?: string[];
   blocked_field_paths?: string[];
   root_dir?: string;
@@ -1667,6 +1678,7 @@ export interface PublicReportPayloadEmitterInput {
   raw_report_data?: Record<string, unknown> | null;
   render_payload?: Record<string, unknown> | null;
   public_report_data?: Record<string, unknown> | null;
+  public_report_source_kind?: PublicReportSourceKind | null;
   allowed_field_paths?: string[];
   blocked_field_paths?: string[];
   root_dir?: string;
@@ -2693,6 +2705,32 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   mismatches.push(...publicTechniqueAuthorityContentFindings);
   mismatches.push(...forbiddenFindings);
 
+  const renderSourceKind =
+    input.render_source_kind ??
+    sourceKindFromSurface(render, ["render_source_kind", "source_kind"]);
+  const publicReportSourceKind =
+    input.public_report_source_kind ??
+    sourceKindFromSurface(publicPayload, ["public_report_source_kind", "source_kind"]);
+  const sourceKindFindings: Array<Record<string, unknown>> = [];
+  const addSourceKindFinding = (
+    surface: "render_payload" | "public_report_payload",
+    sourceKind: PublicReportSourceKind | null,
+  ) => {
+    if (!sourceKind) return;
+    if (!isRejectedPublicReportSourceKind(sourceKind)) return;
+    sourceKindFindings.push({
+      field: surface === "render_payload" ? "render_source_kind" : "public_report_source_kind",
+      surface,
+      mismatch_type: "public_report_source_kind_not_canonical",
+      source_kind: sourceKind,
+      detail:
+        "R10.7 public report acceptance requires a PublicReportViewModel source, not a legacy/raw/shadow source.",
+    });
+  };
+  addSourceKindFinding("render_payload", renderSourceKind);
+  addSourceKindFinding("public_report_payload", publicReportSourceKind);
+  mismatches.push(...sourceKindFindings);
+
   if (renderAvail && publicAvail) {
     const renderPaths = collectSurfacePathSet(render);
     const publicPaths = collectCandidatePaths(publicPayload);
@@ -2720,7 +2758,15 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
         : !hasAllowedFields || !requiredSurfacesAvailable
           ? "insufficient"
           : "passed";
-  const blocker_codes = parityStatus === "passed" ? [] : ["parity_artefacts_missing"];
+  const blocker_codes =
+    parityStatus === "passed"
+      ? []
+      : [
+          ...new Set([
+            ...(sourceKindFindings.length > 0 ? ["public_report_source_kind_not_canonical"] : []),
+            "parity_artefacts_missing",
+          ]),
+        ];
   if (!rawAvail)
     mismatches.push({
       mismatch_type: "raw_report_data_missing",
@@ -2785,6 +2831,12 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     public_output_permissions_checked: checkedSurfaceNames.includes("public_report_payload"),
     report_output_enforcement_checked: checkedSurfaces.length > 0,
     mismatch_count: mismatches.length,
+    render_source_kind: renderSourceKind ?? null,
+    public_report_source_kind: publicReportSourceKind ?? null,
+    public_report_source_kind_accepted:
+      (!renderSourceKind || !isRejectedPublicReportSourceKind(renderSourceKind)) &&
+      (!publicReportSourceKind || !isRejectedPublicReportSourceKind(publicReportSourceKind)),
+    rejected_source_kind_count: sourceKindFindings.length,
     invalid_allowed_public_field_count: invalidAllowedPublicFieldCount,
     dropped_allowed_public_field_count: droppedAllowedPublicFieldCount,
     mismatches,
@@ -4398,12 +4450,44 @@ function unwrapRawReportData(raw: unknown): Record<string, unknown> {
   return nested ?? wrapper;
 }
 
+function sourceKindFromSurface(surface: unknown, keys: string[]): PublicReportSourceKind | null {
+  if (!isRecord(surface)) return null;
+  for (const key of keys) {
+    const value = surface[key];
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
+function classifyRenderReportSource(input: RenderPayloadEmitterInput): PublicReportSourceKind {
+  if (input.render_source_kind) return input.render_source_kind;
+  if (input.render_report_data) {
+    return isPublicReportViewModel(input.render_report_data)
+      ? "public_report_view_model"
+      : "explicit_render_report_data";
+  }
+  return "raw_report_report_data_shadow";
+}
+
+function classifyPublicReportSource(
+  input: PublicReportPayloadEmitterInput,
+): PublicReportSourceKind {
+  if (input.public_report_source_kind) return input.public_report_source_kind;
+  if (input.public_report_data) {
+    return isPublicReportViewModel(input.public_report_data)
+      ? "public_report_view_model"
+      : "explicit_public_report_data";
+  }
+  return "sanitised_render_payload_shadow";
+}
+
 export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
     return { written: false as const, emitted_artefact_ids: [] as string[] };
   }
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const renderSourceKind = classifyRenderReportSource(input);
   const source = input.render_report_data ?? input.raw_report_data ?? null;
   const sourceReportData = unwrapRawReportData(source);
   const sourceSurface = { report_data: sourceReportData };
@@ -4510,9 +4594,7 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
     source_stage: input.source_stage ?? "emitRenderPayloadArtifact",
     source_module: input.source_module ?? "src/server/v3/qa-artifacts-wiring.server.ts",
     render_payload_status: renderPayloadStatus,
-    render_source_kind: input.render_report_data
-      ? "explicit_render_report_data"
-      : "raw_report_report_data_shadow",
+    render_source_kind: renderSourceKind,
     render_source_refs: {
       raw_report_available: Boolean(
         input.raw_report_data && typeof input.raw_report_data === "object",
@@ -4583,6 +4665,7 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
     blocker_codes: blockerCodes,
     parity_payload: payloadSurface,
     payload,
+    render_source_kind: renderSourceKind,
     path: result.path ?? result.storage_path,
     warning: result.warning ?? null,
   };
@@ -4594,6 +4677,7 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
   }
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
+  const publicReportSourceKind = classifyPublicReportSource(input);
   const renderReportData = input.render_payload ? unwrapRawReportData(input.render_payload) : {};
   const explicitPublicSource = input.public_report_data ?? null;
   const source =
@@ -4757,9 +4841,7 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     source_stage: input.source_stage ?? "emitPublicReportPayloadArtifact",
     source_module: input.source_module ?? "src/server/v3/qa-artifacts-wiring.server.ts",
     public_report_payload_status: publicReportPayloadStatus,
-    public_report_source_kind: explicitPublicSource
-      ? "explicit_public_report_data"
-      : "sanitised_render_payload_shadow",
+    public_report_source_kind: publicReportSourceKind,
     public_report_source_refs: {
       raw_report_available: Boolean(
         input.raw_report_data && typeof input.raw_report_data === "object",
@@ -4842,6 +4924,7 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     blocker_codes: blockerCodes,
     parity_payload: payloadSurface,
     payload,
+    public_report_source_kind: publicReportSourceKind,
     path: result.path ?? result.storage_path,
     warning: result.warning ?? null,
   };
@@ -7146,6 +7229,9 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       let renderPayloadForParity = metadata.report_parity_input?.render_payload ?? null;
       let publicReportPayloadForParity =
         metadata.report_parity_input?.public_report_payload ?? null;
+      let renderSourceKindForParity = metadata.report_parity_input.render_source_kind ?? null;
+      let publicReportSourceKindForParity =
+        metadata.report_parity_input.public_report_source_kind ?? null;
       if (
         !renderPayloadForParity &&
         (metadata.report_parity_input?.render_report_data ||
@@ -7160,6 +7246,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
           raw_report_data: metadata.report_parity_input.raw_report_data,
           render_report_data: metadata.report_parity_input.render_report_data,
+          render_source_kind: metadata.report_parity_input.render_source_kind,
           allowed_field_paths: metadata.report_parity_input.allowed_public_fields,
           blocked_field_paths: metadata.report_parity_input.blocked_field_paths,
           root_dir: metadata.root_dir,
@@ -7167,6 +7254,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         });
         if (renderPayloadWrite.written) {
           renderPayloadForParity = renderPayloadWrite.parity_payload;
+          renderSourceKindForParity = renderPayloadWrite.render_source_kind ?? null;
           artefactSourceClassificationById.render_payload = "internal_render_payload";
           artefactLevel2ById.render_payload = false;
           if (renderPayloadWrite.render_payload_status === "emitted") {
@@ -7196,6 +7284,12 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
           raw_report_data: metadata.report_parity_input.raw_report_data,
           render_payload: renderPayloadForParity,
+          public_report_data:
+            metadata.report_parity_input.public_report_data ??
+            metadata.report_parity_input.render_report_data,
+          public_report_source_kind:
+            metadata.report_parity_input.public_report_source_kind ??
+            metadata.report_parity_input.render_source_kind,
           allowed_field_paths: metadata.report_parity_input.allowed_public_fields,
           blocked_field_paths: metadata.report_parity_input.blocked_field_paths,
           root_dir: metadata.root_dir,
@@ -7203,6 +7297,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         });
         if (publicPayloadWrite.written) {
           publicReportPayloadForParity = publicPayloadWrite.parity_payload;
+          publicReportSourceKindForParity = publicPayloadWrite.public_report_source_kind ?? null;
           artefactSourceClassificationById.public_report_payload = "internal_public_report_payload";
           artefactLevel2ById.public_report_payload = false;
           if (publicPayloadWrite.public_report_payload_status === "emitted") {
@@ -7235,6 +7330,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         raw_report_data: paritySourceReportData,
         render_payload: renderPayloadForParity,
         public_report_payload: publicReportPayloadForParity,
+        render_source_kind: renderSourceKindForParity,
+        public_report_source_kind: publicReportSourceKindForParity,
         allowed_public_fields: metadata.report_parity_input?.allowed_public_fields,
         blocked_field_paths: metadata.report_parity_input?.blocked_field_paths,
         blocked_score_field_paths: metadata.report_parity_input?.blocked_score_field_paths,

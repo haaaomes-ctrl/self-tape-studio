@@ -7,6 +7,7 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { createLimitedPublicReportViewModel } from "@/lib/public-report-view-model";
 import { buildMuxHighestMp4Url, isValidMuxMp4Url, normaliseMuxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
@@ -3643,49 +3644,56 @@ export async function runProcessTake(
       (report as Record<string, unknown>).schema_version = "v1-legacy";
     }
 
-    // ---- Phase 3B — single-path v2 persistence selection ----
+    // ---- R10 public report view-model persistence selection ----
     // Server flag is the only switch. Production scoring is untouched: we
     // only swap the SHAPE of the persisted `report` JSON. `scores`,
     // `overall_score`, and `score_breakdown` continue to come from the
-    // legacy production path. v1 fallback covers builder errors and
-    // public-boundary validation failures.
+    // legacy production path. When the flag is enabled, public rendering fails
+    // closed to a limited PublicReportViewModel instead of rescuing content
+    // from v1/raw report fields.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let reportToPersist: any = report;
+    let publicReportViewModelSourceKind: string | null = null;
     try {
       const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
       const cfg3b = await getCfg3b();
       if (cfg3b.future_report_enabled) {
-        const { buildV2Report, validateV2PublicBoundary } =
-          await import("./v2-report-builder.server");
-        const v2Candidate = buildV2Report({
-          legacyReport: report as Record<string, unknown>,
+        const { buildPublicReportViewModel } = await import("./public-report-view-model.server");
+        const publicReport = buildPublicReportViewModel({
+          candidateReport: report as Record<string, unknown>,
+          evidence: twoStepEvidence,
           futureDimensions: capturedFutureDimensions ?? null,
-          auditionType: (report.audition_type as string | null) ?? null,
+          auditionType:
+            (typeof report.audition_type === "string" ? report.audition_type : null) ??
+            auditionType,
           mode: audition.brief ? "brief" : "baseline",
+          briefText: typeof audition.brief === "string" ? audition.brief : null,
+          extractedBrief: extractedBrief as Record<string, unknown> | null,
         });
-        const check = validateV2PublicBoundary(v2Candidate, report as Record<string, unknown>);
-        if (check.ok) {
-          reportToPersist = v2Candidate;
-          console.log("[take-pipeline] v2_report_persisted", {
-            take_id: takeId,
-            schema_version: v2Candidate.schema_version,
-            priority_fixes: v2Candidate.priority_fixes.length,
-            from_future_dimensions: !!capturedFutureDimensions,
-          });
-        } else {
-          console.warn("[take-pipeline] v2_report_fallback_to_v1", {
-            take_id: takeId,
-            reason: check.reason,
-          });
-        }
+        reportToPersist = publicReport.model;
+        publicReportViewModelSourceKind = publicReport.source_kind;
+        console.log("[take-pipeline] public_report_view_model_persisted", {
+          take_id: takeId,
+          schema_version: publicReport.model.schema_version,
+          priority_fixes: publicReport.model.priority_fixes.length,
+          source_kind: publicReport.source_kind,
+          fallback_reason: publicReport.fallback_reason ?? null,
+          from_future_dimensions: !!capturedFutureDimensions,
+        });
       }
     } catch (err) {
-      console.warn("[take-pipeline] v2_report_fallback_to_v1", {
+      console.warn("[take-pipeline] public_report_view_model_limited_fallback", {
         take_id: takeId,
         reason: "build_threw",
         error: err instanceof Error ? err.message.slice(0, 200) : "unknown",
       });
-      reportToPersist = report;
+      reportToPersist = createLimitedPublicReportViewModel({
+        mode: audition.brief ? "brief" : "baseline",
+        auditionType,
+        reason:
+          "This report could not generate a reliable fix-first item from the available evidence.",
+      });
+      publicReportViewModelSourceKind = "public_report_view_model_limited";
     }
 
     console.log("[take-pipeline] finalising_scrubs_completed", {
@@ -4190,6 +4198,11 @@ export async function runProcessTake(
         ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>)
         : (report as Record<string, unknown>);
       const renderReportData = reportToPersist as Record<string, unknown>;
+      const reportParitySourceKind =
+        publicReportViewModelSourceKind ??
+        (renderReportData.schema_version === "v2-component"
+          ? "public_report_view_model_limited"
+          : "raw_report_report_data_shadow");
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -4720,6 +4733,9 @@ export async function runProcessTake(
         report_parity_input: {
           raw_report_data: rawReportPayload,
           render_report_data: renderReportData,
+          public_report_data: renderReportData,
+          render_source_kind: reportParitySourceKind,
+          public_report_source_kind: reportParitySourceKind,
           render_payload: null,
           public_report_payload: null,
           allowed_public_fields: [

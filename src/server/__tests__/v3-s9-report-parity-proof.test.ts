@@ -746,6 +746,29 @@ describe("v3-s9 report parity proof", () => {
             not_assessable: [],
           },
         },
+        render_report_data: {
+          schema_version: "v3",
+          submission_verdict: "not_yet_ready",
+          why_this_verdict: { summary: "Retake because the first beat is unclear." },
+          fix_first: "Retake with a clearer first beat.",
+          priority_fixes: ["Clarify the first beat."],
+          must_fix_before_submitting: ["Clarify the first beat before submitting."],
+          should_improve_if_retaking: ["Keep the reaction more active."],
+          optional_polish: ["Tidy the final pause if time allows."],
+          strengths: ["Text is clear."],
+          preserve: ["Keep the clear text."],
+          do_not_overfix: ["Do not lose the clear text while correcting the first beat."],
+          next_take_plan: ["Retake once."],
+          feedback_reliability: { status: "partial" },
+          brief_requirements: [],
+          brief_achievement: {
+            overall_status: "not_applicable",
+            summary: "No brief supplied.",
+            mandatory_requirements_status: "No mandatory requirements supplied.",
+            readiness_impact: "supports_submission",
+          },
+          not_assessable: [],
+        },
         public_report_payload: null,
         allowed_public_fields: [
           "report_data.schema_version",
@@ -1607,6 +1630,7 @@ describe("v3-s9 report parity proof", () => {
       emitted_artefact_ids: ["raw_report"],
       report_parity_input: {
         raw_report_data: { report_data: { fix_first: "Keep the eyeline steady." } },
+        render_report_data: { fix_first: "Keep the eyeline steady." },
         render_payload: null,
         public_report_payload: null,
         allowed_public_fields: ["report_data.fix_first"],
@@ -1722,6 +1746,43 @@ describe("v3-s9 report parity proof", () => {
     expect(publicPayload.report_data).toEqual(renderPayload.report_data);
     expect(parity.parity_status).toBe("passed");
     expect(renderJson).not.toContain("major casting brief instruction");
+  });
+
+  it("R10.7F: matching render/public payloads fail acceptance when sourced from legacy shadows", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "r10-7f-source-kind-"));
+    const out = await emitReportParityProof({
+      run_id: "run-r107f-source-kind",
+      analysis_run_id: "run-r107f-source-kind",
+      take_id: "t-r107f",
+      internal_qa_emit: true,
+      root_dir: root,
+      raw_report_data: {
+        report_data: {
+          fix_first: "Record and include the full required Side 1 acting scene.",
+        },
+      },
+      render_payload: {
+        report_data: {
+          fix_first: "Record and include the full required Side 1 acting scene.",
+        },
+      },
+      public_report_payload: {
+        report_data: {
+          fix_first: "Record and include the full required Side 1 acting scene.",
+        },
+      },
+      render_source_kind: "raw_report_report_data_shadow",
+      public_report_source_kind: "sanitised_render_payload_shadow",
+      allowed_public_fields: ["report_data.fix_first"],
+    });
+
+    const parity = await readParity(root, "run-r107f-source-kind", "t-r107f");
+    expect(out.parity_status).toBe("failed");
+    expect(parity.mismatch_count).toBeGreaterThan(0);
+    expect(parity.blocker_codes).toContain("public_report_source_kind_not_canonical");
+    expect(parity.render_source_kind).toBe("raw_report_report_data_shadow");
+    expect(parity.public_report_source_kind).toBe("sanitised_render_payload_shadow");
+    expect(JSON.stringify(parity.mismatches)).toMatch(/public_report_source_kind_not_canonical/);
   });
 
   it("comparison parity requiredness: ordinary runs mark parity_comparison not_applicable and do not block solely for it", async () => {
