@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildQAAcceptanceMetrics, emitInternalQAArtifactManifest } from '@/server/v3/qa-artifacts.server';
+import { buildQAAcceptanceMetrics, emitInternalQAArtifactManifest, resolveQADeploymentProvenance } from '@/server/v3/qa-artifacts.server';
 import { emitComparisonParityProof, emitQAManifestForAnalysisRun, emitRuntimeVerificationTrace } from '@/server/v3/qa-artifacts-wiring.server';
 
 async function readJson(filePath: string) {
@@ -50,6 +50,44 @@ function sameVideoSuppressedPayload() {
   };
 }
 
+const provenanceEnvKeys = [
+  'BUILD_COMMIT_SHA',
+  'COMMIT_SHA',
+  'GIT_SHA',
+  'GIT_COMMIT_SHA',
+  'SOURCE_VERSION',
+  'GITHUB_SHA',
+  'GITHUB_REF_NAME',
+  'BRANCH_NAME',
+  'GIT_BRANCH_NAME',
+  'VERCEL_GIT_COMMIT_SHA',
+  'VERCEL_GIT_COMMIT_REF',
+  'VERCEL_DEPLOYMENT_ID',
+  'CF_PAGES_COMMIT_SHA',
+  'CF_PAGES_BRANCH',
+  'LOVABLE_GIT_COMMIT_SHA',
+  'LOVABLE_DEPLOYMENT_ID',
+  'DEPLOYMENT_REVISION',
+] as const;
+
+async function withProvenanceEnv<T>(
+  env: Partial<Record<(typeof provenanceEnvKeys)[number], string>>,
+  fn: () => Promise<T>,
+) {
+  const previous = Object.fromEntries(provenanceEnvKeys.map((key) => [key, process.env[key]]));
+  for (const key of provenanceEnvKeys) delete process.env[key];
+  for (const [key, value] of Object.entries(env)) process.env[key] = value;
+  try {
+    return await fn();
+  } finally {
+    for (const key of provenanceEnvKeys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 describe('v3-s9-19j runtime verification provenance and comparison parity closeout', () => {
   it('keeps source/test/build-only proof from satisfying runtime verification', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-19j-runtime-required-'));
@@ -74,6 +112,41 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
     expect(trace.raw_response).toBeUndefined();
   });
 
+  it('captures safe commit branch and deployment env provenance without raw env dumps', () => {
+    const provenance = resolveQADeploymentProvenance({
+      BUILD_COMMIT_SHA: 'abcdef1234567890abcdef1234567890abcdef12',
+      BRANCH_NAME: 'codex/r10-7h-runtime-provenance-operator-verification',
+      DEPLOYMENT_REVISION: 'deploy_123',
+      MUX_TOKEN_SECRET: 'never-emit',
+    } as NodeJS.ProcessEnv);
+
+    expect(provenance.build_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(provenance.source_branch).toBe('codex/r10-7h-runtime-provenance-operator-verification');
+    expect(provenance.deployment_revision).toBe('deploy_123');
+    expect(provenance.deployment_provenance_status).toBe('resolved');
+    expect(JSON.stringify(provenance)).not.toContain('never-emit');
+  });
+
+  it('ignores unsafe provenance env values without storing rejected raw values', () => {
+    const provenance = resolveQADeploymentProvenance({
+      BUILD_COMMIT_SHA: 'https://example.test/build?token=secret',
+      BRANCH_NAME: 'main?token=secret',
+      DEPLOYMENT_REVISION: 'deploy=secret',
+    } as NodeJS.ProcessEnv);
+
+    expect(provenance.build_commit_sha).toBe('unknown');
+    expect(provenance.source_branch).toBe('unknown');
+    expect(provenance.deployment_revision).toBe('unknown');
+    expect(provenance.deployment_provenance_status).toBe('invalid_env_value_ignored');
+    expect(provenance.deployment_provenance_invalid_sources_ignored).toEqual(expect.arrayContaining([
+      'BUILD_COMMIT_SHA',
+      'BRANCH_NAME',
+      'DEPLOYMENT_REVISION',
+    ]));
+    expect(JSON.stringify(provenance)).not.toContain('token=secret');
+    expect(JSON.stringify(provenance)).not.toContain('deploy=secret');
+  });
+
   it('allows operator-confirmed deployment context without approving production release', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 's9-19j-runtime-confirmed-'));
     const trace = await emitRuntimeVerificationTrace({
@@ -88,8 +161,17 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
       runtime_verified_take_ids: ['ta'],
       runtime_verified_artefact_ids: ['step1_observable_evidence', 'analysis_evidence_state'],
       operator_confirmation_status: 'confirmed',
-      operator_confirmed_runtime_build_ref: 's9-19i-runtime-confirmed',
-      runtime_verified_deployment_ref: 's9-19i-runtime-confirmed',
+      operator_confirmed_deployed_commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+      operator_confirmed_deployment_reference: 'deploy_123',
+      operator_confirmed_branch: 'main',
+      operator_confirmed_by: 'operator',
+      operator_confirmed_at: '2026-05-21T12:00:00.000Z',
+      operator_confirmed_take_id: 'ta',
+      operator_confirmed_analysis_run_id: 'run-runtime-confirmed',
+      operator_confirmed_report_surface: 'public_report_page',
+      operator_confirmation_source: 'explicit_operator_runtime_message',
+      operator_confirmation_scope: 'ordinary_single_take',
+      runtime_verified_deployment_ref: 'deploy_123',
     });
     const manifestOut = await emitInternalQAArtifactManifest({
       run_id: 'run-runtime-confirmed',
@@ -108,8 +190,104 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
     expect(metrics.runtime_bundle_freshness_status).toBe('fresh');
     expect(metrics.runtime_bundle_matches_current_implementation_status).toBe('operator_confirmed');
     expect(metrics.operator_confirmation_status).toBe('confirmed');
+    expect(metrics.operator_confirmed_deployed_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(metrics.operator_confirmed_report_surface).toBe('public_report_page');
     expect(metrics.production_safe_status).toBe('blocked');
     expect(metrics.customer_release_status).toBe('blocked');
+    const confirmation = await readJson(path.join(root, 'run-runtime-confirmed', 'takes', 'take-ta', 'analysis-run-runtime-confirmed', 'analysis', 'runtime_operator_confirmation.json'));
+    expect(confirmation.internal_only).toBe(true);
+    expect(confirmation.deployed_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(confirmation.production_safe_status).toBe('blocked');
+  });
+
+  it('allows safe env provenance to complete runtime proof without release approval', async () => {
+    await withProvenanceEnv({
+      BUILD_COMMIT_SHA: 'abcdef1234567890abcdef1234567890abcdef12',
+      BRANCH_NAME: 'main',
+      DEPLOYMENT_REVISION: 'deploy_123',
+    }, async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), 's9-19j-runtime-env-'));
+      const out = await emitRuntimeVerificationTrace({
+        run_id: 'run-runtime-env',
+        analysis_run_id: 'run-runtime-env',
+        take_id: 'ta',
+        root_dir: root,
+        internal_qa_emit: true,
+        runtime_operator_verification_status: 'completed',
+        runtime_verified_take_ids: ['ta'],
+        runtime_verified_artefact_ids: ['step1_observable_evidence'],
+      });
+
+      const summary = out.runtime_verification_trace_summary as any;
+      expect(summary.runtime_operator_verification_status).toBe('completed');
+      expect(summary.runtime_bundle_freshness_status).toBe('fresh');
+      expect(summary.runtime_bundle_matches_current_implementation_status).toBe('matches_current_implementation');
+      const trace = await readJson(path.join(root, 'run-runtime-env', 'takes', 'take-ta', 'analysis-run-runtime-env', 'analysis', 'RuntimeVerificationTrace.json'));
+      expect(trace.deployment_provenance_status).toBe('resolved');
+      expect(trace.build_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+      expect(trace.production_safe_status).toBe('blocked');
+    });
+  });
+
+  it('blocks runtime proof when safe env provenance conflicts with operator confirmation', async () => {
+    await withProvenanceEnv({
+      BUILD_COMMIT_SHA: '1111111111111111111111111111111111111111',
+      BRANCH_NAME: 'main',
+      DEPLOYMENT_REVISION: 'deploy_123',
+    }, async () => {
+      const root = await mkdtemp(path.join(os.tmpdir(), 's9-19j-runtime-conflict-'));
+      const out = await emitRuntimeVerificationTrace({
+        run_id: 'run-runtime-conflict',
+        analysis_run_id: 'run-runtime-conflict',
+        take_id: 'ta',
+        root_dir: root,
+        internal_qa_emit: true,
+        runtime_operator_verification_status: 'completed',
+        runtime_verified_take_ids: ['ta'],
+        runtime_verified_artefact_ids: ['step1_observable_evidence'],
+        operator_confirmation_status: 'confirmed',
+        operator_confirmed_deployed_commit_sha: '2222222222222222222222222222222222222222',
+        operator_confirmed_deployment_reference: 'deploy_123',
+        operator_confirmed_branch: 'main',
+        operator_confirmed_by: 'operator',
+        operator_confirmed_at: '2026-05-21T12:00:00.000Z',
+        operator_confirmed_take_id: 'ta',
+        operator_confirmed_analysis_run_id: 'run-runtime-conflict',
+        operator_confirmed_report_surface: 'public_report_page',
+        operator_confirmation_source: 'explicit_operator_runtime_message',
+      });
+
+      expect(out.runtime_verification_trace_summary?.runtime_operator_verification_status).toBe('incomplete');
+      expect(out.runtime_verification_trace_summary?.blocker_codes).toEqual(expect.arrayContaining(['runtime_provenance_conflict']));
+      const trace = await readJson(path.join(root, 'run-runtime-conflict', 'takes', 'take-ta', 'analysis-run-runtime-conflict', 'analysis', 'RuntimeVerificationTrace.json'));
+      expect(trace.deployment_provenance_status).toBe('runtime_provenance_conflict');
+      expect(trace.runtime_provenance_conflict_fields).toEqual(['commit']);
+      expect(JSON.stringify(trace)).not.toContain('token=');
+    });
+  });
+
+  it('keeps incomplete operator confirmation blocked with a specific reason', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 's9-19j-runtime-incomplete-confirmation-'));
+    const out = await emitRuntimeVerificationTrace({
+      run_id: 'run-runtime-incomplete-confirmation',
+      analysis_run_id: 'run-runtime-incomplete-confirmation',
+      take_id: 'ta',
+      root_dir: root,
+      internal_qa_emit: true,
+      runtime_operator_verification_status: 'completed',
+      runtime_verified_take_ids: ['ta'],
+      runtime_verified_artefact_ids: ['step1_observable_evidence'],
+      operator_confirmation_status: 'confirmed',
+      operator_confirmed_deployed_commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+      operator_confirmed_by: 'operator',
+      operator_confirmed_at: '2026-05-21T12:00:00.000Z',
+    });
+
+    const summary = out.runtime_verification_trace_summary as any;
+    expect(summary.operator_confirmation_status).toBe('incomplete');
+    expect(summary.operator_confirmation_reason).toBe('operator_confirmation_incomplete');
+    expect(summary.runtime_operator_verification_status).toBe('incomplete');
+    expect(out.emitted_artefact_ids).not.toContain('runtime_operator_confirmation');
   });
 
   it('preserves supplied runtime verification summaries when emitting the runtime trace', async () => {
@@ -126,8 +304,17 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
         runtime_bundle_freshness_status: 'fresh',
         runtime_bundle_matches_current_implementation_status: 'operator_confirmed',
         runtime_verified_take_ids: ['ta'],
+        runtime_verified_artefact_ids: ['runtime_verification_trace'],
         operator_confirmation_status: 'confirmed',
-        operator_confirmed_runtime_build_ref: 'operator-confirmed-runtime',
+        operator_confirmed_deployed_commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+        operator_confirmed_deployment_reference: 'deploy_123',
+        operator_confirmed_branch: 'main',
+        operator_confirmed_by: 'operator',
+        operator_confirmed_at: '2026-05-21T12:00:00.000Z',
+        operator_confirmed_take_id: 'ta',
+        operator_confirmed_analysis_run_id: 'run-runtime-summary',
+        operator_confirmed_report_surface: 'public_report_page',
+        operator_confirmation_source: 'explicit_operator_runtime_message',
       },
     });
 
@@ -138,6 +325,9 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
     expect(manifest.runtime_verification_trace_summary.runtime_operator_verification_status).toBe('completed');
     expect(metrics.runtime_operator_verification_status).toBe('completed');
     expect(trace.runtime_operator_verification_status).toBe('completed');
+    expect(manifest.operator_confirmed_deployed_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(metrics.operator_confirmed_deployed_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
+    expect(trace.operator_confirmed_report_surface).toBe('public_report_page');
   });
 
   it('classifies intentionally absent same-video public output as suppressed, not missing parity artefacts', async () => {
