@@ -92,6 +92,172 @@ function runtimeRecordArray(value: unknown): Array<Record<string, unknown>> {
     : [];
 }
 
+function runtimeText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function runtimeBool(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalised = value.trim().toLowerCase();
+    if (normalised === "true") return true;
+    if (normalised === "false") return false;
+  }
+  return undefined;
+}
+
+function firstRuntimeText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = runtimeText(value);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function resolveRuntimeOperatorConfirmationForTake(input: {
+  signals: unknown;
+  takeId: string;
+  analysisRunId: string;
+}): Record<string, unknown> {
+  const signals = isRuntimeRecord(input.signals) ? input.signals : {};
+  const nested =
+    (isRuntimeRecord(signals.runtime_operator_confirmation)
+      ? signals.runtime_operator_confirmation
+      : null) ??
+    (isRuntimeRecord(signals.r10_runtime_operator_confirmation)
+      ? signals.r10_runtime_operator_confirmation
+      : null);
+  const envStatus = process.env.R10_OPERATOR_CONFIRMATION_STATUS;
+  const status = firstRuntimeText(
+    nested?.operator_confirmation_status,
+    nested?.confirmation_status,
+    nested?.status,
+    envStatus,
+  );
+  if (!status) return {};
+
+  const deployedCommit = firstRuntimeText(
+    nested?.deployed_commit_sha,
+    nested?.operator_confirmed_deployed_commit_sha,
+    process.env.R10_OPERATOR_CONFIRMED_DEPLOYED_COMMIT_SHA,
+    process.env.BUILD_COMMIT_SHA,
+    process.env.COMMIT_SHA,
+    process.env.GIT_SHA,
+    process.env.GIT_COMMIT_SHA,
+    process.env.GITHUB_SHA,
+    process.env.VERCEL_GIT_COMMIT_SHA,
+    process.env.CF_PAGES_COMMIT_SHA,
+    process.env.LOVABLE_GIT_COMMIT_SHA,
+  );
+  const deploymentReference = firstRuntimeText(
+    nested?.deployment_reference,
+    nested?.operator_confirmed_deployment_reference,
+    process.env.R10_OPERATOR_CONFIRMED_DEPLOYMENT_REFERENCE,
+    process.env.DEPLOYMENT_REVISION,
+    process.env.VERCEL_DEPLOYMENT_ID,
+    process.env.LOVABLE_DEPLOYMENT_ID,
+  );
+  const branch = firstRuntimeText(
+    nested?.branch,
+    nested?.operator_confirmed_branch,
+    process.env.R10_OPERATOR_CONFIRMED_BRANCH,
+    process.env.BRANCH_NAME,
+    process.env.GIT_BRANCH_NAME,
+    process.env.GITHUB_REF_NAME,
+    process.env.VERCEL_GIT_COMMIT_REF,
+    process.env.CF_PAGES_BRANCH,
+  );
+
+  return {
+    operator_confirmation_status: status,
+    operator_confirmed_deployed_commit_sha: deployedCommit,
+    operator_confirmed_deployment_reference: deploymentReference,
+    operator_confirmed_branch: branch,
+    operator_confirmed_by: firstRuntimeText(
+      nested?.operator,
+      nested?.operator_confirmed_by,
+      process.env.R10_OPERATOR_CONFIRMED_BY,
+    ),
+    operator_confirmed_at: firstRuntimeText(
+      nested?.confirmed_at,
+      nested?.operator_confirmed_at,
+      process.env.R10_OPERATOR_CONFIRMED_AT,
+    ),
+    operator_confirmed_take_id: firstRuntimeText(
+      nested?.take_id,
+      nested?.operator_confirmed_take_id,
+      process.env.R10_OPERATOR_CONFIRMED_TAKE_ID,
+      input.takeId,
+    ),
+    operator_confirmed_analysis_run_id: firstRuntimeText(
+      nested?.analysis_run_id,
+      nested?.operator_confirmed_analysis_run_id,
+      process.env.R10_OPERATOR_CONFIRMED_ANALYSIS_RUN_ID,
+      input.analysisRunId,
+    ),
+    operator_confirmed_report_surface: firstRuntimeText(
+      nested?.report_surface_reviewed,
+      nested?.operator_confirmed_report_surface,
+      process.env.R10_OPERATOR_CONFIRMED_REPORT_SURFACE,
+    ),
+    operator_confirmation_source: firstRuntimeText(
+      nested?.confirmation_source,
+      nested?.operator_confirmation_source,
+      process.env.R10_OPERATOR_CONFIRMATION_SOURCE,
+      "operator_manual_review",
+    ),
+    operator_confirmation_scope: firstRuntimeText(
+      nested?.confirmation_scope,
+      nested?.operator_confirmation_scope,
+      process.env.R10_OPERATOR_CONFIRMATION_SCOPE,
+      "R10.7 deployed runtime checkpoint",
+    ),
+    operator_confirmation_notes: firstRuntimeText(
+      nested?.notes,
+      nested?.operator_confirmation_notes,
+      process.env.R10_OPERATOR_CONFIRMATION_NOTES,
+    ),
+    operator_confirmation_report_value_status: firstRuntimeText(
+      nested?.report_value_status,
+      process.env.R10_OPERATOR_REPORT_VALUE_STATUS,
+    ),
+    same_test_fixture_confirmed: runtimeBool(
+      nested?.same_test_fixture_confirmed ??
+        process.env.R10_OPERATOR_SAME_TEST_FIXTURE_CONFIRMED,
+    ),
+    same_video_confirmed: runtimeBool(
+      nested?.same_video_confirmed ?? process.env.R10_OPERATOR_SAME_VIDEO_CONFIRMED,
+    ),
+    same_brief_confirmed: runtimeBool(
+      nested?.same_brief_confirmed ?? process.env.R10_OPERATOR_SAME_BRIEF_CONFIRMED,
+    ),
+    operator_confirms_no_customer_release_claimed: runtimeBool(
+      nested?.operator_confirms_no_customer_release_claimed ??
+        process.env.R10_OPERATOR_CONFIRMS_NO_CUSTOMER_RELEASE_CLAIMED,
+    ),
+    operator_confirms_no_production_safe_approval_claimed: runtimeBool(
+      nested?.operator_confirms_no_production_safe_approval_claimed ??
+        process.env.R10_OPERATOR_CONFIRMS_NO_PRODUCTION_SAFE_APPROVAL_CLAIMED,
+    ),
+    operator_confirms_no_level2_acceptance_claimed: runtimeBool(
+      nested?.operator_confirms_no_level2_acceptance_claimed ??
+        process.env.R10_OPERATOR_CONFIRMS_NO_LEVEL2_ACCEPTANCE_CLAIMED,
+    ),
+    operator_confirms_public_scores_blocked: runtimeBool(
+      nested?.operator_confirms_public_scores_blocked ??
+        process.env.R10_OPERATOR_CONFIRMS_PUBLIC_SCORES_BLOCKED,
+    ),
+    operator_confirms_public_technique_authority_blocked: runtimeBool(
+      nested?.operator_confirms_public_technique_authority_blocked ??
+        process.env.R10_OPERATOR_CONFIRMS_PUBLIC_TECHNIQUE_AUTHORITY_BLOCKED,
+    ),
+    operator_confirms_public_comparison_recommendation_blocked: runtimeBool(
+      nested?.operator_confirms_public_comparison_recommendation_blocked ??
+        process.env.R10_OPERATOR_CONFIRMS_PUBLIC_COMPARISON_RECOMMENDATION_BLOCKED,
+    ),
+  };
+}
+
 function addUniqueId(ids: string[], id: string) {
   if (!ids.includes(id)) ids.push(id);
 }
@@ -4203,6 +4369,23 @@ export async function runProcessTake(
         (renderReportData.schema_version === "v2-component"
           ? "public_report_view_model_limited"
           : "raw_report_report_data_shadow");
+      const finalReportModelStatus =
+        renderReportData.schema_version === "v2-component" ? "final" : "not_final";
+      const r107AcceptanceEligible =
+        finalReportModelStatus === "final" &&
+        (reportParitySourceKind === "public_report_view_model" ||
+          reportParitySourceKind === "public_report_view_model_limited");
+      const operatorConfirmation = resolveRuntimeOperatorConfirmationForTake({
+        signals: take.signals,
+        takeId,
+        analysisRunId: `take-${takeId}`,
+      });
+      const operatorConfirmationStatus =
+        typeof operatorConfirmation.operator_confirmation_status === "string"
+          ? operatorConfirmation.operator_confirmation_status.toLowerCase()
+          : null;
+      const operatorConfirmationRequested =
+        operatorConfirmationStatus === "confirmed" || operatorConfirmationStatus === "provided";
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -4736,6 +4919,12 @@ export async function runProcessTake(
           public_report_data: renderReportData,
           render_source_kind: reportParitySourceKind,
           public_report_source_kind: reportParitySourceKind,
+          source_stage:
+            finalReportModelStatus === "final"
+              ? "process_take_success.final_report_model"
+              : "process_take_success.not_final_report_model",
+          final_report_model_status: finalReportModelStatus,
+          r10_7_acceptance_eligible: r107AcceptanceEligible,
           render_payload: null,
           public_report_payload: null,
           allowed_public_fields: [
@@ -4757,6 +4946,33 @@ export async function runProcessTake(
             "report_data.not_assessable",
           ],
         },
+        ...(operatorConfirmation as {
+          operator_confirmation_status?: string;
+          operator_confirmed_deployed_commit_sha?: string;
+          operator_confirmed_deployment_reference?: string;
+          operator_confirmed_branch?: string;
+          operator_confirmed_by?: string;
+          operator_confirmed_at?: string;
+          operator_confirmed_take_id?: string;
+          operator_confirmed_analysis_run_id?: string;
+          operator_confirmed_report_surface?: string;
+          operator_confirmation_source?: string;
+          operator_confirmation_scope?: string;
+          operator_confirmation_notes?: string;
+          operator_confirmation_report_value_status?: string;
+          same_test_fixture_confirmed?: boolean;
+          same_video_confirmed?: boolean;
+          same_brief_confirmed?: boolean;
+          operator_confirms_no_customer_release_claimed?: boolean;
+          operator_confirms_no_production_safe_approval_claimed?: boolean;
+          operator_confirms_no_level2_acceptance_claimed?: boolean;
+          operator_confirms_public_scores_blocked?: boolean;
+          operator_confirms_public_technique_authority_blocked?: boolean;
+          operator_confirms_public_comparison_recommendation_blocked?: boolean;
+        }),
+        ...(operatorConfirmationRequested
+          ? { runtime_operator_verification_status: "completed" }
+          : {}),
       });
       console.info("[internal-qa] emitQAManifestForAnalysisRun_result", {
         event: "emitQAManifestForAnalysisRun_result",

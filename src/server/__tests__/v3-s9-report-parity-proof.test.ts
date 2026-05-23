@@ -1785,6 +1785,119 @@ describe("v3-s9 report parity proof", () => {
     expect(JSON.stringify(parity.mismatches)).toMatch(/public_report_source_kind_not_canonical/);
   });
 
+  it("R10.7I: pre-finalisation public report payloads remain parity-checkable but not R10.7-eligible", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "r10-7i-prefinal-"));
+    await emitQAManifestForAnalysisRun({
+      run_id: "run-r107i-prefinal",
+      analysis_run_id: "run-r107i-prefinal",
+      take_id: "t-r107i",
+      submission_id: "s1",
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ["raw_report"],
+      report_parity_input: {
+        raw_report_data: { report_data: { fix_first: "Record Side 1." } },
+        render_report_data: { fix_first: "Record Side 1." },
+        public_report_data: { fix_first: "Record Side 1." },
+        render_source_kind: "public_report_view_model_limited",
+        public_report_source_kind: "public_report_view_model_limited",
+        final_report_model_status: "not_final",
+        r10_7_acceptance_eligible: false,
+        allowed_public_fields: ["report_data.fix_first"],
+      },
+    });
+
+    const renderPayload = await readRenderPayload(root, "run-r107i-prefinal", "t-r107i");
+    const publicPayload = await readPublicReportPayload(root, "run-r107i-prefinal", "t-r107i");
+    const parity = await readParity(root, "run-r107i-prefinal", "t-r107i");
+    const metrics = JSON.parse(
+      await readFile(
+        path.join(root, "run-r107i-prefinal", "qa", "acceptance_metrics.json"),
+        "utf8",
+      ),
+    );
+
+    expect(renderPayload.final_report_model_status).toBe("not_final");
+    expect(publicPayload.final_report_model_status).toBe("not_final");
+    expect(renderPayload.r10_7_acceptance_eligible).toBe(false);
+    expect(publicPayload.r10_7_acceptance_eligible).toBe(false);
+    expect(parity.parity_status).toBe("passed");
+    expect(parity.r10_7_acceptance_eligible).toBe(false);
+    expect(parity.r10_7_acceptance_blocker_codes).toContain("final_report_model_not_final");
+    expect(metrics.final_report_model_status).toBe("not_final");
+    expect(metrics.r10_7_acceptance_eligible).toBe(false);
+  });
+
+  it("R10.7I: final PublicReportViewModel payloads supersede diagnostic pre-final payloads at canonical paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "r10-7i-final-"));
+    const runId = "run-r107i-final";
+    const takeId = "t-r107i-final";
+
+    await emitQAManifestForAnalysisRun({
+      run_id: runId,
+      analysis_run_id: runId,
+      take_id: takeId,
+      submission_id: "s1",
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ["raw_report"],
+      report_parity_input: {
+        raw_report_data: { report_data: { fix_first: null } },
+        render_report_data: { fix_first: null },
+        public_report_data: { fix_first: null },
+        render_source_kind: "public_report_view_model_limited",
+        public_report_source_kind: "public_report_view_model_limited",
+        final_report_model_status: "not_final",
+        r10_7_acceptance_eligible: false,
+        allowed_public_fields: ["report_data.fix_first"],
+      },
+    });
+
+    await emitQAManifestForAnalysisRun({
+      run_id: runId,
+      analysis_run_id: runId,
+      take_id: takeId,
+      submission_id: "s1",
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ["raw_report"],
+      report_parity_input: {
+        raw_report_data: {
+          report_data: { fix_first: "Record and include the full required Side 1 acting scene." },
+        },
+        render_report_data: {
+          fix_first: "Record and include the full required Side 1 acting scene.",
+        },
+        public_report_data: {
+          fix_first: "Record and include the full required Side 1 acting scene.",
+        },
+        render_source_kind: "public_report_view_model_limited",
+        public_report_source_kind: "public_report_view_model_limited",
+        source_stage: "process_take_success.final_report_model",
+        final_report_model_status: "final",
+        r10_7_acceptance_eligible: true,
+        allowed_public_fields: ["report_data.fix_first"],
+      },
+    });
+
+    const renderPayload = await readRenderPayload(root, runId, takeId);
+    const publicPayload = await readPublicReportPayload(root, runId, takeId);
+    const parity = await readParity(root, runId, takeId);
+    const metrics = JSON.parse(
+      await readFile(path.join(root, runId, "qa", "acceptance_metrics.json"), "utf8"),
+    );
+
+    expect(renderPayload.source_stage).toBe("process_take_success.final_report_model");
+    expect(publicPayload.source_stage).toBe("process_take_success.final_report_model");
+    expect(renderPayload.final_report_model_status).toBe("final");
+    expect(publicPayload.final_report_model_status).toBe("final");
+    expect(renderPayload.report_data.fix_first).toMatch(/Side 1 acting scene/i);
+    expect(publicPayload.report_data.fix_first).toMatch(/Side 1 acting scene/i);
+    expect(parity.r10_7_acceptance_eligible).toBe(true);
+    expect(metrics.final_report_model_status).toBe("final");
+    expect(metrics.r10_7_acceptance_eligible).toBe(true);
+  });
+
   it("comparison parity requiredness: ordinary runs mark parity_comparison not_applicable and do not block solely for it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "s9-13d-ordinary-"));
     const out = await emitReportParityProof({

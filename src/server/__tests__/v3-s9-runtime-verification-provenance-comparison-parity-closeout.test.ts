@@ -196,8 +196,85 @@ describe('v3-s9-19j runtime verification provenance and comparison parity closeo
     expect(metrics.customer_release_status).toBe('blocked');
     const confirmation = await readJson(path.join(root, 'run-runtime-confirmed', 'takes', 'take-ta', 'analysis-run-runtime-confirmed', 'analysis', 'runtime_operator_confirmation.json'));
     expect(confirmation.internal_only).toBe(true);
+    expect(confirmation.schema_version).toBe('tapecoach_r10_runtime_operator_confirmation_v1');
     expect(confirmation.deployed_commit_sha).toBe('abcdef1234567890abcdef1234567890abcdef12');
     expect(confirmation.production_safe_status).toBe('blocked');
+  });
+
+  it('records the R10.7 operator confirmation contract without marking failed report value as passed', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'r10-7i-runtime-confirmed-'));
+    const trace = await emitRuntimeVerificationTrace({
+      run_id: 'run-r107i-confirmed',
+      analysis_run_id: 'take-r107i',
+      take_id: 'r107i',
+      root_dir: root,
+      internal_qa_emit: true,
+      runtime_operator_verification_status: 'completed',
+      runtime_verified_take_ids: ['r107i'],
+      runtime_verified_artefact_ids: ['render_payload', 'public_report_payload', 'parity_report'],
+      operator_confirmation_status: 'confirmed',
+      operator_confirmed_deployed_commit_sha: 'abcdef1234567890abcdef1234567890abcdef12',
+      operator_confirmed_deployment_reference: 'r10-7i-abcdef1',
+      operator_confirmed_branch: 'main',
+      operator_confirmed_by: 'operator',
+      operator_confirmed_at: '2026-05-23T12:00:00.000Z',
+      operator_confirmed_take_id: 'r107i',
+      operator_confirmed_analysis_run_id: 'take-r107i',
+      operator_confirmed_report_surface: 'public_locked_report_ui',
+      operator_confirmation_source: 'operator_manual_review',
+      operator_confirmation_scope: 'R10.7 deployed runtime checkpoint',
+      operator_confirmation_report_value_status: 'failed',
+      same_test_fixture_confirmed: true,
+      same_video_confirmed: true,
+      same_brief_confirmed: true,
+      operator_confirms_no_customer_release_claimed: true,
+      operator_confirms_no_production_safe_approval_claimed: true,
+      operator_confirms_no_level2_acceptance_claimed: true,
+      operator_confirms_public_scores_blocked: true,
+      operator_confirms_public_technique_authority_blocked: true,
+      operator_confirms_public_comparison_recommendation_blocked: true,
+    });
+    const manifestOut = await emitInternalQAArtifactManifest({
+      run_id: 'run-r107i-confirmed',
+      analysis_run_id: 'take-r107i',
+      take_id: 'r107i',
+      root_dir: root,
+      internal_qa_emit: true,
+      runtime_verification_trace_summary: trace.runtime_verification_trace_summary ?? undefined,
+      emitted_artefact_ids: ['runtime_verification_trace', 'runtime_operator_confirmation'],
+      artefact_source_classification_by_id: {
+        runtime_verification_trace: 'runtime_verification_trace',
+        runtime_operator_confirmation: 'internal_runtime_operator_confirmation',
+      },
+      artefact_level2_spine_satisfaction_by_id: {
+        runtime_verification_trace: false,
+        runtime_operator_confirmation: false,
+      },
+    });
+
+    const confirmation = await readJson(
+      path.join(
+        root,
+        'run-r107i-confirmed',
+        'takes',
+        'take-r107i',
+        'analysis-take-r107i',
+        'analysis',
+        'runtime_operator_confirmation.json',
+      ),
+    );
+    const metrics = buildQAAcceptanceMetrics(manifestOut.manifest);
+
+    expect(confirmation.confirmation_scope).toBe('R10.7 deployed runtime checkpoint');
+    expect(confirmation.confirmation_source).toBe('operator_manual_review');
+    expect(confirmation.report_surface_reviewed).toBe('public_locked_report_ui');
+    expect(confirmation.same_test_fixture_confirmed).toBe(true);
+    expect(confirmation.report_value_status).toBe('failed');
+    expect(metrics.runtime_operator_verification_status).toBe('completed');
+    expect(metrics.operator_confirmation_report_value_status).toBe('failed');
+    expect(metrics.production_safe_status).toBe('blocked');
+    expect(metrics.customer_release_status).toBe('blocked');
+    expect(metrics.level2_status).toBe('not_accepted');
   });
 
   it('allows safe env provenance to complete runtime proof without release approval', async () => {

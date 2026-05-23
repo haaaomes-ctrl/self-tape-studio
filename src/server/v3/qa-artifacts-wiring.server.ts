@@ -357,6 +357,16 @@ export interface QARuntimeMetadata {
   operator_confirmation_scope?: string;
   operator_confirmation_notes?: string;
   operator_confirmation_reason?: string;
+  operator_confirmation_report_value_status?: string;
+  same_test_fixture_confirmed?: boolean;
+  same_video_confirmed?: boolean;
+  same_brief_confirmed?: boolean;
+  operator_confirms_no_customer_release_claimed?: boolean;
+  operator_confirms_no_production_safe_approval_claimed?: boolean;
+  operator_confirms_no_level2_acceptance_claimed?: boolean;
+  operator_confirms_public_scores_blocked?: boolean;
+  operator_confirms_public_technique_authority_blocked?: boolean;
+  operator_confirms_public_comparison_recommendation_blocked?: boolean;
   emitted_artefact_ids?: string[];
   emitted_blocked_artefact_ids?: string[];
   deferred_artefact_ids?: string[];
@@ -386,6 +396,9 @@ export interface QARuntimeMetadata {
     public_report_data?: Record<string, unknown> | null;
     render_source_kind?: string | null;
     public_report_source_kind?: string | null;
+    source_stage?: string | null;
+    final_report_model_status?: "not_final" | "final" | null;
+    r10_7_acceptance_eligible?: boolean | null;
     render_payload?: Record<string, unknown> | null;
     public_report_payload?: Record<string, unknown> | null;
     allowed_public_fields?: string[];
@@ -1327,7 +1340,18 @@ export interface RuntimeVerificationTraceEmitterInput {
   operator_confirmed_report_surface?: string | null;
   operator_confirmation_scope?: string | null;
   operator_confirmation_notes?: string | null;
+  operator_confirmation_report_value_status?: string | null;
+  same_test_fixture_confirmed?: boolean;
+  same_video_confirmed?: boolean;
+  same_brief_confirmed?: boolean;
+  operator_confirms_no_customer_release_claimed?: boolean;
+  operator_confirms_no_production_safe_approval_claimed?: boolean;
+  operator_confirms_no_level2_acceptance_claimed?: boolean;
+  operator_confirms_public_scores_blocked?: boolean;
+  operator_confirms_public_technique_authority_blocked?: boolean;
+  operator_confirms_public_comparison_recommendation_blocked?: boolean;
   operator_confirmation_source?:
+    | "operator_manual_review"
     | "explicit_operator_runtime_message"
     | "deployment_dashboard"
     | "safe_env_var"
@@ -1390,10 +1414,13 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     80,
   ) ?? "unknown";
   const operatorConfirmationScope =
+    safeRuntimeNote(input.operator_confirmation_scope) ??
     safeRuntimeToken(input.operator_confirmation_scope, 80) ??
     safeRuntimeToken(input.verification_scope ?? "ordinary_single_take", 80) ??
     "ordinary_single_take";
   const operatorConfirmationNotes = safeRuntimeNote(input.operator_confirmation_notes);
+  const operatorConfirmationReportValueStatus =
+    safeRuntimeToken(input.operator_confirmation_report_value_status, 40) ?? null;
   const operatorStatusRequested = input.operator_confirmation_status ?? "missing";
   const operatorConfirmationDataPresent = Boolean(
     operatorStatusRequested !== "missing" ||
@@ -1571,6 +1598,22 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
     operator_confirmation_source: operatorConfirmationSource,
     operator_confirmation_scope: operatorConfirmationScope,
     operator_confirmation_notes: operatorConfirmationNotes,
+    operator_confirmation_report_value_status: operatorConfirmationReportValueStatus,
+    same_test_fixture_confirmed: input.same_test_fixture_confirmed === true,
+    same_video_confirmed: input.same_video_confirmed === true,
+    same_brief_confirmed: input.same_brief_confirmed === true,
+    operator_confirms_no_customer_release_claimed:
+      input.operator_confirms_no_customer_release_claimed === true,
+    operator_confirms_no_production_safe_approval_claimed:
+      input.operator_confirms_no_production_safe_approval_claimed === true,
+    operator_confirms_no_level2_acceptance_claimed:
+      input.operator_confirms_no_level2_acceptance_claimed === true,
+    operator_confirms_public_scores_blocked:
+      input.operator_confirms_public_scores_blocked === true,
+    operator_confirms_public_technique_authority_blocked:
+      input.operator_confirms_public_technique_authority_blocked === true,
+    operator_confirms_public_comparison_recommendation_blocked:
+      input.operator_confirms_public_comparison_recommendation_blocked === true,
     runtime_provenance_conflict_status: runtimeProvenanceConflict ? "conflict" : "none",
     runtime_provenance_conflict_fields: conflictFields,
     deployment_provenance_status: effectiveDeploymentProvenanceStatus,
@@ -1625,20 +1668,41 @@ export async function emitRuntimeVerificationTrace(input: RuntimeVerificationTra
   let operatorConfirmationResult: Awaited<ReturnType<typeof writeInternalJson>> | null = null;
   if (operatorConfirmationComplete) {
     const confirmationPayload = {
-      schema_version: "tapecoach_runtime_operator_confirmation_v1",
+      schema_version: "tapecoach_r10_runtime_operator_confirmation_v1",
       artefact_type: "runtime_operator_confirmation",
       internal_only: true,
       privacy_classification: "internal_private",
+      confirmation_scope: operatorConfirmationScope,
+      confirmation_source: operatorConfirmationSource,
+      environment: "production",
+      public_url: "https://tapecoach.co.uk",
       take_id: operatorConfirmedTakeId ?? "unknown",
       analysis_run_id: operatorConfirmedAnalysisRunId ?? analysisRunId,
       report_surface: operatorConfirmedReportSurface ?? "unknown",
+      report_surface_reviewed: operatorConfirmedReportSurface ?? "unknown",
       deployed_commit_sha: operatorConfirmedDeployedCommitSha ?? "unknown",
       deployment_reference: operatorConfirmedDeploymentReference ?? null,
       branch: operatorConfirmedBranch ?? null,
       operator: operatorConfirmedBy ?? "unknown",
       confirmed_at: operatorConfirmedAt ?? "unknown",
-      confirmation_source: operatorConfirmationSource,
-      confirmation_scope: operatorConfirmationScope,
+      same_test_fixture_confirmed: input.same_test_fixture_confirmed === true,
+      same_video_confirmed: input.same_video_confirmed === true,
+      same_brief_confirmed: input.same_brief_confirmed === true,
+      report_value_status: operatorConfirmationReportValueStatus ?? "unknown",
+      operator_confirms_runtime_matches_deployed_commit:
+        operatorConfirmationComplete && !runtimeProvenanceConflict,
+      operator_confirms_no_customer_release_claimed:
+        input.operator_confirms_no_customer_release_claimed === true,
+      operator_confirms_no_production_safe_approval_claimed:
+        input.operator_confirms_no_production_safe_approval_claimed === true,
+      operator_confirms_no_level2_acceptance_claimed:
+        input.operator_confirms_no_level2_acceptance_claimed === true,
+      operator_confirms_public_scores_blocked:
+        input.operator_confirms_public_scores_blocked === true,
+      operator_confirms_public_technique_authority_blocked:
+        input.operator_confirms_public_technique_authority_blocked === true,
+      operator_confirms_public_comparison_recommendation_blocked:
+        input.operator_confirms_public_comparison_recommendation_blocked === true,
       notes: operatorConfirmationNotes ?? undefined,
       runtime_provenance_conflict_status: runtimeProvenanceConflict ? "conflict" : "none",
       runtime_provenance_conflict_fields: conflictFields,
@@ -1860,6 +1924,8 @@ export interface ReportParityProofEmitterInput {
   public_report_payload?: Record<string, unknown> | null;
   render_source_kind?: PublicReportSourceKind | null;
   public_report_source_kind?: PublicReportSourceKind | null;
+  final_report_model_status?: "not_final" | "final" | null;
+  r10_7_acceptance_eligible?: boolean | null;
   allowed_public_fields?: string[];
   blocked_field_paths?: string[];
   blocked_score_field_paths?: string[];
@@ -1877,6 +1943,8 @@ export interface RenderPayloadEmitterInput {
   raw_report_data?: Record<string, unknown> | null;
   render_report_data?: Record<string, unknown> | null;
   render_source_kind?: PublicReportSourceKind | null;
+  final_report_model_status?: "not_final" | "final" | null;
+  r10_7_acceptance_eligible?: boolean | null;
   allowed_field_paths?: string[];
   blocked_field_paths?: string[];
   root_dir?: string;
@@ -1894,6 +1962,8 @@ export interface PublicReportPayloadEmitterInput {
   render_payload?: Record<string, unknown> | null;
   public_report_data?: Record<string, unknown> | null;
   public_report_source_kind?: PublicReportSourceKind | null;
+  final_report_model_status?: "not_final" | "final" | null;
+  r10_7_acceptance_eligible?: boolean | null;
   allowed_field_paths?: string[];
   blocked_field_paths?: string[];
   root_dir?: string;
@@ -2926,6 +2996,14 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
   const publicReportSourceKind =
     input.public_report_source_kind ??
     sourceKindFromSurface(publicPayload, ["public_report_source_kind", "source_kind"]);
+  const renderFinalReportModelStatus =
+    input.final_report_model_status ?? readFinalReportModelStatus(render);
+  const publicFinalReportModelStatus =
+    input.final_report_model_status ?? readFinalReportModelStatus(publicPayload);
+  const renderR107AcceptanceEligible =
+    input.r10_7_acceptance_eligible ?? readR107Eligibility(render);
+  const publicR107AcceptanceEligible =
+    input.r10_7_acceptance_eligible ?? readR107Eligibility(publicPayload);
   const sourceKindFindings: Array<Record<string, unknown>> = [];
   const addSourceKindFinding = (
     surface: "render_payload" | "public_report_payload",
@@ -3002,6 +3080,26 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
       mismatch_type: "allowed_public_fields_missing",
       detail: "no_allowed_public_fields_configured",
     });
+  const r107AcceptanceBlockerCodes = [
+    ...new Set([
+      ...(sourceKindFindings.length > 0 ? ["public_report_source_kind_not_canonical"] : []),
+      ...(renderFinalReportModelStatus === "not_final" ||
+      publicFinalReportModelStatus === "not_final"
+        ? ["final_report_model_not_final"]
+        : []),
+      ...(renderR107AcceptanceEligible === false || publicR107AcceptanceEligible === false
+        ? ["final_report_payload_not_r10_7_eligible"]
+        : []),
+      ...(parityStatus === "passed" ? [] : ["report_parity_not_passed"]),
+    ]),
+  ];
+  const r107AcceptanceEligible =
+    parityStatus === "passed" &&
+    sourceKindFindings.length === 0 &&
+    renderFinalReportModelStatus === "final" &&
+    publicFinalReportModelStatus === "final" &&
+    renderR107AcceptanceEligible !== false &&
+    publicR107AcceptanceEligible !== false;
   const payload = {
     schema_version: "tapecoach_v3_report_parity_result_v1",
     artefact_type: "report_parity_result",
@@ -3048,6 +3146,12 @@ export async function emitReportParityProof(input: ReportParityProofEmitterInput
     mismatch_count: mismatches.length,
     render_source_kind: renderSourceKind ?? null,
     public_report_source_kind: publicReportSourceKind ?? null,
+    render_final_report_model_status: renderFinalReportModelStatus ?? null,
+    public_report_final_report_model_status: publicFinalReportModelStatus ?? null,
+    render_r10_7_acceptance_eligible: renderR107AcceptanceEligible,
+    public_report_r10_7_acceptance_eligible: publicR107AcceptanceEligible,
+    r10_7_acceptance_eligible: r107AcceptanceEligible,
+    r10_7_acceptance_blocker_codes: r107AcceptanceBlockerCodes,
     public_report_source_kind_accepted:
       (!renderSourceKind || !isRejectedPublicReportSourceKind(renderSourceKind)) &&
       (!publicReportSourceKind || !isRejectedPublicReportSourceKind(publicReportSourceKind)),
@@ -4696,6 +4800,30 @@ function classifyPublicReportSource(
   return "sanitised_render_payload_shadow";
 }
 
+function resolveFinalReportModelStatus(
+  status: "not_final" | "final" | null | undefined,
+  sourceStage: string | undefined,
+): "not_final" | "final" {
+  if (status === "final") return "final";
+  if (status === "not_final") return "not_final";
+  return sourceStage && /final_report_model/i.test(sourceStage)
+    ? "final"
+    : "not_final";
+}
+
+function readFinalReportModelStatus(surface: unknown): "not_final" | "final" | null {
+  if (!isRecord(surface)) return null;
+  const value = surface.final_report_model_status;
+  return value === "final" || value === "not_final" ? value : null;
+}
+
+function readR107Eligibility(surface: unknown): boolean | null {
+  if (!isRecord(surface)) return null;
+  return typeof surface.r10_7_acceptance_eligible === "boolean"
+    ? surface.r10_7_acceptance_eligible
+    : null;
+}
+
 export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput) {
   if (!resolveInternalQAEmitEnabled({ internal_qa_emit: input.internal_qa_emit })) {
     return { written: false as const, emitted_artefact_ids: [] as string[] };
@@ -4703,6 +4831,11 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const renderSourceKind = classifyRenderReportSource(input);
+  const sourceStage = input.source_stage ?? "emitRenderPayloadArtifact";
+  const finalReportModelStatus = resolveFinalReportModelStatus(
+    input.final_report_model_status,
+    sourceStage,
+  );
   const source = input.render_report_data ?? input.raw_report_data ?? null;
   const sourceReportData = unwrapRawReportData(source);
   const sourceSurface = { report_data: sourceReportData };
@@ -4796,6 +4929,11 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
       : []),
     ...(!hasAllowedContent ? ["render_payload_allowed_fields_unavailable"] : []),
   ];
+  const r107AcceptanceEligible =
+    input.r10_7_acceptance_eligible ??
+    (finalReportModelStatus === "final" &&
+      renderPayloadStatus === "emitted" &&
+      !isRejectedPublicReportSourceKind(renderSourceKind));
   const payload = {
     schema_version: "tapecoach_v3_render_payload_v1",
     artefact_type: "render_payload",
@@ -4806,10 +4944,12 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
     generated_at: new Date().toISOString(),
     internal_only: true,
     privacy_classification: "internal_private",
-    source_stage: input.source_stage ?? "emitRenderPayloadArtifact",
+    source_stage: sourceStage,
     source_module: input.source_module ?? "src/server/v3/qa-artifacts-wiring.server.ts",
     render_payload_status: renderPayloadStatus,
     render_source_kind: renderSourceKind,
+    final_report_model_status: finalReportModelStatus,
+    r10_7_acceptance_eligible: r107AcceptanceEligible,
     render_source_refs: {
       raw_report_available: Boolean(
         input.raw_report_data && typeof input.raw_report_data === "object",
@@ -4881,6 +5021,8 @@ export async function emitRenderPayloadArtifact(input: RenderPayloadEmitterInput
     parity_payload: payloadSurface,
     payload,
     render_source_kind: renderSourceKind,
+    final_report_model_status: finalReportModelStatus,
+    r10_7_acceptance_eligible: r107AcceptanceEligible,
     path: result.path ?? result.storage_path,
     warning: result.warning ?? null,
   };
@@ -4893,6 +5035,11 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
   const root = input.root_dir ?? DEFAULT_ROOT;
   const analysisRunId = input.analysis_run_id ?? input.run_id;
   const publicReportSourceKind = classifyPublicReportSource(input);
+  const sourceStage = input.source_stage ?? "emitPublicReportPayloadArtifact";
+  const finalReportModelStatus = resolveFinalReportModelStatus(
+    input.final_report_model_status,
+    sourceStage,
+  );
   const renderReportData = input.render_payload ? unwrapRawReportData(input.render_payload) : {};
   const explicitPublicSource = input.public_report_data ?? null;
   const source =
@@ -5043,6 +5190,11 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     ...(!hasAllowedContent ? ["public_report_payload_allowed_fields_unavailable"] : []),
     ...(renderSourceUnavailable ? ["public_report_payload_render_source_unavailable"] : []),
   ];
+  const r107AcceptanceEligible =
+    input.r10_7_acceptance_eligible ??
+    (finalReportModelStatus === "final" &&
+      publicReportPayloadStatus === "emitted" &&
+      !isRejectedPublicReportSourceKind(publicReportSourceKind));
   const payload = {
     schema_version: "tapecoach_v3_public_report_payload_v1",
     artefact_type: "public_report_payload",
@@ -5053,10 +5205,12 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     generated_at: new Date().toISOString(),
     internal_only: true,
     privacy_classification: "internal_private",
-    source_stage: input.source_stage ?? "emitPublicReportPayloadArtifact",
+    source_stage: sourceStage,
     source_module: input.source_module ?? "src/server/v3/qa-artifacts-wiring.server.ts",
     public_report_payload_status: publicReportPayloadStatus,
     public_report_source_kind: publicReportSourceKind,
+    final_report_model_status: finalReportModelStatus,
+    r10_7_acceptance_eligible: r107AcceptanceEligible,
     public_report_source_refs: {
       raw_report_available: Boolean(
         input.raw_report_data && typeof input.raw_report_data === "object",
@@ -5140,6 +5294,8 @@ export async function emitPublicReportPayloadArtifact(input: PublicReportPayload
     parity_payload: payloadSurface,
     payload,
     public_report_source_kind: publicReportSourceKind,
+    final_report_model_status: finalReportModelStatus,
+    r10_7_acceptance_eligible: r107AcceptanceEligible,
     path: result.path ?? result.storage_path,
     warning: result.warning ?? null,
   };
@@ -7196,6 +7352,22 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       operator_confirmation_scope: metadata.operator_confirmation_scope,
       operator_confirmation_notes: metadata.operator_confirmation_notes,
       operator_confirmation_reason: metadata.operator_confirmation_reason,
+      operator_confirmation_report_value_status:
+        metadata.operator_confirmation_report_value_status,
+      same_test_fixture_confirmed: metadata.same_test_fixture_confirmed,
+      same_video_confirmed: metadata.same_video_confirmed,
+      same_brief_confirmed: metadata.same_brief_confirmed,
+      operator_confirms_no_customer_release_claimed:
+        metadata.operator_confirms_no_customer_release_claimed,
+      operator_confirms_no_production_safe_approval_claimed:
+        metadata.operator_confirms_no_production_safe_approval_claimed,
+      operator_confirms_no_level2_acceptance_claimed:
+        metadata.operator_confirms_no_level2_acceptance_claimed,
+      operator_confirms_public_scores_blocked: metadata.operator_confirms_public_scores_blocked,
+      operator_confirms_public_technique_authority_blocked:
+        metadata.operator_confirms_public_technique_authority_blocked,
+      operator_confirms_public_comparison_recommendation_blocked:
+        metadata.operator_confirms_public_comparison_recommendation_blocked,
       runtime_evidence_accepted_by_id: metadata.runtime_evidence_accepted_by_id,
       runtime_evidence_blocked_by_id: metadata.runtime_evidence_blocked_by_id,
       artefact_source_classification_by_id: metadata.artefact_source_classification_by_id,
@@ -7314,6 +7486,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           operator_confirmation_source:
             (metadata.operator_confirmation_source ??
               runtimeSummaryString("operator_confirmation_source")) as
+              | "operator_manual_review"
               | "explicit_operator_runtime_message"
               | "deployment_dashboard"
               | "safe_env_var"
@@ -7323,6 +7496,24 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
             metadata.operator_confirmation_scope ?? runtimeSummaryString("operator_confirmation_scope"),
           operator_confirmation_notes:
             metadata.operator_confirmation_notes ?? runtimeSummaryString("operator_confirmation_notes"),
+          operator_confirmation_report_value_status:
+            metadata.operator_confirmation_report_value_status ??
+            runtimeSummaryString("operator_confirmation_report_value_status"),
+          same_test_fixture_confirmed: metadata.same_test_fixture_confirmed,
+          same_video_confirmed: metadata.same_video_confirmed,
+          same_brief_confirmed: metadata.same_brief_confirmed,
+          operator_confirms_no_customer_release_claimed:
+            metadata.operator_confirms_no_customer_release_claimed,
+          operator_confirms_no_production_safe_approval_claimed:
+            metadata.operator_confirms_no_production_safe_approval_claimed,
+          operator_confirms_no_level2_acceptance_claimed:
+            metadata.operator_confirms_no_level2_acceptance_claimed,
+          operator_confirms_public_scores_blocked:
+            metadata.operator_confirms_public_scores_blocked,
+          operator_confirms_public_technique_authority_blocked:
+            metadata.operator_confirms_public_technique_authority_blocked,
+          operator_confirms_public_comparison_recommendation_blocked:
+            metadata.operator_confirms_public_comparison_recommendation_blocked,
           public_output_unchanged: true,
           root_dir: metadata.root_dir,
           internal_qa_emit: true,
@@ -7497,6 +7688,16 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       let renderSourceKindForParity = metadata.report_parity_input.render_source_kind ?? null;
       let publicReportSourceKindForParity =
         metadata.report_parity_input.public_report_source_kind ?? null;
+      const reportPayloadSourceStage =
+        metadata.report_parity_input.source_stage ??
+        (metadata.report_parity_input.final_report_model_status === "final"
+          ? "final_report_model"
+          : "emitQAManifestForAnalysisRun.pre_finalisation");
+      const reportPayloadFinalStatus =
+        metadata.report_parity_input.final_report_model_status ?? "not_final";
+      const reportPayloadR107Eligible =
+        metadata.report_parity_input.r10_7_acceptance_eligible ??
+        reportPayloadFinalStatus === "final";
       if (
         !renderPayloadForParity &&
         (metadata.report_parity_input?.render_report_data ||
@@ -7508,10 +7709,12 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           take_id: takeIdForFirstPassTraces ?? undefined,
           submission_id: metadata.submission_id,
           source_module: "src/server/v3/qa-artifacts-wiring.server.ts",
-          source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
+          source_stage: reportPayloadSourceStage,
           raw_report_data: metadata.report_parity_input.raw_report_data,
           render_report_data: metadata.report_parity_input.render_report_data,
           render_source_kind: metadata.report_parity_input.render_source_kind,
+          final_report_model_status: reportPayloadFinalStatus,
+          r10_7_acceptance_eligible: reportPayloadR107Eligible,
           allowed_field_paths: metadata.report_parity_input.allowed_public_fields,
           blocked_field_paths: metadata.report_parity_input.blocked_field_paths,
           root_dir: metadata.root_dir,
@@ -7546,7 +7749,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           take_id: takeIdForFirstPassTraces ?? undefined,
           submission_id: metadata.submission_id,
           source_module: "src/server/v3/qa-artifacts-wiring.server.ts",
-          source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
+          source_stage: reportPayloadSourceStage,
           raw_report_data: metadata.report_parity_input.raw_report_data,
           render_payload: renderPayloadForParity,
           public_report_data:
@@ -7555,6 +7758,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           public_report_source_kind:
             metadata.report_parity_input.public_report_source_kind ??
             metadata.report_parity_input.render_source_kind,
+          final_report_model_status: reportPayloadFinalStatus,
+          r10_7_acceptance_eligible: reportPayloadR107Eligible,
           allowed_field_paths: metadata.report_parity_input.allowed_public_fields,
           blocked_field_paths: metadata.report_parity_input.blocked_field_paths,
           root_dir: metadata.root_dir,
@@ -7591,12 +7796,14 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         take_id: takeIdForFirstPassTraces ?? undefined,
         submission_id: metadata.submission_id,
         source_module: "src/server/v3/qa-artifacts-wiring.server.ts",
-        source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
+        source_stage: reportPayloadSourceStage,
         raw_report_data: paritySourceReportData,
         render_payload: renderPayloadForParity,
         public_report_payload: publicReportPayloadForParity,
         render_source_kind: renderSourceKindForParity,
         public_report_source_kind: publicReportSourceKindForParity,
+        final_report_model_status: reportPayloadFinalStatus,
+        r10_7_acceptance_eligible: reportPayloadR107Eligible,
         allowed_public_fields: metadata.report_parity_input?.allowed_public_fields,
         blocked_field_paths: metadata.report_parity_input?.blocked_field_paths,
         blocked_score_field_paths: metadata.report_parity_input?.blocked_score_field_paths,
@@ -7750,6 +7957,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           root_dir: metadata.root_dir,
           internal_qa_emit: true,
           intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+          final_manifest_rewrite_expected: false,
         });
         if (validatorWrite.written) {
           emittedWithInternalTraces = [
@@ -7778,6 +7986,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           root_dir: metadata.root_dir,
           internal_qa_emit: true,
           intended_same_finalisation_artefact_ids: intendedSameFinalisationArtefactIds,
+          final_manifest_rewrite_expected: false,
         });
         if (gateWrite.written) {
           emittedWithInternalTraces = [...new Set([...emittedWithInternalTraces, "gate_trace"])];
@@ -15854,7 +16063,7 @@ export async function emitValidatorTraceFirstPass(input: any) {
       : "internal_validator",
     trace_mode: "first_pass_internal_bundle_validator",
     validated_snapshot_stage: "pre_finalisation_snapshot",
-    final_manifest_rewrite_expected: true,
+    final_manifest_rewrite_expected: input.final_manifest_rewrite_expected !== false,
     self_inclusion_validated: false,
     intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? [
       "validator_trace",
@@ -17191,7 +17400,7 @@ export async function emitGateTraceFirstPass(input: any) {
       : "internal_gate_trace",
     trace_mode: "ordinary_l2a_independent_gate_decisions",
     validated_snapshot_stage: "pre_finalisation_snapshot",
-    final_manifest_rewrite_expected: true,
+    final_manifest_rewrite_expected: input.final_manifest_rewrite_expected !== false,
     self_inclusion_validated: false,
     intended_same_finalisation_artefact_ids: input.intended_same_finalisation_artefact_ids ?? [
       "validator_trace",

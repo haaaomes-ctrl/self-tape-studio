@@ -58,6 +58,7 @@ export interface QAArtifactEmitterOptions {
   operator_confirmation_scope?: string;
   operator_confirmation_notes?: string;
   operator_confirmation_reason?: string;
+  operator_confirmation_report_value_status?: string;
   mux_playback_ids?: Record<string, string>;
   fixture_refs?: string[];
   input_refs?: string[];
@@ -310,6 +311,10 @@ export interface QAArtifactEmitterOptions {
 	    blocked_comparison_fields_absent?: boolean;
 	    public_technique_authority_content_scan_safe?: boolean;
 	    public_technique_authority_content_hit_count?: number;
+	    render_final_report_model_status?: string | null;
+	    public_report_final_report_model_status?: string | null;
+	    r10_7_acceptance_eligible?: boolean;
+	    r10_7_acceptance_blocker_codes?: string[];
 	  };
   runtime_verification_trace_summary?: Record<string, unknown>;
   comparison_parity_summary?: Record<string, unknown>;
@@ -1228,6 +1233,14 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const rawReportParityStatus = typeof rawReportParitySummary.parity_status === 'string'
     ? rawReportParitySummary.parity_status
     : null;
+  const reportFinalModelStatus = rawReportParitySummary.render_final_report_model_status === 'final'
+    && rawReportParitySummary.public_report_final_report_model_status === 'final'
+    ? 'final'
+    : (rawReportParitySummary.render_final_report_model_status || rawReportParitySummary.public_report_final_report_model_status
+      ? 'not_final'
+      : 'unknown');
+  const reportR107AcceptanceEligible = rawReportParitySummary.r10_7_acceptance_eligible === true;
+  const reportR107AcceptanceBlockerCodes = safeStringArray(rawReportParitySummary.r10_7_acceptance_blocker_codes);
   const reportParityStatus = parityArtefactStatus === 'missing'
     ? 'missing'
     : (rawReportParityStatus === 'passed' || rawReportParityStatus === 'failed' || rawReportParityStatus === 'insufficient'
@@ -1322,6 +1335,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
   const operatorConfirmedReportSurface = safeOptionalRef(manifest.operator_confirmed_report_surface ?? runtimeVerificationTraceSummary.operator_confirmed_report_surface);
   const operatorConfirmedPrOrCommit = safeOptionalRef(manifest.operator_confirmed_pr_or_commit ?? runtimeVerificationTraceSummary.operator_confirmed_runtime_build_ref);
   const operatorConfirmationRequestedStatus = safeMetricString(manifest.operator_confirmation_status ?? runtimeVerificationTraceSummary.operator_confirmation_status, 'missing');
+  const operatorConfirmationReportValueStatus = safeMetricString(manifest.operator_confirmation_report_value_status ?? runtimeVerificationTraceSummary.operator_confirmation_report_value_status, 'unknown');
   const operatorConfirmationStatus = (operatorConfirmedDeployedCommitSha || operatorConfirmedDeploymentReference || operatorConfirmedPrOrCommit) && operatorConfirmationRequestedStatus === 'confirmed'
     ? 'confirmed'
     : operatorConfirmationRequestedStatus;
@@ -1786,6 +1800,9 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     duplicate_same_video_comparison_status: comparisonInvoked ? comparisonEvidenceStatus : 'not_applicable',
     comparison_no_export_leakage_status: noExportComplete ? 'satisfied' : 'insufficient',
     runtime_operator_verification_status: runtimeOperatorVerificationStatus,
+    final_report_model_status: reportFinalModelStatus,
+    r10_7_acceptance_eligible: reportR107AcceptanceEligible,
+    r10_7_acceptance_blocker_codes: reportR107AcceptanceBlockerCodes,
     runtime_operator_verification_reason: runtimeOperatorVerificationStatus === 'completed'
       ? 'fresh_runtime_bundle_matches_current_commit_with_deployment_context'
       : `runtime_operator_verification_blockers:${runtimeOperatorVerificationBlockerCodes.join(',')}`,
@@ -1802,6 +1819,7 @@ export function buildQAAcceptanceMetrics(manifest: Record<string, any>) {
     deployment_provenance_blocker_codes: deploymentProvenanceBlockerCodes,
     runtime_provenance_conflict_status: runtimeProvenanceConflict ? 'conflict' : 'none',
     operator_confirmation_status: operatorConfirmationStatus,
+    operator_confirmation_report_value_status: operatorConfirmationReportValueStatus,
     operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
     operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
     operator_confirmed_branch: operatorConfirmedBranch,
@@ -2288,6 +2306,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
   const operatorConfirmationNotes = safeOperatorNote(options.operator_confirmation_notes ?? runtimeVerificationTraceSummary.operator_confirmation_notes);
   const operatorConfirmedPrOrCommit = safeOptionalRef(options.operator_confirmed_pr_or_commit ?? runtimeVerificationTraceSummary.operator_confirmed_runtime_build_ref);
   const operatorConfirmationRequestedStatus = safeMetricString(options.operator_confirmation_status ?? runtimeVerificationTraceSummary.operator_confirmation_status, 'missing');
+  const operatorConfirmationReportValueStatus = safeMetricString(options.operator_confirmation_report_value_status ?? runtimeVerificationTraceSummary.operator_confirmation_report_value_status, 'unknown');
   const operatorConfirmationStatus = (operatorConfirmedDeployedCommitSha || operatorConfirmedDeploymentReference || operatorConfirmedPrOrCommit) && operatorConfirmationRequestedStatus === 'confirmed'
     ? 'confirmed'
     : operatorConfirmationRequestedStatus;
@@ -2314,6 +2333,18 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     analysis_evidence_state_summary: options.analysis_evidence_state_summary ?? undefined,
     step1_observable_evidence_summary: options.step1_observable_evidence_summary ?? undefined,
     report_parity_summary: options.report_parity_summary ?? undefined,
+    final_report_model_status:
+      options.report_parity_summary?.render_final_report_model_status === 'final' &&
+      options.report_parity_summary?.public_report_final_report_model_status === 'final'
+        ? 'final'
+        : (options.report_parity_summary?.render_final_report_model_status ||
+          options.report_parity_summary?.public_report_final_report_model_status
+          ? 'not_final'
+          : 'unknown'),
+    r10_7_acceptance_eligible: options.report_parity_summary?.r10_7_acceptance_eligible === true,
+    r10_7_acceptance_blocker_codes: safeStringArray(
+      options.report_parity_summary?.r10_7_acceptance_blocker_codes,
+    ),
     validator_trace_summary: options.validator_trace_summary ?? undefined,
     gate_trace_summary: options.gate_trace_summary ?? undefined,
     runtime_verification_trace_summary: options.runtime_verification_trace_summary ?? undefined,
@@ -2339,6 +2370,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
     runtime_bundle_matches_current_commit_status: runtimeBundleMatchesCurrentCommitStatus,
     runtime_bundle_matches_current_implementation_status: runtimeBundleMatchesCurrentImplementationStatus,
     operator_confirmation_status: operatorConfirmationStatus,
+    operator_confirmation_report_value_status: operatorConfirmationReportValueStatus,
     operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
     operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
     operator_confirmed_branch: operatorConfirmedBranch,
@@ -2396,6 +2428,7 @@ export async function emitInternalQAArtifactManifest(options: QAArtifactEmitterO
       runtime_operator_verification_status: runtimeOperatorVerificationStatus,
       deployment_provenance_status: provenance.deployment_provenance_status,
       operator_confirmation_status: operatorConfirmationStatus,
+      operator_confirmation_report_value_status: operatorConfirmationReportValueStatus,
       operator_confirmed_deployed_commit_sha: operatorConfirmedDeployedCommitSha,
       operator_confirmed_deployment_reference: operatorConfirmedDeploymentReference,
       operator_confirmed_report_surface: operatorConfirmedReportSurface,
