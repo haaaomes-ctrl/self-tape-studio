@@ -330,6 +330,7 @@ export interface QARuntimeMetadata {
   comparison_parity_summary?: QAArtifactEmitterOptions["comparison_parity_summary"];
   report_parity_input?: {
     raw_report_data?: Record<string, unknown> | null;
+    render_report_data?: Record<string, unknown> | null;
     render_payload?: Record<string, unknown> | null;
     public_report_payload?: Record<string, unknown> | null;
     allowed_public_fields?: string[];
@@ -7145,7 +7146,11 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       let renderPayloadForParity = metadata.report_parity_input?.render_payload ?? null;
       let publicReportPayloadForParity =
         metadata.report_parity_input?.public_report_payload ?? null;
-      if (!renderPayloadForParity && metadata.report_parity_input?.raw_report_data) {
+      if (
+        !renderPayloadForParity &&
+        (metadata.report_parity_input?.render_report_data ||
+          metadata.report_parity_input?.raw_report_data)
+      ) {
         const renderPayloadWrite = await emitRenderPayloadArtifact({
           run_id: metadata.run_id,
           analysis_run_id: baseOptions.analysis_run_id,
@@ -7154,6 +7159,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           source_module: "src/server/v3/qa-artifacts-wiring.server.ts",
           source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
           raw_report_data: metadata.report_parity_input.raw_report_data,
+          render_report_data: metadata.report_parity_input.render_report_data,
           allowed_field_paths: metadata.report_parity_input.allowed_public_fields,
           blocked_field_paths: metadata.report_parity_input.blocked_field_paths,
           root_dir: metadata.root_dir,
@@ -7216,6 +7222,9 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
           }
         }
       }
+      const paritySourceReportData = metadata.report_parity_input?.render_report_data
+        ? { report_data: metadata.report_parity_input.render_report_data }
+        : metadata.report_parity_input?.raw_report_data;
       const parityWrite = await emitReportParityProof({
         run_id: metadata.run_id,
         analysis_run_id: baseOptions.analysis_run_id,
@@ -7223,7 +7232,7 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
         submission_id: metadata.submission_id,
         source_module: "src/server/v3/qa-artifacts-wiring.server.ts",
         source_stage: "emitQAManifestForAnalysisRun.pre_finalisation",
-        raw_report_data: metadata.report_parity_input?.raw_report_data,
+        raw_report_data: paritySourceReportData,
         render_payload: renderPayloadForParity,
         public_report_payload: publicReportPayloadForParity,
         allowed_public_fields: metadata.report_parity_input?.allowed_public_fields,

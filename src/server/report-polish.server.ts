@@ -933,19 +933,7 @@ export function renderFallbackReport(
   const derivedBriefRequirements =
     mode === "brief" ? deriveFallbackBriefRequirements(evidence, context) : [];
   const scores = fallbackScores(evidence, derivedBriefRequirements);
-  const detectedComponents =
-    evidence.detected_components.length > 0
-      ? evidence.detected_components
-      : derivedBriefRequirements.some((item) => item.requirement_type === "song")
-        ? [
-            {
-              type: "song",
-              weight: 1,
-              score: scores.vocal ?? scores.brief_adherence ?? 60,
-              note: "Song section identified from locked observation evidence.",
-            },
-          ]
-        : evidence.detected_components;
+  const detectedComponents = evidence.detected_components;
   const fallbackFixFirst = (evidence.fix_first_evidence ?? "").trim() || improvements[0] || "";
   const priorityFixes = fallbackPriorityFixes(derivedBriefRequirements, fallbackFixFirst);
   const fixFirst = priorityFixes[0]?.headline ?? fallbackFixFirst;
@@ -1127,7 +1115,7 @@ export function renderFallbackReport(
             )
             .map((item) => item.next_take_action ?? item.public_summary)
         : submission_risk_flags.filter((flag) => flag.severity === "high").map((flag) => flag.flag),
-    should_improve_if_retaking: improvements.slice(0, 10),
+    should_improve_if_retaking: [],
     optional_polish: [],
     do_not_overfix: [
       evidence.evidence_sufficiency?.audio_assessable !== false &&

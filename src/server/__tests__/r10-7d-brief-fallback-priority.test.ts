@@ -114,6 +114,8 @@ describe("R10.7D brief-led fallback priority repair", () => {
       mode: "brief",
     });
 
+    expect(fallback.detected_components).toEqual([]);
+    expect(fallback.should_improve_if_retaking).toEqual([]);
     expect(v2.submission_verdict.decision).toBe("retake_required_if_possible");
     expect(v2.fix_first).toBe(v2.priority_fixes[0]?.headline);
     expect(v2.fix_first).toMatch(/Side 1 acting scene/i);
