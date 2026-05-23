@@ -145,4 +145,34 @@ describe("R10 locked report component suppression", () => {
       "Action: Record one pass that lands the first reaction before moving on.",
     );
   });
+
+  it("renders from public-safe v2 fields without raw improvements or ok placeholders", () => {
+    const report = buildV2Report({
+      legacyReport: {
+        feedback_reliability_override: "low",
+        feedback_reliability_reason_code: "ok",
+        confidence_reason: "Generated from evidence pass (polish step unavailable).",
+        improvements: ["Blocked: a major casting brief instruction wasn't followed."],
+        should_improve_if_retaking: [],
+        not_assessable: [],
+        why_this_verdict: {
+          summary: "Retake because the required material is incomplete.",
+          limitations: ["ok"],
+        },
+      },
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+    });
+    const html = renderToStaticMarkup(createElement(V2ReportView, { report }));
+
+    expect(report.should_improve_if_retaking).toEqual([]);
+    expect(html).not.toContain("Should improve if retaking");
+    expect(html).not.toContain("major casting brief instruction");
+    expect(html).not.toContain(">ok<");
+    expect(html).not.toContain("Not assessable: ok");
+    expect(html).toContain(
+      "Review reliability is limited because the report was generated from locked observation evidence while report polish was unavailable.",
+    );
+  });
 });

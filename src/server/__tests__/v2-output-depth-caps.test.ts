@@ -116,7 +116,8 @@ describe("v2 builder surfaces new public fields", () => {
     const v2 = buildV2Report({
       legacyReport: {
         priority_fixes: [{ headline: "Clarify the first beat", kind: "critical_gap" }],
-        improvements: ["Hold the breath reset."],
+        should_improve_if_retaking: ["Hold the breath reset."],
+        improvements: ["This legacy improvement should not become a public retake item."],
         strengths: ["The text is clear."],
         overall_score: 91,
         scores: { acting: 90 },
@@ -128,6 +129,9 @@ describe("v2 builder surfaces new public fields", () => {
     expect(v2.must_fix_before_submitting).toEqual(["Clarify the first beat"]);
     expect(v2.should_improve_if_retaking).toEqual(["Hold the breath reset."]);
     expect(v2.preserve).toEqual(["The text is clear."]);
+    expect(JSON.stringify(v2.should_improve_if_retaking)).not.toContain(
+      "legacy improvement should not become",
+    );
     expect(JSON.stringify(v2)).not.toMatch(/overall_score|scores/);
   });
 });

@@ -3445,8 +3445,13 @@ export async function runProcessTake(
         // legacy client-side computation.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (report as any).feedback_reliability_override = target;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (report as any).feedback_reliability_reason_code = groundedConcerns[0] ?? "ok";
+        if (groundedConcerns[0]) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (report as any).feedback_reliability_reason_code = groundedConcerns[0];
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          delete (report as any).feedback_reliability_reason_code;
+        }
       }
     }
 
@@ -4184,6 +4189,7 @@ export async function runProcessTake(
       const rawReportPayload = rawReportEmit.written
         ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>)
         : (report as Record<string, unknown>);
+      const renderReportData = reportToPersist as Record<string, unknown>;
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
@@ -4713,6 +4719,7 @@ export async function runProcessTake(
         media_identity_summary: inputArtefacts.media_identity_summary,
         report_parity_input: {
           raw_report_data: rawReportPayload,
+          render_report_data: renderReportData,
           render_payload: null,
           public_report_payload: null,
           allowed_public_fields: [

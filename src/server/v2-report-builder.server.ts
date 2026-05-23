@@ -186,6 +186,7 @@ function publicText(raw: unknown, maxLength = 420): string | null {
   if (typeof raw !== "string") return null;
   const text = raw.replace(/\s+/g, " ").trim();
   if (!text) return null;
+  if (/^ok[.!?]?$/i.test(text)) return null;
   if (BLOCKED_PUBLIC_TEXT.test(text)) return null;
   return text.slice(0, maxLength).trim();
 }
@@ -344,15 +345,52 @@ function safePlanGroups(value: unknown): Array<{ label: string; items: string[] 
     .slice(0, 6);
 }
 
+function publicReliabilityReason(r: Record<string, unknown>): string | null {
+  const explicit = publicText(r.feedback_reliability_reason, 260);
+  if (explicit) return explicit;
+
+  const reasonCode = asStr(r.feedback_reliability_reason_code)?.trim().toLowerCase() ?? "";
+  switch (reasonCode) {
+    case "confidence_high_full_tape":
+      return "The tape provides enough clear information for practical feedback.";
+    case "no_brief":
+      return "No supplied brief was available, so the report uses general submission standards and observable tape evidence only.";
+    case "poor_audio":
+      return "Audio clarity limits how firmly some performance details can be judged.";
+    case "muddy_audio":
+      return "Some audio detail may limit how firmly parts of the performance can be judged.";
+    case "poor_video":
+      return "Video clarity limits how firmly some visual details can be judged.";
+    case "short_or_partial":
+      return "The tape appears short or partial, so the report focuses on the material available.";
+    case "audio_not_assessable":
+      return "Audio could not be assessed reliably from the available tape.";
+    case "video_not_assessable":
+      return "Video or framing could not be assessed reliably from the available tape.";
+    case "brief_extraction_failed":
+      return "The supplied brief could not be assessed reliably from the available data.";
+    default:
+      break;
+  }
+
+  const confidenceReason = publicText(r.confidence_reason, 260);
+  if (
+    confidenceReason &&
+    /\b(?:polish\s+step\s+unavailable|evidence\s+pass|locked\s+observation)\b/i.test(
+      confidenceReason,
+    )
+  ) {
+    return "Review reliability is limited because the report was generated from locked observation evidence while report polish was unavailable.";
+  }
+  return confidenceReason;
+}
+
 function normaliseReliability(r: Record<string, unknown>): FeedbackReliability {
   const raw =
     asStr(r.feedback_reliability_override) ?? asStr(r.feedback_reliability) ?? asStr(r.reliability);
   const level: FeedbackReliability["level"] =
     raw === "high" || raw === "medium" || raw === "low" ? raw : "medium";
-  const reason =
-    publicText(r.feedback_reliability_reason, 260) ??
-    publicText(r.feedback_reliability_reason_code, 260) ??
-    publicText(r.confidence_reason, 260);
+  const reason = publicReliabilityReason(r);
   const summary =
     reason ??
     (level === "high"
@@ -614,6 +652,110 @@ function normaliseBriefRequirements(value: unknown): BriefRequirementPublic[] {
     .slice(0, 20);
 }
 
+function evidenceTextForBriefReconciliation(r: Record<string, unknown>): string {
+  return [
+    ...asArray(r.detected_components).map((component) => {
+      const obj = asObj(component);
+      return [obj?.type, obj?.label, obj?.note, obj?.summary, obj?.what_it_shows]
+        .map((value) => (typeof value === "string" ? value : null))
+        .filter((value): value is string => value !== null)
+        .join(" ");
+    }),
+    ...Object.values(asObj(r.category_notes) ?? {}).filter(
+      (value): value is string => typeof value === "string",
+    ),
+    ...Object.values(asObj(r.brief_adherence_breakdown) ?? {}).filter(
+      (value): value is string => typeof value === "string",
+    ),
+    ...publicTextArray(r.must_fix_before_submitting, 8),
+    ...publicTextArray(r.next_take_plan, 10),
+    ...publicTextArray(asObj(r.next_take_plan)?.steps, 10),
+    ...normalisePriorityFixes(r).map((fix) => [fix.headline, fix.rationale, fix.action].join(" ")),
+  ]
+    .filter((value) => value.trim().length > 0)
+    .join(" ");
+}
+
+function reportHasSongEvidence(r: Record<string, unknown>, evidenceText: string): boolean {
+  return (
+    asArray(r.detected_components).some((component) => {
+      const obj = asObj(component);
+      const text = [obj?.type, obj?.label, obj?.note, obj?.summary]
+        .map((value) => (typeof value === "string" ? value : ""))
+        .join(" ");
+      return /\b(song|singing|sung|vocal|musical\s+number)\b/i.test(text);
+    }) ||
+    /\b(?:song\s+section\s+(?:is\s+)?present|song\s+section\s+identified|contains\s+(?:a\s+)?song|includes\s+(?:a\s+)?(?:partial\s+)?song|partial\s+song|singing|sung|vocal\s+section|musical\s+number)\b/i.test(
+      evidenceText,
+    )
+  );
+}
+
+function reportHasSongCompletionGap(evidenceText: string): boolean {
+  return /\b(?:partial|partly|incomplete|cut\s*off|cuts\s*off|abrupt|does\s+not\s+finish|did\s+not\s+finish|before\s+completion|ends?\s+early|completion\s+could\s+not\s+be\s+confirmed|package\s+is\s+not\s+complete|package\s+needs\s+completion)\b/i.test(
+    evidenceText,
+  );
+}
+
+function isSongBriefRequirement(item: BriefRequirementPublic): boolean {
+  return (
+    item.requirement_type === "song" ||
+    /\b(?:song|singing|sung|vocal|musical\s+number|mt\s+song|legit)\b/i.test(
+      `${item.source_text} ${item.public_summary}`,
+    )
+  );
+}
+
+function songRequirementClaimsAbsence(item: BriefRequirementPublic): boolean {
+  return (
+    item.achievement_status === "not_achieved" ||
+    /\b(?:does\s+not\s+(?:identify|include|contain)|not\s+identify|not\s+identified|no\s+song|song\s+section\s+missing|song\s+section\s+absent)\b/i.test(
+      `${item.public_summary} ${item.public_evidence_summary ?? ""} ${item.next_take_action ?? ""}`,
+    )
+  );
+}
+
+function reconcileBriefRequirementsWithReportEvidence(
+  requirements: BriefRequirementPublic[],
+  r: Record<string, unknown>,
+): BriefRequirementPublic[] {
+  const evidenceText = evidenceTextForBriefReconciliation(r);
+  const hasSong = reportHasSongEvidence(r, evidenceText);
+  if (!hasSong) return requirements;
+
+  const hasCompletionGap = reportHasSongCompletionGap(evidenceText);
+  return requirements.map((item) => {
+    if (!isSongBriefRequirement(item) || !songRequirementClaimsAbsence(item)) return item;
+    if (hasCompletionGap) {
+      return {
+        ...item,
+        public_summary: "Complete the required song section.",
+        achievement_status: "partly_achieved",
+        readiness_impact:
+          item.readiness_impact === "submission_blocker" ? "submission_blocker" : "material_gap",
+        public_evidence_summary:
+          "A song section is present, but the tape cuts off before the song/package is complete.",
+        assessability_limits: [],
+        next_take_action:
+          "Record the song through to completion and check the final edit does not cut off.",
+      };
+    }
+    return {
+      ...item,
+      achievement_status: "not_assessable",
+      readiness_impact: "not_assessable",
+      public_evidence_summary:
+        "A song section appears present, but completion could not be confirmed from the available tape.",
+      assessability_limits: [
+        "Song completion could not be confirmed reliably from the available tape.",
+      ],
+      next_take_action:
+        item.next_take_action ??
+        "Check that the final edit includes the complete required song section.",
+    };
+  });
+}
+
 function isMandatoryBriefRequirement(item: BriefRequirementPublic): boolean {
   return item.obligation === "mandatory" || item.category === "mandatory";
 }
@@ -624,6 +766,24 @@ function isAssessableBriefGap(item: BriefRequirementPublic): boolean {
     item.achievement_status === "partly_achieved" ||
     item.achievement_status === "mostly_achieved"
   );
+}
+
+function briefImpactRank(item: BriefRequirementPublic): number {
+  if (item.readiness_impact === "submission_blocker") return 0;
+  if (item.readiness_impact === "material_gap") return 1;
+  if (item.readiness_impact === "retake_recommended") return 2;
+  if (item.readiness_impact === "minor_gap") return 3;
+  if (item.readiness_impact === "not_assessable") return 4;
+  return 5;
+}
+
+function sortBriefRequirementsForAction(
+  requirements: BriefRequirementPublic[],
+): BriefRequirementPublic[] {
+  return requirements
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => briefImpactRank(a.item) - briefImpactRank(b.item) || a.index - b.index)
+    .map(({ item }) => item);
 }
 
 function briefRequirementAction(item: BriefRequirementPublic): string {
@@ -643,7 +803,7 @@ function sentenceFragment(value: string): string {
 }
 
 function briefPriorityFixes(requirements: BriefRequirementPublic[]): PriorityFixPublic[] {
-  return requirements
+  return sortBriefRequirementsForAction(requirements)
     .filter(
       (item) =>
         isMandatoryBriefRequirement(item) &&
@@ -776,7 +936,7 @@ function briefRequirementLimit(item: BriefRequirementPublic): string {
 }
 
 function briefActionPlanSteps(requirements: BriefRequirementPublic[]): string[] {
-  return requirements
+  return sortBriefRequirementsForAction(requirements)
     .filter(
       (item) =>
         isMandatoryBriefRequirement(item) &&
@@ -1004,7 +1164,10 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
   const r = (args.legacyReport ?? {}) as Record<string, unknown>;
 
   const mode = args.mode;
-  const briefRequirements = normaliseBriefRequirements(r.brief_requirements);
+  const briefRequirements = reconcileBriefRequirementsWithReportEvidence(
+    normaliseBriefRequirements(r.brief_requirements),
+    r,
+  );
   const priorityFixes = dedupePriorityFixes([
     ...briefPriorityFixes(briefRequirements),
     ...normalisePriorityFixes(r),
@@ -1070,7 +1233,6 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
           [
             ...briefRetakeImprovements,
             ...priorityFixes.filter((fix) => !isMustFix(fix)).map((fix) => fix.headline),
-            ...improvements,
           ],
           10,
         ),
@@ -1088,14 +1250,7 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
   const requirementLimits = briefRequirements
     .filter((item) => item.achievement_status === "not_assessable")
     .map(briefRequirementLimit);
-  const notAssessable = dedupe(
-    [
-      ...explicitNotAssessable,
-      ...requirementLimits,
-      ...(reliability.level === "low" ? [reliability.summary] : []),
-    ],
-    8,
-  );
+  const notAssessable = dedupe([...explicitNotAssessable, ...requirementLimits], 8);
   const whyThisVerdictBase = normaliseWhyThisVerdict(
     r,
     submissionVerdict,

@@ -138,11 +138,7 @@ describe("v2-report-builder R10.2B", () => {
       "Address the brief requirement: Submit the acting scene and song.",
       "Clarify the second beat",
     ]);
-    expect(v2.should_improve_if_retaking).toEqual([
-      "Hold the breath reset",
-      "Make the second beat more active.",
-      "Let the breath reset before the song.",
-    ]);
+    expect(v2.should_improve_if_retaking).toEqual(["Hold the breath reset"]);
     expect(v2.optional_polish).toEqual(["Tidy the final pause if time allows."]);
   });
 
@@ -451,8 +447,12 @@ describe("v2-report-builder R10.2B", () => {
             action: "Let the final thought settle before stopping the recording.",
             kind: "quick_win",
           },
+          {
+            headline: "Reset the breath before the second line.",
+            rationale: "The breath reset will make the second line cleaner.",
+            kind: "quick_win",
+          },
         ],
-        improvements: ["Reset the breath before the second line."],
         next_take_plan: { steps: ["Check the reader volume once before recording."] },
       },
       futureDimensions: null,
@@ -492,6 +492,11 @@ describe("v2-report-builder R10.2B", () => {
           "Use an expensive microphone.",
           "Reset the breath before the final phrase.",
         ],
+        should_improve_if_retaking: [
+          "Add more energy.",
+          "Use an expensive microphone.",
+          "Reset the breath before the final phrase.",
+        ],
         next_take_plan: {
           steps: ["Hire a paid coach.", "Run the breath reset once before recording."],
         },
@@ -505,10 +510,7 @@ describe("v2-report-builder R10.2B", () => {
     expect(v2.priority_fixes.map((fix) => fix.headline)).toEqual([
       "Make the opening eyeline land before the first line",
     ]);
-    expect(v2.should_improve_if_retaking).toEqual([
-      "Make the opening eyeline land before the first line",
-      "Reset the breath before the final phrase.",
-    ]);
+    expect(v2.should_improve_if_retaking).toEqual(["Reset the breath before the final phrase."]);
     expect((v2.next_take_plan as { steps: string[] }).steps).toContain(
       "Run the breath reset once before recording.",
     );
@@ -565,5 +567,104 @@ describe("v2-report-builder R10.2B", () => {
     expect(blockingSetup.must_fix_before_submitting).toContain(
       "Re-record with full-body framing for the movement phrase.",
     );
+  });
+
+  it("treats a detected partial song as incomplete rather than absent", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        detected_components: [
+          {
+            type: "song",
+            note: "Song section identified from locked observation evidence.",
+          },
+        ],
+        category_notes: {
+          brief_adherence: "The song cuts off abruptly before completion.",
+        },
+        brief_requirements: [
+          {
+            source_text: "Tape Side 1, pages 85-87.",
+            public_summary: "Include the required Side 1 acting scene.",
+            category: "mandatory",
+            obligation: "mandatory",
+            requirement_type: "scene",
+            achievement_status: "not_achieved",
+            readiness_impact: "submission_blocker",
+            public_evidence_summary:
+              "The supplied brief asks for Side 1, but the available evidence does not identify the required acting scene.",
+            next_take_action: "Record and include the full required Side 1 acting scene.",
+          },
+          {
+            source_text: "Tape a contemporary legit MT song of your own choice.",
+            public_summary: "Include the required song section.",
+            category: "mandatory",
+            obligation: "mandatory",
+            requirement_type: "song",
+            achievement_status: "not_achieved",
+            readiness_impact: "material_gap",
+            public_evidence_summary:
+              "The supplied brief asks for a song, but the available evidence does not identify a song section in the submitted tape.",
+            next_take_action: "Record and include the required song section.",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+    });
+
+    expect(v2.fix_first).toBe("Record and include the full required Side 1 acting scene.");
+    expect(v2.brief_requirements[1]).toMatchObject({
+      public_summary: "Complete the required song section.",
+      achievement_status: "partly_achieved",
+      readiness_impact: "material_gap",
+      public_evidence_summary:
+        "A song section is present, but the tape cuts off before the song/package is complete.",
+      next_take_action:
+        "Record the song through to completion and check the final edit does not cut off.",
+    });
+    expect(JSON.stringify(v2)).not.toMatch(/does not identify a song section|no song section/i);
+    expect(v2.must_fix_before_submitting).toContain(
+      "Record the song through to completion and check the final edit does not cut off.",
+    );
+    expect((v2.next_take_plan as { steps: string[] }).steps).toEqual(
+      expect.arrayContaining([
+        "Record and include the full required Side 1 acting scene.",
+        "Record the song through to completion and check the final edit does not cut off.",
+      ]),
+    );
+  });
+
+  it("does not backfill public should-improve from legacy improvements or render ok placeholders", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        feedback_reliability_override: "low",
+        feedback_reliability_reason_code: "ok",
+        confidence_reason: "Generated from evidence pass (polish step unavailable).",
+        improvements: ["Blocked: a major casting brief instruction wasn't followed."],
+        should_improve_if_retaking: [],
+        not_assessable: [],
+      },
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+    });
+
+    expect(v2.should_improve_if_retaking).toEqual([]);
+    expect(v2.not_assessable).toEqual([]);
+    expect(v2.why_this_verdict.limitations).toEqual([]);
+    expect(v2.feedback_reliability).toEqual({
+      level: "low",
+      summary:
+        "Review reliability is limited because the report was generated from locked observation evidence while report polish was unavailable.",
+    });
+    expect(
+      JSON.stringify({
+        should_improve_if_retaking: v2.should_improve_if_retaking,
+        not_assessable: v2.not_assessable,
+        why_this_verdict: v2.why_this_verdict,
+        feedback_reliability: v2.feedback_reliability,
+      }),
+    ).not.toMatch(/"ok"|major casting brief instruction wasn't followed/i);
   });
 });

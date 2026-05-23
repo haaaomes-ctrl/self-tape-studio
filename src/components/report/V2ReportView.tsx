@@ -12,7 +12,10 @@ import { cn } from "@/lib/utils";
 type V2 = any;
 
 function safeStr(v: unknown): string | null {
-  return typeof v === "string" && v.trim() ? v : null;
+  if (typeof v !== "string") return null;
+  const text = v.trim();
+  if (!text || /^ok[.!?]?$/i.test(text)) return null;
+  return text;
 }
 
 function safeArr<T = unknown>(v: unknown): T[] {

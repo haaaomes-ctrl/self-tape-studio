@@ -1671,6 +1671,59 @@ describe("v3-s9 report parity proof", () => {
     expect(metrics.level2_status).toBe("not_accepted");
   });
 
+  it("R10.7E: manifest render/public payloads follow explicit rendered report data, not raw legacy fields", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "r10-7e-render-surface-"));
+    await emitQAManifestForAnalysisRun({
+      run_id: "run-r107e-render",
+      analysis_run_id: "run-r107e-render",
+      take_id: "t-r107e",
+      compared_take_ids: ["t-r107e"],
+      comparison_run_id: null,
+      submission_id: "s1",
+      internal_qa_emit: true,
+      root_dir: root,
+      emitted_artefact_ids: ["raw_report"],
+      report_parity_input: {
+        raw_report_data: {
+          report_data: {
+            schema_version: "v1-legacy",
+            should_improve_if_retaking: [
+              "Blocked: a major casting brief instruction wasn't followed.",
+            ],
+            improvements: ["Blocked: a major casting brief instruction wasn't followed."],
+          },
+        },
+        render_report_data: {
+          schema_version: "v2-component",
+          should_improve_if_retaking: [],
+          feedback_reliability: {
+            level: "low",
+            summary:
+              "Review reliability is limited because the report was generated from locked observation evidence while report polish was unavailable.",
+          },
+        },
+        render_payload: null,
+        public_report_payload: null,
+        allowed_public_fields: [
+          "report_data.schema_version",
+          "report_data.should_improve_if_retaking",
+          "report_data.feedback_reliability",
+        ],
+      },
+    });
+
+    const renderPayload = await readRenderPayload(root, "run-r107e-render", "t-r107e");
+    const publicPayload = await readPublicReportPayload(root, "run-r107e-render", "t-r107e");
+    const parity = await readParity(root, "run-r107e-render", "t-r107e");
+    const renderJson = JSON.stringify(renderPayload);
+
+    expect(renderPayload.render_source_kind).toBe("explicit_render_report_data");
+    expect(renderPayload.report_data.should_improve_if_retaking).toEqual([]);
+    expect(publicPayload.report_data).toEqual(renderPayload.report_data);
+    expect(parity.parity_status).toBe("passed");
+    expect(renderJson).not.toContain("major casting brief instruction");
+  });
+
   it("comparison parity requiredness: ordinary runs mark parity_comparison not_applicable and do not block solely for it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "s9-13d-ordinary-"));
     const out = await emitReportParityProof({
