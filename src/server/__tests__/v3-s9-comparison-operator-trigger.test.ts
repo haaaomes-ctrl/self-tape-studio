@@ -205,8 +205,15 @@ describe('v3 s9 comparison operator trigger', () => {
     }
   });
 
-  it('admin guard allows admin caller', async () => {
-    expect(() => assertAdminEmail({ email: 'o.halawi90@gmail.com' })).not.toThrow();
+  it('admin guard allows configured admin caller', async () => {
+    const previous = process.env.TAPECOACH_ADMIN_EMAIL;
+    process.env.TAPECOACH_ADMIN_EMAIL = 'admin@example.test';
+    try {
+      expect(() => assertAdminEmail({ email: 'admin@example.test' })).not.toThrow();
+    } finally {
+      if (previous === undefined) delete process.env.TAPECOACH_ADMIN_EMAIL;
+      else process.env.TAPECOACH_ADMIN_EMAIL = previous;
+    }
   });
 
   it('resolver fails closed for unsafe take id', async () => {
