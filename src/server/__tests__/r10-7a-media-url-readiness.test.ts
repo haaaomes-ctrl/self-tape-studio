@@ -111,7 +111,8 @@ describe("R10.7A media URL readiness and provider 400 recovery", () => {
 
     expect(mediaRejectedIndex).toBeGreaterThan(0);
     expect(nonRetryableIndex).toBeGreaterThan(mediaRejectedIndex);
-    expect(source).toContain("aiResp.status === 400 && !selectedMediaUrlConfirmedFetchable");
+    expect(source).toContain('providerError?.failureCode === "media_url_provider_rejected"');
+    expect(source).toContain("mediaUrlConfirmedFetchable: selectedMediaUrlConfirmedFetchable");
   });
 
   it("redacts raw Mux webhook bodies before logging", () => {

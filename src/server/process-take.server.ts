@@ -70,6 +70,11 @@ import {
   hasValidTruthStateMapForStep2,
 } from "./v3/qa-step2-dependency.server";
 import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
+import {
+  classifyFinalReportProviderError,
+  isFallbackModelEligibleForFinalReportProviderError,
+  type FinalReportProviderErrorClassification,
+} from "./final-report-provider-errors.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -1129,6 +1134,12 @@ export async function runProcessTake(
     | "ai_credits_exhausted"
     | "ai_non_retryable_4xx"
     | "media_url_provider_rejected"
+    | "media_url_provider_rejected_after_confirmed_fetchability"
+    | "final_report_provider_request_invalid"
+    | "final_report_model_request_shape_unsupported"
+    | "final_report_provider_invalid_argument"
+    | "final_report_fallback_generation_unavailable"
+    | "final_report_not_assessable_from_available_evidence"
     | "analysis_total_timeout"
     | "analysis_parse_failed"
     | "analysis_persist_failed"
@@ -1904,6 +1915,17 @@ export async function runProcessTake(
         const observationOnlyStep1Contract =
           (twoStepEvidence as EvidencePass & Record<string, unknown>).step1_provider_contract ===
           "plain_json_observations";
+        const step2Evidence = {
+          ...twoStepEvidence,
+          analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
+          analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
+          analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
+          analysis_evidence_state_status:
+            preStep2AnalysisEvidenceState.payload?.evidence_state_status ?? "missing",
+          analysis_evidence_state_step2_dependency_status: step1Dependency.step2DependencyStatus,
+          analysis_evidence_state_dependency_blocker_codes: step1Dependency.blockerCodes,
+          analysis_evidence_state_qa_warning_codes: step1Dependency.warningCodes,
+        } as EvidencePass & Record<string, unknown>;
         if (
           step1Dependency.step1EvidenceValidForStep2 &&
           step1Dependency.step1QaPersistenceStatus === "failed_emission"
@@ -1920,7 +1942,7 @@ export async function runProcessTake(
         }
         if (observationOnlyStep1Contract) {
           console.warn(
-            "[take-pipeline] step2_blocked_by_observation_only_evidence_pass; falling back to single-pass",
+            "[take-pipeline] step2_blocked_by_observation_only_evidence_pass; using locked-down Step 1 fallback report",
             {
               take_id: takeId,
               step1_provider_contract: (twoStepEvidence as EvidencePass & Record<string, unknown>)
@@ -1934,6 +1956,12 @@ export async function runProcessTake(
           twoStepFallbackUsed = true;
           twoStepFallbackReason =
             "step1_observation_only_contract_not_valid_for_step2_score_calibration";
+          const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
+          twoStepReport = renderFallbackReport(step2Evidence, mode);
+          metric("two_step_fallback_used", {
+            take_id: takeId,
+            reason: twoStepFallbackReason,
+          });
         } else if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
           console.warn("[take-pipeline] step2_blocked_by_analysis_evidence_state", {
             take_id: takeId,
@@ -1947,19 +1975,13 @@ export async function runProcessTake(
           });
           twoStepFallbackUsed = true;
           twoStepFallbackReason = "analysis_evidence_state_invalid_for_step2";
+          const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
+          twoStepReport = renderFallbackReport(step2Evidence, mode);
+          metric("two_step_fallback_used", {
+            take_id: takeId,
+            reason: twoStepFallbackReason,
+          });
         } else {
-          const step2Evidence = {
-            ...twoStepEvidence,
-            analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
-            analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
-            analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
-            analysis_evidence_state_status:
-              preStep2AnalysisEvidenceState.payload?.evidence_state_status ?? "missing",
-            analysis_evidence_state_step2_dependency_status: step1Dependency.step2DependencyStatus,
-            analysis_evidence_state_dependency_blocker_codes: step1Dependency.blockerCodes,
-            analysis_evidence_state_qa_warning_codes: step1Dependency.warningCodes,
-          } as EvidencePass & Record<string, unknown>;
-
           // ---- Step 2: text-only polish ----
           console.log("[take-pipeline] report_polish_started", baseLog);
           metric("report_polish_started", { take_id: takeId });
@@ -1975,6 +1997,8 @@ export async function runProcessTake(
             levelBlock,
             auditionTitle: audition.title,
             reportTool: REPORT_TOOL,
+            takeId,
+            analysisRunId: `take-${takeId}`,
           }).finally(() => clearTimeout(polishTimer));
 
           if (!polishResult.ok) {
@@ -1982,7 +2006,8 @@ export async function runProcessTake(
             console.warn("[take-pipeline] report_polish_failed; using fallback renderer", {
               ...baseLog,
               http_status: polishResult.httpStatus,
-              error: polishResult.error.slice(0, 200),
+              safe_error_category: polishResult.safeErrorCategory,
+              error: polishResult.error,
               duration_ms: polishResult.durationMs,
             });
             metric("report_polish_failed", {
@@ -2218,6 +2243,24 @@ export async function runProcessTake(
           Number.isFinite(attemptTimeoutMs) && attemptTimeoutMs >= 0 ? attemptTimeoutMs : null;
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), attemptTimeoutMs);
+        const requestContractVersion = "legacy_single_pass_video_tool_call_v1";
+        console.log("[take-pipeline] final_ai_request_attempt", {
+          take_id: takeId,
+          analysis_run_id: `take-${takeId}`,
+          stage: "legacy_single_pass_final_report",
+          model: currentModel,
+          fallback_model: ANALYSIS_MODEL_FALLBACK,
+          attempt_number: geminiAttempt,
+          selected_media_url_confirmed_fetchable: selectedMediaUrlConfirmedFetchable,
+          selected_url_kind: "mux_highest_mp4",
+          request_contract_version: requestContractVersion,
+          response_schema_name: "submit_audition_report",
+          content_part_summary: {
+            text_parts: 1,
+            file_url_parts: 1,
+            tool_call_required: true,
+          },
+        });
 
         let thrown: unknown = null;
         let timedOut = false;
@@ -2254,15 +2297,26 @@ export async function runProcessTake(
         // Success.
         if (aiResp && aiResp.ok) break;
 
-        if (aiResp && aiResp.status === 400 && !selectedMediaUrlConfirmedFetchable) {
-          const errText = await aiResp.text();
+        let providerErrorBody = "";
+        let providerError: FinalReportProviderErrorClassification | null = null;
+        if (aiResp && aiResp.status === 400) {
+          providerErrorBody = await aiResp.text().catch(() => "");
+          providerError = classifyFinalReportProviderError({
+            status: aiResp.status,
+            body: providerErrorBody,
+            mediaUrlConfirmedFetchable: selectedMediaUrlConfirmedFetchable,
+          });
+        }
+
+        if (providerError?.failureCode === "media_url_provider_rejected") {
           console.warn("[take-pipeline] media_url_provider_rejected", {
             ...baseLog,
             http_status: 400,
             gemini_attempt: geminiAttempt,
             selected_url_kind: "mux_highest_mp4",
             selected_media_url_confirmed_fetchable: selectedMediaUrlConfirmedFetchable,
-            error: errText.slice(0, 200),
+            safe_provider_error_category: providerError.category,
+            provider_error_body_bytes: providerError.bodyBytes,
           });
           metric("gemini_failed", {
             take_id: takeId,
@@ -2271,10 +2325,10 @@ export async function runProcessTake(
             duration_ms: Date.now() - geminiStartedAt,
             reason: "media_url_provider_rejected",
             model: currentModel,
-            failure_code: "media_url_provider_rejected",
+            failure_code: providerError.failureCode,
           });
           throw new AnalysisFailure(
-            "media_url_provider_rejected",
+            providerError.failureCode,
             "The video file was not ready for provider analysis yet. We will retry when the static rendition is ready.",
           );
         }
@@ -2299,7 +2353,12 @@ export async function runProcessTake(
         // Determine retryability per strict policy.
         const httpRetryable = aiResp !== null && status !== null && RETRYABLE_HTTP.has(status);
         const networkThrow = aiResp === null && !timedOut && thrown !== null;
-        const transient = timedOut || httpRetryable || networkThrow;
+        const fallbackModelRetry =
+          providerError !== null &&
+          currentModel === ANALYSIS_MODEL_PRIMARY &&
+          ANALYSIS_MODEL_FALLBACK !== currentModel &&
+          isFallbackModelEligibleForFinalReportProviderError(providerError.category);
+        const transient = timedOut || httpRetryable || networkThrow || fallbackModelRetry;
 
         // Pick a failure_code for whatever we'd terminate with if no retry left.
         let failureCode: FailureCode;
@@ -2307,27 +2366,67 @@ export async function runProcessTake(
         else if (status === 429) failureCode = "gemini_429";
         else if (status !== null && status >= 500 && status < 600) failureCode = "gemini_5xx";
         else if (networkThrow) failureCode = "ai_network_error";
+        else if (providerError?.failureCode) failureCode = providerError.failureCode;
         else if (status !== null && status >= 400 && status < 500)
           failureCode = "ai_non_retryable_4xx";
         else failureCode = "ai_network_error";
 
+        if (providerError) {
+          console.warn("[take-pipeline] final_ai_provider_error_classified", {
+            take_id: takeId,
+            analysis_run_id: `take-${takeId}`,
+            stage: "legacy_single_pass_final_report",
+            model: currentModel,
+            fallback_model: ANALYSIS_MODEL_FALLBACK,
+            attempt_number: geminiAttempt,
+            selected_media_url_confirmed_fetchable: selectedMediaUrlConfirmedFetchable,
+            selected_url_kind: "mux_highest_mp4",
+            request_contract_version: requestContractVersion,
+            response_schema_name: "submit_audition_report",
+            content_part_summary: {
+              text_parts: 1,
+              file_url_parts: 1,
+              tool_call_required: true,
+            },
+            provider_status_code: status,
+            safe_provider_error_category: providerError.category,
+            provider_error_body_bytes: providerError.bodyBytes,
+            retry_or_fallback_decision: fallbackModelRetry
+              ? "retry_with_configured_fallback_model"
+              : "terminal_or_standard_retry_policy",
+            failure_code: failureCode,
+          });
+        }
+
         // Non-retryable (parse/validation/4xx other than 429): terminate now.
         if (!transient) {
-          const t = aiResp ? await aiResp.text().catch(() => "") : "";
-          console.error("AI gateway hard error", status, t.slice(0, 500));
+          console.error("[take-pipeline] final_ai_provider_error_terminal", {
+            ...baseLog,
+            http_status: status,
+            failure_code: failureCode,
+            safe_provider_error_category: providerError?.category ?? null,
+            provider_error_body_bytes: providerError?.bodyBytes ?? null,
+            model: currentModel,
+          });
           metric("gemini_failed", {
             take_id: takeId,
             retry_count: geminiRetryCount,
             http_status: status,
             duration_ms: Date.now() - geminiStartedAt,
-            reason: "non_retryable",
+            reason: providerError?.category ?? "non_retryable",
             model: currentModel,
             failure_code: failureCode,
           });
-          throw new AnalysisFailure(
-            failureCode,
-            `AI gateway error (${status ?? "network"}). Please try again.`,
-          );
+          const message =
+            failureCode === "final_report_model_request_shape_unsupported"
+              ? "The AI provider rejected the final report request shape. Please retry after the report request contract is fixed."
+              : failureCode === "final_report_provider_request_invalid" ||
+                  failureCode === "final_report_provider_invalid_argument"
+                ? "The AI provider rejected the final report request. Please retry after the report request contract is fixed."
+                : failureCode === "media_url_provider_rejected_after_confirmed_fetchability"
+                  ? "The AI provider rejected the confirmed media URL. Please retry with a fresh analysis attempt."
+                  : `AI gateway error (${status ?? "network"}). Please try again.`;
+          throw new AnalysisFailure(failureCode, message);
         }
 
         // Transient — retry if budget allows. We allow exactly ONE fallback
@@ -2491,11 +2590,14 @@ export async function runProcessTake(
               "The AI response was cut off before it finished writing the report. Please retry.",
             );
           }
-          console.error(
-            "AI JSON parse failed",
-            parseErr,
-            (toolCall.function.arguments as string | undefined)?.slice(-300),
-          );
+          console.error("[take-pipeline] ai_json_parse_failed", {
+            take_id: takeId,
+            error: parseErr instanceof Error ? parseErr.name : "parse_error",
+            argument_bytes:
+              typeof toolCall.function.arguments === "string"
+                ? new TextEncoder().encode(toolCall.function.arguments).length
+                : null,
+          });
           throw new AnalysisFailure(
             "analysis_parse_failed",
             "The AI returned an incomplete report. Please retry.",
