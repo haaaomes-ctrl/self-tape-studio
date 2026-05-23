@@ -1,34 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildV2Report, PUBLIC_CATEGORIES } from "@/server/v2-report-builder.server";
+import { buildV2Report, validateV2PublicBoundary } from "@/server/v2-report-builder.server";
 import type { FutureDimensionsResult } from "@/server/dimensions";
-
-const legacyReport = {
-  audition_type: "musical_theatre",
-  headline: "Confident take with clear story choices.",
-  verdict: "ready_with_notes",
-  overall_score: 72,
-  overall_score_final: 70,
-  confidence: 4,
-  feedback_reliability: "high",
-  scores: {
-    technical: 75,
-    audio: 70,
-    vocal: 68,
-    acting: 74,
-    brief_adherence: 72,
-    professional_presentation: 80,
-  },
-  strengths: [{ point: "Steady frame.", evidence: "00:00–01:30" }],
-  improvements: [{ point: "Vary phrase shape.", evidence: "01:10" }],
-  fix_first: { headline: "Open the second verse.", why_now: "It currently flatlines." },
-  timestamped_notes: [{ timestamp: "00:42", note: "Land the consonant." }],
-  next_take_plan: { steps: ["Slower intake.", "Lift the eyeline."] },
-  risk_flags: ["audio_balance_low"],
-  presentation_notes: { framing: "mid", lighting: "even" },
-  role_fit_notes: "Strong textual match to brief.",
-  role_fit_modifier: 2,
-  role_fit_confidence: "medium",
-};
 
 const futureDimensions: FutureDimensionsResult = {
   components: [
@@ -37,13 +9,24 @@ const futureDimensions: FutureDimensionsResult = {
       start: "00:00",
       end: "02:14",
       confidence: "high",
-      assessability: { component_assessable: true, visibility: "high", audio_balance: "medium", evidence_density: "high" },
+      assessability: {
+        component_assessable: true,
+        visibility: "high",
+        audio_balance: "medium",
+        evidence_density: "high",
+      },
       subtype: "ballad",
       style: "golden_age",
       form: "32_bar",
       dimensions: {},
       evidence_anchors: [
-        { id: "a1", kind: "timestamp", note: "lift", supports: ["acting_through_song"], timestamp: "00:42" },
+        {
+          id: "a1",
+          kind: "timestamp",
+          note: "lift",
+          supports: ["acting_through_song"],
+          timestamp: "00:42",
+        },
       ],
     },
   ],
@@ -51,83 +34,536 @@ const futureDimensions: FutureDimensionsResult = {
   malformed: false,
 };
 
-describe("v2-report-builder (Phase 3A)", () => {
-  it("emits schema_version v2-component", () => {
-    const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "brief" });
+const legacyReport = {
+  audition_type: "musical_theatre",
+  verdict: "Worth another take",
+  submission_verdict: {
+    label: "Worth another take",
+    reason: "The opening is readable, but the acting beat needs a cleaner turn before submission.",
+    blocked: false,
+  },
+  confidence: 74,
+  feedback_reliability: "medium",
+  feedback_reliability_reason: "Audio is clear, but the brief detail is partial.",
+  scores: {
+    technical: 75,
+    audio: 70,
+    vocal: 68,
+    acting: 74,
+    brief_adherence: 72,
+    professional_presentation: 80,
+  },
+  overall_score: 72,
+  overall_score_final: 70,
+  strengths: ["The opening intention is clear.", "The final button lands cleanly."],
+  improvements: ["Make the second beat more active.", "Let the breath reset before the song."],
+  fix_first: "This independent legacy fix should not survive when priority_fixes exists.",
+  priority_fixes: [
+    {
+      headline: "Clarify the second beat",
+      rationale: "The thought turn currently arrives late.",
+      kind: "critical_gap",
+    },
+    {
+      headline: "Hold the breath reset",
+      rationale: "It will make the song start cleaner.",
+      kind: "quick_win",
+    },
+  ],
+  optional_polish: ["Tidy the final pause if time allows."],
+  brief_requirements: [
+    {
+      requirement_id: "brief-1",
+      source_text: "Submit the acting scene and song.",
+      category: "material",
+      obligation: "mandatory",
+      public_summary: "Submit the acting scene and song.",
+      achievement_status: "partially_achieved",
+      readiness_impact: "material_gap",
+      public_evidence_summary: "The scene is present, but the song cut is missing.",
+      evidence_anchor_ids: ["private-anchor"],
+      truth_state_entry_ids: ["private-truth"],
+      assessability_limits: [],
+    },
+    {
+      source_text: "Include full-body movement.",
+      achievement_status: "not_assessable",
+      readiness_impact: "not_assessable",
+      assessability_limits: ["Framing does not show the movement pathway."],
+    },
+  ],
+  next_take_plan: { steps: ["Run the scene once for the beat turn.", "Record one cleaner pass."] },
+  role_fit_notes: "Private role-fit text must not appear.",
+  comparison: { winner: "take-2" },
+  raw_prompt: "private prompt",
+};
+
+describe("v2-report-builder R10.2B", () => {
+  it("emits a locked-down decision-support schema", () => {
+    const v2 = buildV2Report({
+      legacyReport,
+      futureDimensions,
+      auditionType: "musical_theatre",
+      mode: "brief",
+    });
+
     expect(v2.schema_version).toBe("v2-component");
-  });
-
-  it("public scores come verbatim from legacy production scoring", () => {
-    const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect(v2.scores).toEqual(legacyReport.scores);
-    for (const k of PUBLIC_CATEGORIES) {
-      expect(v2.scores![k]).toBe((legacyReport.scores as Record<string, number>)[k]);
-    }
-  });
-
-  it("public_categories mirrors the six existing fields", () => {
-    const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect([...v2.public_categories]).toEqual([
-      "technical",
-      "audio",
-      "vocal",
-      "acting",
-      "brief_adherence",
-      "professional_presentation",
+    expect(v2.submission_verdict).toEqual({
+      decision: "retake_recommended",
+      label: "Retake recommended",
+      reason:
+        "The opening is readable, but the acting beat needs a cleaner turn before submission.",
+      blocked: false,
+    });
+    expect(v2.why_this_verdict.summary).toBe(
+      "The opening is readable, but the acting beat needs a cleaner turn before submission.",
+    );
+    expect(v2.fix_first).toBe("Address the brief requirement: Submit the acting scene and song.");
+    expect(v2.priority_fixes.map((fix) => fix.headline)).toEqual([
+      "Address the brief requirement: Submit the acting scene and song.",
+      "Clarify the second beat",
+      "Hold the breath reset",
     ]);
   });
 
-  it("verdict, headline, overall_readiness, reliability, confidence preserved", () => {
-    const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect(v2.verdict).toBe("ready_with_notes");
-    expect(v2.headline).toBe(legacyReport.headline);
-    expect(v2.overall_readiness).toBe(70); // overall_score_final preferred
-    expect(v2.reliability).toBe("high");
-    expect(v2.confidence).toBe(4);
-  });
-
-  it("components[] surfaces only structural fields (no anchors/dimensions)", () => {
-    const v2 = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect(v2.components).toHaveLength(1);
-    const c = v2.components[0] as unknown as Record<string, unknown>;
-    // Forbidden internal keys must never appear, regardless of which other
-    // public structural fields are present.
-    for (const forbidden of [
-      "evidence_anchors",
-      "dimensions",
-      "dimension_confidence",
-      "supports",
-      "anchor_id",
-      "anchor_ids",
-    ]) {
-      expect(forbidden in c).toBe(false);
-    }
-    // Required public structural fields must be present.
-    for (const required of ["type", "start", "end", "subtype", "style", "form", "assessability"]) {
-      expect(required in c).toBe(true);
-    }
-  });
-
-  it("role_fit only present in brief mode", () => {
-    const brief = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "brief" });
-    const baseline = buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "baseline" });
-    expect(brief.role_fit).toEqual({
-      notes: "Strong textual match to brief.",
-      modifier: 2,
-      confidence: "medium",
+  it("keeps must-fix, retake improvement and optional polish separate", () => {
+    const v2 = buildV2Report({
+      legacyReport,
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
     });
-    expect("role_fit" in baseline).toBe(false);
+
+    expect(v2.must_fix_before_submitting).toEqual([
+      "Address the brief requirement: Submit the acting scene and song.",
+      "Clarify the second beat",
+    ]);
+    expect(v2.should_improve_if_retaking).toEqual([
+      "Hold the breath reset",
+      "Make the second beat more active.",
+      "Let the breath reset before the song.",
+    ]);
+    expect(v2.optional_polish).toEqual(["Tidy the final pause if time allows."]);
   });
 
-  it("does not mutate inputs", () => {
-    const snapshot = JSON.stringify(legacyReport);
-    buildV2Report({ legacyReport, futureDimensions, auditionType: "musical_theatre", mode: "brief" });
-    expect(JSON.stringify(legacyReport)).toBe(snapshot);
+  it("derives preserve and do-not-over-fix from public-safe strengths when explicit values are absent", () => {
+    const v2 = buildV2Report({
+      legacyReport,
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(v2.preserve).toEqual([
+      "The opening intention is clear.",
+      "The final button lands cleanly.",
+    ]);
+    expect(v2.do_not_overfix[0]).toContain("Preserve this: The opening intention is clear.");
   });
 
-  it("handles empty/null futureDimensions safely", () => {
-    const v2 = buildV2Report({ legacyReport, futureDimensions: null, auditionType: null, mode: "baseline" });
-    expect(v2.components).toEqual([]);
-    expect(v2.schema_version).toBe("v2-component");
+  it("summarises brief achievement without exposing private evidence IDs", () => {
+    const v2 = buildV2Report({
+      legacyReport,
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+    const json = JSON.stringify(v2);
+
+    expect(v2.brief_achievement.overall_status).toBe("not_assessable");
+    expect(v2.brief_achievement.mandatory_status).toBe("some_gaps");
+    expect(v2.brief_achievement.readiness_impact).toBe("material_gap");
+    expect(v2.brief_requirements).toEqual([
+      {
+        requirement_id: "brief-1",
+        source_text: "Submit the acting scene and song.",
+        public_summary: "Submit the acting scene and song.",
+        category: "material_instruction",
+        obligation: "mandatory",
+        requirement_type: "song",
+        achievement_status: "partly_achieved",
+        readiness_impact: "material_gap",
+        public_evidence_summary: "The scene is present, but the song cut is missing.",
+        assessability_limits: [],
+      },
+      {
+        source_text: "Include full-body movement.",
+        public_summary: "Include full-body movement.",
+        category: "ambiguous",
+        requirement_type: "dance",
+        achievement_status: "not_assessable",
+        readiness_impact: "not_assessable",
+        assessability_limits: ["Framing does not show the movement pathway."],
+      },
+    ]);
+    expect(v2.not_assessable).toEqual([
+      "Include full-body movement: Framing does not show the movement pathway.",
+    ]);
+    expect(json).not.toContain("private-anchor");
+    expect(json).not.toContain("private-truth");
+  });
+
+  it("suppresses public scores, components, role-fit, comparison and raw/internal fields", () => {
+    const v2 = buildV2Report({
+      legacyReport,
+      futureDimensions,
+      auditionType: "musical_theatre",
+      mode: "brief",
+    });
+    const json = JSON.stringify(v2);
+
+    expect(json).not.toMatch(
+      /overall_score|overall_readiness|scores|category_scores|component_score|role_fit|winner|comparison|raw_prompt|evidence_anchor|truth_state/,
+    );
+    expect(validateV2PublicBoundary(v2, legacyReport)).toEqual({ ok: true });
+  });
+
+  it("fails the public boundary when blocked public claims are injected", () => {
+    const v2 = buildV2Report({
+      legacyReport,
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+    const leaky = {
+      ...v2,
+      priority_fixes: [{ headline: "This is callback-ready and has a 95 score." }],
+    };
+
+    expect(validateV2PublicBoundary(leaky, legacyReport)).toEqual({
+      ok: false,
+      reason: "blocked_public_claim",
+    });
+  });
+
+  it("uses safe fallback copy when upstream data is incomplete", () => {
+    const v2 = buildV2Report({
+      legacyReport: {},
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(v2.submission_verdict.decision).toBe("review_carefully");
+    expect(v2.why_this_verdict.summary).toBe(
+      "Review the priority fixes before deciding whether to submit this take.",
+    );
+    expect(v2.brief_achievement.overall_status).toBe("not_assessable");
+    expect(v2.next_take_plan).toEqual({ steps: [] });
+    expect(v2.fix_first).toBeNull();
+  });
+
+  it("does not invent brief requirements when no brief data is supplied", () => {
+    const v2 = buildV2Report({
+      legacyReport: {},
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+
+    expect(v2.brief_requirements).toEqual([]);
+    expect(v2.brief_achievement).toMatchObject({
+      overall_status: "not_applicable",
+      mandatory_status: "not_applicable",
+      summary: "No supplied brief was available to assess.",
+    });
+    expect(JSON.stringify(v2)).not.toMatch(/role|song|scene|technique requirement/i);
+  });
+
+  it("lets an assessable missing mandatory brief requirement drive readiness and next-take priorities", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        submission_verdict: {
+          decision: "submit",
+          reason: "The tape otherwise has no public-safe blocker.",
+        },
+        brief_requirements: [
+          {
+            source_text: "Include the requested song cut.",
+            public_summary: "Include the requested song cut.",
+            category: "material_instruction",
+            obligation: "mandatory",
+            requirement_type: "song",
+            achievement_status: "not_achieved",
+            readiness_impact: "submission_blocker",
+            public_evidence_summary: "The available tape does not include the requested song cut.",
+            next_take_action: "Record the requested song cut before submitting.",
+          },
+        ],
+        next_take_plan: { steps: ["Check the slate once."] },
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(v2.submission_verdict).toMatchObject({
+      decision: "retake_required_if_possible",
+      blocked: true,
+    });
+    expect(v2.why_this_verdict.main_reasons.join(" ")).toContain("mandatory brief requirement");
+    expect(v2.fix_first).toBe("Record the requested song cut before submitting.");
+    expect(v2.priority_fixes[0]).toMatchObject({
+      headline: "Record the requested song cut before submitting.",
+      category: "brief_adherence",
+    });
+    expect(v2.must_fix_before_submitting).toContain(
+      "Record the requested song cut before submitting.",
+    );
+    expect(v2.next_take_plan).toEqual({
+      steps: ["Record the requested song cut before submitting.", "Check the slate once."],
+    });
+  });
+
+  it("keeps preferred and optional brief gaps out of submission blockers", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        submission_verdict: {
+          decision: "submit",
+          reason: "No mandatory blocker is present.",
+        },
+        brief_requirements: [
+          {
+            source_text: "Preferred: use a lighter comic pace.",
+            public_summary: "Use a lighter comic pace if retaking.",
+            category: "preferred",
+            obligation: "preferred",
+            achievement_status: "partly_achieved",
+            readiness_impact: "minor_gap",
+            next_take_action: "Lift the comic pace if you choose to retake.",
+          },
+          {
+            source_text: "Optional: include a short slate.",
+            public_summary: "Include a short slate if time allows.",
+            category: "optional",
+            obligation: "optional",
+            achievement_status: "partly_achieved",
+            readiness_impact: "minor_gap",
+            next_take_action: "Add the short slate only if it does not distract from the take.",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(v2.submission_verdict.decision).toBe("submit");
+    expect(v2.must_fix_before_submitting).toEqual([]);
+    expect(v2.should_improve_if_retaking).toContain("Lift the comic pace if you choose to retake.");
+    expect(v2.optional_polish).toContain(
+      "Add the short slate only if it does not distract from the take.",
+    );
+    expect(v2.fix_first).toBeNull();
+  });
+
+  it("preserves ambiguous and not-assessable brief states without treating them as failure", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        submission_verdict: {
+          decision: "submit",
+          reason: "The tape otherwise has no public-safe blocker.",
+        },
+        brief_requirements: [
+          {
+            source_text: "Prepare it how you think best.",
+            achievement_status: "not_assessable",
+            readiness_impact: "not_assessable",
+            assessability_limits: ["The brief wording is ambiguous."],
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(v2.brief_requirements[0]).toMatchObject({
+      category: "ambiguous",
+      achievement_status: "not_assessable",
+      readiness_impact: "not_assessable",
+    });
+    expect(v2.brief_requirements[0].achievement_status).not.toBe("not_achieved");
+    expect(v2.submission_verdict.decision).toBe("submit");
+    expect(v2.not_assessable).toEqual([
+      "Prepare it how you think best: The brief wording is ambiguous.",
+    ]);
+  });
+
+  it("keeps fix-first derived from the ranked priority list and exposes all meaningful fixes", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        fix_first: "This contradictory standalone fix should not survive.",
+        priority_fixes: [
+          {
+            headline: "Clarify the first reaction",
+            rationale: "It is the first moment that affects readiness.",
+            action: "Record one pass that lands the first reaction before moving on.",
+            kind: "critical_gap",
+          },
+          {
+            headline: "Hold the final beat",
+            rationale: "The ending currently cuts away too quickly.",
+            action: "Let the final thought settle before stopping the recording.",
+            kind: "quick_win",
+          },
+          {
+            headline: "Reset the breath before the second line",
+            rationale: "The breath reset will make the second line cleaner.",
+            action: "Take one silent breath reset before the second line.",
+            kind: "low_effort_high_impact",
+          },
+          {
+            headline: "Sharpen the eyeline shift",
+            rationale: "The relationship turn will read more clearly.",
+            action: "Set the eyeline before the relationship turn.",
+            kind: "quick_win",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+
+    expect(v2.fix_first).toBe("Clarify the first reaction");
+    expect(v2.priority_fixes.map((fix) => fix.headline)).toEqual([
+      "Clarify the first reaction",
+      "Hold the final beat",
+      "Reset the breath before the second line",
+      "Sharpen the eyeline shift",
+    ]);
+  });
+
+  it("synthesises a finite next-take plan covering must-fix and should-improve items", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        priority_fixes: [
+          {
+            headline: "Clarify the first reaction",
+            rationale: "It materially affects submission readiness.",
+            action: "Record one pass that lands the first reaction before moving on.",
+            kind: "critical_gap",
+          },
+          {
+            headline: "Hold the final beat",
+            rationale: "The ending can land more cleanly if retaking.",
+            action: "Let the final thought settle before stopping the recording.",
+            kind: "quick_win",
+          },
+        ],
+        improvements: ["Reset the breath before the second line."],
+        next_take_plan: { steps: ["Check the reader volume once before recording."] },
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+    const steps = (v2.next_take_plan as { steps: string[] }).steps;
+
+    expect(v2.must_fix_before_submitting).toEqual(["Clarify the first reaction"]);
+    expect(v2.should_improve_if_retaking).toEqual([
+      "Hold the final beat",
+      "Reset the breath before the second line.",
+    ]);
+    expect(steps).toEqual([
+      "Record one pass that lands the first reaction before moving on.",
+      "Let the final thought settle before stopping the recording.",
+      "Retake option: if recording again, use one pass to strengthen reset the breath before the second line.",
+      "Check the reader volume once before recording.",
+    ]);
+    expect(steps).not.toContain("Clarify the first reaction");
+  });
+
+  it("drops generic filler and unsafe resource advice from fixes and actions", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        priority_fixes: [
+          "Be more confident.",
+          {
+            headline: "Make the opening eyeline land before the first line",
+            rationale: "The opening relationship is currently late.",
+            action: "Set the eyeline before the first line starts.",
+            kind: "quick_win",
+          },
+        ],
+        improvements: [
+          "Add more energy.",
+          "Use an expensive microphone.",
+          "Reset the breath before the final phrase.",
+        ],
+        next_take_plan: {
+          steps: ["Hire a paid coach.", "Run the breath reset once before recording."],
+        },
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+    const serialised = JSON.stringify(v2);
+
+    expect(v2.priority_fixes.map((fix) => fix.headline)).toEqual([
+      "Make the opening eyeline land before the first line",
+    ]);
+    expect(v2.should_improve_if_retaking).toEqual([
+      "Make the opening eyeline land before the first line",
+      "Reset the breath before the final phrase.",
+    ]);
+    expect((v2.next_take_plan as { steps: string[] }).steps).toContain(
+      "Run the breath reset once before recording.",
+    );
+    expect(serialised).not.toMatch(
+      /be more confident|add more energy|expensive microphone|paid coach/i,
+    );
+  });
+
+  it("only lets setup become fix-first when it materially blocks assessment or submission", () => {
+    const minorSetup = buildV2Report({
+      legacyReport: {
+        brief_requirements: [
+          {
+            source_text: "Keep the camera landscape.",
+            public_summary: "Keep the camera landscape.",
+            category: "video_audio_setup",
+            obligation: "mandatory",
+            achievement_status: "partly_achieved",
+            readiness_impact: "minor_gap",
+            next_take_action: "Keep the camera landscape if recording again.",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+    const blockingSetup = buildV2Report({
+      legacyReport: {
+        brief_requirements: [
+          {
+            source_text: "Use full-body framing for the movement phrase.",
+            public_summary: "Use full-body framing for the movement phrase.",
+            category: "video_audio_setup",
+            obligation: "mandatory",
+            achievement_status: "not_achieved",
+            readiness_impact: "submission_blocker",
+            next_take_action: "Re-record with full-body framing for the movement phrase.",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(minorSetup.fix_first).toBeNull();
+    expect(minorSetup.should_improve_if_retaking).toContain(
+      "Keep the camera landscape if recording again.",
+    );
+    expect(blockingSetup.fix_first).toBe(
+      "Re-record with full-body framing for the movement phrase.",
+    );
+    expect(blockingSetup.must_fix_before_submitting).toContain(
+      "Re-record with full-body framing for the movement phrase.",
+    );
   });
 });
