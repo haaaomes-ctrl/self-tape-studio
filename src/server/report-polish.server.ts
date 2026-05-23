@@ -8,6 +8,10 @@
 
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
+import {
+  classifyFinalReportProviderError,
+  type FinalReportProviderSafeErrorCategory,
+} from "./final-report-provider-errors.server";
 
 const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
 
@@ -50,6 +54,8 @@ export type RunReportPolishArgs = {
   auditionTitle: string;
   reportTool: unknown;
   model?: string;
+  takeId?: string;
+  analysisRunId?: string;
 };
 
 export type RunReportPolishResult =
@@ -65,6 +71,7 @@ export type RunReportPolishResult =
       ok: false;
       httpStatus: number | null;
       error: string;
+      safeErrorCategory: FinalReportProviderSafeErrorCategory;
       durationMs: number;
       model: string;
     };
@@ -113,6 +120,25 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
 
   let resp: Response | null = null;
   try {
+    if (args.takeId) {
+      console.log("[take-pipeline] final_ai_request_attempt", {
+        take_id: args.takeId,
+        analysis_run_id: args.analysisRunId ?? `take-${args.takeId}`,
+        stage: "report_polish_step2",
+        model,
+        fallback_model: null,
+        attempt_number: 1,
+        selected_media_url_confirmed_fetchable: null,
+        selected_url_kind: "none_text_only",
+        request_contract_version: "step2_locked_evidence_tool_call_v1",
+        response_schema_name: "submit_audition_report",
+        content_part_summary: {
+          text_parts: 1,
+          file_url_parts: 0,
+          tool_call_required: true,
+        },
+      });
+    }
     resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -140,7 +166,8 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     return {
       ok: false,
       httpStatus: null,
-      error: err instanceof Error ? err.message : "network_error",
+      error: err instanceof Error ? err.name || "network_error" : "network_error",
+      safeErrorCategory: "provider_network_error",
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -153,10 +180,16 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     } catch {
       /* ignore */
     }
+    const safeProviderError = classifyFinalReportProviderError({
+      status: resp.status,
+      body,
+      mediaUrlConfirmedFetchable: true,
+    });
     return {
       ok: false,
       httpStatus: resp.status,
-      error: `report_polish_http_${resp.status}: ${body.slice(0, 200)}`,
+      error: `report_polish_http_${resp.status}_${safeProviderError.category}`,
+      safeErrorCategory: safeProviderError.category,
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -171,6 +204,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
         ok: false,
         httpStatus: resp.status,
         error: "report_polish_no_tool_call",
+        safeErrorCategory: "provider_request_contract_invalid",
         durationMs: Date.now() - startedAt,
         model,
       };
@@ -188,6 +222,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       ok: false,
       httpStatus: resp.status,
       error: err instanceof Error ? err.message : "report_polish_parse_error",
+      safeErrorCategory: "provider_request_contract_invalid",
       durationMs: Date.now() - startedAt,
       model,
     };
