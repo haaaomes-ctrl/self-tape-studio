@@ -128,9 +128,9 @@ describe("R10.7D brief-led fallback priority repair", () => {
     expect((v2.next_take_plan as { steps: string[] }).steps).toEqual(
       expect.arrayContaining([
         "Record and include the full required Side 1 acting scene.",
-        "Record the song through to completion without an abrupt cut-off.",
-        "Check that the final edit contains the required material in one continuous video.",
-        "Do a quick playback check before uploading.",
+        "Complete the song section or confirm the song runs through to the end before uploading.",
+        "Check that the song and Side 1 are both present in the final continuous video.",
+        "Do a quick playback check before uploading to catch any cut-off.",
       ]),
     );
   });

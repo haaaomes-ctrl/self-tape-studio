@@ -97,6 +97,53 @@ function testOneEvidence(): EvidencePass {
   };
 }
 
+function testOneEvidenceWithUnconfirmedSongCompletion(): EvidencePass {
+  const base = testOneEvidence();
+  return {
+    ...base,
+    step1_observations: [
+      {
+        family: "material_specific_performance",
+        kind: "intro_present",
+        summary: "The submitted tape starts with a performer introduction.",
+        source_basis: "observed_video",
+        confidence: "high",
+      },
+      {
+        family: "audio_observable",
+        kind: "audio_source_microphone",
+        summary: "Audio is assessable and does not block review.",
+        source_basis: "observed_audio",
+        confidence: "high",
+      },
+    ],
+    brief_adherence_evidence: {
+      material_compliance:
+        "The required Side 1 is not present, and the final package is incomplete.",
+      technical_compliance: "The one-continuous-video package cannot be confirmed as complete.",
+      instruction_precision: "The required acting side is not present in the observed material.",
+      professionalism_signals: "The final edit needs a playback check before upload.",
+      score_material: 0,
+      score_technical: 0,
+      score_instruction: 0,
+      score_professional: 0,
+    },
+    category_notes_evidence: {
+      technical: "",
+      audio: "Audio is assessable.",
+      vocal: "",
+      acting: "No required acting side is observed.",
+      brief_adherence: "Side 1 is missing and the package completion could not be confirmed.",
+      professional_presentation: "",
+    },
+    evidence_sufficiency: {
+      ...base.evidence_sufficiency,
+      notes:
+        "Audio and video are assessable; required material is incomplete and package completion is unconfirmed.",
+    },
+  };
+}
+
 describe("R10.7F canonical public report view model", () => {
   it("routes Test 1 Step 1 evidence into missing Side 1 and incomplete song sections", () => {
     const result = buildPublicReportViewModel({
@@ -134,13 +181,59 @@ describe("R10.7F canonical public report view model", () => {
     expect(model.fix_first).toMatch(/Side 1 acting scene/i);
     expect(model.priority_fixes.map((fix) => JSON.stringify(fix)).join(" ")).toMatch(/song/i);
     expect(model.must_fix_before_submitting.join(" ")).toMatch(/Side 1 acting scene/i);
-    expect(model.must_fix_before_submitting.join(" ")).toMatch(/song/i);
+    expect(model.must_fix_before_submitting).toEqual(
+      expect.arrayContaining([
+        "Complete the song section or confirm the song runs through to the end before uploading.",
+        "Check that the song and Side 1 are both present in the final continuous video.",
+      ]),
+    );
     expect(JSON.stringify(model.next_take_plan)).toMatch(/Side 1 acting scene/i);
-    expect(JSON.stringify(model.next_take_plan)).toMatch(/song/i);
+    expect((model.next_take_plan as { steps: string[] }).steps).toEqual(
+      expect.arrayContaining([
+        "Complete the song section or confirm the song runs through to the end before uploading.",
+        "Check that the song and Side 1 are both present in the final continuous video.",
+        "Do a quick playback check before uploading to catch any cut-off.",
+      ]),
+    );
     expect(model.do_not_overfix.join(" ")).toMatch(/missing required material/i);
     expect(text).not.toMatch(
       /No single public-safe priority fix|Not ready to send|poor_audio|muddy_audio|audio is too unclear|"ok"|major casting brief instruction/i,
     );
+  });
+
+  it("routes a cautious song/package completion action when song completion is unconfirmed", () => {
+    const result = buildPublicReportViewModel({
+      candidateReport: {
+        schema_version: "v1-legacy",
+        source_family: "legacy_adapter",
+        priority_fixes: [],
+        defect_risk_ids: ["legacy_report_used_as_v3_spine_proxy"],
+      },
+      evidence: testOneEvidenceWithUnconfirmedSongCompletion(),
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      briefText: testOneBrief,
+      extractedBrief: {
+        audition_type: "musical_theatre",
+        material_requested: "Side 1 plus contemporary legit MT song",
+      },
+    });
+
+    const publicText = JSON.stringify(result.model);
+
+    expect(result.model.fix_first).toMatch(/Side 1 acting scene/i);
+    expect(result.model.must_fix_before_submitting).toContain(
+      "Complete the song section or confirm the song runs through to the end before uploading.",
+    );
+    expect((result.model.next_take_plan as { steps: string[] }).steps).toEqual(
+      expect.arrayContaining([
+        "Complete the song section or confirm the song runs through to the end before uploading.",
+        "Check that the song and Side 1 are both present in the final continuous video.",
+      ]),
+    );
+    expect(publicText).toMatch(/song\/package completion could not be fully confirmed/i);
+    expect(publicText).not.toMatch(/does not identify a song section|no song section|song absent/i);
   });
 
   it("quarantines legacy raw report fields when no Step 1 evidence is available", () => {
