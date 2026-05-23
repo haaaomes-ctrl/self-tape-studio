@@ -1957,7 +1957,10 @@ export async function runProcessTake(
           twoStepFallbackReason =
             "step1_observation_only_contract_not_valid_for_step2_score_calibration";
           const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
-          twoStepReport = renderFallbackReport(step2Evidence, mode);
+          twoStepReport = renderFallbackReport(step2Evidence, mode, {
+            briefText: typeof audition.brief === "string" ? audition.brief : null,
+            extractedBrief: extractedBrief as Record<string, unknown> | null,
+          });
           metric("two_step_fallback_used", {
             take_id: takeId,
             reason: twoStepFallbackReason,
@@ -1976,7 +1979,10 @@ export async function runProcessTake(
           twoStepFallbackUsed = true;
           twoStepFallbackReason = "analysis_evidence_state_invalid_for_step2";
           const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
-          twoStepReport = renderFallbackReport(step2Evidence, mode);
+          twoStepReport = renderFallbackReport(step2Evidence, mode, {
+            briefText: typeof audition.brief === "string" ? audition.brief : null,
+            extractedBrief: extractedBrief as Record<string, unknown> | null,
+          });
           metric("two_step_fallback_used", {
             take_id: takeId,
             reason: twoStepFallbackReason,
@@ -2019,7 +2025,10 @@ export async function runProcessTake(
             twoStepFallbackReason = polishResult.error.slice(0, 120);
             reportPolishDurationMs = polishResult.durationMs;
             const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
-            twoStepReport = renderFallbackReport(step2Evidence, mode);
+            twoStepReport = renderFallbackReport(step2Evidence, mode, {
+              briefText: typeof audition.brief === "string" ? audition.brief : null,
+              extractedBrief: extractedBrief as Record<string, unknown> | null,
+            });
             metric("two_step_fallback_used", {
               take_id: takeId,
               reason: twoStepFallbackReason,
@@ -3364,12 +3373,41 @@ export async function runProcessTake(
       const suffOk =
         !!suff && suff.audio_assessable && suff.video_assessable && suff.acting_assessable;
       const hasFullPerformance = (dur ?? 0) >= 60 && components.length > 0;
+      const audioEvidenceText = [
+        report.category_notes?.audio,
+        report.not_assessable,
+        report.feedback_reliability_reason,
+        report.feedback_reliability_reason_code,
+        twoStepEvidence?.evidence_sufficiency?.notes,
+        ...(twoStepEvidence?.step1_observations ?? [])
+          .filter(
+            (observation) =>
+              observation.family === "audio_observable" ||
+              (observation.family === "assessability_limit" &&
+                /audio|sound|voice|song|vocal/i.test(observation.summary ?? "")),
+          )
+          .map((observation) => observation.summary),
+        ...(twoStepEvidence?.risk_evidence ?? []).map((item) => `${item.flag} ${item.why}`),
+      ]
+        .flat()
+        .filter((item): item is string => typeof item === "string")
+        .join(" ");
+      const audioLimitationSupported =
+        (!!suff && !suff.audio_assessable) ||
+        (/\b(audio|sound|microphone|mic|voice|words|hear|audible|inaudible|muffled|muddy|clipping|distorted|vocal)\b/i.test(
+          audioEvidenceText,
+        ) &&
+          /\b(unclear|hard|difficult|poor|low|quiet|inaudible|not assessable|muffled|muddy|clip|clipping|distort|distorted)\b/i.test(
+            audioEvidenceText,
+          ));
 
       // Reasons that legitimately downgrade reliability:
       const groundedConcerns: string[] = [];
       if (!hasBrief) groundedConcerns.push("no_brief");
-      if (audioScore != null && audioScore < 50) groundedConcerns.push("poor_audio");
-      else if (audioScore != null && audioScore < 75) groundedConcerns.push("muddy_audio");
+      if (audioLimitationSupported && audioScore != null && audioScore < 50)
+        groundedConcerns.push("poor_audio");
+      else if (audioLimitationSupported && audioScore != null && audioScore < 75)
+        groundedConcerns.push("muddy_audio");
       if (techScore != null && techScore < 50) groundedConcerns.push("poor_video");
       if (!hasFullPerformance) groundedConcerns.push("short_or_partial");
       if (suff && !suff.audio_assessable) groundedConcerns.push("audio_not_assessable");
