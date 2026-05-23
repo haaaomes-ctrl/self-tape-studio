@@ -821,7 +821,7 @@ function briefPriorityFixes(requirements: BriefRequirementPublic[]): PriorityFix
         item.readiness_impact === "submission_blocker" ? "critical_gap" : "low_effort_high_impact",
       category: "brief_adherence",
     }))
-    .slice(0, 4);
+    .slice(0, 8);
 }
 
 function dedupePriorityFixes(fixes: PriorityFixPublic[]): PriorityFixPublic[] {
@@ -946,7 +946,7 @@ function briefActionPlanSteps(requirements: BriefRequirementPublic[]): string[] 
           item.readiness_impact === "retake_recommended"),
     )
     .map(briefRequirementAction)
-    .slice(0, 4);
+    .slice(0, 8);
 }
 
 function actionKey(value: string): string {

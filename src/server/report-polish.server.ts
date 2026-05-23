@@ -637,6 +637,16 @@ export function enforceScoreAlignment(
 function fallbackText(value: unknown, maxLength = 260): string | null {
   if (typeof value !== "string") return null;
   const text = value.replace(/\s+/g, " ").trim();
+  if (
+    /\b(?:system\s+secret|environment\s+value|signed\s+url|private\s+storage\s+url|raw\s+prompt|raw\s+model\s+response|raw\s+response|internal\s+qa|evidence\s+id|truth\s+id|analysis\s+run\s+id|guaranteed\s+(?:casting|booking|recall|job|employment)|castability|bookability|marketability|role[-\s]?fit|employability)\b/i.test(
+      text,
+    ) ||
+    /(?:https?:\/\/(?:[^/\s?#]+)?(?:supabase|storage|mux|cloudflare|r2|s3|amazonaws)[^\s]*|[?&](?:token|signature|expires|X-Amz|Policy|Key-Pair-Id)=|(?:secret|api[_-]?key|access[_-]?token)\s*[:=])/i.test(
+      text,
+    )
+  ) {
+    return null;
+  }
   return text ? text.slice(0, maxLength).trim() : null;
 }
 
@@ -695,7 +705,10 @@ function fallbackBriefText(context?: FallbackReportContext): string {
     .join(" ");
 }
 
-function fallbackSourceText(briefText: string, kind: "side" | "song" | "continuous"): string {
+function fallbackSourceText(
+  briefText: string,
+  kind: "side" | "song" | "continuous" | "single_file" | "framing",
+): string {
   if (kind === "side") {
     return (
       fallbackText(
@@ -710,6 +723,24 @@ function fallbackSourceText(briefText: string, kind: "side" | "song" | "continuo
       ) ?? "Tape the required song."
     );
   }
+  if (kind === "framing") {
+    return (
+      fallbackText(
+        briefText.match(
+          /\b(?:landscape|portrait|close[-\s]?up|head[-\s]?and[-\s]?shoulders|framing)\b[^.\n]*/i,
+        )?.[0],
+      ) ?? "Follow the requested self-tape framing and orientation."
+    );
+  }
+  if (kind === "single_file") {
+    return (
+      fallbackText(
+        briefText.match(
+          /\b(?:do\s+not\s+upload\s+more\s+than\s+one\s+file|one\s+file|single\s+file)\b[^.\n]*/i,
+        )?.[0],
+      ) ?? "Do not upload more than one file."
+    );
+  }
   return (
     fallbackText(
       briefText.match(/\b(?:one\s+continuous\s+video|one\s+file|single\s+file)\b[^.\n]*/i)?.[0],
@@ -722,9 +753,13 @@ type FallbackBriefRequirement = {
   public_summary: string;
   category: "mandatory" | "material_instruction" | "admin_process" | "video_audio_setup";
   obligation: "mandatory";
-  requirement_type: "scene" | "song" | "submission_process";
+  requirement_type: "scene" | "song" | "submission_process" | "framing";
   achievement_status: "achieved" | "partly_achieved" | "not_achieved" | "not_assessable";
-  readiness_impact: "supports_submission" | "material_gap" | "submission_blocker";
+  readiness_impact:
+    | "supports_submission"
+    | "material_gap"
+    | "submission_blocker"
+    | "not_assessable";
   public_evidence_summary?: string;
   assessability_limits: string[];
   next_take_action?: string;
@@ -751,6 +786,14 @@ function deriveFallbackBriefRequirements(
   const requiresSong = /\b(?:song|mt\s+song|musical\s+theatre\s+song|legit)\b/.test(lowerBrief);
   const requiresContinuous =
     /\b(?:one\s+continuous\s+video|one\s+file|single\s+file|do\s+not\s+upload\s+more\s+than\s+one\s+file)\b/.test(
+      lowerBrief,
+    );
+  const requiresSingleFile =
+    /\b(?:one\s+file|single\s+file|do\s+not\s+upload\s+more\s+than\s+one\s+file)\b/.test(
+      lowerBrief,
+    );
+  const requiresFraming =
+    /\b(?:landscape|portrait|close[-\s]?up|head[-\s]?and[-\s]?shoulders|framing)\b/.test(
       lowerBrief,
     );
   const observedScene =
@@ -801,6 +844,37 @@ function deriveFallbackBriefRequirements(
     });
   }
 
+  if (requiresSide && observedScene && !missingRequiredScene) {
+    requirements.push({
+      source_text: fallbackSourceText(briefText, "side"),
+      public_summary: "Include the required Side 1 acting scene.",
+      category: "mandatory",
+      obligation: "mandatory",
+      requirement_type: "scene",
+      achievement_status: "achieved",
+      readiness_impact: "supports_submission",
+      public_evidence_summary:
+        "The available evidence identifies the requested acting scene material in the tape.",
+      assessability_limits: [],
+    });
+  } else if (requiresSide && !missingRequiredScene) {
+    requirements.push({
+      source_text: fallbackSourceText(briefText, "side"),
+      public_summary: "Include the required Side 1 acting scene.",
+      category: "mandatory",
+      obligation: "mandatory",
+      requirement_type: "scene",
+      achievement_status: "not_assessable",
+      readiness_impact: "not_assessable",
+      public_evidence_summary:
+        "The brief requires Side 1, but the acting scene could not be confirmed from the available evidence.",
+      assessability_limits: [
+        "Side 1 presence could not be confirmed reliably from the available tape.",
+      ],
+      next_take_action: "Check that the final edit includes the required Side 1 acting scene.",
+    });
+  }
+
   if (requiresSong) {
     if (songIncomplete) {
       requirements.push({
@@ -846,27 +920,116 @@ function deriveFallbackBriefRequirements(
         assessability_limits: [],
         next_take_action: "Record and include the required song section.",
       });
+    } else if (observedSong) {
+      requirements.push({
+        source_text: fallbackSourceText(briefText, "song"),
+        public_summary: "Include the required song section.",
+        category: "mandatory",
+        obligation: "mandatory",
+        requirement_type: "song",
+        achievement_status: "achieved",
+        readiness_impact: "supports_submission",
+        public_evidence_summary:
+          "The available evidence identifies a song section in the submitted tape.",
+        assessability_limits: [],
+      });
+    } else if (!packageIncomplete) {
+      requirements.push({
+        source_text: fallbackSourceText(briefText, "song"),
+        public_summary: "Include the required song section.",
+        category: "mandatory",
+        obligation: "mandatory",
+        requirement_type: "song",
+        achievement_status: "not_assessable",
+        readiness_impact: "not_assessable",
+        public_evidence_summary:
+          "The brief requires a song, but the song section could not be confirmed from the available evidence.",
+        assessability_limits: [
+          "Song presence and completion could not be confirmed reliably from the available tape.",
+        ],
+        next_take_action: "Check that the final edit includes the complete required song section.",
+      });
     }
   }
 
   if (requiresContinuous && (requirements.length > 0 || songIncomplete)) {
+    const hasMaterialGap = requirements.some(
+      (item) =>
+        item.achievement_status === "not_achieved" ||
+        item.achievement_status === "partly_achieved" ||
+        item.readiness_impact === "material_gap" ||
+        item.readiness_impact === "submission_blocker",
+    );
     requirements.push({
       source_text: fallbackSourceText(briefText, "continuous"),
       public_summary: "Submit the required material in one continuous video.",
       category: "admin_process",
       obligation: "mandatory",
       requirement_type: "submission_process",
-      achievement_status: requirements.some((item) => item.achievement_status === "not_achieved")
-        ? "partly_achieved"
-        : "not_assessable",
-      readiness_impact: "material_gap",
-      public_evidence_summary:
-        "Because required material is missing or incomplete, the final edited package cannot yet be treated as complete.",
+      achievement_status: hasMaterialGap ? "partly_achieved" : "achieved",
+      readiness_impact: hasMaterialGap ? "material_gap" : "supports_submission",
+      public_evidence_summary: hasMaterialGap
+        ? "Because required material is missing or incomplete, the final edited package cannot yet be treated as complete."
+        : "The available evidence supports treating the required material package as complete.",
       assessability_limits: [],
-      next_take_action:
-        requiresSong && requiresSide
-          ? "Check that the song and Side 1 are both present in the final continuous video."
-          : "Check that the final edit contains the required material in one continuous video.",
+      ...(hasMaterialGap
+        ? {
+            next_take_action:
+              requiresSong && requiresSide
+                ? "Check that the song and Side 1 are both present in the final continuous video."
+                : "Check that the final edit contains the required material in one continuous video.",
+          }
+        : {}),
+    });
+  }
+
+  if (requiresFraming) {
+    requirements.push({
+      source_text: fallbackSourceText(briefText, "framing"),
+      public_summary: "Follow the requested landscape close-up/head-and-shoulders framing.",
+      category: "video_audio_setup",
+      obligation: "mandatory",
+      requirement_type: "framing",
+      achievement_status:
+        evidence.evidence_sufficiency?.video_assessable === false ? "not_assessable" : "achieved",
+      readiness_impact:
+        evidence.evidence_sufficiency?.video_assessable === false
+          ? "not_assessable"
+          : "supports_submission",
+      public_evidence_summary:
+        evidence.evidence_sufficiency?.video_assessable === false
+          ? "Video/framing could not be assessed reliably from the available tape."
+          : "Video evidence is assessable for framing and presentation review.",
+      assessability_limits:
+        evidence.evidence_sufficiency?.video_assessable === false
+          ? ["Video/framing could not be assessed reliably from the available tape."]
+          : [],
+    });
+  }
+
+  if (requiresSingleFile) {
+    const hasOpenMaterialGap = requirements.some(
+      (item) =>
+        item.achievement_status === "not_achieved" ||
+        item.achievement_status === "partly_achieved" ||
+        item.readiness_impact === "material_gap" ||
+        item.readiness_impact === "submission_blocker",
+    );
+    requirements.push({
+      source_text: fallbackSourceText(briefText, "single_file"),
+      public_summary: "Do not upload more than one file.",
+      category: "admin_process",
+      obligation: "mandatory",
+      requirement_type: "submission_process",
+      achievement_status: hasOpenMaterialGap ? "partly_achieved" : "achieved",
+      readiness_impact: hasOpenMaterialGap ? "material_gap" : "supports_submission",
+      public_evidence_summary: hasOpenMaterialGap
+        ? "Because the required material package is incomplete, the final one-file submission still needs a check."
+        : "The package can be treated as one submission file once the final export is checked.",
+      assessability_limits: [],
+      ...(hasOpenMaterialGap
+        ? { next_take_action: "Export and upload one final checked file only." }
+        : {}),
     });
   }
 
@@ -973,10 +1136,31 @@ export function renderFallbackReport(
     mode === "brief" ? deriveFallbackBriefRequirements(evidence, context) : [];
   const scores = fallbackScores(evidence, derivedBriefRequirements);
   const detectedComponents = evidence.detected_components;
-  const fallbackFixFirst = (evidence.fix_first_evidence ?? "").trim() || improvements[0] || "";
-  const priorityFixes = fallbackPriorityFixes(derivedBriefRequirements, fallbackFixFirst);
+  const hasDerivedSubmissionBlocker = derivedBriefRequirements.some(
+    (item) => item.readiness_impact === "submission_blocker",
+  );
+  const hasDerivedMaterialGap = derivedBriefRequirements.some(
+    (item) =>
+      item.readiness_impact === "material_gap" ||
+      item.achievement_status === "partly_achieved" ||
+      item.achievement_status === "not_achieved",
+  );
+  const allDerivedBriefAchieved =
+    derivedBriefRequirements.length > 0 &&
+    derivedBriefRequirements.every(
+      (item) =>
+        item.achievement_status === "achieved" || item.readiness_impact === "supports_submission",
+    );
+  const fallbackFixFirst =
+    (evidence.fix_first_evidence ?? "").trim() ||
+    (allDerivedBriefAchieved ? "" : improvements[0] || "");
+  const priorityFixes = allDerivedBriefAchieved
+    ? []
+    : fallbackPriorityFixes(derivedBriefRequirements, fallbackFixFirst);
   const fixFirst = priorityFixes[0]?.headline ?? fallbackFixFirst;
-  const nextTakePlanSteps = fallbackNextTakePlan(derivedBriefRequirements);
+  const nextTakePlanSteps = allDerivedBriefAchieved
+    ? []
+    : fallbackNextTakePlan(derivedBriefRequirements);
   const notAssessable = [
     ...(!evidence.evidence_sufficiency?.audio_assessable
       ? ["Audio limits how firmly vocal or spoken detail can be judged."]
@@ -991,33 +1175,36 @@ export function renderFallbackReport(
   const briefAchievement =
     derivedBriefRequirements.length > 0
       ? {
-          overall_status: derivedBriefRequirements.some(
-            (item) => item.achievement_status === "not_achieved",
-          )
-            ? "partly_achieved"
-            : "mostly_achieved",
-          summary: derivedBriefRequirements.some((item) =>
-            /side\s*1|acting scene/i.test(item.public_summary),
-          )
-            ? "The brief is only partly achieved: the required Side 1 acting scene is missing, and the song package needs completion before submission."
-            : "The brief is partly achieved, but the itemised material gaps need attention before submission.",
-          mandatory_requirements_status: derivedBriefRequirements.some(
-            (item) => item.readiness_impact === "submission_blocker",
-          )
-            ? "At least one assessable mandatory requirement is not achieved."
-            : "At least one mandatory requirement has a material gap to review.",
-          mandatory_status: derivedBriefRequirements.some(
-            (item) => item.readiness_impact === "submission_blocker",
-          )
-            ? "blocked"
-            : "some_gaps",
-          readiness_impact: derivedBriefRequirements.some(
-            (item) => item.readiness_impact === "submission_blocker",
-          )
-            ? "submission_blocker"
-            : "material_gap",
-          readiness_effect:
-            "Retake with the missing or incomplete required material before treating this as a complete submission package.",
+          overall_status: allDerivedBriefAchieved
+            ? "achieved"
+            : hasDerivedMaterialGap
+              ? "partly_achieved"
+              : "mostly_achieved",
+          summary: allDerivedBriefAchieved
+            ? "The supplied brief appears achieved from the available evidence: the required material and package instructions are represented in the tape."
+            : derivedBriefRequirements.some((item) =>
+                  /side\s*1|acting scene/i.test(item.public_summary),
+                )
+              ? "The brief is only partly achieved: the required Side 1 acting scene is missing, and the song package needs completion before submission."
+              : "The brief is partly achieved, but the itemised material gaps need attention before submission.",
+          mandatory_requirements_status: allDerivedBriefAchieved
+            ? "No mandatory blocker is present in the itemised brief checklist."
+            : hasDerivedSubmissionBlocker
+              ? "At least one assessable mandatory requirement is not achieved."
+              : "At least one mandatory requirement has a material gap to review.",
+          mandatory_status: allDerivedBriefAchieved
+            ? "clear"
+            : hasDerivedSubmissionBlocker
+              ? "blocked"
+              : "some_gaps",
+          readiness_impact: allDerivedBriefAchieved
+            ? "supports_submission"
+            : hasDerivedSubmissionBlocker
+              ? "submission_blocker"
+              : "material_gap",
+          readiness_effect: allDerivedBriefAchieved
+            ? "Brief completion supports submission readiness; use optional polish only if retaking for refinement."
+            : "Retake with the missing or incomplete required material before treating this as a complete submission package.",
         }
       : mode === "brief"
         ? {
@@ -1090,6 +1277,15 @@ export function renderFallbackReport(
   return {
     mode,
     audition_type: evidence.audition_type,
+    submission_verdict: allDerivedBriefAchieved
+      ? {
+          decision: "submit_if_deadline_is_close",
+          label: "Submit if deadline is close",
+          reason:
+            "The supplied brief appears complete from the available evidence, with no must-fix blocker identified.",
+          blocked: false,
+        }
+      : undefined,
     detected_components: detectedComponents,
     consistency_modifier: 0,
     confidence: 60,
@@ -1136,13 +1332,17 @@ export function renderFallbackReport(
     fix_first: fixFirst,
     priority_fixes: priorityFixes,
     why_this_verdict: {
-      summary:
-        derivedBriefRequirements.length > 0
+      summary: allDerivedBriefAchieved
+        ? "The supplied brief requirements appear represented in the tape, so the report focuses on preserving what works and optional polish rather than a mandatory retake."
+        : derivedBriefRequirements.length > 0
           ? "The supplied brief asks for specific material, and the available evidence shows that required material is missing or incomplete."
           : "Report polish was unavailable, so this recommendation is based on the locked observation evidence and should be reviewed with that limitation in mind.",
-      main_reasons: [
-        fixFirst || "No single public-safe priority fix was available from the evidence pass.",
-      ],
+      main_reasons: allDerivedBriefAchieved
+        ? [
+            "The itemised supplied brief requirements are achieved or support submission from the available evidence.",
+            ...(strengths[0] ? [strengths[0]] : []),
+          ]
+        : [fixFirst || "No single public-safe priority fix was available from the evidence pass."],
     },
     must_fix_before_submitting:
       derivedBriefRequirements.length > 0
@@ -1155,12 +1355,14 @@ export function renderFallbackReport(
             .map((item) => item.next_take_action ?? item.public_summary)
         : submission_risk_flags.filter((flag) => flag.severity === "high").map((flag) => flag.flag),
     should_improve_if_retaking: [],
-    optional_polish: [],
+    optional_polish: allDerivedBriefAchieved ? improvements.slice(0, 6) : [],
     do_not_overfix: [
-      evidence.evidence_sufficiency?.audio_assessable !== false &&
-      derivedBriefRequirements.length > 0
-        ? "Do not spend the next take chasing audio changes if the recording is already clear enough; prioritise the missing required material."
-        : "Do not keep retaking just to chase minor polish; re-record only for a clear priority fix.",
+      allDerivedBriefAchieved
+        ? "Do not keep retaking just to chase marginal polish when the brief package is complete and the tape is assessable."
+        : evidence.evidence_sufficiency?.audio_assessable !== false &&
+            derivedBriefRequirements.length > 0
+          ? "Do not spend the next take chasing audio changes if the recording is already clear enough; prioritise the missing required material."
+          : "Do not keep retaking just to chase minor polish; re-record only for a clear priority fix.",
     ],
     brief_requirements: derivedBriefRequirements,
     brief_achievement: briefAchievement,

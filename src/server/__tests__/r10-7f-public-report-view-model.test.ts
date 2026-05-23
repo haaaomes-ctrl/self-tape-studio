@@ -144,6 +144,104 @@ function testOneEvidenceWithUnconfirmedSongCompletion(): EvidencePass {
   };
 }
 
+function strongBriefCompleteEvidence(): EvidencePass {
+  const base = testOneEvidence();
+  return {
+    ...base,
+    step1_observations: [
+      {
+        family: "material_specific_performance",
+        kind: "side_1_scene_present",
+        summary: "The tape includes the requested Side 1 acting scene.",
+        source_basis: "observed_video",
+        confidence: "high",
+      },
+      {
+        family: "material_specific_performance",
+        kind: "song_section_complete",
+        summary: "The tape includes a complete song section after the acting scene.",
+        source_basis: "observed_audio",
+        confidence: "high",
+      },
+      {
+        family: "video_observable",
+        kind: "landscape_close_up",
+        summary: "The video is landscape and framed close-up/head-and-shoulders.",
+        source_basis: "observed_video",
+        confidence: "high",
+      },
+      {
+        family: "audio_observable",
+        kind: "audio_assessable",
+        summary: "Audio is clear enough to assess spoken and sung material.",
+        source_basis: "observed_audio",
+        confidence: "high",
+      },
+    ],
+    detected_components: [
+      { type: "acting_scene", weight: 0.55, score: 88, note: "Side 1 acting scene is present." },
+      { type: "song", weight: 0.45, score: 90, note: "Song section is present and complete." },
+    ],
+    raw_scores: {
+      technical: 88,
+      audio: 90,
+      vocal: 90,
+      acting: 89,
+      brief_adherence: 92,
+      professional_presentation: 91,
+    },
+    core_strengths_evidence: [
+      {
+        area: "brief",
+        evidence: "The tape includes Side 1 and the song in a complete package.",
+      },
+      {
+        area: "performance",
+        evidence: "The opening beat is clear and the song storytelling stays connected.",
+      },
+      {
+        area: "presentation",
+        evidence: "Landscape close-up framing is stable and readable.",
+      },
+    ],
+    core_improvements_evidence: [
+      {
+        area: "polish",
+        evidence: "Let the final button settle for a breath before ending the recording.",
+      },
+    ],
+    fix_first_evidence: "",
+    brief_adherence_evidence: {
+      material_compliance: "Side 1 and the song are both present.",
+      technical_compliance: "The material appears edited into one continuous package.",
+      instruction_precision: "The required components are represented in the observed tape.",
+      professionalism_signals: "The package is ready for a final playback check.",
+      score_material: 92,
+      score_technical: 90,
+      score_instruction: 92,
+      score_professional: 91,
+    },
+    category_notes_evidence: {
+      technical: "The framing is stable and follows the landscape close-up instruction.",
+      audio: "Audio is assessable.",
+      vocal: "The song section is audible and complete.",
+      acting: "The requested acting scene is present.",
+      brief_adherence: "The required Side 1, song and one continuous package are present.",
+      professional_presentation: "Presentation is submission-ready with only optional polish.",
+    },
+    evidence_sufficiency: {
+      audio_assessable: true,
+      video_assessable: true,
+      acting_assessable: true,
+      vocal_assessable: true,
+      movement_assessable: true,
+      brief_assessable: true,
+      role_fit_assessable: true,
+      notes: "Audio/video are assessable and the supplied brief components are present.",
+    },
+  };
+}
+
 describe("R10.7F canonical public report view model", () => {
   it("routes Test 1 Step 1 evidence into missing Side 1 and incomplete song sections", () => {
     const result = buildPublicReportViewModel({
@@ -263,6 +361,94 @@ describe("R10.7F canonical public report view model", () => {
     expect(html).toMatch(/Complete the song section/i);
     expect(html).not.toMatch(/No single public-safe priority fix/i);
     expect(html).not.toMatch(/This report could not generate a reliable fix-first item/i);
+  });
+
+  it("restores performer-facing value for a strong brief-complete professional take", () => {
+    const result = buildPublicReportViewModel({
+      candidateReport: {
+        schema_version: "v1-legacy",
+        source_family: "legacy_adapter",
+        strengths: [
+          "The opening scene has clear intention and readable eyeline shifts.",
+          "The song storytelling stays connected through the final phrase.",
+          "Highly castable and 98 overall score.", // red-line legacy wording must not leak
+        ],
+        improvements: ["Let the final button settle for one breath before ending the recording."],
+        priority_fixes: [
+          {
+            headline: "Use one final playback check for the continuous edit.",
+            rationale:
+              "This protects the already-complete package without inventing a retake blocker.",
+          },
+        ],
+        raw_response: "internal raw response should never appear",
+        scores: { overall: 98 },
+        defect_risk_ids: ["legacy_report_used_as_v3_spine_proxy"],
+      },
+      evidence: strongBriefCompleteEvidence(),
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      briefText: testOneBrief,
+      extractedBrief: {
+        audition_type: "musical_theatre",
+        material_requested: "Side 1 plus contemporary legit MT song",
+        framing_required: "Landscape, close-up head-and-shoulders",
+      },
+    });
+
+    const model = result.model;
+    const text = JSON.stringify(model);
+
+    expect(model.submission_verdict).toMatchObject({
+      decision: "submit_if_deadline_is_close",
+      blocked: false,
+    });
+    expect(model.brief_achievement).toMatchObject({
+      overall_status: "achieved",
+      mandatory_status: "clear",
+      readiness_impact: "supports_submission",
+    });
+    expect(model.fix_first).toBeNull();
+    expect(model.priority_fixes).toEqual([]);
+    expect(model.brief_requirements.map((item) => JSON.stringify(item)).join(" ")).toMatch(
+      /Side 1.*song.*continuous video.*Landscape/i,
+    );
+    expect(model.preserve.join(" ")).toMatch(/opening scene|song storytelling|framing/i);
+    expect(model.optional_polish.join(" ")).toMatch(/final button|playback check/i);
+    expect(model.do_not_overfix.join(" ")).toMatch(/brief package is complete|marginal polish/i);
+    expect(text).not.toMatch(
+      /No single public-safe priority fix|Review carefully|highly castable|overall score|raw response|98|category score|poor_audio|muddy_audio/i,
+    );
+  });
+
+  it("preserves supplied brief detail while suppressing explicit red-line content", () => {
+    const result = buildPublicReportViewModel({
+      candidateReport: {
+        schema_version: "v1-legacy",
+        source_family: "legacy_adapter",
+        defect_risk_ids: ["legacy_report_used_as_v3_spine_proxy"],
+      },
+      evidence: strongBriefCompleteEvidence(),
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      briefText: [
+        "Tape Side 1, pages 85-87.",
+        "Tape a contemporary legit MT song.",
+        "Upload via https://storage.example.com/private.mp4?token=secret-signature.",
+        "Landscape, close-up head-and-shoulders.",
+      ].join(" "),
+      extractedBrief: {
+        audition_type: "musical_theatre",
+        material_requested: "Side 1 plus contemporary legit MT song",
+      },
+    });
+
+    const text = JSON.stringify(result.model);
+
+    expect(text).toMatch(/Side 1|contemporary legit MT song|Landscape/i);
+    expect(text).not.toMatch(/storage\.example|token=|secret-signature|signed url|raw prompt/i);
   });
 
   it("quarantines legacy raw report fields when no Step 1 evidence is available", () => {
