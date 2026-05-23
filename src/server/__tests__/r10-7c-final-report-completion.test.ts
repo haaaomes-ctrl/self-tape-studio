@@ -64,9 +64,7 @@ describe("R10.7C final report completion and Gemini 400 hardening", () => {
     const observationBranch = source.slice(observationBranchStart, dependencyBranchStart);
 
     expect(observationBranch).toContain("using locked-down Step 1 fallback report");
-    expect(observationBranch).toContain(
-      "twoStepReport = renderFallbackReport(step2Evidence, mode)",
-    );
+    expect(observationBranch).toContain("twoStepReport = renderFallbackReport(step2Evidence, mode");
     expect(observationBranch).toContain('"two_step_fallback_used"');
     expect(observationBranch).not.toContain("falling back to single-pass");
   });
@@ -83,7 +81,7 @@ describe("R10.7C final report completion and Gemini 400 hardening", () => {
     const dependencyBranch = source.slice(dependencyBranchStart, polishBranchStart);
 
     expect(dependencyBranch).toContain("analysis_evidence_state_invalid_for_step2");
-    expect(dependencyBranch).toContain("twoStepReport = renderFallbackReport(step2Evidence, mode)");
+    expect(dependencyBranch).toContain("twoStepReport = renderFallbackReport(step2Evidence, mode");
     expect(dependencyBranch).toContain('"two_step_fallback_used"');
   });
 
