@@ -2155,6 +2155,7 @@ export async function runProcessTake(
         playbackId: take.mux_playback_id,
         kind: "gemini",
       });
+      let muxUrlRecoveryAttempted = false;
       while (true) {
         // Total-budget guard BEFORE each attempt — prevents starting an attempt
         // we know we can't complete inside the wall-clock budget.
@@ -2229,8 +2230,10 @@ export async function runProcessTake(
           aiResp &&
           aiResp.status === 400 &&
           take.mux_playback_id &&
+          !muxUrlRecoveryAttempted &&
           urlForCall === resolvedProbeUrl
         ) {
+          muxUrlRecoveryAttempted = true;
           const errText = await aiResp.text();
           console.warn(
             "AI gateway rejected URL; retrying once with fresh Mux URL",
