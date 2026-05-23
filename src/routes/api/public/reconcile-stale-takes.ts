@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { buildMuxHighestMp4Url, getMux, normaliseMuxMp4Url } from "@/server/mux.server";
 import {
-  buildMuxHighestMp4Url,
-  getMux,
-  normaliseMuxMp4Url,
-} from "@/server/mux.server";
+  isMuxStaticRenditionReady,
+  type MuxStaticRenditionsLike,
+} from "@/server/mux-static-rendition.server";
 import { runProcessTake } from "@/server/process-take.server";
 import { cleanupMuxAssetForCompletedTake } from "@/server/mux-cleanup.server";
 import { scheduleBackground } from "@/worker-entry";
@@ -63,7 +63,7 @@ type MuxAssetLike = {
   status?: string;
   duration?: number;
   playback_ids?: Array<{ id: string; policy: string }>;
-  static_renditions?: { status?: string };
+  static_renditions?: MuxStaticRenditionsLike;
   errors?: unknown;
 };
 
@@ -106,7 +106,10 @@ async function attemptTranscodingRecovery(take: {
     try {
       return getMux();
     } catch (err) {
-      console.error("transcoding_orphan_checked mux client unavailable", { ...baseLog, err: String(err) });
+      console.error("transcoding_orphan_checked mux client unavailable", {
+        ...baseLog,
+        err: String(err),
+      });
       return null;
     }
   })();
@@ -119,7 +122,10 @@ async function attemptTranscodingRecovery(take: {
 
   if (!assetId) {
     if (!take.mux_upload_id) {
-      console.warn("unrecoverable_transcoding_orphan", { ...baseLog, reason: "no_asset_no_upload" });
+      console.warn("unrecoverable_transcoding_orphan", {
+        ...baseLog,
+        reason: "no_asset_no_upload",
+      });
       return { kind: "unrecoverable", reason: "no_asset_no_upload" };
     }
     try {
@@ -155,7 +161,11 @@ async function attemptTranscodingRecovery(take: {
   const muxAssetStatus = asset.status;
 
   if (muxAssetStatus === "errored") {
-    console.warn("mux_asset_not_ready", { ...baseLog, mux_asset_status: muxAssetStatus, terminal: true });
+    console.warn("mux_asset_not_ready", {
+      ...baseLog,
+      mux_asset_status: muxAssetStatus,
+      terminal: true,
+    });
     return { kind: "terminal", reason: "asset_errored", muxAssetStatus, muxUploadStatus };
   }
 
@@ -172,7 +182,12 @@ async function attemptTranscodingRecovery(take: {
       mux_asset_status: muxAssetStatus,
       reason: "missing_playback_or_duration",
     });
-    return { kind: "not_ready", reason: "missing_playback_or_duration", muxAssetStatus, muxUploadStatus };
+    return {
+      kind: "not_ready",
+      reason: "missing_playback_or_duration",
+      muxAssetStatus,
+      muxUploadStatus,
+    };
   }
 
   const renditionStatus = asset.static_renditions?.status;
@@ -182,7 +197,32 @@ async function attemptTranscodingRecovery(take: {
       mux_asset_status: muxAssetStatus,
       static_rendition_status: renditionStatus,
     });
-    // Still recoverable for streaming-based analysis; don't terminate.
+    return {
+      kind: "terminal",
+      reason: "static_rendition_errored",
+      muxAssetStatus,
+      muxUploadStatus,
+    };
+  }
+
+  if (!isMuxStaticRenditionReady(asset.static_renditions)) {
+    console.log("mux_static_rendition_waiting", {
+      ...baseLog,
+      mux_asset_status: muxAssetStatus,
+      static_rendition_status: renditionStatus ?? "unknown",
+    });
+    metric("mux_static_rendition_waiting", {
+      take_id: take.id,
+      processing_phase: take.processing_phase,
+      reason: "asset_ready_before_static_rendition_ready",
+      static_rendition_status: renditionStatus ?? "unknown",
+    });
+    return {
+      kind: "not_ready",
+      reason: "static_rendition_not_ready",
+      muxAssetStatus,
+      muxUploadStatus,
+    };
   }
 
   const mp4Standard = normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId));
@@ -274,12 +314,12 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
         // Finalising orphans: rows that entered the deterministic post-AI
         // stage and stalled. Distinct from `analysing` (genuine in-flight AI).
-        const finalisingCutoff = new Date(
-          now - FINALISING_ORPHAN_MINUTES * 60_000,
-        ).toISOString();
+        const finalisingCutoff = new Date(now - FINALISING_ORPHAN_MINUTES * 60_000).toISOString();
         const { data: staleFinalising, error: fErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence")
+          .select(
+            "id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence",
+          )
           .eq("processing_phase", "finalising")
           .eq("status", "processing")
           .lt("updated_at", finalisingCutoff)
@@ -304,10 +344,8 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         // entered deterministic post-AI processing — a worker death here will
         // never recover by itself, so we mark terminal rather than reschedule.
         for (const take of staleFinalising ?? []) {
-          const ageSeconds =
-            (now - new Date(take.created_at).getTime()) / 1000;
-          const idleSeconds =
-            (now - new Date(take.updated_at).getTime()) / 1000;
+          const ageSeconds = (now - new Date(take.created_at).getTime()) / 1000;
+          const idleSeconds = (now - new Date(take.updated_at).getTime()) / 1000;
 
           // If the report payload landed but the final status flip was lost
           // (e.g. worker died after persist or QA emission stalled the
@@ -358,8 +396,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             .update({
               status: "error",
               processing_phase: "error",
-              error_message:
-                "We couldn’t finish your report this time. Please try again.",
+              error_message: "We couldn’t finish your report this time. Please try again.",
             })
             .eq("id", take.id)
             .eq("processing_phase", "finalising")
@@ -482,7 +519,6 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           });
           uploadingForcedError.push(take.id);
         }
-
 
         // Transcoding orphan recovery: separate loop because the recovery
         // path talks to Mux and may backfill rather than re-run analysis.
@@ -616,7 +652,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               })
               .eq("id", take.id);
             if (failErr) {
-              console.error("reconcile-stale-takes give-up update failed", { takeId: take.id, failErr });
+              console.error("reconcile-stale-takes give-up update failed", {
+                takeId: take.id,
+                failErr,
+              });
               metric("phase_transition_failure", {
                 take_id: take.id,
                 reason: "give_up_update_failed",
@@ -718,14 +757,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         // error). Bounded batch so a single tick never thrashes Mux.
         const muxCleanupCleaned: string[] = [];
         const muxCleanupFailed: string[] = [];
-        const { data: completedWithAsset, error: cleanupErr } =
-          await supabaseAdmin
-            .from("takes")
-            .select("id, mux_asset_id")
-            .eq("status", "complete")
-            .eq("processing_phase", "complete")
-            .not("mux_asset_id", "is", null)
-            .limit(MAX_BATCH);
+        const { data: completedWithAsset, error: cleanupErr } = await supabaseAdmin
+          .from("takes")
+          .select("id, mux_asset_id")
+          .eq("status", "complete")
+          .eq("processing_phase", "complete")
+          .not("mux_asset_id", "is", null)
+          .limit(MAX_BATCH);
         if (cleanupErr) {
           console.error("mux_cleanup_backfill select failed", { cleanupErr });
         } else {

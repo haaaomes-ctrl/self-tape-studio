@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { buildMuxHighestMp4Url, getMux, normaliseMuxMp4Url } from "@/server/mux.server";
 import {
-  buildMuxHighestMp4Url,
-  getMux,
-  normaliseMuxMp4Url,
-} from "@/server/mux.server";
+  isMuxStaticRenditionReady,
+  type MuxStaticRenditionsLike,
+} from "@/server/mux-static-rendition.server";
 import { runProcessTake } from "@/server/process-take.server";
 import { scheduleBackground } from "@/worker-entry";
 import {
@@ -19,12 +19,23 @@ const STATIC_RENDITION_HEARTBEAT_STALE_MS = 30_000;
 export function classifyStaticRenditionReadyTake(input: {
   status?: string | null;
   processing_phase?: string | null;
+  error_message?: string | null;
   stale_heartbeat_ms: number;
-}): "skip_terminal" | "skip_fresh_inflight" | "recover_stale_analysing" | "continue" {
+}):
+  | "skip_terminal"
+  | "skip_fresh_inflight"
+  | "recover_stale_analysing"
+  | "recover_media_url_rejection"
+  | "continue" {
   const staleHeartbeatMs = Number.isFinite(input.stale_heartbeat_ms)
     ? input.stale_heartbeat_ms
     : Number.POSITIVE_INFINITY;
-  if (input.status === "complete" || input.status === "error") return "skip_terminal";
+  if (input.status === "complete") return "skip_terminal";
+  if (input.status === "error") {
+    return isRecoverableMediaUrlRejectionMessage(input.error_message)
+      ? "recover_media_url_rejection"
+      : "skip_terminal";
+  }
   if (
     (input.processing_phase === "analysing" || input.processing_phase === "finalising") &&
     staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS
@@ -39,6 +50,74 @@ export function classifyStaticRenditionReadyTake(input: {
   }
   if (input.processing_phase === "finalising") return "skip_fresh_inflight";
   return "continue";
+}
+
+export function isRecoverableMediaUrlRejectionMessage(message?: string | null): boolean {
+  return (
+    typeof message === "string" && message.includes("[failure_code:media_url_provider_rejected]")
+  );
+}
+
+export function redactMuxWebhookBodyForLog(rawBody: string): string {
+  const redactString = (value: string): string => {
+    const trimmed = value.trim();
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const url = new URL(trimmed);
+        if (url.search) {
+          url.search = "";
+          return `${url.toString()}[query-redacted]`;
+        }
+        if (/upload|signed|token|jwt|signature|secret/i.test(trimmed)) {
+          return "[redacted-url]";
+        }
+        return trimmed;
+      } catch {
+        return "[redacted-url]";
+      }
+    }
+    if (/token|secret|signature|jwt|bearer/i.test(trimmed)) return "[redacted]";
+    return value;
+  };
+
+  const redactValue = (value: unknown, key = ""): unknown => {
+    if (/token|secret|signature|authorization|signed/i.test(key)) {
+      return "[redacted]";
+    }
+    if (/upload_url|url$/i.test(key)) {
+      return typeof value === "string" ? redactString(value) : "[redacted]";
+    }
+    if (typeof value === "string") return redactString(value);
+    if (Array.isArray(value)) return value.map((item) => redactValue(item));
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+          childKey,
+          redactValue(childValue, childKey),
+        ]),
+      );
+    }
+    return value;
+  };
+
+  try {
+    return JSON.stringify(redactValue(JSON.parse(rawBody)));
+  } catch {
+    return "[unparseable webhook body redacted]";
+  }
+}
+
+export function shouldPreserveAssetReadyProcessingPhase(input: {
+  status?: string | null;
+  processing_phase?: string | null;
+}): boolean {
+  return (
+    input.status === "complete" ||
+    input.status === "error" ||
+    input.processing_phase === "analysis_pending" ||
+    input.processing_phase === "analysing" ||
+    input.processing_phase === "finalising"
+  );
 }
 
 async function resolveTakeIdForMuxEvent(data: {
@@ -76,7 +155,7 @@ async function scheduleTakeFromStaticRenditionReady(params: {
   const { data: existing } = await supabaseAdmin
     .from("takes")
     .select(
-      "status, processing_phase, created_at, updated_at, audition_id, mux_playback_id, mux_duration_seconds",
+      "status, processing_phase, error_message, created_at, updated_at, audition_id, mux_playback_id, mux_duration_seconds",
     )
     .eq("id", takeId)
     .single();
@@ -143,10 +222,15 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     stale_heartbeat_ms: staleHeartbeatMs,
     timestamp: receivedAt,
   });
+  metric("mux_static_rendition_ready", {
+    take_id: takeId,
+    duration_ms: staleHeartbeatMs,
+  });
 
   const recoveryAction = classifyStaticRenditionReadyTake({
     status: existing.status,
     processing_phase: existing.processing_phase,
+    error_message: existing.error_message,
     stale_heartbeat_ms: staleHeartbeatMs,
   });
   if (recoveryAction === "skip_terminal" || recoveryAction === "skip_fresh_inflight") {
@@ -169,17 +253,18 @@ async function scheduleTakeFromStaticRenditionReady(params: {
       take_id: takeId,
       stale_heartbeat_ms: staleHeartbeatMs,
     });
-  }
-
-  if (
-    existing.processing_phase === "analysis_pending" &&
-    staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS
-  ) {
-    console.log("MUX WEBHOOK static_rendition.ready observed active prepare loop", {
+  } else if (recoveryAction === "recover_media_url_rejection") {
+    console.warn("MUX WEBHOOK static_rendition.ready recovering media URL rejection", {
       takeId,
+      status: existing.status,
+      processing_phase: existing.processing_phase,
       stale_heartbeat_ms: staleHeartbeatMs,
     });
-    return new Response("ok", { status: 200 });
+    metric("reconciler_recovered", {
+      take_id: takeId,
+      processing_phase: existing.processing_phase,
+      reason: "media_url_provider_rejected",
+    });
   }
 
   const identity = await resolveTakeIdentity(takeId);
@@ -212,6 +297,10 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     .from("takes")
     .update({ status: "pending", processing_phase: "analysis_pending", error_message: null })
     .eq("id", takeId);
+  metric("transcoding_to_analysis_pending", {
+    take_id: takeId,
+    duration_ms: staleHeartbeatMs,
+  });
 
   console.log("MUX WEBHOOK scheduling runProcessTake from static_rendition.ready", {
     takeId,
@@ -239,7 +328,7 @@ async function scheduleTakeFromStaticRenditionReady(params: {
 //
 // We handle:
 //   - video.upload.asset_created         → link the new asset to our take row
-//   - video.asset.ready                  → renditions usable; gate on duration + URLs, then analyse
+//   - video.asset.ready                  → asset metadata usable; wait for static_rendition.ready
 //   - video.asset.static_rendition.ready → recover stalled prepare loops once highest.mp4 exists
 //   - video.asset.errored                → mark the take errored
 //
@@ -284,7 +373,8 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         console.log("MUX WEBHOOK RAW BODY", {
           timestamp: receivedAt,
           length: rawBody.length,
-          body: rawBody,
+          body: redactMuxWebhookBodyForLog(rawBody),
+          body_redacted: true,
         });
 
         // Surface event.type as early as possible (pre-verification peek for logging only).
@@ -295,7 +385,9 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             type: peek?.type ?? "(unknown)",
           });
         } catch {
-          console.warn("MUX WEBHOOK body is not valid JSON (pre-verify)", { timestamp: receivedAt });
+          console.warn("MUX WEBHOOK body is not valid JSON (pre-verify)", {
+            timestamp: receivedAt,
+          });
         }
 
         console.log("MUX WEBHOOK verifying signature…", { timestamp: receivedAt });
@@ -323,6 +415,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
           new_asset_settings?: { passthrough?: string };
           playback_ids?: Array<{ id: string; policy: string }>;
           duration?: number;
+          static_renditions?: MuxStaticRenditionsLike;
           errors?: { messages?: string[] };
         };
 
@@ -356,28 +449,31 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         }
 
         if (type === "video.asset.ready") {
+          const assetId = data.id ?? null;
           const playbackId = data.playback_ids?.find((p) => p.policy === "public")?.id;
           const duration = typeof data.duration === "number" ? data.duration : null;
 
           // Readiness gate: require playback id AND a positive duration.
-          if (!playbackId || !duration || duration <= 0) {
+          if (!assetId || !playbackId || !duration || duration <= 0) {
             console.warn("asset.ready missing playback_id or duration; skipping", { takeId });
             return new Response("ok", { status: 200 });
           }
-
-          const mp4Standard = normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId));
 
           // Idempotency: only flip into the analysing phase if we haven't
           // already kicked off (or completed) analysis for this take.
           const { data: existing } = await supabaseAdmin
             .from("takes")
-            .select("status, processing_phase, created_at, audition_id")
+            .select("status, processing_phase, created_at, audition_id, mux_status")
             .eq("id", takeId)
             .single();
 
           const elapsedSinceUpload = existing?.created_at
             ? Date.now() - new Date(existing.created_at).getTime()
             : null;
+          const preserveProcessingPhase = shouldPreserveAssetReadyProcessingPhase({
+            status: existing?.status,
+            processing_phase: existing?.processing_phase,
+          });
 
           console.log("[take-pipeline] mux video.asset.ready", {
             take_id: takeId,
@@ -386,6 +482,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             mux_playback_id: playbackId,
             video_duration_seconds: duration,
             elapsed_ms_since_upload: elapsedSinceUpload,
+            static_rendition_ready: isMuxStaticRenditionReady(data.static_renditions),
             timestamp: new Date().toISOString(),
           });
           metric("mux_asset_ready", {
@@ -393,22 +490,34 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             duration_ms: elapsedSinceUpload ?? undefined,
             processing_phase: "transcoding",
           });
-          metric("transcoding_to_analysis_pending", {
-            take_id: takeId,
-            duration_ms: elapsedSinceUpload ?? undefined,
-          });
 
           await supabaseAdmin
             .from("takes")
             .update({
-              mux_asset_id: data.id ?? null,
+              mux_asset_id: assetId,
               mux_playback_id: playbackId,
-              mux_mp4_standard_url: mp4Standard,
               mux_mp4_high_url: null,
               mux_duration_seconds: duration,
-              mux_status: "ready",
+              mux_status: preserveProcessingPhase
+                ? (existing?.mux_status ?? "transcoding")
+                : "transcoding",
+              processing_phase: preserveProcessingPhase
+                ? existing?.processing_phase
+                : "transcoding",
             })
             .eq("id", takeId);
+
+          if (!isMuxStaticRenditionReady(data.static_renditions)) {
+            console.log("MUX WEBHOOK asset.ready waiting for static_rendition.ready", {
+              takeId,
+              static_rendition_ready: false,
+            });
+            metric("mux_static_rendition_waiting", {
+              take_id: takeId,
+              reason: "asset_ready_before_static_rendition_ready",
+            });
+            return new Response("ok", { status: 200 });
+          }
 
           // Idempotency: skip if this take is already complete or has an
           // analysis in flight (analysis_pending = scheduled but not started,
@@ -463,32 +572,11 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             }
           }
 
-          // Mark the take as queued — runProcessTake itself will flip the
-          // phase to "analysing" once it actually begins work. This lets the
-          // stale-analysis reconciler distinguish "scheduled but never
-          // picked up" from "started but never finished".
-          await supabaseAdmin
-            .from("takes")
-            .update({ status: "pending", processing_phase: "analysis_pending" })
-            .eq("id", takeId);
-
-          // Schedule the AI analysis as a background task that the Cloudflare
-          // Worker runtime is required to keep alive past the response via
-          // ctx.waitUntil. No un-awaited promise leak: scheduleBackground
-          // wraps it in waitUntil when an ExecutionContext is available.
-          console.log("MUX WEBHOOK scheduling runProcessTake (waitUntil) →", {
+          return scheduleTakeFromStaticRenditionReady({
+            assetId,
+            receivedAt,
             takeId,
-            timestamp: new Date().toISOString(),
           });
-          scheduleBackground(
-            (async () => {
-              const result = await runProcessTake(takeId);
-              console.log("MUX WEBHOOK runProcessTake completed", { takeId, result });
-              return result;
-            })(),
-            `runProcessTake:${takeId}`,
-          );
-          return new Response("ok", { status: 200 });
         }
 
         if (type === "video.asset.static_rendition.ready") {
@@ -506,8 +594,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         }
 
         if (type === "video.asset.errored" || type === "video.upload.errored") {
-          const msg =
-            data.errors?.messages?.join("; ") ?? "Mux failed to transcode the upload.";
+          const msg = data.errors?.messages?.join("; ") ?? "Mux failed to transcode the upload.";
           await supabaseAdmin
             .from("takes")
             .update({

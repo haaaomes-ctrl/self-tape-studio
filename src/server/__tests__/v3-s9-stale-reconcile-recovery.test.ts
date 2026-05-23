@@ -49,6 +49,16 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
         stale_heartbeat_ms: 45_000,
       }),
     ).toBe("skip_terminal");
+
+    expect(
+      classifyStaticRenditionReadyTake({
+        status: "error",
+        processing_phase: "error",
+        error_message:
+          "[failure_code:media_url_provider_rejected] The video file was not ready yet.",
+        stale_heartbeat_ms: 5_000,
+      }),
+    ).toBe("recover_media_url_rejection");
   });
 
   it("persists completion before optional QA artefact emission", async () => {
@@ -65,22 +75,14 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toContain("internal_qa_emit_warning");
   });
 
-  it("guards Gemini 400 Mux URL recovery as a one-shot path", async () => {
+  it("does not retry Gemini 400s by rebuilding the same Mux URL", async () => {
     const source = await readFile(
       path.join(process.cwd(), "src/server/process-take.server.ts"),
       "utf8",
     );
-    const recoveryStart = source.indexOf("One-shot stale-URL recovery for 400");
-    const hardErrorStart = source.indexOf("Hard, non-retryable: 402 (credits).");
-    const recoveryBlock = source.slice(recoveryStart, hardErrorStart);
-
-    expect(recoveryStart).toBeGreaterThan(0);
-    expect(hardErrorStart).toBeGreaterThan(recoveryStart);
-    expect(source).toContain("let muxUrlRecoveryAttempted = false;");
-    expect(recoveryBlock).toContain("!muxUrlRecoveryAttempted");
-    expect(recoveryBlock).toContain("muxUrlRecoveryAttempted = true;");
-    expect(recoveryBlock).toContain("geminiAttempt -= 1;");
-    expect(source.match(/muxUrlRecoveryAttempted = true;/g)).toHaveLength(1);
+    expect(source).not.toContain("AI gateway rejected URL; retrying once with fresh Mux URL");
+    expect(source).not.toContain("muxUrlRecoveryAttempted");
+    expect(source).toContain("media_url_provider_rejected");
   });
 
   it("reconciler reschedules stale analysing rows instead of leaving them stranded", async () => {

@@ -790,6 +790,10 @@ const MUX_NO_CACHE_HEADERS = {
   Pragma: "no-cache",
 };
 
+export function isProviderFetchableHeadStatus(status: number | null): boolean {
+  return typeof status === "number" && status >= 200 && status < 400;
+}
+
 async function pickAnalysisSource(
   take: {
     id: string;
@@ -1124,6 +1128,7 @@ export async function runProcessTake(
     | "ai_network_error"
     | "ai_credits_exhausted"
     | "ai_non_retryable_4xx"
+    | "media_url_provider_rejected"
     | "analysis_total_timeout"
     | "analysis_parse_failed"
     | "analysis_persist_failed"
@@ -1195,21 +1200,19 @@ export async function runProcessTake(
 
     // ---- Deterministic Mux readiness gate ----
     //
-    // Trust `video.asset.static_rendition.ready` (the webhook that brought us
-    // here, or the reconciler's Mux API check) as the authoritative readiness
-    // signal. We do NOT re-run a multi-method probe loop here — that path was
-    // unreliable against Mux's Varnish layer and caused indefinite
-    // "Preparing analysis" loops on transient 404s.
+    // `video.asset.ready` is not enough for Gemini analysis. Mux may report
+    // the asset as ready before `<playback_id>/highest.mp4` is fetchable by
+    // the provider. We therefore require a positive provider-style HEAD probe
+    // before flipping to "analysing" and handing the URL to the AI gateway.
     //
     // Rules:
     //   - mux_status MUST be "ready" and mux_playback_id MUST be present.
     //   - The MP4 URL is built canonically from mux_playback_id.
     //     Stored URL fields are ignored on the active path.
-    //   - One short HEAD courtesy check (3s timeout) is performed for
-    //     observability only — its result does NOT gate analysis. If Mux
-    //     said the rendition is ready, we proceed.
-    //   - No legacy high.mp4. No range/browser GET fallbacks. No deferral
-    //     loop. The reconciler's wall-clock cap remains the only safety net.
+    //   - HEAD 2xx/3xx confirms fetchability. HEAD 404 or probe failure means
+    //     the row stays in analysis_pending until static_rendition.ready or
+    //     the reconciler retries.
+    //   - No legacy high.mp4. No range/browser GET fallbacks.
     const probeStartedWallclock = Date.now();
 
     if (take.mux_status !== "ready" || !take.mux_playback_id) {
@@ -1265,7 +1268,8 @@ export async function runProcessTake(
       };
     }
 
-    // Courtesy HEAD probe — observability only. Never blocks analysis.
+    // Provider-readiness HEAD probe. A 404 here means Mux has not published
+    // highest.mp4 yet; do not spend an AI request on an unfetchable URL.
     let courtesyHeadStatus: number | null = null;
     let courtesyHeadError: string | null = null;
     {
@@ -1291,12 +1295,39 @@ export async function runProcessTake(
         }
       }
     }
+    const selectedMediaUrlConfirmedFetchable = isProviderFetchableHeadStatus(courtesyHeadStatus);
+    if (!selectedMediaUrlConfirmedFetchable) {
+      const waitingReason =
+        courtesyHeadStatus === 404
+          ? "head_404"
+          : courtesyHeadStatus == null
+            ? "head_probe_failed"
+            : "head_not_fetchable";
+      console.warn("mux_static_rendition_waiting", {
+        ...baseLog,
+        courtesy_head_status: courtesyHeadStatus,
+        courtesy_head_error: courtesyHeadError,
+        selected_url_kind: "mux_highest_mp4",
+        waiting_reason: waitingReason,
+      });
+      metric("mux_static_rendition_waiting", {
+        take_id: takeId,
+        duration_ms: Date.now() - probeStartedWallclock,
+        attempt: 1,
+        tier,
+        reason: waitingReason,
+        courtesy_head_status: courtesyHeadStatus,
+      });
+      deferredPending = true;
+      return { ok: true, alreadyDone: false };
+    }
+
     console.log("mux_prepare_ready", {
       ...baseLog,
-      canonical_url: resolvedProbeUrl,
       courtesy_head_status: courtesyHeadStatus,
       courtesy_head_error: courtesyHeadError,
-      selected_url: resolvedProbeUrl,
+      selected_url_kind: "mux_highest_mp4",
+      selected_media_url_confirmed_fetchable: selectedMediaUrlConfirmedFetchable,
       selected_probe_method: "static_rendition_ready",
     });
     metric("static_mp4_ready", {
@@ -1333,7 +1364,7 @@ export async function runProcessTake(
       ...baseLog,
       analysis_tier: tier,
       elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-      selected_url: resolvedProbeUrl,
+      selected_url_kind: "mux_highest_mp4",
     });
     metric("preparation_completed", {
       take_id: takeId,
@@ -2150,12 +2181,11 @@ export async function runProcessTake(
         max_retries: ANALYSIS_MAX_RETRIES,
       });
 
-      let urlForCall = ensureValidMuxMp4Url({
+      const urlForCall = ensureValidMuxMp4Url({
         url: resolvedProbeUrl,
         playbackId: take.mux_playback_id,
         kind: "gemini",
       });
-      let muxUrlRecoveryAttempted = false;
       while (true) {
         // Total-budget guard BEFORE each attempt — prevents starting an attempt
         // we know we can't complete inside the wall-clock budget.
@@ -2224,29 +2254,29 @@ export async function runProcessTake(
         // Success.
         if (aiResp && aiResp.ok) break;
 
-        // One-shot stale-URL recovery for 400 — preserve existing fallback.
-        // Does NOT count against the retry budget (URL/schema recovery).
-        if (
-          aiResp &&
-          aiResp.status === 400 &&
-          take.mux_playback_id &&
-          !muxUrlRecoveryAttempted &&
-          urlForCall === resolvedProbeUrl
-        ) {
-          muxUrlRecoveryAttempted = true;
+        if (aiResp && aiResp.status === 400 && !selectedMediaUrlConfirmedFetchable) {
           const errText = await aiResp.text();
-          console.warn(
-            "AI gateway rejected URL; retrying once with fresh Mux URL",
-            errText.slice(0, 200),
-          );
-          urlForCall = ensureValidMuxMp4Url({
-            url: buildMuxHighestMp4Url(take.mux_playback_id),
-            playbackId: take.mux_playback_id,
-            kind: "gemini",
+          console.warn("[take-pipeline] media_url_provider_rejected", {
+            ...baseLog,
+            http_status: 400,
+            gemini_attempt: geminiAttempt,
+            selected_url_kind: "mux_highest_mp4",
+            selected_media_url_confirmed_fetchable: selectedMediaUrlConfirmedFetchable,
+            error: errText.slice(0, 200),
           });
-          // Roll back the attempt counter so this doesn't consume a retry slot.
-          geminiAttempt -= 1;
-          continue;
+          metric("gemini_failed", {
+            take_id: takeId,
+            retry_count: geminiRetryCount,
+            http_status: 400,
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "media_url_provider_rejected",
+            model: currentModel,
+            failure_code: "media_url_provider_rejected",
+          });
+          throw new AnalysisFailure(
+            "media_url_provider_rejected",
+            "The video file was not ready for provider analysis yet. We will retry when the static rendition is ready.",
+          );
         }
 
         // Hard, non-retryable: 402 (credits).
