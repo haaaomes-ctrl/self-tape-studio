@@ -236,6 +236,35 @@ describe("R10.7F canonical public report view model", () => {
     expect(publicText).not.toMatch(/does not identify a song section|no song section|song absent/i);
   });
 
+  it("renders the final PublicReportViewModel surface instead of a limited fallback surface", () => {
+    const result = buildPublicReportViewModel({
+      candidateReport: {
+        schema_version: "v1-legacy",
+        source_family: "legacy_adapter",
+        priority_fixes: [],
+        defect_risk_ids: ["legacy_report_used_as_v3_spine_proxy"],
+      },
+      evidence: testOneEvidence(),
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      briefText: testOneBrief,
+      extractedBrief: {
+        audition_type: "musical_theatre",
+        material_requested: "Side 1 plus contemporary legit MT song",
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(V2ReportView, { report: result.model, takeNumber: 1 }),
+    );
+
+    expect(html).toMatch(/Side 1 acting scene/i);
+    expect(html).toMatch(/Complete the song section/i);
+    expect(html).not.toMatch(/No single public-safe priority fix/i);
+    expect(html).not.toMatch(/This report could not generate a reliable fix-first item/i);
+  });
+
   it("quarantines legacy raw report fields when no Step 1 evidence is available", () => {
     const result = buildPublicReportViewModel({
       candidateReport: {
