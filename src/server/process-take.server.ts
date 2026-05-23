@@ -242,6 +242,12 @@ const REPORT_TOOL = {
             properties: {
               headline: { type: "string", maxLength: 200 },
               rationale: { type: "string", maxLength: 320 },
+              action: {
+                type: "string",
+                maxLength: 260,
+                description:
+                  "Practical next-take action for this fix. Must be specific and must not duplicate the headline verbatim.",
+              },
               kind: {
                 type: "string",
                 enum: [
@@ -727,11 +733,11 @@ WRITING RULES (apply to every text field — strengths, improvements, fix_first,
 VOLUME (soft targets — do NOT pad, but do NOT artificially shorten useful feedback either; the schema permits richer output):
 - strengths: 3–8 specific items, ordered by impact. Technical max 12.
 - improvements: 3–10 ordered most-impactful first. Technical max 15.
-- fix_first: ONE sentence. The single highest-impact change for the next take. (Kept for backward compatibility — priority_fixes[0] should usually align.)
-- priority_fixes: 2–5 prioritised fixes. Each item: short headline + one-sentence rationale + a kind tag (urgent | quick_win | critical_gap | assessability_blocker | low_effort_high_impact). Do not duplicate improvements verbatim unless that is the clearest formulation.
+- fix_first: ONE sentence. The single highest-impact change for the next take. (Kept for backward compatibility — priority_fixes[0] must align.)
+- priority_fixes: 2–5 prioritised fixes. Each item: short headline + one-sentence rationale + practical action + a kind tag (urgent | quick_win | critical_gap | assessability_blocker | low_effort_high_impact). Do not duplicate improvements verbatim unless that is the clearest formulation. Do not hide useful lower-ranked fixes behind the first item.
 - Decision-support separation: fill why_this_verdict, must_fix_before_submitting, should_improve_if_retaking, optional_polish, preserve, do_not_overfix and not_assessable distinctly when evidence supports them. Must-fix means materially affects submission readiness; should-improve means useful for a retake; optional polish must not read as a reason to keep retaking. Preserve and do_not_overfix should stop unnecessary overcorrection.
 - Brief requirements: only itemise requirements actually supplied by the brief. For each item, include public_summary plus category/obligation/requirement_type where supported. Preserve ambiguity; do not treat every brief phrase as mandatory. Mark not_assessable when audio, framing, visibility, missing material or brief ambiguity prevents judgement. Do not collapse not_assessable into not_achieved. Missing assessable mandatory requirements may drive the verdict, priority_fixes and next_take_plan; preferred/optional gaps should stay retake improvements or optional polish unless materially blocking.
-- coaching_drills / next_take_plan items: 4–10 actionable items. Technical max 15. Group via next_take_plan.groups (retake_critical, quick_wins, craft_refinements, rehearsal_drills, recording_setup) when items naturally split; otherwise use the flat steps list. Avoid generic advice. Avoid expensive-equipment / paid-coaching / paid-editor advice. For fixed-frame briefs, recorded-take items must preserve the required frame; rehearsal-only exercises must be labelled "Rehearsal-only:" and paired with a frame-safe recorded-take alternative.
+- coaching_drills / next_take_plan items: 4–10 actionable items. Technical max 15. Group via next_take_plan.groups (retake_critical, quick_wins, craft_refinements, rehearsal_drills, recording_setup) when items naturally split; otherwise use the flat steps list. The plan must cover every must_fix_before_submitting and should_improve_if_retaking item, or state that a fair action is unavailable because the evidence is not assessable. Avoid simply repeating priority_fixes prose. Avoid generic advice. Avoid expensive-equipment / paid-coaching / paid-editor advice. For fixed-frame briefs, recorded-take items must preserve the required frame; rehearsal-only exercises must be labelled "Rehearsal-only:" and paired with a frame-safe recorded-take alternative.
 - timestamped_notes: duration-scaled. Validated MM:SS only. Chronological. Never invent. Never pad.
   * under 60 seconds: 3–5 useful notes if assessable
   * 1–3 minutes: 6–10 useful notes if assessable

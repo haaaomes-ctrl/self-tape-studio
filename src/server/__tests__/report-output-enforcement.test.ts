@@ -353,6 +353,40 @@ describe("idempotence + privacy + caps", () => {
     );
   });
 
+  it("strips private nested keys from priority fix action objects", () => {
+    const out = enforcePublicReportOutputQuality(
+      {
+        priority_fixes: [
+          {
+            headline: "Clarify the first reaction",
+            rationale: "It materially affects submission readiness.",
+            action: "Record one pass that lands the first reaction before moving on.",
+            kind: "critical_gap",
+            category: "acting",
+            evidence_anchor_ids: ["private-anchor"],
+            raw_response: "private model response",
+            signed_url: "https://storage.example/private.mp4?signature=secret",
+          },
+        ],
+      },
+      baseCtx,
+    ).report;
+    const json = JSON.stringify(out);
+
+    expect(out.priority_fixes).toEqual([
+      {
+        headline: "Clarify the first reaction",
+        rationale: "It materially affects submission readiness.",
+        action: "Record one pass that lands the first reaction before moving on.",
+        kind: "critical_gap",
+        category: "acting",
+      },
+    ]);
+    expect(json).not.toMatch(
+      /private-anchor|private model response|signature=secret|evidence_anchor|raw_response|signed_url/,
+    );
+  });
+
   it("preserves scores/overall/verdict exactly", () => {
     const out = enforcePublicReportOutputQuality(messy, baseCtx).report;
     expect(out.scores).toEqual(messy.scores);

@@ -99,4 +99,50 @@ describe("R10 locked report component suppression", () => {
     expect(html).toContain("Not assessable: Framing does not show the full movement pathway.");
     expect(html).not.toContain("private-anchor");
   });
+
+  it("renders the full priority-fix hierarchy with the fix-first marker and action", () => {
+    const report = buildV2Report({
+      legacyReport: {
+        priority_fixes: [
+          {
+            headline: "Clarify the first reaction",
+            rationale: "It materially affects submission readiness.",
+            action: "Record one pass that lands the first reaction before moving on.",
+            kind: "critical_gap",
+          },
+          {
+            headline: "Hold the final beat",
+            rationale: "The ending can land more cleanly if retaking.",
+            action: "Let the final thought settle before stopping the recording.",
+            kind: "quick_win",
+          },
+          {
+            headline: "Sharpen the eyeline shift",
+            rationale: "The relationship turn will read more clearly.",
+            action: "Set the eyeline before the relationship turn.",
+            kind: "quick_win",
+          },
+          {
+            headline: "Reset the breath before the second line",
+            rationale: "The breath reset will make the second line cleaner.",
+            action: "Take one silent breath reset before the second line.",
+            kind: "low_effort_high_impact",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+    });
+    const html = renderToStaticMarkup(createElement(V2ReportView, { report }));
+
+    expect(html).toContain("Fix first");
+    expect(html).toContain("Clarify the first reaction");
+    expect(html).toContain("Hold the final beat");
+    expect(html).toContain("Sharpen the eyeline shift");
+    expect(html).toContain("Reset the breath before the second line");
+    expect(html).toContain(
+      "Action: Record one pass that lands the first reaction before moving on.",
+    );
+  });
 });

@@ -98,6 +98,7 @@ const r10DecisionSupportReportData = {
     {
       headline: "Clarify the first reaction.",
       rationale: "It is the first moment that affects submission readiness.",
+      action: "Record one pass that lands the first reaction before moving on.",
       kind: "critical_gap",
       category: "acting",
     },
@@ -418,6 +419,7 @@ describe("v3-s9 report parity proof", () => {
     expect(publicPayload.report_data.priority_fixes[0]).toEqual({
       headline: "Clarify the first reaction.",
       rationale: "It is the first moment that affects submission readiness.",
+      action: "Record one pass that lands the first reaction before moving on.",
       kind: "critical_gap",
       category: "acting",
     });

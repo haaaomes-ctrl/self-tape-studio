@@ -389,4 +389,181 @@ describe("v2-report-builder R10.2B", () => {
       "Prepare it how you think best: The brief wording is ambiguous.",
     ]);
   });
+
+  it("keeps fix-first derived from the ranked priority list and exposes all meaningful fixes", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        fix_first: "This contradictory standalone fix should not survive.",
+        priority_fixes: [
+          {
+            headline: "Clarify the first reaction",
+            rationale: "It is the first moment that affects readiness.",
+            action: "Record one pass that lands the first reaction before moving on.",
+            kind: "critical_gap",
+          },
+          {
+            headline: "Hold the final beat",
+            rationale: "The ending currently cuts away too quickly.",
+            action: "Let the final thought settle before stopping the recording.",
+            kind: "quick_win",
+          },
+          {
+            headline: "Reset the breath before the second line",
+            rationale: "The breath reset will make the second line cleaner.",
+            action: "Take one silent breath reset before the second line.",
+            kind: "low_effort_high_impact",
+          },
+          {
+            headline: "Sharpen the eyeline shift",
+            rationale: "The relationship turn will read more clearly.",
+            action: "Set the eyeline before the relationship turn.",
+            kind: "quick_win",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+
+    expect(v2.fix_first).toBe("Clarify the first reaction");
+    expect(v2.priority_fixes.map((fix) => fix.headline)).toEqual([
+      "Clarify the first reaction",
+      "Hold the final beat",
+      "Reset the breath before the second line",
+      "Sharpen the eyeline shift",
+    ]);
+  });
+
+  it("synthesises a finite next-take plan covering must-fix and should-improve items", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        priority_fixes: [
+          {
+            headline: "Clarify the first reaction",
+            rationale: "It materially affects submission readiness.",
+            action: "Record one pass that lands the first reaction before moving on.",
+            kind: "critical_gap",
+          },
+          {
+            headline: "Hold the final beat",
+            rationale: "The ending can land more cleanly if retaking.",
+            action: "Let the final thought settle before stopping the recording.",
+            kind: "quick_win",
+          },
+        ],
+        improvements: ["Reset the breath before the second line."],
+        next_take_plan: { steps: ["Check the reader volume once before recording."] },
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+    const steps = (v2.next_take_plan as { steps: string[] }).steps;
+
+    expect(v2.must_fix_before_submitting).toEqual(["Clarify the first reaction"]);
+    expect(v2.should_improve_if_retaking).toEqual([
+      "Hold the final beat",
+      "Reset the breath before the second line.",
+    ]);
+    expect(steps).toEqual([
+      "Record one pass that lands the first reaction before moving on.",
+      "Let the final thought settle before stopping the recording.",
+      "Retake option: if recording again, use one pass to strengthen reset the breath before the second line.",
+      "Check the reader volume once before recording.",
+    ]);
+    expect(steps).not.toContain("Clarify the first reaction");
+  });
+
+  it("drops generic filler and unsafe resource advice from fixes and actions", () => {
+    const v2 = buildV2Report({
+      legacyReport: {
+        priority_fixes: [
+          "Be more confident.",
+          {
+            headline: "Make the opening eyeline land before the first line",
+            rationale: "The opening relationship is currently late.",
+            action: "Set the eyeline before the first line starts.",
+            kind: "quick_win",
+          },
+        ],
+        improvements: [
+          "Add more energy.",
+          "Use an expensive microphone.",
+          "Reset the breath before the final phrase.",
+        ],
+        next_take_plan: {
+          steps: ["Hire a paid coach.", "Run the breath reset once before recording."],
+        },
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "baseline",
+    });
+    const serialised = JSON.stringify(v2);
+
+    expect(v2.priority_fixes.map((fix) => fix.headline)).toEqual([
+      "Make the opening eyeline land before the first line",
+    ]);
+    expect(v2.should_improve_if_retaking).toEqual([
+      "Make the opening eyeline land before the first line",
+      "Reset the breath before the final phrase.",
+    ]);
+    expect((v2.next_take_plan as { steps: string[] }).steps).toContain(
+      "Run the breath reset once before recording.",
+    );
+    expect(serialised).not.toMatch(
+      /be more confident|add more energy|expensive microphone|paid coach/i,
+    );
+  });
+
+  it("only lets setup become fix-first when it materially blocks assessment or submission", () => {
+    const minorSetup = buildV2Report({
+      legacyReport: {
+        brief_requirements: [
+          {
+            source_text: "Keep the camera landscape.",
+            public_summary: "Keep the camera landscape.",
+            category: "video_audio_setup",
+            obligation: "mandatory",
+            achievement_status: "partly_achieved",
+            readiness_impact: "minor_gap",
+            next_take_action: "Keep the camera landscape if recording again.",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+    const blockingSetup = buildV2Report({
+      legacyReport: {
+        brief_requirements: [
+          {
+            source_text: "Use full-body framing for the movement phrase.",
+            public_summary: "Use full-body framing for the movement phrase.",
+            category: "video_audio_setup",
+            obligation: "mandatory",
+            achievement_status: "not_achieved",
+            readiness_impact: "submission_blocker",
+            next_take_action: "Re-record with full-body framing for the movement phrase.",
+          },
+        ],
+      },
+      futureDimensions: null,
+      auditionType: null,
+      mode: "brief",
+    });
+
+    expect(minorSetup.fix_first).toBeNull();
+    expect(minorSetup.should_improve_if_retaking).toContain(
+      "Keep the camera landscape if recording again.",
+    );
+    expect(blockingSetup.fix_first).toBe(
+      "Re-record with full-body framing for the movement phrase.",
+    );
+    expect(blockingSetup.must_fix_before_submitting).toContain(
+      "Re-record with full-body framing for the movement phrase.",
+    );
+  });
 });

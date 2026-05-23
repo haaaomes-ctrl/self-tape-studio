@@ -59,7 +59,7 @@ function textList(value: unknown): string[] {
 
 function priorityFixes(
   value: unknown,
-): Array<{ headline: string; rationale?: string; kind?: string }> {
+): Array<{ headline: string; rationale?: string; kind?: string; action?: string }> {
   return safeArr(value)
     .map((item) => {
       if (typeof item === "string") return { headline: item };
@@ -70,10 +70,12 @@ function priorityFixes(
         headline,
         ...(safeStr(obj?.rationale) ? { rationale: safeStr(obj?.rationale)! } : {}),
         ...(safeStr(obj?.kind) ? { kind: safeStr(obj?.kind)! } : {}),
+        ...(safeStr(obj?.action) ? { action: safeStr(obj?.action)! } : {}),
       };
     })
     .filter(
-      (item): item is { headline: string; rationale?: string; kind?: string } => item !== null,
+      (item): item is { headline: string; rationale?: string; kind?: string; action?: string } =>
+        item !== null,
     );
 }
 
@@ -319,9 +321,17 @@ export function V2ReportView({
           <ol className="list-decimal space-y-3 pl-5 text-sm">
             {fixes.map((fix, i) => (
               <li key={i}>
+                {i === 0 && (
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Fix first
+                  </p>
+                )}
                 <p className="font-display text-base font-semibold leading-snug">{fix.headline}</p>
                 {fix.rationale && (
                   <p className="mt-1 text-xs text-muted-foreground">{fix.rationale}</p>
+                )}
+                {fix.action && (
+                  <p className="mt-1 text-xs text-muted-foreground">Action: {fix.action}</p>
                 )}
                 {fix.kind && (
                   <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground">

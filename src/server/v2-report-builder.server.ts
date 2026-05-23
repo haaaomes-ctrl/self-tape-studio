@@ -70,6 +70,7 @@ export interface PriorityFixPublic {
   rationale?: string;
   kind?: string;
   category?: string;
+  action?: string;
 }
 
 export interface BriefRequirementPublic {
@@ -175,12 +176,26 @@ const DECISION_VALUES = new Set(Object.keys(DECISION_LABELS));
 const BLOCKED_PUBLIC_TEXT =
   /\b(?:castability|castable|bookability|bookable|marketability|marketable|role[-\s]?fit|employability|commercial\s+look|callback|recall[-\s]?ready|recall\s+worthy|would\s+(?:get|be)\s+(?:a\s+)?recall|guaranteed|guarantees|winner|best\s+take|selected\s+take|overall\s+score|category\s+score|score\s+of\s+\d+|Meisner|Stanislavski|Uta\s+Hagen|Chekhov|Laban|Viewpoints|Suzuki)\b/i;
 
+const GENERIC_ACTION_TEXT =
+  /^(?:be\s+more\s+confident|add\s+more\s+energy|give\s+it\s+more\s+energy|improve\s+technique|make\s+it\s+stronger|work\s+on\s+presence|be\s+more\s+natural|commit\s+more)\.?$/i;
+
+const RESOURCE_OR_MATERIAL_SHIFT_TEXT =
+  /\b(?:expensive\s+(?:microphone|mic|camera|lighting|equipment)|professional\s+(?:studio|editor|reader|filming)|paid\s+(?:coach|coaching|reader|editor)|hire\s+(?:a\s+)?(?:coach|reader|editor)|choose\s+(?:a\s+)?different\s+(?:song|scene|monologue|material)|pick\s+(?:a\s+)?different\s+(?:song|scene|monologue|material))\b/i;
+
 function publicText(raw: unknown, maxLength = 420): string | null {
   if (typeof raw !== "string") return null;
   const text = raw.replace(/\s+/g, " ").trim();
   if (!text) return null;
   if (BLOCKED_PUBLIC_TEXT.test(text)) return null;
   return text.slice(0, maxLength).trim();
+}
+
+function publicActionText(raw: unknown, maxLength = 420): string | null {
+  const text = publicText(raw, maxLength);
+  if (!text) return null;
+  if (GENERIC_ACTION_TEXT.test(sentenceFragment(text))) return null;
+  if (RESOURCE_OR_MATERIAL_SHIFT_TEXT.test(text)) return null;
+  return text;
 }
 
 function dedupe(items: string[], max = 12): string[] {
@@ -217,31 +232,59 @@ function publicTextArray(value: unknown, max = 12): string[] {
   return dedupe(mapped, max);
 }
 
+function publicActionTextArray(value: unknown, max = 12): string[] {
+  if (!Array.isArray(value)) return [];
+  const mapped = value
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const obj = asObj(item);
+      return (
+        asStr(obj?.text) ??
+        asStr(obj?.title) ??
+        asStr(obj?.headline) ??
+        asStr(obj?.point) ??
+        asStr(obj?.note) ??
+        asStr(obj?.summary)
+      );
+    })
+    .filter((item): item is string => typeof item === "string");
+  return dedupe(
+    mapped.map((item) => publicActionText(item)).filter((item): item is string => item !== null),
+    max,
+  );
+}
+
 function fixFirstText(raw: unknown): string | null {
-  if (typeof raw === "string") return publicText(raw, 220);
+  if (typeof raw === "string") return publicActionText(raw, 220);
   const obj = asObj(raw);
   return (
-    publicText(obj?.headline, 220) ?? publicText(obj?.title, 220) ?? publicText(obj?.point, 220)
+    publicActionText(obj?.headline, 220) ??
+    publicActionText(obj?.title, 220) ??
+    publicActionText(obj?.point, 220)
   );
 }
 
 function priorityFixFromValue(value: unknown): PriorityFixPublic | null {
   if (typeof value === "string") {
-    const headline = publicText(value, 200);
+    const headline = publicActionText(value, 200);
     return headline ? { headline } : null;
   }
   const obj = asObj(value);
   if (!obj) return null;
   const headline =
-    publicText(obj.headline, 200) ??
-    publicText(obj.title, 200) ??
-    publicText(obj.action, 200) ??
-    publicText(obj.what_to_change, 200);
+    publicActionText(obj.headline, 200) ??
+    publicActionText(obj.title, 200) ??
+    publicActionText(obj.action, 200) ??
+    publicActionText(obj.what_to_change, 200);
   if (!headline) return null;
   const rationale =
     publicText(obj.rationale, 320) ??
     publicText(obj.why_it_matters, 320) ??
     publicText(obj.reason, 320);
+  const action =
+    publicActionText(obj.action, 260) ??
+    publicActionText(obj.next_take_action, 260) ??
+    publicActionText(obj.how_to_fix, 260);
   const kind = publicText(obj.kind, 60) ?? publicText(obj.type, 60) ?? undefined;
   const category = publicText(obj.category, 80) ?? undefined;
   return {
@@ -249,6 +292,7 @@ function priorityFixFromValue(value: unknown): PriorityFixPublic | null {
     ...(rationale ? { rationale } : {}),
     ...(kind ? { kind } : {}),
     ...(category ? { category } : {}),
+    ...(action && action.toLowerCase() !== headline.toLowerCase() ? { action } : {}),
   };
 }
 
@@ -274,16 +318,16 @@ function isMustFix(fix: PriorityFixPublic): boolean {
 function normalisePlan(value: unknown, drills: unknown): unknown {
   const plan = asObj(value);
   if (plan) {
-    const steps = publicTextArray(plan.steps, 15);
+    const steps = publicActionTextArray(plan.steps, 15);
     const groups = safePlanGroups(plan.groups);
     return {
       ...(steps.length > 0 ? { steps } : {}),
       ...(groups.length > 0 ? { groups } : {}),
     };
   }
-  const arr = publicTextArray(value, 15);
+  const arr = publicActionTextArray(value, 15);
   if (arr.length > 0) return { steps: arr };
-  const drillSteps = publicTextArray(drills, 15);
+  const drillSteps = publicActionTextArray(drills, 15);
   return drillSteps.length > 0 ? { steps: drillSteps } : { steps: [] };
 }
 
@@ -293,7 +337,7 @@ function safePlanGroups(value: unknown): Array<{ label: string; items: string[] 
     .map((entry) => {
       const obj = asObj(entry);
       const label = publicText(obj?.label, 80);
-      const items = publicTextArray(obj?.items, 10);
+      const items = publicActionTextArray(obj?.items, 10);
       return label && items.length > 0 ? { label, items } : null;
     })
     .filter((entry): entry is { label: string; items: string[] } => entry !== null)
@@ -694,6 +738,14 @@ function appendUnique(items: string[], additions: string[], max: number): string
   return dedupe([...items, ...additions], max);
 }
 
+function withoutExactMatches(items: string[], blocked: string[], max: number): string[] {
+  const blockedKeys = new Set(blocked.map((item) => item.toLowerCase()));
+  return dedupe(
+    items.filter((item) => !blockedKeys.has(item.toLowerCase())),
+    max,
+  );
+}
+
 function normaliseMandatoryStatus(
   raw: unknown,
 ): BriefAchievementPublic["mandatory_status"] | undefined {
@@ -737,13 +789,74 @@ function briefActionPlanSteps(requirements: BriefRequirementPublic[]): string[] 
     .slice(0, 4);
 }
 
-function mergeBriefStepsIntoPlan(plan: unknown, briefSteps: string[]): unknown {
-  if (briefSteps.length === 0) return plan;
-  const existing = asObj(plan);
-  const currentSteps = existing ? publicTextArray(existing.steps, 15) : [];
+function actionKey(value: string): string {
+  return sentenceFragment(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function planAlreadyCovers(items: string[], target: string): boolean {
+  const targetKey = actionKey(target);
+  if (!targetKey) return true;
+  return items.some((item) => {
+    const key = actionKey(item);
+    return key === targetKey || key.includes(targetKey) || targetKey.includes(key);
+  });
+}
+
+function lowerFirst(value: string): string {
+  return value ? value.charAt(0).toLowerCase() + value.slice(1) : value;
+}
+
+function actionForGuidance(
+  item: string,
+  kind: "must" | "should",
+  priorityFixes: PriorityFixPublic[],
+): string {
+  const key = actionKey(item);
+  const linkedFix = priorityFixes.find((fix) => actionKey(fix.headline) === key);
+  const linkedAction =
+    linkedFix?.action && actionKey(linkedFix.action) !== key
+      ? publicActionText(linkedFix.action, 260)
+      : null;
+  if (linkedAction) return linkedAction;
+  const fragment = sentenceFragment(item);
+  if (!fragment) {
+    return "This could not be turned into a fair action because the relevant evidence was not assessable.";
+  }
+  return kind === "must"
+    ? `Recorded take: resolve this before submitting by focusing the next pass on ${lowerFirst(fragment)}.`
+    : `Retake option: if recording again, use one pass to strengthen ${lowerFirst(fragment)}.`;
+}
+
+function buildNextTakePlan(params: {
+  plan: unknown;
+  briefSteps: string[];
+  mustFix: string[];
+  shouldImprove: string[];
+  priorityFixes: PriorityFixPublic[];
+}): unknown {
+  const existing = asObj(params.plan);
+  const currentSteps = existing
+    ? publicActionTextArray(existing.steps, 15)
+    : publicActionTextArray(params.plan, 15);
   const groups = existing ? safePlanGroups(existing.groups) : [];
+  const covered = [
+    ...params.briefSteps,
+    ...currentSteps,
+    ...groups.flatMap((group) => group.items),
+  ];
+  const mustActions = params.mustFix
+    .filter((item) => !planAlreadyCovers(covered, item))
+    .map((item) => actionForGuidance(item, "must", params.priorityFixes));
+  const coveredWithMust = [...covered, ...mustActions];
+  const shouldActions = params.shouldImprove
+    .filter((item) => !planAlreadyCovers(coveredWithMust, item))
+    .map((item) => actionForGuidance(item, "should", params.priorityFixes));
+  const steps = dedupe(
+    [...params.briefSteps, ...mustActions, ...shouldActions, ...currentSteps],
+    15,
+  );
   return {
-    steps: appendUnique(briefSteps, currentSteps, 15),
+    steps,
     ...(groups.length > 0 ? { groups } : {}),
   };
 }
@@ -902,10 +1015,10 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     normaliseSubmissionVerdict(r, reliability),
     briefRequirements,
   );
-  const blockReasons = publicTextArray(r.block_reasons, 8);
-  const explicitMustFix = publicTextArray(r.must_fix_before_submitting, 8);
-  const explicitShouldImprove = publicTextArray(r.should_improve_if_retaking, 10);
-  const explicitOptionalPolish = publicTextArray(r.optional_polish, 6);
+  const blockReasons = publicActionTextArray(r.block_reasons, 8);
+  const explicitMustFix = publicActionTextArray(r.must_fix_before_submitting, 8);
+  const explicitShouldImprove = publicActionTextArray(r.should_improve_if_retaking, 10);
+  const explicitOptionalPolish = publicActionTextArray(r.optional_polish, 6);
   const briefMustFixes = briefRequirements
     .filter(
       (item) =>
@@ -937,7 +1050,7 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
         item.readiness_impact !== "material_gap",
     )
     .map(briefRequirementAction);
-  const improvements = publicTextArray(r.improvements, 15);
+  const improvements = publicActionTextArray(r.improvements, 15);
   const strengths = publicTextArray(r.strengths, 12);
   const mustFix =
     explicitMustFix.length > 0
@@ -950,7 +1063,7 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
           ],
           8,
         );
-  const shouldImprove =
+  const shouldImprove = withoutExactMatches(
     explicitShouldImprove.length > 0
       ? appendUnique(explicitShouldImprove, briefRetakeImprovements, 10)
       : dedupe(
@@ -958,10 +1071,17 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
             ...briefRetakeImprovements,
             ...priorityFixes.filter((fix) => !isMustFix(fix)).map((fix) => fix.headline),
             ...improvements,
-          ].filter((item) => !mustFix.some((must) => must.toLowerCase() === item.toLowerCase())),
+          ],
           10,
-        );
-  const optionalPolish = appendUnique(explicitOptionalPolish, briefOptionalPolish, 6);
+        ),
+    mustFix,
+    10,
+  );
+  const optionalPolish = withoutExactMatches(
+    appendUnique(explicitOptionalPolish, briefOptionalPolish, 6),
+    [...mustFix, ...shouldImprove],
+    6,
+  );
   const preserve = publicTextArray(r.preserve, 12);
   const preserveItems = preserve.length > 0 ? preserve : strengths;
   const explicitNotAssessable = publicTextArray(r.not_assessable, 8);
@@ -1006,10 +1126,13 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
       "Do not keep retaking just to chase minor polish; only re-record for a clear must-fix or useful retake improvement.",
     ];
   })();
-  const nextTakePlan = mergeBriefStepsIntoPlan(
-    normalisePlan(r.next_take_plan, r.coaching_drills),
-    briefActionPlanSteps(briefRequirements),
-  );
+  const nextTakePlan = buildNextTakePlan({
+    plan: normalisePlan(r.next_take_plan, r.coaching_drills),
+    briefSteps: briefActionPlanSteps(briefRequirements),
+    mustFix,
+    shouldImprove,
+    priorityFixes,
+  });
   const briefAchievement = deriveBriefAchievement(r, mode, briefRequirements);
 
   const v2: V2Report = {

@@ -710,8 +710,12 @@ export function enforcePublicReportOutputQuality(
     r.priority_fixes = (r.priority_fixes as unknown[])
       .map((it) => {
         if (!it || typeof it !== "object") return null;
-        const obj = { ...(it as Record<string, unknown>) };
-        for (const k of ["headline", "rationale"]) {
+        const raw = it as Record<string, unknown>;
+        const obj: Record<string, unknown> = {};
+        for (const key of ["headline", "rationale", "kind", "category", "action"]) {
+          if (key in raw) obj[key] = raw[key];
+        }
+        for (const k of ["headline", "rationale", "action"]) {
           if (typeof obj[k] === "string") {
             const cleaned = cleanString(obj[k]);
             let text = cleaned ?? "";

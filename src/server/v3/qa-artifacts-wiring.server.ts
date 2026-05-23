@@ -2024,7 +2024,7 @@ function prunePriorityFixes(value: unknown): unknown {
   return value
     .map((item) => {
       if (typeof item === "string") return item;
-      const pruned = pruneObjectKeys(item, ["headline", "rationale", "kind", "category"]);
+      const pruned = pruneObjectKeys(item, ["headline", "rationale", "kind", "category", "action"]);
       return Object.keys(pruned).length > 0 ? pruned : null;
     })
     .filter((item): item is string | Record<string, unknown> => item !== null);
