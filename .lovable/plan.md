@@ -1,51 +1,45 @@
-## Diagnosis
+## Two fixes
 
-Two issues from the previous "Finalising Results" reliability fix:
+### 1. QA artefacts never reach the bucket (root cause of empty `/admin/storage-downloads`)
 
-1. **QA artefacts (logs + raw report `.json`) stopped appearing in the `qa-artifacts` bucket.**
-   The fix wrapped QA emission in `void (async () => { ... })()` *after* `status: complete` was written (lines ~3198–3250 of `src/server/process-take.server.ts`). On this app's Cloudflare Worker SSR runtime, async work that is not awaited inside the request lifecycle (and not registered with `ctx.waitUntil`) is cancelled the moment the response is returned. The Storage upload promise is being killed before it reaches the bucket.
-   The original "Finalising Results" hang is now independently guarded by the 5s per-upload timeout we added inside `qa-artifact-sink.server.ts` (`QA_ARTIFACT_STORAGE_TIMEOUT_MS`). That makes awaiting the emission bounded and safe — the outer fire-and-forget wrapper is no longer needed.
+`resolveMode()` in `src/server/v3/qa-artifact-sink.server.ts` defaults to `'file'` when `QA_ARTIFACT_SINK` is unset. On the Cloudflare Worker runtime, filesystem writes fail with `EPERM` ("operation not permitted") — confirmed in worker logs: every emission logs `sink_mode:"file"`, `sink_write_status:"failed"`, `warning:"operation not permitted"`. The bucket is empty (0 rows in `storage.objects`).
 
-2. **`/admin/storage-downloads` lists files alphabetically by path.** `listAllArtifacts` in `src/lib/admin-storage.functions.ts` ends with `results.sort((a, b) => a.path.localeCompare(b.path))`. There is no date ordering, so newest takes are not surfaced at the top.
+**Change:** default the sink to `'storage'` instead of `'file'`. Workers can't write files, so `'file'` is never a usable production default. Tests stub the env explicitly so they are unaffected.
 
-## Fix
+```ts
+// src/server/v3/qa-artifact-sink.server.ts
+function resolveMode(env = process.env): QAArtifactSinkMode {
+  const mode = env.QA_ARTIFACT_SINK as QAArtifactSinkMode | undefined;
+  if (mode === 'storage' || mode === 'console_jsonl' || mode === 'file') return mode;
+  return 'storage'; // was 'file'
+}
+```
 
-### A. Restore QA emission so files actually upload — `src/server/process-take.server.ts`
-- Replace the `void (async () => { ... })()` block (lines ~3198–3250) with an awaited `try/catch` around the same emission body.
-- Remove the outer `QA_EMIT_TIMEOUT_MS` / `Promise.race` wrapper. The bounded timeout already lives one layer down in `qa-artifact-sink.server.ts` (5s per upload), so worst-case added latency after `complete` is ~5s × number of artefacts (raw report + manifest ≈ 10s ceiling).
-- Keep a try/catch so a QA failure can never fail the take.
-- Net effect: pipeline still cannot hang at "Finalising Results" (storage timeout protects it), and artefacts actually reach the bucket because the work happens inside the request lifecycle.
+`QA_ARTIFACT_STORAGE_BUCKET` already defaults to `'qa-artifacts'` in `writeQAArtifact`, so uploads will land in the correct bucket.
 
-### B. Order downloads by date — `src/lib/admin-storage.functions.ts`
-- Change the final sort to `updated_at` descending (fall back to `path` when null/equal). Newest first by default.
+### 2. Hardcoded admin email in test file (security finding)
 
-### C. Date grouping in the admin UI — `src/routes/admin/storage-downloads.tsx`
-- Add a "Sort by" toggle: `Newest first` (default) / `Oldest first` / `Path A→Z`. Pure client-side sort over the already-fetched list.
-- When sorted by date, render `YYYY-MM-DD` group headers above each day's files.
+`src/server/__tests__/v3-s9-comparison-operator-trigger.test.ts` contains the real admin email at lines 12 and 211. Replace with a generic placeholder and derive the assertion from the env var.
 
-## Verification (end-to-end test the user requested)
+```ts
+// line 12
+process.env.TAPECOACH_ADMIN_EMAIL = process.env.TAPECOACH_ADMIN_EMAIL ?? 'admin-test@example.com';
+const TEST_ADMIN_EMAIL = process.env.TAPECOACH_ADMIN_EMAIL;
 
-After applying the fix, I will:
+// line 211
+expect(() => assertAdminEmail({ email: TEST_ADMIN_EMAIL })).not.toThrow();
+```
 
-1. Submit a fresh take through the live pipeline using the project's standard submission path.
-2. Poll the take row until `status = complete` to confirm the pipeline does not stall at "Finalising Results".
-3. Visit `/admin/storage-downloads` (or list the bucket via `listAllArtifacts`) and confirm a new dated folder appears at the top containing both:
-   - the raw report `.json`
-   - the manifest + log artefacts
-4. Repeat with a second take to confirm both appear, newest-first, and neither stalls.
-5. Pull `server-function-logs` for the run to confirm no `internal_qa_emit_warning` / `storage_upload_timeout` warnings.
+Then mark the `admin_email_hardcoded` finding fixed.
 
-If the live submission requires an authenticated user session I cannot drive headlessly, I will fall back to invoking the existing process-take server function directly via `invoke-server-function` against a known take id and verify the same artefacts land in the bucket.
+## Verification
 
-## Out of scope / unchanged
-
-- No RLS policy changes
-- `qa-artifacts` bucket stays private
-- No changes to public report shape, scoring, Mux pipeline, reconciler, or `production_safe` status
-- No service-role secret in client bundle
+- After deploy: trigger a take, query `storage.objects WHERE bucket_id='qa-artifacts'` — expect new rows.
+- Reload `/admin/storage-downloads` — expect entries newest first.
+- Tail server-function-logs filtered on `TAPECOACH_QA_ARTIFACT_JSON` — expect `sink_mode:"storage"` + `sink_write_status:"written"`.
+- Existing vitest suites continue to pass (env stubs unchanged).
 
 ## Files to change
 
-- `src/server/process-take.server.ts`
-- `src/lib/admin-storage.functions.ts`
-- `src/routes/admin/storage-downloads.tsx`
+- `src/server/v3/qa-artifact-sink.server.ts`
+- `src/server/__tests__/v3-s9-comparison-operator-trigger.test.ts`
