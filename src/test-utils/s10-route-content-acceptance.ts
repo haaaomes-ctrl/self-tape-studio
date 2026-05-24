@@ -105,8 +105,16 @@ const CORE_SOURCE_EXPECTATIONS: S10SourceExpectation[] = [
   { section: "brief_achievement", expected_module: /brief_achievement_matrix/ },
   { section: "observed_tape", expected_module: /observed_tape_sequence|component_verifications/ },
   { section: "component_breakdown", expected_module: /component_verifications/ },
-  { section: "fix_hierarchy", expected_module: /s10_fix_hierarchy/ },
-  { section: "next_action_plan", expected_module: /s10_next_action_plan/ },
+  {
+    section: "fix_hierarchy",
+    expected_module: /s10_fix_hierarchy/,
+    allow_specific_limitation: true,
+  },
+  {
+    section: "next_action_plan",
+    expected_module: /s10_next_action_plan/,
+    allow_specific_limitation: true,
+  },
   { section: "strengths_and_preserve", expected_module: /s10_professional_critique/ },
   { section: "technique_commentary", expected_module: /s10_technique_commentary/ },
   { section: "timestamped_commentary", expected_module: /s10_timestamped_commentary/ },
@@ -239,7 +247,8 @@ function checkSourceMap(
         ? true
         : matchesSourceModule(module, expectation.expected_module);
 
-    if (!sourceOk || !moduleOk || /raw_report/i.test(`${source ?? ""} ${module ?? ""}`)) {
+    const invalidLegacySource = /raw_report|legacy/i.test(`${source ?? ""} ${module ?? ""}`);
+    if (!sourceOk || !moduleOk || invalidLegacySource) {
       addFailure(failures, {
         category: "source_map",
         fixture_id: input.fixture_id,
@@ -265,7 +274,7 @@ function checkSourceMap(
       const entry = isRecord(rawEntry) ? rawEntry : null;
       const source = asText(entry?.source);
       const module = asText(entry?.module);
-      if (/raw_report/i.test(`${source ?? ""} ${module ?? ""}`)) {
+      if (/raw_report|legacy/i.test(`${source ?? ""} ${module ?? ""}`)) {
         addFailure(failures, {
           category: "source_map",
           fixture_id: input.fixture_id,

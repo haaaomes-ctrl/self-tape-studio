@@ -289,6 +289,78 @@ describe("S10.15 route/PDF content acceptance harness", () => {
     expectAccepted(result);
   });
 
+  it("renders a fix limitation rather than legacy fix fields when S10 fix hierarchy is missing", () => {
+    const report = buildS10CanaryAReportInput();
+    report.fix_first = "Correct the file naming convention";
+    report.priority_fixes = [{ headline: "Correct the file naming convention" }];
+    delete (report as Record<string, unknown>).s10_fix_hierarchy;
+    const v2 = buildV2Report({
+      legacyReport: report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: buildS10CanaryAViewContext() as never,
+    });
+    const html = render(v2 as unknown as Record<string, unknown>);
+    const result = assertS10RouteContentAcceptance({
+      fixture_id: "s10-canary-a-missing-fixes",
+      profile: "missing_module",
+      view_model: v2.s10_view_model,
+      v2_report: v2 as unknown as Record<string, unknown>,
+      rendered_route_html: html,
+      forbiddenExact: [
+        "Correct the file naming convention",
+        "No single public-safe priority fix was available",
+      ],
+      requiredAllOf: ["Fix hierarchy was unavailable for this S10 report."],
+      sourceExpectations: [
+        {
+          section: "fix_hierarchy",
+          expected_source: "specific_limitation",
+        },
+      ],
+    });
+
+    expectAccepted(result);
+  });
+
+  it("renders a next-action limitation rather than legacy next-take plan when S10 next action is missing", () => {
+    const report = buildS10CanaryAReportInput() as Record<string, unknown>;
+    report.next_take_plan = {
+      steps: ["Retake option: if recording again, use one pass to strengthen blocked material."],
+    };
+    report.coaching_drills = ["No single public-safe priority fix was available"];
+    delete report.s10_next_action_plan;
+    const v2 = buildV2Report({
+      legacyReport: report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: buildS10CanaryAViewContext() as never,
+    });
+    const html = render(v2 as unknown as Record<string, unknown>);
+    const result = assertS10RouteContentAcceptance({
+      fixture_id: "s10-canary-a-missing-next-action",
+      profile: "missing_module",
+      view_model: v2.s10_view_model,
+      v2_report: v2 as unknown as Record<string, unknown>,
+      rendered_route_html: html,
+      forbiddenExact: [
+        "Retake option: if recording again, use one pass to strengthen blocked material.",
+        "No single public-safe priority fix was available",
+      ],
+      requiredAllOf: ["Next action plan was unavailable for this S10 report."],
+      sourceExpectations: [
+        {
+          section: "next_action_plan",
+          expected_source: "specific_limitation",
+        },
+      ],
+    });
+
+    expectAccepted(result);
+  });
+
   it("reports actionable source-map failure details", () => {
     const { v2, html } = buildCanaryV2();
     const badView = structuredClone(v2.s10_view_model) as NonNullable<V2Report["s10_view_model"]>;

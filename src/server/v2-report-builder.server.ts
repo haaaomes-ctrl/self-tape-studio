@@ -314,8 +314,9 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
       asStr(r.verdict) ??
       (verdictFromObj ? asStr(verdictFromObj.label) : null));
 
-  // next_take_plan precedence: explicit v2 field, then a structured legacy
-  // object, then derive from `coaching_drills` so re-record steps survive.
+  // Non-S10 next_take_plan precedence: explicit v2 field, then a structured
+  // legacy object, then derive from `coaching_drills` so re-record steps
+  // survive. S10 reports project only S10NextActionPlan.
   const drills = asArray(r.coaching_drills).filter((d): d is string => typeof d === "string");
   const nextPlanFromLegacy = asObj(r.next_take_plan);
   const s10NextPlan = s10View?.next_action_plan
@@ -328,8 +329,9 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
         ].filter(Boolean),
       }
     : null;
-  const nextTakePlan: unknown =
-    s10NextPlan ?? nextPlanFromLegacy ?? (drills.length > 0 ? { steps: drills } : null);
+  const nextTakePlan: unknown = s10View
+    ? s10NextPlan
+    : (nextPlanFromLegacy ?? (drills.length > 0 ? { steps: drills } : null));
 
   const s10Scores =
     scoreSummary?.category_scores && scoreSummary.category_scores.length > 0
@@ -426,14 +428,23 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     components: buildComponents(args),
     consistency_modifier: asNum(r.consistency_modifier),
     public_categories: PUBLIC_CATEGORIES,
-    strengths: s10Strengths && s10Strengths.length > 0 ? s10Strengths : asArray(r.strengths),
-    improvements: s10Improvements.length > 0 ? s10Improvements : asArray(r.improvements),
-    fix_first:
-      s10View?.fix_hierarchy?.fix_first?.title ??
-      s10View?.fix_hierarchy?.fix_first?.exact_action ??
-      r.fix_first ??
-      null,
+    strengths: s10View
+      ? s10Strengths && s10Strengths.length > 0
+        ? s10Strengths
+        : []
+      : asArray(r.strengths),
+    improvements: s10View
+      ? s10Improvements.length > 0
+        ? s10Improvements
+        : []
+      : asArray(r.improvements),
+    fix_first: s10View
+      ? (s10View.fix_hierarchy?.fix_first?.title ??
+        s10View.fix_hierarchy?.fix_first?.exact_action ??
+        null)
+      : (r.fix_first ?? null),
     priority_fixes: (() => {
+      if (s10View) return s10PriorityFixes;
       if (s10PriorityFixes.length > 0) return s10PriorityFixes;
       const pf = asArray(r.priority_fixes);
       if (pf.length > 0) return pf;
@@ -447,10 +458,11 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     risk_explanations: asArray(r.casting_risk_explanations),
     presentation_notes:
       s10PresentationNotes.length > 0 ? s10PresentationNotes : asArray(r.presentation_notes),
-    block_reasons:
-      readiness?.rationale && readiness.rationale.length > 0
+    block_reasons: s10View
+      ? readiness?.rationale && readiness.rationale.length > 0
         ? readiness.rationale
-        : asArray(r.block_reasons),
+        : []
+      : asArray(r.block_reasons),
     at_risk: asBool(r.at_risk),
   };
 

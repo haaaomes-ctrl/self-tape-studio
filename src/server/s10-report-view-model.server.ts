@@ -326,7 +326,8 @@ export function buildS10PerformerReportViewModel(input: {
     ...(componentVerifications.length > 0
       ? []
       : ["Observed component verification is not available for this report."]),
-    ...(fixHierarchy ? [] : ["Fix hierarchy is not available for this report."]),
+    ...(fixHierarchy ? [] : ["Fix hierarchy was unavailable for this S10 report."]),
+    ...(nextActionPlan ? [] : ["Next action plan was unavailable for this S10 report."]),
     ...(techniqueCommentary ? [] : ["Technique commentary is not available for this report."]),
     ...(timestampedCommentary
       ? []
@@ -389,12 +390,12 @@ export function buildS10PerformerReportViewModel(input: {
     fix_hierarchy: source(
       !!fixHierarchy,
       "s10_fix_hierarchy",
-      "Fix hierarchy is not available for this report.",
+      "Fix hierarchy was unavailable for this S10 report.",
     ),
     next_action_plan: source(
       !!nextActionPlan,
       "s10_next_action_plan",
-      "Next action plan is not available for this report.",
+      "Next action plan was unavailable for this S10 report.",
     ),
     strengths_and_preserve: source(
       !!professionalCritique,

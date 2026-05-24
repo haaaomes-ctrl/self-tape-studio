@@ -127,11 +127,24 @@ export function V2ReportView({
   if (!report || typeof report !== "object") return null;
 
   const s10 = safeObj(report.s10_view_model);
+  const s10SectionSourceMap = safeObj(s10?.section_source_map);
   const s10Recommendation = safeObj(s10?.recommendation);
   const s10ScoreSummary = safeObj(s10?.score_summary);
   const s10Matrix = safeObj(s10?.brief_achievement_matrix);
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
   const s10NextActionPlan = safeObj(s10?.next_action_plan);
+  const s10FixHierarchySource = safeObj(s10SectionSourceMap?.fix_hierarchy);
+  const s10NextActionSource = safeObj(s10SectionSourceMap?.next_action_plan);
+  const s10FixHierarchyLimitation =
+    safeStr(s10FixHierarchySource?.source) === "specific_limitation"
+      ? (safeStr(s10FixHierarchySource?.limitation) ??
+        "Fix hierarchy was unavailable for this S10 report.")
+      : null;
+  const s10NextActionLimitation =
+    safeStr(s10NextActionSource?.source) === "specific_limitation"
+      ? (safeStr(s10NextActionSource?.limitation) ??
+        "Next action plan was unavailable for this S10 report.")
+      : null;
   const s10StrengthsAndPreserve = safeObj(s10?.strengths_and_preserve);
   const s10Technique = safeObj(s10?.technique_commentary);
   const s10Timestamped = safeObj(s10?.timestamped_commentary);
@@ -163,12 +176,12 @@ export function V2ReportView({
     safeStr(s10Recommendation?.decision)?.replace(/_/g, " ") ?? safeStr(report.verdict);
   const reliability = safeStr(report.reliability);
   const reliabilityReason = safeStr(report.reliability_reason);
-  const fixFirst = safeStr(report.fix_first);
-  const blockers = safeArr<string>(report.block_reasons).filter(
-    (b): b is string => typeof b === "string",
-  );
+  const legacyFixFirst = safeStr(report.fix_first);
+  const blockers = (
+    s10 ? safeArr<string>(s10Recommendation?.rationale) : safeArr<string>(report.block_reasons)
+  ).filter((b): b is string => typeof b === "string");
   const strengths = safeArr(report.strengths);
-  const improvements = safeArr(report.improvements);
+  const legacyImprovements = safeArr(report.improvements);
   const tsNotes = safeArr<{ timestamp?: string; note?: string }>(report.timestamped_notes);
   const presentation = safeArr<string>(report.presentation_notes).filter(
     (s): s is string => typeof s === "string",
@@ -201,7 +214,7 @@ export function V2ReportView({
     report.category_notes && typeof report.category_notes === "object"
       ? (report.category_notes as Record<string, string>)
       : null;
-  const nextPlan = safeArr<string>(
+  const legacyNextPlan = safeArr<string>(
     (report.next_take_plan && (report.next_take_plan as { steps?: unknown }).steps) ?? [],
   ).filter((s): s is string => typeof s === "string");
   const roleFit =
@@ -459,7 +472,14 @@ export function V2ReportView({
       )}
 
       {(() => {
-        if (s10FixHierarchy) {
+        if (s10) {
+          if (!s10FixHierarchy) {
+            return s10FixHierarchyLimitation ? (
+              <Section title="Prioritised fixes">
+                <p className="text-sm text-muted-foreground">{s10FixHierarchyLimitation}</p>
+              </Section>
+            ) : null;
+          }
           const fixFirst = safeObj(s10FixHierarchy.fix_first);
           const must = safeArr(s10FixHierarchy.must_fix_before_submitting);
           const should = safeArr(s10FixHierarchy.should_improve_if_retaking);
@@ -550,10 +570,10 @@ export function V2ReportView({
             </Section>
           );
         }
-        if (fixFirst) {
+        if (legacyFixFirst) {
           return (
             <Section title="Fix this first">
-              <p className="font-display text-lg font-semibold leading-snug">{fixFirst}</p>
+              <p className="font-display text-lg font-semibold leading-snug">{legacyFixFirst}</p>
             </Section>
           );
         }
@@ -776,10 +796,10 @@ export function V2ReportView({
         </Section>
       )}
 
-      {!s10 && improvements.length > 0 && (
+      {!s10 && legacyImprovements.length > 0 && (
         <Section title="Improvements">
           <ul className="space-y-2 text-sm">
-            {improvements.map((s, i) => (
+            {legacyImprovements.map((s, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-warning">→</span>
                 <span>
@@ -959,10 +979,16 @@ export function V2ReportView({
         </Section>
       )}
 
-      {!s10 && nextPlan.length > 0 && (
+      {s10 && !s10NextActionPlan && s10NextActionLimitation && (
+        <Section title="Next action plan">
+          <p className="text-sm text-muted-foreground">{s10NextActionLimitation}</p>
+        </Section>
+      )}
+
+      {!s10 && legacyNextPlan.length > 0 && (
         <Section title="Next steps">
           <ol className="list-decimal space-y-1.5 pl-5 text-sm">
-            {nextPlan.map((s, i) => (
+            {legacyNextPlan.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ol>
