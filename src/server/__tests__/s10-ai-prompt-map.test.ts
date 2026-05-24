@@ -8,6 +8,7 @@ import {
   LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION,
   LEGACY_S9_SINGLE_PASS_PROMPT_VERSION,
   LEGACY_S9_TWO_STEP_POLISH_PROMPT_VERSION,
+  S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_CANARY_A_PROMPT_REQUIREMENT,
   S10_MODULE_COMPLETENESS_STATUSES,
@@ -40,6 +41,11 @@ describe("S10.1 AI prompt map", () => {
           status: "active",
         }),
         expect.objectContaining({
+          promptVersion: S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
+          runtimeStage: "analysis_step_2_pre_score_brief_achievement",
+          status: "active",
+        }),
+        expect.objectContaining({
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           sourceFile: "src/server/report-polish.server.ts",
           runtimeStage: "analysis_step_2_judgement_or_report_generation",
@@ -50,6 +56,10 @@ describe("S10.1 AI prompt map", () => {
           sourceFile: "src/server/process-take.server.ts",
           runtimeStage: "fallback_single_pass_report_generation",
           status: "active",
+        }),
+        expect.objectContaining({
+          promptVersion: "legacy_brief_adherence_material_compliance_diagnostic_only",
+          status: "diagnostic_only",
         }),
         expect.objectContaining({
           sourceFile: "src/server/dimensions/*",
@@ -152,7 +162,11 @@ describe("S10.1 AI prompt map", () => {
     expect(JSON.stringify(toolCallRequest)).toContain("collect_audition_evidence");
 
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION);
+    expect(POLISH_SYSTEM_PROMPT).toContain(S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain("verify required brief components");
+    expect(POLISH_SYSTEM_PROMPT).toContain("brief_achievement_matrix");
+    expect(POLISH_SYSTEM_PROMPT).toContain("observed_tape_sequence");
+    expect(POLISH_SYSTEM_PROMPT).toContain("component_verifications");
     expect(POLISH_SYSTEM_PROMPT).toContain("category_rationale");
   });
 
@@ -160,9 +174,21 @@ describe("S10.1 AI prompt map", () => {
     const processSrc = read("src/server/process-take.server.ts");
     expect(processSrc).toContain("S10_OBSERVATION_PROMPT_VERSION");
     expect(processSrc).toContain("S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION");
+    expect(processSrc).toContain("S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION");
+    expect(processSrc).toContain("Produce brief_achievement_matrix before any score");
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]evidence_pass_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]single_pass_analysis_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]two_step_report_polish_current['"]/);
+  });
+
+  it("passes S10.3 observation fields through the locked Step 2 evidence block", () => {
+    const polishSrc = read("src/server/report-polish.server.ts");
+    expect(polishSrc).toContain("brief_requirements");
+    expect(polishSrc).toContain("brief_context");
+    expect(polishSrc).toContain("observed_tape_sequence");
+    expect(polishSrc).toContain("component_verifications");
+    expect(polishSrc).toContain("media_observation_summary");
+    expect(polishSrc).toContain("Matrix-before-scoring");
   });
 
   it("represents Canary A component checks before score or recommendation", () => {

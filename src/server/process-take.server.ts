@@ -71,10 +71,15 @@ import {
 import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
 import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
+  S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_OBSERVATION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
 } from "./s10-report-prompt-map.server";
+import {
+  applyBriefAchievementCompatibilityCaps,
+  normaliseBriefAchievementMatrix,
+} from "./s10-brief-achievement-matrix.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -215,6 +220,149 @@ const REPORT_TOOL = {
             "instruction_precision",
             "professionalism_signals",
             "note",
+          ],
+        },
+        brief_achievement_matrix: {
+          type: "object",
+          description:
+            "S10 requirement-by-requirement brief achievement matrix. This must be produced before scores, verdict or readiness language, by comparing BriefRequirement[] against observed ComponentVerification[]/media evidence. Legacy detected_components, raw_report prose and material_compliance cannot prove achievement.",
+          properties: {
+            overall_status: {
+              type: "string",
+              enum: [
+                "achieved",
+                "mostly_achieved",
+                "partly_achieved",
+                "not_achieved",
+                "not_assessable",
+              ],
+            },
+            mandatory_status: {
+              type: "string",
+              enum: ["clear", "some_gaps", "blocked", "not_assessable"],
+            },
+            readiness_impact: {
+              type: "string",
+              enum: [
+                "supports_submission",
+                "review_carefully",
+                "material_gap",
+                "submission_blocker",
+                "not_assessable",
+              ],
+            },
+            summary: { type: "string" },
+            achieved_requirements: { type: "array", items: { type: "string" } },
+            missing_or_incomplete_requirements: {
+              type: "array",
+              items: { type: "string" },
+            },
+            not_assessable_requirements: { type: "array", items: { type: "string" } },
+            final_check_requirements: { type: "array", items: { type: "string" } },
+            requirement_results: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  requirement_id: { type: "string" },
+                  requirement_summary: { type: "string" },
+                  category: {
+                    type: "string",
+                    enum: [
+                      "material",
+                      "performance",
+                      "technical",
+                      "admin_process",
+                      "deadline",
+                      "logistics",
+                      "role_context",
+                    ],
+                  },
+                  importance: {
+                    type: "string",
+                    enum: ["mandatory", "preferred", "optional", "ambiguous"],
+                  },
+                  observed_status: {
+                    type: "string",
+                    enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+                  },
+                  completion_status: {
+                    type: "string",
+                    enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+                  },
+                  achievement_status: {
+                    type: "string",
+                    enum: [
+                      "achieved",
+                      "mostly_achieved",
+                      "partly_achieved",
+                      "not_achieved",
+                      "not_assessable",
+                      "not_applicable",
+                    ],
+                  },
+                  evidence_summary: { type: "string" },
+                  submission_impact: {
+                    type: "string",
+                    enum: [
+                      "supports_submission",
+                      "material_gap",
+                      "submission_blocker",
+                      "optional_polish",
+                      "final_check",
+                      "not_assessable",
+                    ],
+                  },
+                  fix_category: {
+                    type: "string",
+                    enum: [
+                      "must_fix",
+                      "should_improve",
+                      "optional_polish",
+                      "preserve",
+                      "final_check",
+                      "none",
+                    ],
+                  },
+                  recommended_action: { type: "string" },
+                  confidence: { type: "string", enum: ["low", "medium", "high"] },
+                  linked_observed_sequence_ids: { type: "array", items: { type: "string" } },
+                  linked_component_verification_ids: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  cannot_infer_from_brief_only: { type: "boolean", enum: [true] },
+                },
+                required: [
+                  "requirement_id",
+                  "requirement_summary",
+                  "category",
+                  "importance",
+                  "observed_status",
+                  "completion_status",
+                  "achievement_status",
+                  "evidence_summary",
+                  "submission_impact",
+                  "fix_category",
+                  "recommended_action",
+                  "confidence",
+                  "linked_observed_sequence_ids",
+                  "linked_component_verification_ids",
+                  "cannot_infer_from_brief_only",
+                ],
+              },
+            },
+          },
+          required: [
+            "overall_status",
+            "mandatory_status",
+            "readiness_impact",
+            "summary",
+            "achieved_requirements",
+            "missing_or_incomplete_requirements",
+            "not_assessable_requirements",
+            "final_check_requirements",
+            "requirement_results",
           ],
         },
         category_notes: {
@@ -422,6 +570,7 @@ const REPORT_TOOL = {
         "casting_insight",
         "scores",
         "brief_adherence_breakdown",
+        "brief_achievement_matrix",
         "category_notes",
         "strengths",
         "improvements",
@@ -447,8 +596,11 @@ You will receive the video itself, selected performer level, optional casting br
 
 Single-pass S10 recovery rules:
 - Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
+- Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
+- Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
+- Keep continuous-video technical evidence separate from complete required-material package evidence: a technically continuous clip is not a complete package if mandatory material is absent, partial or cut off.
 - For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
 - Populate detected_components only from media evidence, never from brief requests alone.
 - If mandatory material is missing or incomplete, retake/submission readiness must reflect that even when performance quality or audio is strong.
@@ -1674,6 +1826,8 @@ export async function runProcessTake(
           evidence: step2Evidence,
           briefBlock,
           extractedBlock,
+          briefContext: extractedBrief?.brief_context ?? null,
+          briefRequirements: extractedBrief?.brief_requirements ?? [],
           signalsBlock,
           levelBlock,
           auditionTitle: audition.title,
@@ -2330,6 +2484,30 @@ export async function runProcessTake(
 
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
+
+    // ---- S10.4 brief achievement matrix ----
+    // The AI authors the matrix; code validates against S10.2 requirements
+    // and S10.3 observed component verification before legacy score fields
+    // can influence verdict/readiness semantics.
+    report.brief_achievement_matrix = normaliseBriefAchievementMatrix({
+      matrix: (report as Record<string, unknown>).brief_achievement_matrix,
+      briefRequirements: extractedBrief?.brief_requirements ?? [],
+      componentVerifications: twoStepEvidence?.component_verifications ?? [],
+      observedTapeSequence: twoStepEvidence?.observed_tape_sequence ?? [],
+      mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+    });
+    const s10BriefAchievementCap = applyBriefAchievementCompatibilityCaps(
+      report as Record<string, unknown>,
+      report.brief_achievement_matrix,
+    );
+    if (s10BriefAchievementCap.capped) {
+      console.log("[take-pipeline] s10_brief_achievement_legacy_cap_applied", {
+        take_id: takeId,
+        cap: s10BriefAchievementCap.cap,
+        readiness_impact: report.brief_achievement_matrix.readiness_impact,
+        mandatory_status: report.brief_achievement_matrix.mandatory_status,
+      });
+    }
 
     // Capture the model's raw overall before any server recomputation.
     const overallScoreModel =

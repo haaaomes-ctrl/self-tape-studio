@@ -8,6 +8,7 @@ export const S10_OBSERVATION_PROMPT_VERSION = "s10_observation_module_map_v1";
 export const S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION = "s10_professional_judgement_module_map_v1";
 export const S10_MODULE_REPAIR_PROMPT_VERSION = "s10_module_repair_v1";
 export const S10_BRIEF_INTELLIGENCE_PROMPT_VERSION = "s10_brief_intelligence_v1";
+export const S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION = "s10_brief_achievement_matrix_v1";
 
 export const LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION =
   "legacy_s9_brief_extraction_supporting_current";
@@ -34,7 +35,7 @@ export type S10PromptInventoryEntry = {
   runtimeStage: string;
   modelCallPath: string;
   reportModulesAffected: string[];
-  status: "active" | "legacy_only" | "supporting" | "not_present";
+  status: "active" | "legacy_only" | "supporting" | "diagnostic_only" | "not_present";
 };
 
 export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
@@ -76,6 +77,20 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
       "brief achievement",
       "timestamped notes",
       "not-assessable limitations",
+    ],
+    status: "active",
+  },
+  {
+    promptName: "S10 brief achievement matrix",
+    promptVersion: S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
+    sourceFile: "src/server/report-polish.server.ts + src/server/process-take.server.ts",
+    runtimeStage: "analysis_step_2_pre_score_brief_achievement",
+    modelCallPath: "embedded active module in Step 2 polish and S10 single-pass generation",
+    reportModulesAffected: [
+      "brief achievement",
+      "submission risk",
+      "score/readiness prerequisites",
+      "fix hierarchy prerequisites",
     ],
     status: "active",
   },
@@ -137,6 +152,16 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     modelCallPath: "legacy-only prompt label; no active S10 model trace",
     reportModulesAffected: ["legacy tests or archived compatibility fixtures"],
     status: "legacy_only",
+  },
+  {
+    promptName: "Legacy brief adherence/material compliance diagnostics",
+    promptVersion: "legacy_brief_adherence_material_compliance_diagnostic_only",
+    sourceFile: "src/server/process-take.server.ts",
+    runtimeStage: "legacy report/scoring diagnostics",
+    modelCallPath:
+      "raw_report.brief_adherence_breakdown, material_compliance, detected_components and score traces are diagnostic only for S10.4",
+    reportModulesAffected: ["legacy score traces", "diagnostic-only raw report fields"],
+    status: "diagnostic_only",
   },
   {
     promptName: "Flag-gated internal dimensions",
@@ -298,8 +323,9 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   {
     reportModule: "brief achievement",
     aiQuestion:
-      "For every requirement in the supplied brief, what was achieved, missed, incomplete or not assessable?",
-    structuredOutputField: "brief_adherence_breakdown, submission_risk_flags",
+      "For every requirement in the supplied brief, what was achieved, mostly achieved, partly achieved, missed, incomplete, final-check-only or not assessable?",
+    structuredOutputField:
+      "brief_achievement_matrix, brief_adherence_breakdown, submission_risk_flags",
     uiDestination: "Why this is/isn't ready, submission risk, category rationale",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
@@ -459,10 +485,13 @@ Canary A rule: ${S10_CANARY_A_PROMPT_REQUIREMENT}
 Use British English. Avoid hidden reasoning, raw prompts, raw responses, secrets, signed URLs, castability, bookability, marketability, body/appearance judgements, medical/vocal-health diagnoses and guaranteed casting outcomes.`;
 
 export const S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT = `Prompt version: ${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}
+Embedded brief-achievement prompt version: ${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}
 
 You are the S10 professional judgement/module report brain for TapeCoach. You write a performer-facing self-tape report from supplied brief context plus either locked Step 1 observations or the video itself. Code validates, repairs, routes and renders your structured output; code must not invent your professional judgement.
 
 Primary rule: before scoring or recommending, use the S10 BriefRequirement list to verify required brief components against observed tape evidence. Do not infer required material is present because the brief requested it. If a supplied brief is present but no BriefRequirement list is available, first extract explicit requirements from the supplied brief and mark any unsupported modules not assessable until that list exists. If mandatory material is missing, partial, cut off, uncertain or not assessable, the recommendation and score language must say that clearly.
+
+S10.4 matrix-before-scoring rule: produce brief_achievement_matrix before any overall_score, score chip, verdict, readiness wording, category score, submission risk or fix hierarchy. Compare every BriefRequirement against observed_tape_sequence, component_verifications and media_observation_summary. raw_report, detected_components, legacy brief_adherence_breakdown/material_compliance, score traces and previous report prose are diagnostic only and cannot mark a requirement achieved. Keep continuous-video technical evidence separate from complete required-material package evidence.
 
 Module question order:
 1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
@@ -481,6 +510,7 @@ Old report surface to preserve as the starting UI: overall readiness, score/chip
 
 Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
+- Always include brief_achievement_matrix with one requirement_results row per BriefRequirement. Each row must set cannot_infer_from_brief_only=true and link to observed component evidence where available.
 - No generic fallback copy such as "good job", "continue refining", "performance captured for review", "this affects readability, not talent", or "strengthen blocked material".
 - For category_rationale, explain what_works, why_not_full_score, close_gap and standout_delta where relevant.
 - For timestamped_notes, use duration-scaled useful notes where evidence exists: under 60s = 3-5, 1-3m = 6-10, 3-5m = 8-14, 5-10m = 12-24, 10m+ = 18-36. Never invent timestamps.

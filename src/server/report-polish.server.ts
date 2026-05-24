@@ -9,6 +9,7 @@
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
 import {
+  S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
 } from "./s10-report-prompt-map.server";
@@ -21,8 +22,12 @@ You will NOT be given the video. You will be given a LOCKED EVIDENCE block from 
 
 Rules:
 - Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
+- Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
 - Use ONLY the supplied evidence as factual ground truth. Do NOT invent observations the evidence does not support.
-- Before writing score, verdict, readiness, detected_components, strengths, improvements, priority_fixes or category_rationale, compare required brief components against the locked observed component evidence.
+- Before writing score, verdict, readiness, detected_components, strengths, improvements, priority_fixes or category_rationale, produce brief_achievement_matrix by comparing required brief components against the locked observed component evidence.
+- Matrix-before-scoring is mandatory: BriefRequirement[] plus observed_tape_sequence, component_verifications and media_observation_summary determine requirement achievement before any score/chip/verdict/readiness wording.
+- raw_report, detected_components, legacy brief_adherence_breakdown/material_compliance, score traces and previous report prose are diagnostic only; they cannot mark a requirement achieved or override brief_achievement_matrix.
+- Keep continuous-video technical evidence separate from complete required-material package evidence: a continuous clip is not a complete package if mandatory material is missing, partial or cut off.
 - If required material is absent, partial, cut off, uncertain or not assessable, make that the readiness driver. Do not call the take "strong for this level" as a complete submission.
 - Do NOT rely on generic fallback copy. If a module cannot be supported by evidence, mark the limitation specifically and state the exact next recording/check action.
 - Do NOT add new timestamped_notes that are not in evidence.timestamped_evidence. Do NOT change their timestamps. Keep timestamped_notes in CHRONOLOGICAL order.
@@ -52,6 +57,8 @@ export type RunReportPolishArgs = {
   evidence: EvidencePass;
   briefBlock: string;
   extractedBlock: string;
+  briefContext?: unknown;
+  briefRequirements?: unknown[] | null;
   signalsBlock: string;
   levelBlock: string;
   auditionTitle: string;
@@ -77,12 +84,20 @@ export type RunReportPolishResult =
     };
 
 /** Build the locked-evidence block sent to the polish model (text-only). */
-function buildEvidenceBlock(ev: EvidencePass): string {
+export function buildEvidenceBlock(
+  ev: EvidencePass,
+  s10Brief?: { briefContext?: unknown; briefRequirements?: unknown[] | null },
+): string {
   return `LOCKED EVIDENCE (Step 1 — authoritative, do not contradict):\n${JSON.stringify(
     {
+      brief_context: s10Brief?.briefContext ?? null,
+      brief_requirements: s10Brief?.briefRequirements ?? [],
       evidence_version: ev.evidence_version,
       audition_type: ev.audition_type,
       detected_components: ev.detected_components,
+      observed_tape_sequence: ev.observed_tape_sequence ?? [],
+      component_verifications: ev.component_verifications ?? [],
+      media_observation_summary: ev.media_observation_summary ?? null,
       raw_scores: ev.raw_scores,
       core_strengths_evidence: ev.core_strengths_evidence,
       core_improvements_evidence: ev.core_improvements_evidence,
@@ -106,7 +121,10 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
   const model = args.model ?? DEFAULT_MODEL;
   const startedAt = Date.now();
 
-  const evidenceBlock = buildEvidenceBlock(args.evidence);
+  const evidenceBlock = buildEvidenceBlock(args.evidence, {
+    briefContext: args.briefContext,
+    briefRequirements: args.briefRequirements,
+  });
 
   const userText = [
     `Audition title: ${args.auditionTitle}`,
@@ -115,7 +133,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
-    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Use the S10 BriefRequirement list to verify required brief components before scoring or recommending; if the list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
+    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Produce brief_achievement_matrix before scoring or recommending by comparing the S10 BriefRequirement list with observed_tape_sequence, component_verifications and media_observation_summary; if the list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
   ].join("\n\n");
 
   let resp: Response | null = null;

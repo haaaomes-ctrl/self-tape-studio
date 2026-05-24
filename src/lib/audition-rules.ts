@@ -396,6 +396,76 @@ export type BriefRequirement = {
   confidence: "low" | "medium" | "high";
 };
 
+export type BriefAchievementStatus =
+  | "achieved"
+  | "mostly_achieved"
+  | "partly_achieved"
+  | "not_achieved"
+  | "not_assessable"
+  | "not_applicable";
+
+export type BriefAchievementOverallStatus =
+  | "achieved"
+  | "mostly_achieved"
+  | "partly_achieved"
+  | "not_achieved"
+  | "not_assessable";
+
+export type BriefAchievementMandatoryStatus = "clear" | "some_gaps" | "blocked" | "not_assessable";
+
+export type BriefAchievementReadinessImpact =
+  | "supports_submission"
+  | "review_carefully"
+  | "material_gap"
+  | "submission_blocker"
+  | "not_assessable";
+
+export type BriefAchievementSubmissionImpact =
+  | "supports_submission"
+  | "material_gap"
+  | "submission_blocker"
+  | "optional_polish"
+  | "final_check"
+  | "not_assessable";
+
+export type BriefAchievementFixCategory =
+  | "must_fix"
+  | "should_improve"
+  | "optional_polish"
+  | "preserve"
+  | "final_check"
+  | "none";
+
+export type RequirementAchievementResult = {
+  requirement_id: string;
+  requirement_summary: string;
+  category: BriefRequirementCategory;
+  importance: BriefRequirementImportance;
+  observed_status: "present" | "partially_present" | "absent" | "not_assessable" | "uncertain";
+  completion_status: "complete" | "incomplete" | "cut_off" | "not_applicable" | "uncertain";
+  achievement_status: BriefAchievementStatus;
+  evidence_summary: string;
+  submission_impact: BriefAchievementSubmissionImpact;
+  fix_category: BriefAchievementFixCategory;
+  recommended_action: string;
+  confidence: "low" | "medium" | "high";
+  linked_observed_sequence_ids: string[];
+  linked_component_verification_ids: string[];
+  cannot_infer_from_brief_only: true;
+};
+
+export type BriefAchievementMatrix = {
+  overall_status: BriefAchievementOverallStatus;
+  mandatory_status: BriefAchievementMandatoryStatus;
+  readiness_impact: BriefAchievementReadinessImpact;
+  summary: string;
+  achieved_requirements: string[];
+  missing_or_incomplete_requirements: string[];
+  not_assessable_requirements: string[];
+  final_check_requirements: string[];
+  requirement_results: RequirementAchievementResult[];
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;
