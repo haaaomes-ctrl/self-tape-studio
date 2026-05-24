@@ -406,7 +406,13 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
       Object.keys(s10CategoryNotes ?? {}).length > 0
         ? s10CategoryNotes
         : asCategoryNotes(r.category_notes),
-    brief_adherence_breakdown: asObj(r.brief_adherence_breakdown) ?? null,
+    brief_adherence_breakdown: s10View
+      ? {
+          summary: s10View.brief_achievement_matrix?.summary ?? null,
+          material_compliance: s10View.score_summary.brief_completion_score,
+          readiness_impact: s10View.brief_achievement_matrix?.readiness_impact ?? null,
+        }
+      : (asObj(r.brief_adherence_breakdown) ?? null),
     reliability:
       asStr(r.feedback_reliability_override) ??
       asStr(r.feedback_reliability) ??
@@ -431,7 +437,7 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
       const ff = asStr(r.fix_first);
       return ff ? [{ headline: ff }] : [];
     })(),
-    category_rationale: asObj(r.category_rationale),
+    category_rationale: s10View ? null : asObj(r.category_rationale),
     timestamped_notes: s10View ? s10TimestampProjection : asArray(r.timestamped_notes),
     next_take_plan: nextTakePlan,
     risk_flags: asArray(r.submission_risk_flags ?? r.risk_flags),
