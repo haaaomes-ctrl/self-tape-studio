@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { V2ReportView } from "../V2ReportView";
 import { buildV2Report } from "@/server/v2-report-builder.server";
+import { classifyS10SameVideoComparison } from "@/server/s10-same-video-comparison.server";
 import {
   buildS10CanaryAReportInput,
   buildS10CanaryAViewContext,
@@ -13,6 +14,7 @@ import {
   buildS10StrongCompleteProfessionalViewContext,
   s10StrongCompleteProfessionalExpectedViewModel,
 } from "@/test-fixtures/s10-strong-complete-professional";
+import { s10SameVideoComparisonFixtures } from "@/test-fixtures/s10-same-video-comparison";
 
 function render(report: Record<string, unknown>) {
   return renderToStaticMarkup(
@@ -37,6 +39,24 @@ function strongCompleteV2Report() {
     auditionType: "musical_theatre",
     mode: "brief",
     s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+  }) as unknown as Record<string, unknown>;
+}
+
+function sameVideoDuplicateV2Report() {
+  const result = classifyS10SameVideoComparison(
+    s10SameVideoComparisonFixtures.accidentalDuplicate.input,
+  );
+  return buildV2Report({
+    legacyReport: buildS10StrongCompleteProfessionalReportInput(),
+    futureDimensions: null,
+    auditionType: "musical_theatre",
+    mode: "brief",
+    s10Context: {
+      ...buildS10StrongCompleteProfessionalViewContext(),
+      sameVideoEvidence: result.evidence,
+      comparisonTruth: result.comparison_truth,
+      comparisonDisplayMode: result.comparison_display_mode,
+    } as never,
   }) as unknown as Record<string, unknown>;
 }
 
@@ -95,5 +115,20 @@ describe("S10 report view rendering", () => {
     expect(strongS10.recommendation.decision).toBe("submit");
     expect(strongS10.brief_achievement_matrix.mandatory_status).toBe("clear");
     expect(strong.fix_first).toBeNull();
+  });
+
+  it("renders duplicate same-video comparison truth without winner language", () => {
+    const html = render(sameVideoDuplicateV2Report());
+
+    expect(html).toContain("Same-video comparison");
+    expect(html).toContain("These takes appear to use the same underlying video.");
+    expect(html).toContain("Do not treat this as a comparison of different performances.");
+    expect(html).not.toContain("Take 1 is the stronger performance");
+    expect(html).not.toContain("Take 2 is the stronger performance");
+    expect(html).not.toContain("Use Take 1");
+    expect(html).not.toContain("Use Take 2");
+    expect(html).not.toContain("clear winner");
+    expect(html).not.toContain("better performance");
+    expect(html).not.toContain("sha256:");
   });
 });

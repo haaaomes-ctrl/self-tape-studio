@@ -12,6 +12,9 @@ import type {
   S10FixHierarchy,
   S10NextActionPlan,
   S10ProfessionalCritique,
+  S10ComparisonDisplayMode,
+  S10ComparisonTruth,
+  S10SameVideoEvidence,
   S10TechniqueCommentary,
   S10TimestampedCommentary,
 } from "@/lib/audition-rules";
@@ -45,6 +48,7 @@ export type S10ReportSectionKey =
   | "timestamped_commentary"
   | "limitations"
   | "same_video_status"
+  | "comparison_truth"
   | "diagnostic_chips";
 
 export type S10SectionSourceEntry = {
@@ -94,7 +98,11 @@ export type S10PerformerReportViewModel = {
   technique_commentary: S10TechniqueCommentary | null;
   timestamped_commentary: S10TimestampedCommentary | null;
   limitations: string[];
-  same_video_status: unknown | null;
+  same_video_status: S10SameVideoEvidence | null;
+  comparison_truth: S10ComparisonTruth | null;
+  comparison_summary: string | null;
+  comparison_limitations: string[];
+  comparison_display_mode: S10ComparisonDisplayMode;
   diagnostic_chips: unknown[];
 };
 
@@ -104,6 +112,9 @@ export type S10ViewModelContext = {
   observedTapeSequence?: ObservedTapeSequence[] | null;
   componentVerifications?: ComponentVerification[] | null;
   mediaObservationSummary?: MediaObservationSummary | null;
+  sameVideoEvidence?: S10SameVideoEvidence | null;
+  comparisonTruth?: S10ComparisonTruth | null;
+  comparisonDisplayMode?: S10ComparisonDisplayMode | null;
 };
 
 const INTERNAL_KEYS = new Set([
@@ -130,6 +141,7 @@ const INTERNAL_KEYS = new Set([
   "note_source_authority",
   "legacy_source_used",
   "legacy_source_path",
+  "value_hash",
   "is_legacy_timestamp_projection",
   "is_projection_safe",
   "projection_block_reason",
@@ -176,6 +188,24 @@ function source(available: boolean, module: string, limitation: string): S10Sect
     : { source: "specific_limitation", module, limitation };
 }
 
+function comparisonDisplayModeFor(
+  comparisonTruth: S10ComparisonTruth | null,
+): S10ComparisonDisplayMode {
+  switch (comparisonTruth?.comparison_mode) {
+    case "same_video_duplicate":
+      return "same_video_notice";
+    case "same_video_retest":
+    case "same_video_changed_context":
+      return "contextual_comparison";
+    case "uncertain":
+      return "comparison_caution";
+    case "distinct_takes":
+    case "single_take":
+    default:
+      return "hidden";
+  }
+}
+
 export function hasS10AuthoritativeModules(report: unknown): boolean {
   const r = asRecord(report);
   if (!r) return false;
@@ -216,6 +246,24 @@ export function buildS10PerformerReportViewModel(input: {
   const timestampedCommentary = cloneForRouteSurface(
     report.s10_timestamped_commentary,
   ) as S10TimestampedCommentary | null;
+  const sameVideoEvidence = cloneForRouteSurface(
+    input.context?.sameVideoEvidence ??
+      report.s10_same_video_evidence ??
+      report.same_video_status ??
+      null,
+  ) as S10SameVideoEvidence | null;
+  const comparisonTruth = cloneForRouteSurface(
+    input.context?.comparisonTruth ??
+      report.s10_comparison_truth ??
+      report.comparison_truth ??
+      null,
+  ) as S10ComparisonTruth | null;
+  const comparisonDisplayMode =
+    input.context?.comparisonDisplayMode ??
+    (typeof report.comparison_display_mode === "string"
+      ? (report.comparison_display_mode as S10ComparisonDisplayMode)
+      : null) ??
+    comparisonDisplayModeFor(comparisonTruth);
 
   const context = input.context ?? {};
   const briefContext = cloneForRouteSurface(
@@ -316,9 +364,18 @@ export function buildS10PerformerReportViewModel(input: {
     ),
     limitations: { source: "s10_authoritative_module", module: "s10_view_model", limitation: null },
     same_video_status: {
-      source: "unsupported",
-      module: null,
-      limitation: "Same-video status is not available in this report model.",
+      source: sameVideoEvidence ? "s10_authoritative_module" : "unsupported",
+      module: sameVideoEvidence ? "s10_same_video_evidence" : null,
+      limitation: sameVideoEvidence
+        ? null
+        : "Same-video status is not available in this report model.",
+    },
+    comparison_truth: {
+      source: comparisonTruth ? "s10_authoritative_module" : "unsupported",
+      module: comparisonTruth ? "s10_comparison_truth" : null,
+      limitation: comparisonTruth
+        ? null
+        : "Comparison truth is not available or not relevant for this report.",
     },
     diagnostic_chips: {
       source: "unsupported",
@@ -383,7 +440,17 @@ export function buildS10PerformerReportViewModel(input: {
     technique_commentary: techniqueCommentary,
     timestamped_commentary: timestampedCommentary,
     limitations,
-    same_video_status: null,
+    same_video_status: sameVideoEvidence,
+    comparison_truth: comparisonTruth,
+    comparison_summary:
+      comparisonTruth?.performer_facing_summary ??
+      sameVideoEvidence?.performer_facing_summary ??
+      null,
+    comparison_limitations: [
+      ...(comparisonTruth?.limitations ?? []),
+      ...(sameVideoEvidence?.limitations ?? []),
+    ].filter((value, index, array) => value && array.indexOf(value) === index),
+    comparison_display_mode: comparisonDisplayMode,
     diagnostic_chips: [],
   };
 }
@@ -423,6 +490,7 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     "timestamped_commentary",
     "limitations",
     "same_video_status",
+    "comparison_truth",
     "diagnostic_chips",
   ];
   for (const section of requiredSections) {

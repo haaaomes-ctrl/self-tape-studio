@@ -520,6 +520,7 @@ const FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   "note_source_authority",
   "legacy_source_used",
   "legacy_source_path",
+  "value_hash",
   "is_legacy_timestamp_projection",
   "is_projection_safe",
   "projection_block_reason",

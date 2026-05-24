@@ -135,6 +135,18 @@ export function V2ReportView({
   const s10StrengthsAndPreserve = safeObj(s10?.strengths_and_preserve);
   const s10Technique = safeObj(s10?.technique_commentary);
   const s10Timestamped = safeObj(s10?.timestamped_commentary);
+  const s10SameVideo = safeObj(s10?.same_video_status);
+  const s10Comparison = safeObj(s10?.comparison_truth);
+  const s10ComparisonDisplayMode = safeStr(s10?.comparison_display_mode);
+  const s10ComparisonSummary =
+    safeStr(s10?.comparison_summary) ??
+    safeStr(s10Comparison?.performer_facing_summary) ??
+    safeStr(s10SameVideo?.performer_facing_summary);
+  const s10ComparisonWarning =
+    safeStr(s10SameVideo?.comparison_warning) ?? safeStr(s10Comparison?.comparison_warning);
+  const s10ComparisonLimitations = safeArr<string>(s10?.comparison_limitations).filter(
+    (s): s is string => typeof s === "string" && s.trim().length > 0,
+  );
   const s10Limitations = safeArr<string>(s10?.limitations).filter(
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );
@@ -275,6 +287,40 @@ export function V2ReportView({
           </div>
         )}
       </div>
+
+      {s10 &&
+        s10ComparisonDisplayMode &&
+        !["hidden", "single_take"].includes(s10ComparisonDisplayMode) &&
+        (s10ComparisonSummary || s10ComparisonWarning || s10ComparisonLimitations.length > 0) && (
+          <Section
+            title="Same-video comparison"
+            hint="Media identity is kept separate from performance and report comparison."
+          >
+            <div className="space-y-3 text-sm">
+              <div className="flex flex-wrap gap-2">
+                {safeStr(s10SameVideo?.status) && (
+                  <Badge variant="outline" className="capitalize">
+                    {labelize(s10SameVideo?.status)}
+                  </Badge>
+                )}
+                {safeStr(s10Comparison?.recommendation_policy) && (
+                  <Badge variant="secondary" className="capitalize">
+                    {labelize(s10Comparison?.recommendation_policy)}
+                  </Badge>
+                )}
+              </div>
+              {s10ComparisonSummary && <p>{s10ComparisonSummary}</p>}
+              {s10ComparisonWarning && <p className="font-medium">{s10ComparisonWarning}</p>}
+              {s10ComparisonLimitations.length > 0 && (
+                <ul className="space-y-1 text-xs text-muted-foreground">
+                  {s10ComparisonLimitations.map((limitation, index) => (
+                    <li key={index}>{limitation}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Section>
+        )}
 
       {s10 && (
         <>

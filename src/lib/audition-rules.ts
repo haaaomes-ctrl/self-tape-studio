@@ -934,6 +934,116 @@ export type S10TimestampedCommentary = {
   contradiction_warnings: S10TimestampedWarning[];
 };
 
+export type S10SameVideoStatus =
+  | "new_media"
+  | "same_video_confirmed"
+  | "probable_duplicate"
+  | "possible_duplicate"
+  | "intentional_retest"
+  | "same_video_changed_brief"
+  | "same_video_changed_level"
+  | "same_video_changed_report_version"
+  | "duplicate_in_comparison"
+  | "uncertain";
+
+export type S10SameVideoConfidence = "decisive" | "high" | "medium" | "low" | "uncertain";
+
+export type S10SameVideoChangedContext =
+  | "same_brief"
+  | "changed_brief"
+  | "same_level"
+  | "changed_level"
+  | "same_report_version"
+  | "changed_report_version"
+  | "unknown";
+
+export type S10MediaIdentitySignalName =
+  | "original_upload_file_hash"
+  | "file_size_bytes"
+  | "video_duration_ms"
+  | "metadata_file_name"
+  | "original_file_name"
+  | "mux_asset_id"
+  | "mux_playback_id"
+  | "safe_media_fingerprint"
+  | "opening_video_sample_hash"
+  | "closing_video_sample_hash"
+  | "opening_audio_profile_hash"
+  | "closing_audio_profile_hash";
+
+export type S10MediaIdentitySignalStatus =
+  | "available"
+  | "unavailable"
+  | "matched"
+  | "mismatched"
+  | "inconclusive";
+
+export type S10MediaIdentitySignalConfidenceRole = "decisive" | "strong" | "medium" | "weak";
+
+export type S10MediaIdentitySignal = {
+  signal_name: S10MediaIdentitySignalName;
+  status: S10MediaIdentitySignalStatus;
+  confidence_role: S10MediaIdentitySignalConfidenceRole;
+  safe_value_summary: string | null;
+  value_hash: string | null;
+  source: string | null;
+  limitation: string | null;
+};
+
+export type S10SameVideoEvidence = {
+  status: S10SameVideoStatus;
+  confidence: S10SameVideoConfidence;
+  compared_take_ids: string[];
+  current_take_id: string;
+  matching_take_ids: string[];
+  evidence_signals: S10MediaIdentitySignal[];
+  operator_confirmation: string | null;
+  changed_context: S10SameVideoChangedContext[];
+  report_implication: string;
+  performer_facing_summary: string;
+  comparison_warning: string | null;
+  should_compare_as_distinct_performances: boolean;
+  should_reanalyse_against_context: boolean;
+  limitations: string[];
+};
+
+export type S10ComparisonMode =
+  | "single_take"
+  | "distinct_takes"
+  | "same_video_duplicate"
+  | "same_video_retest"
+  | "same_video_changed_context"
+  | "uncertain";
+
+export type S10ComparisonRecommendationPolicy =
+  | "compare_distinct_performances"
+  | "compare_contextual_outputs"
+  | "do_not_pick_winner"
+  | "operator_confirmation_required";
+
+export type S10ComparisonDisplayMode =
+  | "hidden"
+  | "single_take"
+  | "same_video_notice"
+  | "comparison_caution"
+  | "contextual_comparison";
+
+export type S10ComparedTakeSummary = {
+  take_id: string;
+  label: string;
+  media_identity_summary: string;
+  report_context_summary: string | null;
+};
+
+export type S10ComparisonTruth = {
+  comparison_mode: S10ComparisonMode;
+  compared_take_summaries: S10ComparedTakeSummary[];
+  same_video_status: S10SameVideoEvidence | null;
+  recommendation_policy: S10ComparisonRecommendationPolicy;
+  performer_facing_summary: string;
+  limitations: string[];
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;
