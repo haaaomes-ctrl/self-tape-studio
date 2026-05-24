@@ -19,9 +19,6 @@ import {
   type ArtifactEntry,
 } from "@/lib/admin-storage.functions";
 
-function normalizeEmail(email?: string | null): string {
-  return email?.trim().toLowerCase() ?? "";
-}
 
 function RouteErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
