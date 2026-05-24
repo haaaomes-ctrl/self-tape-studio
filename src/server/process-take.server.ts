@@ -79,6 +79,7 @@ import {
   S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
   S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION,
   S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION,
+  S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import {
   applyBriefAchievementCompatibilityCaps,
@@ -94,6 +95,10 @@ import {
   applyS10TechniqueLibraryCommentary,
   scrubS10TechniqueCommentaryProjection,
 } from "./s10-technique-library-commentary.server";
+import {
+  applyS10TimestampedCommentary,
+  scrubS10TimestampedCommentaryProjection,
+} from "./s10-timestamped-commentary.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -460,6 +465,224 @@ const S10_TECHNIQUE_SECTION_SCHEMA = {
     "not_assessable_reason",
     "confidence",
   ],
+};
+
+const S10_TIMESTAMPED_WARNING_SCHEMA = {
+  type: "object",
+  properties: {
+    affected_field: { type: "string" },
+    original_value: { type: ["string", "number", "boolean", "null"] },
+    corrected_value: { type: ["string", "number", "boolean", "null"] },
+    reason: { type: "string" },
+    source: {
+      type: "string",
+      enum: [
+        "s10_ai_judgement",
+        "legacy_raw_report",
+        "legacy_timestamped_notes",
+        "prior_prose",
+        "step1_timestamped_evidence",
+        "evidence_anchor",
+        "provider_output",
+        "s10_normaliser",
+      ],
+    },
+    internal_only: { type: "boolean", enum: [true] },
+  },
+  required: [
+    "affected_field",
+    "original_value",
+    "corrected_value",
+    "reason",
+    "source",
+    "internal_only",
+  ],
+};
+
+const S10_TIMESTAMPED_NOTE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    timecode: { type: ["string", "null"], description: "MM:SS when supported, otherwise null." },
+    start_time: { type: ["string", "null"] },
+    end_time: { type: ["string", "null"] },
+    time_band_label: { type: ["string", "null"] },
+    display_label: { type: "string" },
+    timestamp_precision: {
+      type: "string",
+      enum: ["exact", "approximate", "time_banded", "order_only", "unavailable"],
+    },
+    section: {
+      type: "string",
+      enum: [
+        "brief_requirement",
+        "observed_component",
+        "strength",
+        "fix",
+        "technique",
+        "technical",
+        "limitation",
+        "next_action",
+        "missing_component",
+      ],
+    },
+    title: { type: "string" },
+    detail: { type: "string" },
+    action: { type: ["string", "null"] },
+    evidence_summary: { type: "string" },
+    linked_requirement_ids: { type: "array", items: { type: "string" } },
+    linked_observed_sequence_ids: { type: "array", items: { type: "string" } },
+    linked_component_verification_ids: { type: "array", items: { type: "string" } },
+    linked_matrix_result_ids: { type: "array", items: { type: "string" } },
+    linked_fix_ids: { type: "array", items: { type: "string" } },
+    linked_strength_ids: { type: "array", items: { type: "string" } },
+    linked_technique_observation_ids: { type: "array", items: { type: "string" } },
+    component_type: {
+      type: "string",
+      enum: [
+        "ident",
+        "acting_scene",
+        "song",
+        "dance",
+        "movement",
+        "transition",
+        "technical",
+        "unknown",
+        "not_applicable",
+      ],
+    },
+    component_status: {
+      type: "string",
+      enum: [
+        "present",
+        "partially_present",
+        "absent",
+        "not_assessable",
+        "uncertain",
+        "not_applicable",
+      ],
+    },
+    applies_to_observed_portion_only: { type: "boolean" },
+    is_exact_timestamp_supported: { type: "boolean" },
+    is_legacy_timestamp_projection: { type: "boolean" },
+    note_source_authority: {
+      type: "string",
+      enum: [
+        "s10_ai_authored",
+        "s10_normalised",
+        "step1_timestamped_evidence",
+        "evidence_anchor",
+        "provider_output",
+        "legacy_diagnostic_reauthored",
+        "limitation",
+      ],
+    },
+    legacy_source_used: { type: "boolean" },
+    legacy_source_path: { type: ["string", "null"] },
+    is_missing_component_note: { type: "boolean" },
+    is_projection_safe: { type: "boolean" },
+    projection_block_reason: { type: ["string", "null"] },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    is_generic_fallback: { type: "boolean", enum: [false] },
+  },
+  required: [
+    "id",
+    "timecode",
+    "start_time",
+    "end_time",
+    "time_band_label",
+    "display_label",
+    "timestamp_precision",
+    "section",
+    "title",
+    "detail",
+    "action",
+    "evidence_summary",
+    "linked_requirement_ids",
+    "linked_observed_sequence_ids",
+    "linked_component_verification_ids",
+    "linked_matrix_result_ids",
+    "linked_fix_ids",
+    "linked_strength_ids",
+    "linked_technique_observation_ids",
+    "component_type",
+    "component_status",
+    "applies_to_observed_portion_only",
+    "is_exact_timestamp_supported",
+    "is_legacy_timestamp_projection",
+    "note_source_authority",
+    "legacy_source_used",
+    "legacy_source_path",
+    "is_missing_component_note",
+    "is_projection_safe",
+    "projection_block_reason",
+    "confidence",
+    "is_generic_fallback",
+  ],
+};
+
+const S10_COMPONENT_TIME_RANGE_SCHEMA = {
+  type: "object",
+  properties: {
+    component_type: {
+      type: "string",
+      enum: [
+        "ident",
+        "acting_scene",
+        "song",
+        "dance",
+        "movement",
+        "transition",
+        "technical",
+        "unknown",
+        "not_applicable",
+      ],
+    },
+    label: { type: "string" },
+    start_time: { type: ["string", "null"] },
+    end_time: { type: ["string", "null"] },
+    timestamp_precision: {
+      type: "string",
+      enum: ["exact", "approximate", "time_banded", "order_only", "unavailable"],
+    },
+    observed_status: {
+      type: "string",
+      enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+    },
+    completion_status: {
+      type: "string",
+      enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+    },
+    linked_requirement_ids: { type: "array", items: { type: "string" } },
+    evidence_summary: { type: "string" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  },
+  required: [
+    "component_type",
+    "label",
+    "start_time",
+    "end_time",
+    "timestamp_precision",
+    "observed_status",
+    "completion_status",
+    "linked_requirement_ids",
+    "evidence_summary",
+    "confidence",
+  ],
+};
+
+const S10_TIMESTAMP_PROJECTION_NOTE_SCHEMA = {
+  type: "object",
+  properties: {
+    timestamp: { type: "string" },
+    note: { type: "string" },
+    source_note_id: { type: "string" },
+    timestamp_precision: {
+      type: "string",
+      enum: ["exact", "approximate", "time_banded", "order_only", "unavailable"],
+    },
+  },
+  required: ["timestamp", "note", "source_note_id", "timestamp_precision"],
 };
 
 function addUniqueId(ids: string[], id: string) {
@@ -1071,6 +1294,54 @@ const REPORT_TOOL = {
             "contradiction_warnings",
           ],
         },
+        s10_timestamped_commentary: {
+          type: "object",
+          description:
+            "S10 authoritative timestamped/time-banded commentary. Produce after s10_technique_commentary. Verified component evidence before timestamped commentary is mandatory. Timestamped commentary cannot prove component presence. Exact timestamps require trusted timing support; use approximate/time-banded/order-only commentary when exact timestamps are unavailable. raw_report.timestamped_notes are diagnostic only.",
+          properties: {
+            summary: { type: "string" },
+            notes: { type: "array", items: S10_TIMESTAMPED_NOTE_SCHEMA, maxItems: 36 },
+            component_ranges: {
+              type: "array",
+              items: S10_COMPONENT_TIME_RANGE_SCHEMA,
+              maxItems: 24,
+            },
+            missing_or_unobserved_components: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 16,
+            },
+            timestamp_limitations: { type: "array", items: { type: "string" }, maxItems: 16 },
+            projection_notes: {
+              type: "array",
+              items: S10_TIMESTAMP_PROJECTION_NOTE_SCHEMA,
+              maxItems: 36,
+            },
+            legacy_projection_blocked_count: { type: "integer", minimum: 0 },
+            exact_timestamp_supported_count: { type: "integer", minimum: 0 },
+            time_banded_note_count: { type: "integer", minimum: 0 },
+            order_only_note_count: { type: "integer", minimum: 0 },
+            missing_component_note_count: { type: "integer", minimum: 0 },
+            contradiction_warnings: {
+              type: "array",
+              items: S10_TIMESTAMPED_WARNING_SCHEMA,
+            },
+          },
+          required: [
+            "summary",
+            "notes",
+            "component_ranges",
+            "missing_or_unobserved_components",
+            "timestamp_limitations",
+            "projection_notes",
+            "legacy_projection_blocked_count",
+            "exact_timestamp_supported_count",
+            "time_banded_note_count",
+            "order_only_note_count",
+            "missing_component_note_count",
+            "contradiction_warnings",
+          ],
+        },
         category_notes: {
           type: "object",
           properties: {
@@ -1282,6 +1553,7 @@ const REPORT_TOOL = {
         "s10_next_action_plan",
         "s10_professional_critique",
         "s10_technique_commentary",
+        "s10_timestamped_commentary",
         "category_notes",
         "strengths",
         "improvements",
@@ -1312,6 +1584,7 @@ Single-pass S10 recovery rules:
 - Active embedded fix hierarchy / next-action prompt version is "${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}".
 - Active embedded strengths / preserve / professional critique prompt version is "${S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION}".
 - Active embedded technique-library commentary prompt version is "${S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION}".
+- Active embedded timestamped/time-banded commentary prompt version is "${S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
@@ -1319,6 +1592,7 @@ Single-pass S10 recovery rules:
 - Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. matrix-before-fixes and readiness-before-action-plan are mandatory. Missing mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks.
 - Produce s10_professional_critique after s10_fix_hierarchy and s10_next_action_plan. Component verification before strengths is mandatory: absent or unverified components get limitations, not praise; partial/cut-off song strengths must say observed portion only.
 - Produce s10_technique_commentary after s10_professional_critique. verified component evidence before technique commentary is mandatory. Attempt technique commentary where verified evidence exists. If the brief requires an acting scene and S10.3 does not verify it, acting is not_assessable or limited, not not_applicable. If a song is present but incomplete, cut off or uncertain, vocal/singing is partially_assessable and all notes apply only to the observed portion. public_technique_authority_status and public_technique_authority_blocked must not suppress ordinary authenticated technique commentary.
+- Produce s10_timestamped_commentary after s10_technique_commentary. verified component evidence before timestamped commentary is mandatory. Timestamped commentary cannot prove component presence: it may annotate verified, partial, uncertain or missing components, but it must not create observed material. Exact timestamps require trusted timing support from ObservedTapeSequence, media-observed timestamped_evidence, EvidenceAnchors or provider output tied to verified component evidence. If exact timing is unavailable, use time-banded, order-only or not-observed notes; never invent fake timestamps. raw_report.timestamped_notes and prior prose are diagnostic only.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a technically continuous clip is not a complete package if mandatory material is absent, partial or cut off.
 - For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
 - Populate detected_components only from media evidence, never from brief requests alone.
@@ -1326,6 +1600,7 @@ Single-pass S10 recovery rules:
 - Treat s10_fix_hierarchy and s10_next_action_plan as authoritative. Existing fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are compatibility projections only. raw_report and legacy action fields are diagnostic only unless re-authored through S10 evidence with source tracking.
 - Treat s10_professional_critique as authoritative for strengths, preserve and broad professional notes. Existing strengths, category_notes, category_rationale, presentation_notes and coaching_drills are lossy compatibility projections. Legacy technique traces/prose are diagnostic only.
 - Treat s10_technique_commentary as authoritative for technique-library commentary. Existing category_notes, category_rationale, presentation_notes, coaching_drills and technique-related improvements are compatibility projections only. Legacy TechniqueObservationTrace, raw_report category prose, detected_components and coaching_drills are diagnostic only unless re-authored through S10 observed evidence. S10.8 may link timestamp refs where available, but S10.9 owns first-class timestamped/time-banded commentary.
+- Treat s10_timestamped_commentary as authoritative for timestamped/time-banded commentary. Existing timestamped_notes is a compatibility projection only. Do not directly repopulate timestamped_notes from raw_report.timestamped_notes or legacy prose. Missing components may receive "Not observed" notes without fake timecodes; partial song notes must say observed portion only.
 - Fill the existing submit_audition_report fields with AI-authored module answers: overall readiness, score/chip, verdict, prioritised fixes, why this score/category_rationale, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk, role fit, presentation notes and next action.
 - Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
 - Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
@@ -3477,6 +3752,37 @@ export async function runProcessTake(
       });
     }
 
+    // ---- S10.9 timestamped / time-banded commentary ----
+    // Preserve the Step 1 legacy timestamped_notes lock, then let S10.9
+    // validate the richer structured module and project only safe notes back
+    // into the legacy field. raw_report timestamp prose never becomes source
+    // of truth here.
+    const timestampedCommentarySemantics = applyS10TimestampedCommentary({
+      report: report as Record<string, unknown>,
+      matrix: report.brief_achievement_matrix,
+      readiness: readinessSemantics.judgement,
+      fixHierarchy: fixActionSemantics.hierarchy,
+      nextActionPlan: fixActionSemantics.nextActionPlan,
+      professionalCritique: professionalCritiqueSemantics.critique,
+      techniqueCommentary: techniqueCommentarySemantics.commentary,
+      observedTapeSequence: twoStepEvidence?.observed_tape_sequence ?? [],
+      componentVerifications: twoStepEvidence?.component_verifications ?? [],
+      timestampedEvidence: twoStepEvidence?.timestamped_evidence ?? [],
+    });
+    if (
+      timestampedCommentarySemantics.warnings.length > 0 ||
+      timestampedCommentarySemantics.projectedCount > 0
+    ) {
+      console.log("[take-pipeline] s10_timestamped_commentary_applied", {
+        take_id: takeId,
+        note_count: timestampedCommentarySemantics.commentary.notes.length,
+        projected_count: timestampedCommentarySemantics.projectedCount,
+        missing_component_note_count:
+          timestampedCommentarySemantics.commentary.missing_component_note_count,
+        warning_count: timestampedCommentarySemantics.warnings.length,
+      });
+    }
+
     // ---- Presentation notes — safety filter ----
     const presentationNotes: string[] = Array.isArray(report.presentation_notes)
       ? report.presentation_notes
@@ -4135,7 +4441,14 @@ export async function runProcessTake(
       const s10TechniqueScrub = scrubS10TechniqueCommentaryProjection(
         report as unknown as Record<string, unknown>,
       );
-      if (s10CritiqueScrub.removed > 0 || s10TechniqueScrub.removed > 0) {
+      const s10TimestampedScrub = scrubS10TimestampedCommentaryProjection(
+        report as unknown as Record<string, unknown>,
+      );
+      if (
+        s10CritiqueScrub.removed > 0 ||
+        s10TechniqueScrub.removed > 0 ||
+        s10TimestampedScrub.removed > 0
+      ) {
         safetyRewriteApplied = true;
       }
       console.log("[take-pipeline] output_enforcement_applied", {
@@ -4143,6 +4456,7 @@ export async function runProcessTake(
         framing_fixed: framingFixed,
         s10_professional_critique_projection_removed: s10CritiqueScrub.removed,
         s10_technique_commentary_projection_removed: s10TechniqueScrub.removed,
+        s10_timestamped_commentary_projection_removed: s10TimestampedScrub.removed,
         ...enforcement.counters,
       });
     } catch (enfErr) {
@@ -4175,6 +4489,7 @@ export async function runProcessTake(
       s10_next_action_plan: report.s10_next_action_plan ?? null,
       s10_professional_critique: report.s10_professional_critique ?? null,
       s10_technique_commentary: report.s10_technique_commentary ?? null,
+      s10_timestamped_commentary: report.s10_timestamped_commentary ?? null,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,

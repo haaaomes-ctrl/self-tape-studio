@@ -807,6 +807,133 @@ export type S10TechniqueCommentary = {
   contradiction_warnings: S10TechniqueWarning[];
 };
 
+export type S10TimestampPrecision =
+  | "exact"
+  | "approximate"
+  | "time_banded"
+  | "order_only"
+  | "unavailable";
+
+export type S10TimestampedSection =
+  | "brief_requirement"
+  | "observed_component"
+  | "strength"
+  | "fix"
+  | "technique"
+  | "technical"
+  | "limitation"
+  | "next_action"
+  | "missing_component";
+
+export type S10TimestampedComponentType =
+  | "ident"
+  | "acting_scene"
+  | "song"
+  | "dance"
+  | "movement"
+  | "transition"
+  | "technical"
+  | "unknown"
+  | "not_applicable";
+
+export type S10TimestampedComponentStatus = S10ProfessionalCritiqueComponentStatus;
+
+export type S10TimestampSourceAuthority =
+  | "s10_ai_authored"
+  | "s10_normalised"
+  | "step1_timestamped_evidence"
+  | "evidence_anchor"
+  | "provider_output"
+  | "legacy_diagnostic_reauthored"
+  | "limitation";
+
+export type S10TimestampedWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_timestamped_notes"
+    | "prior_prose"
+    | "step1_timestamped_evidence"
+    | "evidence_anchor"
+    | "provider_output"
+    | "s10_normaliser";
+  internal_only: true;
+};
+
+export type S10TimestampedNote = {
+  id: string;
+  timecode: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  time_band_label: string | null;
+  display_label: string;
+  timestamp_precision: S10TimestampPrecision;
+  section: S10TimestampedSection;
+  title: string;
+  detail: string;
+  action: string | null;
+  evidence_summary: string;
+  linked_requirement_ids: string[];
+  linked_observed_sequence_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_fix_ids: string[];
+  linked_strength_ids: string[];
+  linked_technique_observation_ids: string[];
+  component_type: S10TimestampedComponentType;
+  component_status: S10TimestampedComponentStatus;
+  applies_to_observed_portion_only: boolean;
+  is_exact_timestamp_supported: boolean;
+  is_legacy_timestamp_projection: boolean;
+  note_source_authority: S10TimestampSourceAuthority;
+  legacy_source_used: boolean;
+  legacy_source_path?: string | null;
+  is_missing_component_note: boolean;
+  is_projection_safe: boolean;
+  projection_block_reason?: string | null;
+  confidence: "high" | "medium" | "low";
+  is_generic_fallback: false;
+};
+
+export type S10ComponentTimeRange = {
+  component_type: S10TimestampedComponentType;
+  label: string;
+  start_time: string | null;
+  end_time: string | null;
+  timestamp_precision: S10TimestampPrecision;
+  observed_status: "present" | "partially_present" | "absent" | "not_assessable" | "uncertain";
+  completion_status: "complete" | "incomplete" | "cut_off" | "not_applicable" | "uncertain";
+  linked_requirement_ids: string[];
+  evidence_summary: string;
+  confidence: "high" | "medium" | "low";
+};
+
+export type S10TimestampProjectionNote = {
+  timestamp: string;
+  note: string;
+  source_note_id: string;
+  timestamp_precision: S10TimestampPrecision;
+};
+
+export type S10TimestampedCommentary = {
+  summary: string;
+  notes: S10TimestampedNote[];
+  component_ranges: S10ComponentTimeRange[];
+  missing_or_unobserved_components: string[];
+  timestamp_limitations: string[];
+  projection_notes: S10TimestampProjectionNote[];
+  legacy_projection_blocked_count: number;
+  exact_timestamp_supported_count: number;
+  time_banded_note_count: number;
+  order_only_note_count: number;
+  missing_component_note_count: number;
+  contradiction_warnings: S10TimestampedWarning[];
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;

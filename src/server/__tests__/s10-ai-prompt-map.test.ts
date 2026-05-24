@@ -22,6 +22,7 @@ import {
   S10_REPORT_MODULE_COVERAGE,
   S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION,
   S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION,
+  S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION,
 } from "@/server/s10-report-prompt-map.server";
 
 function read(p: string): string {
@@ -70,6 +71,11 @@ describe("S10.1 AI prompt map", () => {
           status: "active",
         }),
         expect.objectContaining({
+          promptVersion: S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION,
+          runtimeStage: "analysis_step_2_post_technique_timestamped_commentary",
+          status: "active",
+        }),
+        expect.objectContaining({
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           sourceFile: "src/server/report-polish.server.ts",
           runtimeStage: "analysis_step_2_judgement_or_report_generation",
@@ -99,6 +105,10 @@ describe("S10.1 AI prompt map", () => {
         }),
         expect.objectContaining({
           promptVersion: "legacy_technique_commentary_diagnostic_only",
+          status: "diagnostic_only",
+        }),
+        expect.objectContaining({
+          promptVersion: "legacy_timestamped_notes_diagnostic_only",
           status: "diagnostic_only",
         }),
         expect.objectContaining({
@@ -209,6 +219,7 @@ describe("S10.1 AI prompt map", () => {
       S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION,
     );
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION);
+    expect(POLISH_SYSTEM_PROMPT).toContain(S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain("verify required brief components");
     expect(POLISH_SYSTEM_PROMPT).toContain("brief_achievement_matrix");
     expect(POLISH_SYSTEM_PROMPT).toContain("readiness_score_judgement");
@@ -220,6 +231,10 @@ describe("S10.1 AI prompt map", () => {
       "verified component evidence before technique commentary",
     );
     expect(POLISH_SYSTEM_PROMPT).toContain("s10_technique_commentary");
+    expect(POLISH_SYSTEM_PROMPT).toContain(
+      "verified component evidence before timestamped commentary",
+    );
+    expect(POLISH_SYSTEM_PROMPT).toContain("s10_timestamped_commentary");
     expect(POLISH_SYSTEM_PROMPT).toContain("public_technique_authority_status");
     expect(POLISH_SYSTEM_PROMPT).toContain("performance_quality_score");
     expect(POLISH_SYSTEM_PROMPT).toContain("observed_tape_sequence");
@@ -236,12 +251,15 @@ describe("S10.1 AI prompt map", () => {
     expect(processSrc).toContain("S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION");
     expect(processSrc).toContain("S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION");
     expect(processSrc).toContain("S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION");
+    expect(processSrc).toContain("S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION");
     expect(processSrc).toContain("Produce brief_achievement_matrix before any score");
     expect(processSrc).toContain("readiness_score_judgement");
     expect(processSrc).toContain("matrix-before-fixes");
     expect(processSrc).toContain("verification before strengths");
     expect(processSrc).toContain("verified component evidence before technique commentary");
     expect(processSrc).toContain("s10_technique_commentary");
+    expect(processSrc).toContain("verified component evidence before timestamped commentary");
+    expect(processSrc).toContain("s10_timestamped_commentary");
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]evidence_pass_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]single_pass_analysis_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]two_step_report_polish_current['"]/);

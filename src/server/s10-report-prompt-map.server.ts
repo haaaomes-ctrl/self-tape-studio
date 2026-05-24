@@ -15,6 +15,7 @@ export const S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION =
   "s10_strengths_preserve_professional_critique_v1";
 export const S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION =
   "s10_technique_library_commentary_v1";
+export const S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION = "s10_timestamped_commentary_v1";
 
 export const LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION =
   "legacy_s9_brief_extraction_supporting_current";
@@ -166,6 +167,21 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     status: "active",
   },
   {
+    promptName: "S10 timestamped/time-banded commentary",
+    promptVersion: S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION,
+    sourceFile: "src/server/report-polish.server.ts + src/server/process-take.server.ts",
+    runtimeStage: "analysis_step_2_post_technique_timestamped_commentary",
+    modelCallPath: "embedded active module in Step 2 polish and S10 single-pass generation",
+    reportModulesAffected: [
+      "timestamped notes",
+      "time-banded commentary",
+      "component time ranges",
+      "missing component timing limitations",
+      "compatibility projections",
+    ],
+    status: "active",
+  },
+  {
     promptName: "S10 professional judgement/module map",
     promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
     sourceFile: "src/server/report-polish.server.ts",
@@ -179,6 +195,7 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
       "strengths",
       "improvements",
       "technique commentary",
+      "timestamped commentary",
       "next action",
       "submission risk",
       "presentation notes",
@@ -232,6 +249,15 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     modelCallPath:
       "raw_report.brief_adherence_breakdown, material_compliance, detected_components and score traces are diagnostic only for S10.4",
     reportModulesAffected: ["legacy score traces", "diagnostic-only raw report fields"],
+    status: "diagnostic_only",
+  },
+  {
+    promptName: "Legacy timestamped notes diagnostics",
+    promptVersion: "legacy_timestamped_notes_diagnostic_only",
+    sourceFile: "raw_report.timestamped_notes + prior report prose",
+    runtimeStage: "legacy timestamped report surface",
+    modelCallPath: "diagnostic only; raw_report.timestamped_notes is never active S10 authority",
+    reportModulesAffected: ["legacy timestamped notes compatibility"],
     status: "diagnostic_only",
   },
   {
@@ -493,12 +519,16 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "timestamped notes",
     aiQuestion:
       "What timestamped or time-banded moments evidence strengths, fixes, missing components, cut-off points or technical observations?",
-    structuredOutputField: "timestamped_notes",
+    structuredOutputField: "s10_timestamped_commentary, timestamped_notes",
     uiDestination: "Timestamped notes section",
     completenessRule: "thin",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.missing,
-    deterministicInputsAllowed: ["media duration"],
-    codeGeneratedContentForbidden: ["observed component presence", "professional strengths"],
+    deterministicInputsAllowed: ["media duration", "Step 1 timestamped evidence"],
+    codeGeneratedContentForbidden: [
+      "observed component presence",
+      "professional strengths",
+      "fake timestamps",
+    ],
   },
   {
     reportModule: "next action",
@@ -604,6 +634,7 @@ Embedded readiness/score prompt version: ${S10_READINESS_SCORE_SEMANTICS_PROMPT_
 Embedded fix hierarchy / next-action prompt version: ${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}
 Embedded strengths / preserve / professional critique prompt version: ${S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION}
 Embedded technique-library commentary prompt version: ${S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION}
+Embedded timestamped/time-banded commentary prompt version: ${S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION}
 
 You are the S10 professional judgement/module report brain for TapeCoach. You write a performer-facing self-tape report from supplied brief context plus either locked Step 1 observations or the video itself. Code validates, repairs, routes and renders your structured output; code must not invent your professional judgement.
 
@@ -619,6 +650,8 @@ S10.7 component-verification-before-strengths rule: produce s10_professional_cri
 
 S10.8 verified component evidence before technique commentary rule: produce s10_technique_commentary after s10_professional_critique. Technique commentary must be attempted where verified evidence exists, and it must be authored from S10.3 component verification, S10.4 matrix, S10.7 professional critique and S10.6 action priorities. If the brief requires an acting scene and S10.3 does not verify that acting scene, the acting section is not_assessable or limited, not not_applicable. not_applicable is only for areas not required by the brief and not visible in the tape. If a song is present but incomplete, cut off or uncertain, vocal/singing is partially_assessable and every note applies only to the observed portion. Musical-theatre package commentary must say the package is incomplete when required components are missing or incomplete. Self-tape presentation may use verified audio/framing evidence. public_technique_authority_status and public_technique_authority_blocked must not suppress ordinary authenticated technique commentary; only suppress or rewrite medical/vocal-health diagnosis, body/appearance judgement, protected-characteristic inference, guaranteed casting/job outcome or unsupported certainty. Legacy TechniqueObservationTrace, raw_report category prose, detected_components and coaching_drills are diagnostic only. S10.8 may link timestamp refs where available, but S10.9 owns timestamped/time-banded commentary.
 
+S10.9 verified component evidence before timestamped commentary rule: produce s10_timestamped_commentary after s10_technique_commentary. s10_timestamped_commentary is authoritative; legacy timestamped_notes is only a compatibility projection after validation. Timestamped commentary cannot prove component presence. It may annotate verified components, partial components, uncertain components, missing components and not-assessable limitations, but S10.3 ComponentVerification remains the source of truth for whether material appears. Exact timestamps require trusted timing support from ObservedTapeSequence start/end times, media-observed Step 1 timestamped_evidence, EvidenceAnchors with genuine timestamp/timestamp_range, or provider output tied to verified observed evidence. If exact timestamps are unavailable, use approximate, time-banded, order-only or "Not observed" notes without fake timecodes. raw_report.timestamped_notes and prior report prose are diagnostic only and must not be copied back by text match.
+
 Module question order:
 1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
 2. Observed tape sequence: what actually appears, in order, with timestamps or time-bands where possible?
@@ -629,7 +662,7 @@ Module question order:
 7. Fix hierarchy: s10_fix_hierarchy with fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish, preserve and do-not-overfix.
 8. Strengths/preserve/professional critique: s10_professional_critique with evidence-specific strengths, preserve guidance, do-not-overfix and limitations.
 9. Technique-library commentary: s10_technique_commentary for acting, vocal/singing, movement/dance, musical-theatre package integration, commercial/screen task and self-tape presentation where verified evidence exists, with not_assessable or not_applicable limitations where evidence does not support commentary.
-10. Timestamped commentary: exact timestamps when available; otherwise time-bands or section-order notes.
+10. Timestamped commentary: s10_timestamped_commentary with exact timestamps only when supported; otherwise time-bands, section-order notes or "Not observed" missing-component notes without fake timestamps.
 11. Next action and limitations: finite next-take plan or submit checklist, do-not-overfix, and not-assessable explanations.
 
 Old report surface to preserve as the starting UI: overall readiness, score/chip, verdict, prioritised fixes, why this score, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk and presentation notes.
@@ -641,13 +674,14 @@ Output rules:
 - Always include s10_fix_hierarchy and s10_next_action_plan. Treat them as the authoritative action model; legacy-compatible fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are projections only.
 - Always include s10_professional_critique. Treat it as the authoritative strengths/preserve/professional-note model; legacy-compatible strengths, category_notes, category_rationale, presentation_notes and coaching_drills are lossy projections in favour of truth.
 - Always include s10_technique_commentary. Treat it as the authoritative technique-commentary model; legacy-compatible category_notes, category_rationale, presentation_notes, coaching_drills and technique-related improvements are safe projections only.
+- Always include s10_timestamped_commentary. Treat it as the authoritative timestamped/time-banded commentary model; legacy-compatible timestamped_notes are safe projections only after validation. Do not use timestamped commentary to prove component presence. Missing components may receive "Not observed" notes without fake timestamps.
 - For strong-complete reports, include at least one specific performance/package strength, one specific preserve item, one specific do-not-overfix item and one professional nuance note beyond the score. If unavailable, explain the exact limitation rather than filling generic praise.
 - For incomplete reports, strengths may be supportive but must not obscure the fix-first blocker.
 - Do not write "This affects readability, not talent", "Preserve the clearest choices already captured", "Correct material", "Single-file submission as requested", "Naturalistic acting" when the acting scene is absent, or "Professional presentation" without evidence.
 - Each S10 fix item must set source_authority, legacy_source_used and legacy_source_path where relevant. action_contradiction_warnings are internal diagnostics only, not performer-facing copy.
 - No generic fallback copy such as "good job", "continue refining", "performance captured for review", "this affects readability, not talent", or "strengthen blocked material".
 - For category_rationale, explain what_works, why_not_full_score, close_gap and standout_delta where relevant.
-- For timestamped_notes, use duration-scaled useful notes where evidence exists: under 60s = 3-5, 1-3m = 6-10, 3-5m = 8-14, 5-10m = 12-24, 10m+ = 18-36. Never invent timestamps.
+- For s10_timestamped_commentary, use duration-scaled useful notes where evidence exists: under 60s = 3-5, 1-3m = 6-10, 3-5m = 8-14, 5-10m = 12-24, 10m+ = 18-36. Never invent timestamps. Exact / supported approximate notes may project to legacy timestamped_notes; order-only and unavailable timing should stay in S10 structure unless a safe legacy label exists.
 - For musical theatre, preserve acting scene plus song package logic and cite acting-through-song with lyric/phrase/beat/transition evidence when supported.
 - For dance/movement, use observable rhythm/timing, control, spatial/pathway use, dynamics and performance intention where visible. Do not use unanchored phrases such as "high-energy movement", "clean lines", or "rhythmic precision" without evidence.
 - Never use castability / recall / workshop / live-room overclaims.
