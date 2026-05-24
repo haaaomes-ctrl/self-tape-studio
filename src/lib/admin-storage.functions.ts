@@ -5,9 +5,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { setResponseHeader } from "@tanstack/react-start/server";
+import { resolveQAArtifactStorageBucket } from "@/lib/qa-artifact-storage-bucket";
 
 const getAdminEmail = () => (process.env.TAPECOACH_ADMIN_EMAIL ?? "").trim().toLowerCase();
-const BUCKET_NAME = "qa-artifacts";
+const getBucketName = () => resolveQAArtifactStorageBucket().bucket;
 const SIGNED_URL_TTL_SECONDS = 3600;
 const ZIP_TMP_PREFIX = "admin-temp-zips";
 const LEGACY_ZIP_TMP_PREFIX = "admin-zips";
@@ -27,7 +28,7 @@ export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
   for (const prefix of prefixes) {
     let offset = 0;
     while (true) {
-      const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(prefix, {
+      const { data, error } = await supabaseAdmin.storage.from(getBucketName()).list(prefix, {
         limit: PAGE_SIZE,
         offset,
         sortBy: { column: 'name', order: 'asc' },
@@ -50,7 +51,7 @@ export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
     }
   }
   for (const path of candidates) {
-    const { error: rmErr } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
+    const { error: rmErr } = await supabaseAdmin.storage.from(getBucketName()).remove([path]);
     if (rmErr) failed.push({ path, error: rmErr.message });
     else deleted.push(path);
   }
@@ -94,7 +95,7 @@ export async function listAllArtifactsImpl() {
   async function walk(prefix: string): Promise<void> {
     let offset = 0;
     while (true) {
-      const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).list(prefix, {
+      const { data, error } = await supabaseAdmin.storage.from(getBucketName()).list(prefix, {
         limit: PAGE_SIZE,
         offset,
         sortBy: { column: "name", order: "asc" },
@@ -136,7 +137,7 @@ export async function listAllArtifactsImpl() {
 export async function checkExactArtifactKeysImpl(paths: string[]) {
   const results: Array<{ path: string; exists: boolean; error: string | null }> = [];
   for (const objectPath of paths) {
-    const { data, error } = await supabaseAdmin.storage.from(BUCKET_NAME).createSignedUrl(objectPath, 60);
+    const { data, error } = await supabaseAdmin.storage.from(getBucketName()).createSignedUrl(objectPath, 60);
     if (error) {
       const msg = error.message ?? 'unknown';
       const notFound = /not\s*found|does not exist/i.test(msg);
@@ -153,7 +154,7 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
   const zip = new JSZip();
   const used = new Set<string>();
   for (const path of paths) {
-    const { data: blob, error } = await supabaseAdmin.storage.from(BUCKET_NAME).download(path);
+    const { data: blob, error } = await supabaseAdmin.storage.from(getBucketName()).download(path);
     if (error || !blob) throw new Response(`Failed to download for zip: ${error?.message ?? path}`, { status: 500 });
     let name = buildQAArtifactDownloadFilename(path);
     if (used.has(name)) {
@@ -171,7 +172,7 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
   const expiresAt = new Date(Date.now() + ZIP_TMP_TTL_MS).toISOString();
   const objectPath = `${ZIP_TMP_PREFIX}/${Date.now()}-${Math.random().toString(36).slice(2)}.zip`;
 
-  const { error: uploadError } = await supabaseAdmin.storage.from(BUCKET_NAME).upload(objectPath, zipBlob, {
+  const { error: uploadError } = await supabaseAdmin.storage.from(getBucketName()).upload(objectPath, zipBlob, {
     contentType: "application/zip",
     upsert: false,
     metadata: { temp_zip: "true", expires_at: expiresAt },
@@ -179,7 +180,7 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
   if (uploadError) throw new Response(`Failed to stage zip: ${uploadError.message}`, { status: 500 });
 
   const { data: signed, error: signError } = await supabaseAdmin.storage
-    .from(BUCKET_NAME)
+    .from(getBucketName())
     .createSignedUrl(objectPath, SIGNED_URL_TTL_SECONDS, { download: filename });
   if (signError || !signed?.signedUrl) throw new Response(`Failed to sign zip: ${signError?.message ?? "unknown"}`, { status: 500 });
 
@@ -193,7 +194,7 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
 export async function deleteSelectedArtifactsImpl(paths: string[]) {
   const results: Array<{ path: string; ok: boolean; error: string | null }> = [];
   for (const path of paths) {
-    const { error } = await supabaseAdmin.storage.from(BUCKET_NAME).remove([path]);
+    const { error } = await supabaseAdmin.storage.from(getBucketName()).remove([path]);
     results.push({ path, ok: !error, error: error?.message ?? null });
   }
   return { results };
@@ -242,7 +243,7 @@ export const signArtifactDownload = createServerFn({ method: "POST" })
     } catch {}
 
     const { data: signed, error } = await supabaseAdmin.storage
-      .from(BUCKET_NAME)
+      .from(getBucketName())
       .createSignedUrl(data.path, SIGNED_URL_TTL_SECONDS, { download: buildQAArtifactDownloadFilename(data.path) });
 
     if (error || !signed?.signedUrl) {

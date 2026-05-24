@@ -3,18 +3,27 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const upload = vi.fn();
+const { upload, download, storageFrom } = vi.hoisted(() => {
+  const upload = vi.fn();
+  const download = vi.fn();
+  const storageFrom = vi.fn(() => ({ upload, download }));
+  return { upload, download, storageFrom };
+});
 vi.mock('@/integrations/supabase/client.server', () => ({
-  supabaseAdmin: { storage: { from: vi.fn(() => ({ upload })) } },
+  supabaseAdmin: { storage: { from: storageFrom } },
 }));
 
-import { writeQAArtifact } from '@/server/v3/qa-artifact-sink.server';
+import { readQAArtifactText, writeQAArtifact } from '@/server/v3/qa-artifact-sink.server';
 
 describe('v3 s8 qa artifact sink', () => {
   beforeEach(() => {
+    storageFrom.mockClear();
     upload.mockReset();
+    download.mockReset();
     upload.mockResolvedValue({ error: null });
+    download.mockResolvedValue({ data: new Blob(['{"ok":true}'], { type: 'application/json' }), error: null });
     process.env.QA_ARTIFACT_LOG_FALLBACK = 'false';
+    delete process.env.QA_ARTIFACT_STORAGE_BUCKET;
   });
 
   it('file sink writes as before', async () => {
@@ -31,8 +40,52 @@ describe('v3 s8 qa artifact sink', () => {
     process.env.QA_ARTIFACT_SINK = 'storage';
     process.env.QA_ARTIFACT_STORAGE_BUCKET = 'qa-artifacts';
     const out = await writeQAArtifact({ run_id: 'r2', relative_path: 'manifest.json', payload: { run_id: 'r2' } });
-    expect(upload).toHaveBeenCalledWith('v3/r2/manifest.json', expect.any(String), expect.objectContaining({ contentType: 'application/json', upsert: true }));
+    expect(upload).toHaveBeenCalledWith('r2/manifest.json', expect.any(String), expect.objectContaining({ contentType: 'application/json', upsert: true }));
     expect(out.storage_bucket).toBe('qa-artifacts');
+  });
+
+  it('defaults boolean-like storage bucket env to qa-artifacts with a warning', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_STORAGE_BUCKET = 'true';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const out = await writeQAArtifact({ run_id: 'r2b', relative_path: 'manifest.json', payload: { run_id: 'r2b' } });
+    expect(storageFrom).toHaveBeenCalledWith('qa-artifacts');
+    expect(out.written).toBe(true);
+    expect(out.storage_bucket).toBe('qa-artifacts');
+    expect(out.warning).toContain('qa_artifact_storage_bucket_defaulted:boolean_like_value:true');
+    const logLine = spy.mock.calls.map((call) => String(call[0])).find((line) => line.includes('TAPECOACH_QA_ARTIFACT_JSON:'));
+    expect(logLine).toContain('"storage_bucket":"qa-artifacts"');
+    expect(logLine).not.toContain('"storage_bucket":"true"');
+    expect(logLine).toContain('qa_artifact_storage_bucket_defaulted:boolean_like_value:true');
+    spy.mockRestore();
+  });
+
+  it('uses resolved qa-artifacts bucket for reads when bucket env is boolean-like', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_STORAGE_BUCKET = 'true';
+    const out = await readQAArtifactText({ run_id: 'r2c', relative_path: 'manifest.json' });
+    expect(storageFrom).toHaveBeenCalledWith('qa-artifacts');
+    expect(download).toHaveBeenCalledWith('r2c/manifest.json');
+    expect(out.status).toBe('ok');
+  });
+
+  it('fallback log metadata uses resolved bucket when bucket env is boolean-like', async () => {
+    process.env.QA_ARTIFACT_SINK = 'storage';
+    process.env.QA_ARTIFACT_STORAGE_BUCKET = 'true';
+    process.env.QA_ARTIFACT_LOG_FALLBACK = 'true';
+    upload.mockResolvedValue({ error: { message: 'boom' } });
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const out = await writeQAArtifact({ run_id: 'r2d', relative_path: 'manifest.json', payload: { run_id: 'r2d' } });
+    expect(out.written).toBe(false);
+    expect(out.storage_bucket).toBe('qa-artifacts');
+    expect(out.warning).toContain('qa_artifact_storage_bucket_defaulted:boolean_like_value:true');
+    expect(out.warning).toContain('storage_upload_failed:boom');
+    const logLine = spy.mock.calls.map((call) => String(call[0])).find((line) => line.includes('TAPECOACH_QA_ARTIFACT_JSON:'));
+    expect(logLine).toContain('"storage_bucket":"qa-artifacts"');
+    expect(logLine).not.toContain('"storage_bucket":"true"');
+    expect(logLine).toContain('qa_artifact_storage_bucket_defaulted:boolean_like_value:true');
+    spy.mockRestore();
   });
 
   it('storage failure + log fallback returns written false', async () => {

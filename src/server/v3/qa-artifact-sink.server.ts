@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { supabaseAdmin } from '@/integrations/supabase/client.server';
+import { DEFAULT_QA_ARTIFACT_STORAGE_BUCKET, resolveQAArtifactStorageBucket } from '@/lib/qa-artifact-storage-bucket';
 import { assertSafeSegment, stableStringify } from './qa-artifacts.server';
 
 export type QAArtifactSinkMode = 'file' | 'storage' | 'console_jsonl';
@@ -40,6 +41,11 @@ function emitLog(input: { sink_mode: QAArtifactSinkMode; sink_write_status: 'wri
   console.info(`${LOG_PREFIX}${JSON.stringify(line)}`);
 }
 
+function mergeWarnings(...warnings: Array<string | null | undefined>): string | undefined {
+  const present = warnings.filter((warning): warning is string => Boolean(warning && warning.trim()));
+  return present.length > 0 ? present.join(';') : undefined;
+}
+
 
 export interface QAArtifactReadResult {
   status: 'ok' | 'missing' | 'unreadable' | 'unsupported';
@@ -67,7 +73,7 @@ export async function readQAArtifactText(input: { run_id: string; relative_path:
   } catch {
     return { status: 'unreadable', warning: 'comparison_reconciliation_manifest_unreadable', sink_mode: mode };
   }
-  const storage_bucket = env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
+  const storage_bucket = resolveQAArtifactStorageBucket(env).bucket;
   const storage_path = toCanonicalStoragePath(input.run_id, rel);
   if (mode === 'console_jsonl') {
     return { status: 'unsupported', warning: 'comparison_reconciliation_manifest_read_unsupported', sink_mode: mode, storage_path };
@@ -107,7 +113,11 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
   const allowLogFallback = process.env.QA_ARTIFACT_LOG_FALLBACK === 'true';
   const payloadText = stableStringify(input.payload) + '\n';
   const root = input.root_dir ?? 'qa-artifacts';
-  const storage_bucket = process.env.QA_ARTIFACT_STORAGE_BUCKET ?? 'qa-artifacts';
+  const storageBucketResolution = mode === 'storage'
+    ? resolveQAArtifactStorageBucket(process.env)
+    : { bucket: DEFAULT_QA_ARTIFACT_STORAGE_BUCKET, warning: null as string | null };
+  const storage_bucket = storageBucketResolution.bucket;
+  const storageBucketWarning = storageBucketResolution.warning;
 
   let validatedRelativePath = input.relative_path;
   let storage_path = toCanonicalStoragePath(input.run_id, input.relative_path);
@@ -147,13 +157,13 @@ export async function writeQAArtifact(input: QAArtifactWriteInput): Promise<QAAr
       const timeoutPromise = new Promise<{ error: { message: string } }>((resolve) => setTimeout(() => resolve({ error: { message: 'storage_upload_timeout' } }), STORAGE_UPLOAD_TIMEOUT_MS));
       const { error } = await Promise.race([uploadPromise, timeoutPromise]) as { error: { message: string } | null };
       if (error) throw new Error(`storage_upload_failed:${error.message}`);
-      const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, storage_bucket, storage_path, payload: input.payload });
-      return { written: true, sink_mode: mode, sink_write_status: 'written', storage_bucket, storage_path, log_fallback_emitted: successLog.emitted, warning: successLog.warning };
+      const successLog = trySuccessLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, storage_bucket, storage_path, payload: input.payload, warning: storageBucketWarning ?? undefined });
+      return { written: true, sink_mode: mode, sink_write_status: 'written', storage_bucket, storage_path, log_fallback_emitted: successLog.emitted, warning: mergeWarnings(storageBucketWarning, successLog.warning) };
     }
     emitLog({ sink_mode: mode, sink_write_status: 'written', run_id: input.run_id, fixture_id: input.fixture_id, artefact_id: input.artefact_id, relative_path: validatedRelativePath, payload: input.payload });
     return { written: true, sink_mode: mode, sink_write_status: 'written', log_fallback_emitted: true };
   } catch (error) {
-    const warning = error instanceof Error ? error.message : 'unknown_sink_error';
+    const warning = mergeWarnings(storageBucketWarning, error instanceof Error ? error.message : 'unknown_sink_error') ?? 'unknown_sink_error';
     const fallback = tryFallbackLog(warning);
     const warningOut = fallback.attempted && !fallback.emitted ? `${warning};fallback_log_failed` : warning;
     return { written: false, sink_mode: mode, sink_write_status: 'failed', warning: warningOut, storage_bucket: mode === 'storage' ? storage_bucket : undefined, storage_path: mode === 'storage' ? storage_path : undefined, log_fallback_emitted: fallback.emitted };

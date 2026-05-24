@@ -75,6 +75,30 @@ describe('v3 s9 live storage final manifest metrics emission', () => {
     expect(metricsPayload.next_required_engineering_tasks).not.toContain('S9-06 EvidenceAnchors and PublicClaimTrace');
   });
 
+  it('logs manifest write attempt bucket from QA_ARTIFACT_STORAGE_BUCKET', async () => {
+    process.env.QA_ARTIFACT_STORAGE_BUCKET = 'qa-artifacts-from-storage-env';
+    process.env.QA_ARTIFACTS_BUCKET = 'wrong-legacy-env';
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      await emitQAManifestForAnalysisRun({
+        run_id: 'take-logbucket1',
+        analysis_run_id: 'take-logbucket1',
+        take_id: 'logbucket1',
+        submission_id: 's1',
+        internal_qa_emit: true,
+        emitted_artefact_ids: ['raw_report'],
+      });
+
+      const attempt = spy.mock.calls.find((call) => call[0] === '[internal-qa] manifest_write_attempt')?.[1] as { bucket?: string; bucket_config_warning?: string | null } | undefined;
+      expect(attempt?.bucket).toBe('qa-artifacts-from-storage-env');
+      expect(attempt?.bucket).not.toBe('wrong-legacy-env');
+      expect(attempt?.bucket_config_warning).toBeNull();
+    } finally {
+      delete process.env.QA_ARTIFACTS_BUCKET;
+      spy.mockRestore();
+    }
+  });
+
   it('does not fail manifest finalisation when take_id is unavailable in storage mode', async () => {
     const run = 'comparison-run-no-take';
     const out = await emitQAManifestForAnalysisRun({
