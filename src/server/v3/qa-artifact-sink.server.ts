@@ -32,7 +32,7 @@ function validateRelativePath(relativePath: string): string {
 function resolveMode(env = process.env): QAArtifactSinkMode {
   const mode = env.QA_ARTIFACT_SINK as QAArtifactSinkMode | undefined;
   if (mode === 'storage' || mode === 'console_jsonl' || mode === 'file') return mode;
-  return 'file';
+  return 'storage';
 }
 
 function emitLog(input: { sink_mode: QAArtifactSinkMode; sink_write_status: 'written'|'failed'|'skipped'; run_id: string; fixture_id?: string; artefact_id?: string; relative_path: string; storage_bucket?: string; storage_path?: string; blocker_codes?: string[]; payload: unknown; warning?: string; }) {
