@@ -7,11 +7,11 @@ import { runInternalComparisonOperatorTrigger, type CompletedTakeComparisonSourc
 import { assertSafeSegment } from "@/server/v3/qa-artifacts.server";
 import { extractUploadIdentitySignals } from "@/server/v3/media-identity-upload-signals.server";
 
-const ADMIN_EMAIL = "o.halawi90@gmail.com";
+const ADMIN_EMAIL = (process.env.TAPECOACH_ADMIN_EMAIL ?? "").trim().toLowerCase();
 const normalizeEmail = (email?: string | null) => email?.trim().toLowerCase() ?? "";
 const COMPLETED_ANALYSIS_STATUSES = new Set(["complete", "completed", "succeeded", "processed"]);
 export const assertAdminEmail = (claims: { email?: string | null } | null | undefined) => {
-  if (normalizeEmail(claims?.email) !== ADMIN_EMAIL) throw new Response("Forbidden", { status: 403 });
+  if (!ADMIN_EMAIL || normalizeEmail(claims?.email) !== ADMIN_EMAIL) throw new Response("Forbidden", { status: 403 });
 };
 export function isExplicitCompletedAnalysisStatus(value: unknown): boolean {
   if (typeof value !== "string") return false;
