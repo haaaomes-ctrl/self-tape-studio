@@ -524,6 +524,16 @@ const FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   "is_legacy_timestamp_projection",
   "is_projection_safe",
   "projection_block_reason",
+  "evidence_signals",
+  "compared_take_ids",
+  "current_take_id",
+  "matching_take_ids",
+  "compared_take_summaries",
+  "take_id",
+  "audition_id",
+  "submission_id",
+  "run_id",
+  "analysis_run_id",
 ]);
 
 function findForbiddenKey(node: unknown): string | null {

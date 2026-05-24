@@ -145,6 +145,16 @@ const INTERNAL_KEYS = new Set([
   "is_legacy_timestamp_projection",
   "is_projection_safe",
   "projection_block_reason",
+  "evidence_signals",
+  "compared_take_ids",
+  "current_take_id",
+  "matching_take_ids",
+  "compared_take_summaries",
+  "take_id",
+  "audition_id",
+  "submission_id",
+  "run_id",
+  "analysis_run_id",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
