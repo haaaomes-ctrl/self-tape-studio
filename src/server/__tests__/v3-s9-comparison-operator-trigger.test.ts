@@ -9,7 +9,8 @@ import { assertAdminEmail, isExplicitCompletedAnalysisStatus, runAdminInternalCo
 import { assertSafeSegment } from '@/server/v3/qa-artifacts.server';
 import { z } from 'zod';
 
-process.env.TAPECOACH_ADMIN_EMAIL = process.env.TAPECOACH_ADMIN_EMAIL ?? 'o.halawi90@gmail.com';
+process.env.TAPECOACH_ADMIN_EMAIL = process.env.TAPECOACH_ADMIN_EMAIL ?? 'admin-test@example.com';
+const TEST_ADMIN_EMAIL = process.env.TAPECOACH_ADMIN_EMAIL;
 
 
 const ENV_KEYS = ['INTERNAL_QA_EMIT', 'V3_QA_ARTIFACTS_ENABLED'] as const;
