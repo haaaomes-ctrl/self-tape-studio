@@ -209,7 +209,7 @@ describe('v3 s9 comparison operator trigger', () => {
   });
 
   it('admin guard allows admin caller', async () => {
-    expect(() => assertAdminEmail({ email: 'o.halawi90@gmail.com' })).not.toThrow();
+    expect(() => assertAdminEmail({ email: TEST_ADMIN_EMAIL })).not.toThrow();
   });
 
   it('resolver fails closed for unsafe take id', async () => {
