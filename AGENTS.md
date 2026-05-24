@@ -12,40 +12,10 @@ Do not optimise for a clean internal proof layer at the expense of performer-fac
 
 1. `README.md` is the controlling product contract.
 2. `docs/tapecoach/s10-target-architecture.md` defines the target S10 architecture.
-3. Roadmap and delivery docs define sequencing only.
+3. Roadmap / delivery docs define sequencing only.
 4. This `AGENTS.md` defines implementation operating rules for agents.
 
 If there is a conflict, `README.md` wins.
-
-## Simplest mental model
-
-TapeCoach’s simplest flow is:
-
-1. User input:
-   - optional brief;
-   - selected skill / performer level;
-   - self-tape video.
-
-2. Automated media layer:
-   - Mux prepares the media;
-   - the system records media readiness and assessability;
-   - the system captures duration, audio/video assessability, framing and continuity signals where available.
-
-3. AI intelligence layer:
-   - two-step AI analysis observes the tape and produces professional judgement;
-   - the AI is prompted module by module;
-   - AI repair prompts run if a report module is missing, thin, generic or contradictory;
-   - additional AI reviews may be requested when the first analysis is incomplete, low-confidence or contradictory.
-
-4. Report/UI layer:
-   - code pipes structured AI outputs into the report model and UI;
-   - code formats and renders;
-   - code applies only narrow high-risk red-line filtering;
-   - code does not invent professional critique.
-
-5. Operator loop:
-   - uncertain assumptions are confirmed with the operator;
-   - operator confirmations become tests or fixtures.
 
 ## Core doctrine
 
@@ -56,13 +26,37 @@ The code should:
 - load inputs;
 - ask the AI the right module-level questions;
 - validate structure;
-- detect missing, thin, generic, contradictory or unsupported output;
+- detect missing/thin/generic output;
 - re-prompt for repair;
 - route outputs to the UI;
 - apply narrow high-risk red-line filtering;
 - emit diagnostics.
 
 The code must not replace missing AI judgement with generic filler.
+
+## Simplest mental model
+
+TapeCoach’s simplest flow is:
+
+1. User input:
+   - optional brief;
+   - selected skill / performer level;
+   - self-tape video.
+2. Automated media layer:
+   - Mux prepares the media;
+   - system records media readiness and assessability.
+3. AI intelligence layer:
+   - two-step AI analysis observes the tape and produces professional judgement;
+   - AI is prompted module-by-module;
+   - AI repair prompts run if a module is missing, thin, generic or contradictory.
+4. Report/UI layer:
+   - code pipes AI outputs into the report model and UI;
+   - code formats and renders;
+   - code applies only narrow high-risk red-line filtering;
+   - code does not invent professional critique.
+5. Operator loop:
+   - any uncertain assumption is confirmed with the operator;
+   - operator confirmations become tests or fixtures.
 
 ## Product goal
 
@@ -89,14 +83,14 @@ A safe but unhelpful report fails.
 Authenticated performer-facing reports should use all useful available information, including:
 
 - supplied brief text;
-- role, project and material context;
+- role/project/material context;
 - audition instructions;
 - deadline, upload, file naming and format requirements;
 - AI observations;
 - performance critique;
-- acting, vocal, singing, movement and musical-theatre package notes;
+- acting, vocal, singing, movement and MT package notes;
 - technique-library commentary;
-- scores and comparison values in authenticated, operator or test mode;
+- scores and comparison values in authenticated/operator/test mode;
 - timestamped or time-banded notes where available;
 - professional judgement;
 - operator-confirmed assumptions.
@@ -113,9 +107,9 @@ Suppress or rewrite only:
 - raw prompts;
 - raw model responses;
 - internal QA artefact internals;
-- evidence IDs, truth IDs or raw run IDs in performer prose;
+- evidence IDs / truth IDs / raw run IDs in performer prose;
 - protected-characteristic inference;
-- body or appearance judgement;
+- body/appearance judgement;
 - medical or vocal-health diagnosis;
 - guaranteed casting, callback, booking, job or employment outcomes;
 - unsupported certainty.
@@ -132,10 +126,10 @@ The report should show enough of the supplied brief for the performer to underst
 
 - required material;
 - required components;
-- page, scene or line references;
-- song, dance or movement requirements;
+- page / scene / line references;
+- song / dance / movement requirements;
 - ident/slate requirements;
-- technical framing or orientation;
+- technical framing/orientation;
 - file naming;
 - upload instructions;
 - deadline;
@@ -158,7 +152,7 @@ The AI should be explicitly asked to populate:
 - strengths and preserve;
 - technique-library commentary;
 - timestamped commentary;
-- scores and calibration where enabled;
+- scores / calibration where enabled;
 - comparison where enabled;
 - next action;
 - do-not-overfix;
@@ -210,7 +204,7 @@ The code should provide:
 - rendering;
 - QA artefacts.
 
-The code must not invent professional feedback such as strengths, technique notes, optional polish, comparison judgement or readiness rationale.
+The code must not invent professional feedback such as strengths, technique notes, optional polish or readiness rationale.
 
 ## Report model to UI piping
 
@@ -284,106 +278,11 @@ If the AI cannot produce a module after repair prompting, the report should say:
 
 It should not produce a thin shell.
 
-## Thin-shell anti-regression rule
-
-A report fails if, despite available brief and media evidence, it collapses to generic copy such as:
-
-- “No single public-safe priority fix was available”;
-- “Preserve the clearest choices already captured”;
-- “This affects readability, not talent” as the only strength;
-- generic do-not-over-fix copy without context;
-- a recommendation without concrete reasons;
-- brief achievement without itemised evidence;
-- an empty next-take plan;
-- “report polish unavailable” as a reason to withhold useful guidance.
-
-Thin-shell reports are unacceptable.
-
-## Timestamped commentary
-
-Where available, the AI should attempt timestamped or time-banded commentary.
-
-Timestamped commentary should identify:
-
-- component starts and endings;
-- strong moments to preserve;
-- missing or incomplete material;
-- cut-offs;
-- technical, framing or audio issues;
-- performance moments to refine.
-
-If timestamps are unavailable, the report must still provide useful component-level commentary.
-
-## Technique-library commentary
-
-Technique-library commentary should be attempted by default where evidence exists.
-
-Attempt commentary for:
-
-- acting;
-- vocal / singing;
-- movement / dance;
-- musical-theatre package integration;
-- commercial / screen task;
-- self-tape presentation.
-
-Do not avoid technique commentary merely because named public technique authority was previously over-restricted.
-
-Avoid only high-risk claims: medical diagnosis, body/appearance judgement, protected-characteristic inference, guaranteed casting/job outcome, or unsupported certainty.
-
-## Scores, terminology and professional nuance
-
-Numeric scores and comparison chips may remain visible in authenticated/operator/test mode.
-
-Do not confuse this with production/customer approval.
-
-The report may use scores for testing and calibration, but must not claim production release, customer release, public scoring approval, or public comparison recommendation approval unless separately accepted.
-
-### Score is a compression, not the judgement
-
-A score is not the report. It is a compact signal that must be interpreted through:
-
-- performer level;
-- brief completion;
-- material difficulty;
-- audition type;
-- discipline;
-- professional standard;
-- submission risk;
-- comparison context;
-- confidence / reliability;
-- AI qualitative judgement.
-
-The AI must explain what the score means. Code must not rely on the number alone to create verdicts or report language.
-
-### Professional-level score nuance
-
-For professional performers, the score scale compresses a large amount of nuance. Many professional, submission-worthy tapes may score above 90.
-
-At professional level, the system must not treat all scores above 90 as equivalent, and it must not pretend the number alone captures the professional distinction.
-
-Professional scores should be interpreted with qualitative labels and explanation, such as:
-
-- **90–92: Professionally viable / submission-capable** — the tape can credibly sit in a professional submission pool, but may still have clear optional polish, brief-specific risk or comparison weaknesses.
-- **93–95: Strong professional submission** — the tape is brief-aligned and professionally readable, with limited risk and meaningful strengths to preserve.
-- **96–98: Highly competitive professional submission** — the tape is not only brief-complete but unusually clear, specific, technically reliable and performance-ready for the supplied task.
-- **99–100: Exceptional / near-ceiling for this rubric** — reserved for rare cases. This does not guarantee casting, callback, booking or employment.
-
-These bands are descriptive, not deterministic. The AI must still explain the difference in terms a performer can use.
-
-Examples of professional nuance the score alone cannot capture:
-
-- one take may be vocally stronger while another is more role-specific;
-- one take may be technically cleaner while another is more emotionally compelling;
-- one take may have higher polish while another better meets the brief;
-- two takes may both be over 90 but one may be easier to submit because it has lower brief or edit risk;
-- a lower-scored take may still be the better submission if it fulfils the brief more precisely.
-
-### Score terminology alignment
+## Score terminology alignment
 
 Visible scores must align with report terminology.
 
-A score must map to:
+A score is not just a number. It must map to:
 
 - readiness language;
 - submission guidance;
@@ -392,50 +291,72 @@ A score must map to:
 - comparison wording;
 - performer-facing next action.
 
-Do not show a score that contradicts the report language without explanation.
+Do not show a score that contradicts the report language.
 
-Unacceptable contradictions:
+Examples of unacceptable contradictions:
 
 - score suggests strong readiness but verdict says retake required without explaining the brief blocker;
 - score suggests low readiness but verdict says submit without explanation;
-- comparison chip shows a meaningful difference but the report gives no comparison reasoning;
+- comparison chip shows a large difference but the report gives no comparison reasoning;
 - report says “brief achieved” but score language implies a mandatory blocker;
 - report says “no mandatory blocker” but score terminology says “not ready”.
 
 Brief blockers can override performance score.
 
-Example:
-
-A vocally strong tape can still be “retake required” if the brief-required acting side is missing.
+Example: a vocally strong tape can still be “retake required” if the brief-required acting side is missing.
 
 Score language should distinguish:
 
 - performance quality;
 - brief completion;
 - technical assessability;
-- submission readiness;
-- professional nuance;
-- comparison usefulness.
+- submission readiness.
 
 The AI must be asked to explain the score in these terms, not simply output a number.
 
-### General readiness terminology
+## Professional-score nuance
 
-Use this as a default terminology map unless README or a calibration document defines a newer one.
+Scores must not flatten professional feedback.
 
-| Score band | General terminology | Typical meaning |
+At professional level, many strong performers may score in a high band. TapeCoach must still distinguish professional nuance through written judgement, sub-dimensions, brief achievement, submission readiness, comparison reasoning, technique commentary and next-action guidance.
+
+A professional take scoring above 90 may still have meaningful differences in:
+
+- brief precision;
+- acting, vocal or movement specificity;
+- style or genre fit;
+- camera readability;
+- technical presentation;
+- risk under casting conditions;
+- optional polish;
+- comparison against another take.
+
+The report must explain what the score means in relation to:
+
+- selected performer level;
+- brief completion;
+- performance quality;
+- technical assessability;
+- submission readiness;
+- comparison context where relevant.
+
+## Provisional readiness terminology
+
+Use this as the default terminology map unless README or a calibration document defines a newer one.
+
+| Score band | Terminology | Typical report meaning |
 |---|---|---|
-| 0–39 | Not submission-ready / not assessable | Serious missing evidence, technical blocker or incomplete package. |
+| 0–39 | Not submission-ready / not assessable | Serious missing evidence, technical blocker, or incomplete package. |
 | 40–54 | Retake required if possible | Major brief, performance or presentation issue blocks submission readiness. |
 | 55–69 | Review carefully | Some usable material, but meaningful risk, uncertainty or important improvement remains. |
 | 70–84 | Submit if deadline is close | Submission-supporting tape with optional polish or manageable caveats. |
-| 85–100 | Strong submission range | Brief-complete, assessable and strong for the selected level, but professional nuance still requires qualitative interpretation. |
+| 85–100 | Submit / strong submission | Brief-complete, assessable, strong for selected level, no mandatory blocker. |
 
 The verdict is not determined by score alone. Required brief failures, missing material, non-assessability or critical technical issues can override the numerical band.
 
 ## Score and comparison display modes
 
-Numeric score and comparison chips may be visible in authenticated/operator/test mode.
+Numeric score and comparison chips may remain visible in authenticated/operator/test mode.
 
 If visible, they must be treated as diagnostic or authenticated report information, not production/customer release approval.
 
@@ -465,30 +386,25 @@ A same-video upload means the submitted media appears to be the same underlying 
 
 Same-video handling matters because the system must not treat an accidental duplicate as a genuinely new performance take.
 
-### Same video scenarios
+### Same-video scenarios
 
 1. Accidental duplicate upload:
    - identify as duplicate where evidence is sufficient;
    - do not imply it is a new artistic/performance attempt;
    - do not create misleading comparison guidance.
-
 2. Intentional retest / canary rerun:
    - allowed;
    - must be marked as same_video_confirmed or operator-confirmed;
    - useful for testing new report logic on the same media.
-
 3. Same video with changed brief:
    - analysis may need rerun because the task changed;
    - report must say the video is the same media but judged against a different brief.
-
 4. Same video with changed skill level:
    - analysis may need rerun because calibration changed;
    - report must not imply the performance changed.
-
 5. Same video with new AI/report version:
    - analysis may be rerun for regression testing;
    - report artefacts should record the analysis/report version where available.
-
 6. Comparison mode:
    - if two compared takes are actually the same video, the system must say so or ask the operator;
    - do not recommend one duplicate over another as if they were different performances.
@@ -509,6 +425,53 @@ Operator-confirmed fields may include:
 - changed_level_same_media.
 
 If the system is uncertain, it must not guess. It should mark same-video status as uncertain and ask for operator confirmation.
+
+## Thin-shell anti-regression rule
+
+A report fails if, despite available brief and media evidence, it collapses to generic copy such as:
+
+- “No single public-safe priority fix was available”;
+- “Preserve the clearest choices already captured”;
+- “This affects readability, not talent” as the only strength;
+- generic do-not-over-fix copy without context;
+- a recommendation without concrete reasons;
+- brief achievement without itemised evidence;
+- an empty next-take plan;
+- “report polish unavailable” as a reason to withhold useful guidance.
+
+Thin-shell reports are unacceptable.
+
+## Timestamped commentary
+
+Where available, the AI should attempt timestamped or time-banded commentary.
+
+Timestamped commentary should identify:
+
+- component starts / endings;
+- strong moments to preserve;
+- missing or incomplete material;
+- cut-offs;
+- technical/framing/audio issues;
+- performance moments to refine.
+
+If timestamps are unavailable, the report must still provide useful component-level commentary.
+
+## Technique-library commentary
+
+Technique-library commentary should be attempted by default where evidence exists.
+
+Attempt commentary for:
+
+- acting;
+- vocal / singing;
+- movement / dance;
+- musical-theatre package integration;
+- commercial / screen task;
+- self-tape presentation.
+
+Do not avoid technique commentary merely because named public technique authority was previously over-restricted.
+
+Avoid only high-risk claims: medical diagnosis, body/appearance judgement, protected-characteristic inference, guaranteed casting/job outcome, or unsupported certainty.
 
 ## Golden fixtures
 
@@ -561,8 +524,7 @@ Expected:
 - optional polish if useful;
 - submit checklist;
 - specific do-not-overfix guidance;
-- no thin shell;
-- professional score nuance is explained qualitatively, especially above 90.
+- no thin shell.
 
 ### Fixture C — old-report usefulness baseline
 
@@ -609,8 +571,7 @@ Examples:
 - score chips intentionally visible;
 - comparison intentionally visible;
 - AI missed a component;
-- AI misclassified material;
-- score terminology and score nuance are acceptable for the tested performer level.
+- AI misclassified material.
 
 If an assumption is uncertain, ask for operator confirmation or mark it as uncertain.
 
@@ -626,7 +587,6 @@ Examples:
 - Is this meant to be an incomplete mandatory-package take?
 - Are score chips intentionally visible?
 - Is comparison intentionally visible?
-- Does the score terminology make sense for the selected skill level?
 - Did the AI miss a component?
 - Did the report understate the take?
 
@@ -661,9 +621,6 @@ A slice is not done unless:
 - Canary A and Canary B are preserved or improved if relevant;
 - supplied brief content is not suppressed by default;
 - AI outputs are routed to the UI;
-- score terminology aligns with report terminology;
-- professional-level score nuance is explained qualitatively when relevant;
-- same-video handling is explicit when relevant;
 - no generic thin-shell copy is introduced;
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
@@ -683,9 +640,6 @@ Do not:
 - accept QA-only success;
 - hide behind “report polish unavailable”;
 - render generic strengths as the only value;
-- show a score that contradicts report terminology without explanation;
-- treat all professional scores above 90 as equivalent;
-- treat duplicate uploads as new performances without confirmation;
 - add broad safety restrictions beyond explicit high-risk red lines;
 - add env-var sprawl for product toggles;
 - proceed when operator assumptions are untested.
