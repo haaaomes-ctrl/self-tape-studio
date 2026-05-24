@@ -9,6 +9,11 @@ import {
   buildS10CanaryAViewContext,
   s10CanaryAExpectedViewModel,
 } from "@/test-fixtures/s10-canary-a-incomplete-package";
+import {
+  buildS10StrongCompleteProfessionalReportInput,
+  buildS10StrongCompleteProfessionalViewContext,
+  s10StrongCompleteProfessionalExpectedViewModel,
+} from "@/test-fixtures/s10-strong-complete-professional";
 
 describe("S10 report view-model routing", () => {
   it("builds an authoritative S10 view model and blocks raw-report authority", () => {
@@ -61,6 +66,37 @@ describe("S10 report view-model routing", () => {
     expect(v2.s10_view_model?.limitations).toContain(
       "Technique commentary is not available for this report.",
     );
+  });
+
+  it("routes strong-complete positive sections from S10 authoritative modules", () => {
+    const legacy = buildS10StrongCompleteProfessionalReportInput();
+    const snapshot = JSON.stringify(legacy);
+    const v2 = buildV2Report({
+      legacyReport: legacy,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+    });
+
+    expect(hasS10AuthoritativeModules(legacy)).toBe(true);
+    expect(JSON.stringify(legacy)).toBe(snapshot);
+    expect(v2.source_mode).toBe("s10_ai_report_model");
+    expect(v2.s10_view_model?.recommendation?.decision).toBe("submit");
+    expect(
+      v2.s10_view_model?.score_summary.overall_submission_readiness_score,
+    ).toBeGreaterThanOrEqual(85);
+    for (const section of s10StrongCompleteProfessionalExpectedViewModel.required_authoritative_sections) {
+      expect(v2.s10_view_model?.section_source_map[section].source).toBe(
+        "s10_authoritative_module",
+      );
+      expect(v2.s10_view_model?.section_source_map[section].module).not.toMatch(/raw_report/i);
+    }
+    const output = JSON.stringify(v2);
+    for (const forbidden of s10StrongCompleteProfessionalExpectedViewModel.forbidden_route_content) {
+      expect(output).not.toContain(forbidden);
+    }
+    expect(validateV2PublicBoundary(v2, legacy).ok).toBe(true);
   });
 
   it("does not force non-S10 legacy reports into S10 source mode", () => {
