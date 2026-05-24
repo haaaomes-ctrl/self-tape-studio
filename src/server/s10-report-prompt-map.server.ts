@@ -13,6 +13,8 @@ export const S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION = "s10_readiness_score
 export const S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION = "s10_fix_hierarchy_next_action_v1";
 export const S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION =
   "s10_strengths_preserve_professional_critique_v1";
+export const S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION =
+  "s10_technique_library_commentary_v1";
 
 export const LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION =
   "legacy_s9_brief_extraction_supporting_current";
@@ -148,6 +150,22 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     status: "active",
   },
   {
+    promptName: "S10 technique-library commentary",
+    promptVersion: S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION,
+    sourceFile: "src/server/report-polish.server.ts + src/server/process-take.server.ts",
+    runtimeStage: "analysis_step_2_post_professional_critique_technique",
+    modelCallPath: "embedded active module in Step 2 polish and S10 single-pass generation",
+    reportModulesAffected: [
+      "technique commentary",
+      "category notes",
+      "category rationale",
+      "coaching drills",
+      "presentation notes",
+      "compatibility projections",
+    ],
+    status: "active",
+  },
+  {
     promptName: "S10 professional judgement/module map",
     promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
     sourceFile: "src/server/report-polish.server.ts",
@@ -244,6 +262,16 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     modelCallPath:
       "raw_report.strengths, category_rationale, category_notes, presentation_notes, coaching_drills, technique_observation_trace and prior prose are diagnostic only for S10.7",
     reportModulesAffected: ["legacy strengths", "legacy category notes", "legacy technique traces"],
+    status: "diagnostic_only",
+  },
+  {
+    promptName: "Legacy technique commentary diagnostics",
+    promptVersion: "legacy_technique_commentary_diagnostic_only",
+    sourceFile: "src/server/v3/qa-artifacts-wiring.server.ts + src/server/process-take.server.ts",
+    runtimeStage: "legacy technique trace/category/drill diagnostics",
+    modelCallPath:
+      "TechniqueObservationTrace, raw_report.category_rationale/category_notes, detected_components, coaching_drills and public_technique_authority status are diagnostic only for S10.8",
+    reportModulesAffected: ["legacy technique traces", "legacy category prose", "legacy drills"],
     status: "diagnostic_only",
   },
   {
@@ -454,7 +482,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     aiQuestion:
       "What acting, vocal, movement, MT package or presentation technique commentary is visible, and what is not assessable?",
     structuredOutputField:
-      "s10_professional_critique, category_rationale, category_notes, improvements",
+      "s10_technique_commentary, category_rationale, category_notes, improvements",
     uiDestination: "Why this score, category scores, improvements",
     completenessRule: "thin",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.not_assessable,
@@ -575,6 +603,7 @@ Embedded brief-achievement prompt version: ${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT
 Embedded readiness/score prompt version: ${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}
 Embedded fix hierarchy / next-action prompt version: ${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}
 Embedded strengths / preserve / professional critique prompt version: ${S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION}
+Embedded technique-library commentary prompt version: ${S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION}
 
 You are the S10 professional judgement/module report brain for TapeCoach. You write a performer-facing self-tape report from supplied brief context plus either locked Step 1 observations or the video itself. Code validates, repairs, routes and renders your structured output; code must not invent your professional judgement.
 
@@ -586,7 +615,9 @@ S10.5 readiness/score rule: produce readiness_score_judgement after brief_achiev
 
 S10.6 matrix-before-fixes and readiness-before-action-plan rule: produce s10_fix_hierarchy and s10_next_action_plan after brief_achievement_matrix and readiness_score_judgement. Mandatory material/package blockers outrank polish, diction, character detail, file naming and admin-only final checks. Supported positives may appear in preserve/do_not_overfix, but they cannot reduce the urgency of missing mandatory material. raw_report.fix_first, raw_report.improvements, raw_report.next_take_plan, raw_report.block_reasons, coaching_drills and previous report prose are diagnostic only unless re-authored through S10 evidence with source tracking. Do not use generic fallback action copy.
 
-S10.7 component-verification-before-strengths rule: produce s10_professional_critique after s10_fix_hierarchy and s10_next_action_plan. Strengths, preserve guidance and broad professional critique must be grounded in S10.3 component verification, S10.4 requirement achievement, S10.5 readiness and S10.6 action hierarchy. If a component is absent or unverified, prefer a clear limitation over invented praise. If Side 1 is absent, do not write acting-scene strengths. If a song is partial, cut off or completion-uncertain, any vocal/song strength must be explicitly limited to the observed portion and must not imply complete package readiness. Legacy strengths, category notes, category_rationale, coaching_drills, technique_observation_trace and prior prose are diagnostic only unless re-authored through S10 observed evidence. S10.7 may write broad strengths/preserve/professional notes; detailed technique-library commentary is deferred to S10.8.
+S10.7 component-verification-before-strengths rule: produce s10_professional_critique after s10_fix_hierarchy and s10_next_action_plan. Strengths, preserve guidance and broad professional critique must be grounded in S10.3 component verification, S10.4 requirement achievement, S10.5 readiness and S10.6 action hierarchy. If a component is absent or unverified, prefer a clear limitation over invented praise. If Side 1 is absent, do not write acting-scene strengths. If a song is partial, cut off or completion-uncertain, any vocal/song strength must be explicitly limited to the observed portion and must not imply complete package readiness. Legacy strengths, category notes, category_rationale, coaching_drills, technique_observation_trace and prior prose are diagnostic only unless re-authored through S10 observed evidence. S10.7 may write broad strengths/preserve/professional notes.
+
+S10.8 verified component evidence before technique commentary rule: produce s10_technique_commentary after s10_professional_critique. Technique commentary must be attempted where verified evidence exists, and it must be authored from S10.3 component verification, S10.4 matrix, S10.7 professional critique and S10.6 action priorities. If the brief requires an acting scene and S10.3 does not verify that acting scene, the acting section is not_assessable or limited, not not_applicable. not_applicable is only for areas not required by the brief and not visible in the tape. If a song is present but incomplete, cut off or uncertain, vocal/singing is partially_assessable and every note applies only to the observed portion. Musical-theatre package commentary must say the package is incomplete when required components are missing or incomplete. Self-tape presentation may use verified audio/framing evidence. public_technique_authority_status and public_technique_authority_blocked must not suppress ordinary authenticated technique commentary; only suppress or rewrite medical/vocal-health diagnosis, body/appearance judgement, protected-characteristic inference, guaranteed casting/job outcome or unsupported certainty. Legacy TechniqueObservationTrace, raw_report category prose, detected_components and coaching_drills are diagnostic only. S10.8 may link timestamp refs where available, but S10.9 owns timestamped/time-banded commentary.
 
 Module question order:
 1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
@@ -597,7 +628,7 @@ Module question order:
 6. Score reasoning: explain separately how performance quality, brief completion and submission readiness align with the score/chip.
 7. Fix hierarchy: s10_fix_hierarchy with fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish, preserve and do-not-overfix.
 8. Strengths/preserve/professional critique: s10_professional_critique with evidence-specific strengths, preserve guidance, do-not-overfix and limitations.
-9. Improvements and technique: broad acting, vocal/singing, movement/dance, musical-theatre package integration, screen task and self-tape presentation where evidence exists. Detailed technique-library commentary is S10.8.
+9. Technique-library commentary: s10_technique_commentary for acting, vocal/singing, movement/dance, musical-theatre package integration, commercial/screen task and self-tape presentation where verified evidence exists, with not_assessable or not_applicable limitations where evidence does not support commentary.
 10. Timestamped commentary: exact timestamps when available; otherwise time-bands or section-order notes.
 11. Next action and limitations: finite next-take plan or submit checklist, do-not-overfix, and not-assessable explanations.
 
@@ -609,6 +640,7 @@ Output rules:
 - Always include readiness_score_judgement with performance_quality_score, brief_completion_score and overall_submission_readiness_score. Add score_contradiction_warnings when any legacy or AI score conflicts with the brief achievement matrix.
 - Always include s10_fix_hierarchy and s10_next_action_plan. Treat them as the authoritative action model; legacy-compatible fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are projections only.
 - Always include s10_professional_critique. Treat it as the authoritative strengths/preserve/professional-note model; legacy-compatible strengths, category_notes, category_rationale, presentation_notes and coaching_drills are lossy projections in favour of truth.
+- Always include s10_technique_commentary. Treat it as the authoritative technique-commentary model; legacy-compatible category_notes, category_rationale, presentation_notes, coaching_drills and technique-related improvements are safe projections only.
 - For strong-complete reports, include at least one specific performance/package strength, one specific preserve item, one specific do-not-overfix item and one professional nuance note beyond the score. If unavailable, explain the exact limitation rather than filling generic praise.
 - For incomplete reports, strengths may be supportive but must not obscure the fix-first blocker.
 - Do not write "This affects readability, not talent", "Preserve the clearest choices already captured", "Correct material", "Single-file submission as requested", "Naturalistic acting" when the acting scene is absent, or "Professional presentation" without evidence.

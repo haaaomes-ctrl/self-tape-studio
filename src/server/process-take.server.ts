@@ -78,6 +78,7 @@ import {
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
   S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
   S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION,
+  S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import {
   applyBriefAchievementCompatibilityCaps,
@@ -89,6 +90,10 @@ import {
   applyS10ProfessionalCritique,
   scrubS10ProfessionalCritiqueProjection,
 } from "./s10-strengths-preserve-professional-critique.server";
+import {
+  applyS10TechniqueLibraryCommentary,
+  scrubS10TechniqueCommentaryProjection,
+} from "./s10-technique-library-commentary.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -324,6 +329,136 @@ const S10_PRESERVE_ITEM_SCHEMA = {
     "linked_component_verification_ids",
     "confidence",
     "is_generic_fallback",
+  ],
+};
+
+const S10_TECHNIQUE_WARNING_SCHEMA = {
+  type: "object",
+  properties: {
+    affected_field: { type: "string" },
+    original_value: { type: ["string", "number", "boolean", "null"] },
+    corrected_value: { type: ["string", "number", "boolean", "null"] },
+    reason: { type: "string" },
+    source: {
+      type: "string",
+      enum: [
+        "s10_ai_judgement",
+        "legacy_raw_report",
+        "legacy_category_rationale",
+        "legacy_category_notes",
+        "legacy_coaching_drills",
+        "legacy_technique_trace",
+        "prior_prose",
+        "s10_normaliser",
+        "public_technique_authority_gate",
+      ],
+    },
+    internal_only: { type: "boolean", enum: [true] },
+  },
+  required: [
+    "affected_field",
+    "original_value",
+    "corrected_value",
+    "reason",
+    "source",
+    "internal_only",
+  ],
+};
+
+const S10_TECHNIQUE_OBSERVATION_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    technique_area: {
+      type: "string",
+      enum: [
+        "acting",
+        "vocal_singing",
+        "movement_dance",
+        "musical_theatre_package",
+        "self_tape_presentation",
+        "commercial_screen_task",
+      ],
+    },
+    title: { type: "string" },
+    detail: { type: "string" },
+    evidence_summary: { type: "string" },
+    linked_requirement_ids: { type: "array", items: { type: "string" } },
+    linked_component_verification_ids: { type: "array", items: { type: "string" } },
+    linked_matrix_result_ids: { type: "array", items: { type: "string" } },
+    linked_readiness_reason_ids: { type: "array", items: { type: "string" } },
+    linked_strength_ids: { type: "array", items: { type: "string" } },
+    linked_fix_ids: { type: "array", items: { type: "string" } },
+    linked_timestamp_refs: { type: "array", items: { type: "string" } },
+    component_status: {
+      type: "string",
+      enum: [
+        "present",
+        "partially_present",
+        "absent",
+        "not_assessable",
+        "uncertain",
+        "not_applicable",
+      ],
+    },
+    applies_to_observed_portion_only: { type: "boolean" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    is_named_authority_claim: { type: "boolean" },
+    is_medical_or_health_claim: { type: "boolean" },
+    is_body_or_appearance_claim: { type: "boolean" },
+    is_casting_outcome_claim: { type: "boolean" },
+    is_generic_fallback: { type: "boolean", enum: [false] },
+  },
+  required: [
+    "id",
+    "technique_area",
+    "title",
+    "detail",
+    "evidence_summary",
+    "linked_requirement_ids",
+    "linked_component_verification_ids",
+    "linked_matrix_result_ids",
+    "linked_readiness_reason_ids",
+    "linked_strength_ids",
+    "linked_fix_ids",
+    "linked_timestamp_refs",
+    "component_status",
+    "applies_to_observed_portion_only",
+    "confidence",
+    "is_named_authority_claim",
+    "is_medical_or_health_claim",
+    "is_body_or_appearance_claim",
+    "is_casting_outcome_claim",
+    "is_generic_fallback",
+  ],
+};
+
+const S10_TECHNIQUE_SECTION_SCHEMA = {
+  type: "object",
+  properties: {
+    status: {
+      type: "string",
+      enum: ["assessable", "partially_assessable", "not_assessable", "not_applicable"],
+    },
+    headline: { type: "string" },
+    observations: { type: "array", items: S10_TECHNIQUE_OBSERVATION_SCHEMA, maxItems: 8 },
+    what_is_working: { type: "array", items: { type: "string" }, maxItems: 8 },
+    what_could_improve: { type: "array", items: { type: "string" }, maxItems: 8 },
+    practical_actions: { type: "array", items: { type: "string" }, maxItems: 8 },
+    preserve: { type: "array", items: { type: "string" }, maxItems: 8 },
+    not_assessable_reason: { type: ["string", "null"] },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  },
+  required: [
+    "status",
+    "headline",
+    "observations",
+    "what_is_working",
+    "what_could_improve",
+    "practical_actions",
+    "preserve",
+    "not_assessable_reason",
+    "confidence",
   ],
 };
 
@@ -906,6 +1041,36 @@ const REPORT_TOOL = {
             "contradiction_warnings",
           ],
         },
+        s10_technique_commentary: {
+          type: "object",
+          description:
+            "S10 authoritative technique-library commentary. Produce after s10_professional_critique. Verified component evidence before technique commentary is mandatory. Required-but-missing components are not_assessable or limited; present-but-incomplete components are partially_assessable and observed-portion-only. Legacy technique traces and public technique-authority gates are diagnostic only.",
+          properties: {
+            summary: { type: "string" },
+            acting: S10_TECHNIQUE_SECTION_SCHEMA,
+            vocal_singing: S10_TECHNIQUE_SECTION_SCHEMA,
+            movement_dance: S10_TECHNIQUE_SECTION_SCHEMA,
+            musical_theatre_package: S10_TECHNIQUE_SECTION_SCHEMA,
+            self_tape_presentation: S10_TECHNIQUE_SECTION_SCHEMA,
+            commercial_screen_task: S10_TECHNIQUE_SECTION_SCHEMA,
+            limitations: { type: "array", items: { type: "string" }, maxItems: 16 },
+            contradiction_warnings: {
+              type: "array",
+              items: S10_TECHNIQUE_WARNING_SCHEMA,
+            },
+          },
+          required: [
+            "summary",
+            "acting",
+            "vocal_singing",
+            "movement_dance",
+            "musical_theatre_package",
+            "self_tape_presentation",
+            "commercial_screen_task",
+            "limitations",
+            "contradiction_warnings",
+          ],
+        },
         category_notes: {
           type: "object",
           properties: {
@@ -1116,6 +1281,7 @@ const REPORT_TOOL = {
         "s10_fix_hierarchy",
         "s10_next_action_plan",
         "s10_professional_critique",
+        "s10_technique_commentary",
         "category_notes",
         "strengths",
         "improvements",
@@ -1145,18 +1311,21 @@ Single-pass S10 recovery rules:
 - Active embedded readiness/score prompt version is "${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}".
 - Active embedded fix hierarchy / next-action prompt version is "${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}".
 - Active embedded strengths / preserve / professional critique prompt version is "${S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION}".
+- Active embedded technique-library commentary prompt version is "${S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
 - Produce readiness_score_judgement after brief_achievement_matrix. Separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone.
 - Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. matrix-before-fixes and readiness-before-action-plan are mandatory. Missing mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks.
 - Produce s10_professional_critique after s10_fix_hierarchy and s10_next_action_plan. Component verification before strengths is mandatory: absent or unverified components get limitations, not praise; partial/cut-off song strengths must say observed portion only.
+- Produce s10_technique_commentary after s10_professional_critique. verified component evidence before technique commentary is mandatory. Attempt technique commentary where verified evidence exists. If the brief requires an acting scene and S10.3 does not verify it, acting is not_assessable or limited, not not_applicable. If a song is present but incomplete, cut off or uncertain, vocal/singing is partially_assessable and all notes apply only to the observed portion. public_technique_authority_status and public_technique_authority_blocked must not suppress ordinary authenticated technique commentary.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a technically continuous clip is not a complete package if mandatory material is absent, partial or cut off.
 - For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
 - Populate detected_components only from media evidence, never from brief requests alone.
 - If mandatory material is missing or incomplete, retake/submission readiness must reflect that even when performance quality or audio is strong.
 - Treat s10_fix_hierarchy and s10_next_action_plan as authoritative. Existing fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are compatibility projections only. raw_report and legacy action fields are diagnostic only unless re-authored through S10 evidence with source tracking.
 - Treat s10_professional_critique as authoritative for strengths, preserve and broad professional notes. Existing strengths, category_notes, category_rationale, presentation_notes and coaching_drills are lossy compatibility projections. Legacy technique traces/prose are diagnostic only.
+- Treat s10_technique_commentary as authoritative for technique-library commentary. Existing category_notes, category_rationale, presentation_notes, coaching_drills and technique-related improvements are compatibility projections only. Legacy TechniqueObservationTrace, raw_report category prose, detected_components and coaching_drills are diagnostic only unless re-authored through S10 observed evidence. S10.8 may link timestamp refs where available, but S10.9 owns first-class timestamped/time-banded commentary.
 - Fill the existing submit_audition_report fields with AI-authored module answers: overall readiness, score/chip, verdict, prioritised fixes, why this score/category_rationale, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk, role fit, presentation notes and next action.
 - Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
 - Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
@@ -3285,6 +3454,29 @@ export async function runProcessTake(
       });
     }
 
+    // ---- S10.8 technique-library commentary ----
+    // Normalisation order remains S10.3 component verification, S10.4 matrix,
+    // S10.7 professional critique, then S10.8 technique. Legacy technique
+    // traces and public technique-authority gate state are diagnostic only.
+    const techniqueCommentarySemantics = applyS10TechniqueLibraryCommentary({
+      report: report as Record<string, unknown>,
+      matrix: report.brief_achievement_matrix,
+      readiness: readinessSemantics.judgement,
+      fixHierarchy: fixActionSemantics.hierarchy,
+      nextActionPlan: fixActionSemantics.nextActionPlan,
+      professionalCritique: professionalCritiqueSemantics.critique,
+      componentVerifications: twoStepEvidence?.component_verifications ?? [],
+      mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+    });
+    if (techniqueCommentarySemantics.warnings.length > 0) {
+      console.log("[take-pipeline] s10_technique_library_commentary_applied", {
+        take_id: takeId,
+        acting_status: techniqueCommentarySemantics.commentary.acting.status,
+        vocal_status: techniqueCommentarySemantics.commentary.vocal_singing.status,
+        warning_count: techniqueCommentarySemantics.warnings.length,
+      });
+    }
+
     // ---- Presentation notes — safety filter ----
     const presentationNotes: string[] = Array.isArray(report.presentation_notes)
       ? report.presentation_notes
@@ -3940,13 +4132,17 @@ export async function runProcessTake(
       const s10CritiqueScrub = scrubS10ProfessionalCritiqueProjection(
         report as unknown as Record<string, unknown>,
       );
-      if (s10CritiqueScrub.removed > 0) {
+      const s10TechniqueScrub = scrubS10TechniqueCommentaryProjection(
+        report as unknown as Record<string, unknown>,
+      );
+      if (s10CritiqueScrub.removed > 0 || s10TechniqueScrub.removed > 0) {
         safetyRewriteApplied = true;
       }
       console.log("[take-pipeline] output_enforcement_applied", {
         take_id: takeId,
         framing_fixed: framingFixed,
         s10_professional_critique_projection_removed: s10CritiqueScrub.removed,
+        s10_technique_commentary_projection_removed: s10TechniqueScrub.removed,
         ...enforcement.counters,
       });
     } catch (enfErr) {
@@ -3978,6 +4174,7 @@ export async function runProcessTake(
       s10_fix_hierarchy: report.s10_fix_hierarchy ?? null,
       s10_next_action_plan: report.s10_next_action_plan ?? null,
       s10_professional_critique: report.s10_professional_critique ?? null,
+      s10_technique_commentary: report.s10_technique_commentary ?? null,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,

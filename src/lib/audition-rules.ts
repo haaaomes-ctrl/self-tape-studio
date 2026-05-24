@@ -726,6 +726,87 @@ export type S10ProfessionalCritique = {
   contradiction_warnings: S10ProfessionalCritiqueWarning[];
 };
 
+export type S10TechniqueArea =
+  | "acting"
+  | "vocal_singing"
+  | "movement_dance"
+  | "musical_theatre_package"
+  | "self_tape_presentation"
+  | "commercial_screen_task";
+
+export type S10TechniqueSectionStatus =
+  | "assessable"
+  | "partially_assessable"
+  | "not_assessable"
+  | "not_applicable";
+
+export type S10TechniqueComponentStatus = S10ProfessionalCritiqueComponentStatus;
+
+export type S10TechniqueWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_category_rationale"
+    | "legacy_category_notes"
+    | "legacy_coaching_drills"
+    | "legacy_technique_trace"
+    | "prior_prose"
+    | "s10_normaliser"
+    | "public_technique_authority_gate";
+  internal_only: true;
+};
+
+export type S10TechniqueObservation = {
+  id: string;
+  technique_area: S10TechniqueArea;
+  title: string;
+  detail: string;
+  evidence_summary: string;
+  linked_requirement_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_readiness_reason_ids: string[];
+  linked_strength_ids: string[];
+  linked_fix_ids: string[];
+  linked_timestamp_refs: string[];
+  component_status: S10TechniqueComponentStatus;
+  applies_to_observed_portion_only: boolean;
+  confidence: "low" | "medium" | "high";
+  is_named_authority_claim: boolean;
+  is_medical_or_health_claim: boolean;
+  is_body_or_appearance_claim: boolean;
+  is_casting_outcome_claim: boolean;
+  is_generic_fallback: false;
+};
+
+export type S10TechniqueSection = {
+  status: S10TechniqueSectionStatus;
+  headline: string;
+  observations: S10TechniqueObservation[];
+  what_is_working: string[];
+  what_could_improve: string[];
+  practical_actions: string[];
+  preserve: string[];
+  not_assessable_reason: string | null;
+  confidence: "low" | "medium" | "high";
+};
+
+export type S10TechniqueCommentary = {
+  summary: string;
+  acting: S10TechniqueSection;
+  vocal_singing: S10TechniqueSection;
+  movement_dance: S10TechniqueSection;
+  musical_theatre_package: S10TechniqueSection;
+  self_tape_presentation: S10TechniqueSection;
+  commercial_screen_task: S10TechniqueSection;
+  limitations: string[];
+  contradiction_warnings: S10TechniqueWarning[];
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;
