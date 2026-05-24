@@ -14,6 +14,8 @@ INTERNAL_QA_EMIT=true
 TWO_STEP_ANALYSIS_ENABLED=true
 ```
 
+`QA_ARTIFACT_STORAGE_BUCKET` is the Supabase Storage bucket id. It must be `qa-artifacts` for the standard TapeCoach admin storage lane; do not set it to a boolean feature-flag value such as `true`.
+
 ## Secret Names
 
 Document names only. Do not print, paste, log or commit secret values.

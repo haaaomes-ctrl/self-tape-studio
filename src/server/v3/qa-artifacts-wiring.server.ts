@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { resolveQAArtifactStorageBucket } from '@/lib/qa-artifact-storage-bucket';
 import { assertSafeSegment, buildQAAcceptanceMetrics, DEFAULT_ROOT, emitInternalQAArtifactManifest, resolveQADeploymentProvenance, type QAArtifactEmitterOptions } from './qa-artifacts.server';
 import { readQAArtifactText, writeQAArtifact } from './qa-artifact-sink.server';
 
@@ -4302,7 +4303,8 @@ export async function emitQAManifestForAnalysisRun(metadata: QARuntimeMetadata) 
       };
     }
 
-    console.info('[internal-qa] manifest_write_attempt', { event: 'manifest_write_attempt', run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: baseOptions.take_id ?? null, artefact_id: 'manifest', relative_path: manifestRelativePath, resolved_storage_path: null, sink: process.env.QA_ARTIFACT_SINK ?? 'file', bucket: process.env.QA_ARTIFACTS_BUCKET ?? null, emitted_artefact_ids: initialEmitted, timestamp: new Date().toISOString() });
+    const manifestStorageBucket = resolveQAArtifactStorageBucket();
+    console.info('[internal-qa] manifest_write_attempt', { event: 'manifest_write_attempt', run_id: metadata.run_id, analysis_run_id: baseOptions.analysis_run_id, take_id: baseOptions.take_id ?? null, artefact_id: 'manifest', relative_path: manifestRelativePath, resolved_storage_path: null, sink: process.env.QA_ARTIFACT_SINK ?? 'file', bucket: manifestStorageBucket.bucket, bucket_config_warning: manifestStorageBucket.warning, emitted_artefact_ids: initialEmitted, timestamp: new Date().toISOString() });
     const out = await emitInternalQAArtifactManifest({ ...baseOptions, manifest_relative_path: manifestRelativePath });
     console.info('[internal-qa] manifest_write_result', { event: 'manifest_write_result',
       run_id: metadata.run_id,
