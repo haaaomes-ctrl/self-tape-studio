@@ -1,715 +1,947 @@
-# TapeCoach v3 Roadmap — Product-manager optimised release plan
+# TapeCoach v3 Roadmap — Product and Delivery Plan Including S10
 
-**Document status:** PM delivery-sequencing recommendation / planning index only.  
-**Aligned to:** latest `README.md` architecture review update, 18 May 2026.  
+**Document status:** Product roadmap and delivery sequencing layer.  
+**Current reset point:** S9-19.  
+**Current active phase:** S10 — AI-led full-value authenticated report reset.  
 **Language:** UK English.  
-**Release philosophy:** small, frequent, reversible releases that deliver useful locked-down user value quickly, without weakening README gates or turning review into design.
+**Release philosophy:** small, frequent, reversible releases that preserve or improve performer-facing report value.  
+**Primary correction after S10 rollback:** the AI is the report brain; code orchestrates, validates, routes, renders and applies narrow high-risk filtering only.
 
 ---
 
 ## 1. Source hierarchy
 
-`README.md` remains the controlling source for TapeCoach product behaviour, report requirements, scoring rules, QA artefacts, validator gates, public/private boundaries and release decisions.
+`README.md` is the controlling product contract for TapeCoach behaviour, report requirements, scoring rules, QA artefacts, validator gates, public/private boundaries and release decisions.
 
-This roadmap is a product-delivery sequencing layer. It may organise user-benefit sequencing, release slices, dependencies, non-goals and rollback paths. It must not introduce requirements, public-output permissions, release gates or acceptance decisions that are not already present in `README.md`.
+`AGENTS.md` defines the implementation operating rules agents must follow. It does not override `README.md`.
+
+`docs/tapecoach/s10-target-architecture.md` defines the S10 target architecture. It does not override `README.md`.
+
+This roadmap is a sequencing layer. It organises phases, slices, dependencies, rollback points, canary checkpoints and acceptance evidence. It must not introduce product permissions, public-output permissions, release decisions or acceptance gates that are not already allowed by `README.md`.
 
 If this roadmap conflicts with `README.md`, `README.md` wins.
 
 ---
 
-## 2. Product-manager diagnosis
+## 2. Product north star
 
-The current README and roadmap are directionally strong. They correctly define TapeCoach as an evidence-led, level-relative, brief-aware self-tape readiness product, not a JSON-emission project or score-first report.
+TapeCoach is an AI-led professional self-tape critique and audition-readiness system.
 
-The current roadmap also has the right principles: small and frequent releases, good enough rather than perfect, minimal human intervention, and upfront design before implementation review.
+The performer-facing report is the product. It should help the performer understand:
 
-The main PM issue is sequencing. The roadmap still risks making useful user-facing learning wait behind a long artefact/gate chain. That is safe, but slower than necessary.
+1. whether to submit, retake or review carefully;
+2. why;
+3. what the supplied brief asked for;
+4. what TapeCoach observed in the tape;
+5. what was achieved;
+6. what was missed, incomplete or not assessable;
+7. what must be fixed first;
+8. what else should improve;
+9. what is optional polish;
+10. what should be preserved;
+11. what should not be over-fixed;
+12. what to do next.
 
-The product should not wait for full Level 2 closure, full public technique authority, public scoring, repertoire authority or comparison safety before approved locked-down users can see bounded, useful improvements such as:
+The report should feel like a combined perspective from:
 
-- a clearer readiness-first report layout;
+- a casting-aware agent;
+- an acting coach;
+- a vocal/singing coach;
+- a movement or MT package coach;
+- a self-tape technician;
+- a practical audition checklist.
+
+It should not feel like:
+
+- a compliance wrapper;
+- a JSON projection;
+- a safety shell;
+- a vague checklist;
+- a QA artefact viewer.
+
+---
+
+## 3. Roadmap correction after S10 regression
+
+S10 previously drifted towards a proof-first, over-cautious report path. That produced thin-shell reports: generic copy, weak strengths, missing professional judgement, and payload success without route/PDF usefulness.
+
+The corrected roadmap uses this hierarchy:
+
+```text
+1. Performer-facing report usefulness
+2. AI prompt quality and module completeness
+3. Supplied brief transparency
+4. Technique and timestamp commentary
+5. Score/comparison meaning and professional nuance
+6. Same-video and operator assumption handling
+7. Route/PDF acceptance
+8. QA artefacts as secondary proof
+9. Release governance
+```
+
+The failed hierarchy was:
+
+```text
+1. Internal artefact proof
+2. Payload gates
+3. Source-kind restrictions
+4. Broad safety wrappers
+5. Generic fallback copy
+6. Report value if anything remained
+```
+
+That direction must not return.
+
+---
+
+## 4. Current baseline and historical context
+
+### S9-19 — Current rollback baseline
+
+S9-19 is the current recovery point.
+
+Preserve useful work from later experiments where appropriate, but do not reintroduce any feature that recreates thin-shell reports or proof-first acceptance.
+
+Useful ideas to preserve or rebuild carefully:
+
 - brief requirement itemisation;
-- achieved / partly achieved / not assessable status;
-- better priority-fix ordering;
-- clearer next-take actions;
-- safer assessability wording;
-- status/failure messaging when analysis is not reliable.
+- fix-first derived from the highest-ranked meaningful fix;
+- must-fix / should-improve / optional-polish separation;
+- song/package and continuous-video routing;
+- canonical report model concept;
+- route/PDF first review;
+- no-export and QA diagnostics as proof;
+- operator assumption confirmation;
+- same-video handling;
+- timestamped commentary;
+- technique-library commentary;
+- score terminology alignment.
 
-The PM recommendation is to split delivery into two parallel tracks:
+Ideas to discard or quarantine:
 
-1. **Safe visible value track** — gated locked-down report improvements that users/testers can experience quickly.
-2. **Evidence/proof track** — artefacts, trace closure, parity, validator and Level 2 gates that make the system trustworthy and releasable.
-
-The visible value track must still obey `GateTrace.public_output_permissions`, public/private boundaries and README safety rules. It should simply avoid waiting for unrelated gates where the relevant output is already safe, suppressed or feature-flagged.
+- broad brief lockdown;
+- “public-safe” as a synonym for minimal;
+- limited model as ordinary output;
+- generic fallback phrases;
+- payload-only acceptance;
+- QA-only acceptance;
+- hiding useful content because it is detailed;
+- replacing AI judgement with static code copy.
 
 ---
 
-## 3. Resequencing decisions
+## 5. Product maturity tracks
 
-### 3.1 Bring the readiness-first report shell forward
+The roadmap is organised across product maturity tracks. Each phase may touch several tracks, but S10 prioritises Report Intelligence and Prompt Engineering first.
 
-Current roadmap placement has `R10.1 Readiness-first report shell` after trace closure and render/parity work. Product-wise, this is too late.
+### Track A — Report intelligence
 
-Move a limited version forward as:
+Goal: produce the full professional performer-facing report.
+
+Includes:
+
+- recommendation;
+- why;
+- supplied brief task;
+- observed tape;
+- brief achievement;
+- fix-first;
+- priority fixes;
+- must-fix / should-improve / optional-polish;
+- strengths and preserve;
+- technique commentary;
+- timestamped commentary;
+- next action;
+- do-not-overfix;
+- not-assessable limitations.
+
+### Track B — AI prompt engineering
+
+Goal: ensure the AI is asked the correct questions for every report module.
+
+Includes:
+
+- observation pass;
+- professional judgement pass;
+- technique-library pass;
+- timestamp pass;
+- score calibration pass;
+- comparison pass;
+- module completeness check;
+- repair prompts.
+
+### Track C — Brief intelligence
+
+Goal: treat the supplied brief as first-class input.
+
+Includes:
+
+- full useful brief preservation;
+- role/project/material extraction;
+- required component extraction;
+- deadlines, upload instructions, file naming, framing and format instructions;
+- mandatory / preferred / optional / ambiguous classification;
+- achievement status per requirement.
+
+### Track D — Technique library
+
+Goal: attempt observable, useful technique commentary by default.
+
+Includes:
+
+- acting;
+- vocal/singing;
+- movement/dance;
+- Musical Theatre package integration;
+- commercial/screen task;
+- self-tape presentation.
+
+### Track E — Scoring and comparison
+
+Goal: ensure numeric values support language and judgement rather than replacing it.
+
+Includes:
+
+- score-to-terminology mapping;
+- professional score nuance above 90;
+- sub-dimension scoring;
+- brief blockers overriding performance scores;
+- comparison reasoning;
+- operator/test diagnostic score chips.
+
+### Track F — Media and same-video handling
+
+Goal: handle Mux/media readiness, timestamps, continuity, duplicates and retests.
+
+Includes:
+
+- Mux readiness;
+- audio/video/framing assessability;
+- timestamp/time-band support;
+- same-video duplicate detection;
+- intentional retest handling;
+- same-video changed brief/level handling;
+- same-video comparison safeguards.
+
+### Track G — QA and operations
+
+Goal: prove the report without replacing it.
+
+Includes:
+
+- report model artefacts;
+- AI pass artefacts;
+- red-line trace;
+- route/PDF snapshots;
+- operator assumption log;
+- QA emission diagnostics;
+- runtime proof;
+- release readiness later.
+
+---
+
+## 6. Product release levels
+
+### Level 1 — Useful authenticated audition-readiness report
+
+The first shippable product layer.
+
+Must answer:
 
 ```text
-R10.0 Readiness-first preview shell
+Is this ready to submit?
+Why?
+What did the brief require?
+What was achieved/missed?
+What is fix-first?
+What should I preserve?
+What should I do next?
 ```
 
-This preview shell should render only sections permitted by `GateTrace.public_output_permissions` and suppress public score, public named technique, definitive repertoire and comparison content. It can still provide user value through readiness, why, brief status, priorities, strengths, improvements, action plan and limitations.
+Level 1 is S10’s main target.
 
-This does not mean customer-facing release. It means approved locked-down users can experience a better report format earlier.
+### Level 2 — Technique-aware professional critique
 
-### 3.2 Bring render permission enforcement forward
+Adds deeper discipline-specific analysis.
 
-`R9.1 Render permission enforcement` should move before the first user-visible preview. It is the safety precondition for showing early value without accidentally exposing blocked score, technique, repertoire or comparison content.
+Must attempt:
 
-### 3.3 Add a submission-context preflight slice
+- acting technique commentary;
+- vocal/singing commentary;
+- movement/dance commentary;
+- MT package commentary;
+- self-tape technique commentary;
+- timestamped or time-banded observations where possible.
 
-The current roadmap moves from contracts directly into brief itemisation. It should add a small user-facing preflight slice first:
+### Level 3 — Scoring, calibration and comparison
+
+Adds calibrated scoring and take comparison.
+
+Must preserve:
+
+- score terminology alignment;
+- high-professional nuance;
+- comparison reasoning;
+- same-video safeguards.
+
+### Level 4 — Operational/release proof
+
+Adds stronger artefacts, provenance, operator confirmation, release and production gates.
+
+Level 4 is not allowed to degrade Level 1–3 report value.
+
+---
+
+## 7. Active phase: S10 — AI-led full-value report reset
+
+### S10 objective
+
+Rebuild from S9-19 into a full-value, AI-led authenticated report system.
+
+### S10 non-goals
+
+Do not prioritise:
+
+- production/customer release;
+- Level 2 release acceptance;
+- public-share/export mode;
+- broad public gating;
+- heavy artefact reconciliation;
+- source-kind refactors;
+- public scoring governance;
+- comparison release governance.
+
+Those come later, after route/PDF report value is stable.
+
+### S10 acceptance principle
+
+A S10 slice cannot be accepted if it only improves internal proof or code structure while degrading or failing to improve performer-facing report usefulness.
+
+---
+
+## 8. S10 implementation sequence
+
+### S10.0 — Documentation and agent alignment
+
+**Purpose:** Make the corrected direction unavoidable before implementation resumes.
+
+**Deliverables:**
+
+- updated `README.md`;
+- root `AGENTS.md`;
+- `docs/tapecoach/s10-target-architecture.md`;
+- `docs/tapecoach/s10-ai-prompt-map.md`;
+- `docs/tapecoach/s10-score-calibration.md`;
+- `docs/tapecoach/s10-same-video-handling.md`;
+- `docs/tapecoach/s10-golden-fixtures.md`;
+- updated roadmap.
+
+**Acceptance:**
+
+- docs state AI is the report brain;
+- docs state supplied brief transparency is default;
+- docs state thin-shell output is failure;
+- docs state QA artefacts are proof, not the product;
+- roadmap remains sequencing-only.
+
+---
+
+### S10.1 — AI-led report module question map
+
+**Purpose:** Define what the AI must answer for every UI report module.
+
+**Why first:** The previous system failed because modules were populated by deterministic fallback copy instead of AI judgement.
+
+**Deliverables:**
+
+- `AiObservationPass` schema;
+- `AiProfessionalJudgementPass` schema;
+- `AiTechniqueCommentary` schema;
+- `AiTimestampedCommentary` schema;
+- `AiReportModuleCompletenessCheck` schema;
+- module-level AI questions;
+- repair prompt templates.
+
+**Acceptance:**
+
+- every UI report module has a corresponding AI question;
+- every AI output field has a destination in the report model;
+- missing/thin/generic modules trigger repair prompts;
+- no module relies on generic fallback copy as primary content.
+
+**Prompt:**
 
 ```text
-R2.0 Submission context preflight
+Implement S10.1 — AI-led report module question map.
+
+Context:
+TapeCoach has rolled back to S9-19 after S10 report-value regressions.
+README.md is the controlling product contract.
+
+Purpose:
+Define the AI question map and module-completeness contract before rebuilding report rendering.
+
+Deliverables:
+- AI questions for every visible report module;
+- structured observation and judgement output schemas;
+- technique and timestamp commentary schemas;
+- module completeness classifications;
+- repair prompts for missing, thin, generic, contradictory or unsupported modules.
+
+Acceptance:
+- every UI section has an AI question;
+- every AI answer has a report destination;
+- no generic fallback copy is accepted as primary report content.
 ```
 
-This slice confirms or captures:
+---
 
-- selected performer level;
-- audition type;
-- whether a brief/material was supplied;
-- whether material is fixed;
-- whether comparison is requested or not;
-- whether media is ready and assessable enough to proceed.
+### S10.2 — Full-value architecture and model types
 
-This improves downstream accuracy and reduces avoidable “not assessable” or invented-context failures.
+**Purpose:** Add architecture/types that support the AI-led report without changing user-facing behaviour yet.
 
-### 3.4 Split operational readiness into early and late parts
+**Deliverables:**
 
-Full operational readiness can remain R15, but a small locked-down support baseline should come much earlier:
+- `AnalysisInputContext`;
+- `BriefRequirement`;
+- `MediaEvidence`;
+- `TechniqueCommentary`;
+- `FullReportModel`;
+- `AuthenticatedReportModel`;
+- `OperatorAssumptionLog`.
+
+**Acceptance:**
+
+- types exist;
+- no broad public-safe restrictions are introduced;
+- no report behaviour is degraded;
+- architecture supports full-value output.
+
+---
+
+### S10.3 — Brief intelligence and authenticated brief transparency
+
+**Purpose:** Treat the supplied brief as first-class report input.
+
+**Deliverables:**
+
+- full useful brief preservation;
+- project/role/material extraction;
+- requirement extraction;
+- mandatory/preferred/optional/ambiguous classification;
+- achievement criteria per requirement.
+
+**Acceptance:**
+
+- supplied brief details can appear in authenticated report;
+- Canary A and Canary B brief requirements extract correctly;
+- no invented requirements;
+- red-line filtering remains narrow.
+
+---
+
+### S10.4 — AI observation and professional judgement prompts
+
+**Purpose:** Run the two-step AI analysis as the report intelligence source.
+
+**Deliverables:**
+
+- observation prompt;
+- professional judgement prompt;
+- prompt fixtures;
+- schema validation;
+- repair prompts.
+
+**Acceptance:**
+
+- observation pass identifies what appears in the tape;
+- judgement pass provides recommendation, fixes, strengths, technique commentary and next action;
+- AI output is module-ready;
+- no thin shell.
+
+---
+
+### S10.5 — Report model to UI piping
+
+**Purpose:** Render structured AI outputs in the performer-facing report.
+
+**Deliverables:**
+
+- `FullReportModel` composer;
+- `AuthenticatedReportModel` renderer mapping;
+- route text rendering;
+- PDF text rendering;
+- narrow red-line filter.
+
+**Acceptance:**
+
+- AI output appears in the route/PDF;
+- UI does not invent professional judgement;
+- if AI output exists but is not rendered, that is treated as a routing bug.
+
+---
+
+### S10.6 — Technique-library commentary
+
+**Purpose:** Attempt discipline-specific technique commentary wherever evidence exists.
+
+**Deliverables:**
+
+- acting commentary;
+- vocal/singing commentary;
+- movement/dance commentary;
+- MT package commentary;
+- commercial/screen-task commentary;
+- self-tape presentation commentary.
+
+**Acceptance:**
+
+- missing components are marked not assessable rather than ignored;
+- visible components receive specific commentary;
+- no avoidance of technique notes by default;
+- only high-risk medical/body/protected-characteristic/guaranteed-outcome claims are filtered.
+
+---
+
+### S10.7 — Timestamped commentary
+
+**Purpose:** Restore timestamped or time-banded commentary as a positive report feature.
+
+**Deliverables:**
+
+- timestamp/time-band prompt;
+- timestamped strengths/fixes/observations;
+- cut-off and component-boundary notes;
+- component-level fallback if timestamps unavailable.
+
+**Acceptance:**
+
+- timestamped commentary appears where available;
+- timestamp absence does not collapse the report;
+- report remains useful without timestamps.
+
+---
+
+### S10.8 — Score terminology and professional nuance
+
+**Purpose:** Align visible scores with report language and preserve nuance for professional takes clustered above 90.
+
+**Deliverables:**
+
+- score-to-language map;
+- professional-score nuance policy;
+- sub-dimension score language;
+- brief blocker override rules;
+- comparison score language.
+
+**Acceptance:**
+
+- score chips do not contradict verdicts;
+- a high score does not flatten professional feedback;
+- strong professional takes above 90 still receive meaningful written nuance;
+- brief blockers can override performance quality.
+
+---
+
+### S10.9 — Same-video and duplicate-upload handling
+
+**Purpose:** Handle duplicate media, retests and same-video comparisons explicitly.
+
+**Deliverables:**
+
+- same-video status model;
+- duplicate/retest classification;
+- operator confirmation fields;
+- same-video/new-brief handling;
+- same-video/new-level handling;
+- comparison safeguards.
+
+**Acceptance:**
+
+- accidental duplicates are not treated as different performances;
+- intentional retests are allowed and labelled;
+- same-video comparison cannot create a false winner;
+- operator assumptions are captured where needed.
+
+---
+
+### S10.10 — Positive brief-complete report path
+
+**Purpose:** Ensure strong complete takes produce rich positive reports, not empty “no blocker” reports.
+
+**Deliverables:**
+
+- positive readiness rationale;
+- achieved/mostly achieved brief status;
+- no-mandatory-fix language;
+- specific strengths;
+- technique commentary;
+- optional polish;
+- submit checklist;
+- do-not-overfix guidance.
+
+**Acceptance:**
+
+- Canary B passes route/PDF review;
+- no invented blocker;
+- strengths are specific;
+- optional polish is useful and finite;
+- no “This affects readability, not talent” as sole strength;
+- no thin shell.
+
+---
+
+### S10.11 — Incomplete mandatory package path
+
+**Purpose:** Ensure missing required material produces decisive fix-first guidance.
+
+**Deliverables:**
+
+- missing-material detection;
+- missing Side 1 fix-first;
+- song/package completion;
+- continuous-video package check;
+- one-file export/upload check;
+- finite retake plan.
+
+**Acceptance:**
+
+- Canary A passes route/PDF review;
+- missing Side 1 is fix-first;
+- song/package completion appears;
+- continuous-video check appears;
+- no false audio blocker;
+- no generic “Blocked…” legacy copy.
+
+---
+
+### S10.12 — Route/PDF first QA
+
+**Purpose:** Test the actual performer-facing report surface.
+
+**Deliverables:**
+
+- route text snapshot;
+- PDF text snapshot;
+- report surface assertions;
+- operator fixture confirmation.
+
+**Acceptance:**
+
+- route/PDF text is checked;
+- payload parity alone is insufficient;
+- Canary A and Canary B pass visually and textually;
+- thin-shell phrases are blocked.
+
+---
+
+### S10.13 — QA artefacts as secondary proof
+
+**Purpose:** Reintroduce diagnostics without blocking useful report generation.
+
+**Deliverables:**
+
+- AI pass artefacts;
+- report model artefacts;
+- red-line filter trace;
+- report quality check;
+- operator assumption log;
+- QA emission diagnostics.
+
+**Acceptance:**
+
+- QA artefacts emit when enabled;
+- missing artefacts are clearly diagnosed;
+- report still renders if artefacts fail;
+- artefact failure blocks proof/release, not user report generation;
+- no secrets, signed URLs, raw prompts or raw responses leak.
+
+---
+
+## 9. Post-S10 roadmap
+
+### S11 — Broaden report reliability and fixture coverage
+
+Purpose:
 
 ```text
-R1.4 Locked-down processing and failure-state UX
+Expand from two core canaries to a broad suite of realistic performer scenarios.
 ```
 
-Users and testers need to know whether a tape is uploading, processing, failed, not assessable, or awaiting artefact/gate completion. This is product value, not only operations.
-
-### 3.5 Delay active-learning queues until after the brief/readiness MVP
-
-`R3.2 Automated candidate queue` and `R3.3 Batched high-value review tasks` are valuable, but they do not maximise immediate user value. Keep `R3.1 Minimal technique standard schema` where it supports safe descriptors and requested-technique handling, but move active-learning workflow after:
-
-- brief achievement MVP;
-- readiness-first preview shell;
-- priority/action-plan normalisation;
-- at least one locked-down usefulness loop.
-
-Active learning should mature from observed product gaps, not before the product has enough visible behaviour to learn from.
-
-### 3.6 Keep comparison late
-
-Comparison remains high-risk because false winners are P0. It should stay after single-take report value, trace proof and safety gates. The only early comparison work should be invocation discipline and proof that ordinary single-take runs do not accidentally emit comparison outputs.
-
-### 3.6A Limit S9-16 duplicate detection to Tier 1
-
-S9-16 should correct the same-video comparison safety model before any broader comparison user value work. The immediate target is Tier 1 same-user, same-audition duplicate detection as defined in `README.md`.
-
-S9-16 must not treat runtime/reference ID inequality as proof that videos differ. If upload-level or content-level evidence is unavailable, duplicate detection should be `insufficient_evidence`, not cleanly `not_detected`.
-
-Tier 2 near-duplicate sampling and Tier 3 normalised media fingerprinting are deferred. They remain useful later, but they should not displace higher-value near-term work such as readiness reporting, brief itemisation, safe limitations, parity/no-export proof and Level 2 evidence correctness.
-
-### 3.7 Keep public scoring late or optional
-
-Do not make public raw score exposure a near-term product goal. Users can receive high value from qualitative readiness, gap-to-level and prioritised fixes. Public scoring should remain blocked until the README criteria pass.
-
----
-
-## 4. Product outcome metrics
-
-Each slice should report whether it improved the user’s ability to answer the core TapeCoach questions.
-
-Minimum product metrics for locked-down validation:
-
-| Metric | Why it matters | Collection method |
-|---|---|---|
-| Submit/retake clarity | Core product question. | Tester rubric: “Can you tell whether this tape is ready to submit at the selected level?” |
-| Top-fix clarity | Converts feedback into action. | Tester rubric: “Can you identify the top 1–3 things to change in the next take?” |
-| Brief understanding | Tests whether the system understood the task. | Compare generated requirement list to supplied brief. |
-| Brief achievement trust | Tests whether achieved / not achieved / not assessable feels grounded. | Fixture expectation + tester review. |
-| Actionability | Ensures feedback is not generic. | Count evidence-linked priority fixes and action-plan items. |
-| Assessability honesty | Prevents unfair performance criticism. | Validator + tester check for “not assessable” vs “not achieved”. |
-| Suppression quality | Confirms blocked content does not leak. | GateTrace/render parity checks. |
-| Time to useful report | Product experience, not just model latency. | Locked-down telemetry from submit to report-ready state. |
-| Re-run usefulness | Tests next-take loop. | Tester submits revised/paired take and assesses whether feedback helps. |
-
-Do not require these as public-release gates unless README is updated. Use them to prioritise product delivery and avoid building invisible artefacts at the expense of user value.
-
----
-
-## 5. Revised user-value ladder
-
-The product should advance in this order:
-
-1. **Make the run trustworthy enough to inspect** — S9 truth, no false Level 2 promotion.
-2. **Make the user context explicit** — selected level, audition type, brief/material state and media readiness.
-3. **Make the report readable earlier** — readiness-first preview shell with blocked sections suppressed.
-4. **Make the brief understandable** — itemise what was asked.
-5. **Make achievement visible** — achieved / partly achieved / not achieved / not assessable.
-6. **Make fixes useful** — priority fixes, next-take checklist and action plan.
-7. **Make evidence stronger** — real-runtime evidence linkage for the visible sections first.
-8. **Make render safe** — permissions, parity and no-export proof for preview/report surfaces.
-9. **Make specialist feedback safer** — descriptor-first technique feedback before public named authority.
-10. **Make repertoire helpful but cautious** — only when brief/research/library support it.
-11. **Make comparison safe** — explicit invocation, evidence delta, GF-01 / RT-15.
-12. **Make broad release possible** — Level 2, Level 3, Level 4 and RC evidence.
-
-This ladder keeps the “good enough” principle real: users get useful, bounded improvements before the full system is perfect.
-
----
-
-## 6. PM-optimised first tranche
-
-These cards should be queued first. They are intentionally small and reversible.
-
-| Order | Slice | User/operator benefit | Scope | Good-enough acceptance | Still blocked |
-|---:|---|---|---|---|---|
-| 1 | `R0.3` Current report usefulness baseline | Establishes what users cannot currently answer. | Run current locked-down product/fixtures through a simple usefulness rubric. | Baseline records submit/retake clarity, top-fix clarity, brief understanding and obvious failure modes. | No product gate changes. |
-| 2 | `R1.1A` Thin contract pack | Prevents design-through-review without delaying product work. | Only contracts needed for the first visible preview: schema version, path register, manifest/metrics minimum, rule ID convention. | Contract tests pass for first tranche; non-essential contract depth is deferred. | Full L2 remains blocked. |
-| 3 | `R1.4` Locked-down processing and failure-state UX | Users/testers understand what is happening. | Processing, failed, not assessable, media-not-ready and artefact/gate-blocked states. | No silent failures; corrupt/unready media gives a clear safe state. | Customer-facing release. |
-| 4 | `R9.1A` Render permission enforcement | Enables safe early preview. | Render reads and enforces `GateTrace.public_output_permissions`. | Blocked score, technique, repertoire and comparison content suppress even if upstream payload contains it. | Full parity/no-export proof. |
-| 5 | `R10.0` Readiness-first preview shell | Users see a clearer TapeCoach report earlier. | Readiness, why, priorities, strengths, improvements, action plan, gap, limitations; omit/suppress blocked sections. | Approved locked-down users can answer “submit or retake?” and “what should I fix first?” | Public scoring, public technique, repertoire, comparison, customer release. |
-| 6 | `R2.0` Submission context preflight | Reduces wrong assumptions and invented context. | Confirm selected level, audition type, brief/material presence, fixed-material status and media readiness. | Missing/ambiguous context is visible and routed to safe no-brief/unknown handling. | Public release. |
-| 7 | `R2.1` Brief requirement itemisation | User sees what TapeCoach thinks the task asked for. | Parse brief into mandatory/preferred/optional/style/material/technical/admin/ambiguous items. | No invented requirements; ambiguous items stay ambiguous. | Claiming technique success. |
-| 8 | `R2.2` Brief achievement MVP | User sees achieved / partly achieved / not assessable. | Judge each assessable requirement using available evidence. | Mandatory assessable missing items reduce readiness; not assessable does not become performance criticism. | Full L2 closure. |
-| 9 | `R2.3` Brief-driven priority fixes | User knows what to fix first. | Link brief gaps to priority fixes and action plan. | Highest-impact brief gap appears before secondary refinements. | Public named technique authority. |
-| 10 | `R10.2A` Action-plan and next-take checklist | Converts feedback into action. | Normalise priority fixes into a concise next-take checklist. | Every meaningful improvement is represented; no generic filler or single-item collapse. | Public score/authority. |
-| 11 | `R8.1A` Real-runtime evidence linkage for preview sections | Makes visible report claims defensible. | Real-runtime evidence links for readiness, brief achievement, priority fixes and limitations on scoped fixtures. | `legacy_adapter` remains insufficient; scoped `real_runtime_v3` links pass referential integrity. | Full L2-A. |
-| 12 | `R10.3A` Locked-down usefulness loop | Validates value without redesigning in review. | Approved testers use a fixed rubric on the preview report. | Review verifies the designed behaviour; design changes become future slices unless P0/P1. | Broad release. |
-| 13 | `R9.2A` Preview parity and leakage proof | Confirms what users see matches permitted payload. | Render payload, rendered report, parity, leakage and UK English checks for preview surfaces. | Parity/leakage failures block preview expansion. | Full export/no-export proof if not in scope. |
-| 14 | `R15.0` Locked-down operations minimum | Makes early usage supportable. | Basic monitoring, P0 alert conditions, retention/deletion handling for locked-down QA, queue/failure visibility. | Operators can see failed runs and suppress/retry safely. | Customer-facing release. |
-
----
-
-## 7. Revised release train by product stage
-
-### Stage A — Safe preview foundation
-
-Goal: make it safe to show bounded report improvements to approved locked-down users.
-
-Includes:
-
-- `R0.3` current usefulness baseline;
-- `R1.1A` thin contract pack;
-- `R1.2` stage atomicity for first tranche;
-- `R1.4` processing/failure-state UX;
-- `R9.1A` render permission enforcement;
-- `R10.0` readiness-first preview shell.
-
-Do not wait for full L2 closure before this stage, but keep all blocked content suppressed.
-
-### Stage B — Brief-first MVP
-
-Goal: answer “what did the brief ask for, and did the tape achieve it?”
-
-Includes:
-
-- `R2.0` submission context preflight;
-- `R2.1` brief requirement itemisation;
-- `R2.2` brief achievement summary;
-- `R2.3` brief-driven priority fixes.
-
-This should be the primary early user-benefit release family.
-
-### Stage C — Actionability and report quality
-
-Goal: make the report useful enough that a performer knows what to do next.
-
-Includes:
-
-- `R10.2A` action-plan and next-take checklist;
-- timestamp depth and underproduction diagnostics for scoped fixtures;
-- assessability wording improvements;
-- component breakdown only where it adds user value;
-- `R10.3A` usefulness loop.
-
-This stage should avoid public scores and public technique authority.
-
-### Stage D — Evidence proof for the visible product
-
-Goal: make the visible report defensible and release-gate ready.
-
-Includes:
-
-- `R8.1A` real-runtime evidence linkage for preview-visible sections;
-- `R8.2` per-stage ModelRunTrace;
-- `R8.3` ValidatorTrace and GateTrace;
-- `R9.2A` parity/leakage/UK English for preview-visible sections;
-- then full R8/R9 closure for Level 2 scope.
-
-This stage converts useful preview behaviour into stronger release evidence.
-
-### Stage E — Specialist descriptors before public authority
-
-Goal: improve specificity without waiting for named technique authority.
-
-Includes:
-
-- `R3.1` minimal technique/skill-family standards for selected seed set;
-- `R4.1` requested technique extraction;
-- `R4.2` observability/absence/not-assessable handling;
-- `R4.3` safe descriptor feedback;
-- `R11.1` technique-informed safe descriptors;
-- `R11.2` discipline-specific validator upgrades.
-
-Move `R3.2` and `R3.3` active-learning workflows after there is enough preview/report usage to generate meaningful candidates.
-
-### Stage F — Knowledge and repertoire
-
-Goal: make material-aware feedback more specific without overclaiming.
-
-Includes:
-
-- `R5.1` knowledge provenance trace;
-- `R6.1` research invocation decision;
-- `R6.2` cautious research-supported descriptors;
-- `R7.1` repertoire resolver;
-- `R7.2` repertoire-to-technique mapping;
-- `R7.3` repertoire-informed safe feedback.
-
-Do not let repertoire work block brief-first or readiness-first value.
-
-### Stage G — Public authority candidates
-
-Goal: promote only proven specialist/repertoire claims.
-
-Includes:
-
-- `R12.1` candidate promotion board;
-- `R12.2` limited public authority promotions.
-
-This remains human-light but not human-free, because authority promotions need governance.
-
-### Stage H — Comparison runtime and safety
-
-Goal: compare only when explicitly invoked and avoid false winners.
-
-Includes:
-
-- `S9-16A` duplicate detection contract and documentation;
-- `S9-16B` Tier 1 media identity capture;
-- `S9-16C` DuplicateDetectionTrace implementation;
-- `S9-16D` same-video, suppression and comparison parity integration;
-- `S9-16E` base-take Level 2 blocker cleanup;
-- `S9-16F` real-runtime rerun and Level 2 audit;
-- `S9-16G` Level 2 closure decision;
-- `R13.1` invocation record first;
-- `R13.2` evidence-delta comparison;
-- `R14.1` GF-01 same-video suppression;
-- `R14.2` RT-15 repeatability/variance.
-
-Comparison should not be an early user-value dependency. Single-tape clarity is more important and lower risk.
-
-S9-16 is not public comparison output, a public winner/recommendation release, public scoring, public technique authority, production-safe acceptance or Level 2 acceptance by default.
-
-### Stage I — Operational readiness and release candidate
-
-Goal: decide whether broader release is possible.
-
-Includes:
-
-- remaining `R15.1` operational readiness requirements;
-- `R15.2` Level 4 locked-down website QA;
-- `R16.1` release candidate decision;
-- public scoring/authority decisions only where README gates pass.
-
----
-
-## 8. Missing product slices to add
-
-### 8.1 Submission context preflight
-
-Add before brief parsing. Without it, the system may over-rely on resolver inference and produce avoidable ambiguity.
-
-### 8.2 Processing/failure-state user experience
-
-Users need clear status when analysis is processing, blocked, failed, not assessable or awaiting artefact/gate proof.
-
-### 8.3 Readiness-first preview shell
-
-Move earlier than current `R10.1`. This is the fastest route to visible benefit.
-
-### 8.4 Next-take checklist
-
-The report should end with a concise “record the next take like this” checklist derived from priority fixes and action plan.
-
-### 8.5 User usefulness rubric
-
-Add fixed locked-down tester questions:
-
-```text
-Can you tell whether to submit or retake?
-Can you name the top 1–3 fixes?
-Do the brief requirements look correct?
-Does not-assessable feel fair?
-Is anything too generic?
-Is anything overconfident?
-Would this change your next take?
-```
-
-### 8.6 Product telemetry for early slices
-
-Track report-ready time, failure states, suppression counts, brief itemisation count, priority-fix count and user/tester usefulness scores. Keep telemetry internal and private.
-
-### 8.7 Vertical-slice discipline strategy
-
-Do not attempt all disciplines, all levels and all brief types in the first value release. Start with a small fixture-backed vertical slice, then expand.
-
-Recommended first vertical slice:
-
-```text
-single-take, brief-supplied, fixed-material audition,
-with selected level known,
-with no public score, no public named technique authority,
-no public comparison and no definitive repertoire authority.
-```
-
-Then add one discipline at a time based on fixture readiness and user demand.
-
-## 9. What should be de-emphasised early
-
-The following work is valuable but should not block early locked-down user value:
-
-| Work | PM recommendation |
-|---|---|
-| Public raw score exposure | Keep blocked; qualitative readiness is enough early. |
-| Public named technique authority | Use safe descriptors first. |
-| Definitive repertoire/show claims | Use cautious brief/material context first. |
-| Comparison winners | Keep late; false winners are P0. |
-| Tier 2/Tier 3 duplicate fingerprinting | Defer; S9-16 targets Tier 1 same-user, same-audition evidence first. |
-| Full active-learning workflow | Start after visible product behaviour creates useful candidates. |
-| Full customer-facing release proof | Keep gated; do not confuse locked-down preview with release. |
-
----
-
-## 10. Revised first release-card queue
-
-Queue in this order unless an engineering dependency makes a smaller split necessary:
-
-1. `R0.3` Current report usefulness baseline.
-2. `R1.1A` Thin contract pack for first tranche.
-3. `R1.4` Locked-down processing/failure-state UX.
-4. `R9.1A` Render permission enforcement.
-5. `R10.0` Readiness-first preview shell.
-6. `R2.0` Submission context preflight.
-7. `R2.1` Brief requirement itemisation.
-8. `R2.2` Brief achievement MVP.
-9. `R2.3` Brief-driven priority fixes.
-10. `R10.2A` Action-plan and next-take checklist.
-11. `R8.1A` Real-runtime evidence linkage for preview sections.
-12. `R10.3A` Locked-down usefulness loop.
-13. `R9.2A` Preview parity/leakage/UK English checks.
-14. `R15.0` Locked-down operations minimum.
-
-This queue gives users a better, safer, more useful single-tape report earlier while the engineering track continues closing evidence and release gates.
-
----
-
-## 11. README suggestions from PM review
-
-The README does not need a major rewrite. Its current product direction is strong.
-
-Recommended lightweight additions, if the README owner wants to make the product-delivery philosophy controlling rather than roadmap-only:
-
-1. Add a short “product delivery principle” note: safe locked-down value may be previewed before full customer-facing release if `GateTrace.public_output_permissions` permits the specific output.
-2. Add product outcome metrics as non-gate learning metrics.
-3. Add “next-take checklist” as an acceptable public report shape under `Action plan`.
-4. Add processing/failure-state UX to operational readiness or media readiness.
-5. Clarify that public raw score exposure is not needed for early product value.
-
-These are PM suggestions only. They do not unblock public scoring, public technique authority, public repertoire claims, comparison winners or customer-facing release.
-
----
-
-## 12. Non-negotiable controls preserved
-
-This PM resequencing preserves:
-
-- README wins over roadmap;
-- S9 is not Level 2;
-- `legacy_adapter` is not `real_runtime_v3`;
-- public scoring remains blocked;
-- public technique authority remains blocked;
-- public repertoire authority remains blocked;
-- public comparison winners remain blocked;
-- comparison cannot run by default for ordinary single-take analysis;
-- customer-facing release remains blocked until RC gates pass;
-- no per-run human judgement;
-- no design-through-review;
-- no invented timestamps, technique claims, repertoire claims, fixes or padded feedback.
-
----
-
-## 13. S9-16 — real-runtime Level 2 blocker closure and Tier 1 duplicate-video detection
-
-This section is sequencing only. It is aligned to the README S9-16 duplicate/same-video detection contract and must not override `README.md`.
-
-### 13.1 Product rationale
-
-S9-15/S9-16 runtime review showed that Level 2 remains `not_accepted` for valid reasons: parity/no-export proof gaps, partial runtime evidence, legacy score/technique traces, internal-only validator/gate/model traces and comparison duplicate-detection weakness.
-
-The same-video comparison test uploaded the same underlying video as two different takes. The system compared take IDs, analysis IDs and Mux playback references, reported `same_video_detected=false`, did not suppress the internal recommendation, and allowed comparison parity to pass. That approach is incorrect because every new upload can receive unique runtime/reference identifiers even when the media content is the same.
-
-S9-16 therefore focuses on:
-
-1. correcting the same-video duplicate-detection contract;
-2. implementing Tier 1 duplicate detection for same-user, same-audition comparison safety;
-3. fixing real-runtime blocker diagnostics revealed by the base-take bundle;
-4. keeping Level 2/public/production gates blocked unless every required gate truly satisfies.
-
-S9-16 must not become a public release, public comparison feature, public scoring feature, public technique-authority feature or full media-fingerprint programme.
-
-### 13.2 S9-16 delivery sequence
-
-#### S9-16A — duplicate detection contract and documentation
-
-Benefit: prevents the same-video work becoming another design-by-review loop.
-
-Output: README and roadmap define Tier 1 / Tier 2 / Tier 3 duplicate detection, confidence scoring and comparison parity behaviour.
+Likely work:
+
+- drama scene only;
+- musical theatre song only;
+- MT song + acting + dance package;
+- commercial self-tape;
+- poor audio;
+- poor framing;
+- no brief;
+- partial brief;
+- multiple takes;
+- duplicate video;
+- high-scoring professional takes;
+- early-career performer calibration.
 
 Acceptance:
 
-```text
-README states runtime identifiers are diagnostic only.
-README defines confidence-based Tier 1 same-user / same-audition duplicate detection.
-Roadmap defers Tier 2 and Tier 3.
-No public output changes.
-No Level 2 acceptance.
-```
+- reports remain useful across disciplines;
+- no thin shell;
+- score terminology remains aligned;
+- technique commentary is attempted where evidence exists.
 
-#### S9-16B — Tier 1 media identity capture
+### S12 — Technique-library maturity
 
-Benefit: creates low-cost upload/content evidence for same-audition duplicate detection.
-
-Output: internal safe media identity fields captured where available.
-
-Tier 1 signals:
+Purpose:
 
 ```text
-original_upload_file_hash
-visible_or_original_file_name
-metadata_file_name
-file_size_bytes
-video_duration_ms
-opening_video_sample_hash_or_profile
-closing_video_sample_hash_or_profile
-opening_audio_profile_hash
-closing_audio_profile_hash
-operator_same_video_assertion
+Make the technique-library commentary more structured, trustworthy and discipline-aware.
 ```
+
+Likely work:
+
+- acting rubric expansion;
+- vocal/singing rubric expansion;
+- dance/movement rubric expansion;
+- MT package integration rubric;
+- screen/commercial rubric;
+- level-specific technique expectations;
+- uncertainty phrasing.
 
 Acceptance:
 
+- technique commentary is useful and specific;
+- not-assessable limitations are clear;
+- no medical/body/protected-characteristic claims.
+
+### S13 — Score and comparison productisation
+
+Purpose:
+
 ```text
-available Tier 1 signals are persisted internally;
-unavailable signals are recorded as unavailable;
-missing evidence is not treated as not_detected;
-secrets/signed URLs/raw private media paths are not emitted;
-public output unchanged.
+Turn score/comparison diagnostics into a consistent authenticated product feature.
 ```
 
-#### S9-16C — DuplicateDetectionTrace implementation
+Likely work:
 
-Benefit: comparison runtime gets a dedicated proof artefact for duplicate detection instead of relying on take/playback reference equality.
-
-Output: `comparison/duplicate_detection_trace.json`.
+- sub-dimension score explanation;
+- professional >90 nuance;
+- comparison reasoning;
+- same-video comparison safeguards;
+- score trend across takes;
+- operator/test to authenticated product mode transition.
 
 Acceptance:
 
+- scores never contradict language;
+- comparison explains why;
+- duplicate videos are handled honestly;
+- high-level performers still receive useful nuance.
+
+### S14 — QA, provenance and operator proof hardening
+
+Purpose:
+
 ```text
-duplicate_detection_status supports detected, likely_duplicate, possible_duplicate, insufficient_evidence, not_detected;
-duplicate_detection_confidence is deterministic;
-not_detected requires enough upload/content evidence;
-operator_same_video_assertion works for internal QA duplicate-test mode;
-trace is internal-only and safe.
+Strengthen proof without degrading report value.
 ```
 
-#### S9-16D — same-video suppression and comparison parity integration
+Likely work:
 
-Benefit: duplicate/likely duplicate comparisons no longer produce false internal winners or satisfied comparison parity.
-
-Output: duplicate detection feeds same-video repeatability, suppression, comparison report, comparison parity, manifest and metrics.
+- stable QA artefact emission;
+- operator confirmation workflows;
+- report model snapshots;
+- AI prompt/version provenance;
+- route/PDF snapshot storage;
+- regression dashboards.
 
 Acceptance:
 
+- useful report renders even if proof artefacts fail;
+- proof failure blocks release evidence only;
+- diagnostics are clear.
+
+### S15 — Production/customer release readiness
+
+Purpose:
+
 ```text
-same video uploaded as two different takes is detected or classified insufficient;
-different take_id / analysis_run_id / mux refs do not prove different media;
-detected or likely_duplicate requires suppression unless decisive evidence_delta_trace proves material difference;
-possible_duplicate keeps comparison parity insufficient unless evidence_delta_trace proves material difference;
-insufficient_evidence keeps comparison parity insufficient;
-comparison parity cannot pass on missing duplicate evidence;
-public output unchanged.
+Prepare for broader customer release after report value and proof are stable.
 ```
 
-#### S9-16E — base-take Level 2 blocker cleanup
+Likely work:
 
-Benefit: closes misleading blocker labels and restores proof artefacts that should exist in ordinary single-take runs.
-
-Output: manifest/metrics and proof bundle corrections.
+- release gates;
+- privacy/export modes;
+- support workflows;
+- monitoring;
+- billing/quotas if applicable;
+- production runbooks;
+- public/share report rules if introduced.
 
 Acceptance:
 
+- production/customer release is explicitly approved;
+- Level 2/Level 3 gates are separately accepted where required;
+- authenticated report value remains intact.
+
+---
+
+## 10. Golden fixtures
+
+### Fixture A — incomplete mandatory MT package
+
 ```text
-AnalysisEvidenceState emitted/partial is not labelled missing;
-EvidenceAnchors metrics reflect real_runtime_v3 partial anchors;
-ordinary single-take runs are not blocked solely by missing comparison artefacts;
-report parity emits or truthfully blocks;
-no-export proof lanes emit or truthfully block;
-Level 2 remains not_accepted unless all required gates pass.
+Brief:
+Side 1 + contemporary legit MT song + one continuous video.
+
+Tape:
+partial/cut-off song only;
+Side 1 missing;
+audio assessable.
+
+Expected:
+retake required;
+missing Side 1 fix-first;
+song completion;
+continuous-video package check;
+one-file export check;
+specific next-take plan;
+no false audio blocker;
+no generic fallback copy.
 ```
 
-#### S9-16F — real-runtime rerun and Level 2 audit
-
-Benefit: validates S9-16 against actual base-take and comparison-invoked runtime bundles.
-
-Output: fresh ordinary base-take bundle and duplicate-comparison bundle.
-
-Acceptance:
+### Fixture B — strong professional complete package
 
 ```text
-manifest and qa_acceptance_metrics align;
-ordinary single-take has no inappropriate comparison blockers;
-duplicate comparison suppresses false winner or remains insufficient;
-parity/no-export blockers are truthful;
-production_safe_status remains blocked;
-public_scoring_status remains blocked;
-public_technique_authority_status remains blocked;
-public output unchanged.
+Brief:
+same or equivalent.
+
+Tape:
+Side 1 present;
+song present;
+package complete;
+professional level;
+audio/video assessable.
+
+Expected:
+submit / submit if deadline is close;
+brief achieved or mostly achieved;
+no mandatory blocker;
+specific strengths;
+specific technique commentary;
+optional polish;
+submit checklist;
+do-not-overfix.
 ```
 
-#### S9-16G — Level 2 closure decision
+### Fixture C — old-report usefulness baseline
 
-Benefit: avoids claiming acceptance from source code or partial bundles.
+The 22 May report is a minimum usefulness floor, not an exact template. New reports must preserve or exceed its practical specificity while applying only narrow high-risk filtering.
 
-Output: decision: Level 2 accepted for the audited run shape, or exact remaining blockers.
-
-Acceptance:
+### Fixture D — poor assessability
 
 ```text
-all required artefacts emitted or genuinely not_applicable;
-no required artefact missing/deferred/emitted_blocked/failed_emission;
-all required subgates sufficient/passed;
-accepted_gate_evidence assigned only to validated runtime evidence;
-legacy_adapter/source_scaffold/first_pass_internal traces do not satisfy real_runtime_v3 gates;
-public/production gates remain correctly blocked unless separately accepted.
+Expected:
+limited report allowed only with specific assessability explanation;
+no invented fixes;
+no thin shell.
 ```
 
-### 13.3 Duplicate detection maturity tiers
-
-#### Tier 1 — immediate S9-16 quick win
-
-Tier 1 is same-user and same-audition scoped. It is confidence-based and should catch the majority of accidental duplicate uploads without introducing heavyweight media fingerprinting.
-
-Tier 1 should use upload and lightweight content signals:
+### Fixture E — no brief supplied
 
 ```text
-original_upload_file_hash
-visible_or_original_file_name
-metadata_file_name
-file_size_bytes
-video_duration_ms
-opening video sample window
-closing video sample window
-opening audio profile window
-closing audio profile window
+Expected:
+performance and setup feedback;
+no invented brief requirements;
+brief adherence not assessable;
+useful next action.
 ```
 
-Not every signal has to match. Filename and duration may change while stronger content/upload signals still identify the same video.
-
-Tier 1 must use sampling windows, not single frames. This is especially important because many self-tapes start with a performer slate or introduction, and the opening second may look similar across different takes.
-
-#### Tier 2 — deferred near-duplicate sampling
-
-Tier 2 may add:
+### Fixture F — same-video duplicate/retest
 
 ```text
-perceptual frame hashes;
-middle-window sampling;
-more robust audio profile comparison;
-trim/re-encode tolerance;
-duration-normalised sample windows.
+Expected:
+system marks duplicate, retest or uncertain;
+operator confirmation requested where needed;
+comparison does not recommend one duplicate over another as different performances.
 ```
 
-Tier 2 is deferred because the current product has higher-value low-hanging work: report usability, brief itemisation, safer limitations, parity/no-export proof closure and Level 2 evidence correctness.
-
-#### Tier 3 — future normalised media fingerprinting
-
-Tier 3 may add normalised video/audio fingerprinting combined with upload hash.
-
-It should be scoped to the same user profile, with optional same-user cross-audition lookup if later justified. It must not compare across the full database unless a separate privacy, performance and product-value case is approved.
-
-Tier 3 is intentionally much later in the development cycle.
-
-### 13.4 Non-goals for S9-16
-
-S9-16 must not implement:
+### Fixture G — comparison
 
 ```text
-public comparison output;
-public winner or recommendation;
-public scoring;
-public technique authority;
-production-safe acceptance;
-Level 3 repeatability;
-Level 4 locked-down website QA;
-full normalised media fingerprinting;
-global database fingerprint comparison;
-DB-wide duplicate search across users.
-```
-
-S9-16 may add internal QA metadata or artefacts needed for Tier 1 duplicate detection, provided public output remains unchanged and secrets/raw private media URLs are not emitted.
-
-### 13.5 Roadmap positioning
-
-S9-16 should proceed before any renewed Level 2 acceptance attempt. It closes the highest-risk comparison-safety gap and the most misleading real-runtime blocker diagnostics.
-
-Tier 2 and Tier 3 duplicate detection should be placed later than near-term user-value work. The product still has lower-hanging improvements with clearer user benefit, including:
-
-```text
-readiness-first report clarity;
-brief requirement itemisation;
-achieved / partly achieved / not assessable status;
-priority-fix ordering;
-next-take actions;
-assessability limitations;
-parity/no-export proof closure;
-real runtime evidence correctness.
+Expected:
+score/comparison chips visible in authenticated/operator/test mode;
+comparison reasoning exists when comparison is shown;
+no guaranteed casting outcome.
 ```
 
 ---
 
-## 14. Final PM position
+## 11. Operating rules for roadmap slices
 
-The biggest opportunity is not to accelerate every feature. It is to accelerate the right visible value:
+Every slice must satisfy these rules:
+
+1. **Report value first.** If the route/PDF is weak, the slice fails.
+2. **AI question first.** Do not add report UI without an AI question.
+3. **No generic code brain.** Code must not invent professional critique.
+4. **Brief transparency by default.** Do not suppress supplied brief content by default.
+5. **Technique commentary by default.** Attempt it where evidence exists.
+6. **Timestamp commentary by default.** Attempt timestamps/time bands where available.
+7. **Score language must align.** Numeric values must not contradict report language.
+8. **Professional score nuance matters.** High-scoring professional takes still need written distinction.
+9. **Same-video handling is explicit.** Duplicate/retest/comparison cases must not be ambiguous.
+10. **Operator assumptions are tested.** Canary-critical assumptions must be confirmed or marked uncertain.
+11. **QA is proof, not product.** Artefact work must not starve report value.
+12. **Minimal env sprawl.** Product toggles belong in admin/database config where possible.
+
+---
+
+## 12. Stop / rollback conditions
+
+Pause or rollback a slice if any of these occurs:
+
+- Canary A or Canary B regresses;
+- the route/PDF becomes less useful than the previous accepted state;
+- a module becomes generic/thin because AI output was not requested or not routed;
+- supplied brief detail is suppressed by default;
+- score language contradicts report terminology;
+- same-video comparison creates a false winner;
+- QA/proof work blocks useful report generation unnecessarily;
+- product toggles are implemented as env-var sprawl;
+- production/customer/Level 2 approval is claimed without a dedicated release slice.
+
+---
+
+## 13. What this roadmap deliberately does not do
+
+This roadmap does not approve:
+
+- production/customer release;
+- Level 2 or Level 3 release acceptance;
+- public-share/export report mode;
+- public scoring release;
+- public comparison recommendation release;
+- broad removal of red-line handling;
+- direct raw prompt/raw response output;
+- direct internal QA artefact rendering as the report.
+
+It does approve the S10 direction:
 
 ```text
-First make the report easier to trust, understand and act on.
-Then make the proof spine stronger.
-Then expand specialist depth.
-Then add repertoire and comparison.
-Then decide on public scoring, public authority and customer release.
+Full-value authenticated report mode.
+AI as the brain.
+Prompt-engineering first.
+Supplied brief transparency.
+Technique and timestamp commentary.
+Score/comparison nuance.
+Same-video handling.
+Route/PDF first acceptance.
+QA as secondary proof.
 ```
 
-The fastest useful product path is:
+---
 
-```text
-safe preview shell
-→ context preflight
-→ brief itemisation
-→ brief achievement
-→ priority fixes
-→ next-take checklist
-→ scoped real-runtime evidence
-→ parity/leakage proof
-→ broader specialist and release gates
-```
+## 14. Final roadmap rule
 
-This keeps the product honest while giving approved locked-down users meaningful benefit much sooner.
+If the performer would not find the report useful within 60 seconds, the roadmap slice fails — regardless of how clean the payloads, artefacts or gates look.
