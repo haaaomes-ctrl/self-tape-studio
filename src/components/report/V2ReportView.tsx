@@ -37,15 +37,41 @@ function safeNum(v: unknown): number | null {
 function safeArr<T = unknown>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
 }
+function safeObj(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+
+function labelize(value: unknown): string {
+  const raw = safeStr(value) ?? "";
+  return raw.replace(/_/g, " ");
+}
+
+function itemTitle(item: unknown): string | null {
+  if (typeof item === "string") return item;
+  const o = safeObj(item);
+  if (!o) return null;
+  return safeStr(o.title) ?? safeStr(o.headline) ?? safeStr(o.point) ?? safeStr(o.summary);
+}
+
+function itemDetail(item: unknown): string | null {
+  if (typeof item === "string") return null;
+  const o = safeObj(item);
+  if (!o) return null;
+  return (
+    safeStr(o.detail) ??
+    safeStr(o.exact_action) ??
+    safeStr(o.evidence_summary) ??
+    safeStr(o.why_it_matters) ??
+    safeStr(o.why_to_preserve) ??
+    null
+  );
+}
 
 function ScoreBar({ value }: { value: number }) {
   const clamped = Math.max(0, Math.min(100, value));
   return (
     <div className="mt-1 h-2 overflow-hidden rounded-full bg-border">
-      <div
-        className="h-full rounded-full bg-primary"
-        style={{ width: `${clamped}%` }}
-      />
+      <div className="h-full rounded-full bg-primary" style={{ width: `${clamped}%` }} />
     </div>
   );
 }
@@ -68,6 +94,27 @@ function Section({
   );
 }
 
+function SimpleList({ items, marker = "•" }: { items: unknown[]; marker?: string }) {
+  const rows = items
+    .map((item) => ({ title: itemTitle(item), detail: itemDetail(item) }))
+    .filter((item) => item.title || item.detail);
+  if (rows.length === 0) return null;
+  return (
+    <ul className="space-y-2 text-sm">
+      {rows.map((item, index) => (
+        <li key={index} className="flex gap-2">
+          <span className="text-muted-foreground">{marker}</span>
+          <span>
+            {item.title && <span className="font-medium">{item.title}</span>}
+            {item.title && item.detail ? " — " : ""}
+            {item.detail && <span>{item.detail}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function V2ReportView({
   report,
   takeNumber,
@@ -79,12 +126,29 @@ export function V2ReportView({
 }) {
   if (!report || typeof report !== "object") return null;
 
-  const t: AuditionTypeForLabels =
-    auditionType ?? safeStr(report.audition_type);
-  const overall = safeNum(report.overall_readiness);
-  const headline = safeStr(report.headline);
-  const insight = safeStr(report.insight);
-  const verdict = safeStr(report.verdict);
+  const s10 = safeObj(report.s10_view_model);
+  const s10Recommendation = safeObj(s10?.recommendation);
+  const s10ScoreSummary = safeObj(s10?.score_summary);
+  const s10Matrix = safeObj(s10?.brief_achievement_matrix);
+  const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
+  const s10NextActionPlan = safeObj(s10?.next_action_plan);
+  const s10StrengthsAndPreserve = safeObj(s10?.strengths_and_preserve);
+  const s10Technique = safeObj(s10?.technique_commentary);
+  const s10Timestamped = safeObj(s10?.timestamped_commentary);
+  const s10Limitations = safeArr<string>(s10?.limitations).filter(
+    (s): s is string => typeof s === "string" && s.trim().length > 0,
+  );
+  const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
+  const overall =
+    safeNum(s10ScoreSummary?.overall_submission_readiness_score) ??
+    safeNum(report.overall_readiness);
+  const headline = safeStr(s10Recommendation?.headline) ?? safeStr(report.headline);
+  const insight =
+    safeStr(s10Recommendation?.score_explanation) ??
+    safeStr(s10Matrix?.summary) ??
+    safeStr(report.insight);
+  const verdict =
+    safeStr(s10Recommendation?.decision)?.replace(/_/g, " ") ?? safeStr(report.verdict);
   const reliability = safeStr(report.reliability);
   const reliabilityReason = safeStr(report.reliability_reason);
   const fixFirst = safeStr(report.fix_first);
@@ -93,15 +157,11 @@ export function V2ReportView({
   );
   const strengths = safeArr(report.strengths);
   const improvements = safeArr(report.improvements);
-  const tsNotes = safeArr<{ timestamp?: string; note?: string }>(
-    report.timestamped_notes,
-  );
+  const tsNotes = safeArr<{ timestamp?: string; note?: string }>(report.timestamped_notes);
   const presentation = safeArr<string>(report.presentation_notes).filter(
     (s): s is string => typeof s === "string",
   );
-  const riskFlags = safeArr<{ severity?: string; flag?: string }>(
-    report.risk_flags,
-  );
+  const riskFlags = safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
   const components = safeArr<{
     type?: string;
     component_type?: string | null;
@@ -130,12 +190,16 @@ export function V2ReportView({
       ? (report.category_notes as Record<string, string>)
       : null;
   const nextPlan = safeArr<string>(
-    (report.next_take_plan && (report.next_take_plan as { steps?: unknown }).steps) ??
-      [],
+    (report.next_take_plan && (report.next_take_plan as { steps?: unknown }).steps) ?? [],
   ).filter((s): s is string => typeof s === "string");
-  const roleFit = report.role_fit && typeof report.role_fit === "object"
-    ? (report.role_fit as { notes?: string | null; modifier?: number | null; confidence?: string | null })
-    : null;
+  const roleFit =
+    report.role_fit && typeof report.role_fit === "object"
+      ? (report.role_fit as {
+          notes?: string | null;
+          modifier?: number | null;
+          confidence?: string | null;
+        })
+      : null;
 
   return (
     <div className="space-y-6">
@@ -160,26 +224,25 @@ export function V2ReportView({
               <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
                 Component report
               </Badge>
+              {s10 && (
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+                  S10 AI report model
+                </Badge>
+              )}
             </div>
             {headline && (
-              <p className="mt-2 font-display text-xl font-semibold leading-snug">
-                {headline}
-              </p>
+              <p className="mt-2 font-display text-xl font-semibold leading-snug">{headline}</p>
             )}
-            {insight && (
-              <p className="mt-2 text-sm text-muted-foreground">{insight}</p>
-            )}
+            {insight && <p className="mt-2 text-sm text-muted-foreground">{insight}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               {verdict && (
                 <span>
-                  <span className="font-medium text-foreground">Verdict:</span>{" "}
-                  {verdict}
+                  <span className="font-medium text-foreground">Verdict:</span> {verdict}
                 </span>
               )}
               {reliability && (
                 <span>
-                  <span className="font-medium text-foreground">Reliability:</span>{" "}
-                  {reliability}
+                  <span className="font-medium text-foreground">Reliability:</span> {reliability}
                   {reliabilityReason ? ` (${reliabilityReason})` : ""}
                 </span>
               )}
@@ -206,22 +269,232 @@ export function V2ReportView({
           <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
             <p>
-              This tape is flagged <strong>at risk</strong> — a brief requirement
-              appears to be missing.
+              This tape is flagged <strong>at risk</strong> — a brief requirement appears to be
+              missing.
             </p>
           </div>
         )}
       </div>
 
+      {s10 && (
+        <>
+          {(() => {
+            const reqs = safeArr<Record<string, unknown>>(s10.brief_requirements);
+            const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results);
+            if (!s10Matrix && reqs.length === 0) return null;
+            return (
+              <Section
+                title="Brief achievement"
+                hint="What the brief asked for, checked against the submitted tape."
+              >
+                {safeStr(s10Matrix?.summary) && (
+                  <p className="text-sm">{safeStr(s10Matrix?.summary)}</p>
+                )}
+                {s10Matrix && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    {["overall_status", "mandatory_status", "readiness_impact"].map((key) => (
+                      <Badge key={key} variant="outline" className="capitalize">
+                        {key.replace(/_/g, " ")}: {labelize(s10Matrix[key])}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {reqs.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      What the brief asked for
+                    </p>
+                    <ul className="mt-2 space-y-2 text-sm">
+                      {reqs.map((r, i) => (
+                        <li
+                          key={safeStr(r.id) ?? i}
+                          className="rounded-md border border-border p-3"
+                        >
+                          <p className="font-medium">
+                            {safeStr(r.summary) ?? safeStr(r.brief_text)}
+                          </p>
+                          {safeStr(r.brief_text) &&
+                            safeStr(r.brief_text) !== safeStr(r.summary) && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {safeStr(r.brief_text)}
+                              </p>
+                            )}
+                          <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground">
+                            {labelize(r.importance)} · {labelize(r.category)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {rows.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Requirement result
+                    </p>
+                    <ul className="mt-2 space-y-2 text-sm">
+                      {rows.map((r, i) => (
+                        <li key={safeStr(r.requirement_id) ?? i}>
+                          <span className="font-medium">
+                            {safeStr(r.requirement_summary) ?? "Requirement"}
+                          </span>
+                          {" — "}
+                          <span className="capitalize">{labelize(r.achievement_status)}</span>
+                          {safeStr(r.recommended_action) && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {safeStr(r.recommended_action)}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </Section>
+            );
+          })()}
+
+          {(() => {
+            const sequence = safeArr<Record<string, unknown>>(
+              safeObj(s10.observed_tape)?.observed_tape_sequence,
+            );
+            const verifications = safeArr<Record<string, unknown>>(
+              safeObj(s10.observed_tape)?.component_verifications,
+            );
+            if (sequence.length === 0 && verifications.length === 0) return null;
+            return (
+              <Section
+                title="Observed tape"
+                hint="Requested material and observed material are kept separate."
+              >
+                {sequence.length > 0 && (
+                  <div className="space-y-2 text-sm">
+                    {sequence.map((item, i) => (
+                      <p key={safeStr(item.id) ?? i}>
+                        <span className="font-medium">{safeStr(item.label) ?? "Section"}</span>
+                        {" — "}
+                        <span className="capitalize">{labelize(item.present_status)}</span>
+                        {safeStr(item.completion_status) && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            / {labelize(item.completion_status)}
+                          </span>
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {verifications.length > 0 && (
+                  <ul className="mt-3 space-y-2 text-sm">
+                    {verifications.map((item, i) => (
+                      <li key={safeStr(item.requirement_id) ?? i}>
+                        <span className="font-medium">
+                          {safeStr(item.requirement_summary) ?? "Component"}
+                        </span>
+                        {" — "}
+                        <span className="capitalize">{labelize(item.observed_status)}</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          / {labelize(item.completion_status)}
+                        </span>
+                        {safeStr(item.evidence_summary) && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {safeStr(item.evidence_summary)}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Section>
+            );
+          })()}
+        </>
+      )}
+
       {(() => {
-        const priorityFixes = safeArr<{ headline?: string; rationale?: string; kind?: string }>(report.priority_fixes);
+        if (s10FixHierarchy) {
+          const fixFirst = safeObj(s10FixHierarchy.fix_first);
+          const must = safeArr(s10FixHierarchy.must_fix_before_submitting);
+          const should = safeArr(s10FixHierarchy.should_improve_if_retaking);
+          const optional = safeArr(s10FixHierarchy.optional_polish);
+          const preserve = safeArr(s10FixHierarchy.preserve);
+          if (!fixFirst && must.length === 0 && should.length === 0 && optional.length === 0) {
+            return null;
+          }
+          return (
+            <Section
+              title="Prioritised fixes"
+              hint="Ordered from verified brief/package blockers through optional polish."
+            >
+              {fixFirst && (
+                <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-warning">
+                    Fix first
+                  </p>
+                  <p className="mt-1 font-display text-base font-semibold">
+                    {safeStr(fixFirst.title) ?? safeStr(fixFirst.exact_action)}
+                  </p>
+                  {safeStr(fixFirst.exact_action) && (
+                    <p className="mt-1 text-sm">{safeStr(fixFirst.exact_action)}</p>
+                  )}
+                </div>
+              )}
+              {must.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Must fix before submitting
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={must} marker="→" />
+                  </div>
+                </div>
+              )}
+              {should.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Should improve if retaking
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={should} marker="→" />
+                  </div>
+                </div>
+              )}
+              {optional.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Optional polish
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={optional} marker="•" />
+                  </div>
+                </div>
+              )}
+              {preserve.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Preserve
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={preserve} marker="✓" />
+                  </div>
+                </div>
+              )}
+            </Section>
+          );
+        }
+        const priorityFixes = safeArr<{ headline?: string; rationale?: string; kind?: string }>(
+          report.priority_fixes,
+        );
         if (priorityFixes.length > 0) {
           return (
             <Section title="Prioritised fixes">
               <ul className="space-y-3 text-sm">
                 {priorityFixes.map((p, i) => (
                   <li key={i}>
-                    <p className="font-display text-base font-semibold leading-snug">{safeStr(p?.headline) ?? ""}</p>
+                    <p className="font-display text-base font-semibold leading-snug">
+                      {safeStr(p?.headline) ?? ""}
+                    </p>
                     {safeStr(p?.rationale) && (
                       <p className="mt-1 text-xs text-muted-foreground">{p.rationale}</p>
                     )}
@@ -242,22 +515,56 @@ export function V2ReportView({
       })()}
 
       {(() => {
-        const cr = report.category_rationale && typeof report.category_rationale === "object"
-          ? (report.category_rationale as Record<string, { what_works?: string; why_not_full_score?: string; close_gap?: string; standout_delta?: string }>)
-          : null;
+        if (s10) return null;
+        const cr =
+          report.category_rationale && typeof report.category_rationale === "object"
+            ? (report.category_rationale as Record<
+                string,
+                {
+                  what_works?: string;
+                  why_not_full_score?: string;
+                  close_gap?: string;
+                  standout_delta?: string;
+                }
+              >)
+            : null;
         if (!cr) return null;
-        const entries = CATEGORY_KEYS.map((k) => [k, cr[k]] as const).filter(([, v]) => v && (v.why_not_full_score || v.close_gap || v.standout_delta || v.what_works));
+        const entries = CATEGORY_KEYS.map((k) => [k, cr[k]] as const).filter(
+          ([, v]) => v && (v.why_not_full_score || v.close_gap || v.standout_delta || v.what_works),
+        );
         if (entries.length === 0) return null;
         return (
-          <Section title="Why this score" hint="What works, why it isn't 100, and what would close the gap.">
+          <Section
+            title="Why this score"
+            hint="What works, why it isn't 100, and what would close the gap."
+          >
             <div className="space-y-4 text-sm">
               {entries.map(([key, v]) => (
                 <div key={key}>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{getCategoryLabel(t, key)}</p>
-                  {v?.what_works && <p className="mt-1"><span className="font-medium">Works:</span> {v.what_works}</p>}
-                  {v?.why_not_full_score && <p className="mt-1"><span className="font-medium">Why not full score:</span> {v.why_not_full_score}</p>}
-                  {v?.close_gap && <p className="mt-1"><span className="font-medium">Close the gap:</span> {v.close_gap}</p>}
-                  {v?.standout_delta && <p className="mt-1"><span className="font-medium">Standout delta:</span> {v.standout_delta}</p>}
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    {getCategoryLabel(t, key)}
+                  </p>
+                  {v?.what_works && (
+                    <p className="mt-1">
+                      <span className="font-medium">Works:</span> {v.what_works}
+                    </p>
+                  )}
+                  {v?.why_not_full_score && (
+                    <p className="mt-1">
+                      <span className="font-medium">Why not full score:</span>{" "}
+                      {v.why_not_full_score}
+                    </p>
+                  )}
+                  {v?.close_gap && (
+                    <p className="mt-1">
+                      <span className="font-medium">Close the gap:</span> {v.close_gap}
+                    </p>
+                  )}
+                  {v?.standout_delta && (
+                    <p className="mt-1">
+                      <span className="font-medium">Standout delta:</span> {v.standout_delta}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -279,18 +586,12 @@ export function V2ReportView({
               return (
                 <div key={key}>
                   <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-medium">
-                      {getCategoryLabel(t, key)}
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {value}
-                    </span>
+                    <span className="text-sm font-medium">{getCategoryLabel(t, key)}</span>
+                    <span className="text-sm font-semibold tabular-nums">{value}</span>
                   </div>
                   <ScoreBar value={value} />
                   {categoryNotes?.[key] && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {categoryNotes[key]}
-                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{categoryNotes[key]}</p>
                   )}
                 </div>
               );
@@ -331,23 +632,19 @@ export function V2ReportView({
                     )}
                   </div>
                   {score != null && <ScoreBar value={score} />}
-                  {meta && (
-                    <p className="mt-1 text-xs text-muted-foreground">{meta}</p>
-                  )}
+                  {meta && <p className="mt-1 text-xs text-muted-foreground">{meta}</p>}
                   {c.start && c.end && (
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
                       {c.start} – {c.end}
                     </p>
                   )}
-                  {c.note && (
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      {c.note}
-                    </p>
-                  )}
+                  {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
                   {(() => {
                     const detailRows: Array<[string, string]> = [];
-                    if (safeStr(c.what_it_shows)) detailRows.push(["What it shows", c.what_it_shows!]);
-                    if (safeStr(c.what_is_assessable)) detailRows.push(["What's assessable", c.what_is_assessable!]);
+                    if (safeStr(c.what_it_shows))
+                      detailRows.push(["What it shows", c.what_it_shows!]);
+                    if (safeStr(c.what_is_assessable))
+                      detailRows.push(["What's assessable", c.what_is_assessable!]);
                     if (safeStr(c.key_evidence)) detailRows.push(["Key evidence", c.key_evidence!]);
                     if (safeStr(c.score_driver)) detailRows.push(["Score driver", c.score_driver!]);
                     if (safeStr(c.close_gap)) detailRows.push(["Close the gap", c.close_gap!]);
@@ -375,16 +672,57 @@ export function V2ReportView({
         </Section>
       )}
 
-      {strengths.length > 0 && (
+      {s10StrengthsAndPreserve && (
+        <Section title="Strengths and preserve">
+          {safeStr(s10StrengthsAndPreserve.summary) && (
+            <p className="text-sm">{safeStr(s10StrengthsAndPreserve.summary)}</p>
+          )}
+          {safeArr(s10StrengthsAndPreserve.strengths).length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Strengths
+              </p>
+              <div className="mt-2">
+                <SimpleList items={safeArr(s10StrengthsAndPreserve.strengths)} marker="✓" />
+              </div>
+            </div>
+          )}
+          {safeArr(s10StrengthsAndPreserve.preserve).length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Preserve
+              </p>
+              <div className="mt-2">
+                <SimpleList items={safeArr(s10StrengthsAndPreserve.preserve)} marker="✓" />
+              </div>
+            </div>
+          )}
+          {safeArr(s10StrengthsAndPreserve.do_not_overfix).length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Do not overfix
+              </p>
+              <div className="mt-2">
+                <SimpleList items={safeArr(s10StrengthsAndPreserve.do_not_overfix)} marker="•" />
+              </div>
+            </div>
+          )}
+          {safeArr<string>(s10StrengthsAndPreserve.limitations).length > 0 && (
+            <div className="mt-3 text-sm text-muted-foreground">
+              <SimpleList items={safeArr(s10StrengthsAndPreserve.limitations)} />
+            </div>
+          )}
+        </Section>
+      )}
+
+      {!s10 && strengths.length > 0 && (
         <Section title="Strengths">
           <ul className="space-y-2 text-sm">
             {strengths.map((s, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-success">✓</span>
                 <span>
-                  {typeof s === "string"
-                    ? s
-                    : safeStr((s as { point?: unknown })?.point) ?? ""}
+                  {typeof s === "string" ? s : (safeStr((s as { point?: unknown })?.point) ?? "")}
                 </span>
               </li>
             ))}
@@ -392,16 +730,14 @@ export function V2ReportView({
         </Section>
       )}
 
-      {improvements.length > 0 && (
+      {!s10 && improvements.length > 0 && (
         <Section title="Improvements">
           <ul className="space-y-2 text-sm">
             {improvements.map((s, i) => (
               <li key={i} className="flex gap-2">
                 <span className="text-warning">→</span>
                 <span>
-                  {typeof s === "string"
-                    ? s
-                    : safeStr((s as { point?: unknown })?.point) ?? ""}
+                  {typeof s === "string" ? s : (safeStr((s as { point?: unknown })?.point) ?? "")}
                 </span>
               </li>
             ))}
@@ -409,7 +745,110 @@ export function V2ReportView({
         </Section>
       )}
 
-      {tsNotes.length > 0 && (
+      {s10Technique && (
+        <Section
+          title="Technique commentary"
+          hint="Technique notes are shown only where verified tape evidence supports them."
+        >
+          {safeStr(s10Technique.summary) && (
+            <p className="text-sm">{safeStr(s10Technique.summary)}</p>
+          )}
+          <div className="mt-3 space-y-4 text-sm">
+            {[
+              ["Acting", s10Technique.acting],
+              ["Vocal / singing", s10Technique.vocal_singing],
+              ["Movement / dance", s10Technique.movement_dance],
+              ["Musical-theatre package", s10Technique.musical_theatre_package],
+              ["Self-tape presentation", s10Technique.self_tape_presentation],
+              ["Commercial / screen task", s10Technique.commercial_screen_task],
+            ].map(([label, raw]) => {
+              const section = safeObj(raw);
+              if (!section) return null;
+              const observations = safeArr(section.observations);
+              const working = safeArr(section.what_is_working);
+              const improve = safeArr(section.what_could_improve);
+              const actions = safeArr(section.practical_actions);
+              const hasContent =
+                safeStr(section.headline) ||
+                observations.length > 0 ||
+                working.length > 0 ||
+                improve.length > 0 ||
+                actions.length > 0 ||
+                safeStr(section.not_assessable_reason);
+              if (!hasContent) return null;
+              return (
+                <div key={label as string}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{label as string}</p>
+                    <Badge variant="outline" className="capitalize">
+                      {labelize(section.status)}
+                    </Badge>
+                  </div>
+                  {safeStr(section.headline) && (
+                    <p className="mt-1 text-muted-foreground">{safeStr(section.headline)}</p>
+                  )}
+                  {safeStr(section.not_assessable_reason) && (
+                    <p className="mt-1 text-muted-foreground">
+                      {safeStr(section.not_assessable_reason)}
+                    </p>
+                  )}
+                  {observations.length > 0 && (
+                    <div className="mt-2">
+                      <SimpleList items={observations} marker="•" />
+                    </div>
+                  )}
+                  {actions.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Practical action
+                      </p>
+                      <div className="mt-1">
+                        <SimpleList items={actions} marker="→" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      )}
+
+      {s10Timestamped && (
+        <Section
+          title="Timestamped and time-banded notes"
+          hint="Exact times appear only when the timing source supports them."
+        >
+          {safeStr(s10Timestamped.summary) && (
+            <p className="text-sm">{safeStr(s10Timestamped.summary)}</p>
+          )}
+          <ul className="mt-3 space-y-2 text-sm">
+            {safeArr<Record<string, unknown>>(s10Timestamped.notes).map((n, i) => (
+              <li key={safeStr(n.id) ?? i} className="flex gap-3">
+                <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                  {safeStr(n.display_label) ?? safeStr(n.timecode) ?? "Timing unavailable"}
+                </span>
+                <span>
+                  <span className="font-medium">{safeStr(n.title) ?? labelize(n.section)}</span>
+                  {safeStr(n.detail) && <> — {safeStr(n.detail)}</>}
+                  {safeStr(n.action) && (
+                    <span className="block text-xs text-muted-foreground">
+                      Action: {safeStr(n.action)}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {safeArr<string>(s10Timestamped.timestamp_limitations).length > 0 && (
+            <div className="mt-3 text-sm text-muted-foreground">
+              <SimpleList items={safeArr(s10Timestamped.timestamp_limitations)} />
+            </div>
+          )}
+        </Section>
+      )}
+
+      {!s10 && tsNotes.length > 0 && (
         <Section title="Timestamped notes">
           <ul className="space-y-2 text-sm">
             {tsNotes.slice(0, 36).map((n, i) => (
@@ -424,13 +863,69 @@ export function V2ReportView({
         </Section>
       )}
 
-      {nextPlan.length > 0 && (
+      {s10NextActionPlan && (
+        <Section title="Next action plan">
+          {safeArr(s10NextActionPlan.retake_plan).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Retake plan
+              </p>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm">
+                {safeArr(s10NextActionPlan.retake_plan).map((s, i) => (
+                  <li key={i}>{String(s)}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {safeArr(s10NextActionPlan.playback_checks).length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Playback checks
+              </p>
+              <div className="mt-2">
+                <SimpleList items={safeArr(s10NextActionPlan.playback_checks)} />
+              </div>
+            </div>
+          )}
+          {safeArr(s10NextActionPlan.final_checks).length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Final checks
+              </p>
+              <div className="mt-2">
+                <SimpleList items={safeArr(s10NextActionPlan.final_checks)} />
+              </div>
+            </div>
+          )}
+          {safeArr(s10NextActionPlan.submit_checklist).length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Submit checklist
+              </p>
+              <div className="mt-2">
+                <SimpleList items={safeArr(s10NextActionPlan.submit_checklist)} />
+              </div>
+            </div>
+          )}
+          {safeStr(s10NextActionPlan.no_retake_needed_reason) && (
+            <p className="mt-3 text-sm">{safeStr(s10NextActionPlan.no_retake_needed_reason)}</p>
+          )}
+        </Section>
+      )}
+
+      {!s10 && nextPlan.length > 0 && (
         <Section title="Next steps">
           <ol className="list-decimal space-y-1.5 pl-5 text-sm">
             {nextPlan.map((s, i) => (
               <li key={i}>{s}</li>
             ))}
           </ol>
+        </Section>
+      )}
+
+      {s10Limitations.length > 0 && (
+        <Section title="Limitations">
+          <SimpleList items={s10Limitations} />
         </Section>
       )}
 
