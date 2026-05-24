@@ -18,7 +18,6 @@ import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$audit
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
-import { Route as ApiPublicDiagMuxProbeRouteImport } from './routes/api/public/diag-mux-probe'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 
 const NewRoute = NewRouteImport.update({
@@ -67,11 +66,6 @@ const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   path: '/api/public/mux-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicDiagMuxProbeRoute = ApiPublicDiagMuxProbeRouteImport.update({
-  id: '/api/public/diag-mux-probe',
-  path: '/api/public/diag-mux-probe',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiPublicAdminConfigRoute = ApiPublicAdminConfigRouteImport.update({
   id: '/api/public/admin-config',
   path: '/api/public/admin-config',
@@ -87,7 +81,6 @@ export interface FileRoutesByFullPath {
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
-  '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -100,7 +93,6 @@ export interface FileRoutesByTo {
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
-  '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -114,7 +106,6 @@ export interface FileRoutesById {
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
-  '/api/public/diag-mux-probe': typeof ApiPublicDiagMuxProbeRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -129,7 +120,6 @@ export interface FileRouteTypes {
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/api/public/admin-config'
-    | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   fileRoutesByTo: FileRoutesByTo
@@ -142,7 +132,6 @@ export interface FileRouteTypes {
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/api/public/admin-config'
-    | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   id:
@@ -155,7 +144,6 @@ export interface FileRouteTypes {
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/api/public/admin-config'
-    | '/api/public/diag-mux-probe'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   fileRoutesById: FileRoutesById
@@ -169,7 +157,6 @@ export interface RootRouteChildren {
   AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
-  ApiPublicDiagMuxProbeRoute: typeof ApiPublicDiagMuxProbeRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -239,13 +226,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/diag-mux-probe': {
-      id: '/api/public/diag-mux-probe'
-      path: '/api/public/diag-mux-probe'
-      fullPath: '/api/public/diag-mux-probe'
-      preLoaderRoute: typeof ApiPublicDiagMuxProbeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/admin-config': {
       id: '/api/public/admin-config'
       path: '/api/public/admin-config'
@@ -265,7 +245,6 @@ const rootRouteChildren: RootRouteChildren = {
   AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
-  ApiPublicDiagMuxProbeRoute: ApiPublicDiagMuxProbeRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
 }

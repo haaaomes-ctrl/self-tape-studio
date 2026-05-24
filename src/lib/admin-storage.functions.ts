@@ -6,7 +6,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { setResponseHeader } from "@tanstack/react-start/server";
 
-const ADMIN_EMAIL = "o.halawi90@gmail.com";
+const getAdminEmail = () => (process.env.TAPECOACH_ADMIN_EMAIL ?? "").trim().toLowerCase();
 const BUCKET_NAME = "qa-artifacts";
 const SIGNED_URL_TTL_SECONDS = 3600;
 const ZIP_TMP_PREFIX = "admin-temp-zips";
@@ -63,7 +63,8 @@ function normalizeEmail(email?: string | null): string {
 }
 
 function assertAdminEmail(claims: { email?: string | null } | null | undefined) {
-  if (normalizeEmail(claims?.email) !== ADMIN_EMAIL) {
+  const expected = getAdminEmail();
+  if (!expected || normalizeEmail(claims?.email) !== expected) {
     throw new Response("Forbidden", { status: 403 });
   }
 }
@@ -206,11 +207,11 @@ export const whoAmIAdmin = createServerFn({ method: "GET" })
     const claims = (context as { claims?: { email?: string | null; sub?: string | null } }).claims;
     const claimsEmail = claims?.email ?? null;
     const normalized = normalizeEmail(claimsEmail);
+    const expected = getAdminEmail();
     return {
       claimsEmail,
       normalizedEmail: normalized,
-      expectedEmail: ADMIN_EMAIL,
-      isAdmin: normalized === ADMIN_EMAIL,
+      isAdmin: Boolean(expected) && normalized === expected,
       userId: claims?.sub ?? null,
     };
   });
