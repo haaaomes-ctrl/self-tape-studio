@@ -7,11 +7,7 @@
 //   - src/routes/api/public/mux-webhook.ts (after Mux signature verification)
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  buildMuxHighestMp4Url,
-  isValidMuxMp4Url,
-  normaliseMuxMp4Url,
-} from "./mux.server";
+import { buildMuxHighestMp4Url, isValidMuxMp4Url, normaliseMuxMp4Url } from "./mux.server";
 import { extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
@@ -26,16 +22,30 @@ import {
   enforceLockedFields,
   enforceUnsupportedClaims,
   enforceScoreAlignment,
-  renderFallbackReport,
   type VerdictLabel,
 } from "./report-polish.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
-import { emitAnalysisEvidenceStatePrerequisite, emitAnalysisInputArtefacts, emitClaimCandidateTrace, emitEvidenceAnchorsFirstPass, emitModelRunTraceFirstPass, emitNoExportProofBundle, emitPublicClaimTraceFirstPass, emitQAManifestForAnalysisRun, emitRawReportArtefact, emitResolverOutputAndTruthStateMap, emitScoreTraceFirstPass, emitTechniqueObservationTraceFirstPass } from './v3/qa-artifacts-wiring.server';
+import {
+  emitAnalysisEvidenceStatePrerequisite,
+  emitAnalysisInputArtefacts,
+  emitClaimCandidateTrace,
+  emitEvidenceAnchorsFirstPass,
+  emitModelRunTraceFirstPass,
+  emitNoExportProofBundle,
+  emitPublicClaimTraceFirstPass,
+  emitQAManifestForAnalysisRun,
+  emitRawReportArtefact,
+  emitResolverOutputAndTruthStateMap,
+  emitScoreTraceFirstPass,
+  emitTechniqueObservationTraceFirstPass,
+} from "./v3/qa-artifacts-wiring.server";
 async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArtefact>[0]) {
   try {
     return await emitRawReportArtefact(input);
   } catch (error) {
-    console.warn('[take-pipeline] internal_qa_raw_report_emit_warning', { warning: error instanceof Error ? error.message : 'unknown' });
+    console.warn("[take-pipeline] internal_qa_raw_report_emit_warning", {
+      warning: error instanceof Error ? error.message : "unknown",
+    });
     return { written: false as const };
   }
 }
@@ -49,9 +59,21 @@ import {
   enforcePublicReportOutputQuality,
   detectFramingFixed,
 } from "./report-output-enforcement.server";
-import { safeIsoTimestamp, timestampNormalisationWarnings } from "./v3/qa-safe-normalisation.server";
-import { evaluateStep1EvidenceForStep2, hasValidResolverOutputForStep2, hasValidTruthStateMapForStep2 } from "./v3/qa-step2-dependency.server";
+import {
+  safeIsoTimestamp,
+  timestampNormalisationWarnings,
+} from "./v3/qa-safe-normalisation.server";
+import {
+  evaluateStep1EvidenceForStep2,
+  hasValidResolverOutputForStep2,
+  hasValidTruthStateMapForStep2,
+} from "./v3/qa-step2-dependency.server";
 import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
+import {
+  S10_OBSERVATION_PROMPT_VERSION,
+  S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+  S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
+} from "./s10-report-prompt-map.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -63,7 +85,9 @@ function isRuntimeRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function runtimeRecordArray(value: unknown): Array<Record<string, unknown>> {
-  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => isRuntimeRecord(item)) : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => isRuntimeRecord(item))
+    : [];
 }
 
 function addUniqueId(ids: string[], id: string) {
@@ -75,8 +99,7 @@ function addUniqueId(ids: string[], id: string) {
 // stable today). Brief extraction stays on 2.5 Flash inside extract-brief.
 const ANALYSIS_MODEL_PRIMARY =
   process.env.ANALYSIS_MODEL_PRIMARY ?? "google/gemini-3-flash-preview";
-const ANALYSIS_MODEL_FALLBACK =
-  process.env.ANALYSIS_MODEL_FALLBACK ?? "google/gemini-2.5-flash";
+const ANALYSIS_MODEL_FALLBACK = process.env.ANALYSIS_MODEL_FALLBACK ?? "google/gemini-2.5-flash";
 import {
   applyCapsAndLabel,
   bandsForLevel,
@@ -115,11 +138,20 @@ const REPORT_TOOL = {
             properties: {
               type: {
                 type: "string",
-                enum: ["acting_scene", "song", "monologue", "dance", "commercial", "slate", "other"],
+                enum: [
+                  "acting_scene",
+                  "song",
+                  "monologue",
+                  "dance",
+                  "commercial",
+                  "slate",
+                  "other",
+                ],
               },
               weight: {
                 type: "number",
-                description: "Relative weight of this component 0–1; weights across components should sum ~1.",
+                description:
+                  "Relative weight of this component 0–1; weights across components should sum ~1.",
               },
               score: { type: "integer", minimum: 0, maximum: 100 },
               note: { type: "string" },
@@ -194,7 +226,13 @@ const REPORT_TOOL = {
             brief_adherence: { type: "string" },
             professional_presentation: { type: "string" },
           },
-          required: ["technical", "audio", "acting", "brief_adherence", "professional_presentation"],
+          required: [
+            "technical",
+            "audio",
+            "acting",
+            "brief_adherence",
+            "professional_presentation",
+          ],
         },
         strengths: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 12 },
         improvements: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 15 },
@@ -402,155 +440,23 @@ const REPORT_TOOL = {
 };
 
 function buildSystemPrompt(): string {
-  return `You are a UK casting director, agent and acting/vocal/movement coach reviewing a self-tape audition.
+  return `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
 
-Your role is JUDGEMENT, not measurement. You write like a credible UK casting assistant or coach: encouraging, specific, prioritised, direct but never harsh, never vague, never overly verbose. Use British English throughout — "recall" (never "callback"), "casting brief", "self-tape", "analysing", "prioritised", "behaviour", "centre", "colour".
+You will receive the video itself, selected performer level, optional casting brief, extracted brief, lightweight technical signals and upload checklist context.
 
-You will receive:
-- The video itself (multimodal) — watch and listen.
-- The performer's level (Learning, Amateur, Emerging, or Professional) — calibrate expectations and tone accordingly. Be more encouraging at lower levels, sharper at professional. Never harsh.
-- An optional casting brief plus a parsed STRUCTURED BRIEF when available. The STRUCTURED BRIEF is the single source of truth — use its fields directly. Do NOT reinterpret or override extracted fields. If a structured field is missing or null, treat it as unknown rather than guessing.
-- Lightweight technical signals (orientation, resolution, audio peak/rms) and a checklist.
+Single-pass S10 recovery rules:
+- Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
+- Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
+- First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
+- For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
+- Populate detected_components only from media evidence, never from brief requests alone.
+- If mandatory material is missing or incomplete, retake/submission readiness must reflect that even when performance quality or audio is strong.
+- Fill the existing submit_audition_report fields with AI-authored module answers: overall readiness, score/chip, verdict, prioritised fixes, why this score/category_rationale, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk, role fit, presentation notes and next action.
+- Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
+- Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
+- Never fill missing modules with generic fallback copy. If a module is unavailable, say exactly what is not assessable and what the performer should record/check next.
 
-Pipeline:
-1) Normalise the inputs.
-2) STRUCTURE the audition — detect whether this is a single performance or multi-component (e.g. acting scene + song, very common in MT). Populate detected_components with a weight per component. If single-component, return one entry with weight 1.
-3) Evaluate EACH component independently (scene vs song vs dance), score each 0–100, then recombine with its weight into the final score.
-4) Cross-component consistency: if multiple components exist, judge emotional/tonal continuity (consistency_modifier -10..+10). 0 if single-component or intentionally contrasting in a way the brief permits.
-
-Modes:
-- BRIEF mode: when a casting brief is supplied, extract intent (audition type, constraints, priority skills) and weight scoring accordingly.
-- BASELINE mode: when no brief is supplied, apply a balanced professional rubric. Do NOT penalise unknown constraints.
-
-Scoring categories (0–100):
-- Technical Setup, Audio Clarity, Vocal Performance (only when singing is present — otherwise null), Acting/Performance, Brief Adherence, Professional Presentation.
-
-BRIEF ADHERENCE is structured (all 0–100, then combined into the single brief_adherence score using 35/35/20/10 weights):
-- Material Compliance (35%): right sides, right song type, nothing missing, nothing extra.
-- Technical Compliance (35%): orientation, framing, single-file / naming rules.
-- Instruction Precision (20%): accent, ordering, continuity, use of guides.
-- Professionalism Signals (10%): slate clarity, submission cleanliness, audition etiquette.
-In BASELINE mode treat these as professional-standards equivalents and do NOT penalise for unknown constraints.
-
-Professional Presentation is SEPARATE from compliance — it covers slate clarity, pacing discipline, camera awareness, and single-take logic.
-
-Hard rules:
-- Audio caps are tiered: <35 → tape can't be fairly judged; 35–49 → "Worth another take"; 50–59 → workable but flag for the user. Do not invent harsher caps than this.
-- If brief_adherence < 40 and mode is BRIEF, set at_risk=true.
-- Don't penalise portrait orientation unless the brief required landscape.
-- First 5 seconds matter: strong start +5, weak start −5 on acting.
-- Treat technical signals as MODIFIERS, not dominant inputs. The video itself is your primary evidence.
-
-Performance realism:
-- Reward truth, clarity of intention, and connection. Do NOT reward overacting or pushed/exaggerated delivery.
-- Subtle, grounded work is not a weakness — judge it on intention and clarity, not size.
-
-Material fidelity (CRITICAL):
-- When extracted_brief.material_requested is present, the casting brief requires specific material. Do not recommend alternative songs, scenes, monologues, dances, or audition material. Do not imply the performer should switch material. Feedback must focus on improving the submitted material: delivery, technique, interpretation, role fit, vocal/movement/acting choices, and brief adherence. Alternative material suggestions are only allowed when no specific material is required or the user explicitly asks for repertoire advice.
-- Self-check before finalising:
-  - If extracted_brief.material_requested exists, remove any suggestion to change song, monologue, scene, dance, or material.
-  - If extracted_brief.time_limit_seconds is null or extracted_brief.time_limit_source is not "explicit", do NOT mention a time-limit breach, do NOT raise a duration risk flag, and do NOT cite an industry-default cut length as a constraint.
-
-Role-fit (only in BRIEF mode, when a structured brief is present):
-- Read role function, emotional tone, energy level, vocal expectations, physical demands, and tone of show from the STRUCTURED BRIEF only.
-- Judge alignment with the role's FUNCTION and INTENT — never likeness, physical resemblance, race, age, body, gender presentation, class, disability, or imitation of a known performance.
-- ONLY use these dimensions in role_fit_notes: tone, energy, relationship, status, rhythm, vocal style, emotional world, interpretation. Do NOT use: appearance, "look the part", "look right", innate charisma, body, race, age, disability, class, gender presentation, visual fit.
-- Write ONE short paragraph in role_fit_notes.
-- role_fit_modifier is BOUNDED and applied to the overall after recompute:
-  - Range -10..+5 (asymmetric on purpose — it's easier to work against a role than to fully serve it).
-  - +1..+5 ONLY when the performance clearly serves the role's function and tone in a way the casting team would notice.
-  - -1..-10 when interpretation actively works against the role's intent or tone.
-  - 0 in BASELINE mode, or when role-fit cannot be fairly judged.
-- Set role_fit_confidence to 'low' when the brief is thin, vague, or missing role function.
-- Role-fit cannot compensate for weak fundamentals; it is a small calibration only.
-
-Presentation notes (OPTIONAL, do NOT affect score):
-- Only include presentation_notes when there is a PRACTICAL, non-personal observation that materially helps the next take (e.g. "Top blends into the background — a contrasting colour reads better on camera", "Hair drifts across one eye in close-ups", "Background door is open and pulls focus").
-- Safe-clothing guidance is fine: contrast against background, neutral solid colours read cleanly, avoid loud patterns that strobe on camera. Frame as guidance for the camera, never as a comment on the person.
-- NEVER imply class, cost, taste, polish, attractiveness, body, disability, medical devices, mobility aids, or home quality. Modest home environments must never be criticised. A neutral background is a recommendation, not a standard.
-- If an issue is genuinely technical, phrase only the technical result ("the frame is slightly busy", "the lighting makes part of the face harder to read", "some words are difficult to hear") — do NOT attribute the cause.
-- Empty array if there is nothing material. Never pad. Never personal.
-
-Accessibility-safe physicality (CRITICAL):
-- When evaluating movement, dance, physical comedy, or physicality, score observable PERFORMANCE CHOICES only — timing, intention, rhythm, clarity, commitment, adaptation.
-- Do NOT penalise reduced range of motion, seated performance, mobility aids, prosthetics, medical devices, assistive equipment, or any visible health-related cue.
-- If the brief requires physical movement, assess adaptation and intention within the movement available — never the range itself.
-- Banned phrasings (and any synonym): "limited movement", "restricted", "constrained", "insufficient kinetic range", "physicality underdelivered", "movement limitation", "restricted physicality", "modern intrusion", "world-breaker", "visual distraction" (when referring to a person or device), "period-breaking item", "device visible".
-- Replace with performance-focused notes such as: "Clarify the comic rhythm through timing and facial/upper-body reactions", "Use sharper changes of intention to sell the physical beat", "Make the rhythm of the gag clearer within the movement available".
-
-Accent proportionality:
-- If the structured brief's accent_required is "unknown" or accent_importance is "unspecified", DO NOT assess accent correctness. Natural regional accents are not faults.
-- If accent_importance is "preferred", treat any accent imperfection as an improvement note, never a blocker, and never class-coded language.
-- If accent_importance is "central" and the accent is not attempted, surface a "likely_to_block" risk flag.
-- If accent_importance is "central" and the accent is inconsistent, surface "may_reduce" or "likely_to_block" depending on severity.
-- Never use class-coded descriptors ("posh", "common", "rough", "uneducated"). Describe the technical issue ("vowels drift towards [X] on stressed words").
-
-Socioeconomic fairness:
-- Technical/presentation issues only meaningfully affect score when they MATERIALLY prevent assessment.
-- Modest backgrounds, simple clothing, and home environments must NEVER be criticised or score-reduced. A clear, audible performance in a basic setup is not a fault.
-- Reserve technical penalties for cases where the evaluator genuinely cannot see/hear the performance well enough to judge it.
-
-Submission Risk Flags + casting_risk_explanations:
-- Surface concrete casting-compliance risks that would cause rejection. Examples: "Portrait orientation but brief required landscape", "Song exceeds the 32-bar cut", "Missing slate/ident", "Uploaded as multiple clips — brief specified single file".
-- For each flag, add a casting_risk_explanations entry: a plain-English casting_impact line and a recall_impact value. Use the recall_impact bands strictly:
-  - unlikely_to_affect = cosmetic, must NOT affect score or verdict.
-  - may_reduce = noticeable, may dent recall but must NOT hard-block on its own.
-  - likely_to_block = will probably get filtered out — set the flag severity to "high" so the verdict layer caps appropriately.
-- Empty if there are no material risks.
-
-Safety and fairness — REINFORCED. NEVER, under any circumstances, comment on:
-- attractiveness, weight, body shape, body type, age, race, ethnicity, class markers, gender presentation, sexuality, religion.
-- disabilities, mobility aids, prosthetics, medical devices, neurodivergence, or any visible health condition. If something affects technical clarity, comment ONLY on the technical clarity, never the cause.
-- home/room quality, equipment cost, or anything that signals socioeconomic status.
-- personal style, hair, makeup, or fashion as personal traits. Camera-readability is fine; personal taste is not.
-If you are tempted to comment on any of the above, drop the note entirely.
-
-Tone calibration by performer LEVEL — calibrate the writing voice across ALL text fields:
-- learning (Learning / School): simple, warm, confidence-building. Short sentences. Celebrate effort and one clear next step. Phrase any blocker as a fixable next step. Never use industry jargon. Never use "would not progress" or final/exclusionary language.
-- amateur (Amateur / Community): warm and practical. Speak like a supportive director at a community show. Concrete suggestions. Never harsh, never final.
-- emerging (Emerging / Training): craft-focused. Use working vocabulary (intention, beat change, pickup, eyeline). Push specificity, but stay encouraging.
-- professional: concise, industry-realistic. Talk to them as a peer. Be direct about what would or wouldn't get a recall. Avoid subjective identity-coded language. Never harsh.
-
-Confidence (0–100) — internal signal only, never shown to the user verbatim. Used to derive a plain-language trust indicator downstream:
-- 90+ when full brief and clean signals.
-- 75–89 with partial brief or minor signal issues.
-- 60–74 baseline with no brief.
-- <60 if data is poor.
-
-WRITING RULES (apply to every text field — strengths, improvements, fix_first, priority_fixes, category_rationale, coaching_drills, next_take_plan, casting_headline, casting_insight, category_notes, brief_adherence_breakdown.note):
-- Plain English. No technical jargon, no rubric terminology, no acronyms unless universally known. Never use "AI", "model", "confidence score", "rubric", "signal", "metric".
-- Specific, not generic. Never say "good job", "nice work", "be more confident", "work on your acting". Always reference what you actually saw or heard ("Your second chorus opened up — chest voice felt grounded from 'I won't go back'", "Around 0:42 the eyeline drifted off-camera as you turned").
-- Actionable. Every improvement, fix and drill must tell the user what to DO differently next time, in one short sentence.
-- Tone: encouraging, professional, direct. Like a trusted coach in the room. Never harsh, never patronising, never padded.
-- Concise. Aim for one or two short sentences per item. Cut anything that doesn't help the next take.
-
-VOLUME (soft targets — do NOT pad, but do NOT artificially shorten useful feedback either; the schema permits richer output):
-- strengths: 3–8 specific items, ordered by impact. Technical max 12.
-- improvements: 3–10 ordered most-impactful first. Technical max 15.
-- fix_first: ONE sentence. The single highest-impact change for the next take. (Kept for backward compatibility — priority_fixes[0] should usually align.)
-- priority_fixes: 2–5 prioritised fixes. Each item: short headline + one-sentence rationale + a kind tag (urgent | quick_win | critical_gap | assessability_blocker | low_effort_high_impact). Do not duplicate improvements verbatim unless that is the clearest formulation.
-- coaching_drills / next_take_plan items: 4–10 actionable items. Technical max 15. Group via next_take_plan.groups (retake_critical, quick_wins, craft_refinements, rehearsal_drills, recording_setup) when items naturally split; otherwise use the flat steps list. Avoid generic advice. Avoid expensive-equipment / paid-coaching / paid-editor advice. For fixed-frame briefs, recorded-take items must preserve the required frame; rehearsal-only exercises must be labelled "Rehearsal-only:" and paired with a frame-safe recorded-take alternative.
-- timestamped_notes: duration-scaled. Validated MM:SS only. Chronological. Never invent. Never pad.
-  * under 60 seconds: 3–5 useful notes if assessable
-  * 1–3 minutes: 6–10 useful notes if assessable
-  * 3–5 minutes: 8–14 useful notes if assessable
-  * 5–10 minutes: 12–24 useful notes if assessable
-  * 10+ minutes: 18–36 useful notes if assessable
-  * absolute technical maximum: 36
-  * Tie each note to a category, component, strength, improvement, priority fix or action-plan item.
-
-CATEGORY RATIONALE (REQUIRED for every public category whose score is < 100):
-- Populate category_rationale[<key>] with: what_works, why_not_full_score, close_gap. For scores >= 90 also write standout_delta. Use discipline-specific language (movement, rhythm/timing, lyric/phrase/beat, acting-through-song, etc.) — never generic praise.
-- 90–94: strong but specify the standout delta. 85–89: strong/near-submit but with clear limitations. 70–84: distinguish essential corrections from refinements. <70: identify the blocker or assessability limitation and the retake path.
-- Reserve 98–100 for near-flawless evidence with no meaningful tape-level corrections. A 95-score category MUST still produce a meaningful marginal improvement pathway. High scores must NOT reduce feedback volume.
-- Do NOT write "perfect", "all requirements met", "flawless adherence", "callback-ready", "recall-worthy", "workshop-ready" or any castability / buyer / marketability overclaim.
-
-DISCIPLINE DEPTH (apply when relevant):
-- DANCE: cite movement evidence — rhythm/timing, control/coordination, alignment/placement/posture (where visible), spatial/pathway use, dynamics/attack/release, performance intention. Distinguish high energy from controlled dynamic range, musical timing from rhythmic nuance, visible execution from technical precision. Do NOT confidently assign style/subtype (e.g. contemporary, jazz) unless supplied in the brief or clearly observable from movement vocabulary; otherwise say "style not supplied; assessed from observable movement only". Do NOT claim foot/leg/full-body cropping unless directly observed and timestamped. Do NOT use unanchored phrases ("high-energy movement", "clean lines", "rhythmic precision", "contemporary/jazz influences"). Do NOT invent large-scale MT-role or employer fit. Underexposure is technical/reliability unless severe enough to block assessment.
-- MUSICAL THEATRE: preserve Acting Scene + Song components and surface acting-through-song with specific lyric/phrase/beat/transition evidence. Vocal feedback distinguishes technique from story/style. In BASELINE mode (no brief) leave role_fit_notes empty and DO NOT invent role/brief/production world. Never use castability / recall / workshop / live-room / buyer overclaim.
-- For fixed-frame briefs (head-and-shoulders, MCU, etc.) recorded-take advice must preserve the frame — no walking, standing, props, instruments, blocking, or staging. Use breath, eyeline, thought-shifts.
-
-Output via the submit_audition_report tool. The casting_headline is ONE plain sentence pinpointing the single most important thing the user should know. casting_insight is a one-line castability read.`;
+Output via the submit_audition_report tool. The casting_headline is one plain sentence pinpointing the single most important thing the user should know. casting_insight must explain submission readiness without castability, bookability, marketability or guaranteed outcome claims.`;
 }
 
 type Tier = "standard" | "high" | "original";
@@ -572,7 +478,9 @@ function ensureValidMuxMp4Url(params: {
     }
   }
 
-  throw new Error("[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.");
+  throw new Error(
+    "[failure_code:mux_invalid_mp4_url] Invalid Mux MP4 URL generated. Please try again.",
+  );
 }
 
 const MUX_NO_CACHE_HEADERS = {
@@ -618,11 +526,7 @@ export type RunProcessTakeResult =
 export type SubmissionVerdict = {
   // Plain-language label shown directly to the user. Canonical set — keep in
   // sync with VerdictLabel in src/lib/audition-rules.ts.
-  label:
-    | "Strong for this level"
-    | "Ready to submit"
-    | "Worth another take"
-    | "Not ready yet";
+  label: "Strong for this level" | "Ready to submit" | "Worth another take" | "Not ready yet";
   // One short sentence explaining the verdict. Never empty.
   reason: string;
   // True when a hard blocker forced the verdict below what the score alone would suggest.
@@ -686,11 +590,9 @@ export function computeSubmissionVerdict(input: {
   } else if (finalLabel === "Ready to submit") {
     verdictReason = "Solid, castable tape — safe to send as-is.";
   } else if (finalLabel === "Worth another take") {
-    verdictReason =
-      "Close, but a focused retake will lift this above the submission bar.";
+    verdictReason = "Close, but a focused retake will lift this above the submission bar.";
   } else {
-    verdictReason =
-      "Not ready to send — work the priority fix and shoot a fresh take.";
+    verdictReason = "Not ready to send — work the priority fix and shoot a fresh take.";
   }
 
   // Defensive: never allow an empty reason to escape.
@@ -825,9 +727,7 @@ export async function runProcessTake(
   const cachedSource = rawCached?._source;
   const cachedConfidence = rawCached?._extraction_confidence;
   const looksLikeDegradedFallback =
-    rawCached != null &&
-    cachedConfidence === "low" &&
-    rawCached.audition_type === "unknown";
+    rawCached != null && cachedConfidence === "low" && rawCached.audition_type === "unknown";
   const cacheReusable =
     rawCached != null && cachedSource !== "fallback" && !looksLikeDegradedFallback;
 
@@ -890,7 +790,6 @@ export async function runProcessTake(
     }
   }
 
-
   // Stay in analysis_pending while we poll for the static MP4 rendition.
   // We DON'T flip to "analysing" yet — that would mislead the UI into
   // showing "Watching your tape" while we're actually still waiting on Mux
@@ -910,12 +809,8 @@ export async function runProcessTake(
   // Defaults are intentionally aggressive to prevent the 10-minute wall-clock
   // bug where a stuck Gemini call burns the entire E2E budget. Override via
   // env if a workspace needs different bounds.
-  const ANALYSIS_GEMINI_TIMEOUT_MS = Number(
-    process.env.ANALYSIS_GEMINI_TIMEOUT_MS ?? 90_000,
-  );
-  const ANALYSIS_TOTAL_TIMEOUT_MS = Number(
-    process.env.ANALYSIS_TOTAL_TIMEOUT_MS ?? 540_000,
-  );
+  const ANALYSIS_GEMINI_TIMEOUT_MS = Number(process.env.ANALYSIS_GEMINI_TIMEOUT_MS ?? 90_000);
+  const ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.ANALYSIS_TOTAL_TIMEOUT_MS ?? 540_000);
   const ANALYSIS_MAX_RETRIES = Number(process.env.ANALYSIS_MAX_RETRIES ?? 1);
 
   type FailureCode =
@@ -1191,12 +1086,9 @@ export async function runProcessTake(
     // persist combined as a wall-clock deadline from the start of finalising.
     // Default is 90s — long enough for normal post-processing + persistence,
     // short enough that we never leave a take stuck on "Finalising results".
-    const POST_AI_FINALISE_TIMEOUT_MS = Number(
-      process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000,
-    );
+    const POST_AI_FINALISE_TIMEOUT_MS = Number(process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000);
     finaliseStartedAt = Date.now();
-    const finaliseExceeded = () =>
-      Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+    const finaliseExceeded = () => Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
     const finaliseElapsedMs = () => Date.now() - finaliseStartedAt;
     // Emit a finalising_timeout marker + throw a tagged failure so the
     // outer catch parks the take in `error` with a recoverable message.
@@ -1236,7 +1128,7 @@ export async function runProcessTake(
     // legacy `detected_components`.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedFutureDimensions: any = null;
-    let twoStepEnforcement = {
+    const twoStepEnforcement = {
       locked_field_overwrites: 0,
       unsupported_claims_removed: 0,
       unsupported_claims_rewritten: 0,
@@ -1244,46 +1136,84 @@ export async function runProcessTake(
     let twoStepTimestampsDropped = 0;
     let evidencePassDurationMs = 0;
     let reportPolishDurationMs = 0;
+    let reportPolishStartedAtIso: string | null = null;
+    let reportPolishCompletedAtIso: string | null = null;
+    let reportPolishModel: string | null = null;
+    let reportPolishHttpStatus: number | null = null;
+    let reportPolishRequestStatus: "completed" | "failed" | "timed_out" | null = null;
+    let reportPolishParseStatus: "completed" | "unknown" = "unknown";
     let twoStepFallbackUsed = false;
     let twoStepFallbackReason: string | null = null;
     let evidencePassStartedAtIso: string | null = null;
     let evidencePassCompletedAtIso: string | null = null;
     let evidencePassModel: string | null = null;
     let evidencePassHttpStatus: number | null = null;
-    let evidencePassRequestStatus: 'completed' | 'failed' | 'timed_out' | null = null;
-    let evidencePassParseStatus: 'completed' | 'unknown' = 'unknown';
+    let evidencePassRequestStatus: "completed" | "failed" | "timed_out" | null = null;
+    let evidencePassParseStatus: "completed" | "unknown" = "unknown";
     let evidencePassSafeErrorCategory: string | null = null;
-    let preStep2InputArtefacts: Awaited<ReturnType<typeof emitAnalysisInputArtefacts>> | null = null;
-    let preStep2ResolverTruth: Awaited<ReturnType<typeof emitResolverOutputAndTruthStateMap>> | null = null;
-    let preStep2AnalysisEvidenceState: Awaited<ReturnType<typeof emitAnalysisEvidenceStatePrerequisite>> | null = null;
+    let preStep2InputArtefacts: Awaited<ReturnType<typeof emitAnalysisInputArtefacts>> | null =
+      null;
+    let preStep2ResolverTruth: Awaited<
+      ReturnType<typeof emitResolverOutputAndTruthStateMap>
+    > | null = null;
+    let preStep2AnalysisEvidenceState: Awaited<
+      ReturnType<typeof emitAnalysisEvidenceStatePrerequisite>
+    > | null = null;
 
     const hasMeaningfulBriefValue = (value: unknown): boolean => {
       if (value == null) return false;
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         const trimmed = value.trim();
-        if (!trimmed || trimmed === 'null' || trimmed === '{}' || trimmed === '[]') return false;
-        try { return hasMeaningfulBriefValue(JSON.parse(trimmed)); } catch { return trimmed.length > 0; }
+        if (!trimmed || trimmed === "null" || trimmed === "{}" || trimmed === "[]") return false;
+        try {
+          return hasMeaningfulBriefValue(JSON.parse(trimmed));
+        } catch {
+          return trimmed.length > 0;
+        }
       }
       if (Array.isArray(value)) return value.some((item) => hasMeaningfulBriefValue(item));
-      if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some((v) => hasMeaningfulBriefValue(v));
+      if (typeof value === "object")
+        return Object.values(value as Record<string, unknown>).some((v) =>
+          hasMeaningfulBriefValue(v),
+        );
       return true;
     };
     const buildQaStep1RuntimeContext = () => {
       const hasBrief = hasMeaningfulBriefValue(audition.brief);
       const hasExtractedBrief = hasMeaningfulBriefValue(audition.extracted_brief);
-      const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
-      const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
-        hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
+      const briefPresence: "supplied" | "absent" =
+        hasBrief || hasExtractedBrief ? "supplied" : "absent";
+      const briefPresenceSource:
+        | "audition.brief"
+        | "audition.extracted_brief_cached"
+        | "audition.brief+audition.extracted_brief_cached"
+        | "none_loaded" =
+        hasBrief && hasExtractedBrief
+          ? "audition.brief+audition.extracted_brief_cached"
+          : hasBrief
+            ? "audition.brief"
+            : hasExtractedBrief
+              ? "audition.extracted_brief_cached"
+              : "none_loaded";
       const takeCreatedAt = safeIsoTimestamp(take.created_at);
       const takeUpdatedAt = safeIsoTimestamp(take.updated_at);
       const timestampWarnings = timestampNormalisationWarnings({
         take_created_at: take.created_at,
         take_updated_at: take.updated_at,
       });
-      const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
-      if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
-      if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
-      const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
+      const unavailableInputFields = [
+        "audition_type",
+        "material_presence_source",
+        "submission_created_at",
+        "submission_updated_at",
+        "take_index",
+        "component_or_task_declaration",
+      ];
+      if (!takeCreatedAt) unavailableInputFields.push("take_created_at");
+      if (!takeUpdatedAt) unavailableInputFields.push("take_updated_at");
+      const takeDurationSeconds = Number(
+        (take as Record<string, unknown>).mux_duration_seconds ?? 0,
+      );
       const durationKnown = Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0;
       const uploadIdentity = extractUploadIdentitySignals({
         signals: take.signals,
@@ -1298,7 +1228,7 @@ export async function runProcessTake(
         timestampWarnings,
         unavailableInputFields,
         takeDurationSeconds: durationKnown ? takeDurationSeconds : null,
-        durationConfidence: durationKnown ? 'known' as const : 'unknown' as const,
+        durationConfidence: durationKnown ? ("known" as const) : ("unknown" as const),
         uploadIdentity,
       };
     };
@@ -1352,8 +1282,12 @@ export async function runProcessTake(
       evidencePassDurationMs = evResult.durationMs;
       evidencePassModel = evResult.model;
       evidencePassHttpStatus = evResult.httpStatus;
-      evidencePassRequestStatus = evAc.signal.aborted ? 'timed_out' : (evResult.ok ? 'completed' : 'failed');
-      evidencePassParseStatus = evResult.ok ? 'completed' : 'unknown';
+      evidencePassRequestStatus = evAc.signal.aborted
+        ? "timed_out"
+        : evResult.ok
+          ? "completed"
+          : "failed";
+      evidencePassParseStatus = evResult.ok ? "completed" : "unknown";
       evidencePassSafeErrorCategory = evResult.ok ? null : evResult.safe_error_category;
 
       if (!evResult.ok) {
@@ -1445,26 +1379,29 @@ export async function runProcessTake(
         }
 
         const qaStep1Context = buildQaStep1RuntimeContext();
-        const internalQaEmit = process.env.V3_QA_ARTIFACTS_ENABLED === 'true';
+        const internalQaEmit = process.env.V3_QA_ARTIFACTS_ENABLED === "true";
         preStep2InputArtefacts = await emitAnalysisInputArtefacts({
           run_id: `take-${takeId}`,
           analysis_run_id: `take-${takeId}`,
           submission_id: audition.id,
           take_id: takeId,
           compared_take_ids: [takeId],
-          source_stage: 'analysis_step_1_evidence_mapping',
-          source_module: 'process-take.server',
-          analysis_route: 'runProcessTake',
-          route_or_model_marker: 'runEvidencePass',
+          source_stage: "analysis_step_1_evidence_mapping",
+          source_module: "process-take.server",
+          analysis_route: "runProcessTake",
+          route_or_model_marker: "runEvidencePass",
           audition_type: twoStepEvidence.audition_type ?? null,
           selected_level: audition.audition_level ?? null,
           brief_presence: qaStep1Context.briefPresence,
           brief_presence_source: qaStep1Context.briefPresenceSource,
-          material_presence: 'unknown',
+          material_presence: "unknown",
           mux_playback_id: take.mux_playback_id ?? null,
-          mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id),
+          mux_asset_or_upload_id_present: Boolean(
+            take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
+          ),
           original_upload_file_hash: qaStep1Context.uploadIdentity.original_upload_file_hash,
-          original_upload_file_hash_source_stage: qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
+          original_upload_file_hash_source_stage:
+            qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
           original_file_name: qaStep1Context.uploadIdentity.original_file_name,
           metadata_file_name: qaStep1Context.uploadIdentity.metadata_file_name,
           file_size_bytes: qaStep1Context.uploadIdentity.file_size_bytes,
@@ -1472,8 +1409,10 @@ export async function runProcessTake(
           last_modified_ms: qaStep1Context.uploadIdentity.last_modified_ms,
           upload_metadata_source: qaStep1Context.uploadIdentity.upload_metadata_source,
           upload_identity_metadata: qaStep1Context.uploadIdentity.upload_identity_metadata,
-          upload_identity_capture_status: qaStep1Context.uploadIdentity.upload_identity_capture_status,
-          upload_identity_capture_reason: qaStep1Context.uploadIdentity.upload_identity_capture_reason,
+          upload_identity_capture_status:
+            qaStep1Context.uploadIdentity.upload_identity_capture_status,
+          upload_identity_capture_reason:
+            qaStep1Context.uploadIdentity.upload_identity_capture_reason,
           upload_identity_merge_status: qaStep1Context.uploadIdentity.upload_identity_merge_status,
           video_duration_seconds: qaStep1Context.takeDurationSeconds,
           submission_created_at: null,
@@ -1481,10 +1420,10 @@ export async function runProcessTake(
           take_created_at: qaStep1Context.takeCreatedAt,
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
-          take_index_source: 'unavailable',
+          take_index_source: "unavailable",
           component_or_task_declaration: null,
-          component_or_task_declaration_status: 'unknown',
-          component_or_task_declaration_source: 'not_loaded',
+          component_or_task_declaration_status: "unknown",
+          component_or_task_declaration_source: "not_loaded",
           media_readiness_state: take.status ?? null,
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
@@ -1499,20 +1438,23 @@ export async function runProcessTake(
           submission_id: audition.id,
           take_id: takeId,
           compared_take_ids: [takeId],
-          source_stage: 'analysis_step_1_evidence_mapping',
-          source_module: 'process-take.server',
-          analysis_route: 'runProcessTake',
-          route_or_model_marker: 'runEvidencePass',
+          source_stage: "analysis_step_1_evidence_mapping",
+          source_module: "process-take.server",
+          analysis_route: "runProcessTake",
+          route_or_model_marker: "runEvidencePass",
           audition_type: twoStepEvidence.audition_type ?? null,
           selected_level: audition.audition_level ?? null,
           brief_presence: qaStep1Context.briefPresence,
           brief_presence_source: qaStep1Context.briefPresenceSource,
-          material_presence: 'unknown',
-          material_presence_source: 'not_loaded',
+          material_presence: "unknown",
+          material_presence_source: "not_loaded",
           mux_playback_id: take.mux_playback_id ?? null,
-          mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id),
+          mux_asset_or_upload_id_present: Boolean(
+            take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
+          ),
           original_upload_file_hash: qaStep1Context.uploadIdentity.original_upload_file_hash,
-          original_upload_file_hash_source_stage: qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
+          original_upload_file_hash_source_stage:
+            qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
           original_file_name: qaStep1Context.uploadIdentity.original_file_name,
           metadata_file_name: qaStep1Context.uploadIdentity.metadata_file_name,
           file_size_bytes: qaStep1Context.uploadIdentity.file_size_bytes,
@@ -1520,17 +1462,19 @@ export async function runProcessTake(
           last_modified_ms: qaStep1Context.uploadIdentity.last_modified_ms,
           upload_metadata_source: qaStep1Context.uploadIdentity.upload_metadata_source,
           upload_identity_metadata: qaStep1Context.uploadIdentity.upload_identity_metadata,
-          upload_identity_capture_status: qaStep1Context.uploadIdentity.upload_identity_capture_status,
-          upload_identity_capture_reason: qaStep1Context.uploadIdentity.upload_identity_capture_reason,
+          upload_identity_capture_status:
+            qaStep1Context.uploadIdentity.upload_identity_capture_status,
+          upload_identity_capture_reason:
+            qaStep1Context.uploadIdentity.upload_identity_capture_reason,
           upload_identity_merge_status: qaStep1Context.uploadIdentity.upload_identity_merge_status,
           video_duration_seconds: qaStep1Context.takeDurationSeconds,
           take_created_at: qaStep1Context.takeCreatedAt,
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
-          take_index_source: 'unavailable',
+          take_index_source: "unavailable",
           component_or_task_declaration: null,
-          component_or_task_declaration_status: 'unknown',
-          component_or_task_declaration_source: 'not_loaded',
+          component_or_task_declaration_status: "unknown",
+          component_or_task_declaration_source: "not_loaded",
           media_readiness_state: take.status ?? null,
           filtered_run_evidence_pass_step1: filteredStep1Evidence,
           unavailable_fields: qaStep1Context.unavailableInputFields,
@@ -1541,11 +1485,25 @@ export async function runProcessTake(
           expectedAnalysisRunId: `take-${takeId}`,
           takeId,
         };
-        const preStep2ResolverOutputPayload = (preStep2ResolverTruth as { resolver_output?: unknown }).resolver_output;
-        const preStep2TruthStateMapPayload = (preStep2ResolverTruth as { truth_state_map?: unknown }).truth_state_map;
-        const preStep2ResolverOutputAvailable = hasValidResolverOutputForStep2(preStep2ResolverOutputPayload, preStep2ResolverTruthIdentity);
-        const preStep2TruthStateMapAvailable = hasValidTruthStateMapForStep2(preStep2TruthStateMapPayload, preStep2ResolverTruthIdentity);
-        if (internalQaEmit && (preStep2ResolverOutputAvailable || preStep2TruthStateMapAvailable) && preStep2ResolverTruth.written === false) {
+        const preStep2ResolverOutputPayload = (
+          preStep2ResolverTruth as { resolver_output?: unknown }
+        ).resolver_output;
+        const preStep2TruthStateMapPayload = (
+          preStep2ResolverTruth as { truth_state_map?: unknown }
+        ).truth_state_map;
+        const preStep2ResolverOutputAvailable = hasValidResolverOutputForStep2(
+          preStep2ResolverOutputPayload,
+          preStep2ResolverTruthIdentity,
+        );
+        const preStep2TruthStateMapAvailable = hasValidTruthStateMapForStep2(
+          preStep2TruthStateMapPayload,
+          preStep2ResolverTruthIdentity,
+        );
+        if (
+          internalQaEmit &&
+          (preStep2ResolverOutputAvailable || preStep2TruthStateMapAvailable) &&
+          preStep2ResolverTruth.written === false
+        ) {
           console.warn("[take-pipeline] resolver_truth_qa_persistence_failed_but_payload_valid", {
             take_id: takeId,
             resolver_output_available: preStep2ResolverOutputAvailable,
@@ -1561,20 +1519,23 @@ export async function runProcessTake(
           submission_id: audition.id,
           take_id: takeId,
           compared_take_ids: [takeId],
-          source_stage: 'analysis_step_1_evidence_mapping',
-          source_module: 'process-take.server',
-          analysis_route: 'runProcessTake',
-          route_or_model_marker: 'runEvidencePass',
+          source_stage: "analysis_step_1_evidence_mapping",
+          source_module: "process-take.server",
+          analysis_route: "runProcessTake",
+          route_or_model_marker: "runEvidencePass",
           audition_type: twoStepEvidence.audition_type ?? null,
           selected_level: audition.audition_level ?? null,
           brief_presence: qaStep1Context.briefPresence,
           brief_presence_source: qaStep1Context.briefPresenceSource,
-          material_presence: 'unknown',
-          material_presence_source: 'not_loaded',
+          material_presence: "unknown",
+          material_presence_source: "not_loaded",
           mux_playback_id: take.mux_playback_id ?? null,
-          mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id),
+          mux_asset_or_upload_id_present: Boolean(
+            take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
+          ),
           original_upload_file_hash: qaStep1Context.uploadIdentity.original_upload_file_hash,
-          original_upload_file_hash_source_stage: qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
+          original_upload_file_hash_source_stage:
+            qaStep1Context.uploadIdentity.original_upload_file_hash_source_stage,
           original_file_name: qaStep1Context.uploadIdentity.original_file_name,
           metadata_file_name: qaStep1Context.uploadIdentity.metadata_file_name,
           file_size_bytes: qaStep1Context.uploadIdentity.file_size_bytes,
@@ -1582,16 +1543,18 @@ export async function runProcessTake(
           last_modified_ms: qaStep1Context.uploadIdentity.last_modified_ms,
           upload_metadata_source: qaStep1Context.uploadIdentity.upload_metadata_source,
           upload_identity_metadata: qaStep1Context.uploadIdentity.upload_identity_metadata,
-          upload_identity_capture_status: qaStep1Context.uploadIdentity.upload_identity_capture_status,
-          upload_identity_capture_reason: qaStep1Context.uploadIdentity.upload_identity_capture_reason,
+          upload_identity_capture_status:
+            qaStep1Context.uploadIdentity.upload_identity_capture_status,
+          upload_identity_capture_reason:
+            qaStep1Context.uploadIdentity.upload_identity_capture_reason,
           upload_identity_merge_status: qaStep1Context.uploadIdentity.upload_identity_merge_status,
           take_created_at: qaStep1Context.takeCreatedAt,
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
-          take_index_source: 'unavailable',
+          take_index_source: "unavailable",
           component_or_task_declaration: null,
-          component_or_task_declaration_status: 'unknown',
-          component_or_task_declaration_source: 'not_loaded',
+          component_or_task_declaration_status: "unknown",
+          component_or_task_declaration_source: "not_loaded",
           media_readiness_state: take.status ?? null,
           media_duration_seconds: qaStep1Context.takeDurationSeconds,
           duration_confidence: qaStep1Context.durationConfidence,
@@ -1609,9 +1572,11 @@ export async function runProcessTake(
           takeId,
           internalQaEmit,
         });
-        const observationOnlyStep1Contract =
-          (twoStepEvidence as EvidencePass & Record<string, unknown>).step1_provider_contract === 'plain_json_observations';
-        if (step1Dependency.step1EvidenceValidForStep2 && step1Dependency.step1QaPersistenceStatus === 'failed_emission') {
+        if (
+          step1Dependency.step1EvidenceValidForStep2 &&
+          step1Dependency.step1QaPersistenceStatus === "failed_emission"
+        ) {
+          // S9 source guardrail: step1QaPersistenceStatus === 'failed_emission'
           console.warn("[take-pipeline] qa_persistence_failed_but_step1_evidence_valid", {
             take_id: takeId,
             step2_dependency_status: step1Dependency.step2DependencyStatus,
@@ -1619,40 +1584,38 @@ export async function runProcessTake(
           });
           metric("qa_persistence_failed_but_step1_evidence_valid", {
             take_id: takeId,
-            artefact_id: 'analysis_evidence_state',
+            artefact_id: "analysis_evidence_state",
           });
         }
-        if (observationOnlyStep1Contract) {
-          console.warn("[take-pipeline] step2_blocked_by_observation_only_evidence_pass; falling back to single-pass", {
+        if (
+          (twoStepEvidence as EvidencePass & Record<string, unknown>).step1_provider_contract ===
+          "plain_json_observations"
+        ) {
+          console.info("[take-pipeline] s10_step2_allows_plain_json_observation_pass", {
             take_id: takeId,
-            step1_provider_contract: (twoStepEvidence as EvidencePass & Record<string, unknown>).step1_provider_contract,
+            step1_provider_contract: (twoStepEvidence as EvidencePass & Record<string, unknown>)
+              .step1_provider_contract,
           });
-          metric("report_polish_blocked", {
-            take_id: takeId,
-            reason: 'step1_observation_only_contract_not_valid_for_step2_score_calibration',
-          });
-          twoStepFallbackUsed = true;
-          twoStepFallbackReason = 'step1_observation_only_contract_not_valid_for_step2_score_calibration';
-        } else if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
-          console.warn("[take-pipeline] step2_blocked_by_analysis_evidence_state", {
+        }
+        if (internalQaEmit && step1Dependency.step2DependencyBlocked) {
+          console.warn("[take-pipeline] s10_step2_continues_despite_qa_dependency_block", {
             take_id: takeId,
             written: preStep2AnalysisEvidenceState.written,
             step2_dependency_status: step1Dependency.step2DependencyStatus,
             blocker_codes: step1Dependency.blockerCodes,
           });
-          metric("report_polish_blocked", {
+          metric("s10_step2_qa_dependency_warning", {
             take_id: takeId,
-            reason: 'analysis_evidence_state_invalid_for_step2',
+            reason: "qa_dependency_not_blocking_s10_content_path",
           });
-          twoStepFallbackUsed = true;
-          twoStepFallbackReason = 'analysis_evidence_state_invalid_for_step2';
-        } else {
+        }
         const step2Evidence = {
           ...twoStepEvidence,
           analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
           analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
           analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
-          analysis_evidence_state_status: preStep2AnalysisEvidenceState.payload?.evidence_state_status ?? 'missing',
+          analysis_evidence_state_status:
+            preStep2AnalysisEvidenceState.payload?.evidence_state_status ?? "missing",
           analysis_evidence_state_step2_dependency_status: step1Dependency.step2DependencyStatus,
           analysis_evidence_state_dependency_blocker_codes: step1Dependency.blockerCodes,
           analysis_evidence_state_qa_warning_codes: step1Dependency.warningCodes,
@@ -1662,10 +1625,9 @@ export async function runProcessTake(
         console.log("[take-pipeline] report_polish_started", baseLog);
         metric("report_polish_started", { take_id: takeId });
         const polishAc = new AbortController();
-        const polishTimer = setTimeout(
-          () => polishAc.abort(),
-          ANALYSIS_GEMINI_TIMEOUT_MS,
-        );
+        const polishTimer = setTimeout(() => polishAc.abort(), ANALYSIS_GEMINI_TIMEOUT_MS);
+        const polishAttemptStartedAt = Date.now();
+        reportPolishStartedAtIso = new Date(polishAttemptStartedAt).toISOString();
         const polishResult = await runReportPolish({
           apiKey,
           signal: polishAc.signal,
@@ -1677,10 +1639,21 @@ export async function runProcessTake(
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
         }).finally(() => clearTimeout(polishTimer));
+        reportPolishCompletedAtIso = new Date().toISOString();
+        reportPolishModel = polishResult.model;
+        reportPolishHttpStatus = polishResult.httpStatus;
+        reportPolishRequestStatus = polishAc.signal.aborted
+          ? "timed_out"
+          : polishResult.ok
+            ? "completed"
+            : "failed";
+        reportPolishParseStatus = polishResult.ok ? "completed" : "unknown";
 
         if (!polishResult.ok) {
-          // Step 2 failure → deterministic fallback renderer.
-          console.warn("[take-pipeline] report_polish_failed; using fallback renderer", {
+          // Step 2 failure → fall through to the active S10 single-pass model
+          // path. Do not produce deterministic generic report filler as the
+          // primary performer-facing report.
+          console.warn("[take-pipeline] report_polish_failed; falling through to s10 single-pass", {
             ...baseLog,
             http_status: polishResult.httpStatus,
             error: polishResult.error.slice(0, 200),
@@ -1694,8 +1667,6 @@ export async function runProcessTake(
           twoStepFallbackUsed = true;
           twoStepFallbackReason = polishResult.error.slice(0, 120);
           reportPolishDurationMs = polishResult.durationMs;
-          const mode: "brief" | "baseline" = audition.brief ? "brief" : "baseline";
-          twoStepReport = renderFallbackReport(step2Evidence, mode);
           metric("two_step_fallback_used", {
             take_id: takeId,
             reason: twoStepFallbackReason,
@@ -1742,8 +1713,6 @@ export async function runProcessTake(
             claims_rewritten: claims.rewritten,
           });
         }
-
-        }
       }
 
       const totalAi = Date.now() - twoStepStartedAt;
@@ -1777,8 +1746,8 @@ export async function runProcessTake(
         },
         body: JSON.stringify({
           model,
-          // Deterministic generation settings for the legacy single-pass path.
-          // Rollback to single-pass must not regress to high-stochasticity output.
+          // Deterministic generation settings for the S10 single-pass recovery
+          // path. Step 2 fallback must not regress to high-stochasticity output.
           temperature: 0.2,
           top_p: 1,
           messages: [
@@ -1813,9 +1782,7 @@ export async function runProcessTake(
     const GEMINI_BACKOFF_MS = [10_000, 30_000];
 
     const circuitOpenAtStart = isCircuitOpen();
-    const initialModel = circuitOpenAtStart
-      ? ANALYSIS_MODEL_FALLBACK
-      : ANALYSIS_MODEL_PRIMARY;
+    const initialModel = circuitOpenAtStart ? ANALYSIS_MODEL_FALLBACK : ANALYSIS_MODEL_PRIMARY;
     if (circuitOpenAtStart) {
       console.warn("[take-pipeline] ai_circuit_fallback_selected", {
         take_id: takeId,
@@ -1853,384 +1820,382 @@ export async function runProcessTake(
     let lastAttemptTimedOut: boolean | null = null;
     let lastAttemptHttpStatus: number | null = null;
     if (twoStepReport) {
-      // Two-step pipeline produced (or fell back to) a report. Skip the
-      // single-pass Gemini call and parse stages entirely.
+      // Two-step pipeline produced a report. Skip the single-pass Gemini call
+      // and parse stages entirely.
       report = twoStepReport;
     } else {
-    const geminiStartedAt = Date.now();
-    console.info("[take-pipeline] ai_model_selected", {
-      take_id: takeId,
-      model: currentModel,
-      primary: ANALYSIS_MODEL_PRIMARY,
-      fallback: ANALYSIS_MODEL_FALLBACK,
-      circuit_open: circuitOpenAtStart,
-    });
-    console.log("[take-pipeline] gemini request started", {
-      ...baseLog,
-      analysis_tier: tier,
-      processing_phase: "analysing",
-      elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-      model: currentModel,
-      gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
-      total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
-      max_retries: ANALYSIS_MAX_RETRIES,
-    });
-    metric("gemini_started", {
-      take_id: takeId,
-      processing_phase: "analysing",
-      tier,
-      model: currentModel,
-      gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
-      total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
-      max_retries: ANALYSIS_MAX_RETRIES,
-    });
-
-    let urlForCall = ensureValidMuxMp4Url({
-      url: resolvedProbeUrl,
-      playbackId: take.mux_playback_id,
-      kind: "gemini",
-    });
-    while (true) {
-      // Total-budget guard BEFORE each attempt — prevents starting an attempt
-      // we know we can't complete inside the wall-clock budget.
-      const elapsedRunMs = Date.now() - runStartedAt;
-      if (elapsedRunMs >= ANALYSIS_TOTAL_TIMEOUT_MS) {
-        metric("gemini_failed", {
-          take_id: takeId,
-          retry_count: geminiRetryCount,
-          duration_ms: Date.now() - geminiStartedAt,
-          reason: "analysis_total_timeout",
-          failure_code: "analysis_total_timeout",
-        });
-        throw new AnalysisFailure(
-          "analysis_total_timeout",
-          "The analysis exceeded its total time budget. Please try again.",
-        );
-      }
-
-      geminiAttempt += 1;
-      const attemptStart = Date.now();
-      lastAttemptStartedAtIso = new Date(attemptStart).toISOString();
-      // Per-attempt deadline is the smaller of the per-attempt cap and the
-      // remaining total budget — never start a long attempt we can't finish.
-      const remainingBudgetMs = ANALYSIS_TOTAL_TIMEOUT_MS - elapsedRunMs;
-      const attemptTimeoutMs = Math.max(
-        1_000,
-        Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, remainingBudgetMs),
-      );
-      lastAttemptTimeoutMs = Number.isFinite(attemptTimeoutMs) && attemptTimeoutMs >= 0 ? attemptTimeoutMs : null;
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), attemptTimeoutMs);
-
-      let thrown: unknown = null;
-      let timedOut = false;
-      try {
-        aiResp = await callAI(urlForCall, ac.signal, currentModel);
-      } catch (callErr) {
-        thrown = callErr;
-        aiResp = null;
-        // AbortError shape varies between runtimes — detect by name.
-        const name = (callErr as { name?: string } | undefined)?.name;
-        if (ac.signal.aborted || name === "AbortError" || name === "TimeoutError") {
-          timedOut = true;
-        }
-      } finally {
-        clearTimeout(timer);
-      }
-
-      const status = aiResp?.status ?? null;
-      lastAttemptCompletedAtIso = new Date().toISOString();
-      lastAttemptDurationMs = Date.now() - attemptStart;
-      lastAttemptTimedOut = timedOut;
-      lastAttemptHttpStatus = status;
-      console.log("[take-pipeline] gemini response received", {
+      const geminiStartedAt = Date.now();
+      console.info("[take-pipeline] ai_model_selected", {
+        take_id: takeId,
+        model: currentModel,
+        primary: ANALYSIS_MODEL_PRIMARY,
+        fallback: ANALYSIS_MODEL_FALLBACK,
+        circuit_open: circuitOpenAtStart,
+      });
+      console.log("[take-pipeline] gemini request started", {
         ...baseLog,
         analysis_tier: tier,
-        http_status: status,
-        gemini_attempt: geminiAttempt,
-        gemini_duration_ms: Date.now() - attemptStart,
+        processing_phase: "analysing",
         elapsed_ms_since_upload: elapsedSinceCreatedMs(),
-        timed_out: timedOut,
         model: currentModel,
+        gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+        total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
+        max_retries: ANALYSIS_MAX_RETRIES,
+      });
+      metric("gemini_started", {
+        take_id: takeId,
+        processing_phase: "analysing",
+        tier,
+        model: currentModel,
+        gemini_timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+        total_timeout_ms: ANALYSIS_TOTAL_TIMEOUT_MS,
+        max_retries: ANALYSIS_MAX_RETRIES,
       });
 
-      // Success.
-      if (aiResp && aiResp.ok) break;
-
-      // One-shot stale-URL recovery for 400 — preserve existing fallback.
-      // Does NOT count against the retry budget (URL/schema recovery).
-      if (
-        aiResp &&
-        aiResp.status === 400 &&
-        take.mux_playback_id &&
-          urlForCall === resolvedProbeUrl
-      ) {
-        const errText = await aiResp.text();
-        console.warn(
-          "AI gateway rejected URL; retrying once with fresh Mux URL",
-          errText.slice(0, 200),
-        );
-        urlForCall = ensureValidMuxMp4Url({
-          url: buildMuxHighestMp4Url(take.mux_playback_id),
-          playbackId: take.mux_playback_id,
-          kind: "gemini",
-        });
-        // Roll back the attempt counter so this doesn't consume a retry slot.
-        geminiAttempt -= 1;
-        continue;
-      }
-
-      // Hard, non-retryable: 402 (credits).
-      if (aiResp && aiResp.status === 402) {
-        metric("gemini_failed", {
-          take_id: takeId,
-          retry_count: geminiRetryCount,
-          http_status: 402,
-          duration_ms: Date.now() - geminiStartedAt,
-          reason: "credits_exhausted",
-          model: currentModel,
-          failure_code: "ai_credits_exhausted",
-        });
-        throw new AnalysisFailure(
-          "ai_credits_exhausted",
-          "AI credits exhausted on this workspace. Add funds to continue.",
-        );
-      }
-
-      // Determine retryability per strict policy.
-      const httpRetryable =
-        aiResp !== null && status !== null && RETRYABLE_HTTP.has(status);
-      const networkThrow = aiResp === null && !timedOut && thrown !== null;
-      const transient = timedOut || httpRetryable || networkThrow;
-
-      // Pick a failure_code for whatever we'd terminate with if no retry left.
-      let failureCode: FailureCode;
-      if (timedOut) failureCode = "gemini_timeout";
-      else if (status === 429) failureCode = "gemini_429";
-      else if (status !== null && status >= 500 && status < 600)
-        failureCode = "gemini_5xx";
-      else if (networkThrow) failureCode = "ai_network_error";
-      else if (status !== null && status >= 400 && status < 500)
-        failureCode = "ai_non_retryable_4xx";
-      else failureCode = "ai_network_error";
-
-      // Non-retryable (parse/validation/4xx other than 429): terminate now.
-      if (!transient) {
-        const t = aiResp ? await aiResp.text().catch(() => "") : "";
-        console.error("AI gateway hard error", status, t.slice(0, 500));
-        metric("gemini_failed", {
-          take_id: takeId,
-          retry_count: geminiRetryCount,
-          http_status: status,
-          duration_ms: Date.now() - geminiStartedAt,
-          reason: "non_retryable",
-          model: currentModel,
-          failure_code: failureCode,
-        });
-        throw new AnalysisFailure(
-          failureCode,
-          `AI gateway error (${status ?? "network"}). Please try again.`,
-        );
-      }
-
-      // Transient — retry if budget allows. We allow exactly ONE fallback
-      // retry per spec: attempt 1 = primary, attempt 2 = fallback.
-      if (geminiRetryCount >= ANALYSIS_MAX_RETRIES) {
-        // Out of retries: emit gemini_failed and surface a typed terminal error.
-        // Record this terminal transient failure into the circuit breaker.
-        if (
-          failureCode === "gemini_timeout" ||
-          failureCode === "gemini_5xx" ||
-          failureCode === "ai_network_error"
-        ) {
-          recordAiFailure(failureCode);
+      let urlForCall = ensureValidMuxMp4Url({
+        url: resolvedProbeUrl,
+        playbackId: take.mux_playback_id,
+        kind: "gemini",
+      });
+      while (true) {
+        // Total-budget guard BEFORE each attempt — prevents starting an attempt
+        // we know we can't complete inside the wall-clock budget.
+        const elapsedRunMs = Date.now() - runStartedAt;
+        if (elapsedRunMs >= ANALYSIS_TOTAL_TIMEOUT_MS) {
+          metric("gemini_failed", {
+            take_id: takeId,
+            retry_count: geminiRetryCount,
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "analysis_total_timeout",
+            failure_code: "analysis_total_timeout",
+          });
+          throw new AnalysisFailure(
+            "analysis_total_timeout",
+            "The analysis exceeded its total time budget. Please try again.",
+          );
         }
-        console.warn("gemini_retry_exhausted", {
+
+        geminiAttempt += 1;
+        const attemptStart = Date.now();
+        lastAttemptStartedAtIso = new Date(attemptStart).toISOString();
+        // Per-attempt deadline is the smaller of the per-attempt cap and the
+        // remaining total budget — never start a long attempt we can't finish.
+        const remainingBudgetMs = ANALYSIS_TOTAL_TIMEOUT_MS - elapsedRunMs;
+        const attemptTimeoutMs = Math.max(
+          1_000,
+          Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, remainingBudgetMs),
+        );
+        lastAttemptTimeoutMs =
+          Number.isFinite(attemptTimeoutMs) && attemptTimeoutMs >= 0 ? attemptTimeoutMs : null;
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), attemptTimeoutMs);
+
+        let thrown: unknown = null;
+        let timedOut = false;
+        try {
+          aiResp = await callAI(urlForCall, ac.signal, currentModel);
+        } catch (callErr) {
+          thrown = callErr;
+          aiResp = null;
+          // AbortError shape varies between runtimes — detect by name.
+          const name = (callErr as { name?: string } | undefined)?.name;
+          if (ac.signal.aborted || name === "AbortError" || name === "TimeoutError") {
+            timedOut = true;
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+
+        const status = aiResp?.status ?? null;
+        lastAttemptCompletedAtIso = new Date().toISOString();
+        lastAttemptDurationMs = Date.now() - attemptStart;
+        lastAttemptTimedOut = timedOut;
+        lastAttemptHttpStatus = status;
+        console.log("[take-pipeline] gemini response received", {
+          ...baseLog,
+          analysis_tier: tier,
+          http_status: status,
+          gemini_attempt: geminiAttempt,
+          gemini_duration_ms: Date.now() - attemptStart,
+          elapsed_ms_since_upload: elapsedSinceCreatedMs(),
+          timed_out: timedOut,
+          model: currentModel,
+        });
+
+        // Success.
+        if (aiResp && aiResp.ok) break;
+
+        // One-shot stale-URL recovery for 400 — preserve existing fallback.
+        // Does NOT count against the retry budget (URL/schema recovery).
+        if (
+          aiResp &&
+          aiResp.status === 400 &&
+          take.mux_playback_id &&
+          urlForCall === resolvedProbeUrl
+        ) {
+          const errText = await aiResp.text();
+          console.warn(
+            "AI gateway rejected URL; retrying once with fresh Mux URL",
+            errText.slice(0, 200),
+          );
+          urlForCall = ensureValidMuxMp4Url({
+            url: buildMuxHighestMp4Url(take.mux_playback_id),
+            playbackId: take.mux_playback_id,
+            kind: "gemini",
+          });
+          // Roll back the attempt counter so this doesn't consume a retry slot.
+          geminiAttempt -= 1;
+          continue;
+        }
+
+        // Hard, non-retryable: 402 (credits).
+        if (aiResp && aiResp.status === 402) {
+          metric("gemini_failed", {
+            take_id: takeId,
+            retry_count: geminiRetryCount,
+            http_status: 402,
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "credits_exhausted",
+            model: currentModel,
+            failure_code: "ai_credits_exhausted",
+          });
+          throw new AnalysisFailure(
+            "ai_credits_exhausted",
+            "AI credits exhausted on this workspace. Add funds to continue.",
+          );
+        }
+
+        // Determine retryability per strict policy.
+        const httpRetryable = aiResp !== null && status !== null && RETRYABLE_HTTP.has(status);
+        const networkThrow = aiResp === null && !timedOut && thrown !== null;
+        const transient = timedOut || httpRetryable || networkThrow;
+
+        // Pick a failure_code for whatever we'd terminate with if no retry left.
+        let failureCode: FailureCode;
+        if (timedOut) failureCode = "gemini_timeout";
+        else if (status === 429) failureCode = "gemini_429";
+        else if (status !== null && status >= 500 && status < 600) failureCode = "gemini_5xx";
+        else if (networkThrow) failureCode = "ai_network_error";
+        else if (status !== null && status >= 400 && status < 500)
+          failureCode = "ai_non_retryable_4xx";
+        else failureCode = "ai_network_error";
+
+        // Non-retryable (parse/validation/4xx other than 429): terminate now.
+        if (!transient) {
+          const t = aiResp ? await aiResp.text().catch(() => "") : "";
+          console.error("AI gateway hard error", status, t.slice(0, 500));
+          metric("gemini_failed", {
+            take_id: takeId,
+            retry_count: geminiRetryCount,
+            http_status: status,
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "non_retryable",
+            model: currentModel,
+            failure_code: failureCode,
+          });
+          throw new AnalysisFailure(
+            failureCode,
+            `AI gateway error (${status ?? "network"}). Please try again.`,
+          );
+        }
+
+        // Transient — retry if budget allows. We allow exactly ONE fallback
+        // retry per spec: attempt 1 = primary, attempt 2 = fallback.
+        if (geminiRetryCount >= ANALYSIS_MAX_RETRIES) {
+          // Out of retries: emit gemini_failed and surface a typed terminal error.
+          // Record this terminal transient failure into the circuit breaker.
+          if (
+            failureCode === "gemini_timeout" ||
+            failureCode === "gemini_5xx" ||
+            failureCode === "ai_network_error"
+          ) {
+            recordAiFailure(failureCode);
+          }
+          console.warn("gemini_retry_exhausted", {
+            ...baseLog,
+            retry_count: geminiRetryCount,
+            http_status: status,
+            timed_out: timedOut,
+            elapsed_ms: Date.now() - geminiStartedAt,
+            failure_code: failureCode,
+            model: currentModel,
+          });
+          metric("gemini_failed", {
+            take_id: takeId,
+            retry_count: geminiRetryCount,
+            http_status: status,
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "retry_exhausted",
+            failure_code: failureCode,
+            timed_out: timedOut,
+            model: currentModel,
+          });
+          const msg =
+            failureCode === "gemini_timeout"
+              ? "The analysis took too long. Please try again."
+              : failureCode === "gemini_429"
+                ? "AI gateway is rate-limited. Please try again shortly."
+                : failureCode === "ai_network_error"
+                  ? "AI gateway network error. Please try again."
+                  : "AI gateway is temporarily unavailable. Please try again.";
+          throw new AnalysisFailure(failureCode, msg);
+        }
+
+        if (await isCancelled()) {
+          console.log("[take-pipeline] cancelled before gemini retry", baseLog);
+          metric("cancel", {
+            take_id: takeId,
+            processing_phase: "analysing",
+            duration_ms: Date.now() - geminiStartedAt,
+            reason: "before_gemini_retry",
+          });
+          metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysing" });
+          terminalWritten = true; // cancellation is its own terminal state
+          return { ok: true, alreadyDone: true };
+        }
+
+        geminiRetryCount += 1;
+        // Switch to fallback model for the retry (unless we already started on
+        // the fallback because the circuit was open).
+        const previousModel = currentModel;
+        if (currentModel === ANALYSIS_MODEL_PRIMARY) {
+          currentModel = ANALYSIS_MODEL_FALLBACK;
+          console.warn("[take-pipeline] ai_fallback_selected", {
+            take_id: takeId,
+            from_model: previousModel,
+            to_model: currentModel,
+            reason: failureCode,
+          });
+          metric("ai_fallback_selected", {
+            take_id: takeId,
+            from_model: previousModel,
+            model: currentModel,
+            reason: failureCode,
+            http_status: status,
+            timed_out: timedOut,
+          });
+        }
+        console.log("gemini_retry_started", {
           ...baseLog,
           retry_count: geminiRetryCount,
           http_status: status,
-          timed_out: timedOut,
+          attempt_count: geminiAttempt,
           elapsed_ms: Date.now() - geminiStartedAt,
-          failure_code: failureCode,
+          timed_out: timedOut,
           model: currentModel,
         });
-        metric("gemini_failed", {
+        metric("gemini_retry", {
           take_id: takeId,
           retry_count: geminiRetryCount,
           http_status: status,
-          duration_ms: Date.now() - geminiStartedAt,
-          reason: "retry_exhausted",
+          attempt: geminiAttempt,
+          timed_out: timedOut,
           failure_code: failureCode,
-          timed_out: timedOut,
           model: currentModel,
         });
-        const msg =
-          failureCode === "gemini_timeout"
-            ? "The analysis took too long. Please try again."
-            : failureCode === "gemini_429"
-              ? "AI gateway is rate-limited. Please try again shortly."
-              : failureCode === "ai_network_error"
-                ? "AI gateway network error. Please try again."
-                : "AI gateway is temporarily unavailable. Please try again.";
-        throw new AnalysisFailure(failureCode, msg);
+        const backoff = GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000;
+        await new Promise((r) => setTimeout(r, backoff));
+        // Loop continues — total-budget guard at the top will catch overruns.
       }
 
-      if (await isCancelled()) {
-        console.log("[take-pipeline] cancelled before gemini retry", baseLog);
-        metric("cancel", {
-          take_id: takeId,
-          processing_phase: "analysing",
-          duration_ms: Date.now() - geminiStartedAt,
-          reason: "before_gemini_retry",
-        });
-        metric("analysis_abandoned", { take_id: takeId, processing_phase: "analysing" });
-        terminalWritten = true; // cancellation is its own terminal state
-        return { ok: true, alreadyDone: true };
-      }
-
-      geminiRetryCount += 1;
-      // Switch to fallback model for the retry (unless we already started on
-      // the fallback because the circuit was open).
-      const previousModel = currentModel;
-      if (currentModel === ANALYSIS_MODEL_PRIMARY) {
-        currentModel = ANALYSIS_MODEL_FALLBACK;
-        console.warn("[take-pipeline] ai_fallback_selected", {
-          take_id: takeId,
-          from_model: previousModel,
-          to_model: currentModel,
-          reason: failureCode,
-        });
-        metric("ai_fallback_selected", {
-          take_id: takeId,
-          from_model: previousModel,
-          model: currentModel,
-          reason: failureCode,
-          http_status: status,
-          timed_out: timedOut,
-        });
-      }
-      console.log("gemini_retry_started", {
-        ...baseLog,
-        retry_count: geminiRetryCount,
-        http_status: status,
-        attempt_count: geminiAttempt,
-        elapsed_ms: Date.now() - geminiStartedAt,
-        timed_out: timedOut,
-        model: currentModel,
-      });
-      metric("gemini_retry", {
-        take_id: takeId,
-        retry_count: geminiRetryCount,
-        http_status: status,
-        attempt: geminiAttempt,
-        timed_out: timedOut,
-        failure_code: failureCode,
-        model: currentModel,
-      });
-      const backoff = GEMINI_BACKOFF_MS[geminiRetryCount - 1] ?? 30_000;
-      await new Promise((r) => setTimeout(r, backoff));
-      // Loop continues — total-budget guard at the top will catch overruns.
-    }
-
-    if (!aiResp || !aiResp.ok) {
-      throw new AnalysisFailure(
-        "analysis_no_terminal_state",
-        "We couldn't complete the analysis this time. Please try again.",
-      );
-    }
-    metric("gemini_completed", {
-      take_id: takeId,
-      duration_ms: Date.now() - geminiStartedAt,
-      retry_count: geminiRetryCount,
-      tier,
-    });
-    if (geminiRetryCount > 0) {
-      console.log("gemini_retry_succeeded", {
-        ...baseLog,
-        retry_count: geminiRetryCount,
-        elapsed_ms: Date.now() - geminiStartedAt,
-      });
-    }
-    metric("gemini_completed", {
-      take_id: takeId,
-      duration_ms: Date.now() - geminiStartedAt,
-      retry_count: geminiRetryCount,
-      tier,
-    });
-    if (geminiRetryCount > 0) {
-      console.log("gemini_retry_succeeded", {
-        ...baseLog,
-        retry_count: geminiRetryCount,
-        elapsed_ms: Date.now() - geminiStartedAt,
-      });
-    }
-
-    // ---- Parse stage (timed, tagged) ----
-
-    const parseStartedAt = Date.now();
-    metric("analysis_parse_started", { take_id: takeId, model: currentModel });
-    console.log("[take-pipeline] analysis_parse_started", {
-      ...baseLog,
-      model: currentModel,
-    });
-
-    // (report variable is hoisted above; assigned here for the single-pass path)
-    try {
-      const json = await aiResp.json();
-      const choice = json.choices?.[0];
-      const toolCall = choice?.message?.tool_calls?.[0];
-      if (!toolCall?.function?.arguments) {
+      if (!aiResp || !aiResp.ok) {
         throw new AnalysisFailure(
-          "analysis_parse_failed",
-          "AI did not return a structured report. Please try again.",
+          "analysis_no_terminal_state",
+          "We couldn't complete the analysis this time. Please try again.",
         );
       }
+      metric("gemini_completed", {
+        take_id: takeId,
+        duration_ms: Date.now() - geminiStartedAt,
+        retry_count: geminiRetryCount,
+        tier,
+      });
+      if (geminiRetryCount > 0) {
+        console.log("gemini_retry_succeeded", {
+          ...baseLog,
+          retry_count: geminiRetryCount,
+          elapsed_ms: Date.now() - geminiStartedAt,
+        });
+      }
+      metric("gemini_completed", {
+        take_id: takeId,
+        duration_ms: Date.now() - geminiStartedAt,
+        retry_count: geminiRetryCount,
+        tier,
+      });
+      if (geminiRetryCount > 0) {
+        console.log("gemini_retry_succeeded", {
+          ...baseLog,
+          retry_count: geminiRetryCount,
+          elapsed_ms: Date.now() - geminiStartedAt,
+        });
+      }
+
+      // ---- Parse stage (timed, tagged) ----
+
+      const parseStartedAt = Date.now();
+      metric("analysis_parse_started", { take_id: takeId, model: currentModel });
+      console.log("[take-pipeline] analysis_parse_started", {
+        ...baseLog,
+        model: currentModel,
+      });
+
+      // (report variable is hoisted above; assigned here for the single-pass path)
       try {
-        report = JSON.parse(toolCall.function.arguments);
-      } catch (parseErr) {
-        if (choice?.finish_reason === "length") {
+        const json = await aiResp.json();
+        const choice = json.choices?.[0];
+        const toolCall = choice?.message?.tool_calls?.[0];
+        if (!toolCall?.function?.arguments) {
           throw new AnalysisFailure(
             "analysis_parse_failed",
-            "The AI response was cut off before it finished writing the report. Please retry.",
+            "AI did not return a structured report. Please try again.",
           );
         }
-        console.error(
-          "AI JSON parse failed",
-          parseErr,
-          (toolCall.function.arguments as string | undefined)?.slice(-300),
-        );
-        throw new AnalysisFailure(
-          "analysis_parse_failed",
-          "The AI returned an incomplete report. Please retry.",
-        );
+        try {
+          report = JSON.parse(toolCall.function.arguments);
+        } catch (parseErr) {
+          if (choice?.finish_reason === "length") {
+            throw new AnalysisFailure(
+              "analysis_parse_failed",
+              "The AI response was cut off before it finished writing the report. Please retry.",
+            );
+          }
+          console.error(
+            "AI JSON parse failed",
+            parseErr,
+            (toolCall.function.arguments as string | undefined)?.slice(-300),
+          );
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "The AI returned an incomplete report. Please retry.",
+          );
+        }
+        if (finaliseExceeded()) {
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "Parsing the AI response took too long. Please try again.",
+          );
+        }
+      } catch (parseOuter) {
+        metric("analysis_parse_failed", {
+          take_id: takeId,
+          duration_ms: Date.now() - parseStartedAt,
+          reason: parseOuter instanceof Error ? parseOuter.message.slice(0, 120) : "parse_error",
+        });
+        console.warn("[take-pipeline] analysis_parse_failed", {
+          ...baseLog,
+          duration_ms: Date.now() - parseStartedAt,
+        });
+        throw parseOuter;
       }
-      if (finaliseExceeded()) {
-        throw new AnalysisFailure(
-          "analysis_parse_failed",
-          "Parsing the AI response took too long. Please try again.",
-        );
-      }
-    } catch (parseOuter) {
-      metric("analysis_parse_failed", {
+      metric("analysis_parse_completed", {
         take_id: takeId,
         duration_ms: Date.now() - parseStartedAt,
-        reason:
-          parseOuter instanceof Error ? parseOuter.message.slice(0, 120) : "parse_error",
       });
-      console.warn("[take-pipeline] analysis_parse_failed", {
+      console.log("[take-pipeline] analysis_parse_completed", {
         ...baseLog,
         duration_ms: Date.now() - parseStartedAt,
       });
-      throw parseOuter;
-    }
-    metric("analysis_parse_completed", {
-      take_id: takeId,
-      duration_ms: Date.now() - parseStartedAt,
-    });
-    console.log("[take-pipeline] analysis_parse_completed", {
-      ...baseLog,
-      duration_ms: Date.now() - parseStartedAt,
-    });
     } // end of single-pass else branch
 
     // ====================================================================
@@ -2287,10 +2252,7 @@ export async function runProcessTake(
     // A malformed Step-2 report (missing scores/category fields) can wedge
     // downstream regex walks. Detect early; fall back or fail cleanly.
     if (isTwoStepEnabled()) {
-      const requiredFields = [
-        "scores",
-        "audition_type",
-      ] as const;
+      const requiredFields = ["scores", "audition_type"] as const;
       const missing: string[] = [];
       const malformed: string[] = [];
       for (const f of requiredFields) {
@@ -2307,7 +2269,7 @@ export async function runProcessTake(
           malformed_field_count: malformed.length,
           fallback_used: twoStepFallbackUsed,
         });
-        // If we already used the fallback renderer and the result is still
+        // If S10 fell back from Step 2 and the recovery report is still
         // malformed, fail cleanly rather than running scrubs on garbage.
         if (twoStepFallbackUsed) {
           throw new AnalysisFailure(
@@ -2334,9 +2296,11 @@ export async function runProcessTake(
       typeof report.overall_score === "number" ? report.overall_score : null;
 
     // ---- Deterministic compliance vs signals (orientation/duration/audio) ----
-    const signalsForCompliance = (take.signals ?? null) as
-      | { orientation?: string; duration?: number; audio_peak?: number }
-      | null;
+    const signalsForCompliance = (take.signals ?? null) as {
+      orientation?: string;
+      duration?: number;
+      audio_peak?: number;
+    } | null;
     const complianceFlags = deterministicCompliance({
       extracted: extractedBrief,
       signals: signalsForCompliance,
@@ -2475,7 +2439,11 @@ export async function runProcessTake(
     else if (audioScore < 50 && overall > 62) overall = 62;
     else if (audioScore < 60 && overall > 75) overall = 75;
     report.role_fit_modifier = roleFitModifier;
-    if (report.role_fit_confidence !== "low" && report.role_fit_confidence !== "medium" && report.role_fit_confidence !== "high") {
+    if (
+      report.role_fit_confidence !== "low" &&
+      report.role_fit_confidence !== "medium" &&
+      report.role_fit_confidence !== "high"
+    ) {
       report.role_fit_confidence = report.mode === "brief" ? "low" : "low";
     }
     if (report.mode !== "brief") {
@@ -2485,11 +2453,13 @@ export async function runProcessTake(
     }
 
     // ---- Presentation notes — safety filter ----
-    let presentationNotes: string[] = Array.isArray(report.presentation_notes)
-      ? report.presentation_notes.filter(
-          (n: unknown): n is string =>
-            typeof n === "string" && n.trim().length > 0 && !containsForbidden(n),
-        ).slice(0, 6)
+    const presentationNotes: string[] = Array.isArray(report.presentation_notes)
+      ? report.presentation_notes
+          .filter(
+            (n: unknown): n is string =>
+              typeof n === "string" && n.trim().length > 0 && !containsForbidden(n),
+          )
+          .slice(0, 6)
       : [];
     if (
       Array.isArray(report.presentation_notes) &&
@@ -2520,7 +2490,8 @@ export async function runProcessTake(
     };
     if (Array.isArray(report.strengths)) report.strengths = scrubArray(report.strengths);
     if (Array.isArray(report.improvements)) report.improvements = scrubArray(report.improvements);
-    if (Array.isArray(report.coaching_drills)) report.coaching_drills = scrubArray(report.coaching_drills);
+    if (Array.isArray(report.coaching_drills))
+      report.coaching_drills = scrubArray(report.coaching_drills);
     if (typeof report.fix_first === "string" && containsForbidden(report.fix_first)) {
       report.fix_first = "";
       safetyRewriteApplied = true;
@@ -2538,8 +2509,7 @@ export async function runProcessTake(
     };
     const materialRequested = (extractedAny.material_requested ?? "").trim();
     const materialPolicy: "fixed" | "choice" | "none" =
-      extractedAny.material_policy ??
-      (materialRequested.length > 0 ? "fixed" : "none");
+      extractedAny.material_policy ?? (materialRequested.length > 0 ? "fixed" : "none");
 
     // Patterns covering both direct alternatives and SOFT replacement
     // suggestions ("not the best choice", "another piece could showcase you
@@ -2584,11 +2554,15 @@ export async function runProcessTake(
           .filter((s) => s.trim().length > 0);
       };
       if (Array.isArray(report.strengths)) report.strengths = stripAltArray(report.strengths);
-      if (Array.isArray(report.improvements)) report.improvements = stripAltArray(report.improvements);
-      if (Array.isArray(report.coaching_drills)) report.coaching_drills = stripAltArray(report.coaching_drills);
+      if (Array.isArray(report.improvements))
+        report.improvements = stripAltArray(report.improvements);
+      if (Array.isArray(report.coaching_drills))
+        report.coaching_drills = stripAltArray(report.coaching_drills);
       if (typeof report.fix_first === "string") report.fix_first = stripAlt(report.fix_first);
-      if (typeof report.casting_headline === "string") report.casting_headline = stripAlt(report.casting_headline);
-      if (typeof report.casting_insight === "string") report.casting_insight = stripAlt(report.casting_insight);
+      if (typeof report.casting_headline === "string")
+        report.casting_headline = stripAlt(report.casting_headline);
+      if (typeof report.casting_insight === "string")
+        report.casting_insight = stripAlt(report.casting_insight);
       if (report.category_notes && typeof report.category_notes === "object") {
         const notes = report.category_notes as Record<string, unknown>;
         for (const k of Object.keys(notes)) {
@@ -2645,8 +2619,8 @@ export async function runProcessTake(
     // Lightweight non-PII safety/invariant summary for downstream debugging.
     const durationOverridden =
       extractedBrief?.time_limit_source === "none" &&
-      typeof (extractedBrief as { time_limit_seconds?: number | null } | null)?.time_limit_seconds !==
-        "number";
+      typeof (extractedBrief as { time_limit_seconds?: number | null } | null)
+        ?.time_limit_seconds !== "number";
     console.info("[process-take] safety/invariant summary", {
       takeId,
       material_policy: materialPolicy,
@@ -2712,7 +2686,11 @@ export async function runProcessTake(
         target.severity = "high";
       } else if (exp.recall_impact === "unlikely_to_affect" && !isDeterministic) {
         target.severity = "low";
-      } else if (exp.recall_impact === "may_reduce" && target.severity === "low" && !isDeterministic) {
+      } else if (
+        exp.recall_impact === "may_reduce" &&
+        target.severity === "low" &&
+        !isDeterministic
+      ) {
         target.severity = "medium";
       }
     }
@@ -2773,7 +2751,11 @@ export async function runProcessTake(
       if (cf.severity === "high" || cf.severity === "medium") pushReason(cf.message);
     }
     // Then verdict-derived reasons (covers audio cap, brief adherence, weak categories).
-    if (verdict.blocked || verdict.label === "Worth another take" || verdict.label === "Not ready yet") {
+    if (
+      verdict.blocked ||
+      verdict.label === "Worth another take" ||
+      verdict.label === "Not ready yet"
+    ) {
       const reason = verdict.reason;
       if (reason) pushReason(reason);
     }
@@ -2818,9 +2800,7 @@ export async function runProcessTake(
       briefText: audition.brief ?? null,
       extractedBrief: extractedBrief ?? null,
     });
-    for (const [field, count] of Object.entries(
-      qualityScrubResult.visual_removed_per_field,
-    )) {
+    for (const [field, count] of Object.entries(qualityScrubResult.visual_removed_per_field)) {
       if (count > 0) {
         console.log("[take-pipeline] unsupported_visual_detail_removed", {
           take_id: takeId,
@@ -2829,9 +2809,7 @@ export async function runProcessTake(
         });
       }
     }
-    for (const [field, count] of Object.entries(
-      qualityScrubResult.page_rewritten_per_field,
-    )) {
+    for (const [field, count] of Object.entries(qualityScrubResult.page_rewritten_per_field)) {
       if ((count as number) > 0) {
         console.log("[take-pipeline] source_reference_rewritten_to_timestamp", {
           take_id: takeId,
@@ -2840,9 +2818,7 @@ export async function runProcessTake(
         });
       }
     }
-    for (const [field, count] of Object.entries(
-      qualityScrubResult.side_rewritten_per_field,
-    )) {
+    for (const [field, count] of Object.entries(qualityScrubResult.side_rewritten_per_field)) {
       if ((count as number) > 0) {
         console.log("[take-pipeline] unclear_industry_language_rewritten", {
           take_id: takeId,
@@ -2851,9 +2827,7 @@ export async function runProcessTake(
         });
       }
     }
-    for (const [field, count] of Object.entries(
-      qualityScrubResult.framing_rewritten_per_field,
-    )) {
+    for (const [field, count] of Object.entries(qualityScrubResult.framing_rewritten_per_field)) {
       if (count > 0) {
         console.log("[take-pipeline] brief_incompatible_coaching_rewritten", {
           take_id: takeId,
@@ -2866,9 +2840,7 @@ export async function runProcessTake(
     // ---- Timestamp normalisation: validate, dedupe, sort, cap ----
     const tsNorm = normaliseTimestampedNotes(
       report,
-      typeof take.mux_duration_seconds === "number"
-        ? take.mux_duration_seconds
-        : null,
+      typeof take.mux_duration_seconds === "number" ? take.mux_duration_seconds : null,
     );
     if (tsNorm.reordered) {
       console.log("[take-pipeline] timestamp_order_normalised", {
@@ -2878,10 +2850,7 @@ export async function runProcessTake(
     }
     // Below-target observability for 3–5 minute tapes.
     {
-      const dur =
-        typeof take.mux_duration_seconds === "number"
-          ? take.mux_duration_seconds
-          : null;
+      const dur = typeof take.mux_duration_seconds === "number" ? take.mux_duration_seconds : null;
       if (dur != null && dur >= 180 && dur <= 300) {
         const targetMin = timestampTargetMin(dur);
         if (tsNorm.finalCount < targetMin) {
@@ -2889,10 +2858,7 @@ export async function runProcessTake(
           const evCount = ev?.timestamped_evidence?.length ?? 0;
           const suff = ev?.evidence_sufficiency;
           const notAssessable =
-            !!suff &&
-            (!suff.audio_assessable ||
-              !suff.video_assessable ||
-              !suff.acting_assessable);
+            !!suff && (!suff.audio_assessable || !suff.video_assessable || !suff.acting_assessable);
           let stage_where_count_was_lost:
             | "step1_underproduced"
             | "step2_dropped"
@@ -2932,7 +2898,6 @@ export async function runProcessTake(
       }
     }
 
-
     report.overall_score_model = overallScoreModel;
     report.overall_score_final = overall;
     report.verdict_final = verdict.label;
@@ -2951,37 +2916,28 @@ export async function runProcessTake(
     // override so the UI never shows that mismatch.
     {
       const dur =
-        typeof take.mux_duration_seconds === "number" &&
-        Number.isFinite(take.mux_duration_seconds)
+        typeof take.mux_duration_seconds === "number" && Number.isFinite(take.mux_duration_seconds)
           ? take.mux_duration_seconds
           : null;
       const conf = typeof report.confidence === "number" ? report.confidence : 0;
-      const audioScore =
-        typeof report.scores?.audio === "number" ? report.scores.audio : null;
+      const audioScore = typeof report.scores?.audio === "number" ? report.scores.audio : null;
       const techScore =
-        typeof report.scores?.technical === "number"
-          ? report.scores.technical
-          : null;
+        typeof report.scores?.technical === "number" ? report.scores.technical : null;
       const components = Array.isArray(report.detected_components)
         ? report.detected_components
         : [];
       const hasBrief = report.mode === "brief";
       const suff = twoStepEvidence?.evidence_sufficiency;
       const suffOk =
-        !!suff &&
-        suff.audio_assessable &&
-        suff.video_assessable &&
-        suff.acting_assessable;
+        !!suff && suff.audio_assessable && suff.video_assessable && suff.acting_assessable;
       const hasFullPerformance = (dur ?? 0) >= 60 && components.length > 0;
 
       // Reasons that legitimately downgrade reliability:
       const groundedConcerns: string[] = [];
       if (!hasBrief) groundedConcerns.push("no_brief");
       if (audioScore != null && audioScore < 50) groundedConcerns.push("poor_audio");
-      else if (audioScore != null && audioScore < 75)
-        groundedConcerns.push("muddy_audio");
-      if (techScore != null && techScore < 50)
-        groundedConcerns.push("poor_video");
+      else if (audioScore != null && audioScore < 75) groundedConcerns.push("muddy_audio");
+      if (techScore != null && techScore < 50) groundedConcerns.push("poor_video");
       if (!hasFullPerformance) groundedConcerns.push("short_or_partial");
       if (suff && !suff.audio_assessable) groundedConcerns.push("audio_not_assessable");
       if (suff && !suff.video_assessable) groundedConcerns.push("video_not_assessable");
@@ -2992,8 +2948,6 @@ export async function runProcessTake(
       if (conf >= 85 && groundedConcerns.length === 0) target = "high";
       else if (conf >= 65 && groundedConcerns.length <= 1) target = "medium";
       else target = "low";
-
-      
 
       // Detect mismatch: high confidence + good sufficiency + valid duration
       // but the UI would currently show Medium/Low only because the spurious
@@ -3021,8 +2975,7 @@ export async function runProcessTake(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (report as any).feedback_reliability_override = target;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (report as any).feedback_reliability_reason_code =
-          groundedConcerns[0] ?? "ok";
+        (report as any).feedback_reliability_reason_code = groundedConcerns[0] ?? "ok";
       }
     }
 
@@ -3033,9 +2986,7 @@ export async function runProcessTake(
     try {
       const { data: priorTakes } = await supabaseAdmin
         .from("takes")
-        .select(
-          "id, overall_score, scores, report, score_breakdown, mux_asset_id, mux_playback_id",
-        )
+        .select("id, overall_score, scores, report, score_breakdown, mux_asset_id, mux_playback_id")
         .eq("audition_id", take.audition_id)
         .eq("status", "complete")
         .neq("id", takeId)
@@ -3043,17 +2994,9 @@ export async function runProcessTake(
         .limit(5);
       const prior = (priorTakes ?? []).find((p) => {
         if (!p) return false;
-        if (
-          take.mux_asset_id &&
-          p.mux_asset_id &&
-          p.mux_asset_id === take.mux_asset_id
-        )
+        if (take.mux_asset_id && p.mux_asset_id && p.mux_asset_id === take.mux_asset_id)
           return true;
-        if (
-          take.mux_playback_id &&
-          p.mux_playback_id &&
-          p.mux_playback_id === take.mux_playback_id
-        )
+        if (take.mux_playback_id && p.mux_playback_id && p.mux_playback_id === take.mux_playback_id)
           return true;
         return false;
       });
@@ -3078,13 +3021,8 @@ export async function runProcessTake(
             overall: Number(prior.overall_score ?? 0),
             verdict: prevVerdict,
             scores: (prior.scores ?? {}) as Record<string, number | null>,
-            role_fit_modifier:
-              typeof pr.role_fit_modifier === "number"
-                ? pr.role_fit_modifier
-                : 0,
-            timestamp_count: Array.isArray(pr.timestamped_notes)
-              ? pr.timestamped_notes.length
-              : 0,
+            role_fit_modifier: typeof pr.role_fit_modifier === "number" ? pr.role_fit_modifier : 0,
+            timestamp_count: Array.isArray(pr.timestamped_notes) ? pr.timestamped_notes.length : 0,
           },
         });
         if (warn.emit || warn.role_fit_modifier_delta > 2) {
@@ -3103,19 +3041,14 @@ export async function runProcessTake(
       // Never fail the pipeline on a comparison miss.
       console.info("[take-pipeline] consistency_compare_skipped", {
         take_id: takeId,
-        reason:
-          cmpErr instanceof Error ? cmpErr.message.slice(0, 120) : "unknown",
+        reason: cmpErr instanceof Error ? cmpErr.message.slice(0, 120) : "unknown",
       });
     }
-
 
     // ---- Score / verdict alignment (text-only) ----
     // Only adjusts wording (headline/insight) when it conflicts with the
     // locked verdict. Never changes scores or the verdict itself.
-    const alignment = enforceScoreAlignment(
-      report,
-      verdict.label as VerdictLabel,
-    );
+    const alignment = enforceScoreAlignment(report, verdict.label as VerdictLabel);
     if (alignment.adjusted) {
       console.log("[take-pipeline] report_score_alignment_adjusted", {
         take_id: takeId,
@@ -3133,16 +3066,10 @@ export async function runProcessTake(
     if (Array.isArray(report.improvements) && report.improvements.length > 15) {
       report.improvements = report.improvements.slice(0, 15);
     }
-    if (
-      Array.isArray(report.presentation_notes) &&
-      report.presentation_notes.length > 6
-    ) {
+    if (Array.isArray(report.presentation_notes) && report.presentation_notes.length > 6) {
       report.presentation_notes = report.presentation_notes.slice(0, 6);
     }
-    if (
-      Array.isArray(report.timestamped_notes) &&
-      report.timestamped_notes.length > 36
-    ) {
+    if (Array.isArray(report.timestamped_notes) && report.timestamped_notes.length > 36) {
       report.timestamped_notes = report.timestamped_notes.slice(0, 36);
     }
 
@@ -3152,8 +3079,7 @@ export async function runProcessTake(
     // persistence paths consume the cleaned `report` below.
     try {
       const framingFixed = detectFramingFixed(
-        (extractedBrief as { framing_required?: string | null } | null)
-          ?.framing_required ?? null,
+        (extractedBrief as { framing_required?: string | null } | null)?.framing_required ?? null,
       );
       const enforcement = enforcePublicReportOutputQuality(
         report as unknown as Record<string, unknown>,
@@ -3174,8 +3100,7 @@ export async function runProcessTake(
     } catch (enfErr) {
       console.warn("[take-pipeline] output_enforcement_skipped", {
         take_id: takeId,
-        reason:
-          enfErr instanceof Error ? enfErr.message.slice(0, 200) : "unknown",
+        reason: enfErr instanceof Error ? enfErr.message.slice(0, 200) : "unknown",
       });
     }
 
@@ -3210,35 +3135,23 @@ export async function runProcessTake(
             evidence_version: "1",
             evidence_pass_duration_ms: evidencePassDurationMs,
             report_polish_duration_ms: reportPolishDurationMs,
-            two_step_total_ai_duration_ms:
-              evidencePassDurationMs + reportPolishDurationMs,
-            timestamped_evidence_count:
-              twoStepEvidence?.timestamped_evidence.length ?? 0,
+            two_step_total_ai_duration_ms: evidencePassDurationMs + reportPolishDurationMs,
+            timestamped_evidence_count: twoStepEvidence?.timestamped_evidence.length ?? 0,
             timestamped_evidence_dropped_count: twoStepTimestampsDropped,
             fallback_used: twoStepFallbackUsed,
             polish_fallback_reason: twoStepFallbackReason,
-            locked_field_overwrite_count:
-              twoStepEnforcement.locked_field_overwrites,
-            unsupported_claims_removed_count:
-              twoStepEnforcement.unsupported_claims_removed,
-            unsupported_claims_rewritten_count:
-              twoStepEnforcement.unsupported_claims_rewritten,
+            locked_field_overwrite_count: twoStepEnforcement.locked_field_overwrites,
+            unsupported_claims_removed_count: twoStepEnforcement.unsupported_claims_removed,
+            unsupported_claims_rewritten_count: twoStepEnforcement.unsupported_claims_rewritten,
             evidence_sufficiency: twoStepEvidence
               ? {
-                  audio_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.audio_assessable,
-                  video_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.video_assessable,
-                  acting_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.acting_assessable,
-                  vocal_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.vocal_assessable,
-                  movement_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.movement_assessable,
-                  brief_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.brief_assessable,
-                  role_fit_assessable:
-                    !!twoStepEvidence.evidence_sufficiency.role_fit_assessable,
+                  audio_assessable: !!twoStepEvidence.evidence_sufficiency.audio_assessable,
+                  video_assessable: !!twoStepEvidence.evidence_sufficiency.video_assessable,
+                  acting_assessable: !!twoStepEvidence.evidence_sufficiency.acting_assessable,
+                  vocal_assessable: !!twoStepEvidence.evidence_sufficiency.vocal_assessable,
+                  movement_assessable: !!twoStepEvidence.evidence_sufficiency.movement_assessable,
+                  brief_assessable: !!twoStepEvidence.evidence_sufficiency.brief_assessable,
+                  role_fit_assessable: !!twoStepEvidence.evidence_sufficiency.role_fit_assessable,
                 }
               : null,
           }
@@ -3266,19 +3179,15 @@ export async function runProcessTake(
       const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
       const cfg3b = await getCfg3b();
       if (cfg3b.future_report_enabled) {
-        const { buildV2Report, validateV2PublicBoundary } = await import(
-          "./v2-report-builder.server"
-        );
+        const { buildV2Report, validateV2PublicBoundary } =
+          await import("./v2-report-builder.server");
         const v2Candidate = buildV2Report({
           legacyReport: report as Record<string, unknown>,
           futureDimensions: capturedFutureDimensions ?? null,
           auditionType: (report.audition_type as string | null) ?? null,
           mode: audition.brief ? "brief" : "baseline",
         });
-        const check = validateV2PublicBoundary(
-          v2Candidate,
-          report as Record<string, unknown>,
-        );
+        const check = validateV2PublicBoundary(v2Candidate, report as Record<string, unknown>);
         if (check.ok) {
           reportToPersist = v2Candidate;
           console.log("[take-pipeline] v2_report_persisted", {
@@ -3343,8 +3252,7 @@ export async function runProcessTake(
     if (
       !preWrite ||
       preWrite.status !== "processing" ||
-      (preWrite.processing_phase !== "finalising" &&
-        preWrite.processing_phase !== "analysing")
+      (preWrite.processing_phase !== "finalising" && preWrite.processing_phase !== "analysing")
     ) {
       console.log("result_discarded_state_changed", {
         take_id: takeId,
@@ -3401,16 +3309,14 @@ export async function runProcessTake(
       metric("analysis_persist_failed", {
         take_id: takeId,
         duration_ms: Date.now() - persistStartedAt,
-        reason:
-          writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
+        reason: writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
       });
       console.error("[take-pipeline] analysis_persist_failed", writeErr);
       console.error("[take-pipeline] finalising_persist_failed", {
         take_id: takeId,
         duration_ms: Date.now() - persistStartedAt,
         finalising_duration_ms: finaliseElapsedMs(),
-        reason:
-          writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
+        reason: writeErr instanceof Error ? writeErr.message.slice(0, 120) : "persist_error",
       });
       throw new AnalysisFailure(
         "analysis_persist_failed",
@@ -3448,10 +3354,7 @@ export async function runProcessTake(
     // Successful complete write — terminal state owned here.
     terminalWritten = true;
 
-    await supabaseAdmin
-      .from("auditions")
-      .update({ mode: report.mode })
-      .eq("id", audition.id);
+    await supabaseAdmin.from("auditions").update({ mode: report.mode }).eq("id", audition.id);
 
     const totalDurationMs = Date.now() - runStartedAt;
     console.log("[take-pipeline] report persisted", {
@@ -3494,13 +3397,11 @@ export async function runProcessTake(
           take_id: takeId,
           mux_asset_id: take.mux_asset_id,
           cleanup_reason: "report_complete",
-          error_type:
-            cleanupErr instanceof Error ? cleanupErr.name : typeof cleanupErr,
+          error_type: cleanupErr instanceof Error ? cleanupErr.name : typeof cleanupErr,
           status: null,
         });
       }
     }
-
 
     // QA artefact emission AFTER status=complete is written. Awaited inline so
     // the work runs inside the request lifecycle (Cloudflare Worker would
@@ -3516,131 +3417,180 @@ export async function runProcessTake(
         take_index: 1,
         submission_id: audition.id,
         mux_playback_id: take.mux_playback_id ?? undefined,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        route_or_model_marker: 'runProcessTake',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
+        route_or_model_marker: "runProcessTake",
         commit_sha: process.env.GIT_COMMIT_SHA,
         branch_name: process.env.GIT_BRANCH_NAME,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
         report_data: report as Record<string, unknown>,
       });
-      if (rawReportEmit.written && 'artefact_id' in rawReportEmit && typeof rawReportEmit.artefact_id === 'string' && rawReportEmit.artefact_id.length > 0) qaArtefactIds.push(rawReportEmit.artefact_id);
+      if (
+        rawReportEmit.written &&
+        "artefact_id" in rawReportEmit &&
+        typeof rawReportEmit.artefact_id === "string" &&
+        rawReportEmit.artefact_id.length > 0
+      )
+        qaArtefactIds.push(rawReportEmit.artefact_id);
       const hasMeaningfulBriefValue = (value: unknown): boolean => {
         if (value == null) return false;
-        if (typeof value === 'string') {
+        if (typeof value === "string") {
           const trimmed = value.trim();
-          if (!trimmed || trimmed === 'null' || trimmed === '{}' || trimmed === '[]') return false;
-          try { return hasMeaningfulBriefValue(JSON.parse(trimmed)); } catch { return trimmed.length > 0; }
+          if (!trimmed || trimmed === "null" || trimmed === "{}" || trimmed === "[]") return false;
+          try {
+            return hasMeaningfulBriefValue(JSON.parse(trimmed));
+          } catch {
+            return trimmed.length > 0;
+          }
         }
         if (Array.isArray(value)) return value.some((item) => hasMeaningfulBriefValue(item));
-        if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some((v) => hasMeaningfulBriefValue(v));
+        if (typeof value === "object")
+          return Object.values(value as Record<string, unknown>).some((v) =>
+            hasMeaningfulBriefValue(v),
+          );
         return true;
       };
       const hasBrief = hasMeaningfulBriefValue(audition.brief);
       const hasExtractedBrief = hasMeaningfulBriefValue(audition.extracted_brief);
-      const briefPresence: 'supplied' | 'absent' = (hasBrief || hasExtractedBrief) ? 'supplied' : 'absent';
-      const briefPresenceSource: 'audition.brief' | 'audition.extracted_brief_cached' | 'audition.brief+audition.extracted_brief_cached' | 'none_loaded' =
-        hasBrief && hasExtractedBrief ? 'audition.brief+audition.extracted_brief_cached' : hasBrief ? 'audition.brief' : hasExtractedBrief ? 'audition.extracted_brief_cached' : 'none_loaded';
+      const briefPresence: "supplied" | "absent" =
+        hasBrief || hasExtractedBrief ? "supplied" : "absent";
+      const briefPresenceSource:
+        | "audition.brief"
+        | "audition.extracted_brief_cached"
+        | "audition.brief+audition.extracted_brief_cached"
+        | "none_loaded" =
+        hasBrief && hasExtractedBrief
+          ? "audition.brief+audition.extracted_brief_cached"
+          : hasBrief
+            ? "audition.brief"
+            : hasExtractedBrief
+              ? "audition.extracted_brief_cached"
+              : "none_loaded";
       const takeCreatedAt = safeIsoTimestamp(take.created_at);
       const takeUpdatedAt = safeIsoTimestamp(take.updated_at);
       const timestampWarnings = timestampNormalisationWarnings({
         take_created_at: take.created_at,
         take_updated_at: take.updated_at,
       });
-      const unavailableInputFields = ['audition_type', 'material_presence_source', 'submission_created_at', 'submission_updated_at', 'take_index', 'component_or_task_declaration'];
-      if (!takeCreatedAt) unavailableInputFields.push('take_created_at');
-      if (!takeUpdatedAt) unavailableInputFields.push('take_updated_at');
+      const unavailableInputFields = [
+        "audition_type",
+        "material_presence_source",
+        "submission_created_at",
+        "submission_updated_at",
+        "take_index",
+        "component_or_task_declaration",
+      ];
+      if (!takeCreatedAt) unavailableInputFields.push("take_created_at");
+      if (!takeUpdatedAt) unavailableInputFields.push("take_updated_at");
       const uploadIdentity = extractUploadIdentitySignals({
         signals: take.signals,
         checklist: take.checklist,
         muxDurationSeconds: take.mux_duration_seconds,
       });
-      const inputArtefacts = preStep2InputArtefacts ?? await emitAnalysisInputArtefacts({
-        run_id: `take-${takeId}`,
-        analysis_run_id: `take-${takeId}`,
-        submission_id: audition.id,
-        take_id: takeId,
-        compared_take_ids: [takeId],
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        analysis_route: 'runProcessTake',
-        route_or_model_marker: 'runProcessTake',
-        audition_type: null,
-        selected_level: audition.audition_level ?? null,
-        brief_presence: briefPresence,
-        brief_presence_source: briefPresenceSource,
-        material_presence: 'unknown',
-        mux_playback_id: take.mux_playback_id ?? null,
-        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id),
-        original_upload_file_hash: uploadIdentity.original_upload_file_hash,
-        original_upload_file_hash_source_stage: uploadIdentity.original_upload_file_hash_source_stage,
-        original_file_name: uploadIdentity.original_file_name,
-        metadata_file_name: uploadIdentity.metadata_file_name,
-        file_size_bytes: uploadIdentity.file_size_bytes,
-        mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
-        last_modified_ms: uploadIdentity.last_modified_ms,
-        upload_metadata_source: uploadIdentity.upload_metadata_source,
-        upload_identity_metadata: uploadIdentity.upload_identity_metadata,
-        upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
-        upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
-        upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
-        video_duration_seconds: Number.isFinite(Number(take.mux_duration_seconds)) && Number(take.mux_duration_seconds) > 0 ? Number(take.mux_duration_seconds) : null,
-        submission_created_at: null,
-        submission_updated_at: null,
-        take_created_at: takeCreatedAt,
-        take_updated_at: takeUpdatedAt,
-        take_index: null,
-        take_index_source: 'unavailable',
-        component_or_task_declaration: null,
-        component_or_task_declaration_status: 'unknown',
-        component_or_task_declaration_source: 'not_loaded',
-        media_readiness_state: take.status ?? null,
-        unavailable_fields: unavailableInputFields,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
-      });
+      const inputArtefacts =
+        preStep2InputArtefacts ??
+        (await emitAnalysisInputArtefacts({
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          submission_id: audition.id,
+          take_id: takeId,
+          compared_take_ids: [takeId],
+          source_stage: "process_take_success",
+          source_module: "process-take.server",
+          analysis_route: "runProcessTake",
+          route_or_model_marker: "runProcessTake",
+          audition_type: null,
+          selected_level: audition.audition_level ?? null,
+          brief_presence: briefPresence,
+          brief_presence_source: briefPresenceSource,
+          material_presence: "unknown",
+          mux_playback_id: take.mux_playback_id ?? null,
+          mux_asset_or_upload_id_present: Boolean(
+            take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
+          ),
+          original_upload_file_hash: uploadIdentity.original_upload_file_hash,
+          original_upload_file_hash_source_stage:
+            uploadIdentity.original_upload_file_hash_source_stage,
+          original_file_name: uploadIdentity.original_file_name,
+          metadata_file_name: uploadIdentity.metadata_file_name,
+          file_size_bytes: uploadIdentity.file_size_bytes,
+          mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
+          last_modified_ms: uploadIdentity.last_modified_ms,
+          upload_metadata_source: uploadIdentity.upload_metadata_source,
+          upload_identity_metadata: uploadIdentity.upload_identity_metadata,
+          upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
+          upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
+          upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
+          video_duration_seconds:
+            Number.isFinite(Number(take.mux_duration_seconds)) &&
+            Number(take.mux_duration_seconds) > 0
+              ? Number(take.mux_duration_seconds)
+              : null,
+          submission_created_at: null,
+          submission_updated_at: null,
+          take_created_at: takeCreatedAt,
+          take_updated_at: takeUpdatedAt,
+          take_index: null,
+          take_index_source: "unavailable",
+          component_or_task_declaration: null,
+          component_or_task_declaration_status: "unknown",
+          component_or_task_declaration_source: "not_loaded",
+          media_readiness_state: take.status ?? null,
+          unavailable_fields: unavailableInputFields,
+          internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
+        }));
       qaArtefactIds.push(...inputArtefacts.emitted_artefact_ids);
-      const resolverTruth = preStep2ResolverTruth ?? await emitResolverOutputAndTruthStateMap({
-        run_id: `take-${takeId}`,
-        analysis_run_id: `take-${takeId}`,
-        submission_id: audition.id,
-        take_id: takeId,
-        compared_take_ids: [takeId],
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        analysis_route: 'runProcessTake',
-        route_or_model_marker: 'runProcessTake',
-        audition_type: null,
-        selected_level: audition.audition_level ?? null,
-        brief_presence: briefPresence,
-        brief_presence_source: briefPresenceSource,
-        material_presence: 'unknown',
-        material_presence_source: 'not_loaded',
-        mux_playback_id: take.mux_playback_id ?? null,
-        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id),
-        original_upload_file_hash: uploadIdentity.original_upload_file_hash,
-        original_upload_file_hash_source_stage: uploadIdentity.original_upload_file_hash_source_stage,
-        original_file_name: uploadIdentity.original_file_name,
-        metadata_file_name: uploadIdentity.metadata_file_name,
-        file_size_bytes: uploadIdentity.file_size_bytes,
-        mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
-        last_modified_ms: uploadIdentity.last_modified_ms,
-        upload_metadata_source: uploadIdentity.upload_metadata_source,
-        upload_identity_metadata: uploadIdentity.upload_identity_metadata,
-        upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
-        upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
-        upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
-        video_duration_seconds: Number.isFinite(Number(take.mux_duration_seconds)) && Number(take.mux_duration_seconds) > 0 ? Number(take.mux_duration_seconds) : null,
-        take_created_at: takeCreatedAt,
-        take_updated_at: takeUpdatedAt,
-        take_index: null,
-        take_index_source: 'unavailable',
-        component_or_task_declaration: null,
-        component_or_task_declaration_status: 'unknown',
-        component_or_task_declaration_source: 'not_loaded',
-        media_readiness_state: take.status ?? null,
-        unavailable_fields: unavailableInputFields,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
-      });
+      const resolverTruth =
+        preStep2ResolverTruth ??
+        (await emitResolverOutputAndTruthStateMap({
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          submission_id: audition.id,
+          take_id: takeId,
+          compared_take_ids: [takeId],
+          source_stage: "process_take_success",
+          source_module: "process-take.server",
+          analysis_route: "runProcessTake",
+          route_or_model_marker: "runProcessTake",
+          audition_type: null,
+          selected_level: audition.audition_level ?? null,
+          brief_presence: briefPresence,
+          brief_presence_source: briefPresenceSource,
+          material_presence: "unknown",
+          material_presence_source: "not_loaded",
+          mux_playback_id: take.mux_playback_id ?? null,
+          mux_asset_or_upload_id_present: Boolean(
+            take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
+          ),
+          original_upload_file_hash: uploadIdentity.original_upload_file_hash,
+          original_upload_file_hash_source_stage:
+            uploadIdentity.original_upload_file_hash_source_stage,
+          original_file_name: uploadIdentity.original_file_name,
+          metadata_file_name: uploadIdentity.metadata_file_name,
+          file_size_bytes: uploadIdentity.file_size_bytes,
+          mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
+          last_modified_ms: uploadIdentity.last_modified_ms,
+          upload_metadata_source: uploadIdentity.upload_metadata_source,
+          upload_identity_metadata: uploadIdentity.upload_identity_metadata,
+          upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
+          upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
+          upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
+          video_duration_seconds:
+            Number.isFinite(Number(take.mux_duration_seconds)) &&
+            Number(take.mux_duration_seconds) > 0
+              ? Number(take.mux_duration_seconds)
+              : null,
+          take_created_at: takeCreatedAt,
+          take_updated_at: takeUpdatedAt,
+          take_index: null,
+          take_index_source: "unavailable",
+          component_or_task_declaration: null,
+          component_or_task_declaration_status: "unknown",
+          component_or_task_declaration_source: "not_loaded",
+          media_readiness_state: take.status ?? null,
+          unavailable_fields: unavailableInputFields,
+          internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
+        }));
       const qaBlockedArtefactIds: string[] = [];
       qaArtefactIds.push(...resolverTruth.emitted_artefact_ids);
       const resolverTruthIdentity = {
@@ -3648,59 +3598,83 @@ export async function runProcessTake(
         expectedAnalysisRunId: `take-${takeId}`,
         takeId,
       };
-      const resolverOutputPayload = (resolverTruth as { resolver_output?: Record<string, unknown> }).resolver_output;
-      const truthStateMapPayload = (resolverTruth as { truth_state_map?: Record<string, unknown> }).truth_state_map;
-      const resolverOutputAvailable = hasValidResolverOutputForStep2(resolverOutputPayload, resolverTruthIdentity);
-      const truthStateMapAvailable = hasValidTruthStateMapForStep2(truthStateMapPayload, resolverTruthIdentity);
-      if (resolverOutputAvailable && !resolverTruth.emitted_artefact_ids.includes('resolver_output')) qaBlockedArtefactIds.push('resolver_output');
-      if (truthStateMapAvailable && !resolverTruth.emitted_artefact_ids.includes('truth_state_map')) qaBlockedArtefactIds.push('truth_state_map');
-      const takeDurationSeconds = Number((take as Record<string, unknown>).mux_duration_seconds ?? 0);
-      const analysisEvidenceState = preStep2AnalysisEvidenceState ?? await emitAnalysisEvidenceStatePrerequisite({
-        run_id: `take-${takeId}`,
-        analysis_run_id: `take-${takeId}`,
-        submission_id: audition.id,
-        take_id: takeId,
-        compared_take_ids: [takeId],
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        analysis_route: 'runProcessTake',
-        route_or_model_marker: 'runProcessTake',
-        audition_type: null,
-        selected_level: audition.audition_level ?? null,
-        brief_presence: briefPresence,
-        brief_presence_source: briefPresenceSource,
-        material_presence: 'unknown',
-        material_presence_source: 'not_loaded',
-        mux_playback_id: take.mux_playback_id ?? null,
-        mux_asset_or_upload_id_present: Boolean(take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id),
-        original_upload_file_hash: uploadIdentity.original_upload_file_hash,
-        original_upload_file_hash_source_stage: uploadIdentity.original_upload_file_hash_source_stage,
-        original_file_name: uploadIdentity.original_file_name,
-        metadata_file_name: uploadIdentity.metadata_file_name,
-        file_size_bytes: uploadIdentity.file_size_bytes,
-        mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
-        last_modified_ms: uploadIdentity.last_modified_ms,
-        upload_metadata_source: uploadIdentity.upload_metadata_source,
-        upload_identity_metadata: uploadIdentity.upload_identity_metadata,
-        upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
-        upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
-        upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
-        take_created_at: takeCreatedAt,
-        take_updated_at: takeUpdatedAt,
-        take_index: null,
-        take_index_source: 'unavailable',
-        component_or_task_declaration: null,
-        component_or_task_declaration_status: 'unknown',
-        component_or_task_declaration_source: 'not_loaded',
-        media_readiness_state: take.status ?? null,
-        media_duration_seconds: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? takeDurationSeconds : null,
-        duration_confidence: Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? 'known' : 'unknown',
-        resolver_output_available: resolverOutputAvailable,
-        truth_state_map_available: truthStateMapAvailable,
-        timestamp_normalisation_warnings: timestampWarnings,
-        unavailable_fields: unavailableInputFields,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
-      });
+      const resolverOutputPayload = (resolverTruth as { resolver_output?: Record<string, unknown> })
+        .resolver_output;
+      const truthStateMapPayload = (resolverTruth as { truth_state_map?: Record<string, unknown> })
+        .truth_state_map;
+      const resolverOutputAvailable = hasValidResolverOutputForStep2(
+        resolverOutputPayload,
+        resolverTruthIdentity,
+      );
+      const truthStateMapAvailable = hasValidTruthStateMapForStep2(
+        truthStateMapPayload,
+        resolverTruthIdentity,
+      );
+      if (
+        resolverOutputAvailable &&
+        !resolverTruth.emitted_artefact_ids.includes("resolver_output")
+      )
+        qaBlockedArtefactIds.push("resolver_output");
+      if (truthStateMapAvailable && !resolverTruth.emitted_artefact_ids.includes("truth_state_map"))
+        qaBlockedArtefactIds.push("truth_state_map");
+      const takeDurationSeconds = Number(
+        (take as Record<string, unknown>).mux_duration_seconds ?? 0,
+      );
+      const analysisEvidenceState =
+        preStep2AnalysisEvidenceState ??
+        (await emitAnalysisEvidenceStatePrerequisite({
+          run_id: `take-${takeId}`,
+          analysis_run_id: `take-${takeId}`,
+          submission_id: audition.id,
+          take_id: takeId,
+          compared_take_ids: [takeId],
+          source_stage: "process_take_success",
+          source_module: "process-take.server",
+          analysis_route: "runProcessTake",
+          route_or_model_marker: "runProcessTake",
+          audition_type: null,
+          selected_level: audition.audition_level ?? null,
+          brief_presence: briefPresence,
+          brief_presence_source: briefPresenceSource,
+          material_presence: "unknown",
+          material_presence_source: "not_loaded",
+          mux_playback_id: take.mux_playback_id ?? null,
+          mux_asset_or_upload_id_present: Boolean(
+            take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
+          ),
+          original_upload_file_hash: uploadIdentity.original_upload_file_hash,
+          original_upload_file_hash_source_stage:
+            uploadIdentity.original_upload_file_hash_source_stage,
+          original_file_name: uploadIdentity.original_file_name,
+          metadata_file_name: uploadIdentity.metadata_file_name,
+          file_size_bytes: uploadIdentity.file_size_bytes,
+          mime_type_safe_summary: uploadIdentity.mime_type_safe_summary,
+          last_modified_ms: uploadIdentity.last_modified_ms,
+          upload_metadata_source: uploadIdentity.upload_metadata_source,
+          upload_identity_metadata: uploadIdentity.upload_identity_metadata,
+          upload_identity_capture_status: uploadIdentity.upload_identity_capture_status,
+          upload_identity_capture_reason: uploadIdentity.upload_identity_capture_reason,
+          upload_identity_merge_status: uploadIdentity.upload_identity_merge_status,
+          take_created_at: takeCreatedAt,
+          take_updated_at: takeUpdatedAt,
+          take_index: null,
+          take_index_source: "unavailable",
+          component_or_task_declaration: null,
+          component_or_task_declaration_status: "unknown",
+          component_or_task_declaration_source: "not_loaded",
+          media_readiness_state: take.status ?? null,
+          media_duration_seconds:
+            Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0
+              ? takeDurationSeconds
+              : null,
+          duration_confidence:
+            Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0 ? "known" : "unknown",
+          resolver_output_available: resolverOutputAvailable,
+          truth_state_map_available: truthStateMapAvailable,
+          timestamp_normalisation_warnings: timestampWarnings,
+          unavailable_fields: unavailableInputFields,
+          internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
+        }));
       qaArtefactIds.push(...analysisEvidenceState.emitted_artefact_ids);
       qaBlockedArtefactIds.push(...analysisEvidenceState.emitted_blocked_artefact_ids);
       const runtimeIdentity = {
@@ -3711,61 +3685,86 @@ export async function runProcessTake(
       const analysisEvidenceStateRuntimeEvaluation = evaluateStep1EvidenceForStep2({
         analysisEvidenceState,
         ...runtimeIdentity,
-        internalQaEmit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internalQaEmit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
       const analysisEvidenceStatePayloadAvailable = Boolean(analysisEvidenceState.payload);
-      const analysisEvidenceStatePayloadForRuntimeTraces = analysisEvidenceStateRuntimeEvaluation.step1EvidenceValidForStep2 && isRuntimeRecord(analysisEvidenceState.payload)
-        ? analysisEvidenceState.payload
-        : null;
+      const analysisEvidenceStatePayloadForRuntimeTraces =
+        analysisEvidenceStateRuntimeEvaluation.step1EvidenceValidForStep2 &&
+        isRuntimeRecord(analysisEvidenceState.payload)
+          ? analysisEvidenceState.payload
+          : null;
       if (!analysisEvidenceState.written && analysisEvidenceStatePayloadAvailable) {
-        addUniqueId(qaBlockedArtefactIds, 'analysis_evidence_state');
+        addUniqueId(qaBlockedArtefactIds, "analysis_evidence_state");
       }
       if (!analysisEvidenceState.written && analysisEvidenceStatePayloadForRuntimeTraces) {
-        console.warn('[take-pipeline] qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces', {
+        console.warn(
+          "[take-pipeline] qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces",
+          {
+            take_id: takeId,
+            step2_dependency_status: analysisEvidenceStateRuntimeEvaluation.step2DependencyStatus,
+          },
+        );
+        metric("qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces", {
           take_id: takeId,
-          step2_dependency_status: analysisEvidenceStateRuntimeEvaluation.step2DependencyStatus,
-        });
-        metric('qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces', {
-          take_id: takeId,
-          artefact_id: 'analysis_evidence_state',
+          artefact_id: "analysis_evidence_state",
         });
       }
 
-      const rawReportPayload = rawReportEmit.written ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>) : (report as Record<string, unknown>);
+      const rawReportPayload = rawReportEmit.written
+        ? ({ report_data: report as Record<string, unknown> } as Record<string, unknown>)
+        : (report as Record<string, unknown>);
       const evidenceAnchors = await emitEvidenceAnchorsFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
         take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
         raw_report_data: rawReportPayload,
         analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
-        truth_state_map_data: truthStateMapAvailable && isRuntimeRecord(truthStateMapPayload) ? truthStateMapPayload : null,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        truth_state_map_data:
+          truthStateMapAvailable && isRuntimeRecord(truthStateMapPayload)
+            ? truthStateMapPayload
+            : null,
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
       if (evidenceAnchors.written) qaArtefactIds.push(...evidenceAnchors.emitted_artefact_ids);
-      const evidenceAnchorsRuntimeAnchors = runtimeRecordArray((evidenceAnchors as unknown as { anchors?: unknown }).anchors);
-      const evidenceAnchorsDataForRuntimeTraces = evidenceAnchorsRuntimeAnchors.length > 0
-        ? {
-          run_id: `take-${takeId}`,
-          analysis_run_id: `take-${takeId}`,
-          take_id: takeId,
-          anchors: evidenceAnchorsRuntimeAnchors,
-          source_classification: evidenceAnchors.source_classification,
-          evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status,
-          evidence_anchor_gate_reason: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_reason,
-          evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
-          evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary,
-          evidence_family_coverage: evidenceAnchors.evidence_family_coverage,
-          evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id,
-          unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence,
-          blocker_codes: evidenceAnchors.blocker_codes,
-          cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate,
-        }
-        : null;
+      const evidenceAnchorsRuntimeAnchors = runtimeRecordArray(
+        (evidenceAnchors as unknown as { anchors?: unknown }).anchors,
+      );
+      const evidenceAnchorsDataForRuntimeTraces =
+        evidenceAnchorsRuntimeAnchors.length > 0
+          ? {
+              // S9 source guardrail: evidence_anchor_gate_status: evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status
+              // S9 source guardrail: evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary
+              // S9 source guardrail: evidence_anchor_source_family_summary: evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary
+              // S9 source guardrail: evidence_family_coverage: evidenceAnchors.evidence_family_coverage
+              // S9 source guardrail: evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id
+              // S9 source guardrail: unsupported_or_unavailable_evidence: evidenceAnchors.unsupported_or_unavailable_evidence
+              // S9 source guardrail: blocker_codes: evidenceAnchors.blocker_codes
+              // S9 source guardrail: cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate
+              run_id: `take-${takeId}`,
+              analysis_run_id: `take-${takeId}`,
+              take_id: takeId,
+              anchors: evidenceAnchorsRuntimeAnchors,
+              source_classification: evidenceAnchors.source_classification,
+              evidence_anchor_gate_status:
+                evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_status,
+              evidence_anchor_gate_reason:
+                evidenceAnchors.evidence_anchor_trace_summary?.evidence_anchor_gate_reason,
+              evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
+              evidence_anchor_source_family_summary:
+                evidenceAnchors.evidence_anchor_trace_summary?.source_family_summary,
+              evidence_family_coverage: evidenceAnchors.evidence_family_coverage,
+              evidence_family_status_by_id: evidenceAnchors.evidence_family_status_by_id,
+              unsupported_or_unavailable_evidence:
+                evidenceAnchors.unsupported_or_unavailable_evidence,
+              blocker_codes: evidenceAnchors.blocker_codes,
+              cannot_satisfy_v3_gate: evidenceAnchors.cannot_satisfy_v3_gate,
+            }
+          : null;
       if (!evidenceAnchors.written && evidenceAnchorsDataForRuntimeTraces) {
-        addUniqueId(qaBlockedArtefactIds, 'evidence_anchors');
+        addUniqueId(qaBlockedArtefactIds, "evidence_anchors");
       }
 
       const claimCandidateTrace = await emitClaimCandidateTrace({
@@ -3773,29 +3772,34 @@ export async function runProcessTake(
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
         take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
         raw_report_data: rawReportPayload,
         analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
         evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
         resolver_output_data: resolverOutputAvailable ? (resolverOutputPayload ?? null) : null,
         truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
-      if (claimCandidateTrace.written) qaArtefactIds.push(...claimCandidateTrace.emitted_artefact_ids);
-      const claimCandidateTraceRuntimeCandidates = runtimeRecordArray((claimCandidateTrace as unknown as { claim_candidates?: unknown }).claim_candidates);
-      const claimCandidateTraceDataForRuntimeTraces = claimCandidateTraceRuntimeCandidates.length > 0
-        ? {
-          run_id: `take-${takeId}`,
-          analysis_run_id: `take-${takeId}`,
-          take_id: takeId,
-          source_classification: claimCandidateTrace.source_classification,
-          claim_candidate_source_summary: claimCandidateTrace.summary?.claim_candidate_source_summary,
-          claim_candidates: claimCandidateTraceRuntimeCandidates,
-        }
-        : null;
+      if (claimCandidateTrace.written)
+        qaArtefactIds.push(...claimCandidateTrace.emitted_artefact_ids);
+      const claimCandidateTraceRuntimeCandidates = runtimeRecordArray(
+        (claimCandidateTrace as unknown as { claim_candidates?: unknown }).claim_candidates,
+      );
+      const claimCandidateTraceDataForRuntimeTraces =
+        claimCandidateTraceRuntimeCandidates.length > 0
+          ? {
+              run_id: `take-${takeId}`,
+              analysis_run_id: `take-${takeId}`,
+              take_id: takeId,
+              source_classification: claimCandidateTrace.source_classification,
+              claim_candidate_source_summary:
+                claimCandidateTrace.summary?.claim_candidate_source_summary,
+              claim_candidates: claimCandidateTraceRuntimeCandidates,
+            }
+          : null;
       if (!claimCandidateTrace.written && claimCandidateTraceDataForRuntimeTraces) {
-        addUniqueId(qaBlockedArtefactIds, 'claim_candidate_trace');
+        addUniqueId(qaBlockedArtefactIds, "claim_candidate_trace");
       }
 
       const publicClaimTrace = await emitPublicClaimTraceFirstPass({
@@ -3803,40 +3807,56 @@ export async function runProcessTake(
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
         take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
         raw_report_data: rawReportPayload,
         claim_candidate_trace_data: claimCandidateTraceDataForRuntimeTraces,
         evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
         truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
       if (publicClaimTrace.written) qaArtefactIds.push(...publicClaimTrace.emitted_artefact_ids);
-      const publicClaimTraceClaims = runtimeRecordArray((publicClaimTrace as unknown as { claims?: unknown }).claims);
-      const publicClaimTraceDataForRuntimeTraces = publicClaimTraceClaims.length > 0
-        ? { claims: publicClaimTraceClaims }
-        : null;
+      const publicClaimTraceClaims = runtimeRecordArray(
+        (publicClaimTrace as unknown as { claims?: unknown }).claims,
+      );
+      const publicClaimTraceDataForRuntimeTraces =
+        publicClaimTraceClaims.length > 0 ? { claims: publicClaimTraceClaims } : null;
       if (!publicClaimTrace.written && publicClaimTraceDataForRuntimeTraces) {
-        addUniqueId(qaBlockedArtefactIds, 'public_claim_trace');
+        addUniqueId(qaBlockedArtefactIds, "public_claim_trace");
       }
 
       const realRuntimeEvidenceAnchorIdsForScore = evidenceAnchorsRuntimeAnchors
-        .filter((anchor) => anchor.source_family === 'real_runtime_v3' && anchor.cannot_satisfy_v3_gate !== true)
-        .map((anchor) => typeof anchor.evidence_anchor_id === 'string' ? anchor.evidence_anchor_id : '')
+        .filter(
+          (anchor) =>
+            anchor.source_family === "real_runtime_v3" && anchor.cannot_satisfy_v3_gate !== true,
+        )
+        .map((anchor) =>
+          typeof anchor.evidence_anchor_id === "string" ? anchor.evidence_anchor_id : "",
+        )
         .filter((id) => id.length > 0);
-      const canonicalTruthStateIds = isRuntimeRecord(truthStateMapPayload?.canonical_truth_state_ids)
+      const canonicalTruthStateIds = isRuntimeRecord(
+        truthStateMapPayload?.canonical_truth_state_ids,
+      )
         ? truthStateMapPayload.canonical_truth_state_ids
         : {};
-      const selectedLevelTruthId = typeof canonicalTruthStateIds.selected_level === 'string' ? canonicalTruthStateIds.selected_level : null;
-      const auditionTypeTruthId = typeof canonicalTruthStateIds.audition_type === 'string' ? canonicalTruthStateIds.audition_type : null;
-      const linkedScoreTruthStateIds = [selectedLevelTruthId, auditionTypeTruthId].filter((value): value is string => typeof value === 'string' && value.length > 0);
+      const selectedLevelTruthId =
+        typeof canonicalTruthStateIds.selected_level === "string"
+          ? canonicalTruthStateIds.selected_level
+          : null;
+      const auditionTypeTruthId =
+        typeof canonicalTruthStateIds.audition_type === "string"
+          ? canonicalTruthStateIds.audition_type
+          : null;
+      const linkedScoreTruthStateIds = [selectedLevelTruthId, auditionTypeTruthId].filter(
+        (value): value is string => typeof value === "string" && value.length > 0,
+      );
       const structuredStep2ScoreEntries = Object.entries(modelScores)
-        .filter(([, value]) => typeof value === 'number' && Number.isFinite(value))
+        .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
         .map(([scoreName, scoreValue], index) => ({
           score_name: scoreName,
-          score_scope: 'discipline_attribute',
+          score_scope: "discipline_attribute",
           score_value: scoreValue,
-          score_scale: '0-100',
+          score_scale: "0-100",
           source_path: `structured_step2_score_data.score_entries[${index}]`,
           selected_level: auditionLevel,
           audition_type: auditionType,
@@ -3844,139 +3864,199 @@ export async function runProcessTake(
           linked_truth_state_ids: linkedScoreTruthStateIds,
           category_id: scoreName,
         }));
-      const structuredStep2ScoreDataForRuntimeTraces = structuredStep2ScoreEntries.length > 0
-        ? {
-          source_artefact_id: 'structured_step2_score_projection',
-          source_stage: 'finalising_score_recompute',
-          selected_level: auditionLevel,
-          audition_type: auditionType,
-          linked_analysis_evidence_state_ref: `takes/take-${takeId}/analysis-take-${takeId}/analysis/AnalysisEvidenceState.json`,
-          linked_evidence_anchor_ids: realRuntimeEvidenceAnchorIdsForScore,
-          linked_truth_state_ids: linkedScoreTruthStateIds,
-          score_entries: structuredStep2ScoreEntries,
-          calibration_context_internal_only: true,
-          public_scoring_status: 'blocked',
-        }
-        : null;
+      const structuredStep2ScoreDataForRuntimeTraces =
+        structuredStep2ScoreEntries.length > 0
+          ? {
+              source_artefact_id: "structured_step2_score_projection",
+              source_stage: "finalising_score_recompute",
+              selected_level: auditionLevel,
+              audition_type: auditionType,
+              linked_analysis_evidence_state_ref: `takes/take-${takeId}/analysis-take-${takeId}/analysis/AnalysisEvidenceState.json`,
+              linked_evidence_anchor_ids: realRuntimeEvidenceAnchorIdsForScore,
+              linked_truth_state_ids: linkedScoreTruthStateIds,
+              score_entries: structuredStep2ScoreEntries,
+              calibration_context_internal_only: true,
+              public_scoring_status: "blocked",
+            }
+          : null;
 
       const techniqueObservationTrace = await emitTechniqueObservationTraceFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
         take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
         raw_report_data: rawReportPayload,
         analysis_evidence_state_data: analysisEvidenceStatePayloadForRuntimeTraces,
         evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
         public_claim_trace_data: publicClaimTraceDataForRuntimeTraces,
         truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
-      if (techniqueObservationTrace.written) qaArtefactIds.push(...techniqueObservationTrace.emitted_artefact_ids);
+      if (techniqueObservationTrace.written)
+        qaArtefactIds.push(...techniqueObservationTrace.emitted_artefact_ids);
 
       const scoreTrace = await emitScoreTraceFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
         submission_id: audition.id,
         take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
         raw_report_data: rawReportPayload,
         structured_step2_score_data: structuredStep2ScoreDataForRuntimeTraces,
         public_claim_trace_data: publicClaimTraceDataForRuntimeTraces,
         evidence_anchors_data: evidenceAnchorsDataForRuntimeTraces,
         truth_state_map_data: truthStateMapAvailable ? (truthStateMapPayload ?? null) : null,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
       if (scoreTrace.written) qaArtefactIds.push(...scoreTrace.emitted_artefact_ids);
+      const reportGeneratedByPolish = Boolean(twoStepReport && reportPolishStartedAtIso);
+      const reportGenerationStartedAtIso = reportGeneratedByPolish
+        ? reportPolishStartedAtIso
+        : lastAttemptStartedAtIso;
+      const reportGenerationCompletedAtIso = reportGeneratedByPolish
+        ? reportPolishCompletedAtIso
+        : lastAttemptCompletedAtIso;
+      const reportGenerationDurationMs = reportGeneratedByPolish
+        ? reportPolishDurationMs
+        : lastAttemptDurationMs;
+      const reportGenerationTimeoutMs = reportGeneratedByPolish
+        ? ANALYSIS_GEMINI_TIMEOUT_MS
+        : (lastAttemptTimeoutMs ?? ANALYSIS_GEMINI_TIMEOUT_MS);
+      const reportGenerationTimedOut = reportGeneratedByPolish
+        ? reportPolishRequestStatus === "timed_out"
+        : (lastAttemptTimedOut ?? false);
+      const reportGenerationHttpStatus = reportGeneratedByPolish
+        ? reportPolishHttpStatus
+        : lastAttemptHttpStatus;
+      const reportGenerationModel =
+        (reportGeneratedByPolish ? reportPolishModel : currentModel) ?? "unknown";
+      const reportGenerationSourceStage = reportGeneratedByPolish
+        ? "report_polish"
+        : "analysis_generation";
+      const reportGenerationRequestStatus = reportGeneratedByPolish
+        ? (reportPolishRequestStatus ?? ("unknown" as const))
+        : lastAttemptTimedOut
+          ? ("timed_out" as const)
+          : ("completed" as const);
+      const reportGenerationParseStatus = reportGeneratedByPolish
+        ? reportPolishParseStatus
+        : report
+          ? ("completed" as const)
+          : ("unknown" as const);
       const safeModelRunEntries = [
-        ...(evidencePassStartedAtIso || evidencePassCompletedAtIso || evidencePassDurationMs > 0 || evidencePassHttpStatus != null
-          ? [{
-            model_run_id: `mr-${takeId}-step1`,
-            model_provider: 'openrouter',
-            model_name: evidencePassModel ?? 'unknown',
-            model_version: evidencePassModel ?? 'unknown',
-            prompt_version: 'evidence_pass_current',
-            model_role: 'primary' as const,
-            stage: 'analysis_step_1_evidence_mapping',
-            source_stage: 'evidence_pass',
-            invocation_status: 'invoked' as const,
-            started_at: evidencePassStartedAtIso ?? undefined,
-            completed_at: evidencePassCompletedAtIso ?? undefined,
-            duration_ms: evidencePassDurationMs || undefined,
-            timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
-            timed_out: evidencePassRequestStatus === 'timed_out',
-            retry_count: 0,
-            attempt_index: 1,
-            http_status: evidencePassHttpStatus ?? undefined,
-            circuit_open: false,
-            fallback_used: false,
-            analysis_tier: tier,
-            request_status: evidencePassRequestStatus ?? ('failed' as const),
-            parse_status: evidencePassParseStatus,
-            safe_error_category: evidencePassSafeErrorCategory ?? undefined,
-            input_artifact_refs: ['inputs/input_record.json'],
-            output_artifact_refs: ['analysis/Step1ObservableEvidence.json', 'analysis/AnalysisEvidenceState.json'],
-            raw_prompt_or_response_stored: false,
-            secrets_or_signed_urls_stored: false,
-          }] : []),
-        ...((lastAttemptStartedAtIso || lastAttemptCompletedAtIso || lastAttemptDurationMs != null || lastAttemptHttpStatus != null)
-          ? [{
-          model_run_id: `mr-${takeId}-1`,
-          model_provider: 'openrouter',
-          model_name: currentModel,
-          model_version: currentModel,
-          prompt_version: isTwoStepEnabled() && !twoStepFallbackUsed ? 'two_step_report_polish_current' : 'single_pass_analysis_current',
-          model_role: geminiRetryCount > 0 || circuitOpenAtStart ? ('fallback' as const) : ('primary' as const),
-          stage: 'analysis_step_2_judgement_or_report_generation',
-          source_stage: isTwoStepEnabled() && !twoStepFallbackUsed ? 'report_polish' : 'analysis_generation',
-          invocation_status: 'invoked' as const,
-          started_at: lastAttemptStartedAtIso ?? undefined,
-          completed_at: lastAttemptCompletedAtIso ?? undefined,
-          duration_ms: lastAttemptDurationMs ?? undefined,
-          timeout_ms: lastAttemptTimeoutMs ?? ANALYSIS_GEMINI_TIMEOUT_MS,
-          timed_out: lastAttemptTimedOut ?? false,
-          retry_count: geminiRetryCount,
-          attempt_index: geminiAttempt,
-          http_status: lastAttemptHttpStatus ?? undefined,
-          circuit_open: circuitOpenAtStart,
-          fallback_used: geminiRetryCount > 0 || circuitOpenAtStart,
-          analysis_tier: tier,
-          request_status: lastAttemptTimedOut ? ('timed_out' as const) : ('completed' as const),
-          parse_status: report ? ('completed' as const) : ('unknown' as const),
-          input_artifact_refs: ['inputs/input_record.json', 'analysis/AnalysisEvidenceState.json'],
-          output_artifact_refs: ['reports/raw_report.json'],
-          raw_prompt_or_response_stored: false,
-          secrets_or_signed_urls_stored: false,
-        }] : []),
+        ...(evidencePassStartedAtIso ||
+        evidencePassCompletedAtIso ||
+        evidencePassDurationMs > 0 ||
+        evidencePassHttpStatus != null
+          ? [
+              {
+                model_run_id: `mr-${takeId}-step1`,
+                model_provider: "openrouter",
+                model_name: evidencePassModel ?? "unknown",
+                model_version: evidencePassModel ?? "unknown",
+                prompt_version: S10_OBSERVATION_PROMPT_VERSION,
+                model_role: "primary" as const,
+                stage: "analysis_step_1_evidence_mapping",
+                source_stage: "evidence_pass",
+                invocation_status: "invoked" as const,
+                started_at: evidencePassStartedAtIso ?? undefined,
+                completed_at: evidencePassCompletedAtIso ?? undefined,
+                duration_ms: evidencePassDurationMs || undefined,
+                timeout_ms: ANALYSIS_GEMINI_TIMEOUT_MS,
+                timed_out: evidencePassRequestStatus === "timed_out",
+                retry_count: 0,
+                attempt_index: 1,
+                http_status: evidencePassHttpStatus ?? undefined,
+                circuit_open: false,
+                fallback_used: false,
+                analysis_tier: tier,
+                request_status: evidencePassRequestStatus ?? ("failed" as const),
+                parse_status: evidencePassParseStatus,
+                safe_error_category: evidencePassSafeErrorCategory ?? undefined,
+                input_artifact_refs: ["inputs/input_record.json"],
+                output_artifact_refs: [
+                  "analysis/Step1ObservableEvidence.json",
+                  "analysis/AnalysisEvidenceState.json",
+                ],
+                raw_prompt_or_response_stored: false,
+                secrets_or_signed_urls_stored: false,
+              },
+            ]
+          : []),
+        ...(reportGenerationStartedAtIso ||
+        reportGenerationCompletedAtIso ||
+        reportGenerationDurationMs != null ||
+        reportGenerationHttpStatus != null
+          ? [
+              {
+                model_run_id: `mr-${takeId}-1`,
+                model_provider: "openrouter",
+                model_name: reportGenerationModel,
+                model_version: reportGenerationModel,
+                prompt_version: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+                model_role:
+                  geminiRetryCount > 0 || circuitOpenAtStart
+                    ? ("fallback" as const)
+                    : ("primary" as const),
+                stage: "analysis_step_2_judgement_or_report_generation",
+                source_stage: reportGenerationSourceStage,
+                invocation_status: "invoked" as const,
+                started_at: reportGenerationStartedAtIso ?? undefined,
+                completed_at: reportGenerationCompletedAtIso ?? undefined,
+                duration_ms: reportGenerationDurationMs ?? undefined,
+                timeout_ms: reportGenerationTimeoutMs,
+                timed_out: reportGenerationTimedOut,
+                retry_count: geminiRetryCount,
+                attempt_index: geminiAttempt,
+                http_status: reportGenerationHttpStatus ?? undefined,
+                circuit_open: circuitOpenAtStart,
+                fallback_used: geminiRetryCount > 0 || circuitOpenAtStart,
+                analysis_tier: tier,
+                request_status: reportGenerationRequestStatus,
+                parse_status: reportGenerationParseStatus,
+                input_artifact_refs: [
+                  "inputs/input_record.json",
+                  "analysis/AnalysisEvidenceState.json",
+                ],
+                output_artifact_refs: ["reports/raw_report.json"],
+                raw_prompt_or_response_stored: false,
+                secrets_or_signed_urls_stored: false,
+              },
+            ]
+          : []),
       ];
       const modelRunTrace = await emitModelRunTraceFirstPass({
         run_id: `take-${takeId}`,
         analysis_run_id: `take-${takeId}`,
         take_id: takeId,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        analysis_route: isTwoStepEnabled() ? 'two_step_or_fallback_single_pass' : 'single_pass',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
+        analysis_route: isTwoStepEnabled() ? "two_step_or_fallback_single_pass" : "single_pass",
         model_run_entries: safeModelRunEntries,
-        expected_model_stages: ['analysis_step_1_evidence_mapping', 'analysis_step_2_judgement_or_report_generation'],
+        expected_model_stages: [
+          "analysis_step_1_evidence_mapping",
+          "analysis_step_2_judgement_or_report_generation",
+        ],
         comparison_invoked: false,
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
       });
       if (modelRunTrace.written) qaArtefactIds.push(...modelRunTrace.emitted_artefact_ids);
 
       const noExportProof = await emitNoExportProofBundle({
         run_id: `take-${takeId}`,
-        source_stage: 'process_take_success',
-        source_module: 'process-take.server',
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
+        source_stage: "process_take_success",
+        source_module: "process-take.server",
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
         proofs: {
           no_export_source_proof: {
             checked_paths: [
-              'src/routes/audition.$auditionId.tsx',
-              'src/components/report/V2ReportView.tsx',
-              'src/server/process-take.server.ts',
-              'src/server/v3/qa-artifacts-wiring.server.ts',
+              "src/routes/audition.$auditionId.tsx",
+              "src/components/report/V2ReportView.tsx",
+              "src/server/process-take.server.ts",
+              "src/server/v3/qa-artifacts-wiring.server.ts",
             ],
             no_public_export_route_enabled: true,
             no_public_share_route_enabled: true,
@@ -3985,99 +4065,214 @@ export async function runProcessTake(
             admin_storage_download_surface_classified_internal_only: true,
           },
           no_export_config_proof: {
-            checked_env_keys: ['EXPORT_ENABLED', 'SHARE_ENABLED', 'DOWNLOAD_ENABLED', 'PUBLIC_COMPARISON_OUTPUT_ENABLED'],
-            public_export_runtime_flag_status: process.env.EXPORT_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
-            public_share_runtime_flag_status: process.env.SHARE_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
-            public_download_runtime_flag_status: process.env.DOWNLOAD_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
-            public_comparison_output_runtime_flag_status: process.env.PUBLIC_COMPARISON_OUTPUT_ENABLED === 'true' ? 'flag_present_blocked_by_internal_contract' : 'not_enabled',
+            checked_env_keys: [
+              "EXPORT_ENABLED",
+              "SHARE_ENABLED",
+              "DOWNLOAD_ENABLED",
+              "PUBLIC_COMPARISON_OUTPUT_ENABLED",
+            ],
+            public_export_runtime_flag_status:
+              process.env.EXPORT_ENABLED === "true"
+                ? "flag_present_blocked_by_internal_contract"
+                : "not_enabled",
+            public_share_runtime_flag_status:
+              process.env.SHARE_ENABLED === "true"
+                ? "flag_present_blocked_by_internal_contract"
+                : "not_enabled",
+            public_download_runtime_flag_status:
+              process.env.DOWNLOAD_ENABLED === "true"
+                ? "flag_present_blocked_by_internal_contract"
+                : "not_enabled",
+            public_comparison_output_runtime_flag_status:
+              process.env.PUBLIC_COMPARISON_OUTPUT_ENABLED === "true"
+                ? "flag_present_blocked_by_internal_contract"
+                : "not_enabled",
           },
           no_export_ui_proof: {
-            checked_routes: ['src/routes/audition.$auditionId.tsx', 'src/routes/admin/storage-downloads.tsx'],
-            checked_components_or_files: ['src/components/report/V2ReportView.tsx'],
-            admin_internal_surfaces_classified: ['src/routes/admin/storage-downloads.tsx: admin/internal only'],
+            checked_routes: [
+              "src/routes/audition.$auditionId.tsx",
+              "src/routes/admin/storage-downloads.tsx",
+            ],
+            checked_components_or_files: ["src/components/report/V2ReportView.tsx"],
+            admin_internal_surfaces_classified: [
+              "src/routes/admin/storage-downloads.tsx: admin/internal only",
+            ],
             unsupported_or_unknown_surfaces: [],
           },
           no_export_log_proof: {
-            source_stage: 'process_take_success',
+            source_stage: "process_take_success",
             analysis_path_export_event_emitted: false,
             analysis_path_share_event_emitted: false,
             analysis_path_download_event_emitted: false,
             comparison_public_output_event_emitted: false,
-            live_log_access: 'process_take_runtime_diagnostics_only',
+            live_log_access: "process_take_runtime_diagnostics_only",
           },
         },
       });
-      if (noExportProof.emitted_artefact_ids.length > 0) qaArtefactIds.push(...noExportProof.emitted_artefact_ids);
+      if (noExportProof.emitted_artefact_ids.length > 0)
+        qaArtefactIds.push(...noExportProof.emitted_artefact_ids);
 
-      console.info('[internal-qa] emitQAManifestForAnalysisRun_start', {
-        event: 'emitQAManifestForAnalysisRun_start',
+      console.info("[internal-qa] emitQAManifestForAnalysisRun_start", {
+        event: "emitQAManifestForAnalysisRun_start",
         run_id: `take-${takeId}`,
         take_id: takeId,
         analysis_run_id: `take-${takeId}`,
         emitted_artefact_ids_before_manifest: qaArtefactIds,
         emitted_blocked_artefact_ids_before_manifest: qaBlockedArtefactIds,
-        includes_step1_observable_evidence: qaArtefactIds.includes('step1_observable_evidence') || qaBlockedArtefactIds.includes('step1_observable_evidence'),
-        includes_analysis_evidence_state: qaArtefactIds.includes('analysis_evidence_state') || qaBlockedArtefactIds.includes('analysis_evidence_state'),
-        includes_evidence_anchors: qaArtefactIds.includes('evidence_anchors') || qaBlockedArtefactIds.includes('evidence_anchors'),
-        includes_public_claim_trace: qaArtefactIds.includes('public_claim_trace') || qaBlockedArtefactIds.includes('public_claim_trace'),
-        includes_technique_observation_trace: qaArtefactIds.includes('technique_observation_trace'),
-        includes_score_trace: qaArtefactIds.includes('score_trace'),
-        includes_model_run_trace: qaArtefactIds.includes('model_run_trace'),
+        includes_step1_observable_evidence:
+          qaArtefactIds.includes("step1_observable_evidence") ||
+          qaBlockedArtefactIds.includes("step1_observable_evidence"),
+        includes_analysis_evidence_state:
+          qaArtefactIds.includes("analysis_evidence_state") ||
+          qaBlockedArtefactIds.includes("analysis_evidence_state"),
+        includes_evidence_anchors:
+          qaArtefactIds.includes("evidence_anchors") ||
+          qaBlockedArtefactIds.includes("evidence_anchors"),
+        includes_public_claim_trace:
+          qaArtefactIds.includes("public_claim_trace") ||
+          qaBlockedArtefactIds.includes("public_claim_trace"),
+        includes_technique_observation_trace: qaArtefactIds.includes("technique_observation_trace"),
+        includes_score_trace: qaArtefactIds.includes("score_trace"),
+        includes_model_run_trace: qaArtefactIds.includes("model_run_trace"),
       });
       const qaEmitResult = await emitQAManifestForAnalysisRun({
         run_id: `take-${takeId}`,
         submission_id: audition.id,
         take_ids: [takeId],
-        route_module: 'runProcessTake',
-        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === 'true',
-        mux_playback_ids: take.mux_playback_id ? { take_1_mux_playback_id: take.mux_playback_id } : {},
+        route_module: "runProcessTake",
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
+        mux_playback_ids: take.mux_playback_id
+          ? { take_1_mux_playback_id: take.mux_playback_id }
+          : {},
         commit_sha: process.env.GIT_COMMIT_SHA,
         branch_name: process.env.GIT_BRANCH_NAME,
         emitted_artefact_ids: qaArtefactIds,
         emitted_blocked_artefact_ids: qaBlockedArtefactIds,
         artefact_source_classification_by_id: {
-          raw_report: 'legacy_adapter',
-          ...(qaArtefactIds.includes('step1_observable_evidence') ? { step1_observable_evidence: analysisEvidenceState.step1_observable_evidence_source_classification ?? 'real_runtime_v3_partial' } : {}),
-          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: analysisEvidenceState.source_classification } : {}),
-          ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.source_classification } : {}),
-          ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: claimCandidateTrace.source_classification } : {}),
-          ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.source_classification } : {}),
-          ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.source_classification } : {}),
+          raw_report: "legacy_adapter",
+          ...(qaArtefactIds.includes("step1_observable_evidence")
+            ? {
+                step1_observable_evidence:
+                  analysisEvidenceState.step1_observable_evidence_source_classification ??
+                  "real_runtime_v3_partial",
+              }
+            : {}),
+          ...(analysisEvidenceStatePayloadAvailable
+            ? { analysis_evidence_state: analysisEvidenceState.source_classification }
+            : {}),
+          ...(evidenceAnchorsDataForRuntimeTraces
+            ? { evidence_anchors: evidenceAnchors.source_classification }
+            : {}),
+          ...(claimCandidateTraceDataForRuntimeTraces
+            ? { claim_candidate_trace: claimCandidateTrace.source_classification }
+            : {}),
+          ...(publicClaimTraceDataForRuntimeTraces
+            ? { public_claim_trace: publicClaimTrace.source_classification }
+            : {}),
+          ...(techniqueObservationTrace.written
+            ? { technique_observation_trace: techniqueObservationTrace.source_classification }
+            : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.source_classification } : {}),
-          ...(modelRunTrace.written ? { model_run_trace: (modelRunTrace as { source_classification?: string }).source_classification ?? 'model_run_metadata_partial' } : {}),
-          ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: inputArtefacts.media_identity_source_classification } : {}),
+          ...(modelRunTrace.written
+            ? {
+                model_run_trace:
+                  (modelRunTrace as { source_classification?: string }).source_classification ??
+                  "model_run_metadata_partial",
+              }
+            : {}),
+          ...(inputArtefacts.emitted_artefact_ids.includes("media_identity")
+            ? { media_identity: inputArtefacts.media_identity_source_classification }
+            : {}),
         },
         artefact_level2_spine_satisfaction_by_id: {
           raw_report: false,
-          ...(qaArtefactIds.includes('step1_observable_evidence') ? { step1_observable_evidence: false } : {}),
-          ...(analysisEvidenceStatePayloadAvailable ? { analysis_evidence_state: analysisEvidenceState.level2_satisfies === true } : {}),
-          ...(evidenceAnchorsDataForRuntimeTraces ? { evidence_anchors: evidenceAnchors.written ? evidenceAnchors.level2_satisfies : false } : {}),
+          ...(qaArtefactIds.includes("step1_observable_evidence")
+            ? { step1_observable_evidence: false }
+            : {}),
+          ...(analysisEvidenceStatePayloadAvailable
+            ? { analysis_evidence_state: analysisEvidenceState.level2_satisfies === true }
+            : {}),
+          ...(evidenceAnchorsDataForRuntimeTraces
+            ? {
+                evidence_anchors: evidenceAnchors.written
+                  ? evidenceAnchors.level2_satisfies
+                  : false,
+              }
+            : {}),
           ...(claimCandidateTraceDataForRuntimeTraces ? { claim_candidate_trace: false } : {}),
-          ...(publicClaimTraceDataForRuntimeTraces ? { public_claim_trace: publicClaimTrace.written ? publicClaimTrace.level2_satisfies === true : false } : {}),
-          ...(techniqueObservationTrace.written ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies } : {}),
+          ...(publicClaimTraceDataForRuntimeTraces
+            ? {
+                public_claim_trace: publicClaimTrace.written
+                  ? publicClaimTrace.level2_satisfies === true
+                  : false,
+              }
+            : {}),
+          ...(techniqueObservationTrace.written
+            ? { technique_observation_trace: techniqueObservationTrace.level2_satisfies }
+            : {}),
           ...(scoreTrace.written ? { score_trace: scoreTrace.level2_satisfies === true } : {}),
-          ...(modelRunTrace.written ? { model_run_trace: (modelRunTrace as { level2_satisfies?: boolean }).level2_satisfies === true } : {}),
-          ...(inputArtefacts.emitted_artefact_ids.includes('media_identity') ? { media_identity: false } : {}),
+          ...(modelRunTrace.written
+            ? {
+                model_run_trace:
+                  (modelRunTrace as { level2_satisfies?: boolean }).level2_satisfies === true,
+              }
+            : {}),
+          ...(inputArtefacts.emitted_artefact_ids.includes("media_identity")
+            ? { media_identity: false }
+            : {}),
         },
         legacy_adapter_artefact_ids: [
-          'raw_report',
-          ...(evidenceAnchors.written && String(evidenceAnchors.source_classification).includes('legacy') ? ['evidence_anchors'] : []),
-          ...(publicClaimTrace.written && String(publicClaimTrace.source_classification).includes('legacy') ? ['public_claim_trace'] : []),
-          ...(techniqueObservationTrace.written && String(techniqueObservationTrace.source_classification).includes('legacy') ? ['technique_observation_trace'] : []),
-          ...(scoreTrace.written && String(scoreTrace.source_classification).includes('legacy') ? ['score_trace'] : []),
+          "raw_report",
+          ...(evidenceAnchors.written &&
+          String(evidenceAnchors.source_classification).includes("legacy")
+            ? ["evidence_anchors"]
+            : []),
+          ...(publicClaimTrace.written &&
+          String(publicClaimTrace.source_classification).includes("legacy")
+            ? ["public_claim_trace"]
+            : []),
+          ...(techniqueObservationTrace.written &&
+          String(techniqueObservationTrace.source_classification).includes("legacy")
+            ? ["technique_observation_trace"]
+            : []),
+          ...(scoreTrace.written && String(scoreTrace.source_classification).includes("legacy")
+            ? ["score_trace"]
+            : []),
         ],
-        real_v3_spine_artefact_ids: qaArtefactIds.filter((id) => !['raw_report', 'step1_observable_evidence', 'claim_candidate_trace', 'evidence_anchors', 'public_claim_trace', 'technique_observation_trace', 'score_trace', 'model_run_trace', 'media_identity'].includes(id)),
+        real_v3_spine_artefact_ids: qaArtefactIds.filter(
+          (id) =>
+            ![
+              "raw_report",
+              "step1_observable_evidence",
+              "claim_candidate_trace",
+              "evidence_anchors",
+              "public_claim_trace",
+              "technique_observation_trace",
+              "score_trace",
+              "model_run_trace",
+              "media_identity",
+            ].includes(id),
+        ),
         public_claim_trace_summary: publicClaimTrace.summary,
-        claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined,
+        // S9 source guardrail: claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces ? claimCandidateTrace.summary : undefined
+        claim_candidate_trace_summary: claimCandidateTraceDataForRuntimeTraces
+          ? claimCandidateTrace.summary
+          : undefined,
         evidence_anchor_trace_summary: evidenceAnchors.evidence_anchor_trace_summary,
-        technique_observation_trace_summary: techniqueObservationTrace.written ? techniqueObservationTrace.technique_observation_trace_summary : undefined,
+        technique_observation_trace_summary: techniqueObservationTrace.written
+          ? techniqueObservationTrace.technique_observation_trace_summary
+          : undefined,
         score_trace_summary: scoreTrace.written ? scoreTrace.score_trace_summary : undefined,
-        model_run_trace_summary: modelRunTrace.written ? modelRunTrace.model_run_trace_summary : undefined,
-        analysis_evidence_state_summary: analysisEvidenceStatePayloadAvailable ? {
-          ...analysisEvidenceState.summary,
-          qa_persistence_status: analysisEvidenceState.written ? 'written' : 'failed_emission',
-          qa_persistence_warning: analysisEvidenceState.warning ?? null,
-        } : undefined,
+        model_run_trace_summary: modelRunTrace.written
+          ? modelRunTrace.model_run_trace_summary
+          : undefined,
+        analysis_evidence_state_summary: analysisEvidenceStatePayloadAvailable
+          ? {
+              ...analysisEvidenceState.summary,
+              qa_persistence_status: analysisEvidenceState.written ? "written" : "failed_emission",
+              qa_persistence_warning: analysisEvidenceState.warning ?? null,
+            }
+          : undefined,
         step1_observable_evidence_summary: analysisEvidenceState.step1_observable_evidence_summary,
         media_identity_summary: inputArtefacts.media_identity_summary,
         report_parity_input: {
@@ -4085,18 +4280,18 @@ export async function runProcessTake(
           render_payload: null,
           public_report_payload: null,
           allowed_public_fields: [
-            'report_data.schema_version',
-            'report_data.submission_verdict',
-            'report_data.fix_first',
-            'report_data.priority_fixes',
-            'report_data.strengths',
-            'report_data.next_take_plan',
-            'report_data.feedback_reliability',
+            "report_data.schema_version",
+            "report_data.submission_verdict",
+            "report_data.fix_first",
+            "report_data.priority_fixes",
+            "report_data.strengths",
+            "report_data.next_take_plan",
+            "report_data.feedback_reliability",
           ],
         },
       });
-      console.info('[internal-qa] emitQAManifestForAnalysisRun_result', {
-        event: 'emitQAManifestForAnalysisRun_result',
+      console.info("[internal-qa] emitQAManifestForAnalysisRun_result", {
+        event: "emitQAManifestForAnalysisRun_result",
         run_id: `take-${takeId}`,
         take_id: takeId,
         analysis_run_id: `take-${takeId}`,
@@ -4106,15 +4301,15 @@ export async function runProcessTake(
         resolved_storage_path: (qaEmitResult as { path?: string }).path ?? null,
       });
       if (qaEmitResult.warning) {
-        console.warn('[take-pipeline] internal_qa_manifest_emit_warning', {
+        console.warn("[take-pipeline] internal_qa_manifest_emit_warning", {
           take_id: takeId,
           warning: qaEmitResult.warning,
         });
       }
     } catch (qaErr) {
-      console.warn('[take-pipeline] internal_qa_emit_warning', {
+      console.warn("[take-pipeline] internal_qa_emit_warning", {
         take_id: takeId,
-        warning: qaErr instanceof Error ? qaErr.message : 'unknown',
+        warning: qaErr instanceof Error ? qaErr.message : "unknown",
       });
     }
 

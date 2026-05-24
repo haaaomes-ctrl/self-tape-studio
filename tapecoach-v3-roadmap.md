@@ -346,315 +346,97 @@ A S10 slice cannot be accepted if it only improves internal proof or code struct
 
 ---
 
-### S10.1 — AI-led report module question map
+### S10.1 — AI report module question map and active prompt replacement
 
-**Purpose:** Define what the AI must answer for every UI report module.
+**Purpose:** Define what the AI must answer for every performer-facing report module and make the S10 prompt map the active runtime path.
 
-**Why first:** The previous system failed because modules were populated by deterministic fallback copy instead of AI judgement.
-
-**Deliverables:**
-
-- `AiObservationPass` schema;
-- `AiProfessionalJudgementPass` schema;
-- `AiTechniqueCommentary` schema;
-- `AiTimestampedCommentary` schema;
-- `AiReportModuleCompletenessCheck` schema;
-- module-level AI questions;
-- repair prompt templates.
-
-**Acceptance:**
-
-- every UI report module has a corresponding AI question;
-- every AI output field has a destination in the report model;
-- missing/thin/generic modules trigger repair prompts;
-- no module relies on generic fallback copy as primary content.
-
-**Prompt:**
-
-```text
-Implement S10.1 — AI-led report module question map.
-
-Context:
-TapeCoach has rolled back to S9-19 after S10 report-value regressions.
-README.md is the controlling product contract.
-
-Purpose:
-Define the AI question map and module-completeness contract before rebuilding report rendering.
-
-Deliverables:
-- AI questions for every visible report module;
-- structured observation and judgement output schemas;
-- technique and timestamp commentary schemas;
-- module completeness classifications;
-- repair prompts for missing, thin, generic, contradictory or unsupported modules.
-
-Acceptance:
-- every UI section has an AI question;
-- every AI answer has a report destination;
-- no generic fallback copy is accepted as primary report content.
-```
+**Acceptance:** active Step 1, Step 2 and fallback/single-pass report generation use S10 prompt versions; legacy S9 prompt labels are legacy-only; every visible report module has an AI question, output destination, completeness rule and repair prompt; Canary A component verification is explicit before scoring or recommending.
 
 ---
 
-### S10.2 — Full-value architecture and model types
+### S10.2 — Brief intelligence and requirement extraction
 
-**Purpose:** Add architecture/types that support the AI-led report without changing user-facing behaviour yet.
-
-**Deliverables:**
-
-- `AnalysisInputContext`;
-- `BriefRequirement`;
-- `MediaEvidence`;
-- `TechniqueCommentary`;
-- `FullReportModel`;
-- `AuthenticatedReportModel`;
-- `OperatorAssumptionLog`.
-
-**Acceptance:**
-
-- types exist;
-- no broad public-safe restrictions are introduced;
-- no report behaviour is degraded;
-- architecture supports full-value output.
+Extract the supplied brief into explicit, testable `BriefRequirement[]` items before the tape is judged.
 
 ---
 
-### S10.3 — Brief intelligence and authenticated brief transparency
+### S10.3 — Tape observation and component verification
 
-**Purpose:** Treat the supplied brief as first-class report input.
-
-**Deliverables:**
-
-- full useful brief preservation;
-- project/role/material extraction;
-- requirement extraction;
-- mandatory/preferred/optional/ambiguous classification;
-- achievement criteria per requirement.
-
-**Acceptance:**
-
-- supplied brief details can appear in authenticated report;
-- Canary A and Canary B brief requirements extract correctly;
-- no invented requirements;
-- red-line filtering remains narrow.
+Ask the AI to observe the tape sequence and classify each required component as present, partially present, absent, not assessable or uncertain.
 
 ---
 
-### S10.4 — AI observation and professional judgement prompts
+### S10.4 — Brief achievement matrix
 
-**Purpose:** Run the two-step AI analysis as the report intelligence source.
-
-**Deliverables:**
-
-- observation prompt;
-- professional judgement prompt;
-- prompt fixtures;
-- schema validation;
-- repair prompts.
-
-**Acceptance:**
-
-- observation pass identifies what appears in the tape;
-- judgement pass provides recommendation, fixes, strengths, technique commentary and next action;
-- AI output is module-ready;
-- no thin shell.
+Compare `BriefRequirement[]` with observed tape components before recommendation, score or fix hierarchy.
 
 ---
 
-### S10.5 — Report model to UI piping
+### S10.5 — Readiness recommendation and score semantics
 
-**Purpose:** Render structured AI outputs in the performer-facing report.
-
-**Deliverables:**
-
-- `FullReportModel` composer;
-- `AuthenticatedReportModel` renderer mapping;
-- route text rendering;
-- PDF text rendering;
-- narrow red-line filter.
-
-**Acceptance:**
-
-- AI output appears in the route/PDF;
-- UI does not invent professional judgement;
-- if AI output exists but is not rendered, that is treated as a routing bug.
+Make score, score chip language and recommendation depend on brief achievement, with mandatory brief blockers overriding submission readiness.
 
 ---
 
-### S10.6 — Technique-library commentary
+### S10.6 — Fix hierarchy and next-action plan
 
-**Purpose:** Attempt discipline-specific technique commentary wherever evidence exists.
-
-**Deliverables:**
-
-- acting commentary;
-- vocal/singing commentary;
-- movement/dance commentary;
-- MT package commentary;
-- commercial/screen-task commentary;
-- self-tape presentation commentary.
-
-**Acceptance:**
-
-- missing components are marked not assessable rather than ignored;
-- visible components receive specific commentary;
-- no avoidance of technique notes by default;
-- only high-risk medical/body/protected-characteristic/guaranteed-outcome claims are filtered.
+Ask the AI to rank must-fix, should-improve and optional-polish actions by submission impact.
 
 ---
 
-### S10.7 — Timestamped commentary
+### S10.7 — Strengths, preserve and professional critique
 
-**Purpose:** Restore timestamped or time-banded commentary as a positive report feature.
-
-**Deliverables:**
-
-- timestamp/time-band prompt;
-- timestamped strengths/fixes/observations;
-- cut-off and component-boundary notes;
-- component-level fallback if timestamps unavailable.
-
-**Acceptance:**
-
-- timestamped commentary appears where available;
-- timestamp absence does not collapse the report;
-- report remains useful without timestamps.
+Preserve old-report richness with AI-authored strengths, preserve guidance and professional critique for incomplete and strong complete takes.
 
 ---
 
-### S10.8 — Score terminology and professional nuance
+### S10.8 — Technique-library commentary
 
-**Purpose:** Align visible scores with report language and preserve nuance for professional takes clustered above 90.
-
-**Deliverables:**
-
-- score-to-language map;
-- professional-score nuance policy;
-- sub-dimension score language;
-- brief blocker override rules;
-- comparison score language.
-
-**Acceptance:**
-
-- score chips do not contradict verdicts;
-- a high score does not flatten professional feedback;
-- strong professional takes above 90 still receive meaningful written nuance;
-- brief blockers can override performance quality.
+Attempt practical technique commentary by default where evidence exists; missing components produce not-assessable technique notes.
 
 ---
 
-### S10.9 — Same-video and duplicate-upload handling
+### S10.9 — Timestamped and time-banded commentary
 
-**Purpose:** Handle duplicate media, retests and same-video comparisons explicitly.
-
-**Deliverables:**
-
-- same-video status model;
-- duplicate/retest classification;
-- operator confirmation fields;
-- same-video/new-brief handling;
-- same-video/new-level handling;
-- comparison safeguards.
-
-**Acceptance:**
-
-- accidental duplicates are not treated as different performances;
-- intentional retests are allowed and labelled;
-- same-video comparison cannot create a false winner;
-- operator assumptions are captured where needed.
+Keep timestamped/time-banded commentary as a first-class AI output and UI module.
 
 ---
 
-### S10.10 — Positive brief-complete report path
+### S10.10 — Report model to UI piping
 
-**Purpose:** Ensure strong complete takes produce rich positive reports, not empty “no blocker” reports.
-
-**Deliverables:**
-
-- positive readiness rationale;
-- achieved/mostly achieved brief status;
-- no-mandatory-fix language;
-- specific strengths;
-- technique commentary;
-- optional polish;
-- submit checklist;
-- do-not-overfix guidance.
-
-**Acceptance:**
-
-- Canary B passes route/PDF review;
-- no invented blocker;
-- strengths are specific;
-- optional polish is useful and finite;
-- no “This affects readability, not talent” as sole strength;
-- no thin shell.
+Pipe AI module outputs into the existing rich report surface; if AI output exists but is not rendered, treat it as a routing bug.
 
 ---
 
-### S10.11 — Incomplete mandatory package path
+### S10.11 — Canary A incomplete mandatory package fixture
 
-**Purpose:** Ensure missing required material produces decisive fix-first guidance.
-
-**Deliverables:**
-
-- missing-material detection;
-- missing Side 1 fix-first;
-- song/package completion;
-- continuous-video package check;
-- one-file export/upload check;
-- finite retake plan.
-
-**Acceptance:**
-
-- Canary A passes route/PDF review;
-- missing Side 1 is fix-first;
-- song/package completion appears;
-- continuous-video check appears;
-- no false audio blocker;
-- no generic “Blocked…” legacy copy.
+Create permanent regression coverage for the incomplete mandatory MT package false-positive.
 
 ---
 
-### S10.12 — Route/PDF first QA
+### S10.12 — Strong complete professional fixture
 
-**Purpose:** Test the actual performer-facing report surface.
-
-**Deliverables:**
-
-- route text snapshot;
-- PDF text snapshot;
-- report surface assertions;
-- operator fixture confirmation.
-
-**Acceptance:**
-
-- route/PDF text is checked;
-- payload parity alone is insufficient;
-- Canary A and Canary B pass visually and textually;
-- thin-shell phrases are blocked.
+Create permanent coverage for a professional-level complete take that receives a rich positive report.
 
 ---
 
-### S10.13 — QA artefacts as secondary proof
+### S10.13 — Same-video and comparison handling
 
-**Purpose:** Reintroduce diagnostics without blocking useful report generation.
+Handle duplicate media, intentional retests, changed brief/level/report version and same-video comparison without false performance deltas.
 
-**Deliverables:**
+---
 
-- AI pass artefacts;
-- report model artefacts;
-- red-line filter trace;
-- report quality check;
-- operator assumption log;
-- QA emission diagnostics.
+### S10.14 — Operator assumption checkpoints
 
-**Acceptance:**
+Record lightweight operator fixture assumptions for content testing; missing assumptions make results uncertain, not accepted by hidden proof.
 
-- QA artefacts emit when enabled;
-- missing artefacts are clearly diagnosed;
-- report still renders if artefacts fail;
-- artefact failure blocks proof/release, not user report generation;
-- no secrets, signed URLs, raw prompts or raw responses leak.
+---
+
+### S10.15 — Route/PDF content acceptance
+
+Treat rendered route text, exported PDF text and visible performer-facing modules as the S10 acceptance surface.
+
+S10 explicitly defers runtime provenance, operator runtime verification, GateTrace, ValidatorTrace, Level 2 acceptance, production/customer release, public/private payload parity, public scoring approval, public technique authority approval, public comparison approval and full QA artefact reconciliation.
 
 ---
 

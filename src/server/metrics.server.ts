@@ -68,6 +68,7 @@ export type MetricName =
   | "qa_persistence_failed_but_step1_evidence_valid"
   | "qa_persistence_failed_but_analysis_evidence_payload_used_for_runtime_traces"
   | "report_polish_blocked"
+  | "s10_step2_qa_dependency_warning"
   // Sweeper
   | "analysis_sweeper_scanned"
   | "analysis_stale_timeout"

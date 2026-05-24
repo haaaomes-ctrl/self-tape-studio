@@ -8,14 +8,16 @@ describe("timestamp density scaling", () => {
   const procSrc = read("src/server/process-take.server.ts");
   const polSrc = read("src/server/report-polish.server.ts");
   const evSrc = read("src/server/evidence-pass.server.ts");
+  const s10PromptSrc = read("src/server/s10-report-prompt-map.server.ts");
+  const promptSrc = `${procSrc}\n${polSrc}\n${evSrc}\n${s10PromptSrc}`;
   const viewSrc = read("src/components/report/V2ReportView.tsx");
 
   it("process prompt declares all five duration bands", () => {
-    expect(procSrc).toMatch(/under 60 seconds: 3.5/);
-    expect(procSrc).toMatch(/1.3 minutes: 6.10/);
-    expect(procSrc).toMatch(/3.5 minutes: 8.14/);
-    expect(procSrc).toMatch(/5.10 minutes: 12.24/);
-    expect(procSrc).toMatch(/10\+ minutes: 18.36/);
+    expect(promptSrc).toMatch(/under 60 seconds: 3.5/);
+    expect(promptSrc).toMatch(/1.3 minutes: 6.10/);
+    expect(promptSrc).toMatch(/3.5 minutes: 8.14/);
+    expect(promptSrc).toMatch(/5.10 minutes: 12.24/);
+    expect(promptSrc).toMatch(/10\+ minutes: 18.36/);
   });
 
   it("polish prompt declares duration bands and 36 max", () => {
@@ -36,28 +38,36 @@ describe("timestamp density scaling", () => {
 });
 
 describe("Dance prompt depth", () => {
-  const procSrc = read("src/server/process-take.server.ts");
+  const promptSrc = [
+    read("src/server/process-take.server.ts"),
+    read("src/server/report-polish.server.ts"),
+    read("src/server/s10-report-prompt-map.server.ts"),
+  ].join("\n");
   it("requires movement evidence vocabulary", () => {
     for (const tok of ["rhythm/timing", "control", "spatial", "dynamics", "performance"]) {
-      expect(procSrc).toContain(tok);
+      expect(promptSrc).toContain(tok);
     }
   });
   it("forbids unanchored Dance phrases", () => {
-    expect(procSrc).toContain("high-energy movement");
-    expect(procSrc).toContain("clean lines");
-    expect(procSrc).toContain("rhythmic precision");
+    expect(promptSrc).toContain("high-energy movement");
+    expect(promptSrc).toContain("clean lines");
+    expect(promptSrc).toContain("rhythmic precision");
   });
 });
 
 describe("MT prompt depth", () => {
-  const procSrc = read("src/server/process-take.server.ts");
+  const promptSrc = [
+    read("src/server/process-take.server.ts"),
+    read("src/server/report-polish.server.ts"),
+    read("src/server/s10-report-prompt-map.server.ts"),
+  ].join("\n");
   const polSrc = read("src/server/report-polish.server.ts");
   it("requires acting-through-song with lyric/phrase/beat/transition", () => {
-    expect(procSrc).toContain("acting-through-song");
-    expect(procSrc).toMatch(/lyric.phrase.beat.transition/);
+    expect(promptSrc).toContain("acting-through-song");
+    expect(promptSrc).toMatch(/lyric.phrase.beat.transition/);
     expect(polSrc).toContain("acting-through-song");
   });
   it("forbids castability/recall/workshop/live-room overclaim", () => {
-    expect(procSrc).toMatch(/castability\s*\/\s*recall\s*\/\s*workshop\s*\/\s*live-room/);
+    expect(promptSrc).toMatch(/castability\s*\/\s*recall\s*\/\s*workshop\s*\/\s*live-room/);
   });
 });

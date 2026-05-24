@@ -296,15 +296,15 @@ If same-video status affects comparison, canary acceptance or report interpretat
 
 Use the following status language:
 
-| Status | Meaning | Expected behaviour |
-|---|---|---|
-| `new_media` | The media appears to be a different self-tape. | Analyse as a new take. |
-| `same_video_confirmed` | Operator or strong signals confirm same underlying video. | Do not imply performance changed; allow retest/regression review. |
-| `probable_duplicate` | Signals strongly suggest duplicate, but not confirmed. | Ask operator or mark uncertain. |
-| `intentional_retest` | Same video intentionally rerun to test report logic. | Allow, but mark as retest. |
-| `same_video_changed_brief` | Same video judged against a different brief. | Reanalyse brief achievement; do not imply new performance. |
-| `same_video_changed_level` | Same video judged at a different level. | Recalibrate level-relative commentary. |
-| `duplicate_in_comparison` | Compared takes are the same media. | Do not recommend one as a different performance; explain duplicate status. |
+| Status                     | Meaning                                                   | Expected behaviour                                                         |
+| -------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `new_media`                | The media appears to be a different self-tape.            | Analyse as a new take.                                                     |
+| `same_video_confirmed`     | Operator or strong signals confirm same underlying video. | Do not imply performance changed; allow retest/regression review.          |
+| `probable_duplicate`       | Signals strongly suggest duplicate, but not confirmed.    | Ask operator or mark uncertain.                                            |
+| `intentional_retest`       | Same video intentionally rerun to test report logic.      | Allow, but mark as retest.                                                 |
+| `same_video_changed_brief` | Same video judged against a different brief.              | Reanalyse brief achievement; do not imply new performance.                 |
+| `same_video_changed_level` | Same video judged at a different level.                   | Recalibrate level-relative commentary.                                     |
+| `duplicate_in_comparison`  | Compared takes are the same media.                        | Do not recommend one as a different performance; explain duplicate status. |
 
 ---
 
@@ -700,11 +700,11 @@ If limited output is used, the report must say exactly what evidence was insuffi
 
 TapeCoach should use these performer-facing recommendation states:
 
-| State | Meaning |
-|---|---|
-| `submit` | The tape appears ready to submit for the selected level and supplied task. |
-| `submit_if_deadline_is_close` | The tape supports submission; optional polish may exist but should not delay unnecessarily. |
-| `review_carefully` | The tape may be usable, but there is meaningful uncertainty or risk to check. |
+| State                         | Meaning                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submit`                      | The tape appears ready to submit for the selected level and supplied task.                                                                          |
+| `submit_if_deadline_is_close` | The tape supports submission; optional polish may exist but should not delay unnecessarily.                                                         |
+| `review_carefully`            | The tape may be usable, but there is meaningful uncertainty or risk to check.                                                                       |
 | `retake_required_if_possible` | A material issue, missing brief component, serious technical issue or performance readability problem means a retake is recommended if time allows. |
 
 ### 8.2 Recommendation rules
@@ -786,13 +786,13 @@ Scores must not flatten professional feedback into “high score = no useful not
 
 Use this default map unless superseded by a calibration document.
 
-| Score band | Terminology | Typical meaning |
-|---|---|---|
-| 0–39 | Not submission-ready / not assessable | Serious missing evidence, technical blocker or incomplete package. |
-| 40–54 | Retake required if possible | Major brief, performance or presentation issue blocks submission readiness. |
-| 55–69 | Review carefully | Some usable material, but meaningful risk, uncertainty or important improvement remains. |
-| 70–84 | Submit if deadline is close | Submission-supporting tape with optional polish or manageable caveats. |
-| 85–100 | Strong submission / submit | Brief-complete, assessable, strong for selected level, no mandatory blocker. |
+| Score band | Terminology                           | Typical meaning                                                                          |
+| ---------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 0–39       | Not submission-ready / not assessable | Serious missing evidence, technical blocker or incomplete package.                       |
+| 40–54      | Retake required if possible           | Major brief, performance or presentation issue blocks submission readiness.              |
+| 55–69      | Review carefully                      | Some usable material, but meaningful risk, uncertainty or important improvement remains. |
+| 70–84      | Submit if deadline is close           | Submission-supporting tape with optional polish or manageable caveats.                   |
+| 85–100     | Strong submission / submit            | Brief-complete, assessable, strong for selected level, no mandatory blocker.             |
 
 The verdict is not determined by score alone.
 
@@ -1150,10 +1150,10 @@ If content is useful but overstrong, rewrite it into safe professional language.
 
 Examples:
 
-| Overstrong / high-risk | Preferred rewrite |
-|---|---|
-| “This guarantees a callback.” | “This supports submission readiness from the available evidence.” |
-| “This proves professional mastery.” | “This reads strongly against the selected level in the observed areas.” |
+| Overstrong / high-risk                    | Preferred rewrite                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| “This guarantees a callback.”             | “This supports submission readiness from the available evidence.”                    |
+| “This proves professional mastery.”       | “This reads strongly against the selected level in the observed areas.”              |
 | “The performer has a vocal health issue.” | “Vocal health cannot be assessed; consider professional advice if there is concern.” |
 
 ### 18.3 Suppress only true red lines
@@ -1378,7 +1378,7 @@ Every report-value slice must inspect or test:
 - rendered route text;
 - exported PDF text;
 - payload model;
-- QA artefacts where available.
+- diagnostics where relevant. QA artefacts may help later proof work but are not required for S10 report-value acceptance.
 
 If the route/PDF is weak, the slice fails even if payload parity passes.
 
@@ -1413,7 +1413,7 @@ Report-value changes should include tests for:
 - same-video handling;
 - comparison handling;
 - red-line filtering;
-- QA proof where relevant.
+- route/PDF content acceptance. QA proof is deferred unless a later non-S10 release/provenance slice explicitly scopes it.
 
 ### 24.2 Acceptance hierarchy
 
@@ -1427,7 +1427,6 @@ A slice is not done unless:
 - no generic thin-shell copy is introduced;
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
-- QA artefact status is clear;
 - production/customer/Level acceptance is not claimed unless explicitly in scope.
 
 ### 24.3 QA-only success is not acceptance
@@ -1454,13 +1453,13 @@ Use maturity levels as release-control language, not as a reason to suppress use
 
 Suggested levels:
 
-| Level | Meaning |
-|---|---|
-| Level 1 | AI-led audition readiness and performance readability report. |
-| Level 2 | Discipline-specific and technique-aware critique. |
-| Level 3 | Brief-intelligent module detection and package analysis. |
-| Level 4 | Role/material/repertoire-aware feedback. |
-| Level 5 | Comparison-aware and competitive readiness feedback. |
+| Level   | Meaning                                                             |
+| ------- | ------------------------------------------------------------------- |
+| Level 1 | AI-led audition readiness and performance readability report.       |
+| Level 2 | Discipline-specific and technique-aware critique.                   |
+| Level 3 | Brief-intelligent module detection and package analysis.            |
+| Level 4 | Role/material/repertoire-aware feedback.                            |
+| Level 5 | Comparison-aware and competitive readiness feedback.                |
 | Level 6 | Professional/agent mode with deeper calibration and operator tools. |
 
 ### 25.2 Release gates
@@ -1481,21 +1480,25 @@ If a release produces a thin shell or materially reduces report usefulness, roll
 
 The corrected S10 rebuild should follow this order:
 
-1. AI-led report module question map.
-2. Full-value authenticated report architecture and types.
-3. Brief intelligence and authenticated brief transparency.
-4. AI observation and professional judgement prompts.
-5. Report model to UI piping.
-6. Technique-library commentary.
-7. Timestamped commentary.
-8. Score terminology and professional nuance.
-9. Same-video / duplicate-upload handling.
-10. Positive brief-complete report path.
-11. Incomplete mandatory package path.
-12. Route/PDF first QA.
-13. QA artefacts as secondary proof.
+1. AI report module question map and active prompt replacement.
+2. Brief intelligence and requirement extraction.
+3. Tape observation and component verification.
+4. Brief achievement matrix.
+5. Readiness recommendation and score semantics.
+6. Fix hierarchy and next-action plan.
+7. Strengths, preserve and professional critique.
+8. Technique-library commentary.
+9. Timestamped/time-banded commentary.
+10. Report model to UI piping.
+11. Canary A incomplete mandatory package fixture.
+12. Strong complete professional fixture.
+13. Same-video and comparison handling.
+14. Operator assumption checkpoints.
+15. Route/PDF content acceptance.
 
 Do not start with payload gates, source-kind restrictions or QA architecture before the report is useful.
+
+Runtime provenance, GateTrace, ValidatorTrace, public/private payload parity, Level 2 acceptance, production release and full QA artefact reconciliation are post-S10 roadmap work unless explicitly scoped in a later slice.
 
 ---
 

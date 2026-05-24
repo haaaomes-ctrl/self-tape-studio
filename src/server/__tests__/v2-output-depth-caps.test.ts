@@ -13,6 +13,7 @@ describe("v2 output-depth caps removed", () => {
   const processSrc = read("src/server/process-take.server.ts");
   const polishSrc = read("src/server/report-polish.server.ts");
   const evidenceSrc = read("src/server/evidence-pass.server.ts");
+  const s10PromptSrc = read("src/server/s10-report-prompt-map.server.ts");
   const viewSrc = read("src/components/report/V2ReportView.tsx");
 
   it("REPORT_TOOL strengths/improvements/coaching_drills/timestamped_notes maxima are raised", () => {
@@ -57,10 +58,11 @@ describe("v2 output-depth caps removed", () => {
   });
 
   it("system prompt requests duration-scaled timestamps + category rationale + discipline depth", () => {
-    expect(processSrc).toContain("18–36");
-    expect(processSrc).toContain("category_rationale");
-    expect(processSrc).toContain("acting-through-song");
-    expect(processSrc).toContain("rhythm/timing");
+    const promptSources = `${processSrc}\n${s10PromptSrc}`;
+    expect(promptSources).toContain("18-36");
+    expect(promptSources).toContain("category_rationale");
+    expect(promptSources).toContain("acting-through-song");
+    expect(promptSources).toContain("rhythm/timing");
   });
 });
 
@@ -68,9 +70,20 @@ describe("v2 builder surfaces new public fields", () => {
   it("priority_fixes from legacy report passes through; falls back to fix_first", () => {
     const v2a = buildV2Report({
       legacyReport: {
-        scores: { technical: 80, audio: 80, vocal: 80, acting: 80, brief_adherence: 80, professional_presentation: 80 },
+        scores: {
+          technical: 80,
+          audio: 80,
+          vocal: 80,
+          acting: 80,
+          brief_adherence: 80,
+          professional_presentation: 80,
+        },
         priority_fixes: [
-          { headline: "Open the second verse", rationale: "Currently flatlines", kind: "quick_win" },
+          {
+            headline: "Open the second verse",
+            rationale: "Currently flatlines",
+            kind: "quick_win",
+          },
         ],
       },
       futureDimensions: null,

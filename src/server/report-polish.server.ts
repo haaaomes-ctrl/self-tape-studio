@@ -3,20 +3,28 @@
 // Text-only "polish" pass. Receives the locked Step 1 evidence (no video) and
 // uses the existing REPORT_TOOL schema to produce a final structured report.
 // Then runs locked-field enforcement (primary safeguard), conservative
-// unsupported-claim handling, and a deterministic fallback renderer for
-// total Step 2 failure.
+// unsupported-claim handling, and a legacy emergency renderer for explicit
+// AI-judgement-unavailable cases.
 
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
+import {
+  S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+  S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
+} from "./s10-report-prompt-map.server";
 
-const DEFAULT_MODEL =
-  process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
+const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
 
-const POLISH_SYSTEM_PROMPT = `You are a UK casting director, agent and acting coach writing a self-tape audition report. You will NOT be given the video. You will be given a LOCKED EVIDENCE block from a prior pass that did watch the tape.
+export const POLISH_SYSTEM_PROMPT = `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
+
+You will NOT be given the video. You will be given a LOCKED EVIDENCE block from a prior pass that did watch the tape.
 
 Rules:
+- Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
 - Use ONLY the supplied evidence as factual ground truth. Do NOT invent observations the evidence does not support.
-- Improve WORDING only. Do NOT change scores, score meanings, verdicts, or score-derived conclusions. The orchestrator will overwrite scores from the evidence pass.
+- Before writing score, verdict, readiness, detected_components, strengths, improvements, priority_fixes or category_rationale, compare required brief components against the locked observed component evidence.
+- If required material is absent, partial, cut off, uncertain or not assessable, make that the readiness driver. Do not call the take "strong for this level" as a complete submission.
+- Do NOT rely on generic fallback copy. If a module cannot be supported by evidence, mark the limitation specifically and state the exact next recording/check action.
 - Do NOT add new timestamped_notes that are not in evidence.timestamped_evidence. Do NOT change their timestamps. Keep timestamped_notes in CHRONOLOGICAL order.
 - Do NOT add new submission_risk_flags that the evidence does not support.
 - Do NOT add new presentation_notes that the evidence does not support. Visual claims about clothing, "top", "shirt", "your top provides contrast", "solid colour of your top", background colour, or any wardrobe/contrast claim must NOT appear unless that exact claim is locked in evidence.presentation_evidence. When in doubt, omit. Acceptable safe wording when there is no locked visual evidence: "the frame is clean and easy to read", "the background does not distract from the performance", "the performer remains visually clear throughout".
@@ -26,12 +34,12 @@ Rules:
 - Replace unclear standalone "side" jargon with clearer wording for non-industry users: "the requested side" → "the requested Side 1 acting scene" (when the brief explicitly says Side 1) or "the requested acting scene"; "the side and the song" → "the acting scene and the song"; "in the side" → "in the acting section"; bare "the side" → "the acting scene". "Side 1" is acceptable when the brief explicitly uses it.
 - If the brief requires head-and-shoulders, close-up, medium close-up, fixed/static framing, or any "self-tape framing" / "camera-led" instruction, do NOT recommend on-camera movement or staging that breaks the frame in the RECORDED take. Specifically forbidden as recorded-take advice: standing up to record/perform/sing, walking, moving around the room, packing a bag, crossing the room, holding an instrument or microphone or any prop on camera, using props, physical tasks, recording while moving, recording while standing, adding staging, adding blocking, adding business, or moving out of frame. These are allowed ONLY when explicitly framed as "rehearsal-only" or "off-camera rehearsal" exercises, and you MUST then also give a recorded-take alternative that preserves the required head-and-shoulders frame (use breath, stillness, eyeline changes, thought-shifts, intention shifts).
 - Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre, colour).
-- Be specific, prioritised, supportive — the same voice as the existing single-pass report.
+- Be specific, prioritised, supportive — preserve the useful richness of the old report surface without preserving false-positive logic.
 - Calibrate tone to the supplied performer level.
 - NEVER comment on appearance, body, age, race, class, disability, mobility aids, medical devices, or socioeconomic status.
 - Respect evidence_sufficiency. If audio_assessable=false, do not praise vocal detail. If video_assessable=false, do not praise micro-expression. If brief_assessable=false or role_fit_assessable=false, leave role_fit_notes empty.
 - presentation_notes are OPTIONAL. Leave the array empty when there is nothing materially useful to say. Do not pad with generic praise such as "looks professional".
-- "Fix this first" must be the SINGLE highest-impact actionable note from the evidence. "Top improvements" must be specific and grounded in evidence_lines.
+- "Fix this first" must be the SINGLE highest-impact actionable note from the evidence. If mandatory material is missing, that must outrank optional performance polish.
 - Volume targets (do NOT pad, do NOT artificially shorten when the evidence supports more): strengths 3–8 (max 12), improvements 3–10 (max 15), priority_fixes 2–5 (max 8), next_take_plan items 4–10 (max 15), presentation_notes max 6, timestamped_notes duration-scaled (<60s 3–5; 1–3m 6–10; 3–5m 8–14; 5–10m 12–24; 10m+ 18–36; absolute max 36). Coaching_drills as the schema allows.
 - Populate priority_fixes (2–5 prioritised fixes with kind tag) and next_take_plan (steps[] and optionally groups[]) when the evidence supports them. Do not duplicate improvements verbatim unless that is the clearest formulation.
 - Populate category_rationale[<key>] for every category whose score is < 100: what_works, why_not_full_score, close_gap. For scores >= 90 also write standout_delta. Discipline-specific language; never generic praise; reserve 98–100 for near-flawless evidence; high scores must NOT reduce feedback volume; a 95 still gets a marginal improvement pathway.
@@ -94,9 +102,7 @@ function buildEvidenceBlock(ev: EvidencePass): string {
   )}`;
 }
 
-export async function runReportPolish(
-  args: RunReportPolishArgs,
-): Promise<RunReportPolishResult> {
+export async function runReportPolish(args: RunReportPolishArgs): Promise<RunReportPolishResult> {
   const model = args.model ?? DEFAULT_MODEL;
   const startedAt = Date.now();
 
@@ -109,7 +115,7 @@ export async function runReportPolish(
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
-    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Improve wording only. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency.",
+    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Verify required brief components before scoring or recommending. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
   ].join("\n\n");
 
   let resp: Response | null = null;
@@ -264,7 +270,58 @@ export function enforceLockedFields(
 // ---------- Conservative unsupported-claim enforcement ----------
 
 const STOPWORDS = new Set([
-  "the","a","an","and","or","but","of","in","on","to","for","with","at","by","is","are","was","were","be","been","being","this","that","these","those","it","its","as","from","into","over","under","than","then","so","if","when","while","very","more","less","most","least","you","your","they","their","we","our","i","my","me",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "of",
+  "in",
+  "on",
+  "to",
+  "for",
+  "with",
+  "at",
+  "by",
+  "is",
+  "are",
+  "was",
+  "were",
+  "be",
+  "been",
+  "being",
+  "this",
+  "that",
+  "these",
+  "those",
+  "it",
+  "its",
+  "as",
+  "from",
+  "into",
+  "over",
+  "under",
+  "than",
+  "then",
+  "so",
+  "if",
+  "when",
+  "while",
+  "very",
+  "more",
+  "less",
+  "most",
+  "least",
+  "you",
+  "your",
+  "they",
+  "their",
+  "we",
+  "our",
+  "i",
+  "my",
+  "me",
 ]);
 
 function tokenise(s: string): string[] {
@@ -345,9 +402,7 @@ export function enforceUnsupportedClaims(
   // ---- Strict: submission_risk_flags ----
   if (Array.isArray(report.submission_risk_flags)) {
     const riskCorpus = [
-      ...evidence.risk_evidence.map((r) =>
-        `${r.flag} ${r.why}`.toLowerCase(),
-      ),
+      ...evidence.risk_evidence.map((r) => `${r.flag} ${r.why}`.toLowerCase()),
       ...corpusLower,
     ];
     const filtered = report.submission_risk_flags.filter(
@@ -379,10 +434,7 @@ export function enforceUnsupportedClaims(
   }
 
   // ---- Strict-ish: role_fit_notes ----
-  if (
-    typeof report.role_fit_notes === "string" &&
-    report.role_fit_notes.trim().length > 0
-  ) {
+  if (typeof report.role_fit_notes === "string" && report.role_fit_notes.trim().length > 0) {
     const roleAssessable =
       !!evidence.evidence_sufficiency?.role_fit_assessable &&
       !!evidence.evidence_sufficiency?.brief_assessable;
@@ -547,13 +599,12 @@ export function enforceScoreAlignment(
   return { adjusted };
 }
 
-// ---------- Deterministic fallback renderer ----------
+// ---------- Legacy deterministic failure renderer ----------
 
 /**
- * Build a minimal, valid report directly from Step 1 evidence when Step 2
- * fails. The orchestrator's existing post-process (recompute, caps, material
- * policy, verdict, block reasons) runs over this exactly as it would over a
- * polished report. Prefers the richer evidence fields over generic scraping.
+ * Legacy emergency renderer for explicit AI-judgement-unavailable cases only.
+ * S10 performer-facing analysis should fall through to the active single-pass
+ * S10 prompt instead of using this as primary report content.
  */
 export function renderFallbackReport(
   evidence: EvidencePass,
@@ -571,23 +622,16 @@ export function renderFallbackReport(
   const ba = evidence.brief_adherence_evidence;
 
   const strengths = evidence.core_strengths_evidence
-    .map((s) =>
-      s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
-    )
+    .map((s) => (s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area))
     .filter((x) => typeof x === "string" && x.length > 0)
     .slice(0, 12);
 
   const improvements = evidence.core_improvements_evidence
-    .map((s) =>
-      s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area,
-    )
+    .map((s) => (s.area && s.evidence ? `${s.area}: ${s.evidence}` : s.evidence || s.area))
     .filter((x) => typeof x === "string" && x.length > 0)
     .slice(0, 15);
 
-  const fixFirst =
-    (evidence.fix_first_evidence ?? "").trim() ||
-    improvements[0] ||
-    "";
+  const fixFirst = (evidence.fix_first_evidence ?? "").trim() || improvements[0] || "";
 
   const timestamped_notes = evidence.timestamped_evidence
     .map((t) => {
@@ -626,8 +670,7 @@ export function renderFallbackReport(
     detected_components: evidence.detected_components,
     consistency_modifier: 0,
     confidence: 60,
-    confidence_reason:
-      "Generated from evidence pass (polish step unavailable).",
+    confidence_reason: "AI judgement unavailable; generated only from observation evidence.",
     overall_score:
       Math.round(
         ((evidence.raw_scores.technical ?? 0) +
@@ -637,16 +680,14 @@ export function renderFallbackReport(
           (evidence.raw_scores.professional_presentation ?? 0)) /
           5,
       ) || 0,
-    casting_headline: "Report generated from observation evidence.",
-    casting_insight:
-      "Polish step unavailable — see strengths and improvements below.",
+    casting_headline: "AI judgement unavailable for this report.",
+    casting_insight: "Please retry the analysis to receive the full S10 report judgement.",
     scores: { ...evidence.raw_scores },
     brief_adherence_breakdown: {
       material_compliance: ba?.score_material ?? evidence.raw_scores.brief_adherence,
       technical_compliance: ba?.score_technical ?? evidence.raw_scores.brief_adherence,
       instruction_precision: ba?.score_instruction ?? evidence.raw_scores.brief_adherence,
-      professionalism_signals:
-        ba?.score_professional ?? evidence.raw_scores.brief_adherence,
+      professionalism_signals: ba?.score_professional ?? evidence.raw_scores.brief_adherence,
       note:
         [
           ba?.material_compliance,
@@ -666,13 +707,19 @@ export function renderFallbackReport(
       professional_presentation: cn.professional_presentation ?? "",
     },
     strengths:
-      strengths.length > 0 ? strengths : ["Performance captured for review."],
+      strengths.length > 0
+        ? strengths
+        : ["AI-authored strengths unavailable; retry the analysis for performer-facing judgement."],
     improvements:
-      improvements.length > 0 ? improvements : ["Continue refining the take."],
+      improvements.length > 0
+        ? improvements
+        : [
+            "AI-authored improvements unavailable; retry the analysis for performer-facing judgement.",
+          ],
     fix_first: fixFirst,
     timestamped_notes,
     coaching_drills: [
-      "Re-run the take with sharper choices on the strongest moment.",
+      "Retry the analysis before treating this report as performer-facing guidance.",
     ],
     submission_risk_flags,
     casting_risk_explanations,
@@ -680,7 +727,6 @@ export function renderFallbackReport(
     role_fit_modifier: 0,
     role_fit_confidence: evidence.role_fit_confidence ?? "low",
     presentation_notes: evidence.presentation_evidence.slice(0, 6),
-    at_risk:
-      evidence.raw_scores.brief_adherence < 40 && mode === "brief",
+    at_risk: evidence.raw_scores.brief_adherence < 40 && mode === "brief",
   };
 }

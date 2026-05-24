@@ -202,7 +202,7 @@ The code should provide:
 - AI repair prompting;
 - red-line filtering;
 - rendering;
-- QA artefacts.
+- diagnostics where useful.
 
 The code must not invent professional feedback such as strengths, technique notes, optional polish or readiness rationale.
 
@@ -344,13 +344,13 @@ The report must explain what the score means in relation to:
 
 Use this as the default terminology map unless README or a calibration document defines a newer one.
 
-| Score band | Terminology | Typical report meaning |
-|---|---|---|
-| 0–39 | Not submission-ready / not assessable | Serious missing evidence, technical blocker, or incomplete package. |
-| 40–54 | Retake required if possible | Major brief, performance or presentation issue blocks submission readiness. |
-| 55–69 | Review carefully | Some usable material, but meaningful risk, uncertainty or important improvement remains. |
-| 70–84 | Submit if deadline is close | Submission-supporting tape with optional polish or manageable caveats. |
-| 85–100 | Submit / strong submission | Brief-complete, assessable, strong for selected level, no mandatory blocker. |
+| Score band | Terminology                           | Typical report meaning                                                                   |
+| ---------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 0–39       | Not submission-ready / not assessable | Serious missing evidence, technical blocker, or incomplete package.                      |
+| 40–54      | Retake required if possible           | Major brief, performance or presentation issue blocks submission readiness.              |
+| 55–69      | Review carefully                      | Some usable material, but meaningful risk, uncertainty or important improvement remains. |
+| 70–84      | Submit if deadline is close           | Submission-supporting tape with optional polish or manageable caveats.                   |
+| 85–100     | Submit / strong submission            | Brief-complete, assessable, strong for selected level, no mandatory blocker.             |
 
 The verdict is not determined by score alone. Required brief failures, missing material, non-assessability or critical technical issues can override the numerical band.
 
@@ -604,13 +604,25 @@ Product toggles should live in database/admin config where possible.
 
 When rebuilding S10, work in this order:
 
-1. Define AI questions for each report module.
-2. Validate AI output quality.
-3. Pipe AI output to the report UI.
-4. Test route/PDF usefulness.
-5. Add QA artefacts and release proof.
+1. AI report module question map and active prompt replacement.
+2. Brief intelligence and requirement extraction.
+3. Tape observation and component verification.
+4. Brief achievement matrix.
+5. Readiness recommendation and score semantics.
+6. Fix hierarchy and next-action plan.
+7. Strengths, preserve and professional critique.
+8. Technique-library commentary.
+9. Timestamped/time-banded commentary.
+10. Report model to UI piping.
+11. Canary A incomplete mandatory package fixture.
+12. Strong complete professional fixture.
+13. Same-video and comparison handling.
+14. Operator assumption checkpoints.
+15. Route/PDF content acceptance.
 
 Do not start with payload gates, source-kind restrictions or QA artefact architecture before the report is useful.
+
+Runtime provenance, GateTrace, ValidatorTrace, public/private parity, release proof and full QA artefact reconciliation are post-S10 roadmap work unless a later slice explicitly scopes them.
 
 ## Definition of done
 
@@ -624,7 +636,6 @@ A slice is not done unless:
 - no generic thin-shell copy is introduced;
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
-- QA artefact status is clear;
 - production/customer/Level 2 approval is not claimed unless explicitly in scope.
 
 ## Forbidden failure modes
