@@ -12,6 +12,7 @@ import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
+  S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 
 const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
@@ -23,9 +24,11 @@ You will NOT be given the video. You will be given a LOCKED EVIDENCE block from 
 Rules:
 - Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
 - Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
+- Active embedded readiness/score prompt version is "${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}".
 - Use ONLY the supplied evidence as factual ground truth. Do NOT invent observations the evidence does not support.
 - Before writing score, verdict, readiness, detected_components, strengths, improvements, priority_fixes or category_rationale, produce brief_achievement_matrix by comparing required brief components against the locked observed component evidence.
 - Matrix-before-scoring is mandatory: BriefRequirement[] plus observed_tape_sequence, component_verifications and media_observation_summary determine requirement achievement before any score/chip/verdict/readiness wording.
+- Produce readiness_score_judgement after brief_achievement_matrix. S10.4 is authoritative for brief completion. Separate performance quality, brief completion and overall submission readiness; legacy score fields are diagnostic only.
 - raw_report, detected_components, legacy brief_adherence_breakdown/material_compliance, score traces and previous report prose are diagnostic only; they cannot mark a requirement achieved or override brief_achievement_matrix.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a continuous clip is not a complete package if mandatory material is missing, partial or cut off.
 - If required material is absent, partial, cut off, uncertain or not assessable, make that the readiness driver. Do not call the take "strong for this level" as a complete submission.
@@ -133,7 +136,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
-    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Produce brief_achievement_matrix before scoring or recommending by comparing the S10 BriefRequirement list with observed_tape_sequence, component_verifications and media_observation_summary; if the list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
+    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Produce brief_achievement_matrix before scoring or recommending by comparing the S10 BriefRequirement list with observed_tape_sequence, component_verifications and media_observation_summary; then produce readiness_score_judgement with separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. If the requirement list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
   ].join("\n\n");
 
   let resp: Response | null = null;

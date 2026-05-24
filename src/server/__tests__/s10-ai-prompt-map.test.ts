@@ -17,6 +17,7 @@ import {
   S10_OBSERVATION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROMPT_INVENTORY,
+  S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
   S10_REPORT_MODULE_COVERAGE,
 } from "@/server/s10-report-prompt-map.server";
 
@@ -46,6 +47,11 @@ describe("S10.1 AI prompt map", () => {
           status: "active",
         }),
         expect.objectContaining({
+          promptVersion: S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
+          runtimeStage: "analysis_step_2_post_matrix_readiness_score",
+          status: "active",
+        }),
+        expect.objectContaining({
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           sourceFile: "src/server/report-polish.server.ts",
           runtimeStage: "analysis_step_2_judgement_or_report_generation",
@@ -59,6 +65,10 @@ describe("S10.1 AI prompt map", () => {
         }),
         expect.objectContaining({
           promptVersion: "legacy_brief_adherence_material_compliance_diagnostic_only",
+          status: "diagnostic_only",
+        }),
+        expect.objectContaining({
+          promptVersion: "legacy_score_readiness_diagnostic_only",
           status: "diagnostic_only",
         }),
         expect.objectContaining({
@@ -163,8 +173,11 @@ describe("S10.1 AI prompt map", () => {
 
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION);
+    expect(POLISH_SYSTEM_PROMPT).toContain(S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain("verify required brief components");
     expect(POLISH_SYSTEM_PROMPT).toContain("brief_achievement_matrix");
+    expect(POLISH_SYSTEM_PROMPT).toContain("readiness_score_judgement");
+    expect(POLISH_SYSTEM_PROMPT).toContain("performance_quality_score");
     expect(POLISH_SYSTEM_PROMPT).toContain("observed_tape_sequence");
     expect(POLISH_SYSTEM_PROMPT).toContain("component_verifications");
     expect(POLISH_SYSTEM_PROMPT).toContain("category_rationale");
@@ -175,7 +188,9 @@ describe("S10.1 AI prompt map", () => {
     expect(processSrc).toContain("S10_OBSERVATION_PROMPT_VERSION");
     expect(processSrc).toContain("S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION");
     expect(processSrc).toContain("S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION");
+    expect(processSrc).toContain("S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION");
     expect(processSrc).toContain("Produce brief_achievement_matrix before any score");
+    expect(processSrc).toContain("readiness_score_judgement");
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]evidence_pass_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]single_pass_analysis_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]two_step_report_polish_current['"]/);
@@ -189,6 +204,7 @@ describe("S10.1 AI prompt map", () => {
     expect(polishSrc).toContain("component_verifications");
     expect(polishSrc).toContain("media_observation_summary");
     expect(polishSrc).toContain("Matrix-before-scoring");
+    expect(polishSrc).toContain("readiness_score_judgement");
   });
 
   it("represents Canary A component checks before score or recommendation", () => {

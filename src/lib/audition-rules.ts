@@ -466,6 +466,100 @@ export type BriefAchievementMatrix = {
   requirement_results: RequirementAchievementResult[];
 };
 
+export type ReadinessDecision =
+  | "submit"
+  | "submit_if_deadline_is_close"
+  | "review_carefully"
+  | "retake_required_if_possible";
+
+export type ReadinessScoreBandLabel =
+  | "not_submission_ready"
+  | "retake_required_if_possible"
+  | "review_carefully"
+  | "submit_if_deadline_is_close"
+  | "submit_strong_submission";
+
+export type S10CategoryScoreId =
+  | "acting"
+  | "vocal"
+  | "movement"
+  | "dance"
+  | "audio"
+  | "technical"
+  | "brief_adherence"
+  | "professional_presentation"
+  | "self_tape_presentation"
+  | "mt_package"
+  | "other";
+
+export type S10ComponentScoreType =
+  | "acting_scene"
+  | "song"
+  | "dance"
+  | "slate"
+  | "package"
+  | "technical"
+  | "other";
+
+export type CategoryScore = {
+  category_id: S10CategoryScoreId;
+  score: number | null;
+  score_basis: string;
+  what_works: string;
+  why_not_full_score: string;
+  close_gap: string;
+  confidence: "low" | "medium" | "high";
+  blocked_or_not_assessable_reason: string | null;
+};
+
+export type ComponentScore = {
+  component_type: S10ComponentScoreType;
+  linked_requirement_ids: string[];
+  observed_status: "present" | "partially_present" | "absent" | "not_assessable" | "uncertain";
+  completion_status: "complete" | "incomplete" | "cut_off" | "not_applicable" | "uncertain";
+  score: number | null;
+  score_basis: string;
+  confidence: "low" | "medium" | "high";
+  cannot_score_reason: string | null;
+};
+
+export type ScoreContradictionWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  capped_value: string | number | boolean | null;
+  matrix_reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "score_trace"
+    | "detected_components"
+    | "prior_prose";
+};
+
+export type ReadinessAndScoreJudgement = {
+  decision: ReadinessDecision;
+  headline: string;
+  rationale: string[];
+  confidence: "low" | "medium" | "high";
+  performance_quality_score: number | null;
+  brief_completion_score: number | null;
+  overall_submission_readiness_score: number;
+  score_band_label: ReadinessScoreBandLabel;
+  score_explanation: string;
+  brief_blocker_override: boolean;
+  performance_quality_summary: string;
+  brief_completion_summary: string;
+  technical_assessability_summary: string;
+  selected_level_calibration_summary: string;
+  professional_nuance_summary: string;
+  category_scores: CategoryScore[];
+  category_rationale: Record<string, unknown>;
+  component_scores: ComponentScore[];
+  component_score_notes: string[];
+  score_contradiction_warnings: ScoreContradictionWarning[];
+  repair_prompt_status: "not_needed" | "classified_contradictory";
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;

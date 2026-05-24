@@ -75,11 +75,13 @@ import {
   S10_OBSERVATION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
+  S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import {
   applyBriefAchievementCompatibilityCaps,
   normaliseBriefAchievementMatrix,
 } from "./s10-brief-achievement-matrix.server";
+import { applyReadinessScoreSemantics } from "./s10-readiness-score-semantics.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -365,6 +367,187 @@ const REPORT_TOOL = {
             "requirement_results",
           ],
         },
+        readiness_score_judgement: {
+          type: "object",
+          description:
+            "S10 readiness and score semantics. Produce after brief_achievement_matrix. Separate performance quality, brief completion and overall submission readiness; legacy scores are diagnostic only.",
+          properties: {
+            decision: {
+              type: "string",
+              enum: [
+                "submit",
+                "submit_if_deadline_is_close",
+                "review_carefully",
+                "retake_required_if_possible",
+              ],
+            },
+            headline: { type: "string" },
+            rationale: { type: "array", items: { type: "string" } },
+            confidence: { type: "string", enum: ["low", "medium", "high"] },
+            performance_quality_score: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+            brief_completion_score: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+            overall_submission_readiness_score: { type: "integer", minimum: 0, maximum: 100 },
+            score_band_label: {
+              type: "string",
+              enum: [
+                "not_submission_ready",
+                "retake_required_if_possible",
+                "review_carefully",
+                "submit_if_deadline_is_close",
+                "submit_strong_submission",
+              ],
+            },
+            score_explanation: { type: "string" },
+            brief_blocker_override: { type: "boolean" },
+            performance_quality_summary: { type: "string" },
+            brief_completion_summary: { type: "string" },
+            technical_assessability_summary: { type: "string" },
+            selected_level_calibration_summary: { type: "string" },
+            professional_nuance_summary: { type: "string" },
+            category_scores: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  category_id: {
+                    type: "string",
+                    enum: [
+                      "acting",
+                      "vocal",
+                      "movement",
+                      "dance",
+                      "audio",
+                      "technical",
+                      "brief_adherence",
+                      "professional_presentation",
+                      "self_tape_presentation",
+                      "mt_package",
+                      "other",
+                    ],
+                  },
+                  score: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+                  score_basis: { type: "string" },
+                  what_works: { type: "string" },
+                  why_not_full_score: { type: "string" },
+                  close_gap: { type: "string" },
+                  confidence: { type: "string", enum: ["low", "medium", "high"] },
+                  blocked_or_not_assessable_reason: { type: ["string", "null"] },
+                },
+                required: [
+                  "category_id",
+                  "score",
+                  "score_basis",
+                  "what_works",
+                  "why_not_full_score",
+                  "close_gap",
+                  "confidence",
+                  "blocked_or_not_assessable_reason",
+                ],
+              },
+            },
+            category_rationale: { type: "object" },
+            component_scores: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  component_type: {
+                    type: "string",
+                    enum: [
+                      "acting_scene",
+                      "song",
+                      "dance",
+                      "slate",
+                      "package",
+                      "technical",
+                      "other",
+                    ],
+                  },
+                  linked_requirement_ids: { type: "array", items: { type: "string" } },
+                  observed_status: {
+                    type: "string",
+                    enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+                  },
+                  completion_status: {
+                    type: "string",
+                    enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+                  },
+                  score: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+                  score_basis: { type: "string" },
+                  confidence: { type: "string", enum: ["low", "medium", "high"] },
+                  cannot_score_reason: { type: ["string", "null"] },
+                },
+                required: [
+                  "component_type",
+                  "linked_requirement_ids",
+                  "observed_status",
+                  "completion_status",
+                  "score",
+                  "score_basis",
+                  "confidence",
+                  "cannot_score_reason",
+                ],
+              },
+            },
+            component_score_notes: { type: "array", items: { type: "string" } },
+            score_contradiction_warnings: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  affected_field: { type: "string" },
+                  original_value: { type: ["string", "number", "boolean", "null"] },
+                  capped_value: { type: ["string", "number", "boolean", "null"] },
+                  matrix_reason: { type: "string" },
+                  source: {
+                    type: "string",
+                    enum: [
+                      "s10_ai_judgement",
+                      "legacy_raw_report",
+                      "score_trace",
+                      "detected_components",
+                      "prior_prose",
+                    ],
+                  },
+                },
+                required: [
+                  "affected_field",
+                  "original_value",
+                  "capped_value",
+                  "matrix_reason",
+                  "source",
+                ],
+              },
+            },
+            repair_prompt_status: {
+              type: "string",
+              enum: ["not_needed", "classified_contradictory"],
+            },
+          },
+          required: [
+            "decision",
+            "headline",
+            "rationale",
+            "confidence",
+            "performance_quality_score",
+            "brief_completion_score",
+            "overall_submission_readiness_score",
+            "score_band_label",
+            "score_explanation",
+            "brief_blocker_override",
+            "performance_quality_summary",
+            "brief_completion_summary",
+            "technical_assessability_summary",
+            "selected_level_calibration_summary",
+            "professional_nuance_summary",
+            "category_scores",
+            "category_rationale",
+            "component_scores",
+            "component_score_notes",
+            "score_contradiction_warnings",
+            "repair_prompt_status",
+          ],
+        },
         category_notes: {
           type: "object",
           properties: {
@@ -571,6 +754,7 @@ const REPORT_TOOL = {
         "scores",
         "brief_adherence_breakdown",
         "brief_achievement_matrix",
+        "readiness_score_judgement",
         "category_notes",
         "strengths",
         "improvements",
@@ -597,9 +781,11 @@ You will receive the video itself, selected performer level, optional casting br
 Single-pass S10 recovery rules:
 - Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
 - Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
+- Active embedded readiness/score prompt version is "${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
+- Produce readiness_score_judgement after brief_achievement_matrix. Separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a technically continuous clip is not a complete package if mandatory material is absent, partial or cut off.
 - For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
 - Populate detected_components only from media evidence, never from brief requests alone.
@@ -2670,6 +2856,28 @@ export async function runProcessTake(
       report.role_fit_confidence = "low";
     }
 
+    // ---- S10.5 readiness / score semantics ----
+    // AI-authored judgement is preserved, but effective report fields are
+    // matrix-constrained so high performance/audio scores cannot hide missing
+    // mandatory brief material.
+    const readinessSemantics = applyReadinessScoreSemantics({
+      report: report as Record<string, unknown>,
+      matrix: report.brief_achievement_matrix,
+      currentOverallScore: overall,
+      selectedLevel: auditionLevel,
+    });
+    overall = readinessSemantics.overall;
+    if (readinessSemantics.capped) {
+      console.log("[take-pipeline] s10_readiness_score_semantics_applied", {
+        take_id: takeId,
+        overall_submission_readiness_score:
+          readinessSemantics.judgement.overall_submission_readiness_score,
+        decision: readinessSemantics.judgement.decision,
+        repair_prompt_status: readinessSemantics.judgement.repair_prompt_status,
+        warning_count: readinessSemantics.warnings.length,
+      });
+    }
+
     // ---- Presentation notes — safety filter ----
     const presentationNotes: string[] = Array.isArray(report.presentation_notes)
       ? report.presentation_notes
@@ -2976,6 +3184,18 @@ export async function runProcessTake(
     ) {
       const reason = verdict.reason;
       if (reason) pushReason(reason);
+    }
+    const readinessJudgement = report.readiness_score_judgement as
+      | { rationale?: unknown; brief_blocker_override?: unknown }
+      | undefined;
+    if (
+      readinessJudgement?.brief_blocker_override === true &&
+      Array.isArray(readinessJudgement.rationale)
+    ) {
+      const firstReadinessReason = readinessJudgement.rationale.find(
+        (item): item is string => typeof item === "string" && item.trim().length > 0,
+      );
+      if (firstReadinessReason) pushReason(firstReadinessReason);
     }
     // Hard fallback: if verdict is non-positive but no reason, add a generic line.
     if (
@@ -3340,6 +3560,7 @@ export async function runProcessTake(
       block_reasons: blockReasons,
       extraction_confidence: extractionConfidence,
       score_discrepancy: scoreDiscrepancy,
+      readiness_score_judgement: report.readiness_score_judgement ?? null,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,

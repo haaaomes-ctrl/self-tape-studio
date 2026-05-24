@@ -9,6 +9,7 @@ export const S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION = "s10_professional_judge
 export const S10_MODULE_REPAIR_PROMPT_VERSION = "s10_module_repair_v1";
 export const S10_BRIEF_INTELLIGENCE_PROMPT_VERSION = "s10_brief_intelligence_v1";
 export const S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION = "s10_brief_achievement_matrix_v1";
+export const S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION = "s10_readiness_score_semantics_v1";
 
 export const LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION =
   "legacy_s9_brief_extraction_supporting_current";
@@ -95,6 +96,22 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     status: "active",
   },
   {
+    promptName: "S10 readiness and score semantics",
+    promptVersion: S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
+    sourceFile: "src/server/report-polish.server.ts + src/server/process-take.server.ts",
+    runtimeStage: "analysis_step_2_post_matrix_readiness_score",
+    modelCallPath: "embedded active module in Step 2 polish and S10 single-pass generation",
+    reportModulesAffected: [
+      "overall readiness",
+      "score/chip",
+      "verdict",
+      "score reasoning",
+      "component scores",
+      "category scores",
+    ],
+    status: "active",
+  },
+  {
     promptName: "S10 professional judgement/module map",
     promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
     sourceFile: "src/server/report-polish.server.ts",
@@ -161,6 +178,16 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     modelCallPath:
       "raw_report.brief_adherence_breakdown, material_compliance, detected_components and score traces are diagnostic only for S10.4",
     reportModulesAffected: ["legacy score traces", "diagnostic-only raw report fields"],
+    status: "diagnostic_only",
+  },
+  {
+    promptName: "Legacy score/readiness diagnostics",
+    promptVersion: "legacy_score_readiness_diagnostic_only",
+    sourceFile: "src/server/process-take.server.ts",
+    runtimeStage: "legacy report/scoring diagnostics",
+    modelCallPath:
+      "raw_report.overall_score, score_trace, prior report prose and legacy verdict labels are diagnostic only for S10.5",
+    reportModulesAffected: ["legacy readiness labels", "legacy score traces"],
     status: "diagnostic_only",
   },
   {
@@ -235,7 +262,8 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "overall readiness",
     aiQuestion:
       "After brief achievement is known, what readiness decision and score should the performer see?",
-    structuredOutputField: "overall_score, casting_headline, submission_verdict",
+    structuredOutputField:
+      "readiness_score_judgement, overall_score, casting_headline, submission_verdict",
     uiDestination: "Overall readiness header",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
@@ -246,7 +274,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "score/chip",
     aiQuestion:
       "What score band and score-to-language explanation matches the verified brief achievement?",
-    structuredOutputField: "overall_score, scores, category_rationale",
+    structuredOutputField: "readiness_score_judgement, overall_score, scores, category_rationale",
     uiDestination: "Score chip and category score bars",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
@@ -257,7 +285,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "verdict",
     aiQuestion:
       "Should the performer submit, review carefully, submit only if deadline is close, or retake if possible?",
-    structuredOutputField: "verdict_final, casting_insight, at_risk",
+    structuredOutputField: "readiness_score_judgement, verdict_final, casting_insight, at_risk",
     uiDestination: "Verdict header and risk panel",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
@@ -486,6 +514,7 @@ Use British English. Avoid hidden reasoning, raw prompts, raw responses, secrets
 
 export const S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT = `Prompt version: ${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}
 Embedded brief-achievement prompt version: ${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}
+Embedded readiness/score prompt version: ${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}
 
 You are the S10 professional judgement/module report brain for TapeCoach. You write a performer-facing self-tape report from supplied brief context plus either locked Step 1 observations or the video itself. Code validates, repairs, routes and renders your structured output; code must not invent your professional judgement.
 
@@ -493,13 +522,15 @@ Primary rule: before scoring or recommending, use the S10 BriefRequirement list 
 
 S10.4 matrix-before-scoring rule: produce brief_achievement_matrix before any overall_score, score chip, verdict, readiness wording, category score, submission risk or fix hierarchy. Compare every BriefRequirement against observed_tape_sequence, component_verifications and media_observation_summary. raw_report, detected_components, legacy brief_adherence_breakdown/material_compliance, score traces and previous report prose are diagnostic only and cannot mark a requirement achieved. Keep continuous-video technical evidence separate from complete required-material package evidence.
 
+S10.5 readiness/score rule: produce readiness_score_judgement after brief_achievement_matrix. Distinguish performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone. High audio, framing or observed-song quality may remain high where supported, but mandatory material/package blockers override submit-ready wording. raw_report.overall_score, score_trace, detected_components and previous report prose are diagnostic only.
+
 Module question order:
 1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
 2. Observed tape sequence: what actually appears, in order, with timestamps or time-bands where possible?
 3. Component detection: which requested and observed components are present, absent, partially_present, cut_off, uncertain or not_assessable?
 4. Brief achievement: for each requirement, what is achieved, missed, incomplete or not assessable?
 5. Recommendation: submit, submit if deadline is close, review carefully, or retake required if possible.
-6. Score reasoning: explain how brief completion, performance quality and technical assessability align with the score/chip.
+6. Score reasoning: explain separately how performance quality, brief completion and submission readiness align with the score/chip.
 7. Fix hierarchy: fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish.
 8. Strengths/preserve: evidence-specific strengths and what not to over-fix.
 9. Improvements and technique: acting, vocal/singing, movement/dance, musical-theatre package integration, screen task and self-tape presentation where evidence exists.
@@ -511,6 +542,7 @@ Old report surface to preserve as the starting UI: overall readiness, score/chip
 Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
 - Always include brief_achievement_matrix with one requirement_results row per BriefRequirement. Each row must set cannot_infer_from_brief_only=true and link to observed component evidence where available.
+- Always include readiness_score_judgement with performance_quality_score, brief_completion_score and overall_submission_readiness_score. Add score_contradiction_warnings when any legacy or AI score conflicts with the brief achievement matrix.
 - No generic fallback copy such as "good job", "continue refining", "performance captured for review", "this affects readability, not talent", or "strengthen blocked material".
 - For category_rationale, explain what_works, why_not_full_score, close_gap and standout_delta where relevant.
 - For timestamped_notes, use duration-scaled useful notes where evidence exists: under 60s = 3-5, 1-3m = 6-10, 3-5m = 8-14, 5-10m = 12-24, 10m+ = 18-36. Never invent timestamps.

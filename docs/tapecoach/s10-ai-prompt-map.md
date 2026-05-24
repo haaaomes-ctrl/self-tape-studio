@@ -11,10 +11,12 @@ Runtime provenance, GateTrace, ValidatorTrace, public/private parity and QA proo
 | S10 brief intelligence                            | `s10_brief_intelligence_v1`                                  | `src/server/extract-brief.server.ts`                                       | Preflight brief extraction                            | Active                          |
 | S10 observation/module map                        | `s10_observation_module_map_v1`                              | `src/server/evidence-pass.server.ts`                                       | Step 1 evidence / observation                         | Active                          |
 | S10 brief achievement matrix                      | `s10_brief_achievement_matrix_v1`                            | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts` | Step 2 / single-pass pre-score requirement comparison | Active embedded module          |
+| S10 readiness and score semantics                 | `s10_readiness_score_semantics_v1`                           | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts` | Step 2 / single-pass post-matrix readiness scoring    | Active embedded module          |
 | S10 professional judgement/module map             | `s10_professional_judgement_module_map_v1`                   | `src/server/report-polish.server.ts`                                       | Step 2 judgement / report generation                  | Active                          |
 | S10 single-pass professional judgement/module map | `s10_professional_judgement_module_map_v1`                   | `src/server/process-take.server.ts`                                        | Single-pass recovery                                  | Active                          |
 | S10 module repair                                 | `s10_module_repair_v1`                                       | `src/server/s10-report-prompt-map.server.ts`                               | Repair prompt template                                | Active template                 |
 | Legacy brief adherence/material compliance        | `legacy_brief_adherence_material_compliance_diagnostic_only` | `src/server/process-take.server.ts`                                        | Legacy raw report / score fields                      | Diagnostic only                 |
+| Legacy score/readiness fields                     | `legacy_score_readiness_diagnostic_only`                     | `src/server/process-take.server.ts`                                        | Legacy score traces / verdict prose                   | Diagnostic only                 |
 | Legacy S9 brief extraction                        | `legacy_s9_brief_extraction_supporting_current`              | `src/server/extract-brief.server.ts`                                       | Archived coarse brief extraction                      | Legacy only                     |
 | Legacy S9 evidence pass                           | `legacy_s9_evidence_pass_current`                            | `src/server/evidence-pass.server.ts`                                       | Archived Step 1 label                                 | Legacy only                     |
 | Legacy S9 single pass                             | `legacy_s9_single_pass_analysis_current`                     | `src/server/process-take.server.ts`                                        | Archived single-pass label                            | Legacy only                     |
@@ -88,6 +90,21 @@ S10.4 rules:
 - mandatory material that is absent, partial, cut off, uncertain or not assessable prevents `overall_status=achieved`;
 - unsupported admin/process requirements become `final_check` or `not_assessable`, not performance criticism;
 - continuous-video technical evidence remains separate from complete required-material package evidence.
+
+## S10.5 Readiness Recommendation And Score Semantics
+
+The active Step 2 and single-pass prompts embed `s10_readiness_score_semantics_v1`. After `brief_achievement_matrix`, the AI must produce `readiness_score_judgement` that separates `performance_quality_score`, `brief_completion_score` and `overall_submission_readiness_score`.
+
+The visible overall score represents submission readiness. Category/component scores may still recognise strong observed performance where supported. Mandatory material/package blockers can override readiness language and visible overall readiness. Preferred, optional and final-check gaps do not automatically cap readiness unless the AI explains concrete submission-readiness impact.
+
+S10.5 rules:
+
+- S10.4 is authoritative for brief completion;
+- high audio, framing or observed-song scores may remain high when supported;
+- absent Side 1 means acting-scene score is unavailable or not assessable;
+- partial or cut-off song may be scored only for the observed portion;
+- `submit_if_deadline_is_close` is not allowed for assessable missing/incomplete mandatory material unless framed as emergency/partial submission outside normal readiness;
+- every cap/downshift emits a `score_contradiction_warning` with original value, capped value, matrix reason, affected field and source.
 
 ## Deterministic Inputs Code May Supply
 
