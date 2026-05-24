@@ -117,8 +117,6 @@ function StorageDownloadsPage() {
   const zipSelected = useServerFn(zipSelectedArtifacts);
   const deleteSelected = useServerFn(deleteSelectedArtifacts);
 
-  const clientEmail = user?.email ?? null;
-  const clientNormalized = normalizeEmail(clientEmail);
 
   const [whoState, setWhoState] = useState<{
     loading: boolean;
