@@ -645,6 +645,87 @@ export type S10NextActionPlan = {
   confidence: "low" | "medium" | "high";
 };
 
+export type S10ProfessionalCritiqueSourceCategory =
+  | "brief"
+  | "performance"
+  | "acting"
+  | "vocal"
+  | "movement"
+  | "technical"
+  | "presentation"
+  | "package"
+  | "limitation";
+
+export type S10ProfessionalCritiqueComponentStatus =
+  | "present"
+  | "partially_present"
+  | "absent"
+  | "not_assessable"
+  | "uncertain"
+  | "not_applicable";
+
+export type S10ProfessionalCritiqueWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_category_rationale"
+    | "legacy_category_notes"
+    | "legacy_coaching_drills"
+    | "legacy_technique_trace"
+    | "prior_prose"
+    | "s10_normaliser";
+  internal_only: true;
+};
+
+export type S10StrengthItem = {
+  id: string;
+  title: string;
+  detail: string;
+  why_it_matters: string;
+  evidence_summary: string;
+  source_category: S10ProfessionalCritiqueSourceCategory;
+  linked_requirement_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_readiness_reason_ids: string[];
+  linked_fix_ids: string[];
+  confidence: "low" | "medium" | "high";
+  is_component_verified: boolean;
+  component_status: S10ProfessionalCritiqueComponentStatus;
+  applies_to_observed_portion_only: boolean;
+  is_generic_fallback: false;
+};
+
+export type S10PreserveItem = {
+  id: string;
+  title: string;
+  detail: string;
+  evidence_summary: string;
+  why_to_preserve: string;
+  linked_component_verification_ids: string[];
+  confidence: "low" | "medium" | "high";
+  is_generic_fallback: false;
+};
+
+export type S10ProfessionalCritique = {
+  summary: string;
+  performance_strengths: S10StrengthItem[];
+  brief_package_strengths: S10StrengthItem[];
+  technical_presentation_strengths: S10StrengthItem[];
+  vocal_or_singing_strengths: S10StrengthItem[];
+  acting_strengths: S10StrengthItem[];
+  movement_or_physical_strengths: S10StrengthItem[];
+  professional_presentation_notes: S10StrengthItem[];
+  preserve: S10PreserveItem[];
+  do_not_overfix: S10PreserveItem[];
+  critique_limitations: string[];
+  contradiction_warnings: S10ProfessionalCritiqueWarning[];
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;

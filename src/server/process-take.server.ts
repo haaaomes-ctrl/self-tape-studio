@@ -77,6 +77,7 @@ import {
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
   S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
+  S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import {
   applyBriefAchievementCompatibilityCaps,
@@ -84,6 +85,10 @@ import {
 } from "./s10-brief-achievement-matrix.server";
 import { applyReadinessScoreSemantics } from "./s10-readiness-score-semantics.server";
 import { applyS10FixHierarchyNextAction } from "./s10-fix-hierarchy-next-action.server";
+import {
+  applyS10ProfessionalCritique,
+  scrubS10ProfessionalCritiqueProjection,
+} from "./s10-strengths-preserve-professional-critique.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -200,6 +205,125 @@ const S10_FIX_ITEM_SCHEMA = {
     "is_generic_fallback",
     "source_authority",
     "legacy_source_used",
+  ],
+};
+
+const S10_PROFESSIONAL_CRITIQUE_WARNING_SCHEMA = {
+  type: "object",
+  properties: {
+    affected_field: { type: "string" },
+    original_value: { type: ["string", "number", "boolean", "null"] },
+    corrected_value: { type: ["string", "number", "boolean", "null"] },
+    reason: { type: "string" },
+    source: {
+      type: "string",
+      enum: [
+        "s10_ai_judgement",
+        "legacy_raw_report",
+        "legacy_category_rationale",
+        "legacy_category_notes",
+        "legacy_coaching_drills",
+        "legacy_technique_trace",
+        "prior_prose",
+        "s10_normaliser",
+      ],
+    },
+    internal_only: { type: "boolean", enum: [true] },
+  },
+  required: [
+    "affected_field",
+    "original_value",
+    "corrected_value",
+    "reason",
+    "source",
+    "internal_only",
+  ],
+};
+
+const S10_STRENGTH_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    detail: { type: "string" },
+    why_it_matters: { type: "string" },
+    evidence_summary: { type: "string" },
+    source_category: {
+      type: "string",
+      enum: [
+        "brief",
+        "performance",
+        "acting",
+        "vocal",
+        "movement",
+        "technical",
+        "presentation",
+        "package",
+        "limitation",
+      ],
+    },
+    linked_requirement_ids: { type: "array", items: { type: "string" } },
+    linked_component_verification_ids: { type: "array", items: { type: "string" } },
+    linked_matrix_result_ids: { type: "array", items: { type: "string" } },
+    linked_readiness_reason_ids: { type: "array", items: { type: "string" } },
+    linked_fix_ids: { type: "array", items: { type: "string" } },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    is_component_verified: { type: "boolean" },
+    component_status: {
+      type: "string",
+      enum: [
+        "present",
+        "partially_present",
+        "absent",
+        "not_assessable",
+        "uncertain",
+        "not_applicable",
+      ],
+    },
+    applies_to_observed_portion_only: { type: "boolean" },
+    is_generic_fallback: { type: "boolean", enum: [false] },
+  },
+  required: [
+    "id",
+    "title",
+    "detail",
+    "why_it_matters",
+    "evidence_summary",
+    "source_category",
+    "linked_requirement_ids",
+    "linked_component_verification_ids",
+    "linked_matrix_result_ids",
+    "linked_readiness_reason_ids",
+    "linked_fix_ids",
+    "confidence",
+    "is_component_verified",
+    "component_status",
+    "applies_to_observed_portion_only",
+    "is_generic_fallback",
+  ],
+};
+
+const S10_PRESERVE_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    detail: { type: "string" },
+    evidence_summary: { type: "string" },
+    why_to_preserve: { type: "string" },
+    linked_component_verification_ids: { type: "array", items: { type: "string" } },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    is_generic_fallback: { type: "boolean", enum: [false] },
+  },
+  required: [
+    "id",
+    "title",
+    "detail",
+    "evidence_summary",
+    "why_to_preserve",
+    "linked_component_verification_ids",
+    "confidence",
+    "is_generic_fallback",
   ],
 };
 
@@ -718,6 +842,70 @@ const REPORT_TOOL = {
             "confidence",
           ],
         },
+        s10_professional_critique: {
+          type: "object",
+          description:
+            "S10 authoritative strengths, preserve guidance and broad professional critique. Produce after s10_fix_hierarchy/s10_next_action_plan. Strengths must be grounded in verified S10 component evidence; absent or unverified components produce limitations, not praise. Detailed technique-library commentary is S10.8.",
+          properties: {
+            summary: { type: "string" },
+            performance_strengths: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            brief_package_strengths: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            technical_presentation_strengths: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            vocal_or_singing_strengths: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            acting_strengths: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            movement_or_physical_strengths: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            professional_presentation_notes: {
+              type: "array",
+              items: S10_STRENGTH_ITEM_SCHEMA,
+              maxItems: 8,
+            },
+            preserve: { type: "array", items: S10_PRESERVE_ITEM_SCHEMA, maxItems: 8 },
+            do_not_overfix: { type: "array", items: S10_PRESERVE_ITEM_SCHEMA, maxItems: 8 },
+            critique_limitations: { type: "array", items: { type: "string" }, maxItems: 12 },
+            contradiction_warnings: {
+              type: "array",
+              items: S10_PROFESSIONAL_CRITIQUE_WARNING_SCHEMA,
+            },
+          },
+          required: [
+            "summary",
+            "performance_strengths",
+            "brief_package_strengths",
+            "technical_presentation_strengths",
+            "vocal_or_singing_strengths",
+            "acting_strengths",
+            "movement_or_physical_strengths",
+            "professional_presentation_notes",
+            "preserve",
+            "do_not_overfix",
+            "critique_limitations",
+            "contradiction_warnings",
+          ],
+        },
         category_notes: {
           type: "object",
           properties: {
@@ -927,6 +1115,7 @@ const REPORT_TOOL = {
         "readiness_score_judgement",
         "s10_fix_hierarchy",
         "s10_next_action_plan",
+        "s10_professional_critique",
         "category_notes",
         "strengths",
         "improvements",
@@ -955,16 +1144,19 @@ Single-pass S10 recovery rules:
 - Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
 - Active embedded readiness/score prompt version is "${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}".
 - Active embedded fix hierarchy / next-action prompt version is "${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}".
+- Active embedded strengths / preserve / professional critique prompt version is "${S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
 - Produce readiness_score_judgement after brief_achievement_matrix. Separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone.
 - Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. matrix-before-fixes and readiness-before-action-plan are mandatory. Missing mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks.
+- Produce s10_professional_critique after s10_fix_hierarchy and s10_next_action_plan. Component verification before strengths is mandatory: absent or unverified components get limitations, not praise; partial/cut-off song strengths must say observed portion only.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a technically continuous clip is not a complete package if mandatory material is absent, partial or cut off.
 - For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
 - Populate detected_components only from media evidence, never from brief requests alone.
 - If mandatory material is missing or incomplete, retake/submission readiness must reflect that even when performance quality or audio is strong.
 - Treat s10_fix_hierarchy and s10_next_action_plan as authoritative. Existing fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are compatibility projections only. raw_report and legacy action fields are diagnostic only unless re-authored through S10 evidence with source tracking.
+- Treat s10_professional_critique as authoritative for strengths, preserve and broad professional notes. Existing strengths, category_notes, category_rationale, presentation_notes and coaching_drills are lossy compatibility projections. Legacy technique traces/prose are diagnostic only.
 - Fill the existing submit_audition_report fields with AI-authored module answers: overall readiness, score/chip, verdict, prioritised fixes, why this score/category_rationale, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk, role fit, presentation notes and next action.
 - Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
 - Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
@@ -3071,6 +3263,28 @@ export async function runProcessTake(
       });
     }
 
+    // ---- S10.7 strengths / preserve / professional critique ----
+    // Normalisation order remains S10.4 matrix, S10.5 readiness, S10.6
+    // actions, then S10.7 critique. Legacy prose is diagnostic only; projected
+    // fields are a lossy compatibility surface until S10.10 rendering.
+    const professionalCritiqueSemantics = applyS10ProfessionalCritique({
+      report: report as Record<string, unknown>,
+      matrix: report.brief_achievement_matrix,
+      readiness: readinessSemantics.judgement,
+      fixHierarchy: fixActionSemantics.hierarchy,
+      nextActionPlan: fixActionSemantics.nextActionPlan,
+      componentVerifications: twoStepEvidence?.component_verifications ?? [],
+      mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+    });
+    if (professionalCritiqueSemantics.warnings.length > 0) {
+      console.log("[take-pipeline] s10_strengths_professional_critique_applied", {
+        take_id: takeId,
+        strength_count: Array.isArray(report.strengths) ? report.strengths.length : 0,
+        limitation_count: professionalCritiqueSemantics.critique.critique_limitations.length,
+        warning_count: professionalCritiqueSemantics.warnings.length,
+      });
+    }
+
     // ---- Presentation notes — safety filter ----
     const presentationNotes: string[] = Array.isArray(report.presentation_notes)
       ? report.presentation_notes
@@ -3723,9 +3937,16 @@ export async function runProcessTake(
       );
       // Re-assign cleaned fields back onto the report (keeps reference stable).
       Object.assign(report, enforcement.report);
+      const s10CritiqueScrub = scrubS10ProfessionalCritiqueProjection(
+        report as unknown as Record<string, unknown>,
+      );
+      if (s10CritiqueScrub.removed > 0) {
+        safetyRewriteApplied = true;
+      }
       console.log("[take-pipeline] output_enforcement_applied", {
         take_id: takeId,
         framing_fixed: framingFixed,
+        s10_professional_critique_projection_removed: s10CritiqueScrub.removed,
         ...enforcement.counters,
       });
     } catch (enfErr) {
@@ -3756,6 +3977,7 @@ export async function runProcessTake(
       readiness_score_judgement: report.readiness_score_judgement ?? null,
       s10_fix_hierarchy: report.s10_fix_hierarchy ?? null,
       s10_next_action_plan: report.s10_next_action_plan ?? null,
+      s10_professional_critique: report.s10_professional_critique ?? null,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,
