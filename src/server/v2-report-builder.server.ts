@@ -296,25 +296,23 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
   const readiness = s10View?.recommendation ?? null;
   const scoreSummary = s10View?.score_summary ?? null;
 
-  const overall =
-    clampScore(scoreSummary?.overall_submission_readiness_score) ??
-    asNum(r.overall_score_final) ??
-    asNum(r.overall_score) ??
-    asNum(r.overall_readiness);
+  const overall = s10View
+    ? clampScore(scoreSummary?.overall_submission_readiness_score)
+    : (asNum(r.overall_score_final) ?? asNum(r.overall_score) ?? asNum(r.overall_readiness));
 
-  const headline = readiness?.headline ?? asStr(r.casting_headline) ?? asStr(r.headline);
-  const insight =
-    readiness?.score_explanation ??
-    s10View?.brief_achievement_matrix?.summary ??
-    asStr(r.casting_insight) ??
-    asStr(r.insight);
+  const headline = s10View
+    ? (readiness?.headline ?? null)
+    : (asStr(r.casting_headline) ?? asStr(r.headline));
+  const insight = s10View
+    ? (readiness?.score_explanation ?? s10View?.brief_achievement_matrix?.summary ?? null)
+    : (asStr(r.casting_insight) ?? asStr(r.insight));
 
   const verdictFromObj = asObj(r.submission_verdict);
-  const verdict =
-    readiness?.decision ??
-    asStr(r.verdict_final) ??
-    asStr(r.verdict) ??
-    (verdictFromObj ? asStr(verdictFromObj.label) : null);
+  const verdict = s10View
+    ? (readiness?.decision ?? null)
+    : (asStr(r.verdict_final) ??
+      asStr(r.verdict) ??
+      (verdictFromObj ? asStr(verdictFromObj.label) : null));
 
   // next_take_plan precedence: explicit v2 field, then a structured legacy
   // object, then derive from `coaching_drills` so re-record steps survive.
@@ -353,6 +351,8 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
           return acc;
         }, {})
       : null;
+  const hasS10Scores = Object.keys(s10Scores ?? {}).length > 0;
+  const hasS10CategoryNotes = Object.keys(s10CategoryNotes ?? {}).length > 0;
 
   const s10Fixes = s10View?.fix_hierarchy
     ? [
@@ -403,11 +403,12 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     insight,
     verdict,
     overall_readiness: overall,
-    scores: Object.keys(s10Scores ?? {}).length > 0 ? s10Scores : asScores(r.scores),
-    category_notes:
-      Object.keys(s10CategoryNotes ?? {}).length > 0
+    scores: s10View ? (hasS10Scores ? s10Scores : null) : asScores(r.scores),
+    category_notes: s10View
+      ? hasS10CategoryNotes
         ? s10CategoryNotes
-        : asCategoryNotes(r.category_notes),
+        : null
+      : asCategoryNotes(r.category_notes),
     brief_adherence_breakdown: s10View
       ? {
           summary: s10View.brief_achievement_matrix?.summary ?? null,

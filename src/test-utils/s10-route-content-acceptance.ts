@@ -87,6 +87,21 @@ const CORE_SOURCE_EXPECTATIONS: S10SourceExpectation[] = [
   { section: "readiness_header", expected_module: /readiness_score_judgement/ },
   { section: "submission_guidance", expected_module: /readiness_score_judgement/ },
   { section: "score_summary", expected_module: /readiness_score_judgement/ },
+  {
+    section: "category_scores",
+    expected_module: /readiness_score_judgement\.category_scores/,
+    allow_specific_limitation: true,
+  },
+  {
+    section: "category_rationale",
+    expected_module: /readiness_score_judgement\.category_rationale/,
+    allow_specific_limitation: true,
+  },
+  {
+    section: "brief_adherence_material_compliance",
+    expected_module: /readiness_score_judgement\.brief_completion_score/,
+    allow_specific_limitation: true,
+  },
   { section: "brief_achievement", expected_module: /brief_achievement_matrix/ },
   { section: "observed_tape", expected_module: /observed_tape_sequence|component_verifications/ },
   { section: "component_breakdown", expected_module: /component_verifications/ },

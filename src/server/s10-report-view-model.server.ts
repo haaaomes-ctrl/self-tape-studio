@@ -36,6 +36,9 @@ export type S10ReportSectionKey =
   | "readiness_header"
   | "submission_guidance"
   | "score_summary"
+  | "category_scores"
+  | "category_rationale"
+  | "brief_adherence_material_compliance"
   | "brief_context"
   | "brief_requirements"
   | "brief_achievement"
@@ -342,6 +345,21 @@ export function buildS10PerformerReportViewModel(input: {
       "readiness_score_judgement",
       "S10 score semantics are not available for this report.",
     ),
+    category_scores: source(
+      (readiness?.category_scores?.length ?? 0) > 0,
+      "readiness_score_judgement.category_scores",
+      "S10 category score semantics are not available for this report.",
+    ),
+    category_rationale: source(
+      Object.keys(readiness?.category_rationale ?? {}).length > 0,
+      "readiness_score_judgement.category_rationale",
+      "S10 category rationale is not available for this report.",
+    ),
+    brief_adherence_material_compliance: source(
+      typeof readiness?.brief_completion_score === "number",
+      "readiness_score_judgement.brief_completion_score",
+      "S10 brief-completion score is not available for this report.",
+    ),
     brief_context: source(
       !!briefContext,
       "brief_context",
@@ -513,6 +531,9 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     "readiness_header",
     "submission_guidance",
     "score_summary",
+    "category_scores",
+    "category_rationale",
+    "brief_adherence_material_compliance",
     "brief_context",
     "brief_requirements",
     "brief_achievement",
