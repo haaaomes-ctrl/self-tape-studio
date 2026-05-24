@@ -1,3 +1,5 @@
+import type { S10OperatorAssumptionCheckpoint, S10OperatorExpectation } from "@/lib/audition-rules";
+
 export const s10StrongCompleteProfessionalOperatorFacts = {
   fixture_id: "s10-strong-complete-professional",
   selected_level: "professional",
@@ -1031,6 +1033,58 @@ export const s10StrongCompleteProfessionalExpectedViewModel = {
     "Strong choices.",
   ],
 } as const;
+
+export const s10StrongCompleteProfessionalOperatorAssumptionCheckpoint = {
+  checkpoint_id: "s10-strong-complete-operator-checkpoint",
+  fixture_id: s10StrongCompleteProfessionalOperatorFacts.fixture_id,
+  take_id: "strong-complete-take",
+  audition_id: "strong-complete-audition",
+  report_context: "S10 deterministic strong complete professional fixture",
+  declared_fixture_type: "strong_complete_professional",
+  declared_expected_outcome: "Submit-ready complete professional MT package.",
+  same_brief_confirmed: true,
+  same_video_confirmed: true,
+  same_media_identity: "confirmed",
+  rerun_intent: "not_applicable",
+  strong_complete_take_confirmed: true,
+  incomplete_mandatory_package_confirmed: false,
+  expected_primary_blocker: null,
+  expected_secondary_notes: [
+    "No invented mandatory fix",
+    "Submit checklist remains the default next action",
+    "Positive report contains specific strengths and technique value",
+  ],
+  score_chips_intentionally_visible: true,
+  comparison_chips_intentionally_visible: false,
+  comparison_context: null,
+  changed_brief_confirmed: false,
+  changed_level_confirmed: false,
+  changed_report_version_confirmed: false,
+  operator_notes: ["Strong-complete fixture protects against thin no-blocker report output."],
+  created_by_role: "test",
+  created_at: "2026-05-24T00:00:00.000Z",
+  confidence: "confirmed",
+  scope: "deterministic_fixture",
+} satisfies S10OperatorAssumptionCheckpoint;
+
+export const s10StrongCompleteProfessionalOperatorExpectation = {
+  expected_recommendation: "submit",
+  expected_brief_achievement_status: "mostly_achieved",
+  expected_missing_requirements: [],
+  expected_present_requirements: ["req-side-1", "req-song", "req-continuous-video"],
+  expected_not_assessable_areas: [],
+  expected_fix_first: "No mandatory fix before submission",
+  expected_score_band: "submit_strong_submission",
+  expected_same_video_status: null,
+  expected_comparison_policy: null,
+  expected_forbidden_phrases:
+    s10StrongCompleteProfessionalExpectedViewModel.forbidden_route_content.slice(),
+  expected_required_phrases: [
+    "Submit: strong complete professional package",
+    "Specific acting-through-song package integration",
+    "Do not rework the achieved package",
+  ],
+} satisfies S10OperatorExpectation;
 
 export function buildS10StrongCompleteProfessionalReportInput() {
   return {

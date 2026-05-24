@@ -1044,6 +1044,135 @@ export type S10ComparisonTruth = {
   limitations: string[];
 };
 
+export type S10OperatorDeclaredFixtureType =
+  | "incomplete_mandatory_package"
+  | "strong_complete_professional"
+  | "same_video_duplicate"
+  | "same_video_retest"
+  | "same_video_changed_brief"
+  | "same_video_changed_level"
+  | "same_video_changed_report_version"
+  | "same_video_uncertain"
+  | "unknown";
+
+export type S10OperatorCheckpointConfidence = "confirmed" | "likely" | "uncertain" | "contradicted";
+
+export type S10OperatorCheckpointScope =
+  | "deterministic_fixture"
+  | "canary_review"
+  | "operator_test"
+  | "local_dev"
+  | "unknown";
+
+export type S10OperatorSameMediaIdentity =
+  | "confirmed"
+  | "probable"
+  | "possible"
+  | "distinct"
+  | "uncertain"
+  | "not_applicable";
+
+export type S10OperatorRerunIntent =
+  | "accidental_duplicate"
+  | "intentional_retest"
+  | "changed_brief"
+  | "changed_level"
+  | "changed_report_version"
+  | "not_applicable"
+  | "unknown";
+
+export type S10OperatorAssumptionCheckpoint = {
+  checkpoint_id: string;
+  fixture_id: string;
+  take_id: string | null;
+  audition_id: string | null;
+  report_context: string;
+  declared_fixture_type: S10OperatorDeclaredFixtureType;
+  declared_expected_outcome: string;
+  same_brief_confirmed: boolean | null;
+  same_video_confirmed: boolean | null;
+  same_media_identity: S10OperatorSameMediaIdentity;
+  rerun_intent: S10OperatorRerunIntent;
+  strong_complete_take_confirmed: boolean | null;
+  incomplete_mandatory_package_confirmed: boolean | null;
+  expected_primary_blocker: string | null;
+  expected_secondary_notes: string[];
+  score_chips_intentionally_visible: boolean;
+  comparison_chips_intentionally_visible: boolean;
+  comparison_context: string | null;
+  changed_brief_confirmed: boolean | null;
+  changed_level_confirmed: boolean | null;
+  changed_report_version_confirmed: boolean | null;
+  operator_notes: string[];
+  created_by_role: "operator" | "developer" | "test" | "system";
+  created_at: string;
+  confidence: S10OperatorCheckpointConfidence;
+  scope: S10OperatorCheckpointScope;
+};
+
+export type S10OperatorExpectation = {
+  expected_recommendation: ReadinessDecision | null;
+  expected_brief_achievement_status: BriefAchievementOverallStatus | null;
+  expected_missing_requirements: string[];
+  expected_present_requirements: string[];
+  expected_not_assessable_areas: string[];
+  expected_fix_first: string | null;
+  expected_score_band: ReadinessScoreBandLabel | null;
+  expected_same_video_status: S10SameVideoStatus | null;
+  expected_comparison_policy: S10ComparisonRecommendationPolicy | null;
+  expected_forbidden_phrases: string[];
+  expected_required_phrases: string[];
+};
+
+export type S10OperatorAssumptionMismatchType =
+  | "brief_extraction_mismatch"
+  | "component_observation_mismatch"
+  | "brief_achievement_mismatch"
+  | "readiness_score_mismatch"
+  | "fix_hierarchy_mismatch"
+  | "professional_critique_mismatch"
+  | "technique_commentary_mismatch"
+  | "timestamped_commentary_mismatch"
+  | "route_projection_mismatch"
+  | "same_video_classification_mismatch"
+  | "fixture_expectation_mismatch"
+  | "operator_assumption_missing"
+  | "operator_assumption_uncertain";
+
+export type S10OperatorAssumptionComparisonStatus =
+  | "matches_operator_expectation"
+  | "partially_matches_operator_expectation"
+  | "contradicts_operator_expectation"
+  | "assumption_missing"
+  | "assumption_uncertain"
+  | "not_applicable";
+
+export type S10OperatorAssumptionNextStep =
+  | "accept_fixture"
+  | "review_ai_observation"
+  | "review_prompt_contract"
+  | "review_route_projection"
+  | "ask_operator"
+  | "not_applicable";
+
+export type S10OperatorAssumptionMismatch = {
+  mismatch_type: S10OperatorAssumptionMismatchType;
+  field: string;
+  expected: string | number | boolean | null;
+  actual: string | number | boolean | null;
+  message: string;
+};
+
+export type S10OperatorAssumptionComparison = {
+  checkpoint_id: string | null;
+  report_id_or_fixture_id: string | null;
+  comparison_status: S10OperatorAssumptionComparisonStatus;
+  mismatches: S10OperatorAssumptionMismatch[];
+  matched_expectations: string[];
+  unresolved_assumptions: string[];
+  recommended_next_step: S10OperatorAssumptionNextStep;
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;

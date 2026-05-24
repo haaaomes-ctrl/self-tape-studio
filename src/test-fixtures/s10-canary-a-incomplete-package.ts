@@ -1,3 +1,5 @@
+import type { S10OperatorAssumptionCheckpoint, S10OperatorExpectation } from "@/lib/audition-rules";
+
 export const s10CanaryAOperatorFacts = {
   fixture_id: "s10-canary-a-incomplete-mandatory-package",
   selected_level: "professional",
@@ -892,6 +894,59 @@ export const s10CanaryAExpectedViewModel = {
     "complete song package",
   ],
 } as const;
+
+export const s10CanaryAOperatorAssumptionCheckpoint = {
+  checkpoint_id: "s10-canary-a-operator-checkpoint",
+  fixture_id: s10CanaryAOperatorFacts.fixture_id,
+  take_id: "canary-a-take",
+  audition_id: "canary-a-audition",
+  report_context: "S10 deterministic incomplete mandatory package fixture",
+  declared_fixture_type: "incomplete_mandatory_package",
+  declared_expected_outcome: "Retake required because required Side 1 is missing.",
+  same_brief_confirmed: true,
+  same_video_confirmed: true,
+  same_media_identity: "confirmed",
+  rerun_intent: "not_applicable",
+  strong_complete_take_confirmed: false,
+  incomplete_mandatory_package_confirmed: true,
+  expected_primary_blocker: "Missing required Side 1",
+  expected_secondary_notes: [
+    "Partial/incomplete song",
+    "Song completion not confirmed",
+    "Final continuous one-file check required",
+  ],
+  score_chips_intentionally_visible: true,
+  comparison_chips_intentionally_visible: false,
+  comparison_context: null,
+  changed_brief_confirmed: false,
+  changed_level_confirmed: false,
+  changed_report_version_confirmed: false,
+  operator_notes: [
+    "Operator-declared fixture facts are deterministic and must not be inferred from raw_report.",
+  ],
+  created_by_role: "test",
+  created_at: "2026-05-24T00:00:00.000Z",
+  confidence: "confirmed",
+  scope: "deterministic_fixture",
+} satisfies S10OperatorAssumptionCheckpoint;
+
+export const s10CanaryAOperatorExpectation = {
+  expected_recommendation: "retake_required_if_possible",
+  expected_brief_achievement_status: "not_achieved",
+  expected_missing_requirements: ["req-side-1", "req-song"],
+  expected_present_requirements: [],
+  expected_not_assessable_areas: ["acting"],
+  expected_fix_first: "Side 1",
+  expected_score_band: "retake_required_if_possible",
+  expected_same_video_status: null,
+  expected_comparison_policy: null,
+  expected_forbidden_phrases: s10CanaryAExpectedViewModel.forbidden_route_content.slice(),
+  expected_required_phrases: [
+    "Retake required if possible",
+    "required Side 1|Side 1 not observed|required acting side not identified",
+    "Record/include the full required Side 1 acting scene|record Side 1",
+  ],
+} satisfies S10OperatorExpectation;
 
 export function buildS10CanaryAReportInput() {
   return {
