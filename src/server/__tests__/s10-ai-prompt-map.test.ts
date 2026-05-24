@@ -5,8 +5,10 @@ import { buildEvidencePassRequestBodyForProvider } from "@/server/evidence-pass.
 import { POLISH_SYSTEM_PROMPT } from "@/server/report-polish.server";
 import {
   LEGACY_S9_EVIDENCE_PASS_PROMPT_VERSION,
+  LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION,
   LEGACY_S9_SINGLE_PASS_PROMPT_VERSION,
   LEGACY_S9_TWO_STEP_POLISH_PROMPT_VERSION,
+  S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_CANARY_A_PROMPT_REQUIREMENT,
   S10_MODULE_COMPLETENESS_STATUSES,
   S10_MODULE_REPAIR_PROMPT_VERSION,
@@ -26,9 +28,10 @@ describe("S10.1 AI prompt map", () => {
     expect(S10_PROMPT_INVENTORY).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          promptVersion: S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
           sourceFile: "src/server/extract-brief.server.ts",
           runtimeStage: "preflight_brief_extraction",
-          status: "supporting",
+          status: "active",
         }),
         expect.objectContaining({
           promptVersion: S10_OBSERVATION_PROMPT_VERSION,
@@ -61,6 +64,7 @@ describe("S10.1 AI prompt map", () => {
 
     for (const legacyVersion of [
       LEGACY_S9_EVIDENCE_PASS_PROMPT_VERSION,
+      LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION,
       LEGACY_S9_SINGLE_PASS_PROMPT_VERSION,
       LEGACY_S9_TWO_STEP_POLISH_PROMPT_VERSION,
     ]) {

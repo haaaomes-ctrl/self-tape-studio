@@ -7,7 +7,10 @@
 export const S10_OBSERVATION_PROMPT_VERSION = "s10_observation_module_map_v1";
 export const S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION = "s10_professional_judgement_module_map_v1";
 export const S10_MODULE_REPAIR_PROMPT_VERSION = "s10_module_repair_v1";
+export const S10_BRIEF_INTELLIGENCE_PROMPT_VERSION = "s10_brief_intelligence_v1";
 
+export const LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION =
+  "legacy_s9_brief_extraction_supporting_current";
 export const LEGACY_S9_EVIDENCE_PASS_PROMPT_VERSION = "legacy_s9_evidence_pass_current";
 export const LEGACY_S9_SINGLE_PASS_PROMPT_VERSION = "legacy_s9_single_pass_analysis_current";
 export const LEGACY_S9_TWO_STEP_POLISH_PROMPT_VERSION = "legacy_s9_two_step_report_polish_current";
@@ -36,13 +39,28 @@ export type S10PromptInventoryEntry = {
 
 export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
   {
-    promptName: "Brief extraction",
-    promptVersion: "brief_extraction_supporting_current",
+    promptName: "S10 brief intelligence",
+    promptVersion: S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
     sourceFile: "src/server/extract-brief.server.ts",
     runtimeStage: "preflight_brief_extraction",
     modelCallPath: "extractBriefFromText -> Lovable AI Gateway chat/completions",
-    reportModulesAffected: ["brief intelligence", "brief achievement", "role fit"],
-    status: "supporting",
+    reportModulesAffected: [
+      "brief intelligence",
+      "brief requirement extraction",
+      "brief achievement",
+      "role fit",
+      "component declaration",
+    ],
+    status: "active",
+  },
+  {
+    promptName: "Legacy S9 brief extraction",
+    promptVersion: LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION,
+    sourceFile: "src/server/extract-brief.server.ts",
+    runtimeStage: "legacy coarse brief extraction",
+    modelCallPath: "legacy-only prompt label; no active S10 model trace",
+    reportModulesAffected: ["legacy cached brief fields"],
+    status: "legacy_only",
   },
   {
     promptName: "S10 observation/module map",
@@ -396,7 +414,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
 ];
 
 export const S10_CANARY_A_PROMPT_REQUIREMENT = [
-  "Before scoring or recommending, verify each required brief component against the observed tape.",
+  "Before scoring or recommending, use the S10 BriefRequirement list and verify each required brief component against the observed tape.",
   "For Canary A, explicitly check Side 1 acting scene, contemporary legit MT song completion, one continuous video, one final file/package readiness, and abrupt cut-off.",
   "The AI must not infer required material is present because the brief requested it.",
   "Required component status must be one of present, absent, partially_present, cut_off, uncertain, or not_assessable.",
@@ -407,7 +425,7 @@ export const S10_OBSERVATION_MODULE_SYSTEM_PROMPT = `Prompt version: ${S10_OBSER
 
 You are the S10 observation/module-mapping pass for TapeCoach. Your job is to watch and listen to the self-tape and return factual, structured observations that the report brain can use. You do not recommend, score, praise, coach or write performer-facing prose.
 
-Primary rule: component presence is observed from the media, not inferred from the brief. A brief can request Side 1, a song, one continuous video or file naming, but you may only mark those achieved when the tape evidence supports it.
+Primary rule: component presence is observed from the media, not inferred from the brief. Use the S10 BriefRequirement list as the checklist of what to verify. A brief can request Side 1, a song, one continuous video or file naming, but you may only mark those achieved when the tape evidence supports it.
 
 Required observation questions:
 - What appears first?
@@ -429,7 +447,7 @@ export const S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT = `Prompt version: ${S10_P
 
 You are the S10 professional judgement/module report brain for TapeCoach. You write a performer-facing self-tape report from supplied brief context plus either locked Step 1 observations or the video itself. Code validates, repairs, routes and renders your structured output; code must not invent your professional judgement.
 
-Primary rule: before scoring or recommending, verify required brief components against observed tape evidence. Do not infer required material is present because the brief requested it. If mandatory material is missing, partial, cut off, uncertain or not assessable, the recommendation and score language must say that clearly.
+Primary rule: before scoring or recommending, use the S10 BriefRequirement list to verify required brief components against observed tape evidence. Do not infer required material is present because the brief requested it. If a supplied brief is present but no BriefRequirement list is available, first extract explicit requirements from the supplied brief and mark any unsupported modules not assessable until that list exists. If mandatory material is missing, partial, cut off, uncertain or not assessable, the recommendation and score language must say that clearly.
 
 Module question order:
 1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?

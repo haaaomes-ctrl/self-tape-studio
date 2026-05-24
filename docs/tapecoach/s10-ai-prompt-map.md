@@ -2,24 +2,46 @@
 
 S10 makes the AI the report brain. Code supplies deterministic context, validates/repairs output, routes it to the report model and renders it. Code must not replace missing AI judgement with generic performer-facing filler.
 
-Runtime provenance, GateTrace, ValidatorTrace, public/private parity and QA proof are not S10.1 acceptance requirements.
+Runtime provenance, GateTrace, ValidatorTrace, public/private parity and QA proof are not S10 acceptance requirements.
 
 ## Active Prompt Versions
 
-| Prompt                                            | Version                                      | Source                                       | Runtime stage                         | Status                          |
-| ------------------------------------------------- | -------------------------------------------- | -------------------------------------------- | ------------------------------------- | ------------------------------- |
-| Brief extraction                                  | `brief_extraction_supporting_current`        | `src/server/extract-brief.server.ts`         | Preflight brief extraction            | Supporting only                 |
-| S10 observation/module map                        | `s10_observation_module_map_v1`              | `src/server/evidence-pass.server.ts`         | Step 1 evidence / observation         | Active                          |
-| S10 professional judgement/module map             | `s10_professional_judgement_module_map_v1`   | `src/server/report-polish.server.ts`         | Step 2 judgement / report generation  | Active                          |
-| S10 single-pass professional judgement/module map | `s10_professional_judgement_module_map_v1`   | `src/server/process-take.server.ts`          | Single-pass recovery                  | Active                          |
-| S10 module repair                                 | `s10_module_repair_v1`                       | `src/server/s10-report-prompt-map.server.ts` | Repair prompt template                | Active template                 |
-| Legacy S9 evidence pass                           | `legacy_s9_evidence_pass_current`            | `src/server/evidence-pass.server.ts`         | Archived Step 1 label                 | Legacy only                     |
-| Legacy S9 single pass                             | `legacy_s9_single_pass_analysis_current`     | `src/server/process-take.server.ts`          | Archived single-pass label            | Legacy only                     |
-| Legacy S9 report polish                           | `legacy_s9_two_step_report_polish_current`   | `src/server/report-polish.server.ts`         | Archived Step 2 label                 | Legacy only                     |
-| Internal dimensions                               | `legacy_internal_dimension_prompt_fragments` | `src/server/dimensions/*`                    | Flag-gated internal dimension capture | Legacy/internal only            |
-| Comparison model prompt                           | `no_active_s10_comparison_model_prompt`      | `src/server/v3/s6-variance-comparison.ts`    | Comparison                            | No active model prompt in S10.1 |
+| Prompt                                            | Version                                         | Source                                       | Runtime stage                         | Status                          |
+| ------------------------------------------------- | ----------------------------------------------- | -------------------------------------------- | ------------------------------------- | ------------------------------- |
+| S10 brief intelligence                            | `s10_brief_intelligence_v1`                     | `src/server/extract-brief.server.ts`         | Preflight brief extraction            | Active                          |
+| S10 observation/module map                        | `s10_observation_module_map_v1`                 | `src/server/evidence-pass.server.ts`         | Step 1 evidence / observation         | Active                          |
+| S10 professional judgement/module map             | `s10_professional_judgement_module_map_v1`      | `src/server/report-polish.server.ts`         | Step 2 judgement / report generation  | Active                          |
+| S10 single-pass professional judgement/module map | `s10_professional_judgement_module_map_v1`      | `src/server/process-take.server.ts`          | Single-pass recovery                  | Active                          |
+| S10 module repair                                 | `s10_module_repair_v1`                          | `src/server/s10-report-prompt-map.server.ts` | Repair prompt template                | Active template                 |
+| Legacy S9 brief extraction                        | `legacy_s9_brief_extraction_supporting_current` | `src/server/extract-brief.server.ts`         | Archived coarse brief extraction      | Legacy only                     |
+| Legacy S9 evidence pass                           | `legacy_s9_evidence_pass_current`               | `src/server/evidence-pass.server.ts`         | Archived Step 1 label                 | Legacy only                     |
+| Legacy S9 single pass                             | `legacy_s9_single_pass_analysis_current`        | `src/server/process-take.server.ts`          | Archived single-pass label            | Legacy only                     |
+| Legacy S9 report polish                           | `legacy_s9_two_step_report_polish_current`      | `src/server/report-polish.server.ts`         | Archived Step 2 label                 | Legacy only                     |
+| Internal dimensions                               | `legacy_internal_dimension_prompt_fragments`    | `src/server/dimensions/*`                    | Flag-gated internal dimension capture | Legacy/internal only            |
+| Comparison model prompt                           | `no_active_s10_comparison_model_prompt`         | `src/server/v3/s6-variance-comparison.ts`    | Comparison                            | No active model prompt in S10.1 |
 
 The old S9 prompt version names must not be emitted by the active S10 analysis path. They may appear only in this inventory, tests, or archived compatibility references.
+
+## S10.2 Brief Intelligence
+
+The active brief preflight prompt extracts `BriefContext` and `BriefRequirement[]` before the tape is observed, scored or recommended. It preserves supplied brief details and makes each requirement testable by S10.3 observation.
+
+For supplied-brief runs, legacy cached brief fields are not enough for the active S10 path. The pipeline re-extracts when the cached brief lacks `s10_brief_intelligence_v1` requirements, and it must not proceed to scoring/recommendation while a supplied brief has no S10 requirement list.
+
+Each `BriefRequirement` contains:
+
+- `id`;
+- `brief_text`;
+- `summary`;
+- `category`: `material`, `performance`, `technical`, `admin_process`, `deadline`, `logistics` or `role_context`;
+- `importance`: `mandatory`, `preferred`, `optional` or `ambiguous`;
+- `expected_evidence_in_tape`;
+- `achievement_test`;
+- `submission_impact_if_missing`;
+- `report_destination`;
+- `confidence`.
+
+Canary A guardrail: Side 1 and the song are separate mandatory material requirements; one continuous video and one file only are separate mandatory package/admin requirements; landscape and head-and-shoulders are mandatory technical requirements; role description stays `role_context` unless the brief explicitly makes it performed material.
 
 ## Deterministic Inputs Code May Supply
 

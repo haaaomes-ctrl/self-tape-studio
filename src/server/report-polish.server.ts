@@ -115,7 +115,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
-    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Verify required brief components before scoring or recommending. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
+    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Use the S10 BriefRequirement list to verify required brief components before scoring or recommending; if the list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
   ].join("\n\n");
 
   let resp: Response | null = null;

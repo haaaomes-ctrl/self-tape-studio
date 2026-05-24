@@ -8,7 +8,7 @@
 //   - src/server/process-take.functions.ts -> retryProcessTake (after auth + ownership)
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { buildMuxHighestMp4Url, isValidMuxMp4Url, normaliseMuxMp4Url } from "./mux.server";
-import { extractBriefFromText } from "./extract-brief.server";
+import { deriveS10BriefRuntimeFacts, extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
 import {
@@ -70,6 +70,7 @@ import {
 } from "./v3/qa-step2-dependency.server";
 import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
 import {
+  S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_OBSERVATION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
@@ -724,12 +725,20 @@ export async function runProcessTake(
   };
   const rawCached = ((audition as { extracted_brief?: CachedBrief | null }).extracted_brief ??
     null) as CachedBrief | null;
+  const suppliedBriefText = typeof audition.brief === "string" ? audition.brief.trim() : "";
   const cachedSource = rawCached?._source;
   const cachedConfidence = rawCached?._extraction_confidence;
   const looksLikeDegradedFallback =
     rawCached != null && cachedConfidence === "low" && rawCached.audition_type === "unknown";
+  const cachedHasS10BriefRequirements =
+    rawCached?.brief_intelligence_prompt_version === S10_BRIEF_INTELLIGENCE_PROMPT_VERSION &&
+    Array.isArray(rawCached.brief_requirements) &&
+    rawCached.brief_requirements.length > 0;
   const cacheReusable =
-    rawCached != null && cachedSource !== "fallback" && !looksLikeDegradedFallback;
+    rawCached != null &&
+    cachedSource !== "fallback" &&
+    !looksLikeDegradedFallback &&
+    (suppliedBriefText.length <= 5 || cachedHasS10BriefRequirements);
 
   let extractedBrief: ExtractedBrief | null = cacheReusable ? rawCached : null;
   let extractionConfidence: "low" | "medium" | "high" | "unknown" = cacheReusable
@@ -749,8 +758,8 @@ export async function runProcessTake(
     });
   }
 
-  if (!extractedBrief && audition.brief && audition.brief.trim().length > 5) {
-    const result = await extractBriefFromText(audition.brief);
+  if (!extractedBrief && suppliedBriefText.length > 5) {
+    const result = await extractBriefFromText(suppliedBriefText);
     if (result) {
       extractedBrief = result.brief;
       extractionConfidence = result.extraction_confidence;
@@ -789,6 +798,12 @@ export async function runProcessTake(
       }
     }
   }
+  const s10BriefRuntimeFacts = deriveS10BriefRuntimeFacts(extractedBrief);
+  const s10BriefRequirementsReady =
+    suppliedBriefText.length <= 5 ||
+    (extractedBrief?.brief_intelligence_prompt_version === S10_BRIEF_INTELLIGENCE_PROMPT_VERSION &&
+      Array.isArray(extractedBrief.brief_requirements) &&
+      extractedBrief.brief_requirements.length > 0);
 
   // Stay in analysis_pending while we poll for the static MP4 rendition.
   // We DON'T flip to "analysing" yet — that would mislead the UI into
@@ -823,6 +838,7 @@ export async function runProcessTake(
     | "analysis_total_timeout"
     | "analysis_parse_failed"
     | "analysis_persist_failed"
+    | "brief_intelligence_unavailable"
     | "analysis_no_terminal_state"
     | "mux_invalid_mp4_url"
     | "mux_static_rendition_timeout"
@@ -887,6 +903,20 @@ export async function runProcessTake(
   }
 
   try {
+    if (!s10BriefRequirementsReady) {
+      console.warn("[take-pipeline] s10_brief_requirements_missing_before_analysis", {
+        take_id: takeId,
+        audition_id: audition.id,
+        prompt_version: extractedBrief?.brief_intelligence_prompt_version ?? null,
+        requirement_count: extractedBrief?.brief_requirements?.length ?? 0,
+        extraction_confidence: extractionConfidence,
+      });
+      throw new AnalysisFailure(
+        "brief_intelligence_unavailable",
+        "We couldn’t read the casting brief clearly enough to check the required material. Please try again.",
+      );
+    }
+
     const { tier } = await pickAnalysisSource(take, allowOriginal);
 
     // ---- Deterministic Mux readiness gate ----
@@ -1203,12 +1233,16 @@ export async function runProcessTake(
       });
       const unavailableInputFields = [
         "audition_type",
-        "material_presence_source",
         "submission_created_at",
         "submission_updated_at",
         "take_index",
-        "component_or_task_declaration",
       ];
+      if (s10BriefRuntimeFacts.material_presence === "unknown") {
+        unavailableInputFields.push("material_presence_source");
+      }
+      if (s10BriefRuntimeFacts.component_or_task_declaration_status === "unknown") {
+        unavailableInputFields.push("component_or_task_declaration");
+      }
       if (!takeCreatedAt) unavailableInputFields.push("take_created_at");
       if (!takeUpdatedAt) unavailableInputFields.push("take_updated_at");
       const takeDurationSeconds = Number(
@@ -1394,7 +1428,7 @@ export async function runProcessTake(
           selected_level: audition.audition_level ?? null,
           brief_presence: qaStep1Context.briefPresence,
           brief_presence_source: qaStep1Context.briefPresenceSource,
-          material_presence: "unknown",
+          material_presence: s10BriefRuntimeFacts.material_presence,
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(
             take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
@@ -1421,9 +1455,11 @@ export async function runProcessTake(
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
           take_index_source: "unavailable",
-          component_or_task_declaration: null,
-          component_or_task_declaration_status: "unknown",
-          component_or_task_declaration_source: "not_loaded",
+          component_or_task_declaration: s10BriefRuntimeFacts.component_or_task_declaration,
+          component_or_task_declaration_status:
+            s10BriefRuntimeFacts.component_or_task_declaration_status,
+          component_or_task_declaration_source:
+            s10BriefRuntimeFacts.component_or_task_declaration_source,
           media_readiness_state: take.status ?? null,
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
@@ -1446,8 +1482,8 @@ export async function runProcessTake(
           selected_level: audition.audition_level ?? null,
           brief_presence: qaStep1Context.briefPresence,
           brief_presence_source: qaStep1Context.briefPresenceSource,
-          material_presence: "unknown",
-          material_presence_source: "not_loaded",
+          material_presence: s10BriefRuntimeFacts.material_presence,
+          material_presence_source: s10BriefRuntimeFacts.material_presence_source,
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(
             take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
@@ -1472,9 +1508,11 @@ export async function runProcessTake(
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
           take_index_source: "unavailable",
-          component_or_task_declaration: null,
-          component_or_task_declaration_status: "unknown",
-          component_or_task_declaration_source: "not_loaded",
+          component_or_task_declaration: s10BriefRuntimeFacts.component_or_task_declaration,
+          component_or_task_declaration_status:
+            s10BriefRuntimeFacts.component_or_task_declaration_status,
+          component_or_task_declaration_source:
+            s10BriefRuntimeFacts.component_or_task_declaration_source,
           media_readiness_state: take.status ?? null,
           filtered_run_evidence_pass_step1: filteredStep1Evidence,
           unavailable_fields: qaStep1Context.unavailableInputFields,
@@ -1527,8 +1565,8 @@ export async function runProcessTake(
           selected_level: audition.audition_level ?? null,
           brief_presence: qaStep1Context.briefPresence,
           brief_presence_source: qaStep1Context.briefPresenceSource,
-          material_presence: "unknown",
-          material_presence_source: "not_loaded",
+          material_presence: s10BriefRuntimeFacts.material_presence,
+          material_presence_source: s10BriefRuntimeFacts.material_presence_source,
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(
             take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
@@ -1552,9 +1590,11 @@ export async function runProcessTake(
           take_updated_at: qaStep1Context.takeUpdatedAt,
           take_index: null,
           take_index_source: "unavailable",
-          component_or_task_declaration: null,
-          component_or_task_declaration_status: "unknown",
-          component_or_task_declaration_source: "not_loaded",
+          component_or_task_declaration: s10BriefRuntimeFacts.component_or_task_declaration,
+          component_or_task_declaration_status:
+            s10BriefRuntimeFacts.component_or_task_declaration_status,
+          component_or_task_declaration_source:
+            s10BriefRuntimeFacts.component_or_task_declaration_source,
           media_readiness_state: take.status ?? null,
           media_duration_seconds: qaStep1Context.takeDurationSeconds,
           duration_confidence: qaStep1Context.durationConfidence,
@@ -3474,12 +3514,16 @@ export async function runProcessTake(
       });
       const unavailableInputFields = [
         "audition_type",
-        "material_presence_source",
         "submission_created_at",
         "submission_updated_at",
         "take_index",
-        "component_or_task_declaration",
       ];
+      if (s10BriefRuntimeFacts.material_presence === "unknown") {
+        unavailableInputFields.push("material_presence_source");
+      }
+      if (s10BriefRuntimeFacts.component_or_task_declaration_status === "unknown") {
+        unavailableInputFields.push("component_or_task_declaration");
+      }
       if (!takeCreatedAt) unavailableInputFields.push("take_created_at");
       if (!takeUpdatedAt) unavailableInputFields.push("take_updated_at");
       const uploadIdentity = extractUploadIdentitySignals({
@@ -3503,7 +3547,7 @@ export async function runProcessTake(
           selected_level: audition.audition_level ?? null,
           brief_presence: briefPresence,
           brief_presence_source: briefPresenceSource,
-          material_presence: "unknown",
+          material_presence: s10BriefRuntimeFacts.material_presence,
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(
             take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
@@ -3532,9 +3576,11 @@ export async function runProcessTake(
           take_updated_at: takeUpdatedAt,
           take_index: null,
           take_index_source: "unavailable",
-          component_or_task_declaration: null,
-          component_or_task_declaration_status: "unknown",
-          component_or_task_declaration_source: "not_loaded",
+          component_or_task_declaration: s10BriefRuntimeFacts.component_or_task_declaration,
+          component_or_task_declaration_status:
+            s10BriefRuntimeFacts.component_or_task_declaration_status,
+          component_or_task_declaration_source:
+            s10BriefRuntimeFacts.component_or_task_declaration_source,
           media_readiness_state: take.status ?? null,
           unavailable_fields: unavailableInputFields,
           internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
@@ -3556,8 +3602,8 @@ export async function runProcessTake(
           selected_level: audition.audition_level ?? null,
           brief_presence: briefPresence,
           brief_presence_source: briefPresenceSource,
-          material_presence: "unknown",
-          material_presence_source: "not_loaded",
+          material_presence: s10BriefRuntimeFacts.material_presence,
+          material_presence_source: s10BriefRuntimeFacts.material_presence_source,
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(
             take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
@@ -3584,9 +3630,11 @@ export async function runProcessTake(
           take_updated_at: takeUpdatedAt,
           take_index: null,
           take_index_source: "unavailable",
-          component_or_task_declaration: null,
-          component_or_task_declaration_status: "unknown",
-          component_or_task_declaration_source: "not_loaded",
+          component_or_task_declaration: s10BriefRuntimeFacts.component_or_task_declaration,
+          component_or_task_declaration_status:
+            s10BriefRuntimeFacts.component_or_task_declaration_status,
+          component_or_task_declaration_source:
+            s10BriefRuntimeFacts.component_or_task_declaration_source,
           media_readiness_state: take.status ?? null,
           unavailable_fields: unavailableInputFields,
           internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
@@ -3636,8 +3684,8 @@ export async function runProcessTake(
           selected_level: audition.audition_level ?? null,
           brief_presence: briefPresence,
           brief_presence_source: briefPresenceSource,
-          material_presence: "unknown",
-          material_presence_source: "not_loaded",
+          material_presence: s10BriefRuntimeFacts.material_presence,
+          material_presence_source: s10BriefRuntimeFacts.material_presence_source,
           mux_playback_id: take.mux_playback_id ?? null,
           mux_asset_or_upload_id_present: Boolean(
             take.mux_asset_id || (take as { mux_upload_id?: string | null }).mux_upload_id,
@@ -3659,9 +3707,11 @@ export async function runProcessTake(
           take_updated_at: takeUpdatedAt,
           take_index: null,
           take_index_source: "unavailable",
-          component_or_task_declaration: null,
-          component_or_task_declaration_status: "unknown",
-          component_or_task_declaration_source: "not_loaded",
+          component_or_task_declaration: s10BriefRuntimeFacts.component_or_task_declaration,
+          component_or_task_declaration_status:
+            s10BriefRuntimeFacts.component_or_task_declaration_status,
+          component_or_task_declaration_source:
+            s10BriefRuntimeFacts.component_or_task_declaration_source,
           media_readiness_state: take.status ?? null,
           media_duration_seconds:
             Number.isFinite(takeDurationSeconds) && takeDurationSeconds > 0

@@ -382,6 +382,7 @@ You are using the tool-call Step 1 contract. Your ONLY job is to return factual 
 
 Rules:
 - Active prompt version is "${S10_OBSERVATION_PROMPT_VERSION}".
+- Use the S10 BriefRequirement list from the structured brief as the checklist of requested material, package, technical, admin and role-context requirements.
 - Component presence must be observed from the tape, not inferred from the brief.
 - Before any provisional scoring field, verify required brief components as present, absent, partial, cut off, uncertain, or not assessable.
 - Use detected_components only for components actually observed in the tape. If Side 1 is requested but absent, do not include acting_scene as achieved.

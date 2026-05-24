@@ -209,9 +209,12 @@ export function computeBlockers(input: {
   // vocal, or brief_adherence). Pure presentation/technical/audio stacking
   // is handled as a verdict cap, not a blocker.
   const fundamentals: WeightedCategory[] = ["acting", "vocal", "brief_adherence"];
-  const weakEntries = (Object.entries(input.scores) as Array<[string, number | null | undefined]>)
-    .filter(([, s]) => typeof s === "number" && (s as number) < 50);
-  const hasWeakFundamental = weakEntries.some(([k]) => fundamentals.includes(k as WeightedCategory));
+  const weakEntries = (
+    Object.entries(input.scores) as Array<[string, number | null | undefined]>
+  ).filter(([, s]) => typeof s === "number" && (s as number) < 50);
+  const hasWeakFundamental = weakEntries.some(([k]) =>
+    fundamentals.includes(k as WeightedCategory),
+  );
   if (weakEntries.length >= 2 && hasWeakFundamental) {
     blockers.push({
       code: "two_weak_categories",
@@ -369,10 +372,49 @@ export function deterministicCompliance(input: {
 
 // -------------------- Extracted brief schema --------------------
 
+export type BriefRequirementCategory =
+  | "material"
+  | "performance"
+  | "technical"
+  | "admin_process"
+  | "deadline"
+  | "logistics"
+  | "role_context";
+
+export type BriefRequirementImportance = "mandatory" | "preferred" | "optional" | "ambiguous";
+
+export type BriefRequirement = {
+  id: string;
+  brief_text: string;
+  summary: string;
+  category: BriefRequirementCategory;
+  importance: BriefRequirementImportance;
+  expected_evidence_in_tape: string;
+  achievement_test: string;
+  submission_impact_if_missing: string;
+  report_destination: string;
+  confidence: "low" | "medium" | "high";
+};
+
+export type BriefContext = {
+  project_name?: string | null;
+  role_name?: string | null;
+  discipline?: string | null;
+  audition_type?: string | null;
+  material_package_summary?: string | null;
+  role_description_summary?: string | null;
+  deadline_summary?: string | null;
+  upload_summary?: string | null;
+  file_naming_summary?: string | null;
+};
+
 export type ExtractedBrief = {
   audition_type: AuditionType;
   role_name?: string | null;
   show_or_project?: string | null;
+  brief_context?: BriefContext | null;
+  brief_requirements?: BriefRequirement[];
+  brief_intelligence_prompt_version?: string | null;
   character_descriptors?: string[];
   tone_or_world?: string | null;
   performance_style?: string | null;
