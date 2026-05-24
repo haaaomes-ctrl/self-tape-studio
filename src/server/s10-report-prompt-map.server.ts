@@ -70,6 +70,8 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     modelCallPath: "runEvidencePass -> Lovable AI Gateway chat/completions",
     reportModulesAffected: [
       "observed tape sequence",
+      "component verification",
+      "media observation summary",
       "component breakdown",
       "brief achievement",
       "timestamped notes",
@@ -285,7 +287,8 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "component breakdown",
     aiQuestion:
       "Which components were actually observed, and are they present, absent, partial, cut off, uncertain or not assessable?",
-    structuredOutputField: "detected_components",
+    structuredOutputField:
+      "observed_tape_sequence, component_verifications, media_observation_summary, detected_components",
     uiDestination: "Component breakdown section",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
@@ -438,6 +441,18 @@ Required observation questions:
 - Are audio, video, framing and performance assessable?
 - What timestamp or time-band supports each component claim?
 - What uncertainty or limitation affects each claim?
+
+Required Step 1 structured outputs:
+- observed_tape_sequence: the ordered visible/audible tape sections with present_status, completion_status, media evidence basis and timestamps/time-bands where possible.
+- component_verifications: every S10 BriefRequirement checked against the submitted media with observed_status, completion_status, evidence summary, timestamp refs, confidence and cannot_infer_from_brief_only=true.
+- media_observation_summary: audio/video/framing/continuity assessability, abrupt cut-off, one-continuous-video observation, duration summary and uncertainties.
+
+Strict verification rules:
+- Requested material and observed material must remain separate.
+- A component can only be present, partially_present or complete when observed_from_media=true and evidence_basis=observed_audio_video.
+- brief_text_only can define what to look for, but cannot prove the thing appears in the tape.
+- deterministic_metadata can support assessability, but cannot prove component completion.
+- raw_report.detected_components, legacy report prose, material compliance fields or prior score fields are diagnostic only and cannot override component_verifications.
 
 Canary A rule: ${S10_CANARY_A_PROMPT_REQUIREMENT}
 
