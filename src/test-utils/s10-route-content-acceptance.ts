@@ -36,6 +36,7 @@ export type S10SourceExpectation = {
   expected_source?: string;
   expected_module?: string | RegExp;
   allow_specific_limitation?: boolean;
+  allow_not_applicable?: boolean;
 };
 
 export type S10RouteContentAcceptanceInput = {
@@ -118,6 +119,18 @@ const CORE_SOURCE_EXPECTATIONS: S10SourceExpectation[] = [
   { section: "strengths_and_preserve", expected_module: /s10_professional_critique/ },
   { section: "technique_commentary", expected_module: /s10_technique_commentary/ },
   { section: "timestamped_commentary", expected_module: /s10_timestamped_commentary/ },
+  {
+    section: "presentation_notes",
+    expected_module: /s10_professional_critique|s10_technique_commentary/,
+    allow_specific_limitation: true,
+    allow_not_applicable: true,
+  },
+  {
+    section: "submission_risk",
+    expected_module: /readiness_score_judgement|brief_achievement_matrix|s10_fix_hierarchy/,
+    allow_specific_limitation: true,
+    allow_not_applicable: true,
+  },
 ];
 
 const SAME_VIDEO_SOURCE_EXPECTATIONS: S10SourceExpectation[] = [
@@ -241,9 +254,11 @@ function checkSourceMap(
     const expectedSource = expectation.expected_source ?? "s10_authoritative_module";
     const sourceOk =
       source === expectedSource ||
-      (expectation.allow_specific_limitation && source === "specific_limitation");
+      (expectation.allow_specific_limitation && source === "specific_limitation") ||
+      (expectation.allow_not_applicable && source === "not_applicable");
     const moduleOk =
-      expectation.allow_specific_limitation && source === "specific_limitation"
+      (expectation.allow_specific_limitation && source === "specific_limitation") ||
+      (expectation.allow_not_applicable && source === "not_applicable")
         ? true
         : matchesSourceModule(module, expectation.expected_module);
 
@@ -254,7 +269,9 @@ function checkSourceMap(
         fixture_id: input.fixture_id,
         section: expectation.section,
         expected_source: expectation.allow_specific_limitation
-          ? `${expectedSource} or specific_limitation`
+          ? expectation.allow_not_applicable
+            ? `${expectedSource}, specific_limitation, or not_applicable`
+            : `${expectedSource} or specific_limitation`
           : expectedSource,
         actual_source: source,
         expected_module:

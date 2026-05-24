@@ -51,6 +51,7 @@ export interface V2SectionSourceEntry {
     | "s10_authoritative_module"
     | "s10_compatibility_projection"
     | "specific_limitation"
+    | "not_applicable"
     | "legacy_diagnostic_fallback"
     | "unsupported";
   module: string | null;
@@ -295,6 +296,10 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
   });
   const readiness = s10View?.recommendation ?? null;
   const scoreSummary = s10View?.score_summary ?? null;
+  const hasS10BlockingDecision =
+    !!readiness?.decision &&
+    readiness.decision !== "submit" &&
+    readiness.decision !== "submit_if_deadline_is_close";
 
   const overall = s10View
     ? clampScore(scoreSummary?.overall_submission_readiness_score)
@@ -454,16 +459,19 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     category_rationale: s10View ? null : asObj(r.category_rationale),
     timestamped_notes: s10View ? s10TimestampProjection : asArray(r.timestamped_notes),
     next_take_plan: nextTakePlan,
-    risk_flags: asArray(r.submission_risk_flags ?? r.risk_flags),
-    risk_explanations: asArray(r.casting_risk_explanations),
-    presentation_notes:
-      s10PresentationNotes.length > 0 ? s10PresentationNotes : asArray(r.presentation_notes),
+    risk_flags: s10View ? [] : asArray(r.submission_risk_flags ?? r.risk_flags),
+    risk_explanations: s10View ? [] : asArray(r.casting_risk_explanations),
+    presentation_notes: s10View
+      ? s10PresentationNotes.length > 0
+        ? s10PresentationNotes
+        : []
+      : asArray(r.presentation_notes),
     block_reasons: s10View
-      ? readiness?.rationale && readiness.rationale.length > 0
+      ? hasS10BlockingDecision && readiness?.rationale && readiness.rationale.length > 0
         ? readiness.rationale
         : []
       : asArray(r.block_reasons),
-    at_risk: asBool(r.at_risk),
+    at_risk: s10View ? false : asBool(r.at_risk),
   };
 
   if (args.mode === "brief") {

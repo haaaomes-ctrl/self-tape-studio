@@ -29,6 +29,7 @@ export type S10SectionSource =
   | "s10_authoritative_module"
   | "s10_compatibility_projection"
   | "specific_limitation"
+  | "not_applicable"
   | "legacy_diagnostic_fallback"
   | "unsupported";
 
@@ -50,6 +51,8 @@ export type S10ReportSectionKey =
   | "professional_critique"
   | "technique_commentary"
   | "timestamped_commentary"
+  | "presentation_notes"
+  | "submission_risk"
   | "limitations"
   | "same_video_status"
   | "comparison_truth"
@@ -204,6 +207,10 @@ function source(available: boolean, module: string, limitation: string): S10Sect
     : { source: "specific_limitation", module, limitation };
 }
 
+function notApplicable(limitation: string): S10SectionSourceEntry {
+  return { source: "not_applicable", module: null, limitation };
+}
+
 function observationSource(
   available: boolean,
   module: string,
@@ -319,6 +326,21 @@ export function buildS10PerformerReportViewModel(input: {
   const mediaObservationSummary = cloneForRouteSurface(
     context.mediaObservationSummary ?? report.media_observation_summary ?? null,
   ) as MediaObservationSummary | null;
+  const hasS10PresentationNotes =
+    asArray(
+      (techniqueCommentary?.self_tape_presentation as { what_is_working?: unknown } | null)
+        ?.what_is_working,
+    ).length > 0 || asArray(professionalCritique?.professional_presentation_notes).length > 0;
+  const hasBlockingReadiness =
+    !!readiness?.decision &&
+    readiness.decision !== "submit" &&
+    readiness.decision !== "submit_if_deadline_is_close";
+  const hasS10SubmissionRisk =
+    hasBlockingReadiness ||
+    matrix?.readiness_impact === "material_gap" ||
+    matrix?.readiness_impact === "submission_blocker" ||
+    !!fixHierarchy?.fix_first ||
+    (fixHierarchy?.must_fix_before_submitting?.length ?? 0) > 0;
 
   const limitations = [
     ...(matrix ? [] : ["Brief achievement details are not available for this report."]),
@@ -417,6 +439,20 @@ export function buildS10PerformerReportViewModel(input: {
       "s10_timestamped_commentary",
       "Timestamped commentary is not available for this report.",
     ),
+    presentation_notes: hasS10PresentationNotes
+      ? {
+          source: "s10_authoritative_module",
+          module: "s10_professional_critique/s10_technique_commentary",
+          limitation: null,
+        }
+      : notApplicable("No S10 presentation notes are rendered for this report."),
+    submission_risk: hasS10SubmissionRisk
+      ? {
+          source: "s10_authoritative_module",
+          module: "readiness_score_judgement/brief_achievement_matrix/s10_fix_hierarchy",
+          limitation: null,
+        }
+      : notApplicable("No S10 submission-risk section is rendered for this report."),
     limitations: { source: "s10_authoritative_module", module: "s10_view_model", limitation: null },
     same_video_status: {
       source: sameVideoEvidence ? "s10_authoritative_module" : "unsupported",
@@ -546,6 +582,8 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     "professional_critique",
     "technique_commentary",
     "timestamped_commentary",
+    "presentation_notes",
+    "submission_risk",
     "limitations",
     "same_video_status",
     "comparison_truth",

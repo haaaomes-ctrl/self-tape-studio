@@ -361,6 +361,90 @@ describe("S10.15 route/PDF content acceptance harness", () => {
     expectAccepted(result);
   });
 
+  it("omits presentation notes rather than rendering legacy presentation copy when S10 presentation is absent", () => {
+    const report = buildS10CanaryAReportInput() as Record<string, unknown>;
+    report.presentation_notes = [
+      "Single-file submission as requested",
+      "Correct material, orientation, and framing",
+      "The frame is clean and easy to read",
+    ];
+    const technique = report.s10_technique_commentary as Record<string, unknown>;
+    const presentation = technique.self_tape_presentation as Record<string, unknown>;
+    presentation.what_is_working = [];
+    presentation.what_could_improve = [];
+    presentation.practical_actions = [];
+    presentation.preserve = [];
+    const critique = report.s10_professional_critique as Record<string, unknown>;
+    critique.professional_presentation_notes = [];
+    const v2 = buildV2Report({
+      legacyReport: report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: buildS10CanaryAViewContext() as never,
+    });
+    const html = render(v2 as unknown as Record<string, unknown>);
+    const result = assertS10RouteContentAcceptance({
+      fixture_id: "s10-canary-a-missing-presentation",
+      profile: "missing_module",
+      view_model: v2.s10_view_model,
+      v2_report: v2 as unknown as Record<string, unknown>,
+      rendered_route_html: html,
+      forbiddenExact: [
+        "Single-file submission as requested",
+        "Correct material, orientation, and framing",
+        "The frame is clean and easy to read",
+      ],
+      sourceExpectations: [
+        {
+          section: "presentation_notes",
+          expected_source: "not_applicable",
+        },
+      ],
+    });
+
+    expectAccepted(result);
+  });
+
+  it("omits stale legacy risk state when S10 readiness is submit-ready", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+    report.at_risk = true;
+    report.risk_flags = [{ severity: "low", flag: "LOW File naming convention not followed" }];
+    report.submission_risk_flags = [
+      { severity: "high", flag: "Stale missing-brief warning from legacy report" },
+    ];
+    report.block_reasons = ["Legacy missing brief blocker"];
+    const v2 = buildV2Report({
+      legacyReport: report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+    });
+    const html = render(v2 as unknown as Record<string, unknown>);
+    const result = assertS10RouteContentAcceptance({
+      fixture_id: "s10-strong-complete-stale-risk",
+      profile: "missing_module",
+      view_model: v2.s10_view_model,
+      v2_report: v2 as unknown as Record<string, unknown>,
+      rendered_route_html: html,
+      forbiddenExact: [
+        "LOW File naming convention not followed",
+        "Stale missing-brief warning from legacy report",
+        "Legacy missing brief blocker",
+        "This tape is flagged",
+      ],
+      sourceExpectations: [
+        {
+          section: "submission_risk",
+          expected_source: "not_applicable",
+        },
+      ],
+    });
+
+    expectAccepted(result);
+  });
+
   it("reports actionable source-map failure details", () => {
     const { v2, html } = buildCanaryV2();
     const badView = structuredClone(v2.s10_view_model) as NonNullable<V2Report["s10_view_model"]>;

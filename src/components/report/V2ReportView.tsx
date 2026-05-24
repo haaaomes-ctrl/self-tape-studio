@@ -115,6 +115,15 @@ function SimpleList({ items, marker = "•" }: { items: unknown[]; marker?: stri
   );
 }
 
+function displayStrings(value: unknown): string[] {
+  return safeArr(value)
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      return itemTitle(item) ?? itemDetail(item) ?? "";
+    })
+    .filter((item): item is string => item.trim().length > 0);
+}
+
 export function V2ReportView({
   report,
   takeNumber,
@@ -133,6 +142,7 @@ export function V2ReportView({
   const s10Matrix = safeObj(s10?.brief_achievement_matrix);
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
   const s10NextActionPlan = safeObj(s10?.next_action_plan);
+  const s10ProfessionalCritique = safeObj(s10?.professional_critique);
   const s10FixHierarchySource = safeObj(s10SectionSourceMap?.fix_hierarchy);
   const s10NextActionSource = safeObj(s10SectionSourceMap?.next_action_plan);
   const s10FixHierarchyLimitation =
@@ -183,10 +193,14 @@ export function V2ReportView({
   const strengths = safeArr(report.strengths);
   const legacyImprovements = safeArr(report.improvements);
   const tsNotes = safeArr<{ timestamp?: string; note?: string }>(report.timestamped_notes);
-  const presentation = safeArr<string>(report.presentation_notes).filter(
-    (s): s is string => typeof s === "string",
-  );
-  const riskFlags = safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
+  const s10SelfTapePresentation = safeObj(s10Technique?.self_tape_presentation);
+  const presentation = s10
+    ? [
+        ...displayStrings(s10SelfTapePresentation?.what_is_working),
+        ...displayStrings(s10ProfessionalCritique?.professional_presentation_notes),
+      ].slice(0, 6)
+    : safeArr<string>(report.presentation_notes).filter((s): s is string => typeof s === "string");
+  const riskFlags = s10 ? [] : safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
   const components = safeArr<{
     type?: string;
     component_type?: string | null;
@@ -290,7 +304,7 @@ export function V2ReportView({
             </ul>
           </div>
         )}
-        {report.at_risk && blockers.length === 0 && (
+        {!s10 && report.at_risk && blockers.length === 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
             <p>
