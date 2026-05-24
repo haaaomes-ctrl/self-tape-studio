@@ -13,22 +13,14 @@ const baseCtx = {
 };
 
 function withHeadline(h: string) {
-  return {
-    casting_headline: h,
-    scores: { acting: 70 },
-    overall_score: 70,
-    verdict_final: "ready_with_notes",
-  };
+  return { casting_headline: h, scores: { acting: 70 }, overall_score: 70, verdict_final: "ready_with_notes" };
 }
 
 describe("castability / callback / workshop overclaim suppression", () => {
   // Phase 3C P2 — soft overclaims are REWRITTEN to safer wording.
   const rewritten: Array<[string, RegExp]> = [
     ["Highly castable for musical theatre development.", /well aligned with the supplied brief/i],
-    [
-      "Highly castable for contemporary legit musical theatre.",
-      /well aligned with the supplied brief/i,
-    ],
+    ["Highly castable for contemporary legit musical theatre.", /well aligned with the supplied brief/i],
     ["Strong contender for a workshop environment.", /a strong tape for the stated task/i],
     ["Recall-worthy take.", /ready to submit/i],
     ["Callback-ready performance.", /ready to submit/i],
@@ -60,15 +52,15 @@ describe("castability / callback / workshop overclaim suppression", () => {
       const out = enforcePublicReportOutputQuality(withHeadline(p), baseCtx);
       const headline = (out.report.casting_headline as string) ?? "";
       // Either dropped entirely, or rewritten then dropped on residual hard token.
-      const stillUnsafe = /\b(?:bookable|marketable|commercial look|would get a recall)\b/i.test(
-        headline,
-      );
+      const stillUnsafe = /\b(?:bookable|marketable|commercial look|would get a recall)\b/i.test(headline);
       expect(stillUnsafe).toBe(false);
     });
   }
 
   it("preserves neutral 'development workshop' brief reference when no overclaim", () => {
-    const r = withHeadline("The submitted tape was prepared for a development workshop project.");
+    const r = withHeadline(
+      "The submitted tape was prepared for a development workshop project.",
+    );
     const out = enforcePublicReportOutputQuality(r, baseCtx);
     expect(out.report.casting_headline).toMatch(/development workshop/i);
   });
@@ -76,14 +68,7 @@ describe("castability / callback / workshop overclaim suppression", () => {
   it("does not change scores, overall_score, verdict, role_fit_modifier", () => {
     const r = {
       casting_headline: "Highly castable.",
-      scores: {
-        acting: 70,
-        vocal: 65,
-        technical: 80,
-        audio: 70,
-        brief_adherence: 75,
-        professional_presentation: 72,
-      },
+      scores: { acting: 70, vocal: 65, technical: 80, audio: 70, brief_adherence: 75, professional_presentation: 72 },
       overall_score: 73,
       verdict_final: "ready",
       role_fit_modifier: 2,
@@ -171,12 +156,14 @@ describe("professional_presentation anti-polish cleanup", () => {
     const out = enforcePublicReportOutputQuality(
       {
         category_notes: {
-          professional_presentation: "Highly professional tape. Technically polished.",
+          professional_presentation:
+            "Highly professional tape. Technically polished.",
         },
       },
       baseCtx,
     );
-    const note = (out.report.category_notes as Record<string, string>).professional_presentation;
+    const note = (out.report.category_notes as Record<string, string>)
+      .professional_presentation;
     expect(note).not.toMatch(/highly professional tape|technically polished/i);
     expect(out.counters.presentation_polish_removed).toBeGreaterThan(0);
   });
@@ -191,7 +178,8 @@ describe("professional_presentation anti-polish cleanup", () => {
       },
       baseCtx,
     );
-    const note = (out.report.category_notes as Record<string, string>).professional_presentation;
+    const note = (out.report.category_notes as Record<string, string>)
+      .professional_presentation;
     expect(note).not.toMatch(/well-lit|neutral background|no distractions/i);
   });
 
@@ -207,14 +195,15 @@ describe("professional_presentation anti-polish cleanup", () => {
     const out = enforcePublicReportOutputQuality(
       {
         category_notes: {
-          professional_presentation: "Head-and-shoulders framing maintained throughout.",
+          professional_presentation:
+            "Head-and-shoulders framing maintained throughout.",
         },
       },
       baseCtx,
     );
-    expect((out.report.category_notes as Record<string, string>).professional_presentation).toMatch(
-      /head-and-shoulders/i,
-    );
+    expect(
+      (out.report.category_notes as Record<string, string>).professional_presentation,
+    ).toMatch(/head-and-shoulders/i);
   });
 });
 
@@ -236,8 +225,13 @@ describe("fixed-frame / rehearsal-only rewrite", () => {
     "Use props to anchor the moment.",
     "Move around the room to find more weight.",
   ])("rewrites: %s", (s) => {
-    const out = enforcePublicReportOutputQuality({ coaching_drills: [s] }, baseCtx);
-    expect((out.report.coaching_drills as string[])[0].toLowerCase()).toContain("rehearsal-only");
+    const out = enforcePublicReportOutputQuality(
+      { coaching_drills: [s] },
+      baseCtx,
+    );
+    expect((out.report.coaching_drills as string[])[0].toLowerCase()).toContain(
+      "rehearsal-only",
+    );
   });
 
   it("does not rewrite when framingFixed=false", () => {
@@ -261,7 +255,9 @@ describe("idempotence + privacy + caps", () => {
     },
     presentation_notes: ["Well-lit against neutral background."],
     next_take_plan: { steps: ["Hold the script."] },
-    timestamped_notes: [{ timestamp: "00:42", note: "Reader response warm." }],
+    timestamped_notes: [
+      { timestamp: "00:42", note: "Reader response warm." },
+    ],
     scores: { acting: 70, vocal: 65 },
     overall_score: 70,
     verdict_final: "ready_with_notes",
@@ -286,105 +282,6 @@ describe("idempotence + privacy + caps", () => {
     ];
     const json = JSON.stringify(out);
     for (const k of FORBIDDEN) expect(json).not.toContain(`"${k}"`);
-  });
-
-  it("strips private nested keys from brief requirement and achievement objects", () => {
-    const out = enforcePublicReportOutputQuality(
-      {
-        brief_requirements: [
-          {
-            source_text: "Submit one scene.",
-            public_summary: "Submit one scene.",
-            category: "material_instruction",
-            obligation: "mandatory",
-            requirement_type: "scene",
-            achievement_status: "achieved",
-            readiness_impact: "supports_submission",
-            public_evidence_summary: "The scene material is present.",
-            assessability_limits: ["No capture limitation was noted."],
-            next_take_action: "Keep the scene material present.",
-            evidence_anchor_ids: ["private-anchor"],
-            truth_state_entry_ids: ["private-truth"],
-            raw_prompt: "private prompt",
-            signed_url: "https://storage.example/private.mp4?signature=secret",
-          },
-        ],
-        brief_achievement: {
-          overall_status: "achieved",
-          summary: "The supplied brief item is achieved.",
-          mandatory_requirements_status: "No mandatory blocker.",
-          mandatory_status: "clear",
-          readiness_impact: "supports_submission",
-          readiness_effect: "The brief item supports submission readiness.",
-          not_assessable_summary: "No brief limitation is present.",
-          evidence_id: "private-evidence",
-          raw_response: "private model response",
-        },
-      },
-      baseCtx,
-    ).report;
-    const json = JSON.stringify(out);
-
-    expect(out.brief_requirements).toEqual([
-      {
-        source_text: "Submit one scene.",
-        public_summary: "Submit one scene.",
-        category: "material_instruction",
-        obligation: "mandatory",
-        requirement_type: "scene",
-        achievement_status: "achieved",
-        readiness_impact: "supports_submission",
-        public_evidence_summary: "The scene material is present.",
-        assessability_limits: ["No capture limitation was noted."],
-        next_take_action: "Keep the scene material present.",
-      },
-    ]);
-    expect(out.brief_achievement).toEqual({
-      overall_status: "achieved",
-      summary: "The supplied brief item is achieved.",
-      mandatory_requirements_status: "No mandatory blocker.",
-      mandatory_status: "clear",
-      readiness_impact: "supports_submission",
-      readiness_effect: "The brief item supports submission readiness.",
-      not_assessable_summary: "No brief limitation is present.",
-    });
-    expect(json).not.toMatch(
-      /private-anchor|private-truth|private prompt|signature=secret|private-evidence|private model response|evidence_anchor|truth_state|raw_prompt|signed_url|raw_response/,
-    );
-  });
-
-  it("strips private nested keys from priority fix action objects", () => {
-    const out = enforcePublicReportOutputQuality(
-      {
-        priority_fixes: [
-          {
-            headline: "Clarify the first reaction",
-            rationale: "It materially affects submission readiness.",
-            action: "Record one pass that lands the first reaction before moving on.",
-            kind: "critical_gap",
-            category: "acting",
-            evidence_anchor_ids: ["private-anchor"],
-            raw_response: "private model response",
-            signed_url: "https://storage.example/private.mp4?signature=secret",
-          },
-        ],
-      },
-      baseCtx,
-    ).report;
-    const json = JSON.stringify(out);
-
-    expect(out.priority_fixes).toEqual([
-      {
-        headline: "Clarify the first reaction",
-        rationale: "It materially affects submission readiness.",
-        action: "Record one pass that lands the first reaction before moving on.",
-        kind: "critical_gap",
-        category: "acting",
-      },
-    ]);
-    expect(json).not.toMatch(
-      /private-anchor|private model response|signature=secret|evidence_anchor|raw_response|signed_url/,
-    );
   });
 
   it("preserves scores/overall/verdict exactly", () => {

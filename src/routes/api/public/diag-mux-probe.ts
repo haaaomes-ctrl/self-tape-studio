@@ -1,9 +1,9 @@
-// Operator-only diagnostic endpoint: runs the same probe sequence used by
+// Temporary diagnostic endpoint: runs the same probe sequence used by
 // runProcessTake from inside the deployed Worker runtime, and returns the
 // raw HEAD / Range GET / browser GET statuses + selected method.
 //
-// Requires RECONCILER_SECRET via x-reconciler-secret or bearer auth before
-// reading the target URL. The target remains restricted to stream.mux.com.
+// SAFE: read-only fetches against a caller-supplied stream.mux.com URL.
+// Restricted to https://stream.mux.com/* paths; nothing else is fetched.
 import { createFileRoute } from "@tanstack/react-router";
 
 const NO_CACHE = {
@@ -38,33 +38,15 @@ async function dispose(res: Response | null) {
   }
 }
 
-function authorise(request: Request): Response | null {
-  const secret = process.env.RECONCILER_SECRET;
-  if (!secret) {
-    console.error("[diag-mux-probe] RECONCILER_SECRET not configured");
-    return new Response("not configured", { status: 503, headers: NO_CACHE });
-  }
-  const directHeader = request.headers.get("x-reconciler-secret");
-  const bearerHeader = request.headers.get("authorization");
-  const bearerToken = bearerHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? null;
-  if (directHeader === secret || bearerToken === secret) return null;
-  return new Response("unauthorized", { status: 401, headers: NO_CACHE });
-}
-
 export const Route = createFileRoute("/api/public/diag-mux-probe")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const denied = authorise(request);
-        if (denied) return denied;
-
         const u = new URL(request.url);
         const target = u.searchParams.get("url");
         if (!target || !/^https:\/\/stream\.mux\.com\/[^/]+\/(highest|high)\.mp4$/.test(target)) {
           return new Response(
-            JSON.stringify({
-              error: "invalid url; must match https://stream.mux.com/<id>/(highest|high).mp4",
-            }),
+            JSON.stringify({ error: "invalid url; must match https://stream.mux.com/<id>/(highest|high).mp4" }),
             { status: 400, headers: { "Content-Type": "application/json" } },
           );
         }

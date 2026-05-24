@@ -5,12 +5,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { setResponseHeader } from "@tanstack/react-start/server";
-import {
-  assertAdminEmail,
-  isAdminEmail,
-  normalizeEmail,
-} from "@/lib/admin-auth.server";
 
+const ADMIN_EMAIL = "o.halawi90@gmail.com";
 const BUCKET_NAME = "qa-artifacts";
 const SIGNED_URL_TTL_SECONDS = 3600;
 const ZIP_TMP_PREFIX = "admin-temp-zips";
@@ -61,6 +57,16 @@ export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
   return { deleted, failed };
 }
 
+
+function normalizeEmail(email?: string | null): string {
+  return email?.trim().toLowerCase() ?? "";
+}
+
+function assertAdminEmail(claims: { email?: string | null } | null | undefined) {
+  if (normalizeEmail(claims?.email) !== ADMIN_EMAIL) {
+    throw new Response("Forbidden", { status: 403 });
+  }
+}
 
 export type ArtifactEntry = {
   path: string;
@@ -203,7 +209,8 @@ export const whoAmIAdmin = createServerFn({ method: "GET" })
     return {
       claimsEmail,
       normalizedEmail: normalized,
-      isAdmin: isAdminEmail(claims),
+      expectedEmail: ADMIN_EMAIL,
+      isAdmin: normalized === ADMIN_EMAIL,
       userId: claims?.sub ?? null,
     };
   });

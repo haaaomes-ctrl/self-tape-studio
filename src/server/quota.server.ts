@@ -13,9 +13,7 @@ import { startOfDay } from "date-fns";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getResolvedConfig, SAFE_DEFAULTS } from "./app-config.server";
 
-// Deprecated compatibility path for historical anon-owned rows only.
-// New submissions require authentication and database triggers reject anon_id
-// ownership writes.
+// Anon lifetime cap is intentionally hard-coded (out of scope for app_config).
 export const ANON_LIFETIME_CAP = 2;
 // Re-exported for any legacy import sites; the runtime value comes from config.
 export const USER_DAILY_CAP_DEFAULT = SAFE_DEFAULTS.daily_submission_cap;
@@ -52,7 +50,6 @@ export class QuotaExceededError extends Error {
 
 export type QuotaIdentity =
   | { kind: "user"; userId: string }
-  /** @deprecated Anonymous submissions are no longer supported. */
   | { kind: "anon"; anonId: string };
 
 /**
@@ -87,7 +84,9 @@ export async function assertWithinAnalysisQuota(
 
     const used = count ?? 0;
     if (used >= cap) {
-      console.warn(`[quota] REJECTED ${op} — used=${used} cap=${cap} scope=user_daily`);
+      console.warn(
+        `[quota] REJECTED ${op} — used=${used} cap=${cap} scope=user_daily`,
+      );
       throw new QuotaExceededError({
         scope: "user_daily",
         cap,
@@ -100,7 +99,7 @@ export async function assertWithinAnalysisQuota(
     return;
   }
 
-  // Deprecated anon compatibility path for historical rows.
+  // anon
   const { count, error } = await supabaseAdmin
     .from("takes")
     .select("id", { count: "exact", head: true })
@@ -153,14 +152,13 @@ export function quotaErrorToResponse(err: unknown): Response | unknown {
 }
 
 /**
- * Resolve the take's identity. Used by the webhook path
+ * Resolve the take's identity (user OR anon). Used by the webhook path
  * which has no caller context — the trust comes from the verified Mux
  * signature, and the take row tells us who owns the upload.
- *
- * Anonymous ownership is deprecated; the anon branch is retained only so
- * historical rows fail or complete consistently rather than crashing.
  */
-export async function resolveTakeIdentity(takeId: string): Promise<QuotaIdentity | null> {
+export async function resolveTakeIdentity(
+  takeId: string,
+): Promise<QuotaIdentity | null> {
   const { data, error } = await supabaseAdmin
     .from("takes")
     .select("user_id, anon_id")

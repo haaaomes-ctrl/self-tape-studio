@@ -67,7 +67,6 @@ This note implements the first internal-only QA artefact emitter foundation for 
 - GitHub is **not** a runtime artefact sink.
 - Filesystem sink (`qa-artifacts/<run_id>/...`) is local/dev only unless the runtime keeps files retrievable.
 - Locked-down Lovable production should use `QA_ARTIFACT_SINK=storage` with private bucket `qa-artifacts`.
-- The `qa-artifacts` Storage bucket and `take_qa_traces` table are internal-only. Runtime access is through service-role server code and admin-gated signed downloads; anon/authenticated clients must not receive direct Storage or table policies. Explicit deny-all policies are intentional and should not be replaced with owner-scoped client policies unless the public/private contract changes.
 - Object key pattern is `v3/<run_id>/<relative_path>` (for example `v3/<run_id>/manifest.json`).
 - Optional fallback logging: `QA_ARTIFACT_LOG_FALLBACK=true` emits one JSONL-style line per write attempt, prefixed with `TAPECOACH_QA_ARTIFACT_JSON:`.
 - Storage/log sinks are internal-only and non-public.

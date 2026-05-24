@@ -1,30 +1,51 @@
-## Goal
+## Diagnosis
 
-Add the runtime provenance env vars that `resolveQADeploymentProvenance` reads, so the runtime verification trace can resolve commit/branch/deployment without operator confirmation conflicts.
+Two issues from the previous "Finalising Results" reliability fix:
 
-## What to set
+1. **QA artefacts (logs + raw report `.json`) stopped appearing in the `qa-artifacts` bucket.**
+   The fix wrapped QA emission in `void (async () => { ... })()` *after* `status: complete` was written (lines ~3198–3250 of `src/server/process-take.server.ts`). On this app's Cloudflare Worker SSR runtime, async work that is not awaited inside the request lifecycle (and not registered with `ctx.waitUntil`) is cancelled the moment the response is returned. The Storage upload promise is being killed before it reaches the bucket.
+   The original "Finalising Results" hang is now independently guarded by the 5s per-upload timeout we added inside `qa-artifact-sink.server.ts` (`QA_ARTIFACT_STORAGE_TIMEOUT_MS`). That makes awaiting the emission bounded and safe — the outer fire-and-forget wrapper is no longer needed.
 
-Add three secrets via `secrets--add_secret` (runtime env vars in the deployed Worker):
+2. **`/admin/storage-downloads` lists files alphabetically by path.** `listAllArtifacts` in `src/lib/admin-storage.functions.ts` ends with `results.sort((a, b) => a.path.localeCompare(b.path))`. There is no date ordering, so newest takes are not surfaced at the top.
 
-| Secret name | Value |
-|---|---|
-| `BUILD_COMMIT_SHA` | `f2e87e6` (or full 40-char SHA if you have it — preferred for the resolver's safe-value check) |
-| `BRANCH_NAME` | `main` |
-| `DEPLOYMENT_REVISION` | `r10-7h-f2e87e6` |
+## Fix
 
-The other aliases in your table (`COMMIT_SHA`, `GIT_SHA`, `GITHUB_SHA`, `VERCEL_*`, `CF_PAGES_*`, `LOVABLE_GIT_COMMIT_SHA`, `LOVABLE_DEPLOYMENT_ID`, etc.) are alternate names the resolver also accepts. Leave them unset — Lovable's Worker runtime does not inject GitHub/Vercel/Cloudflare-specific names, and setting redundant aliases just creates drift risk if values disagree later.
+### A. Restore QA emission so files actually upload — `src/server/process-take.server.ts`
+- Replace the `void (async () => { ... })()` block (lines ~3198–3250) with an awaited `try/catch` around the same emission body.
+- Remove the outer `QA_EMIT_TIMEOUT_MS` / `Promise.race` wrapper. The bounded timeout already lives one layer down in `qa-artifact-sink.server.ts` (5s per upload), so worst-case added latency after `complete` is ~5s × number of artefacts (raw report + manifest ≈ 10s ceiling).
+- Keep a try/catch so a QA failure can never fail the take.
+- Net effect: pipeline still cannot hang at "Finalising Results" (storage timeout protects it), and artefacts actually reach the bucket because the work happens inside the request lifecycle.
 
-## Why these three
+### B. Order downloads by date — `src/lib/admin-storage.functions.ts`
+- Change the final sort to `updated_at` descending (fall back to `path` when null/equal). Newest first by default.
 
-`src/server/v3/qa-artifacts.server.ts` → `resolveQADeploymentProvenance` walks the alias list per field and picks the first present + "safe" value (rejects URLs, `token=`, `=`, etc.). Setting one canonical name per field is enough and matches the test fixtures in `v3-s9-runtime-verification-provenance-comparison-parity-closeout.test.ts` ("allows safe env provenance to complete runtime proof").
+### C. Date grouping in the admin UI — `src/routes/admin/storage-downloads.tsx`
+- Add a "Sort by" toggle: `Newest first` (default) / `Oldest first` / `Path A→Z`. Pure client-side sort over the already-fetched list.
+- When sorted by date, render `YYYY-MM-DD` group headers above each day's files.
 
-## Notes / caveats
+## Verification (end-to-end test the user requested)
 
-- **Prefer the full 40-char Git SHA** for `BUILD_COMMIT_SHA` if you have it. The short `f2e87e6` will be accepted by the safe-value filter, but operator-confirmation conflict checks elsewhere compare against full SHAs — using the full SHA avoids a spurious `runtime_provenance_conflict`.
-- Values must not contain `://`, `?`, `=`, or whitespace, or the resolver will mark them `invalid_env_value_ignored`.
-- These are runtime secrets, not build secrets — `add_secret` is the right path.
-- No code changes needed. After the secrets are saved, the next analysis run will populate `deployment_provenance_status: resolved` in `RuntimeVerificationTrace.json`. `production_safe_status` stays `blocked` by design (release approval is a separate gate).
+After applying the fix, I will:
 
-## Step
+1. Submit a fresh take through the live pipeline using the project's standard submission path.
+2. Poll the take row until `status = complete` to confirm the pipeline does not stall at "Finalising Results".
+3. Visit `/admin/storage-downloads` (or list the bucket via `listAllArtifacts`) and confirm a new dated folder appears at the top containing both:
+   - the raw report `.json`
+   - the manifest + log artefacts
+4. Repeat with a second take to confirm both appear, newest-first, and neither stalls.
+5. Pull `server-function-logs` for the run to confirm no `internal_qa_emit_warning` / `storage_upload_timeout` warnings.
 
-1. Call `secrets--add_secret` for `BUILD_COMMIT_SHA`, `BRANCH_NAME`, `DEPLOYMENT_REVISION` — you enter the values in the secure form.
+If the live submission requires an authenticated user session I cannot drive headlessly, I will fall back to invoking the existing process-take server function directly via `invoke-server-function` against a known take id and verify the same artefacts land in the bucket.
+
+## Out of scope / unchanged
+
+- No RLS policy changes
+- `qa-artifacts` bucket stays private
+- No changes to public report shape, scoring, Mux pipeline, reconciler, or `production_safe` status
+- No service-role secret in client bundle
+
+## Files to change
+
+- `src/server/process-take.server.ts`
+- `src/lib/admin-storage.functions.ts`
+- `src/routes/admin/storage-downloads.tsx`

@@ -19,6 +19,12 @@ import {
   type ArtifactEntry,
 } from "@/lib/admin-storage.functions";
 
+const ADMIN_EMAIL = "o.halawi90@gmail.com";
+
+function normalizeEmail(email?: string | null): string {
+  return email?.trim().toLowerCase() ?? "";
+}
+
 function RouteErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   const status = (error as unknown as { status?: number }).status;
@@ -91,6 +97,7 @@ function triggerDownload(url: string, filename: string) {
 type WhoAmI = {
   claimsEmail: string | null;
   normalizedEmail: string;
+  expectedEmail: string;
   isAdmin: boolean;
 };
 
@@ -113,6 +120,10 @@ function StorageDownloadsPage() {
   const zipSelected = useServerFn(zipSelectedArtifacts);
   const deleteSelected = useServerFn(deleteSelectedArtifacts);
 
+  const clientEmail = user?.email ?? null;
+  const clientNormalized = normalizeEmail(clientEmail);
+  const clientEmailMatches = clientNormalized === ADMIN_EMAIL;
+
   const [whoState, setWhoState] = useState<{
     loading: boolean;
     data: WhoAmI | null;
@@ -134,9 +145,9 @@ function StorageDownloadsPage() {
     failed: { path: string; error: string }[];
   }>({ running: false, done: 0, total: 0, current: null, failed: [] });
 
-  // Verify admin access server-side only; do not expose the configured admin address to the client.
+  // Verify admin server-side only when client is signed in as the expected email.
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading || !user || !clientEmailMatches) return;
     let cancelled = false;
     setWhoState({ loading: true, data: null, error: null });
     whoAmI()
@@ -151,7 +162,7 @@ function StorageDownloadsPage() {
     return () => {
       cancelled = true;
     };
-  }, [loading, user, whoAmI]);
+  }, [loading, user, clientEmailMatches, whoAmI]);
 
   const serverIsAdmin = whoState.data?.isAdmin === true;
 
@@ -204,7 +215,7 @@ function StorageDownloadsPage() {
           <dt>client.hasSession</dt>
           <dd>{String(!!user)}</dd>
           <dt>client.matches</dt>
-          <dd>server-verified</dd>
+          <dd>{String(clientEmailMatches)}</dd>
           <dt>server.loading</dt>
           <dd>{String(whoState.loading)}</dd>
           <dt>server.isAdmin</dt>
@@ -231,10 +242,32 @@ function StorageDownloadsPage() {
         <Panel>Checking your app login session…</Panel>
       ) : !user ? (
         <Panel>
-          <p>You must sign in with an authorised administrator account to access storage downloads.</p>
+          <p>
+            You must sign in to the app as <code>{ADMIN_EMAIL}</code> to access
+            storage downloads.
+          </p>
           <div className="mt-4">
             <Button asChild>
               <Link to="/login">Sign in to continue</Link>
+            </Button>
+          </div>
+        </Panel>
+      ) : !clientEmailMatches ? (
+        <Panel tone="warn">
+          <p>This account is not authorized for storage downloads.</p>
+          <ul className="mt-2 font-mono text-xs">
+            <li>current: {clientEmail ?? "(none)"}</li>
+            <li>normalized: {clientNormalized || "(none)"}</li>
+            <li>expected: {ADMIN_EMAIL}</li>
+          </ul>
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await signOut();
+              }}
+            >
+              Sign out
             </Button>
           </div>
         </Panel>
@@ -253,17 +286,8 @@ function StorageDownloadsPage() {
           <ul className="mt-2 font-mono text-xs">
             <li>server email: {whoState.data?.claimsEmail ?? "(none)"}</li>
             <li>server normalized: {whoState.data?.normalizedEmail ?? "(none)"}</li>
+            <li>expected: {ADMIN_EMAIL}</li>
           </ul>
-          <div className="mt-4">
-            <Button
-              variant="outline"
-              onClick={async () => {
-                await signOut();
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
         </Panel>
       ) : (
         <FilesUI

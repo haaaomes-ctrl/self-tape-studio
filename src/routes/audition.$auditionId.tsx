@@ -37,10 +37,6 @@ function pickHeadline(report: unknown): string | null {
   return null;
 }
 
-function legacyPublicReportRenderingEnabled(): boolean {
-  return false;
-}
-
 export const Route = createFileRoute("/audition/$auditionId")({
   head: () => ({ meta: [{ title: brandTitle("Audition") }] }),
   component: AuditionPage,
@@ -865,15 +861,10 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
   const r = take.report;
   if (!r) return null;
 
-  // R10.7F — ordinary public rendering must use the canonical public report
-  // view model. Legacy v1 fields may remain stored for QA/migration, but they
-  // must not rescue or populate the performer-facing report path.
-  const reportSchemaVersion = readReportSchemaVersion(r);
-  if (reportSchemaVersion !== "v2-component" && !legacyPublicReportRenderingEnabled()) {
-    return <V2ReportView report={null} takeNumber={take.take_number} auditionType={null} />;
-  }
-
-  if (reportSchemaVersion === "v2-component") {
+  // Phase 3B — schema-version branch. Only "v2-component" routes to the v2
+  // renderer; missing/unknown/v1-legacy continues through the existing v1
+  // path. Reads via readReportSchemaVersion so renderer source stays clean.
+  if (readReportSchemaVersion(r) === "v2-component") {
     return (
       <V2ReportView
         report={r}

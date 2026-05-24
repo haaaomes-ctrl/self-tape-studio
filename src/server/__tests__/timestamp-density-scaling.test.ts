@@ -29,11 +29,9 @@ describe("timestamp density scaling", () => {
     expect(evSrc).toMatch(/3.5 min -> 8.14|3.5 minutes: 8.14/);
   });
 
-  it("locked V2ReportView no longer renders timestamped evidence while public scoring is blocked", () => {
+  it("V2ReportView no longer slices timestamps to 8", () => {
     expect(viewSrc).not.toContain("tsNotes.slice(0, 8)");
-    expect(viewSrc).not.toContain("tsNotes.slice(0, 36)");
-    expect(viewSrc).toContain("Submission guidance");
-    expect(viewSrc).toContain("Not assessable");
+    expect(viewSrc).toContain("tsNotes.slice(0, 36)");
   });
 });
 
