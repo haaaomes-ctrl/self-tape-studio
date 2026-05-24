@@ -560,6 +560,91 @@ export type ReadinessAndScoreJudgement = {
   repair_prompt_status: "not_needed" | "classified_contradictory";
 };
 
+export type S10FixSourceCategory =
+  | "brief"
+  | "performance"
+  | "technical"
+  | "admin_process"
+  | "score_semantics"
+  | "polish"
+  | "limitation";
+
+export type S10FixUrgency = "critical_gap" | "high" | "medium" | "low" | "optional";
+
+export type S10FixSubmissionImpact =
+  | "submission_blocker"
+  | "material_gap"
+  | "review_carefully"
+  | "optional_polish"
+  | "final_check"
+  | "supports_submission";
+
+export type S10ActionSourceAuthority =
+  | "s10_ai_authored"
+  | "s10_normalised"
+  | "legacy_diagnostic_reauthored"
+  | "limitation";
+
+export type S10ActionContradictionWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_improvements"
+    | "legacy_next_take_plan"
+    | "legacy_coaching_drills"
+    | "prior_prose"
+    | "s10_normaliser";
+  internal_only: true;
+};
+
+export type S10FixItem = {
+  id: string;
+  title: string;
+  issue: string;
+  why_it_matters: string;
+  exact_action: string;
+  source_category: S10FixSourceCategory;
+  urgency: S10FixUrgency;
+  submission_impact: S10FixSubmissionImpact;
+  linked_requirement_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_readiness_reason_ids: string[];
+  evidence_summary: string;
+  confidence: "low" | "medium" | "high";
+  is_fix_first_candidate: boolean;
+  is_generic_fallback: false;
+  source_authority: S10ActionSourceAuthority;
+  legacy_source_used: boolean;
+  legacy_source_path?: string | null;
+};
+
+export type S10FixHierarchy = {
+  fix_first: S10FixItem | null;
+  priority_fixes: S10FixItem[];
+  must_fix_before_submitting: S10FixItem[];
+  should_improve_if_retaking: S10FixItem[];
+  optional_polish: S10FixItem[];
+  preserve: S10FixItem[];
+  do_not_overfix: S10FixItem[];
+  action_contradiction_warnings: S10ActionContradictionWarning[];
+};
+
+export type S10NextActionPlan = {
+  submit_checklist: string[];
+  retake_plan: string[];
+  final_checks: string[];
+  playback_checks: string[];
+  do_not_overfix: string[];
+  if_time_is_short_guidance: string[];
+  no_retake_needed_reason: string | null;
+  confidence: "low" | "medium" | "high";
+};
+
 export type BriefContext = {
   project_name?: string | null;
   role_name?: string | null;

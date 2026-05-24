@@ -10,6 +10,7 @@ export const S10_MODULE_REPAIR_PROMPT_VERSION = "s10_module_repair_v1";
 export const S10_BRIEF_INTELLIGENCE_PROMPT_VERSION = "s10_brief_intelligence_v1";
 export const S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION = "s10_brief_achievement_matrix_v1";
 export const S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION = "s10_readiness_score_semantics_v1";
+export const S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION = "s10_fix_hierarchy_next_action_v1";
 
 export const LEGACY_S9_BRIEF_EXTRACTION_PROMPT_VERSION =
   "legacy_s9_brief_extraction_supporting_current";
@@ -112,6 +113,22 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     status: "active",
   },
   {
+    promptName: "S10 fix hierarchy and next action",
+    promptVersion: S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
+    sourceFile: "src/server/report-polish.server.ts + src/server/process-take.server.ts",
+    runtimeStage: "analysis_step_2_post_readiness_fix_action",
+    modelCallPath: "embedded active module in Step 2 polish and S10 single-pass generation",
+    reportModulesAffected: [
+      "fix hierarchy",
+      "prioritised fixes",
+      "fix-first",
+      "next action",
+      "do-not-overfix",
+      "compatibility projections",
+    ],
+    status: "active",
+  },
+  {
     promptName: "S10 professional judgement/module map",
     promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
     sourceFile: "src/server/report-polish.server.ts",
@@ -188,6 +205,16 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
     modelCallPath:
       "raw_report.overall_score, score_trace, prior report prose and legacy verdict labels are diagnostic only for S10.5",
     reportModulesAffected: ["legacy readiness labels", "legacy score traces"],
+    status: "diagnostic_only",
+  },
+  {
+    promptName: "Legacy fix/action diagnostics",
+    promptVersion: "legacy_fix_action_diagnostic_only",
+    sourceFile: "src/server/process-take.server.ts + src/server/report-polish.server.ts",
+    runtimeStage: "legacy action/fix diagnostics",
+    modelCallPath:
+      "raw_report.fix_first, raw_report.improvements, raw_report.next_take_plan, raw_report.block_reasons and legacy coaching_drills are diagnostic only for S10.6",
+    reportModulesAffected: ["legacy action fields", "legacy next-take prose"],
     status: "diagnostic_only",
   },
   {
@@ -296,7 +323,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "prioritised fixes",
     aiQuestion:
       "What are the most submission-impactful fixes, ordered by urgency and source category?",
-    structuredOutputField: "priority_fixes",
+    structuredOutputField: "s10_fix_hierarchy.priority_fixes, priority_fixes",
     uiDestination: "Prioritised fixes section",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
@@ -307,7 +334,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "fix-first",
     aiQuestion:
       "What is the single first action the performer should take before submitting or retaking?",
-    structuredOutputField: "fix_first",
+    structuredOutputField: "s10_fix_hierarchy.fix_first, fix_first",
     uiDestination: "Fix this first fallback section",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
@@ -375,7 +402,8 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "preserve/do-not-overfix",
     aiQuestion:
       "What choices should the performer preserve, and what should they avoid over-fixing?",
-    structuredOutputField: "next_take_plan, coaching_drills, category_rationale",
+    structuredOutputField:
+      "s10_fix_hierarchy.preserve, s10_fix_hierarchy.do_not_overfix, s10_next_action_plan",
     uiDestination: "Next steps and why this score sections",
     completenessRule: "thin",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
@@ -385,7 +413,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   {
     reportModule: "improvements",
     aiQuestion: "What concrete improvements are grounded in the observed tape and selected level?",
-    structuredOutputField: "improvements",
+    structuredOutputField: "s10_fix_hierarchy.should_improve_if_retaking, improvements",
     uiDestination: "Improvements section",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
@@ -417,7 +445,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   {
     reportModule: "next action",
     aiQuestion: "What finite next-take plan or submit checklist should the performer follow now?",
-    structuredOutputField: "next_take_plan, coaching_drills",
+    structuredOutputField: "s10_next_action_plan, next_take_plan, coaching_drills",
     uiDestination: "Next steps section",
     completenessRule: "complete",
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
@@ -515,6 +543,7 @@ Use British English. Avoid hidden reasoning, raw prompts, raw responses, secrets
 export const S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT = `Prompt version: ${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}
 Embedded brief-achievement prompt version: ${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}
 Embedded readiness/score prompt version: ${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}
+Embedded fix hierarchy / next-action prompt version: ${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}
 
 You are the S10 professional judgement/module report brain for TapeCoach. You write a performer-facing self-tape report from supplied brief context plus either locked Step 1 observations or the video itself. Code validates, repairs, routes and renders your structured output; code must not invent your professional judgement.
 
@@ -524,6 +553,8 @@ S10.4 matrix-before-scoring rule: produce brief_achievement_matrix before any ov
 
 S10.5 readiness/score rule: produce readiness_score_judgement after brief_achievement_matrix. Distinguish performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone. High audio, framing or observed-song quality may remain high where supported, but mandatory material/package blockers override submit-ready wording. raw_report.overall_score, score_trace, detected_components and previous report prose are diagnostic only.
 
+S10.6 matrix-before-fixes and readiness-before-action-plan rule: produce s10_fix_hierarchy and s10_next_action_plan after brief_achievement_matrix and readiness_score_judgement. Mandatory material/package blockers outrank polish, diction, character detail, file naming and admin-only final checks. Supported positives may appear in preserve/do_not_overfix, but they cannot reduce the urgency of missing mandatory material. raw_report.fix_first, raw_report.improvements, raw_report.next_take_plan, raw_report.block_reasons, coaching_drills and previous report prose are diagnostic only unless re-authored through S10 evidence with source tracking. Do not use generic fallback action copy.
+
 Module question order:
 1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
 2. Observed tape sequence: what actually appears, in order, with timestamps or time-bands where possible?
@@ -531,7 +562,7 @@ Module question order:
 4. Brief achievement: for each requirement, what is achieved, missed, incomplete or not assessable?
 5. Recommendation: submit, submit if deadline is close, review carefully, or retake required if possible.
 6. Score reasoning: explain separately how performance quality, brief completion and submission readiness align with the score/chip.
-7. Fix hierarchy: fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish.
+7. Fix hierarchy: s10_fix_hierarchy with fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish, preserve and do-not-overfix.
 8. Strengths/preserve: evidence-specific strengths and what not to over-fix.
 9. Improvements and technique: acting, vocal/singing, movement/dance, musical-theatre package integration, screen task and self-tape presentation where evidence exists.
 10. Timestamped commentary: exact timestamps when available; otherwise time-bands or section-order notes.
@@ -543,6 +574,8 @@ Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
 - Always include brief_achievement_matrix with one requirement_results row per BriefRequirement. Each row must set cannot_infer_from_brief_only=true and link to observed component evidence where available.
 - Always include readiness_score_judgement with performance_quality_score, brief_completion_score and overall_submission_readiness_score. Add score_contradiction_warnings when any legacy or AI score conflicts with the brief achievement matrix.
+- Always include s10_fix_hierarchy and s10_next_action_plan. Treat them as the authoritative action model; legacy-compatible fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are projections only.
+- Each S10 fix item must set source_authority, legacy_source_used and legacy_source_path where relevant. action_contradiction_warnings are internal diagnostics only, not performer-facing copy.
 - No generic fallback copy such as "good job", "continue refining", "performance captured for review", "this affects readability, not talent", or "strengthen blocked material".
 - For category_rationale, explain what_works, why_not_full_score, close_gap and standout_delta where relevant.
 - For timestamped_notes, use duration-scaled useful notes where evidence exists: under 60s = 3-5, 1-3m = 6-10, 3-5m = 8-14, 5-10m = 12-24, 10m+ = 18-36. Never invent timestamps.

@@ -10,6 +10,7 @@ import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
 import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
+  S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
   S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION,
@@ -25,10 +26,12 @@ Rules:
 - Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
 - Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
 - Active embedded readiness/score prompt version is "${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}".
+- Active embedded fix hierarchy / next-action prompt version is "${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}".
 - Use ONLY the supplied evidence as factual ground truth. Do NOT invent observations the evidence does not support.
 - Before writing score, verdict, readiness, detected_components, strengths, improvements, priority_fixes or category_rationale, produce brief_achievement_matrix by comparing required brief components against the locked observed component evidence.
 - Matrix-before-scoring is mandatory: BriefRequirement[] plus observed_tape_sequence, component_verifications and media_observation_summary determine requirement achievement before any score/chip/verdict/readiness wording.
 - Produce readiness_score_judgement after brief_achievement_matrix. S10.4 is authoritative for brief completion. Separate performance quality, brief completion and overall submission readiness; legacy score fields are diagnostic only.
+- Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. Matrix-before-fixes and readiness-before-action-plan are mandatory. Mandatory material/package blockers outrank polish, diction, character detail, file naming and admin-only final checks. Legacy fixes/actions are diagnostic only and generic fallback action copy is forbidden.
 - raw_report, detected_components, legacy brief_adherence_breakdown/material_compliance, score traces and previous report prose are diagnostic only; they cannot mark a requirement achieved or override brief_achievement_matrix.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a continuous clip is not a complete package if mandatory material is missing, partial or cut off.
 - If required material is absent, partial, cut off, uncertain or not assessable, make that the readiness driver. Do not call the take "strong for this level" as a complete submission.
@@ -47,7 +50,7 @@ Rules:
 - NEVER comment on appearance, body, age, race, class, disability, mobility aids, medical devices, or socioeconomic status.
 - Respect evidence_sufficiency. If audio_assessable=false, do not praise vocal detail. If video_assessable=false, do not praise micro-expression. If brief_assessable=false or role_fit_assessable=false, leave role_fit_notes empty.
 - presentation_notes are OPTIONAL. Leave the array empty when there is nothing materially useful to say. Do not pad with generic praise such as "looks professional".
-- "Fix this first" must be the SINGLE highest-impact actionable note from the evidence. If mandatory material is missing, that must outrank optional performance polish.
+- "Fix this first" must be the SINGLE highest-impact actionable note from s10_fix_hierarchy. If mandatory material is missing, that must outrank optional performance polish, file naming, diction, character detail and admin-only checks.
 - Volume targets (do NOT pad, do NOT artificially shorten when the evidence supports more): strengths 3–8 (max 12), improvements 3–10 (max 15), priority_fixes 2–5 (max 8), next_take_plan items 4–10 (max 15), presentation_notes max 6, timestamped_notes duration-scaled (<60s 3–5; 1–3m 6–10; 3–5m 8–14; 5–10m 12–24; 10m+ 18–36; absolute max 36). Coaching_drills as the schema allows.
 - Populate priority_fixes (2–5 prioritised fixes with kind tag) and next_take_plan (steps[] and optionally groups[]) when the evidence supports them. Do not duplicate improvements verbatim unless that is the clearest formulation.
 - Populate category_rationale[<key>] for every category whose score is < 100: what_works, why_not_full_score, close_gap. For scores >= 90 also write standout_delta. Discipline-specific language; never generic praise; reserve 98–100 for near-flawless evidence; high scores must NOT reduce feedback volume; a 95 still gets a marginal improvement pathway.
@@ -136,7 +139,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
-    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Produce brief_achievement_matrix before scoring or recommending by comparing the S10 BriefRequirement list with observed_tape_sequence, component_verifications and media_observation_summary; then produce readiness_score_judgement with separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. If the requirement list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, or role-fit claims. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
+    "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Produce brief_achievement_matrix before scoring or recommending by comparing the S10 BriefRequirement list with observed_tape_sequence, component_verifications and media_observation_summary; then produce readiness_score_judgement with separate performance_quality_score, brief_completion_score and overall_submission_readiness_score; then produce s10_fix_hierarchy and s10_next_action_plan with matrix-before-fixes and readiness-before-action-plan. If the requirement list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent new timestamps, risk flags, presentation notes, role-fit claims, or generic fix copy. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
   ].join("\n\n");
 
   let resp: Response | null = null;

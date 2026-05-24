@@ -11,6 +11,7 @@ import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_CANARY_A_PROMPT_REQUIREMENT,
+  S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
   S10_MODULE_COMPLETENESS_STATUSES,
   S10_MODULE_REPAIR_PROMPT_VERSION,
   S10_MODULE_REPAIR_PROMPTS,
@@ -52,6 +53,11 @@ describe("S10.1 AI prompt map", () => {
           status: "active",
         }),
         expect.objectContaining({
+          promptVersion: S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
+          runtimeStage: "analysis_step_2_post_readiness_fix_action",
+          status: "active",
+        }),
+        expect.objectContaining({
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           sourceFile: "src/server/report-polish.server.ts",
           runtimeStage: "analysis_step_2_judgement_or_report_generation",
@@ -69,6 +75,10 @@ describe("S10.1 AI prompt map", () => {
         }),
         expect.objectContaining({
           promptVersion: "legacy_score_readiness_diagnostic_only",
+          status: "diagnostic_only",
+        }),
+        expect.objectContaining({
+          promptVersion: "legacy_fix_action_diagnostic_only",
           status: "diagnostic_only",
         }),
         expect.objectContaining({
@@ -174,9 +184,12 @@ describe("S10.1 AI prompt map", () => {
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain(S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION);
+    expect(POLISH_SYSTEM_PROMPT).toContain(S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION);
     expect(POLISH_SYSTEM_PROMPT).toContain("verify required brief components");
     expect(POLISH_SYSTEM_PROMPT).toContain("brief_achievement_matrix");
     expect(POLISH_SYSTEM_PROMPT).toContain("readiness_score_judgement");
+    expect(POLISH_SYSTEM_PROMPT).toContain("s10_fix_hierarchy");
+    expect(POLISH_SYSTEM_PROMPT).toContain("readiness-before-action-plan");
     expect(POLISH_SYSTEM_PROMPT).toContain("performance_quality_score");
     expect(POLISH_SYSTEM_PROMPT).toContain("observed_tape_sequence");
     expect(POLISH_SYSTEM_PROMPT).toContain("component_verifications");
@@ -189,8 +202,10 @@ describe("S10.1 AI prompt map", () => {
     expect(processSrc).toContain("S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION");
     expect(processSrc).toContain("S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION");
     expect(processSrc).toContain("S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION");
+    expect(processSrc).toContain("S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION");
     expect(processSrc).toContain("Produce brief_achievement_matrix before any score");
     expect(processSrc).toContain("readiness_score_judgement");
+    expect(processSrc).toContain("matrix-before-fixes");
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]evidence_pass_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]single_pass_analysis_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]two_step_report_polish_current['"]/);
@@ -205,6 +220,7 @@ describe("S10.1 AI prompt map", () => {
     expect(polishSrc).toContain("media_observation_summary");
     expect(polishSrc).toContain("Matrix-before-scoring");
     expect(polishSrc).toContain("readiness_score_judgement");
+    expect(polishSrc).toContain("s10_fix_hierarchy");
   });
 
   it("represents Canary A component checks before score or recommendation", () => {

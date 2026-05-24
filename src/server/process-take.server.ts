@@ -72,6 +72,7 @@ import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals
 import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
+  S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
   S10_OBSERVATION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT,
@@ -82,6 +83,7 @@ import {
   normaliseBriefAchievementMatrix,
 } from "./s10-brief-achievement-matrix.server";
 import { applyReadinessScoreSemantics } from "./s10-readiness-score-semantics.server";
+import { applyS10FixHierarchyNextAction } from "./s10-fix-hierarchy-next-action.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -97,6 +99,109 @@ function runtimeRecordArray(value: unknown): Array<Record<string, unknown>> {
     ? value.filter((item): item is Record<string, unknown> => isRuntimeRecord(item))
     : [];
 }
+
+const S10_ACTION_WARNING_SCHEMA = {
+  type: "object",
+  properties: {
+    affected_field: { type: "string" },
+    original_value: { type: ["string", "number", "boolean", "null"] },
+    corrected_value: { type: ["string", "number", "boolean", "null"] },
+    reason: { type: "string" },
+    source: {
+      type: "string",
+      enum: [
+        "s10_ai_judgement",
+        "legacy_raw_report",
+        "legacy_improvements",
+        "legacy_next_take_plan",
+        "legacy_coaching_drills",
+        "prior_prose",
+        "s10_normaliser",
+      ],
+    },
+    internal_only: { type: "boolean", enum: [true] },
+  },
+  required: [
+    "affected_field",
+    "original_value",
+    "corrected_value",
+    "reason",
+    "source",
+    "internal_only",
+  ],
+};
+
+const S10_FIX_ITEM_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    issue: { type: "string" },
+    why_it_matters: { type: "string" },
+    exact_action: { type: "string" },
+    source_category: {
+      type: "string",
+      enum: [
+        "brief",
+        "performance",
+        "technical",
+        "admin_process",
+        "score_semantics",
+        "polish",
+        "limitation",
+      ],
+    },
+    urgency: {
+      type: "string",
+      enum: ["critical_gap", "high", "medium", "low", "optional"],
+    },
+    submission_impact: {
+      type: "string",
+      enum: [
+        "submission_blocker",
+        "material_gap",
+        "review_carefully",
+        "optional_polish",
+        "final_check",
+        "supports_submission",
+      ],
+    },
+    linked_requirement_ids: { type: "array", items: { type: "string" } },
+    linked_matrix_result_ids: { type: "array", items: { type: "string" } },
+    linked_component_verification_ids: { type: "array", items: { type: "string" } },
+    linked_readiness_reason_ids: { type: "array", items: { type: "string" } },
+    evidence_summary: { type: "string" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    is_fix_first_candidate: { type: "boolean" },
+    is_generic_fallback: { type: "boolean", enum: [false] },
+    source_authority: {
+      type: "string",
+      enum: ["s10_ai_authored", "s10_normalised", "legacy_diagnostic_reauthored", "limitation"],
+    },
+    legacy_source_used: { type: "boolean" },
+    legacy_source_path: { type: ["string", "null"] },
+  },
+  required: [
+    "id",
+    "title",
+    "issue",
+    "why_it_matters",
+    "exact_action",
+    "source_category",
+    "urgency",
+    "submission_impact",
+    "linked_requirement_ids",
+    "linked_matrix_result_ids",
+    "linked_component_verification_ids",
+    "linked_readiness_reason_ids",
+    "evidence_summary",
+    "confidence",
+    "is_fix_first_candidate",
+    "is_generic_fallback",
+    "source_authority",
+    "legacy_source_used",
+  ],
+};
 
 function addUniqueId(ids: string[], id: string) {
   if (!ids.includes(id)) ids.push(id);
@@ -548,6 +653,71 @@ const REPORT_TOOL = {
             "repair_prompt_status",
           ],
         },
+        s10_fix_hierarchy: {
+          type: "object",
+          description:
+            "S10 authoritative fix hierarchy. Produce after brief_achievement_matrix and readiness_score_judgement. Mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks. Legacy action fields are diagnostic only.",
+          properties: {
+            fix_first: {
+              type: ["object", "null"],
+              properties: S10_FIX_ITEM_SCHEMA.properties,
+              required: S10_FIX_ITEM_SCHEMA.required,
+            },
+            priority_fixes: { type: "array", items: S10_FIX_ITEM_SCHEMA, maxItems: 8 },
+            must_fix_before_submitting: { type: "array", items: S10_FIX_ITEM_SCHEMA, maxItems: 8 },
+            should_improve_if_retaking: {
+              type: "array",
+              items: S10_FIX_ITEM_SCHEMA,
+              maxItems: 10,
+            },
+            optional_polish: { type: "array", items: S10_FIX_ITEM_SCHEMA, maxItems: 8 },
+            preserve: { type: "array", items: S10_FIX_ITEM_SCHEMA, maxItems: 8 },
+            do_not_overfix: { type: "array", items: S10_FIX_ITEM_SCHEMA, maxItems: 8 },
+            action_contradiction_warnings: {
+              type: "array",
+              items: S10_ACTION_WARNING_SCHEMA,
+            },
+          },
+          required: [
+            "fix_first",
+            "priority_fixes",
+            "must_fix_before_submitting",
+            "should_improve_if_retaking",
+            "optional_polish",
+            "preserve",
+            "do_not_overfix",
+            "action_contradiction_warnings",
+          ],
+        },
+        s10_next_action_plan: {
+          type: "object",
+          description:
+            "S10 authoritative finite next-action plan. Use retake_plan when readiness requires retake/review; use submit_checklist when no retake is needed. Include final checks and playback/cut-off checks where relevant.",
+          properties: {
+            submit_checklist: { type: "array", items: { type: "string" }, maxItems: 10 },
+            retake_plan: { type: "array", items: { type: "string" }, maxItems: 12 },
+            final_checks: { type: "array", items: { type: "string" }, maxItems: 10 },
+            playback_checks: { type: "array", items: { type: "string" }, maxItems: 8 },
+            do_not_overfix: { type: "array", items: { type: "string" }, maxItems: 8 },
+            if_time_is_short_guidance: {
+              type: "array",
+              items: { type: "string" },
+              maxItems: 6,
+            },
+            no_retake_needed_reason: { type: ["string", "null"] },
+            confidence: { type: "string", enum: ["low", "medium", "high"] },
+          },
+          required: [
+            "submit_checklist",
+            "retake_plan",
+            "final_checks",
+            "playback_checks",
+            "do_not_overfix",
+            "if_time_is_short_guidance",
+            "no_retake_needed_reason",
+            "confidence",
+          ],
+        },
         category_notes: {
           type: "object",
           properties: {
@@ -755,6 +925,8 @@ const REPORT_TOOL = {
         "brief_adherence_breakdown",
         "brief_achievement_matrix",
         "readiness_score_judgement",
+        "s10_fix_hierarchy",
+        "s10_next_action_plan",
         "category_notes",
         "strengths",
         "improvements",
@@ -782,14 +954,17 @@ Single-pass S10 recovery rules:
 - Active prompt version is "${S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION}".
 - Active embedded brief-achievement prompt version is "${S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION}".
 - Active embedded readiness/score prompt version is "${S10_READINESS_SCORE_SEMANTICS_PROMPT_VERSION}".
+- Active embedded fix hierarchy / next-action prompt version is "${S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
 - Produce readiness_score_judgement after brief_achievement_matrix. Separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone.
+- Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. matrix-before-fixes and readiness-before-action-plan are mandatory. Missing mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks.
 - Keep continuous-video technical evidence separate from complete required-material package evidence: a technically continuous clip is not a complete package if mandatory material is absent, partial or cut off.
 - For Canary A style packages, explicitly check Side 1, song completion, one continuous video, one final file/package readiness and abrupt cut-off.
 - Populate detected_components only from media evidence, never from brief requests alone.
 - If mandatory material is missing or incomplete, retake/submission readiness must reflect that even when performance quality or audio is strong.
+- Treat s10_fix_hierarchy and s10_next_action_plan as authoritative. Existing fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are compatibility projections only. raw_report and legacy action fields are diagnostic only unless re-authored through S10 evidence with source tracking.
 - Fill the existing submit_audition_report fields with AI-authored module answers: overall readiness, score/chip, verdict, prioritised fixes, why this score/category_rationale, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk, role fit, presentation notes and next action.
 - Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
 - Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
@@ -2878,6 +3053,24 @@ export async function runProcessTake(
       });
     }
 
+    // ---- S10.6 fix hierarchy / next action ----
+    // Normalisation order is intentional: S10.4 matrix, then S10.5
+    // readiness, then S10.6 actions. Legacy fix/action fields are
+    // compatibility projections, not the source of truth.
+    const fixActionSemantics = applyS10FixHierarchyNextAction({
+      report: report as Record<string, unknown>,
+      matrix: report.brief_achievement_matrix,
+      readiness: readinessSemantics.judgement,
+    });
+    if (fixActionSemantics.warnings.length > 0) {
+      console.log("[take-pipeline] s10_fix_hierarchy_next_action_applied", {
+        take_id: takeId,
+        fix_first: fixActionSemantics.hierarchy.fix_first?.title ?? null,
+        must_fix_count: fixActionSemantics.hierarchy.must_fix_before_submitting.length,
+        warning_count: fixActionSemantics.warnings.length,
+      });
+    }
+
     // ---- Presentation notes — safety filter ----
     const presentationNotes: string[] = Array.isArray(report.presentation_notes)
       ? report.presentation_notes
@@ -3561,6 +3754,8 @@ export async function runProcessTake(
       extraction_confidence: extractionConfidence,
       score_discrepancy: scoreDiscrepancy,
       readiness_score_judgement: report.readiness_score_judgement ?? null,
+      s10_fix_hierarchy: report.s10_fix_hierarchy ?? null,
+      s10_next_action_plan: report.s10_next_action_plan ?? null,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,

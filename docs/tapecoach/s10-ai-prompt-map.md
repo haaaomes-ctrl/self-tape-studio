@@ -12,11 +12,13 @@ Runtime provenance, GateTrace, ValidatorTrace, public/private parity and QA proo
 | S10 observation/module map                        | `s10_observation_module_map_v1`                              | `src/server/evidence-pass.server.ts`                                       | Step 1 evidence / observation                         | Active                          |
 | S10 brief achievement matrix                      | `s10_brief_achievement_matrix_v1`                            | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts` | Step 2 / single-pass pre-score requirement comparison | Active embedded module          |
 | S10 readiness and score semantics                 | `s10_readiness_score_semantics_v1`                           | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts` | Step 2 / single-pass post-matrix readiness scoring    | Active embedded module          |
+| S10 fix hierarchy and next action                 | `s10_fix_hierarchy_next_action_v1`                           | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts` | Step 2 / single-pass post-readiness action planning   | Active embedded module          |
 | S10 professional judgement/module map             | `s10_professional_judgement_module_map_v1`                   | `src/server/report-polish.server.ts`                                       | Step 2 judgement / report generation                  | Active                          |
 | S10 single-pass professional judgement/module map | `s10_professional_judgement_module_map_v1`                   | `src/server/process-take.server.ts`                                        | Single-pass recovery                                  | Active                          |
 | S10 module repair                                 | `s10_module_repair_v1`                                       | `src/server/s10-report-prompt-map.server.ts`                               | Repair prompt template                                | Active template                 |
 | Legacy brief adherence/material compliance        | `legacy_brief_adherence_material_compliance_diagnostic_only` | `src/server/process-take.server.ts`                                        | Legacy raw report / score fields                      | Diagnostic only                 |
 | Legacy score/readiness fields                     | `legacy_score_readiness_diagnostic_only`                     | `src/server/process-take.server.ts`                                        | Legacy score traces / verdict prose                   | Diagnostic only                 |
+| Legacy fix/action fields                          | `legacy_fix_action_diagnostic_only`                          | `src/server/process-take.server.ts` + `src/server/report-polish.server.ts` | Legacy fix/action prose                               | Diagnostic only                 |
 | Legacy S9 brief extraction                        | `legacy_s9_brief_extraction_supporting_current`              | `src/server/extract-brief.server.ts`                                       | Archived coarse brief extraction                      | Legacy only                     |
 | Legacy S9 evidence pass                           | `legacy_s9_evidence_pass_current`                            | `src/server/evidence-pass.server.ts`                                       | Archived Step 1 label                                 | Legacy only                     |
 | Legacy S9 single pass                             | `legacy_s9_single_pass_analysis_current`                     | `src/server/process-take.server.ts`                                        | Archived single-pass label                            | Legacy only                     |
@@ -105,6 +107,22 @@ S10.5 rules:
 - partial or cut-off song may be scored only for the observed portion;
 - `submit_if_deadline_is_close` is not allowed for assessable missing/incomplete mandatory material unless framed as emergency/partial submission outside normal readiness;
 - every cap/downshift emits a `score_contradiction_warning` with original value, capped value, matrix reason, affected field and source.
+
+## S10.6 Fix Hierarchy And Next-Action Plan
+
+The active Step 2 and single-pass prompts embed `s10_fix_hierarchy_next_action_v1`. After `brief_achievement_matrix` and `readiness_score_judgement`, the AI must produce authoritative `s10_fix_hierarchy` and `s10_next_action_plan`.
+
+S10.6 rules:
+
+- matrix before fixes;
+- readiness before action plan;
+- mandatory material/package blockers outrank polish, diction, character detail, file naming and admin-only final checks;
+- supported positives may appear in preserve/do-not-overfix, but cannot reduce blocker urgency;
+- `fix_first`, `priority_fixes`, `improvements`, `next_take_plan` and `coaching_drills` are compatibility projections only until S10.10 rendering;
+- `raw_report.fix_first`, `raw_report.improvements`, `raw_report.next_take_plan`, `raw_report.block_reasons`, legacy coaching drills and previous report prose are diagnostic only;
+- legacy actions may only be used when re-authored through S10 evidence and source-tracked;
+- action contradiction warnings are internal diagnostics only;
+- missing or generic S10.6 output becomes a specific limitation, never generic fallback copy.
 
 ## Deterministic Inputs Code May Supply
 
