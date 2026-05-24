@@ -1637,7 +1637,7 @@ function summaryLooksBriefOnly(value: string): boolean {
       value,
     );
   if (!mentionsBriefRequest) return false;
-  return !/\b(observed|heard|visible|audible|seen|appears|tape|video|audio|media|section|sings|singing|cuts? off|ends?|starts?)\b/i.test(
+  return !/\b(observed|identified|present|included|complete|heard|visible|audible|seen|appears|tape|video|audio|media|section|sings|singing|cuts? off|ends?|starts?)\b/i.test(
     value,
   );
 }

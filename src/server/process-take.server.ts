@@ -99,6 +99,7 @@ import {
   applyS10TimestampedCommentary,
   scrubS10TimestampedCommentaryProjection,
 } from "./s10-timestamped-commentary.server";
+import { resolveS10ObservationContext } from "./s10-observation-context.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -114,6 +115,124 @@ function runtimeRecordArray(value: unknown): Array<Record<string, unknown>> {
     ? value.filter((item): item is Record<string, unknown> => isRuntimeRecord(item))
     : [];
 }
+
+const S10_OBSERVED_TAPE_SEQUENCE_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    label: { type: "string" },
+    component_type: {
+      type: "string",
+      enum: [
+        "ident",
+        "acting_scene",
+        "song",
+        "dance",
+        "movement",
+        "transition",
+        "technical",
+        "unknown",
+      ],
+    },
+    linked_requirement_ids: { type: "array", items: { type: "string" } },
+    start_time: { type: ["string", "null"] },
+    end_time: { type: ["string", "null"] },
+    present_status: {
+      type: "string",
+      enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+    },
+    completion_status: {
+      type: "string",
+      enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+    },
+    evidence_summary: { type: "string" },
+    observed_from_media: { type: "boolean" },
+    evidence_basis: {
+      type: "string",
+      enum: ["observed_audio_video", "deterministic_metadata", "brief_text_only", "uncertainty"],
+    },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    assessability_notes: { type: "string" },
+  },
+  required: [
+    "id",
+    "label",
+    "component_type",
+    "linked_requirement_ids",
+    "start_time",
+    "end_time",
+    "present_status",
+    "completion_status",
+    "evidence_summary",
+    "observed_from_media",
+    "evidence_basis",
+    "confidence",
+    "assessability_notes",
+  ],
+};
+
+const S10_COMPONENT_VERIFICATION_SCHEMA = {
+  type: "object",
+  properties: {
+    requirement_id: { type: "string" },
+    requirement_summary: { type: "string" },
+    observed_status: {
+      type: "string",
+      enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+    },
+    completion_status: {
+      type: "string",
+      enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+    },
+    evidence_summary: { type: "string" },
+    observed_from_media: { type: "boolean" },
+    evidence_basis: {
+      type: "string",
+      enum: ["observed_audio_video", "deterministic_metadata", "brief_text_only", "uncertainty"],
+    },
+    timestamp_refs: { type: "array", items: { type: "string" } },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    cannot_infer_from_brief_only: { type: "boolean", enum: [true] },
+    assessability_notes: { type: "string" },
+  },
+  required: [
+    "requirement_id",
+    "requirement_summary",
+    "observed_status",
+    "completion_status",
+    "evidence_summary",
+    "observed_from_media",
+    "evidence_basis",
+    "timestamp_refs",
+    "confidence",
+    "cannot_infer_from_brief_only",
+    "assessability_notes",
+  ],
+};
+
+const S10_MEDIA_OBSERVATION_SUMMARY_SCHEMA = {
+  type: "object",
+  properties: {
+    audio_assessable: { type: ["boolean", "null"] },
+    video_assessable: { type: ["boolean", "null"] },
+    framing_assessable: { type: ["boolean", "null"] },
+    continuity_assessable: { type: ["boolean", "null"] },
+    abrupt_cutoff_detected: { type: ["boolean", "null"] },
+    one_continuous_video_observed: { type: ["boolean", "null"] },
+    duration_summary: { type: "string" },
+    uncertainties: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "audio_assessable",
+    "video_assessable",
+    "framing_assessable",
+    "continuity_assessable",
+    "abrupt_cutoff_detected",
+    "one_continuous_video_observed",
+    "duration_summary",
+    "uncertainties",
+  ],
+};
 
 const S10_ACTION_WARNING_SCHEMA = {
   type: "object",
@@ -753,6 +872,25 @@ const REPORT_TOOL = {
             },
             required: ["type", "weight", "score", "note"],
           },
+        },
+        observed_tape_sequence: {
+          type: "array",
+          description:
+            "S10.3 observed tape sequence. Required S10 component truth for single-pass output; requested brief material, legacy detected_components and raw_report prose cannot prove observed material.",
+          items: S10_OBSERVED_TAPE_SEQUENCE_SCHEMA,
+          maxItems: 30,
+        },
+        component_verifications: {
+          type: "array",
+          description:
+            "S10.3 component verification for every brief requirement. Presence/completion claims must come from observed media evidence, not brief text, scores, metadata-only evidence, raw_report or legacy detected_components.",
+          items: S10_COMPONENT_VERIFICATION_SCHEMA,
+          maxItems: 40,
+        },
+        media_observation_summary: {
+          ...S10_MEDIA_OBSERVATION_SUMMARY_SCHEMA,
+          description:
+            "S10.3 media observation summary. Technical assessability can support confidence but cannot prove required component completion.",
         },
         consistency_modifier: {
           type: "integer",
@@ -1547,6 +1685,9 @@ const REPORT_TOOL = {
         "casting_insight",
         "scores",
         "brief_adherence_breakdown",
+        "observed_tape_sequence",
+        "component_verifications",
+        "media_observation_summary",
         "brief_achievement_matrix",
         "readiness_score_judgement",
         "s10_fix_hierarchy",
@@ -1587,6 +1728,7 @@ Single-pass S10 recovery rules:
 - Active embedded timestamped/time-banded commentary prompt version is "${S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION}".
 - Watch and listen to the full tape before deciding detected_components, scores, verdict or readiness.
 - First identify the required brief components and then verify whether each is present, absent, partially_present, cut_off, uncertain or not_assessable.
+- Produce observed_tape_sequence, component_verifications and media_observation_summary before brief_achievement_matrix. These S10.3 fields are the component evidence source for single-pass reports. Do not infer component presence from brief text, detected_components, raw_report, scores, category prose, material_compliance or prior report text.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
 - Produce readiness_score_judgement after brief_achievement_matrix. Separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone.
 - Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. matrix-before-fixes and readiness-before-action-plan are mandatory. Missing mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks.
@@ -3482,6 +3624,28 @@ export async function runProcessTake(
     // ---- UK terminology pass on all string output ----
     report = ukifyDeep(report);
 
+    // ---- S10.3 observation context ----
+    // Two-step output wins when present, but single-pass reports also carry
+    // top-level S10 observation fields. Never recover this context from
+    // raw_report or legacy detected_components.
+    const s10ObservationContext = resolveS10ObservationContext({
+      twoStepEvidence,
+      singlePassOutput: report as Record<string, unknown>,
+      report: report as Record<string, unknown>,
+    });
+    report.observed_tape_sequence = s10ObservationContext.observed_tape_sequence;
+    report.component_verifications = s10ObservationContext.component_verifications;
+    report.media_observation_summary = s10ObservationContext.media_observation_summary;
+    report.s10_observation_context_source_kind = s10ObservationContext.source_kind;
+    report.s10_observation_context_limitations = s10ObservationContext.limitations;
+    report.s10_observation_context_warnings = s10ObservationContext.contradiction_warnings;
+    if (s10ObservationContext.source_kind === "unavailable") {
+      console.warn("[take-pipeline] s10_observation_context_unavailable", {
+        take_id: takeId,
+        limitations: s10ObservationContext.limitations,
+      });
+    }
+
     // ---- S10.4 brief achievement matrix ----
     // The AI authors the matrix; code validates against S10.2 requirements
     // and S10.3 observed component verification before legacy score fields
@@ -3489,9 +3653,9 @@ export async function runProcessTake(
     report.brief_achievement_matrix = normaliseBriefAchievementMatrix({
       matrix: (report as Record<string, unknown>).brief_achievement_matrix,
       briefRequirements: extractedBrief?.brief_requirements ?? [],
-      componentVerifications: twoStepEvidence?.component_verifications ?? [],
-      observedTapeSequence: twoStepEvidence?.observed_tape_sequence ?? [],
-      mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+      componentVerifications: s10ObservationContext.component_verifications,
+      observedTapeSequence: s10ObservationContext.observed_tape_sequence,
+      mediaObservationSummary: s10ObservationContext.media_observation_summary,
     });
     const s10BriefAchievementCap = applyBriefAchievementCompatibilityCaps(
       report as Record<string, unknown>,
@@ -3717,8 +3881,8 @@ export async function runProcessTake(
       readiness: readinessSemantics.judgement,
       fixHierarchy: fixActionSemantics.hierarchy,
       nextActionPlan: fixActionSemantics.nextActionPlan,
-      componentVerifications: twoStepEvidence?.component_verifications ?? [],
-      mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+      componentVerifications: s10ObservationContext.component_verifications,
+      mediaObservationSummary: s10ObservationContext.media_observation_summary,
     });
     if (professionalCritiqueSemantics.warnings.length > 0) {
       console.log("[take-pipeline] s10_strengths_professional_critique_applied", {
@@ -3740,8 +3904,8 @@ export async function runProcessTake(
       fixHierarchy: fixActionSemantics.hierarchy,
       nextActionPlan: fixActionSemantics.nextActionPlan,
       professionalCritique: professionalCritiqueSemantics.critique,
-      componentVerifications: twoStepEvidence?.component_verifications ?? [],
-      mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+      componentVerifications: s10ObservationContext.component_verifications,
+      mediaObservationSummary: s10ObservationContext.media_observation_summary,
     });
     if (techniqueCommentarySemantics.warnings.length > 0) {
       console.log("[take-pipeline] s10_technique_library_commentary_applied", {
@@ -3765,8 +3929,8 @@ export async function runProcessTake(
       nextActionPlan: fixActionSemantics.nextActionPlan,
       professionalCritique: professionalCritiqueSemantics.critique,
       techniqueCommentary: techniqueCommentarySemantics.commentary,
-      observedTapeSequence: twoStepEvidence?.observed_tape_sequence ?? [],
-      componentVerifications: twoStepEvidence?.component_verifications ?? [],
+      observedTapeSequence: s10ObservationContext.observed_tape_sequence,
+      componentVerifications: s10ObservationContext.component_verifications,
       timestampedEvidence: twoStepEvidence?.timestamped_evidence ?? [],
     });
     if (
@@ -4558,9 +4722,10 @@ export async function runProcessTake(
             ? {
                 briefContext: extractedBrief?.brief_context ?? null,
                 briefRequirements: extractedBrief?.brief_requirements ?? [],
-                observedTapeSequence: twoStepEvidence?.observed_tape_sequence ?? [],
-                componentVerifications: twoStepEvidence?.component_verifications ?? [],
-                mediaObservationSummary: twoStepEvidence?.media_observation_summary ?? null,
+                observedTapeSequence: s10ObservationContext.observed_tape_sequence,
+                componentVerifications: s10ObservationContext.component_verifications,
+                mediaObservationSummary: s10ObservationContext.media_observation_summary,
+                observationSourceKind: s10ObservationContext.source_kind,
               }
             : null,
         });

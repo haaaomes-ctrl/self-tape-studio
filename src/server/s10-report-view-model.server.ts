@@ -23,6 +23,7 @@ import type {
   MediaObservationSummary,
   ObservedTapeSequence,
 } from "./evidence-pass.server";
+import type { S10ObservationContextSourceKind } from "./s10-observation-context.server";
 
 export type S10SectionSource =
   | "s10_authoritative_module"
@@ -55,6 +56,7 @@ export type S10SectionSourceEntry = {
   source: S10SectionSource;
   module: string | null;
   limitation: string | null;
+  source_kind?: S10ObservationContextSourceKind | null;
 };
 
 export type S10PerformerReportViewModel = {
@@ -115,6 +117,7 @@ export type S10ViewModelContext = {
   sameVideoEvidence?: S10SameVideoEvidence | null;
   comparisonTruth?: S10ComparisonTruth | null;
   comparisonDisplayMode?: S10ComparisonDisplayMode | null;
+  observationSourceKind?: S10ObservationContextSourceKind | null;
 };
 
 const INTERNAL_KEYS = new Set([
@@ -198,6 +201,27 @@ function source(available: boolean, module: string, limitation: string): S10Sect
     : { source: "specific_limitation", module, limitation };
 }
 
+function observationSource(
+  available: boolean,
+  module: string,
+  limitation: string,
+  sourceKind?: S10ObservationContextSourceKind | null,
+): S10SectionSourceEntry {
+  return available
+    ? {
+        source: "s10_authoritative_module",
+        module,
+        limitation: null,
+        source_kind: sourceKind ?? "report_embedded_s10_observation",
+      }
+    : {
+        source: "specific_limitation",
+        module,
+        limitation,
+        source_kind: "unavailable",
+      };
+}
+
 function comparisonDisplayModeFor(
   comparisonTruth: S10ComparisonTruth | null,
 ): S10ComparisonDisplayMode {
@@ -276,6 +300,7 @@ export function buildS10PerformerReportViewModel(input: {
     comparisonDisplayModeFor(comparisonTruth);
 
   const context = input.context ?? {};
+  const observationSourceKind = context.observationSourceKind ?? "report_embedded_s10_observation";
   const briefContext = cloneForRouteSurface(
     context.briefContext ?? report.brief_context ?? null,
   ) as BriefContext | null;
@@ -337,10 +362,11 @@ export function buildS10PerformerReportViewModel(input: {
       "observed_tape_sequence/component_verifications",
       "Observed tape sequence is not available for this report.",
     ),
-    component_breakdown: source(
+    component_breakdown: observationSource(
       componentVerifications.length > 0,
       "component_verifications",
-      "Component verification is not available for this report.",
+      "Component verification was unavailable for this S10 report.",
+      observationSourceKind,
     ),
     fix_hierarchy: source(
       !!fixHierarchy,

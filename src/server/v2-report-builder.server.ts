@@ -3,9 +3,9 @@
 //
 // Pure functions. The builder produces a `schema_version: "v2-component"`
 // JSON object from an already-finalised v1 legacy report plus an OPTIONAL
-// validated future-dimensions component structure. When future dimensions
-// are not available, the builder falls back to legacy `detected_components`
-// from the v1 report so v2 can still render in hidden production.
+// validated future-dimensions component structure. Non-S10 legacy reports may
+// still fall back to legacy `detected_components`; S10 reports never use that
+// field as component authority.
 //
 // The builder takes public `scores` verbatim from the legacy report. It does
 // NOT consume or surface shadow scores, QA counters, raw evidence prose, or
@@ -55,6 +55,7 @@ export interface V2SectionSourceEntry {
     | "unsupported";
   module: string | null;
   limitation: string | null;
+  source_kind?: string | null;
 }
 
 export interface V2Report {
@@ -276,6 +277,7 @@ function buildComponents(args: BuildV2ReportArgs): V2Component[] {
       };
     });
   }
+  if (s10View) return [];
   const future = args.futureDimensions?.components ?? [];
   if (future.length > 0) return future.map(projectFutureComponent);
   const legacy = asArray((args.legacyReport ?? {})["detected_components"]);

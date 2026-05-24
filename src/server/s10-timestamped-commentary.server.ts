@@ -223,7 +223,10 @@ function componentVerified(
   if (note.component_type === "technical" || note.component_type === "transition") return true;
   const linked = new Set(note.linked_component_verification_ids.filter(Boolean));
   const candidates = linked.size
-    ? componentVerifications.filter((item) => linked.has(item.requirement_id))
+    ? componentVerifications.filter((item) => {
+        const derivedVerificationId = `cv-${item.requirement_id.replace(/^req-/, "")}`;
+        return linked.has(item.requirement_id) || linked.has(derivedVerificationId);
+      })
     : componentVerifications;
   return candidates.some((item) => {
     const combined = `${item.requirement_summary} ${item.evidence_summary}`;
