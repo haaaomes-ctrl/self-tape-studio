@@ -8,19 +8,141 @@ export type ProviderSafeErrorCategory =
   | "parser_error"
   | "unknown_safe_error";
 
+const UNSUPPORTED_PROVIDER_SCHEMA_KEYS = new Set([
+  "$defs",
+  "$ref",
+  "additionalProperties",
+  "allOf",
+  "anyOf",
+  "const",
+  "default",
+  "exclusiveMaximum",
+  "exclusiveMinimum",
+  "format",
+  "maxItems",
+  "maxLength",
+  "maximum",
+  "minItems",
+  "minLength",
+  "minimum",
+  "multipleOf",
+  "oneOf",
+  "pattern",
+]);
+
+function asObjectRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function schemaAllowsNull(value: unknown): boolean {
+  const record = asObjectRecord(value);
+  if (!record) return false;
+  const type = record.type;
+  return (
+    record.nullable === true ||
+    (Array.isArray(type) && type.some((item) => item === "null"))
+  );
+}
+
+function appendDescription(current: unknown, addition: string): string {
+  const base = typeof current === "string" ? current.trim() : "";
+  return base ? `${base} ${addition}` : addition;
+}
+
+function normaliseType(value: unknown): { type: unknown; descriptionHint: string | null } {
+  if (!Array.isArray(value)) return { type: value, descriptionHint: null };
+  const nonNullTypes = value.filter((item): item is string => typeof item === "string" && item !== "null");
+  const selectedType = nonNullTypes[0] ?? "string";
+  const descriptionHint =
+    nonNullTypes.length > 1
+      ? `Provider schema narrowed a mixed-type field from ${nonNullTypes.join(", ")} to ${selectedType}.`
+      : null;
+  return { type: selectedType, descriptionHint };
+}
+
+function normaliseEnum(value: unknown): {
+  enumValue: string[] | null;
+  descriptionHint: string | null;
+} {
+  if (!Array.isArray(value)) return { enumValue: null, descriptionHint: null };
+  if (value.every((item): item is string => typeof item === "string")) {
+    return { enumValue: value, descriptionHint: null };
+  }
+  if (value.every((item): item is boolean => typeof item === "boolean")) {
+    return {
+      enumValue: null,
+      descriptionHint: `Expected value: ${value.map(String).join(" or ")}.`,
+    };
+  }
+  return {
+    enumValue: null,
+    descriptionHint: "Provider schema omitted a mixed-type enum constraint.",
+  };
+}
+
 export function cloneForProviderToolSchema<T>(value: T): T {
   if (Array.isArray(value)) return value.map((item) => cloneForProviderToolSchema(item)) as T;
   if (!value || typeof value !== "object") return value;
 
+  const original = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  const originalProperties = asObjectRecord(original.properties);
+  const nullablePropertyNames = new Set(
+    Object.entries(originalProperties ?? {})
+      .filter(([, child]) => schemaAllowsNull(child))
+      .map(([key]) => key),
+  );
+
+  for (const [key, child] of Object.entries(original)) {
+    if (UNSUPPORTED_PROVIDER_SCHEMA_KEYS.has(key)) continue;
+    if (key === "nullable") continue;
+    if (key === "required") continue;
+
     if (key === "type" && Array.isArray(child)) {
-      const nonNullType = child.find((item) => item !== "null");
-      out.type = typeof nonNullType === "string" ? nonNullType : "string";
+      const { type, descriptionHint } = normaliseType(child);
+      out.type = type;
+      if (descriptionHint) out.description = appendDescription(out.description, descriptionHint);
       continue;
     }
+
+    if (key === "enum") {
+      const { enumValue, descriptionHint } = normaliseEnum(child);
+      if (enumValue && enumValue.length > 0) out.enum = enumValue;
+      if (descriptionHint) out.description = appendDescription(out.description, descriptionHint);
+      continue;
+    }
+
     out[key] = cloneForProviderToolSchema(child);
   }
+
+  if (originalProperties) {
+    const providerProperties = asObjectRecord(out.properties) ?? {};
+    const required = Array.isArray(original.required)
+      ? original.required.filter(
+          (item): item is string =>
+            typeof item === "string" &&
+            item in providerProperties &&
+            !nullablePropertyNames.has(item),
+        )
+      : [];
+    if (required.length > 0) out.required = required;
+  }
+
+  if (out.type === "object") {
+    const properties = asObjectRecord(out.properties);
+    if (!properties || Object.keys(properties).length === 0) {
+      out.properties = {
+        summary: {
+          type: "string",
+          description:
+            "Provider-safe summary for an internally open object. Server-side validation still enforces the final shape.",
+        },
+      };
+      delete out.required;
+    }
+  }
+
   return out as T;
 }
 

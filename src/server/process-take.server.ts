@@ -834,7 +834,7 @@ import {
 } from "@/lib/audition-rules";
 
 // Scoring v2 — multi-component aware, split brief adherence, submission risk flags.
-const REPORT_TOOL = {
+export const REPORT_TOOL = {
   type: "function" as const,
   function: {
     name: "submit_audition_report",
@@ -1717,6 +1717,10 @@ const REPORT_TOOL = {
     },
   },
 };
+
+export function buildReportToolForProvider(model?: string | null): typeof REPORT_TOOL {
+  return buildProviderToolForModel(REPORT_TOOL, model);
+}
 
 function buildSystemPrompt(): string {
   return `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
@@ -3069,7 +3073,7 @@ export async function runProcessTake(
             console.error("[take-pipeline] report_polish_provider_contract_failed", {
               ...baseLog,
               http_status: polishResult.httpStatus,
-              error: polishResult.error.slice(0, 200),
+              error: polishResult.error.slice(0, 900),
               duration_ms: polishResult.durationMs,
             });
             metric("report_polish_failed", {
@@ -3171,7 +3175,7 @@ export async function runProcessTake(
     }
 
     const callAI = (videoUrl: string, signal: AbortSignal, model: string) => {
-      const reportTool = buildProviderToolForModel(REPORT_TOOL, model);
+      const reportTool = buildReportToolForProvider(model);
       return fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -3427,7 +3431,7 @@ export async function runProcessTake(
 
         // Non-retryable (parse/validation/4xx other than 429): terminate now.
         if (!transient) {
-          console.error("AI gateway hard error", status, aiErrorBody.slice(0, 500));
+          console.error("AI gateway hard error", status, aiErrorBody.slice(0, 900));
           metric("gemini_failed", {
             take_id: takeId,
             retry_count: geminiRetryCount,

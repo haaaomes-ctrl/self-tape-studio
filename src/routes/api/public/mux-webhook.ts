@@ -41,6 +41,62 @@ export function classifyStaticRenditionReadyTake(input: {
   return "continue";
 }
 
+function summariseMuxWebhookBody(rawBody: string): Record<string, unknown> {
+  try {
+    const payload = JSON.parse(rawBody) as {
+      id?: string;
+      type?: string;
+      object?: { id?: string; type?: string };
+      data?: Record<string, unknown>;
+      created_at?: string;
+    };
+    const data = (payload.data ?? {}) as {
+      id?: string;
+      asset_id?: string;
+      upload_id?: string;
+      status?: string;
+      passthrough?: string;
+      new_asset_settings?: { passthrough?: string };
+      width?: number;
+      height?: number;
+      duration?: number;
+      resolution?: string;
+      resolution_tier?: string;
+      static_renditions?: { files?: Array<{ status?: string; resolution?: string; name?: string }> };
+      playback_ids?: Array<{ id?: string; policy?: string }>;
+    };
+    return {
+      parse_status: "ok",
+      event_id: payload.id ?? null,
+      event_type: payload.type ?? null,
+      object_type: payload.object?.type ?? null,
+      object_id: payload.object?.id ?? null,
+      data_id: data.id ?? null,
+      asset_id: data.asset_id ?? null,
+      upload_id: data.upload_id ?? null,
+      status: data.status ?? null,
+      passthrough: data.passthrough ?? data.new_asset_settings?.passthrough ?? null,
+      width: data.width ?? null,
+      height: data.height ?? null,
+      duration: data.duration ?? null,
+      resolution: data.resolution ?? null,
+      resolution_tier: data.resolution_tier ?? null,
+      static_rendition_files: data.static_renditions?.files?.map((file) => ({
+        status: file.status ?? null,
+        resolution: file.resolution ?? null,
+        name: file.name ?? null,
+      })) ?? null,
+      playback_ids: data.playback_ids?.map((playback) => ({
+        id: playback.id ?? null,
+        policy: playback.policy ?? null,
+      })) ?? null,
+      created_at: payload.created_at ?? null,
+    };
+  } catch {
+    return { parse_status: "invalid_json" };
+  }
+}
+
 async function resolveTakeIdForMuxEvent(data: {
   asset_id?: string;
   passthrough?: string;
@@ -281,10 +337,10 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         }
 
         const rawBody = await request.text();
-        console.log("MUX WEBHOOK RAW BODY", {
+        console.log("MUX WEBHOOK BODY SUMMARY", {
           timestamp: receivedAt,
           length: rawBody.length,
-          body: rawBody,
+          ...summariseMuxWebhookBody(rawBody),
         });
 
         // Surface event.type as early as possible (pre-verification peek for logging only).

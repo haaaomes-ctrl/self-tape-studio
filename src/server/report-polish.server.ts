@@ -205,7 +205,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     return {
       ok: false,
       httpStatus: resp.status,
-      error: `report_polish_http_${resp.status}: ${body.slice(0, 200)}`,
+      error: `report_polish_http_${resp.status}: ${body.slice(0, 1000)}`,
       safe_error_category: classifyAiGatewayProviderError(resp.status, body),
       durationMs: Date.now() - startedAt,
       model,
