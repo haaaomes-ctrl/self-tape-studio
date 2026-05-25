@@ -15,6 +15,7 @@ import {
   type AuditionTypeForLabels,
   type PublicCategoryKey,
 } from "@/lib/discipline-labels";
+import { isUsableS10PerformerReportViewModel } from "@/lib/audition-rules";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type V2 = any;
@@ -65,6 +66,10 @@ function itemDetail(item: unknown): string | null {
     safeStr(o.why_to_preserve) ??
     null
   );
+}
+
+function hasRenderableItem(item: unknown): boolean {
+  return itemTitle(item) != null || itemDetail(item) != null;
 }
 
 function ScoreBar({ value }: { value: number }) {
@@ -124,6 +129,126 @@ function displayStrings(value: unknown): string[] {
     .filter((item): item is string => item.trim().length > 0);
 }
 
+function itemDedupeKey(item: unknown): string | null {
+  const title = itemTitle(item);
+  const detail = itemDetail(item);
+  const key = [title, detail].filter(Boolean).join(" — ").trim().toLowerCase();
+  return key || null;
+}
+
+function uniqueListItems(items: unknown[], seen: Set<string>): unknown[] {
+  return items.filter((item) => {
+    const key = itemDedupeKey(item);
+    if (!key) return false;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderableListItems(items: unknown[]): unknown[] {
+  return items.filter(hasRenderableItem);
+}
+
+function isRouteCategoryKey(value: unknown): value is PublicCategoryKey {
+  return typeof value === "string" && CATEGORY_KEYS.includes(value as PublicCategoryKey);
+}
+
+function hasRenderableComponentRow(value: unknown): boolean {
+  const row = safeObj(value);
+  if (!row) return false;
+  return [
+    row.requirement_summary,
+    row.observed_status,
+    row.completion_status,
+    row.evidence_summary,
+    row.assessability_notes,
+  ].some((candidate) => !!safeStr(candidate));
+}
+
+function hasRenderableBriefContext(value: unknown): boolean {
+  const context = safeObj(value);
+  if (!context) return false;
+  return [
+    context.project_name,
+    context.role_name,
+    context.discipline,
+    context.audition_type,
+    context.material_package_summary,
+    context.role_description_summary,
+    context.deadline_summary,
+    context.upload_summary,
+    context.file_naming_summary,
+  ].some((candidate) => !!safeStr(candidate));
+}
+
+function briefContextRows(value: unknown): Array<[string, string]> {
+  const context = safeObj(value);
+  if (!context) return [];
+  return [
+    ["Project", context.project_name],
+    ["Role", context.role_name],
+    ["Discipline", context.discipline],
+    ["Audition type", context.audition_type],
+    ["Material", context.material_package_summary],
+    ["Role context", context.role_description_summary],
+    ["Deadline", context.deadline_summary],
+    ["Upload", context.upload_summary],
+    ["File naming", context.file_naming_summary],
+  ].flatMap(([label, raw]) => {
+    const value = safeStr(raw);
+    return value ? ([[label as string, value]] as Array<[string, string]>) : [];
+  });
+}
+
+function hasRenderableBriefRequirement(value: unknown): boolean {
+  const row = safeObj(value);
+  if (!row) return false;
+  return [
+    row.summary,
+    row.brief_text,
+    row.expected_evidence_in_tape,
+    row.achievement_test,
+    row.submission_impact_if_missing,
+    row.report_destination,
+  ].some((candidate) => !!safeStr(candidate));
+}
+
+function hasRenderableBriefAchievementRow(value: unknown): boolean {
+  const row = safeObj(value);
+  if (!row) return false;
+  return [
+    row.requirement_summary,
+    row.observed_status,
+    row.completion_status,
+    row.achievement_status,
+    row.evidence_summary,
+    row.submission_impact,
+    row.fix_category,
+    row.recommended_action,
+  ].some((candidate) => !!safeStr(candidate));
+}
+
+function hasRenderableObservedTapeSequenceRow(value: unknown): boolean {
+  const row = safeObj(value);
+  if (!row) return false;
+  return [
+    row.label,
+    row.present_status,
+    row.completion_status,
+    row.evidence_summary,
+    row.assessability_notes,
+  ].some((candidate) => !!safeStr(candidate));
+}
+
+function hasRenderableTimestampedNote(value: unknown): boolean {
+  const note = safeObj(value);
+  if (!note) return false;
+  return [note.title, note.detail, note.action, note.evidence_summary].some(
+    (candidate) => !!safeStr(candidate),
+  );
+}
+
 function sourceLimitation(
   sourceMap: Record<string, unknown> | null,
   section: string,
@@ -163,10 +288,13 @@ export function V2ReportView({
 }) {
   if (!report || typeof report !== "object") return null;
 
-  const s10 = safeObj(report.s10_view_model);
+  const rawS10View = report.s10_view_model;
+  const usableS10View = isUsableS10PerformerReportViewModel(rawS10View);
   const isS10 =
-    safeStr(report.source_mode) === "s10_ai_report_model" || !!s10 || hasS10ModuleObject(report);
-  if (isS10 && !s10) {
+    safeStr(report.source_mode) === "s10_ai_report_model" ||
+    rawS10View != null ||
+    hasS10ModuleObject(report);
+  if (isS10 && !usableS10View) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
@@ -188,9 +316,11 @@ export function V2ReportView({
       </div>
     );
   }
+  const s10 = usableS10View ? safeObj(rawS10View) : null;
   const s10SectionSourceMap = safeObj(s10?.section_source_map);
   const s10Recommendation = safeObj(s10?.recommendation);
   const s10ScoreSummary = safeObj(s10?.score_summary);
+  const s10BriefContext = safeObj(s10?.brief_context);
   const s10Matrix = safeObj(s10?.brief_achievement_matrix);
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
   const s10NextActionPlan = safeObj(s10?.next_action_plan);
@@ -252,16 +382,14 @@ export function V2ReportView({
     !!s10Decision && !["submit", "submit_if_deadline_is_close"].includes(s10Decision);
   const s10SubmissionRiskSource = safeObj(s10SectionSourceMap?.submission_risk);
   const s10HasRiskSource = safeStr(s10SubmissionRiskSource?.source) === "s10_authoritative_module";
-  const s10Rationale = safeArr<string>(s10Recommendation?.rationale).filter(
-    (b): b is string => typeof b === "string" && b.trim().length > 0,
-  );
+  const s10Rationale = renderableListItems(safeArr(s10Recommendation?.rationale));
   const blockers = (
     isS10 && (s10HasBlockingDecision || s10HasRiskSource)
       ? s10Rationale
       : !isS10
         ? safeArr<string>(report.block_reasons)
         : []
-  ).filter((b): b is string => typeof b === "string");
+  ).filter(hasRenderableItem);
   const recommendationRationale =
     isS10 && !s10HasBlockingDecision && !s10HasRiskSource ? s10Rationale : [];
   const strengths = safeArr(report.strengths);
@@ -275,9 +403,13 @@ export function V2ReportView({
       ].slice(0, 6)
     : safeArr<string>(report.presentation_notes).filter((s): s is string => typeof s === "string");
   const riskFlags = isS10 ? [] : safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
-  const s10CategoryRows = safeArr<Record<string, unknown>>(s10ScoreSummary?.category_scores);
+  const s10CategoryRows = safeArr<Record<string, unknown>>(s10ScoreSummary?.category_scores).filter(
+    (row) => isRouteCategoryKey(safeStr(row.category_id)),
+  );
   const s10ComponentScores = safeArr<Record<string, unknown>>(s10ScoreSummary?.component_scores);
-  const s10ComponentBreakdown = safeArr<Record<string, unknown>>(s10?.component_breakdown);
+  const s10ComponentBreakdown = safeArr<Record<string, unknown>>(s10?.component_breakdown).filter(
+    hasRenderableComponentRow,
+  );
   const components = isS10
     ? s10ComponentBreakdown.map((c, index) => {
         const requirementId = safeStr(c.requirement_id);
@@ -426,12 +558,20 @@ export function V2ReportView({
               Why this isn't ready
             </p>
             <ul className="mt-2 space-y-1.5 text-sm">
-              {blockers.map((b, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-warning">•</span>
-                  <span>{b}</span>
-                </li>
-              ))}
+              {blockers.map((b, i) => {
+                const title = itemTitle(b);
+                const detail = itemDetail(b);
+                return (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-warning">•</span>
+                    <span>
+                      {title && <span className="font-medium">{title}</span>}
+                      {title && detail ? " — " : ""}
+                      {detail && <span>{detail}</span>}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -441,12 +581,20 @@ export function V2ReportView({
               Why this recommendation
             </p>
             <ul className="mt-2 space-y-1.5 text-sm">
-              {recommendationRationale.map((item, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-muted-foreground">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
+              {recommendationRationale.map((item, i) => {
+                const title = itemTitle(item);
+                const detail = itemDetail(item);
+                return (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-muted-foreground">•</span>
+                    <span>
+                      {title && <span className="font-medium">{title}</span>}
+                      {title && detail ? " — " : ""}
+                      {detail && <span>{detail}</span>}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -498,22 +646,55 @@ export function V2ReportView({
       {isS10 && (
         <>
           {(() => {
-            const reqs = safeArr<Record<string, unknown>>(s10?.brief_requirements);
-            const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results);
-            if (!s10Matrix && reqs.length === 0) return null;
+            const contextRows = briefContextRows(s10BriefContext);
+            const reqs = safeArr<Record<string, unknown>>(s10?.brief_requirements).filter(
+              hasRenderableBriefRequirement,
+            );
+            const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results).filter(
+              hasRenderableBriefAchievementRow,
+            );
+            const matrixStatusRows = [
+              ["Overall", s10Matrix?.overall_status],
+              ["Mandatory", s10Matrix?.mandatory_status],
+              ["Readiness impact", s10Matrix?.readiness_impact],
+            ].flatMap(([label, raw]) => {
+              const value = safeStr(raw);
+              return value ? ([[label as string, value]] as Array<[string, string]>) : [];
+            });
+            const hasMatrixSummary = !!safeStr(s10Matrix?.summary);
+            if (
+              contextRows.length === 0 &&
+              !hasMatrixSummary &&
+              matrixStatusRows.length === 0 &&
+              reqs.length === 0 &&
+              rows.length === 0
+            )
+              return null;
             return (
               <Section
                 title="Brief achievement"
                 hint="What the brief asked for, checked against the submitted tape."
               >
-                {safeStr(s10Matrix?.summary) && (
-                  <p className="text-sm">{safeStr(s10Matrix?.summary)}</p>
+                {contextRows.length > 0 && (
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    {contextRows.map(([label, value]) => (
+                      <p key={label}>
+                        <span className="font-medium">{label}:</span>{" "}
+                        <span className="text-muted-foreground">{value}</span>
+                      </p>
+                    ))}
+                  </div>
                 )}
-                {s10Matrix && (
+                {safeStr(s10Matrix?.summary) && (
+                  <p className={cn("text-sm", contextRows.length > 0 && "mt-3")}>
+                    {safeStr(s10Matrix?.summary)}
+                  </p>
+                )}
+                {matrixStatusRows.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                    {["overall_status", "mandatory_status", "readiness_impact"].map((key) => (
-                      <Badge key={key} variant="outline" className="capitalize">
-                        {key.replace(/_/g, " ")}: {labelize(s10Matrix[key])}
+                    {matrixStatusRows.map(([label, value]) => (
+                      <Badge key={label} variant="outline" className="capitalize">
+                        {label}: {labelize(value)}
                       </Badge>
                     ))}
                   </div>
@@ -538,6 +719,21 @@ export function V2ReportView({
                                 {safeStr(r.brief_text)}
                               </p>
                             )}
+                          {safeStr(r.expected_evidence_in_tape) && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Evidence expected: {safeStr(r.expected_evidence_in_tape)}
+                            </p>
+                          )}
+                          {safeStr(r.achievement_test) && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Achievement check: {safeStr(r.achievement_test)}
+                            </p>
+                          )}
+                          {safeStr(r.submission_impact_if_missing) && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              If missing: {safeStr(r.submission_impact_if_missing)}
+                            </p>
+                          )}
                           <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground">
                             {labelize(r.importance)} · {labelize(r.category)}
                           </p>
@@ -555,10 +751,24 @@ export function V2ReportView({
                       {rows.map((r, i) => (
                         <li key={safeStr(r.requirement_id) ?? i}>
                           <span className="font-medium">
-                            {safeStr(r.requirement_summary) ?? "Requirement"}
+                            {safeStr(r.requirement_summary) ?? "Requirement result"}
                           </span>
                           {" — "}
-                          <span className="capitalize">{labelize(r.achievement_status)}</span>
+                          <span className="capitalize">
+                            {safeStr(r.achievement_status)
+                              ? labelize(r.achievement_status)
+                              : "status unavailable"}
+                          </span>
+                          {safeStr(r.evidence_summary) && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Evidence: {safeStr(r.evidence_summary)}
+                            </p>
+                          )}
+                          {safeStr(r.submission_impact) && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              Submission impact: {labelize(r.submission_impact)}
+                            </p>
+                          )}
                           {safeStr(r.recommended_action) && (
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {safeStr(r.recommended_action)}
@@ -576,10 +786,10 @@ export function V2ReportView({
           {(() => {
             const sequence = safeArr<Record<string, unknown>>(
               safeObj(s10?.observed_tape)?.observed_tape_sequence,
-            );
+            ).filter(hasRenderableObservedTapeSequenceRow);
             const verifications = safeArr<Record<string, unknown>>(
               safeObj(s10?.observed_tape)?.component_verifications,
-            );
+            ).filter(hasRenderableComponentRow);
             if (sequence.length === 0 && verifications.length === 0) return null;
             return (
               <Section
@@ -590,13 +800,29 @@ export function V2ReportView({
                   <div className="space-y-2 text-sm">
                     {sequence.map((item, i) => (
                       <p key={safeStr(item.id) ?? i}>
-                        <span className="font-medium">{safeStr(item.label) ?? "Section"}</span>
-                        {" — "}
-                        <span className="capitalize">{labelize(item.present_status)}</span>
+                        <span className="font-medium">
+                          {safeStr(item.label) ?? safeStr(item.evidence_summary) ?? "Observed item"}
+                        </span>
+                        {safeStr(item.present_status) && (
+                          <>
+                            {" — "}
+                            <span className="capitalize">{labelize(item.present_status)}</span>
+                          </>
+                        )}
                         {safeStr(item.completion_status) && (
                           <span className="text-muted-foreground">
                             {" "}
                             / {labelize(item.completion_status)}
+                          </span>
+                        )}
+                        {safeStr(item.evidence_summary) && safeStr(item.label) && (
+                          <span className="block text-xs text-muted-foreground">
+                            {safeStr(item.evidence_summary)}
+                          </span>
+                        )}
+                        {safeStr(item.assessability_notes) && (
+                          <span className="block text-xs text-muted-foreground">
+                            {safeStr(item.assessability_notes)}
                           </span>
                         )}
                       </p>
@@ -608,17 +834,30 @@ export function V2ReportView({
                     {verifications.map((item, i) => (
                       <li key={safeStr(item.requirement_id) ?? i}>
                         <span className="font-medium">
-                          {safeStr(item.requirement_summary) ?? "Component"}
+                          {safeStr(item.requirement_summary) ??
+                            safeStr(item.evidence_summary) ??
+                            "Observed component"}
                         </span>
-                        {" — "}
-                        <span className="capitalize">{labelize(item.observed_status)}</span>
-                        <span className="text-muted-foreground">
-                          {" "}
-                          / {labelize(item.completion_status)}
-                        </span>
+                        {safeStr(item.observed_status) && (
+                          <>
+                            {" — "}
+                            <span className="capitalize">{labelize(item.observed_status)}</span>
+                          </>
+                        )}
+                        {safeStr(item.completion_status) && (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            / {labelize(item.completion_status)}
+                          </span>
+                        )}
                         {safeStr(item.evidence_summary) && (
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {safeStr(item.evidence_summary)}
+                          </p>
+                        )}
+                        {safeStr(item.assessability_notes) && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {safeStr(item.assessability_notes)}
                           </p>
                         )}
                       </li>
@@ -640,12 +879,37 @@ export function V2ReportView({
               </Section>
             ) : null;
           }
-          const fixFirst = safeObj(s10FixHierarchy.fix_first);
-          const must = safeArr(s10FixHierarchy.must_fix_before_submitting);
-          const should = safeArr(s10FixHierarchy.should_improve_if_retaking);
-          const optional = safeArr(s10FixHierarchy.optional_polish);
-          const preserve = safeArr(s10FixHierarchy.preserve);
-          if (!fixFirst && must.length === 0 && should.length === 0 && optional.length === 0) {
+          const rawFixFirst = safeObj(s10FixHierarchy.fix_first);
+          const fixFirst = rawFixFirst && itemDedupeKey(rawFixFirst) ? rawFixFirst : null;
+          const seenFixItems = new Set<string>();
+          if (fixFirst) {
+            const key = itemDedupeKey(fixFirst);
+            if (key) seenFixItems.add(key);
+          }
+          const priority = uniqueListItems(safeArr(s10FixHierarchy.priority_fixes), seenFixItems);
+          const must = uniqueListItems(
+            safeArr(s10FixHierarchy.must_fix_before_submitting),
+            seenFixItems,
+          );
+          const should = uniqueListItems(
+            safeArr(s10FixHierarchy.should_improve_if_retaking),
+            seenFixItems,
+          );
+          const optional = uniqueListItems(safeArr(s10FixHierarchy.optional_polish), seenFixItems);
+          const preserve = uniqueListItems(safeArr(s10FixHierarchy.preserve), seenFixItems);
+          const doNotOverfix = uniqueListItems(
+            safeArr(s10FixHierarchy.do_not_overfix),
+            seenFixItems,
+          );
+          if (
+            !fixFirst &&
+            priority.length === 0 &&
+            must.length === 0 &&
+            should.length === 0 &&
+            optional.length === 0 &&
+            preserve.length === 0 &&
+            doNotOverfix.length === 0
+          ) {
             return null;
           }
           return (
@@ -664,6 +928,16 @@ export function V2ReportView({
                   {safeStr(fixFirst.exact_action) && (
                     <p className="mt-1 text-sm">{safeStr(fixFirst.exact_action)}</p>
                   )}
+                </div>
+              )}
+              {priority.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Priority fixes
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={priority} marker="→" />
+                  </div>
                 </div>
               )}
               {must.length > 0 && (
@@ -703,6 +977,16 @@ export function V2ReportView({
                   </p>
                   <div className="mt-2">
                     <SimpleList items={preserve} marker="✓" />
+                  </div>
+                </div>
+              )}
+              {doNotOverfix.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Do not over-fix
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={doNotOverfix} marker="•" />
                   </div>
                 </div>
               )}
@@ -929,39 +1213,50 @@ export function V2ReportView({
           {safeStr(s10StrengthsAndPreserve.summary) && (
             <p className="text-sm">{safeStr(s10StrengthsAndPreserve.summary)}</p>
           )}
-          {safeArr(s10StrengthsAndPreserve.strengths).length > 0 && (
+          {renderableListItems(safeArr(s10StrengthsAndPreserve.strengths)).length > 0 && (
             <div className="mt-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Strengths
               </p>
               <div className="mt-2">
-                <SimpleList items={safeArr(s10StrengthsAndPreserve.strengths)} marker="✓" />
+                <SimpleList
+                  items={renderableListItems(safeArr(s10StrengthsAndPreserve.strengths))}
+                  marker="✓"
+                />
               </div>
             </div>
           )}
-          {safeArr(s10StrengthsAndPreserve.preserve).length > 0 && (
+          {renderableListItems(safeArr(s10StrengthsAndPreserve.preserve)).length > 0 && (
             <div className="mt-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Preserve
               </p>
               <div className="mt-2">
-                <SimpleList items={safeArr(s10StrengthsAndPreserve.preserve)} marker="✓" />
+                <SimpleList
+                  items={renderableListItems(safeArr(s10StrengthsAndPreserve.preserve))}
+                  marker="✓"
+                />
               </div>
             </div>
           )}
-          {safeArr(s10StrengthsAndPreserve.do_not_overfix).length > 0 && (
+          {renderableListItems(safeArr(s10StrengthsAndPreserve.do_not_overfix)).length > 0 && (
             <div className="mt-3">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Do not overfix
               </p>
               <div className="mt-2">
-                <SimpleList items={safeArr(s10StrengthsAndPreserve.do_not_overfix)} marker="•" />
+                <SimpleList
+                  items={renderableListItems(safeArr(s10StrengthsAndPreserve.do_not_overfix))}
+                  marker="•"
+                />
               </div>
             </div>
           )}
-          {safeArr<string>(s10StrengthsAndPreserve.limitations).length > 0 && (
+          {renderableListItems(safeArr(s10StrengthsAndPreserve.limitations)).length > 0 && (
             <div className="mt-3 text-sm text-muted-foreground">
-              <SimpleList items={safeArr(s10StrengthsAndPreserve.limitations)} />
+              <SimpleList
+                items={renderableListItems(safeArr(s10StrengthsAndPreserve.limitations))}
+              />
             </div>
           )}
         </Section>
@@ -1005,6 +1300,11 @@ export function V2ReportView({
           {safeStr(s10Technique.summary) && (
             <p className="text-sm">{safeStr(s10Technique.summary)}</p>
           )}
+          {renderableListItems(safeArr(s10Technique.limitations)).length > 0 && (
+            <div className="mt-3 text-sm text-muted-foreground">
+              <SimpleList items={renderableListItems(safeArr(s10Technique.limitations))} />
+            </div>
+          )}
           <div className="mt-3 space-y-4 text-sm">
             {[
               ["Acting", s10Technique.acting],
@@ -1016,16 +1316,20 @@ export function V2ReportView({
             ].map(([label, raw]) => {
               const section = safeObj(raw);
               if (!section) return null;
-              const observations = safeArr(section.observations);
-              const working = safeArr(section.what_is_working);
-              const improve = safeArr(section.what_could_improve);
-              const actions = safeArr(section.practical_actions);
+              const observations = renderableListItems(safeArr(section.observations));
+              const working = renderableListItems(safeArr(section.what_is_working));
+              const improve = renderableListItems(safeArr(section.what_could_improve));
+              const actions = renderableListItems(safeArr(section.practical_actions));
+              const preserve = renderableListItems(safeArr(section.preserve));
+              const limitations = renderableListItems(safeArr(section.limitations));
               const hasContent =
                 safeStr(section.headline) ||
                 observations.length > 0 ||
                 working.length > 0 ||
                 improve.length > 0 ||
                 actions.length > 0 ||
+                preserve.length > 0 ||
+                limitations.length > 0 ||
                 safeStr(section.not_assessable_reason);
               if (!hasContent) return null;
               return (
@@ -1049,6 +1353,26 @@ export function V2ReportView({
                       <SimpleList items={observations} marker="•" />
                     </div>
                   )}
+                  {working.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        What is working
+                      </p>
+                      <div className="mt-1">
+                        <SimpleList items={working} marker="✓" />
+                      </div>
+                    </div>
+                  )}
+                  {improve.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        What could improve
+                      </p>
+                      <div className="mt-1">
+                        <SimpleList items={improve} marker="→" />
+                      </div>
+                    </div>
+                  )}
                   {actions.length > 0 && (
                     <div className="mt-2">
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1059,6 +1383,26 @@ export function V2ReportView({
                       </div>
                     </div>
                   )}
+                  {preserve.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Preserve
+                      </p>
+                      <div className="mt-1">
+                        <SimpleList items={preserve} marker="✓" />
+                      </div>
+                    </div>
+                  )}
+                  {limitations.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Limitations
+                      </p>
+                      <div className="mt-1">
+                        <SimpleList items={limitations} marker="•" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1066,39 +1410,63 @@ export function V2ReportView({
         </Section>
       )}
 
-      {s10Timestamped && (
-        <Section
-          title="Timestamped and time-banded notes"
-          hint="Exact times appear only when the timing source supports them."
-        >
-          {safeStr(s10Timestamped.summary) && (
-            <p className="text-sm">{safeStr(s10Timestamped.summary)}</p>
-          )}
-          <ul className="mt-3 space-y-2 text-sm">
-            {safeArr<Record<string, unknown>>(s10Timestamped.notes).map((n, i) => (
-              <li key={safeStr(n.id) ?? i} className="flex gap-3">
-                <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-                  {safeStr(n.display_label) ?? safeStr(n.timecode) ?? "Timing unavailable"}
-                </span>
-                <span>
-                  <span className="font-medium">{safeStr(n.title) ?? labelize(n.section)}</span>
-                  {safeStr(n.detail) && <> — {safeStr(n.detail)}</>}
-                  {safeStr(n.action) && (
-                    <span className="block text-xs text-muted-foreground">
-                      Action: {safeStr(n.action)}
+      {(() => {
+        if (!s10Timestamped) return null;
+        const notes = safeArr<Record<string, unknown>>(s10Timestamped.notes).filter(
+          hasRenderableTimestampedNote,
+        );
+        const timestampLimitations = renderableListItems(
+          safeArr(s10Timestamped.timestamp_limitations),
+        );
+        if (
+          !safeStr(s10Timestamped.summary) &&
+          notes.length === 0 &&
+          timestampLimitations.length === 0
+        )
+          return null;
+        return (
+          <Section
+            title="Timestamped and time-banded notes"
+            hint="Exact times appear only when the timing source supports them."
+          >
+            {safeStr(s10Timestamped.summary) && (
+              <p className="text-sm">{safeStr(s10Timestamped.summary)}</p>
+            )}
+            {notes.length > 0 && (
+              <ul className="mt-3 space-y-2 text-sm">
+                {notes.map((n, i) => (
+                  <li key={safeStr(n.id) ?? i} className="flex gap-3">
+                    <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                      {safeStr(n.display_label) ?? safeStr(n.timecode) ?? "Timing unavailable"}
                     </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {safeArr<string>(s10Timestamped.timestamp_limitations).length > 0 && (
-            <div className="mt-3 text-sm text-muted-foreground">
-              <SimpleList items={safeArr(s10Timestamped.timestamp_limitations)} />
-            </div>
-          )}
-        </Section>
-      )}
+                    <span>
+                      {(safeStr(n.title) ?? safeStr(n.detail)) && (
+                        <span className="font-medium">{safeStr(n.title) ?? safeStr(n.detail)}</span>
+                      )}
+                      {safeStr(n.title) && safeStr(n.detail) && <> — {safeStr(n.detail)}</>}
+                      {safeStr(n.action) && (
+                        <span className="block text-xs text-muted-foreground">
+                          Action: {safeStr(n.action)}
+                        </span>
+                      )}
+                      {safeStr(n.evidence_summary) && (
+                        <span className="block text-xs text-muted-foreground">
+                          {safeStr(n.evidence_summary)}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {timestampLimitations.length > 0 && (
+              <div className="mt-3 text-sm text-muted-foreground">
+                <SimpleList items={timestampLimitations} />
+              </div>
+            )}
+          </Section>
+        );
+      })()}
 
       {!isS10 && tsNotes.length > 0 && (
         <Section title="Timestamped notes">

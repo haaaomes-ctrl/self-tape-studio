@@ -77,6 +77,49 @@ describe("S10.P1e hard V2 route boundary", () => {
     expect(html).not.toContain("Correct the file naming convention");
   });
 
+  it("renders the S10 limitation surface for invalid S10 view-model shapes", () => {
+    for (const s10_view_model of [
+      {},
+      {
+        report_version: "s10_performer_report_view_model_v0",
+        source_mode: "s10_ai_report_model",
+      },
+      {
+        report_version: "s10_performer_report_view_model_v1",
+        source_mode: "s10_ai_report_model",
+      },
+    ]) {
+      const html = render({
+        schema_version: "v2-component",
+        source_mode: "s10_ai_report_model",
+        s10_view_model,
+        overall_readiness: 93,
+        headline: "Strong for this level",
+        reliability: "high",
+        role_fit: {
+          notes: "Legacy role fit should not render.",
+        },
+        components: [{ type: "legacy acting scene", note: "Naturalistic acting with good pace" }],
+        scores: { acting: 93 },
+        fix_first: "Correct the file naming convention",
+        category_notes: { acting: "Correct material, orientation, and framing" },
+        presentation_notes: ["Single-file submission as requested"],
+        risk_flags: [{ severity: "low", flag: "LOW File naming convention not followed" }],
+      });
+
+      expect(html).toContain("S10 report assembly limitation");
+      expect(html).toContain("No legacy report was used as a substitute.");
+      expect(html).not.toContain("Strong for this level");
+      expect(html).not.toContain("Reliability");
+      expect(html).not.toContain("Legacy role fit should not render");
+      expect(html).not.toContain("Naturalistic acting with good pace");
+      expect(html).not.toContain("Correct material, orientation, and framing");
+      expect(html).not.toContain("Single-file submission as requested");
+      expect(html).not.toContain("LOW File naming convention not followed");
+      expect(html).not.toContain("Correct the file naming convention");
+    }
+  });
+
   it("builds a valid limited S10 V2 report with a limited view model", () => {
     const limited = buildS10LimitedV2Report({
       auditionType: "musical_theatre",

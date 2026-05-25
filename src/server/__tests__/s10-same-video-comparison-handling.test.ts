@@ -329,6 +329,107 @@ describe("S10.13 same-video and comparison handling", () => {
     expect(JSON.stringify(result.comparison_truth.pairwise_matches)).not.toContain("take_b_id");
   });
 
+  it("keeps duplicate subset membership on stable IDs when display labels repeat", () => {
+    const result = classifyS10SameVideoComparison({
+      current_take_id: "take-a",
+      scope: "same_user_same_audition",
+      comparison_present: true,
+      compared_takes: [
+        {
+          take_id: "take-a",
+          label: "Take 1",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"4".repeat(64)}`,
+        },
+        {
+          take_id: "take-b",
+          label: "Take 2",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"4".repeat(64)}`,
+        },
+        {
+          take_id: "take-c",
+          label: "Take 2",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"5".repeat(64)}`,
+        },
+      ],
+    });
+
+    expect(result.comparison_truth.comparison_mode).toBe("mixed_same_video_and_distinct_takes");
+    expect(result.comparison_truth.duplicate_subsets).toEqual([["Take 1", "Take 2"]]);
+    expect(result.comparison_truth.compared_take_summaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          take_id: "take-b",
+          label: "Take 2",
+          media_identity_summary:
+            "Appears to share the same underlying video with another compared take.",
+        }),
+        expect.objectContaining({
+          take_id: "take-c",
+          label: "Take 2",
+          media_identity_summary: "Media identity relationship is not confirmed.",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(result.comparison_truth)).not.toContain("sha256:");
+  });
+
+  it("uses fallback stable IDs before projecting duplicate subset labels", () => {
+    const result = classifyS10SameVideoComparison({
+      current_take_id: "analysis-a",
+      scope: "same_user_same_audition",
+      comparison_present: true,
+      compared_takes: [
+        {
+          analysis_run_id: "analysis-a",
+          label: "Take 1",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"6".repeat(64)}`,
+        },
+        {
+          comparison_take_id: "comparison-b",
+          label: "Take 2",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"6".repeat(64)}`,
+        },
+        {
+          fixture_stable_id: "fixture-c",
+          label: "Take 2",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"7".repeat(64)}`,
+        },
+      ],
+    });
+
+    expect(result.comparison_truth.comparison_mode).toBe("mixed_same_video_and_distinct_takes");
+    expect(result.evidence.current_take_id).toBe("analysis-a");
+    expect(result.comparison_truth.duplicate_subsets).toEqual([["Take 1", "Take 2"]]);
+    expect(result.comparison_truth.compared_take_summaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          take_id: "comparison-b",
+          label: "Take 2",
+          media_identity_summary:
+            "Appears to share the same underlying video with another compared take.",
+        }),
+        expect.objectContaining({
+          take_id: "fixture-c",
+          label: "Take 2",
+          media_identity_summary: "Media identity relationship is not confirmed.",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(result.comparison_truth)).not.toContain("sha256:");
+  });
+
   it("keeps whole-comparison no-winner policy only when all compared media match", () => {
     const result = classifyS10SameVideoComparison({
       current_take_id: "take-a",

@@ -4,6 +4,11 @@
 // authenticated report keeps useful S10 brief, score, technique and timestamp
 // detail while removing raw prompts, raw model internals and diagnostic traces.
 
+import {
+  S10_PERFORMER_REPORT_VIEW_MODEL_VERSION,
+  S10_REPORT_SOURCE_MODE,
+  isUsableS10PerformerReportViewModel,
+} from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
   BriefContext,
@@ -64,8 +69,8 @@ export type S10SectionSourceEntry = {
 };
 
 export type S10PerformerReportViewModel = {
-  report_version: "s10_performer_report_view_model_v1";
-  source_mode: "s10_ai_report_model";
+  report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
+  source_mode: typeof S10_REPORT_SOURCE_MODE;
   section_source_map: Record<S10ReportSectionKey, S10SectionSourceEntry>;
   recommendation: {
     decision: ReadinessAndScoreJudgement["decision"];
@@ -350,10 +355,10 @@ export function buildS10PerformerReportViewModel(input: {
     context.mediaObservationSummary ?? report.media_observation_summary ?? null,
   ) as MediaObservationSummary | null;
   const hasS10PresentationNotes =
-    asArray(
+    arrayHasRenderableItems(
       (techniqueCommentary?.self_tape_presentation as { what_is_working?: unknown } | null)
         ?.what_is_working,
-    ).length > 0 || asArray(professionalCritique?.professional_presentation_notes).length > 0;
+    ) || arrayHasRenderableItems(professionalCritique?.professional_presentation_notes);
   const hasBlockingReadiness =
     !!readiness?.decision &&
     readiness.decision !== "submit" &&
@@ -362,8 +367,8 @@ export function buildS10PerformerReportViewModel(input: {
     hasBlockingReadiness ||
     matrix?.readiness_impact === "material_gap" ||
     matrix?.readiness_impact === "submission_blocker" ||
-    !!fixHierarchy?.fix_first ||
-    (fixHierarchy?.must_fix_before_submitting?.length ?? 0) > 0;
+    hasRenderableItemText(fixHierarchy?.fix_first) ||
+    arrayHasRenderableItems(fixHierarchy?.must_fix_before_submitting);
   const visibleS10Score =
     asNumber((readiness as Record<string, unknown> | null)?.overall_submission_readiness_score) ??
     null;
@@ -371,6 +376,7 @@ export function buildS10PerformerReportViewModel(input: {
   const limitations = [
     ...(matrix ? [] : ["Brief achievement details are not available for this report."]),
     ...(readiness ? [] : ["Readiness judgement is not available for this report."]),
+    ...(visibleS10Score != null ? [] : ["S10 score summary was unavailable for this report."]),
     ...(componentVerifications.length > 0
       ? []
       : ["Observed component verification is not available for this report."]),
@@ -383,9 +389,13 @@ export function buildS10PerformerReportViewModel(input: {
   ];
 
   const section_source_map: S10PerformerReportViewModel["section_source_map"] = {
-    readiness_header: source(!!readiness, "readiness_score_judgement", limitations[1] ?? ""),
+    readiness_header: source(
+      hasVisibleRecommendationPayload(readiness),
+      "readiness_score_judgement",
+      "Readiness judgement is not available for this report.",
+    ),
     submission_guidance: source(
-      !!readiness,
+      hasVisibleRecommendationPayload(readiness),
       "readiness_score_judgement",
       "Submission guidance is not available for this report.",
     ),
@@ -395,12 +405,12 @@ export function buildS10PerformerReportViewModel(input: {
       "S10 score summary was unavailable for this report.",
     ),
     category_scores: source(
-      (readiness?.category_scores?.length ?? 0) > 0,
+      hasVisibleCategoryScoreRows(readiness?.category_scores),
       "readiness_score_judgement.category_scores",
       "S10 category score semantics are not available for this report.",
     ),
     category_rationale: source(
-      Object.keys(readiness?.category_rationale ?? {}).length > 0,
+      hasScoreRowRationale(readiness?.category_scores),
       "readiness_score_judgement.category_rationale",
       "S10 category rationale is not available for this report.",
     ),
@@ -410,58 +420,64 @@ export function buildS10PerformerReportViewModel(input: {
       "S10 brief-completion score is not available for this report.",
     ),
     brief_context: source(
-      !!briefContext,
+      hasVisibleBriefContextPayload(briefContext),
       "brief_context",
       "Brief context is not available for this report.",
     ),
     brief_requirements: source(
-      briefRequirements.length > 0,
+      hasVisibleBriefRequirementRows(briefRequirements),
       "brief_requirements",
       "Brief requirements are not available for this report.",
     ),
     brief_achievement: source(
-      !!matrix,
+      hasVisibleBriefAchievementPayload(matrix),
       "brief_achievement_matrix",
       "Brief achievement matrix is not available for this report.",
     ),
     observed_tape: source(
-      observedTapeSequence.length > 0 || componentVerifications.length > 0,
+      hasVisibleObservedTapeSequenceRows(observedTapeSequence) ||
+        hasVisibleComponentVerificationRows(componentVerifications),
       "observed_tape_sequence/component_verifications",
       "Observed tape sequence is not available for this report.",
     ),
     component_breakdown: observationSource(
-      componentVerifications.length > 0,
+      hasVisibleComponentVerificationRows(componentVerifications),
       "component_verifications",
       "Component verification was unavailable for this S10 report.",
       observationSourceKind,
     ),
     fix_hierarchy: source(
-      !!fixHierarchy,
+      hasFixHierarchyPayload(fixHierarchy),
       "s10_fix_hierarchy",
       "Fix hierarchy was unavailable for this S10 report.",
     ),
     next_action_plan: source(
-      !!nextActionPlan,
+      hasNextActionPayload(nextActionPlan),
       "s10_next_action_plan",
       "Next action plan was unavailable for this S10 report.",
     ),
     strengths_and_preserve: source(
-      !!professionalCritique,
+      hasVisibleProfessionalCritiquePayload(professionalCritique),
       "s10_professional_critique",
       "Strengths and preserve guidance are not available for this report.",
     ),
     professional_critique: source(
-      !!professionalCritique,
+      hasVisibleProfessionalCritiquePayload(professionalCritique),
       "s10_professional_critique",
       "Professional critique is not available for this report.",
     ),
     technique_commentary: source(
-      !!techniqueCommentary,
+      hasVisibleTechniquePayload(techniqueCommentary),
       "s10_technique_commentary",
       "Technique commentary is not available for this report.",
     ),
     timestamped_commentary: source(
-      !!timestampedCommentary,
+      !!timestampedCommentary &&
+        (hasVisibleTimestampedNotes((timestampedCommentary as Record<string, unknown>).notes) ||
+          hasVisibleTimestampLimitations(
+            (timestampedCommentary as Record<string, unknown>).timestamp_limitations,
+          ) ||
+          !!asText((timestampedCommentary as Record<string, unknown>).summary)),
       "s10_timestamped_commentary",
       "Timestamped commentary is not available for this report.",
     ),
@@ -505,8 +521,8 @@ export function buildS10PerformerReportViewModel(input: {
   };
 
   return {
-    report_version: "s10_performer_report_view_model_v1",
-    source_mode: "s10_ai_report_model",
+    report_version: S10_PERFORMER_REPORT_VIEW_MODEL_VERSION,
+    source_mode: S10_REPORT_SOURCE_MODE,
     section_source_map,
     recommendation: readiness
       ? {
@@ -610,8 +626,8 @@ export function buildS10LimitedPerformerReportViewModel(
   };
 
   return {
-    report_version: "s10_performer_report_view_model_v1",
-    source_mode: "s10_ai_report_model",
+    report_version: S10_PERFORMER_REPORT_VIEW_MODEL_VERSION,
+    source_mode: S10_REPORT_SOURCE_MODE,
     section_source_map,
     recommendation: {
       decision: "review_carefully",
@@ -824,11 +840,153 @@ function arrayHasItems(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
+const ROUTE_RENDERED_CATEGORY_IDS = new Set([
+  "acting",
+  "vocal",
+  "audio",
+  "technical",
+  "brief_adherence",
+  "professional_presentation",
+]);
+
+function isRouteRenderedCategoryId(value: unknown): boolean {
+  const categoryId = asText(value);
+  return !!categoryId && ROUTE_RENDERED_CATEGORY_IDS.has(categoryId);
+}
+
+function hasRenderableItemText(value: unknown): boolean {
+  if (asText(value)) return true;
+  const record = asRecord(value);
+  if (!record) return false;
+  return [
+    record.title,
+    record.headline,
+    record.point,
+    record.summary,
+    record.detail,
+    record.exact_action,
+    record.evidence_summary,
+    record.why_it_matters,
+    record.why_to_preserve,
+    record.recommended_action,
+  ].some((candidate) => !!asText(candidate));
+}
+
+function arrayHasRenderableItems(value: unknown): boolean {
+  return Array.isArray(value) && value.some((item) => hasRenderableItemText(item));
+}
+
+function hasVisibleRecommendationPayload(value: unknown): boolean {
+  const recommendation = asRecord(value);
+  if (!recommendation) return false;
+  return (
+    !!asText(recommendation.decision) ||
+    !!asText(recommendation.headline) ||
+    !!asText(recommendation.score_explanation) ||
+    arrayHasRenderableItems(recommendation.rationale)
+  );
+}
+
+function hasVisibleBriefContextPayload(value: unknown): boolean {
+  const context = asRecord(value);
+  if (!context) return false;
+  return [
+    context.project_name,
+    context.role_name,
+    context.discipline,
+    context.audition_type,
+    context.material_package_summary,
+    context.role_description_summary,
+    context.deadline_summary,
+    context.upload_summary,
+    context.file_naming_summary,
+  ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleBriefRequirementRow(value: unknown): boolean {
+  const row = asRecord(value);
+  if (!row) return false;
+  return [
+    row.summary,
+    row.brief_text,
+    row.expected_evidence_in_tape,
+    row.achievement_test,
+    row.submission_impact_if_missing,
+    row.report_destination,
+  ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleBriefRequirementRows(value: unknown): boolean {
+  return Array.isArray(value) && value.some((row) => hasVisibleBriefRequirementRow(row));
+}
+
+function hasVisibleBriefAchievementRow(value: unknown): boolean {
+  const row = asRecord(value);
+  if (!row) return false;
+  return [
+    row.requirement_summary,
+    row.observed_status,
+    row.completion_status,
+    row.achievement_status,
+    row.evidence_summary,
+    row.submission_impact,
+    row.fix_category,
+    row.recommended_action,
+  ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleBriefAchievementPayload(value: unknown): boolean {
+  const matrix = asRecord(value);
+  if (!matrix) return false;
+  return (
+    !!asText(matrix.summary) ||
+    !!asText(matrix.overall_status) ||
+    !!asText(matrix.mandatory_status) ||
+    !!asText(matrix.readiness_impact) ||
+    (Array.isArray(matrix.requirement_results) &&
+      matrix.requirement_results.some((row) => hasVisibleBriefAchievementRow(row)))
+  );
+}
+
+function hasVisibleObservedTapeSequenceRow(value: unknown): boolean {
+  const row = asRecord(value);
+  if (!row) return false;
+  return [
+    row.label,
+    row.present_status,
+    row.completion_status,
+    row.evidence_summary,
+    row.assessability_notes,
+  ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleObservedTapeSequenceRows(value: unknown): boolean {
+  return Array.isArray(value) && value.some((row) => hasVisibleObservedTapeSequenceRow(row));
+}
+
+function hasVisibleComponentVerificationRow(value: unknown): boolean {
+  const row = asRecord(value);
+  if (!row) return false;
+  return [
+    row.requirement_summary,
+    row.observed_status,
+    row.completion_status,
+    row.evidence_summary,
+    row.assessability_notes,
+  ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleComponentVerificationRows(value: unknown): boolean {
+  return Array.isArray(value) && value.some((row) => hasVisibleComponentVerificationRow(row));
+}
+
 function hasVisibleCategoryScoreRows(value: unknown): boolean {
   if (!Array.isArray(value)) return false;
   return value.some((row) => {
     const record = asRecord(row);
-    return !!record && !!asText(record.category_id) && asNumber(record.score) != null;
+    return (
+      !!record && isRouteRenderedCategoryId(record.category_id) && asNumber(record.score) != null
+    );
   });
 }
 
@@ -838,7 +996,7 @@ function hasScoreRowRationale(value: unknown): boolean {
     const record = asRecord(row);
     return (
       !!record &&
-      !!asText(record.category_id) &&
+      isRouteRenderedCategoryId(record.category_id) &&
       Boolean(
         asText(record.score_basis) ?? asText(record.why_not_full_score) ?? asText(record.close_gap),
       )
@@ -846,15 +1004,21 @@ function hasScoreRowRationale(value: unknown): boolean {
   });
 }
 
+function hasVisibleComponentBreakdownRows(value: unknown): boolean {
+  return hasVisibleComponentVerificationRows(value);
+}
+
 function hasFixHierarchyPayload(value: unknown): boolean {
   const hierarchy = asRecord(value);
   if (!hierarchy) return false;
   return (
-    !!asRecord(hierarchy.fix_first) ||
-    arrayHasItems(hierarchy.must_fix_before_submitting) ||
-    arrayHasItems(hierarchy.should_improve_if_retaking) ||
-    arrayHasItems(hierarchy.optional_polish) ||
-    arrayHasItems(hierarchy.preserve)
+    hasRenderableItemText(hierarchy.fix_first) ||
+    arrayHasRenderableItems(hierarchy.priority_fixes) ||
+    arrayHasRenderableItems(hierarchy.must_fix_before_submitting) ||
+    arrayHasRenderableItems(hierarchy.should_improve_if_retaking) ||
+    arrayHasRenderableItems(hierarchy.optional_polish) ||
+    arrayHasRenderableItems(hierarchy.preserve) ||
+    arrayHasRenderableItems(hierarchy.do_not_overfix)
   );
 }
 
@@ -862,10 +1026,10 @@ function hasNextActionPayload(value: unknown): boolean {
   const plan = asRecord(value);
   if (!plan) return false;
   return (
-    arrayHasItems(plan.submit_checklist) ||
-    arrayHasItems(plan.retake_plan) ||
-    arrayHasItems(plan.final_checks) ||
-    arrayHasItems(plan.playback_checks) ||
+    arrayHasRenderableItems(plan.submit_checklist) ||
+    arrayHasRenderableItems(plan.retake_plan) ||
+    arrayHasRenderableItems(plan.final_checks) ||
+    arrayHasRenderableItems(plan.playback_checks) ||
     !!asText(plan.no_retake_needed_reason)
   );
 }
@@ -875,10 +1039,10 @@ function hasStrengthPayload(value: unknown): boolean {
   if (!critique) return false;
   return (
     !!asText(critique.summary) ||
-    arrayHasItems(critique.strengths) ||
-    arrayHasItems(critique.preserve) ||
-    arrayHasItems(critique.do_not_overfix) ||
-    arrayHasItems(critique.limitations)
+    arrayHasRenderableItems(critique.strengths) ||
+    arrayHasRenderableItems(critique.preserve) ||
+    arrayHasRenderableItems(critique.do_not_overfix) ||
+    arrayHasRenderableItems(critique.limitations)
   );
 }
 
@@ -887,16 +1051,16 @@ function hasVisibleProfessionalCritiquePayload(value: unknown): boolean {
   if (!critique) return false;
   return (
     !!asText(critique.summary) ||
-    arrayHasItems(critique.performance_strengths) ||
-    arrayHasItems(critique.brief_package_strengths) ||
-    arrayHasItems(critique.technical_presentation_strengths) ||
-    arrayHasItems(critique.vocal_or_singing_strengths) ||
-    arrayHasItems(critique.acting_strengths) ||
-    arrayHasItems(critique.movement_or_physical_strengths) ||
-    arrayHasItems(critique.professional_presentation_notes) ||
-    arrayHasItems(critique.preserve) ||
-    arrayHasItems(critique.do_not_overfix) ||
-    arrayHasItems(critique.critique_limitations)
+    arrayHasRenderableItems(critique.performance_strengths) ||
+    arrayHasRenderableItems(critique.brief_package_strengths) ||
+    arrayHasRenderableItems(critique.technical_presentation_strengths) ||
+    arrayHasRenderableItems(critique.vocal_or_singing_strengths) ||
+    arrayHasRenderableItems(critique.acting_strengths) ||
+    arrayHasRenderableItems(critique.movement_or_physical_strengths) ||
+    arrayHasRenderableItems(critique.professional_presentation_notes) ||
+    arrayHasRenderableItems(critique.preserve) ||
+    arrayHasRenderableItems(critique.do_not_overfix) ||
+    arrayHasRenderableItems(critique.critique_limitations)
   );
 }
 
@@ -906,12 +1070,12 @@ function hasVisibleTechniqueSectionPayload(value: unknown): boolean {
   return (
     !!asText(section.headline) ||
     !!asText(section.not_assessable_reason) ||
-    arrayHasItems(section.observations) ||
-    arrayHasItems(section.what_is_working) ||
-    arrayHasItems(section.what_could_improve) ||
-    arrayHasItems(section.practical_actions) ||
-    arrayHasItems(section.preserve) ||
-    arrayHasItems(section.limitations)
+    arrayHasRenderableItems(section.observations) ||
+    arrayHasRenderableItems(section.what_is_working) ||
+    arrayHasRenderableItems(section.what_could_improve) ||
+    arrayHasRenderableItems(section.practical_actions) ||
+    arrayHasRenderableItems(section.preserve) ||
+    arrayHasRenderableItems(section.limitations)
   );
 }
 
@@ -920,7 +1084,7 @@ function hasVisibleTechniquePayload(value: unknown): boolean {
   if (!commentary) return false;
   return (
     !!asText(commentary.summary) ||
-    arrayHasItems(commentary.limitations) ||
+    arrayHasRenderableItems(commentary.limitations) ||
     [
       "acting",
       "vocal_singing",
@@ -937,8 +1101,8 @@ function hasPresentationPayload(view: Record<string, unknown>): boolean {
   const selfTape = asRecord(technique?.self_tape_presentation);
   const critique = asRecord(view.professional_critique);
   return (
-    arrayHasItems(selfTape?.what_is_working) ||
-    arrayHasItems(critique?.professional_presentation_notes)
+    arrayHasRenderableItems(selfTape?.what_is_working) ||
+    arrayHasRenderableItems(critique?.professional_presentation_notes)
   );
 }
 
@@ -951,9 +1115,25 @@ function hasSubmissionRiskPayload(view: Record<string, unknown>): boolean {
     (!!decision && decision !== "submit" && decision !== "submit_if_deadline_is_close") ||
     asText(matrix?.readiness_impact) === "material_gap" ||
     asText(matrix?.readiness_impact) === "submission_blocker" ||
-    !!asRecord(fixHierarchy?.fix_first) ||
-    arrayHasItems(fixHierarchy?.must_fix_before_submitting)
+    hasRenderableItemText(fixHierarchy?.fix_first) ||
+    arrayHasRenderableItems(fixHierarchy?.must_fix_before_submitting)
   );
+}
+
+function hasVisibleTimestampedNote(value: unknown): boolean {
+  const note = asRecord(value);
+  if (!note) return false;
+  return [note.title, note.detail, note.action, note.evidence_summary].some(
+    (candidate) => !!asText(candidate),
+  );
+}
+
+function hasVisibleTimestampedNotes(value: unknown): boolean {
+  return Array.isArray(value) && value.some((note) => hasVisibleTimestampedNote(note));
+}
+
+function hasVisibleTimestampLimitations(value: unknown): boolean {
+  return Array.isArray(value) && value.some((item) => hasRenderableItemText(item));
 }
 
 function validateSectionVisiblePayload(
@@ -975,15 +1155,7 @@ function validateSectionVisiblePayload(
   switch (section) {
     case "readiness_header":
     case "submission_guidance": {
-      const recommendation = asRecord(view.recommendation);
-      hasVisiblePayload =
-        !!recommendation &&
-        Boolean(
-          asText(recommendation.decision) ||
-          asText(recommendation.headline) ||
-          asText(recommendation.score_explanation) ||
-          arrayHasItems(recommendation.rationale),
-        );
+      hasVisiblePayload = hasVisibleRecommendationPayload(view.recommendation);
       break;
     }
     case "score_summary":
@@ -999,21 +1171,21 @@ function validateSectionVisiblePayload(
       hasVisiblePayload = asNumber(scoreSummary?.brief_completion_score) != null;
       break;
     case "brief_context":
-      hasVisiblePayload = !!asRecord(view.brief_context);
+      hasVisiblePayload = hasVisibleBriefContextPayload(view.brief_context);
       break;
     case "brief_requirements":
-      hasVisiblePayload = arrayHasItems(view.brief_requirements);
+      hasVisiblePayload = hasVisibleBriefRequirementRows(view.brief_requirements);
       break;
     case "brief_achievement":
-      hasVisiblePayload = !!asRecord(view.brief_achievement_matrix);
+      hasVisiblePayload = hasVisibleBriefAchievementPayload(view.brief_achievement_matrix);
       break;
     case "observed_tape":
       hasVisiblePayload =
-        arrayHasItems(observedTape?.observed_tape_sequence) ||
-        arrayHasItems(observedTape?.component_verifications);
+        hasVisibleObservedTapeSequenceRows(observedTape?.observed_tape_sequence) ||
+        hasVisibleComponentVerificationRows(observedTape?.component_verifications);
       break;
     case "component_breakdown":
-      hasVisiblePayload = arrayHasItems(view.component_breakdown);
+      hasVisiblePayload = hasVisibleComponentBreakdownRows(view.component_breakdown);
       break;
     case "fix_hierarchy":
       hasVisiblePayload = hasFixHierarchyPayload(view.fix_hierarchy);
@@ -1034,8 +1206,8 @@ function validateSectionVisiblePayload(
       const timestamped = asRecord(view.timestamped_commentary);
       hasVisiblePayload =
         !!timestamped &&
-        (arrayHasItems(timestamped.notes) ||
-          arrayHasItems(timestamped.timestamp_limitations) ||
+        (hasVisibleTimestampedNotes(timestamped.notes) ||
+          hasVisibleTimestampLimitations(timestamped.timestamp_limitations) ||
           !!asText(timestamped.summary));
       break;
     }
@@ -1073,11 +1245,14 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     } {
   const view = asRecord(viewModel);
   if (!view) return { ok: false, reason: "s10_view_model_not_object" };
-  if (view.report_version !== "s10_performer_report_view_model_v1") {
-    return { ok: false, reason: "s10_view_model_wrong_version" };
-  }
-  if (view.source_mode !== "s10_ai_report_model") {
-    return { ok: false, reason: "s10_view_model_wrong_source_mode" };
+  if (!isUsableS10PerformerReportViewModel(viewModel)) {
+    if (view.report_version !== S10_PERFORMER_REPORT_VIEW_MODEL_VERSION) {
+      return { ok: false, reason: "s10_view_model_wrong_version" };
+    }
+    if (view.source_mode !== S10_REPORT_SOURCE_MODE) {
+      return { ok: false, reason: "s10_view_model_wrong_source_mode" };
+    }
+    return { ok: false, reason: "s10_view_model_incomplete_shape" };
   }
   const sourceMap = asRecord(view.section_source_map);
   if (!sourceMap) return { ok: false, reason: "missing_section_source_map" };

@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { V2ReportView } from "@/components/report/V2ReportView";
 import {
   buildS10LimitedPerformerReportViewModel,
   buildS10PerformerReportViewModel,
@@ -33,6 +36,21 @@ function canaryView(report: Record<string, unknown> = buildS10CanaryAReportInput
   return view;
 }
 
+function renderS10View(view: ReturnType<typeof strongView>) {
+  return renderToStaticMarkup(
+    React.createElement(V2ReportView, {
+      report: {
+        schema_version: "v2-component",
+        mode: "brief",
+        source_mode: "s10_ai_report_model",
+        s10_view_model: view,
+      },
+      takeNumber: 1,
+      auditionType: "musical_theatre",
+    }),
+  );
+}
+
 describe("S10.P1e source-map validation", () => {
   it("marks score_summary as a limitation when the visible S10 score is absent", () => {
     const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
@@ -45,6 +63,8 @@ describe("S10.P1e source-map validation", () => {
       source: "specific_limitation",
       module: "readiness_score_judgement",
     });
+    expect(view.limitations).toContain("S10 score summary was unavailable for this report.");
+    expect(renderS10View(view)).toContain("S10 score summary was unavailable for this report.");
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
   });
 
@@ -59,7 +79,64 @@ describe("S10.P1e source-map validation", () => {
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
   });
 
+  it("maps missing readiness to the readiness limitation when score summary is also unavailable", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+    delete report.readiness_score_judgement;
+    const view = strongView(report);
+
+    expect(view.section_source_map.readiness_header).toMatchObject({
+      source: "specific_limitation",
+      module: "readiness_score_judgement",
+      limitation: "Readiness judgement is not available for this report.",
+    });
+    expect(view.section_source_map.score_summary).toMatchObject({
+      source: "specific_limitation",
+      module: "readiness_score_judgement",
+      limitation: "S10 score summary was unavailable for this report.",
+    });
+  });
+
   it.each([
+    [
+      "readiness_header",
+      (view: ReturnType<typeof strongView>) => {
+        view.recommendation = {
+          decision: "" as never,
+          headline: "",
+          rationale: [{} as never],
+          score_explanation: "",
+          confidence: "high",
+        };
+      },
+    ],
+    [
+      "brief_context",
+      (view: ReturnType<typeof strongView>) => {
+        view.brief_context = {};
+      },
+    ],
+    [
+      "brief_requirements",
+      (view: ReturnType<typeof strongView>) => {
+        view.brief_requirements = [{} as never];
+      },
+    ],
+    [
+      "brief_achievement",
+      (view: ReturnType<typeof strongView>) => {
+        view.brief_achievement_matrix = {} as never;
+      },
+    ],
+    [
+      "observed_tape",
+      (view: ReturnType<typeof strongView>) => {
+        view.observed_tape = {
+          observed_tape_sequence: [{} as never],
+          component_verifications: [{} as never],
+          media_observation_summary: null,
+        };
+      },
+    ],
     [
       "score_summary",
       (view: ReturnType<typeof strongView>) => {
@@ -79,10 +156,28 @@ describe("S10.P1e source-map validation", () => {
       },
     ],
     [
+      "category_scores",
+      (view: ReturnType<typeof strongView>) => {
+        view.score_summary.category_scores = [{ category_id: "movement", score: 88 } as never];
+      },
+    ],
+    [
       "component_breakdown",
       (view: ReturnType<typeof strongView>) => {
         view.component_breakdown = [];
         view.observed_tape.component_verifications = [];
+      },
+    ],
+    [
+      "component_breakdown",
+      (view: ReturnType<typeof strongView>) => {
+        view.component_breakdown = [{} as never];
+      },
+    ],
+    [
+      "component_breakdown",
+      (view: ReturnType<typeof strongView>) => {
+        view.component_breakdown = [{ requirement_id: "req_side_1" } as never];
       },
     ],
     [
@@ -98,6 +193,21 @@ describe("S10.P1e source-map validation", () => {
           do_not_overfix: [],
           action_contradiction_warnings: [],
         };
+      },
+    ],
+    [
+      "fix_hierarchy",
+      (view: ReturnType<typeof strongView>) => {
+        view.fix_hierarchy = {
+          fix_first: {},
+          priority_fixes: [],
+          must_fix_before_submitting: [],
+          should_improve_if_retaking: [],
+          optional_polish: [],
+          preserve: [],
+          do_not_overfix: [],
+          action_contradiction_warnings: [],
+        } as never;
       },
     ],
     [
@@ -122,9 +232,29 @@ describe("S10.P1e source-map validation", () => {
       },
     ],
     [
+      "professional_critique",
+      (view: ReturnType<typeof strongView>) => {
+        view.professional_critique = {
+          performance_strengths: [{ confidence: "high" }],
+          contradiction_warnings: ["metadata only"],
+        } as never;
+      },
+    ],
+    [
       "technique_commentary",
       (view: ReturnType<typeof strongView>) => {
         view.technique_commentary = { confidence: "high" } as never;
+      },
+    ],
+    [
+      "technique_commentary",
+      (view: ReturnType<typeof strongView>) => {
+        view.technique_commentary = {
+          acting: {
+            status: "assessable",
+            what_is_working: [{ confidence: "high" }],
+          },
+        } as never;
       },
     ],
     [
@@ -137,6 +267,24 @@ describe("S10.P1e source-map validation", () => {
           view.professional_critique.professional_presentation_notes = [];
       },
     ],
+    [
+      "timestamped_commentary",
+      (view: ReturnType<typeof strongView>) => {
+        view.timestamped_commentary = {
+          summary: "",
+          notes: [{} as never],
+          component_ranges: [],
+          missing_or_unobserved_components: [],
+          timestamp_limitations: [],
+          projection_notes: [],
+          legacy_projection_blocked_count: 0,
+          exact_timestamp_supported_count: 0,
+          time_banded_note_count: 0,
+          order_only_note_count: 0,
+          missing_component_note_count: 0,
+        } as never;
+      },
+    ],
   ] as const)("rejects authoritative %s without visible route payload", (section, mutate) => {
     const view = strongView();
     mutate(view);
@@ -145,6 +293,64 @@ describe("S10.P1e source-map validation", () => {
     const result = validateAuthenticatedS10RouteSurface(view);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe(`missing_visible_payload:${section}`);
+  });
+
+  it("does not render empty S10 fix-first or metadata-only technique list shells", () => {
+    const view = strongView();
+    view.fix_hierarchy = {
+      fix_first: {},
+      priority_fixes: [],
+      must_fix_before_submitting: [],
+      should_improve_if_retaking: [],
+      optional_polish: [],
+      preserve: [],
+      do_not_overfix: [],
+      action_contradiction_warnings: [],
+    } as never;
+    view.technique_commentary = {
+      acting: {
+        status: "assessable",
+        what_is_working: [{ confidence: "high" }],
+      },
+    } as never;
+
+    const html = renderS10View(view);
+    expect(html).not.toContain("Fix first");
+    expect(html).not.toContain("What is working");
+    expect(html).not.toContain("[object Object]");
+  });
+
+  it("does not render blank S10 brief, observed-tape, component, or timestamp shells", () => {
+    const view = strongView();
+    view.brief_context = {};
+    view.brief_requirements = [{} as never];
+    view.brief_achievement_matrix = {} as never;
+    view.observed_tape = {
+      observed_tape_sequence: [{} as never],
+      component_verifications: [{} as never],
+      media_observation_summary: null,
+    };
+    view.component_breakdown = [{ requirement_id: "req_side_1" } as never];
+    view.timestamped_commentary = {
+      summary: "",
+      notes: [{} as never],
+      component_ranges: [],
+      missing_or_unobserved_components: [],
+      timestamp_limitations: [],
+      projection_notes: [],
+      legacy_projection_blocked_count: 0,
+      exact_timestamp_supported_count: 0,
+      time_banded_note_count: 0,
+      order_only_note_count: 0,
+      missing_component_note_count: 0,
+    } as never;
+
+    const html = renderS10View(view);
+    expect(html).not.toContain("Requirement result");
+    expect(html).not.toContain("Observed item");
+    expect(html).not.toContain("Observed component");
+    expect(html).not.toContain("Component 1");
+    expect(html).not.toContain("Timing unavailable");
   });
 
   it("does not treat positive submit-ready rationale as submission risk payload", () => {
@@ -160,6 +366,313 @@ describe("S10.P1e source-map validation", () => {
     const result = validateAuthenticatedS10RouteSurface(view);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("missing_visible_payload:submission_risk");
+  });
+
+  it("does not treat metadata-only fix fields as submission risk payload", () => {
+    const view = strongView();
+    view.fix_hierarchy = {
+      fix_first: {},
+      priority_fixes: [],
+      must_fix_before_submitting: [{}],
+      should_improve_if_retaking: [],
+      optional_polish: [],
+      preserve: [],
+      do_not_overfix: [],
+      action_contradiction_warnings: [],
+    } as never;
+    view.section_source_map.fix_hierarchy = {
+      source: "specific_limitation",
+      module: "s10_fix_hierarchy",
+      limitation: "Fix hierarchy was unavailable for this S10 report.",
+    };
+    view.section_source_map.submission_risk = {
+      source: "s10_authoritative_module",
+      module: "s10_fix_hierarchy",
+      limitation: null,
+    };
+
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("missing_visible_payload:submission_risk");
+  });
+
+  it("validates and renders object-shaped S10 recommendation rationale", () => {
+    const view = strongView();
+    view.recommendation = {
+      decision: "submit",
+      headline: "",
+      rationale: [
+        {
+          title: "The complete package supports submission.",
+          detail: "All required material is present and assessable.",
+        } as never,
+      ],
+      score_explanation: "",
+      confidence: "high",
+    };
+    view.section_source_map.readiness_header.source = "s10_authoritative_module";
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const html = renderS10View(view);
+    expect(html).toContain("Why this recommendation");
+    expect(html).toContain("The complete package supports submission.");
+    expect(html).not.toContain("[object Object]");
+  });
+
+  it("validates and renders populated S10 brief context, observed tape, and timestamp notes", () => {
+    const view = strongView();
+    view.brief_context = {
+      project_name: "Spring showcase",
+      role_name: "Mina",
+      material_package_summary: "Side 1 plus a contemporary legit MT song.",
+    };
+    view.brief_requirements = [
+      {
+        id: "req_side_1",
+        brief_text: "Prepare Side 1.",
+        summary: "Side 1 acting scene",
+        category: "material",
+        importance: "mandatory",
+        expected_evidence_in_tape: "A complete acting side.",
+        achievement_test: "Side is present and assessable.",
+        submission_impact_if_missing: "Missing side blocks submission.",
+        report_destination: "brief_achievement",
+        confidence: "high",
+      },
+    ];
+    view.observed_tape = {
+      observed_tape_sequence: [
+        {
+          label: "Song excerpt",
+          present_status: "partially_present",
+          completion_status: "cut_off",
+          evidence_summary: "The song starts but cuts off before the ending.",
+        } as never,
+      ],
+      component_verifications: [
+        {
+          requirement_summary: "Side 1 acting scene",
+          observed_status: "absent",
+          completion_status: "not_applicable",
+          evidence_summary: "No acting side is visible in the submitted tape.",
+        } as never,
+      ],
+      media_observation_summary: null,
+    };
+    view.timestamped_commentary = {
+      summary: "",
+      notes: [
+        {
+          display_label: "Not observed",
+          title: "Side 1 is missing",
+          detail: "The acting side requested in the brief is not present.",
+          action: "Record the missing side before submitting.",
+        } as never,
+      ],
+      component_ranges: [],
+      missing_or_unobserved_components: [],
+      timestamp_limitations: [],
+      projection_notes: [],
+      legacy_projection_blocked_count: 0,
+      exact_timestamp_supported_count: 0,
+      time_banded_note_count: 0,
+      order_only_note_count: 0,
+      missing_component_note_count: 0,
+    } as never;
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const html = renderS10View(view);
+    expect(html).toContain("Spring showcase");
+    expect(html).toContain("Side 1 acting scene");
+    expect(html).toContain("Song excerpt");
+    expect(html).toContain("No acting side is visible");
+    expect(html).toContain("Side 1 is missing");
+  });
+
+  it("validates and renders technique what-is-working content counted as visible", () => {
+    const view = strongView();
+    view.technique_commentary = {
+      summary: null,
+      acting: {
+        status: "assessable",
+        headline: null,
+        observations: [],
+        what_is_working: [
+          {
+            title: "The opening beat is playable and clear.",
+            detail: "The objective reads before the dialogue starts.",
+          },
+        ],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        limitations: [],
+      },
+    } as never;
+    view.section_source_map.technique_commentary.source = "s10_authoritative_module";
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const html = renderS10View(view);
+    expect(html).toContain("What is working");
+    expect(html).toContain("The opening beat is playable and clear.");
+    expect(html).not.toContain("[object Object]");
+  });
+
+  it("validates and renders technique what-could-improve content counted as visible", () => {
+    const view = strongView();
+    view.technique_commentary = {
+      summary: null,
+      vocal_singing: {
+        status: "assessable",
+        headline: null,
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [
+          {
+            title: "Let the final phrase release cleanly.",
+            detail: "It will make the cut-off feel intentional rather than clipped.",
+          },
+        ],
+        practical_actions: [],
+        preserve: [],
+        limitations: [],
+      },
+    } as never;
+    view.section_source_map.technique_commentary.source = "s10_authoritative_module";
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const html = renderS10View(view);
+    expect(html).toContain("What could improve");
+    expect(html).toContain("Let the final phrase release cleanly.");
+    expect(html).not.toContain("[object Object]");
+  });
+
+  it("validates and renders top-level technique limitations counted as visible", () => {
+    const view = strongView();
+    view.technique_commentary = {
+      summary: null,
+      acting: {
+        status: "not_applicable",
+        headline: "",
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        not_assessable_reason: null,
+        confidence: "low",
+      },
+      vocal_singing: {
+        status: "not_applicable",
+        headline: "",
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        not_assessable_reason: null,
+        confidence: "low",
+      },
+      movement_dance: {
+        status: "not_applicable",
+        headline: "",
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        not_assessable_reason: null,
+        confidence: "low",
+      },
+      musical_theatre_package: {
+        status: "not_applicable",
+        headline: "",
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        not_assessable_reason: null,
+        confidence: "low",
+      },
+      self_tape_presentation: {
+        status: "not_applicable",
+        headline: "",
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        not_assessable_reason: null,
+        confidence: "low",
+      },
+      commercial_screen_task: {
+        status: "not_applicable",
+        headline: "",
+        observations: [],
+        what_is_working: [],
+        what_could_improve: [],
+        practical_actions: [],
+        preserve: [],
+        not_assessable_reason: null,
+        confidence: "low",
+      },
+      limitations: ["Technique commentary was limited to verified components."],
+    } as never;
+    view.section_source_map.technique_commentary.source = "s10_authoritative_module";
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    expect(renderS10View(view)).toContain(
+      "Technique commentary was limited to verified components.",
+    );
+  });
+
+  it("validates and renders S10 priority fixes when they are the only fix hierarchy content", () => {
+    const view = strongView();
+    view.fix_hierarchy = {
+      fix_first: null,
+      priority_fixes: [
+        {
+          title: "Keep the song ending in frame.",
+          exact_action: "Hold the final moment until the cut.",
+        },
+      ],
+      must_fix_before_submitting: [],
+      should_improve_if_retaking: [],
+      optional_polish: [],
+      preserve: [],
+      do_not_overfix: [],
+    } as never;
+    view.section_source_map.fix_hierarchy.source = "s10_authoritative_module";
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const html = renderS10View(view);
+    expect(html).toContain("Priority fixes");
+    expect(html).toContain("Keep the song ending in frame.");
+  });
+
+  it("validates and renders S10 do-not-overfix guidance when it is the only fix content", () => {
+    const view = strongView();
+    view.fix_hierarchy = {
+      fix_first: null,
+      priority_fixes: [],
+      must_fix_before_submitting: [],
+      should_improve_if_retaking: [],
+      optional_polish: [],
+      preserve: [],
+      do_not_overfix: [
+        {
+          title: "Do not sand down the spontaneous laugh.",
+          detail: "It is part of the take's professional warmth.",
+        },
+      ],
+    } as never;
+    view.section_source_map.fix_hierarchy.source = "s10_authoritative_module";
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const html = renderS10View(view);
+    expect(html).toContain("Do not over-fix");
+    expect(html).toContain("Do not sand down the spontaneous laugh.");
   });
 
   it.each([

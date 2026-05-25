@@ -31,7 +31,10 @@ export type S10SameVideoOperatorConfirmation =
   | "unknown";
 
 export type S10SameVideoTakeIdentityInput = {
-  take_id: string;
+  take_id?: string | null;
+  analysis_run_id?: string | null;
+  comparison_take_id?: string | null;
+  fixture_stable_id?: string | null;
   label?: string | null;
   user_id?: string | null;
   audition_id?: string | null;
@@ -74,6 +77,7 @@ export type S10SameVideoClassificationResult = {
 
 type NormalisedTake = {
   take_id: string;
+  stable_id: string;
   label: string;
   user_id: string | null;
   audition_id: string | null;
@@ -128,7 +132,17 @@ function normaliseFileName(value: unknown): string | null {
   return text ? text.toLowerCase() : null;
 }
 
-function normaliseTake(take: S10SameVideoTakeIdentityInput): NormalisedTake {
+function normaliseStableTakeId(take: S10SameVideoTakeIdentityInput, index: number): string {
+  return (
+    asText(take.take_id) ??
+    asText(take.analysis_run_id) ??
+    asText(take.comparison_take_id) ??
+    asText(take.fixture_stable_id) ??
+    `compared-take-${index + 1}`
+  );
+}
+
+function normaliseTake(take: S10SameVideoTakeIdentityInput, index: number): NormalisedTake {
   const uploadIdentity = extractUploadIdentitySignals({
     signals: take.signals,
     checklist: take.checklist,
@@ -141,9 +155,13 @@ function normaliseTake(take: S10SameVideoTakeIdentityInput): NormalisedTake {
       : null) ??
     uploadIdentity.video_duration_ms;
 
+  const stableId = normaliseStableTakeId(take, index);
+  const takeId = asText(take.take_id) ?? stableId;
+
   return {
-    take_id: take.take_id,
-    label: asText(take.label) ?? take.take_id,
+    take_id: takeId,
+    stable_id: stableId,
+    label: asText(take.label) ?? takeId,
     user_id: asText(take.user_id),
     audition_id: asText(take.audition_id),
     submission_id: asText(take.submission_id),
@@ -509,8 +527,8 @@ function buildPairwiseMatches(
       if (!takeA || !takeB) continue;
       if (!supportedScope) {
         matches.push({
-          take_a_id: takeA.take_id,
-          take_b_id: takeB.take_id,
+          take_a_id: takeA.stable_id,
+          take_b_id: takeB.stable_id,
           take_a_label: takeA.label,
           take_b_label: takeB.label,
           relationship: "uncertain",
@@ -522,8 +540,8 @@ function buildPairwiseMatches(
       }
       const result = pairwiseSignals(takeA, takeB);
       matches.push({
-        take_a_id: takeA.take_id,
-        take_b_id: takeB.take_id,
+        take_a_id: takeA.stable_id,
+        take_b_id: takeB.stable_id,
         take_a_label: takeA.label,
         take_b_label: takeB.label,
         relationship: result.relationship,
@@ -536,12 +554,11 @@ function buildPairwiseMatches(
   return matches;
 }
 
-function duplicateSubsetsFromPairs(
+function duplicateSubsetIdsFromPairs(
   takes: NormalisedTake[],
   sameMediaPairs: InternalPairwiseSameVideoMatch[],
 ): string[][] {
-  const ids = new Set(takes.map((take) => take.take_id));
-  const labelsById = new Map(takes.map((take) => [take.take_id, take.label] as const));
+  const ids = new Set(takes.map((take) => take.stable_id));
   const parent = new Map<string, string>();
   for (const id of ids) parent.set(id, id);
 
@@ -564,21 +581,32 @@ function duplicateSubsetsFromPairs(
 
   const components = new Map<string, string[]>();
   for (const take of takes) {
-    const root = find(take.take_id);
+    const root = find(take.stable_id);
     const group = components.get(root) ?? [];
-    group.push(labelsById.get(take.take_id) ?? take.label);
+    group.push(take.stable_id);
     components.set(root, group);
   }
 
   return Array.from(components.values()).filter((group) => group.length > 1);
 }
 
+function duplicateSubsetLabelsFromIds(takes: NormalisedTake[], duplicateSubsetIds: string[][]) {
+  const labelsById = new Map(takes.map((take) => [take.take_id, take.label] as const));
+  const labelsByStableId = new Map(takes.map((take) => [take.stable_id, take.label] as const));
+  return duplicateSubsetIds.map((subset) =>
+    subset.map((id) => labelsByStableId.get(id) ?? labelsById.get(id) ?? "Compared take"),
+  );
+}
+
 export function classifyS10SameVideoComparison(
   input: S10SameVideoComparisonInput,
 ): S10SameVideoClassificationResult {
   const takes = input.compared_takes.map(normaliseTake);
-  const current = takes.find((take) => take.take_id === input.current_take_id) ?? takes[0];
-  const others = takes.filter((take) => take.take_id !== current.take_id);
+  const current =
+    takes.find(
+      (take) => take.take_id === input.current_take_id || take.stable_id === input.current_take_id,
+    ) ?? takes[0];
+  const others = takes.filter((take) => take.stable_id !== current.stable_id);
   const comparedTakeIds = takes.map((take) => take.take_id);
   const limitations: string[] = [];
 
@@ -624,9 +652,10 @@ export function classifyS10SameVideoComparison(
   const distinctMediaPairs = pairwiseMatches.filter(
     (match) => match.relationship === "distinct_media",
   );
-  const duplicateSubsets = duplicateSubsetsFromPairs(takes, sameMediaPairs);
+  const duplicateSubsetIds = duplicateSubsetIdsFromPairs(takes, sameMediaPairs);
+  const duplicateSubsets = duplicateSubsetLabelsFromIds(takes, duplicateSubsetIds);
   const allComparedMediaMatches =
-    takes.length > 1 && duplicateSubsets.some((subset) => subset.length === takes.length);
+    takes.length > 1 && duplicateSubsetIds.some((subset) => subset.length === takes.length);
   const mixedSameAndDistinct = sameMediaPairs.length > 0 && distinctMediaPairs.length > 0;
   if (!supportedScope) {
     limitations.push(scope.limitation ?? "Same-video comparison scope is not confirmed.");
@@ -703,8 +732,8 @@ export function classifyS10SameVideoComparison(
           .filter((take) =>
             sameMediaPairs.some(
               (match) =>
-                (match.take_a_id === current.take_id && match.take_b_id === take.take_id) ||
-                (match.take_b_id === current.take_id && match.take_a_id === take.take_id),
+                (match.take_a_id === current.stable_id && match.take_b_id === take.stable_id) ||
+                (match.take_b_id === current.stable_id && match.take_a_id === take.stable_id),
             ),
           )
           .map((take) => take.take_id)
@@ -737,7 +766,7 @@ export function classifyS10SameVideoComparison(
   };
 
   const takeSummaries: S10ComparedTakeSummary[] = takes.map((take) => {
-    const duplicateSubset = duplicateSubsets.find((subset) => subset.includes(take.label));
+    const duplicateSubset = duplicateSubsetIds.find((subset) => subset.includes(take.stable_id));
     return {
       take_id: take.take_id,
       label: take.label,

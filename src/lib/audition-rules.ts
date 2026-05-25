@@ -6,6 +6,41 @@
 
 export type AuditionLevel = "learning" | "amateur" | "emerging" | "professional";
 
+export const S10_PERFORMER_REPORT_VIEW_MODEL_VERSION =
+  "s10_performer_report_view_model_v1" as const;
+
+export const S10_REPORT_SOURCE_MODE = "s10_ai_report_model" as const;
+
+export function isUsableS10PerformerReportViewModel(value: unknown): value is {
+  report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
+  source_mode: typeof S10_REPORT_SOURCE_MODE;
+} {
+  const record =
+    Boolean(value) && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const sectionSourceMap = record?.section_source_map;
+  const scoreSummary = record?.score_summary;
+  const recommendation = record?.recommendation;
+  const limitations = record?.limitations;
+  return (
+    !!record &&
+    record.report_version === S10_PERFORMER_REPORT_VIEW_MODEL_VERSION &&
+    record.source_mode === S10_REPORT_SOURCE_MODE &&
+    Boolean(sectionSourceMap) &&
+    typeof sectionSourceMap === "object" &&
+    !Array.isArray(sectionSourceMap) &&
+    Boolean(scoreSummary) &&
+    typeof scoreSummary === "object" &&
+    !Array.isArray(scoreSummary) &&
+    Array.isArray(limitations) &&
+    ((Boolean(recommendation) &&
+      typeof recommendation === "object" &&
+      !Array.isArray(recommendation)) ||
+      limitations.length > 0)
+  );
+}
+
 export type AuditionType =
   | "acting_scene"
   | "monologue"
