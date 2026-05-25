@@ -4705,15 +4705,19 @@ export async function runProcessTake(
     // fail generation explicitly; never substitute the legacy v1 report.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let reportToPersist: any = report;
-    let v2HasS10ReportModel = [
-      "brief_achievement_matrix",
-      "readiness_score_judgement",
-      "s10_fix_hierarchy",
-      "s10_next_action_plan",
-      "s10_professional_critique",
-      "s10_technique_commentary",
-      "s10_timestamped_commentary",
-    ].some((key) => Boolean((report as Record<string, unknown>)[key]));
+    const reportRecordForV2 = report as Record<string, unknown>;
+    let v2HasS10ReportModel =
+      reportRecordForV2.source_mode === "s10_ai_report_model" ||
+      reportRecordForV2.s10_view_model != null ||
+      [
+        "brief_achievement_matrix",
+        "readiness_score_judgement",
+        "s10_fix_hierarchy",
+        "s10_next_action_plan",
+        "s10_professional_critique",
+        "s10_technique_commentary",
+        "s10_timestamped_commentary",
+      ].some((key) => Boolean(reportRecordForV2[key]));
     try {
       const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
       const cfg3b = await getCfg3b();
@@ -4765,12 +4769,39 @@ export async function runProcessTake(
       });
       if (err instanceof AnalysisFailure) throw err;
       if (v2HasS10ReportModel) {
-        throw new AnalysisFailure(
-          "analysis_parse_failed",
-          "TapeCoach could not assemble the S10 report surface. Please try again.",
-        );
+        try {
+          const { buildS10LimitedV2Report, validateV2PublicBoundary } =
+            await import("./v2-report-builder.server");
+          const limited = buildS10LimitedV2Report({
+            auditionType: (report.audition_type as string | null) ?? null,
+            mode: audition.brief ? "brief" : "baseline",
+          });
+          const limitedCheck = validateV2PublicBoundary(limited, null);
+          if (limitedCheck.ok) {
+            reportToPersist = limited;
+            console.log("[take-pipeline] v2_report_persisted", {
+              take_id: takeId,
+              schema_version: limited.schema_version,
+              outcome: "s10_limited_v2_persisted",
+              components: limited.components.length,
+              from_future_dimensions: false,
+            });
+          } else {
+            throw new AnalysisFailure(
+              "analysis_parse_failed",
+              "TapeCoach could not assemble the S10 report surface. Please try again.",
+            );
+          }
+        } catch (limitedErr) {
+          if (limitedErr instanceof AnalysisFailure) throw limitedErr;
+          throw new AnalysisFailure(
+            "analysis_parse_failed",
+            "TapeCoach could not assemble the S10 report surface. Please try again.",
+          );
+        }
+      } else {
+        reportToPersist = report;
       }
-      reportToPersist = report;
     }
 
     console.log("[take-pipeline] finalising_scrubs_completed", {

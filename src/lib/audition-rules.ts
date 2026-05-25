@@ -11,6 +11,32 @@ export const S10_PERFORMER_REPORT_VIEW_MODEL_VERSION =
 
 export const S10_REPORT_SOURCE_MODE = "s10_ai_report_model" as const;
 
+export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
+  "readiness_header",
+  "submission_guidance",
+  "score_summary",
+  "category_scores",
+  "category_rationale",
+  "brief_adherence_material_compliance",
+  "brief_context",
+  "brief_requirements",
+  "brief_achievement",
+  "observed_tape",
+  "component_breakdown",
+  "fix_hierarchy",
+  "next_action_plan",
+  "strengths_and_preserve",
+  "professional_critique",
+  "technique_commentary",
+  "timestamped_commentary",
+  "presentation_notes",
+  "submission_risk",
+  "limitations",
+  "same_video_status",
+  "comparison_truth",
+  "diagnostic_chips",
+] as const;
+
 export function isUsableS10PerformerReportViewModel(value: unknown): value is {
   report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
   source_mode: typeof S10_REPORT_SOURCE_MODE;
@@ -57,13 +83,19 @@ export function isUsableS10PerformerReportViewModel(value: unknown): value is {
   const hasVisibleLimitation =
     Array.isArray(limitations) &&
     limitations.some((item) => typeof item === "string" && item.trim().length > 0);
+  const hasRequiredSourceMapEntries =
+    Boolean(sectionSourceMap) &&
+    typeof sectionSourceMap === "object" &&
+    !Array.isArray(sectionSourceMap) &&
+    S10_ROUTE_REQUIRED_SECTION_KEYS.every((section) => {
+      const entry = (sectionSourceMap as Record<string, unknown>)[section];
+      return Boolean(entry) && typeof entry === "object" && !Array.isArray(entry);
+    });
   return (
     !!record &&
     record.report_version === S10_PERFORMER_REPORT_VIEW_MODEL_VERSION &&
     record.source_mode === S10_REPORT_SOURCE_MODE &&
-    Boolean(sectionSourceMap) &&
-    typeof sectionSourceMap === "object" &&
-    !Array.isArray(sectionSourceMap) &&
+    hasRequiredSourceMapEntries &&
     Boolean(scoreSummary) &&
     typeof scoreSummary === "object" &&
     !Array.isArray(scoreSummary) &&

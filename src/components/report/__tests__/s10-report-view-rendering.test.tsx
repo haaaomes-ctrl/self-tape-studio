@@ -283,4 +283,46 @@ describe("S10 report view rendering", () => {
     expect(html).toContain("Keep the song take only after the full acting side is captured.");
     expect(html).not.toContain("[object Object]");
   });
+
+  it("renders recommended-action-only S10 list items accepted by validation", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.next_action_plan = {
+      submit_checklist: [],
+      retake_plan: [
+        {
+          recommended_action: "Record the missing acting side before using this take.",
+        },
+      ],
+      final_checks: [],
+      playback_checks: [],
+      no_retake_needed_reason: null,
+    };
+    view.section_source_map.next_action_plan = {
+      source: "s10_authoritative_module",
+      module: "s10_next_action_plan",
+      limitation: null,
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("Record the missing acting side before using this take.");
+    expect(html).not.toContain("[object Object]");
+  });
+
+  it("renders a technique limitation instead of a blank metadata-only technique shell", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.technique_commentary = { confidence: "high" };
+    view.section_source_map.technique_commentary = {
+      source: "specific_limitation",
+      module: "s10_technique_commentary",
+      limitation: "Technique commentary is not available for this report.",
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("Technique commentary is not available for this report.");
+    expect(html).not.toContain("[object Object]");
+  });
 });

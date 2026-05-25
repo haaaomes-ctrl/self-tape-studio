@@ -64,6 +64,7 @@ function itemDetail(item: unknown): string | null {
     safeStr(o.evidence_summary) ??
     safeStr(o.why_it_matters) ??
     safeStr(o.why_to_preserve) ??
+    safeStr(o.recommended_action) ??
     null
   );
 }
@@ -344,6 +345,11 @@ export function V2ReportView({
     s10SectionSourceMap,
     "strengths_and_preserve",
     "Strengths and preserve guidance are not available for this report.",
+  );
+  const s10TechniqueLimitation = sourceLimitation(
+    s10SectionSourceMap,
+    "technique_commentary",
+    "Technique commentary is not available for this report.",
   );
   const s10StrengthsAndPreserve = safeObj(s10?.strengths_and_preserve);
   const s10Technique = safeObj(s10?.technique_commentary);
@@ -1334,123 +1340,172 @@ export function V2ReportView({
         </Section>
       )}
 
-      {s10Technique && (
-        <Section
-          title="Technique commentary"
-          hint="Technique notes are shown only where verified tape evidence supports them."
-        >
-          {safeStr(s10Technique.summary) && (
-            <p className="text-sm">{safeStr(s10Technique.summary)}</p>
-          )}
-          {renderableListItems(safeArr(s10Technique.limitations)).length > 0 && (
-            <div className="mt-3 text-sm text-muted-foreground">
-              <SimpleList items={renderableListItems(safeArr(s10Technique.limitations))} />
-            </div>
-          )}
-          <div className="mt-3 space-y-4 text-sm">
-            {[
-              ["Acting", s10Technique.acting],
-              ["Vocal / singing", s10Technique.vocal_singing],
-              ["Movement / dance", s10Technique.movement_dance],
-              ["Musical-theatre package", s10Technique.musical_theatre_package],
-              ["Self-tape presentation", s10Technique.self_tape_presentation],
-              ["Commercial / screen task", s10Technique.commercial_screen_task],
-            ].map(([label, raw]) => {
-              const section = safeObj(raw);
-              if (!section) return null;
-              const observations = renderableListItems(safeArr(section.observations));
-              const working = renderableListItems(safeArr(section.what_is_working));
-              const improve = renderableListItems(safeArr(section.what_could_improve));
-              const actions = renderableListItems(safeArr(section.practical_actions));
-              const preserve = renderableListItems(safeArr(section.preserve));
-              const limitations = renderableListItems(safeArr(section.limitations));
-              const hasContent =
-                safeStr(section.headline) ||
-                observations.length > 0 ||
-                working.length > 0 ||
-                improve.length > 0 ||
-                actions.length > 0 ||
-                preserve.length > 0 ||
-                limitations.length > 0 ||
-                safeStr(section.not_assessable_reason);
-              if (!hasContent) return null;
-              return (
-                <div key={label as string}>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{label as string}</p>
-                    <Badge variant="outline" className="capitalize">
-                      {labelize(section.status)}
-                    </Badge>
-                  </div>
-                  {safeStr(section.headline) && (
-                    <p className="mt-1 text-muted-foreground">{safeStr(section.headline)}</p>
-                  )}
-                  {safeStr(section.not_assessable_reason) && (
-                    <p className="mt-1 text-muted-foreground">
-                      {safeStr(section.not_assessable_reason)}
-                    </p>
-                  )}
-                  {observations.length > 0 && (
-                    <div className="mt-2">
-                      <SimpleList items={observations} marker="•" />
-                    </div>
-                  )}
-                  {working.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        What is working
-                      </p>
-                      <div className="mt-1">
-                        <SimpleList items={working} marker="✓" />
+      {(() => {
+        if (!s10Technique) {
+          return s10TechniqueLimitation ? (
+            <Section title="Technique commentary">
+              <p className="text-sm text-muted-foreground">{s10TechniqueLimitation}</p>
+            </Section>
+          ) : null;
+        }
+        const topLimitations = renderableListItems(safeArr(s10Technique.limitations));
+        const techniqueSections = [
+          ["Acting", s10Technique.acting],
+          ["Vocal / singing", s10Technique.vocal_singing],
+          ["Movement / dance", s10Technique.movement_dance],
+          ["Musical-theatre package", s10Technique.musical_theatre_package],
+          ["Self-tape presentation", s10Technique.self_tape_presentation],
+          ["Commercial / screen task", s10Technique.commercial_screen_task],
+        ].flatMap(([label, raw]) => {
+          const section = safeObj(raw);
+          if (!section) return [];
+          const observations = renderableListItems(safeArr(section.observations));
+          const working = renderableListItems(safeArr(section.what_is_working));
+          const improve = renderableListItems(safeArr(section.what_could_improve));
+          const actions = renderableListItems(safeArr(section.practical_actions));
+          const preserve = renderableListItems(safeArr(section.preserve));
+          const limitations = renderableListItems(safeArr(section.limitations));
+          const hasContent =
+            safeStr(section.headline) ||
+            observations.length > 0 ||
+            working.length > 0 ||
+            improve.length > 0 ||
+            actions.length > 0 ||
+            preserve.length > 0 ||
+            limitations.length > 0 ||
+            safeStr(section.not_assessable_reason);
+          return hasContent
+            ? [
+                {
+                  label: label as string,
+                  section,
+                  observations,
+                  working,
+                  improve,
+                  actions,
+                  preserve,
+                  limitations,
+                },
+              ]
+            : [];
+        });
+        if (
+          !safeStr(s10Technique.summary) &&
+          topLimitations.length === 0 &&
+          techniqueSections.length === 0
+        ) {
+          return s10TechniqueLimitation ? (
+            <Section title="Technique commentary">
+              <p className="text-sm text-muted-foreground">{s10TechniqueLimitation}</p>
+            </Section>
+          ) : null;
+        }
+        return (
+          <Section
+            title="Technique commentary"
+            hint="Technique notes are shown only where verified tape evidence supports them."
+          >
+            {safeStr(s10Technique.summary) && (
+              <p className="text-sm">{safeStr(s10Technique.summary)}</p>
+            )}
+            {topLimitations.length > 0 && (
+              <div className="mt-3 text-sm text-muted-foreground">
+                <SimpleList items={topLimitations} />
+              </div>
+            )}
+            {techniqueSections.length > 0 && (
+              <div className="mt-3 space-y-4 text-sm">
+                {techniqueSections.map(
+                  ({
+                    label,
+                    section,
+                    observations,
+                    working,
+                    improve,
+                    actions,
+                    preserve,
+                    limitations,
+                  }) => (
+                    <div key={label}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{label}</p>
+                        {safeStr(section.status) && (
+                          <Badge variant="outline" className="capitalize">
+                            {labelize(section.status)}
+                          </Badge>
+                        )}
                       </div>
+                      {safeStr(section.headline) && (
+                        <p className="mt-1 text-muted-foreground">{safeStr(section.headline)}</p>
+                      )}
+                      {safeStr(section.not_assessable_reason) && (
+                        <p className="mt-1 text-muted-foreground">
+                          {safeStr(section.not_assessable_reason)}
+                        </p>
+                      )}
+                      {observations.length > 0 && (
+                        <div className="mt-2">
+                          <SimpleList items={observations} marker="•" />
+                        </div>
+                      )}
+                      {working.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            What is working
+                          </p>
+                          <div className="mt-1">
+                            <SimpleList items={working} marker="✓" />
+                          </div>
+                        </div>
+                      )}
+                      {improve.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            What could improve
+                          </p>
+                          <div className="mt-1">
+                            <SimpleList items={improve} marker="→" />
+                          </div>
+                        </div>
+                      )}
+                      {actions.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Practical action
+                          </p>
+                          <div className="mt-1">
+                            <SimpleList items={actions} marker="→" />
+                          </div>
+                        </div>
+                      )}
+                      {preserve.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Preserve
+                          </p>
+                          <div className="mt-1">
+                            <SimpleList items={preserve} marker="✓" />
+                          </div>
+                        </div>
+                      )}
+                      {limitations.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Limitations
+                          </p>
+                          <div className="mt-1">
+                            <SimpleList items={limitations} marker="•" />
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {improve.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        What could improve
-                      </p>
-                      <div className="mt-1">
-                        <SimpleList items={improve} marker="→" />
-                      </div>
-                    </div>
-                  )}
-                  {actions.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Practical action
-                      </p>
-                      <div className="mt-1">
-                        <SimpleList items={actions} marker="→" />
-                      </div>
-                    </div>
-                  )}
-                  {preserve.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Preserve
-                      </p>
-                      <div className="mt-1">
-                        <SimpleList items={preserve} marker="✓" />
-                      </div>
-                    </div>
-                  )}
-                  {limitations.length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Limitations
-                      </p>
-                      <div className="mt-1">
-                        <SimpleList items={limitations} marker="•" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+                  ),
+                )}
+              </div>
+            )}
+          </Section>
+        );
+      })()}
 
       {(() => {
         if (!s10Timestamped) return null;

@@ -79,6 +79,15 @@ describe("S10.P1e source-map validation", () => {
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
   });
 
+  it("rejects S10 view models that are missing required source-map entries", () => {
+    const view = strongView();
+    delete (view.section_source_map as Record<string, unknown>).comparison_truth;
+
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("s10_view_model_incomplete_shape");
+  });
+
   it("maps missing readiness to the readiness limitation when score summary is also unavailable", () => {
     const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
     delete report.readiness_score_judgement;
@@ -431,6 +440,22 @@ describe("S10.P1e source-map validation", () => {
       },
     ],
     [
+      "comparison_truth",
+      (view: ReturnType<typeof strongView>) => {
+        view.comparison_display_mode = "comparison_caution";
+        view.comparison_truth = {
+          same_video_status: {
+            performer_facing_summary: "Nested same-video text only.",
+          },
+        } as never;
+        view.section_source_map.comparison_truth = {
+          source: "s10_authoritative_module",
+          module: "s10_comparison_truth",
+          limitation: null,
+        };
+      },
+    ],
+    [
       "limitations",
       (view: ReturnType<typeof strongView>) => {
         view.limitations = [{} as never];
@@ -514,6 +539,7 @@ describe("S10.P1e source-map validation", () => {
 
   it("accepts route-visible same-video, comparison, and limitation text", () => {
     const view = strongView();
+    view.comparison_display_mode = "comparison_caution";
     view.same_video_status = {
       performer_facing_summary: "These uploads appear to be the same underlying tape.",
       comparison_warning: null,
@@ -541,6 +567,31 @@ describe("S10.P1e source-map validation", () => {
       limitation: null,
     };
 
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+  });
+
+  it("marks hidden same-video and comparison payloads as not applicable", () => {
+    const view = buildS10PerformerReportViewModel({
+      report: buildS10StrongCompleteProfessionalReportInput(),
+      context: {
+        ...buildS10StrongCompleteProfessionalViewContext(),
+        sameVideoEvidence: {
+          performer_facing_summary: "These uploads appear to be the same underlying tape.",
+          comparison_warning: null,
+          limitations: [],
+        } as never,
+        comparisonTruth: {
+          performer_facing_summary:
+            "Comparison should focus on report context rather than a winner.",
+          limitations: [],
+        } as never,
+        comparisonDisplayMode: "hidden",
+      } as never,
+    });
+    if (!view) throw new Error("expected S10 view");
+
+    expect(view.section_source_map.same_video_status.source).toBe("not_applicable");
+    expect(view.section_source_map.comparison_truth.source).toBe("not_applicable");
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
   });
 

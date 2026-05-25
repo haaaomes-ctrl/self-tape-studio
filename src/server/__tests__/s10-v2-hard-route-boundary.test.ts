@@ -93,6 +93,16 @@ describe("S10.P1e hard V2 route boundary", () => {
         source_mode: "s10_ai_report_model",
         section_source_map: {},
         score_summary: {},
+        recommendation: {
+          decision: "submit",
+        },
+        limitations: [],
+      },
+      {
+        report_version: "s10_performer_report_view_model_v1",
+        source_mode: "s10_ai_report_model",
+        section_source_map: {},
+        score_summary: {},
         recommendation: {},
         limitations: [],
       },
@@ -183,6 +193,31 @@ describe("S10.P1e hard V2 route boundary", () => {
     );
     expect(JSON.stringify(result.reportToPersist)).not.toContain("Take 1 · 93");
     expect(JSON.stringify(result.reportToPersist)).not.toContain("Correct material");
+  });
+
+  it("persists a limited S10 V2 report when source-mode-only S10 input build throws", () => {
+    const result = buildRouteReportForPersistence({
+      legacyReport: {
+        source_mode: "s10_ai_report_model",
+        headline: "Legacy headline should not survive",
+        overall_score: 93,
+      },
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      futureReportEnabled: true,
+      buildV2: (() => {
+        throw new Error("simulated source-mode-only S10 build failure");
+      }) as (args: BuildV2ReportArgs) => never,
+    });
+
+    expect(result.outcome).toBe("s10_limited_v2_persisted");
+    if (result.outcome !== "s10_limited_v2_persisted") throw new Error("expected limited v2");
+    expect(result.reportToPersist.source_mode).toBe("s10_ai_report_model");
+    expect(result.reportToPersist.report_status).toBe("limited");
+    expect(JSON.stringify(result.reportToPersist)).not.toContain(
+      "Legacy headline should not survive",
+    );
   });
 
   it("persists a limited S10 V2 report instead of falling back to v1 when validation fails", () => {

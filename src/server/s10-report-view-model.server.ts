@@ -7,6 +7,7 @@
 import {
   S10_PERFORMER_REPORT_VIEW_MODEL_VERSION,
   S10_REPORT_SOURCE_MODE,
+  S10_ROUTE_REQUIRED_SECTION_KEYS,
   isUsableS10PerformerReportViewModel,
 } from "@/lib/audition-rules";
 import type {
@@ -336,6 +337,8 @@ export function buildS10PerformerReportViewModel(input: {
       ? (report.comparison_display_mode as S10ComparisonDisplayMode)
       : null) ??
     comparisonDisplayModeFor(comparisonTruth);
+  const rendersComparisonSection =
+    comparisonDisplayMode !== "hidden" && comparisonDisplayMode !== "single_take";
 
   const context = input.context ?? {};
   const observationSourceKind = context.observationSourceKind ?? "report_embedded_s10_observation";
@@ -512,22 +515,32 @@ export function buildS10PerformerReportViewModel(input: {
         ? sourceModule("s10_view_model")
         : notApplicable("No S10 limitations are rendered for this report."),
     same_video_status: {
-      source: hasVisibleSameVideoPayload(sameVideoEvidence)
-        ? "s10_authoritative_module"
-        : "not_applicable",
-      module: hasVisibleSameVideoPayload(sameVideoEvidence) ? "s10_same_video_evidence" : null,
-      limitation: hasVisibleSameVideoPayload(sameVideoEvidence)
-        ? null
-        : "Same-video status is not available in this report model.",
+      source:
+        rendersComparisonSection && hasVisibleSameVideoPayload(sameVideoEvidence)
+          ? "s10_authoritative_module"
+          : "not_applicable",
+      module:
+        rendersComparisonSection && hasVisibleSameVideoPayload(sameVideoEvidence)
+          ? "s10_same_video_evidence"
+          : null,
+      limitation:
+        rendersComparisonSection && hasVisibleSameVideoPayload(sameVideoEvidence)
+          ? null
+          : "Same-video status is not available in this report model.",
     },
     comparison_truth: {
-      source: hasVisibleComparisonTruthPayload(comparisonTruth)
-        ? "s10_authoritative_module"
-        : "not_applicable",
-      module: hasVisibleComparisonTruthPayload(comparisonTruth) ? "s10_comparison_truth" : null,
-      limitation: hasVisibleComparisonTruthPayload(comparisonTruth)
-        ? null
-        : "Comparison truth is not available or not relevant for this report.",
+      source:
+        rendersComparisonSection && hasVisibleComparisonTruthPayload(comparisonTruth)
+          ? "s10_authoritative_module"
+          : "not_applicable",
+      module:
+        rendersComparisonSection && hasVisibleComparisonTruthPayload(comparisonTruth)
+          ? "s10_comparison_truth"
+          : null,
+      limitation:
+        rendersComparisonSection && hasVisibleComparisonTruthPayload(comparisonTruth)
+          ? null
+          : "Comparison truth is not available or not relevant for this report.",
     },
     diagnostic_chips: {
       source: "not_applicable",
@@ -1176,9 +1189,13 @@ function hasVisibleComparisonTruthPayload(value: unknown): boolean {
   if (!comparison) return false;
   return (
     !!asText(comparison.performer_facing_summary) ||
-    arrayHasRenderableStrings(comparison.limitations) ||
-    hasVisibleSameVideoPayload(comparison.same_video_status)
+    arrayHasRenderableStrings(comparison.limitations)
   );
+}
+
+function hasRouteVisibleComparisonDisplayMode(value: unknown): boolean {
+  const mode = asText(value);
+  return !!mode && mode !== "hidden" && mode !== "single_take";
 }
 
 function validateSectionVisiblePayload(
@@ -1261,10 +1278,14 @@ function validateSectionVisiblePayload(
       hasVisiblePayload = arrayHasRenderableStrings(view.limitations);
       break;
     case "same_video_status":
-      hasVisiblePayload = hasVisibleSameVideoPayload(view.same_video_status);
+      hasVisiblePayload =
+        hasRouteVisibleComparisonDisplayMode(view.comparison_display_mode) &&
+        hasVisibleSameVideoPayload(view.same_video_status);
       break;
     case "comparison_truth":
-      hasVisiblePayload = hasVisibleComparisonTruthPayload(view.comparison_truth);
+      hasVisiblePayload =
+        hasRouteVisibleComparisonDisplayMode(view.comparison_display_mode) &&
+        hasVisibleComparisonTruthPayload(view.comparison_truth);
       break;
     case "diagnostic_chips":
       hasVisiblePayload = arrayHasItems(view.diagnostic_chips);
@@ -1296,31 +1317,7 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
   }
   const sourceMap = asRecord(view.section_source_map);
   if (!sourceMap) return { ok: false, reason: "missing_section_source_map" };
-  const requiredSections: S10ReportSectionKey[] = [
-    "readiness_header",
-    "submission_guidance",
-    "score_summary",
-    "category_scores",
-    "category_rationale",
-    "brief_adherence_material_compliance",
-    "brief_context",
-    "brief_requirements",
-    "brief_achievement",
-    "observed_tape",
-    "component_breakdown",
-    "fix_hierarchy",
-    "next_action_plan",
-    "strengths_and_preserve",
-    "professional_critique",
-    "technique_commentary",
-    "timestamped_commentary",
-    "presentation_notes",
-    "submission_risk",
-    "limitations",
-    "same_video_status",
-    "comparison_truth",
-    "diagnostic_chips",
-  ];
+  const requiredSections = [...S10_ROUTE_REQUIRED_SECTION_KEYS] as S10ReportSectionKey[];
   for (const section of requiredSections) {
     const entry = asRecord(sourceMap[section]);
     if (!entry) {
