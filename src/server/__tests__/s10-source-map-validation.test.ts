@@ -138,6 +138,7 @@ describe("S10.P1e source-map validation", () => {
     [
       "readiness_header",
       (view: ReturnType<typeof strongView>) => {
+        view.limitations = ["A non-header limitation keeps the view-model shape usable."];
         view.recommendation = {
           decision: "" as never,
           headline: "",

@@ -132,6 +132,43 @@ describe("S10 report view rendering", () => {
     expect(html).not.toContain("sha256:");
   });
 
+  it("renders nested same-video comparison limitations when no summary or warning is present", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.comparison_display_mode = "comparison_caution";
+    view.comparison_summary = null;
+    view.comparison_limitations = [];
+    view.same_video_status = {
+      status: "uncertain",
+      performer_facing_summary: null,
+      comparison_warning: null,
+      limitations: ["Same-user scope IDs were unavailable."],
+    };
+    view.comparison_truth = {
+      comparison_mode: "uncertain",
+      recommendation_policy: "operator_confirmation_required",
+      performer_facing_summary: null,
+      limitations: ["Comparison needs operator confirmation."],
+      same_video_status: view.same_video_status,
+    };
+    view.section_source_map.same_video_status = {
+      source: "s10_authoritative_module",
+      module: "s10_same_video_evidence",
+      limitation: null,
+    };
+    view.section_source_map.comparison_truth = {
+      source: "s10_authoritative_module",
+      module: "s10_comparison_truth",
+      limitation: null,
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("Same-video comparison");
+    expect(html).toContain("Same-user scope IDs were unavailable.");
+    expect(html).toContain("Comparison needs operator confirmation.");
+  });
+
   it("renders S10 section limitations instead of empty strengths, fix, or next-action shells", () => {
     const report = strongCompleteV2Report();
     const view = report.s10_view_model as Record<string, any>;
@@ -202,6 +239,20 @@ describe("S10 report view rendering", () => {
 
     expect(html).toContain("The acting side is visible and assessable.");
     expect(html).not.toContain("req_internal_side_1");
+  });
+
+  it("does not render summary-only S10 brief achievement rows as status unavailable", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.brief_achievement_matrix = {
+      requirement_results: [{ requirement_summary: "Label-only requirement" }],
+    };
+
+    const html = render(report);
+
+    expect(html).not.toContain("Label-only requirement");
+    expect(html).not.toContain("Requirement result");
+    expect(html).not.toContain("status unavailable");
   });
 
   it("renders object-shaped S10 retake plan items without object-string output", () => {

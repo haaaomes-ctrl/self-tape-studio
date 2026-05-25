@@ -216,7 +216,6 @@ function hasRenderableBriefAchievementRow(value: unknown): boolean {
   const row = safeObj(value);
   if (!row) return false;
   return [
-    row.requirement_summary,
     row.observed_status,
     row.completion_status,
     row.achievement_status,
@@ -358,9 +357,11 @@ export function V2ReportView({
     safeStr(s10SameVideo?.performer_facing_summary);
   const s10ComparisonWarning =
     safeStr(s10SameVideo?.comparison_warning) ?? safeStr(s10Comparison?.comparison_warning);
-  const s10ComparisonLimitations = safeArr<string>(s10?.comparison_limitations).filter(
-    (s): s is string => typeof s === "string" && s.trim().length > 0,
-  );
+  const s10ComparisonLimitations = [
+    ...safeArr(s10?.comparison_limitations),
+    ...safeArr(s10Comparison?.limitations),
+    ...safeArr(s10SameVideo?.limitations),
+  ].filter((s): s is string => typeof s === "string" && s.trim().length > 0);
   const s10Limitations = safeArr<string>(s10?.limitations).filter(
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );

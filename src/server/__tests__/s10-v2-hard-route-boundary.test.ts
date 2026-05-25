@@ -88,6 +88,30 @@ describe("S10.P1e hard V2 route boundary", () => {
         report_version: "s10_performer_report_view_model_v1",
         source_mode: "s10_ai_report_model",
       },
+      {
+        report_version: "s10_performer_report_view_model_v1",
+        source_mode: "s10_ai_report_model",
+        section_source_map: {},
+        score_summary: {},
+        recommendation: {},
+        limitations: [],
+      },
+      {
+        report_version: "s10_performer_report_view_model_v1",
+        source_mode: "s10_ai_report_model",
+        section_source_map: {},
+        score_summary: {},
+        recommendation: null,
+        limitations: [{}],
+      },
+      {
+        report_version: "s10_performer_report_view_model_v1",
+        source_mode: "s10_ai_report_model",
+        section_source_map: {},
+        score_summary: {},
+        recommendation: null,
+        limitations: ["  "],
+      },
     ]) {
       const html = render({
         schema_version: "v2-component",

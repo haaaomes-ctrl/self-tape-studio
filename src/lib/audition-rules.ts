@@ -23,6 +23,40 @@ export function isUsableS10PerformerReportViewModel(value: unknown): value is {
   const scoreSummary = record?.score_summary;
   const recommendation = record?.recommendation;
   const limitations = record?.limitations;
+  const recommendationRecord =
+    recommendation && typeof recommendation === "object" && !Array.isArray(recommendation)
+      ? (recommendation as Record<string, unknown>)
+      : null;
+  const hasRenderableItemText = (item: unknown): boolean => {
+    if (typeof item === "string" && item.trim().length > 0) return true;
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const record = item as Record<string, unknown>;
+    return [
+      record.title,
+      record.headline,
+      record.point,
+      record.summary,
+      record.detail,
+      record.exact_action,
+      record.evidence_summary,
+      record.why_it_matters,
+      record.recommended_action,
+    ].some((value) => typeof value === "string" && value.trim().length > 0);
+  };
+  const hasVisibleRecommendation =
+    !!recommendationRecord &&
+    [
+      recommendationRecord.decision,
+      recommendationRecord.headline,
+      recommendationRecord.score_explanation,
+    ].some((item) => typeof item === "string" && item.trim().length > 0);
+  const hasVisibleRecommendationRationale =
+    !!recommendationRecord &&
+    Array.isArray(recommendationRecord.rationale) &&
+    recommendationRecord.rationale.some((item) => hasRenderableItemText(item));
+  const hasVisibleLimitation =
+    Array.isArray(limitations) &&
+    limitations.some((item) => typeof item === "string" && item.trim().length > 0);
   return (
     !!record &&
     record.report_version === S10_PERFORMER_REPORT_VIEW_MODEL_VERSION &&
@@ -34,10 +68,7 @@ export function isUsableS10PerformerReportViewModel(value: unknown): value is {
     typeof scoreSummary === "object" &&
     !Array.isArray(scoreSummary) &&
     Array.isArray(limitations) &&
-    ((Boolean(recommendation) &&
-      typeof recommendation === "object" &&
-      !Array.isArray(recommendation)) ||
-      limitations.length > 0)
+    (hasVisibleRecommendation || hasVisibleRecommendationRationale || hasVisibleLimitation)
   );
 }
 
