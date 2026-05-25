@@ -81,6 +81,13 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     expect(source).toContain('Authorization: Bearer <secret>');
   });
 
+  it('mux webhook logs a safe body summary instead of signed raw upload URLs', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/routes/api/public/mux-webhook.ts'), 'utf8');
+    expect(source).toContain('MUX WEBHOOK BODY SUMMARY');
+    expect(source).not.toContain('MUX WEBHOOK RAW BODY');
+    expect(source).not.toContain('body: rawBody');
+  });
+
   it('cron migration targets the canonical production reconciler URL with the secret header', async () => {
     const source = await readFile(
       path.join(process.cwd(), 'supabase/migrations/20260525143000_reconcile_stale_takes_canonical_url.sql'),
