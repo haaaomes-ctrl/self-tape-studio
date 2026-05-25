@@ -3,10 +3,19 @@ import {
   buildProviderToolForModel,
   classifyAiGatewayProviderError,
   cloneForProviderToolSchema,
+  parseProviderJsonObjectContent,
+  selectReportProviderContract,
   shouldRetryWithFreshMuxUrl,
 } from "@/server/provider-tool-schema.server";
-import { buildReportToolForProvider, REPORT_TOOL } from "@/server/process-take.server";
-import { runReportPolish } from "@/server/report-polish.server";
+import {
+  buildReportToolForProvider,
+  buildSinglePassReportRequestBodyForProvider,
+  REPORT_TOOL,
+} from "@/server/process-take.server";
+import {
+  buildReportPolishRequestBodyForProvider,
+  runReportPolish,
+} from "@/server/report-polish.server";
 
 const UNSUPPORTED_PROVIDER_SCHEMA_KEYS = new Set([
   "$defs",
@@ -226,6 +235,60 @@ describe("provider tool schema helpers", () => {
     ).toBe("string");
   });
 
+  it("uses plain JSON report contracts for Gemini report generation", () => {
+    expect(selectReportProviderContract("google/gemini-3-flash-preview")).toBe(
+      "plain_json_report",
+    );
+
+    const polishBody = buildReportPolishRequestBodyForProvider({
+      model: "google/gemini-3-flash-preview",
+      systemPrompt: "system",
+      userText: "user",
+      reportTool: REPORT_TOOL,
+    });
+    expect(polishBody).not.toHaveProperty("tools");
+    expect(polishBody).not.toHaveProperty("tool_choice");
+    expect(JSON.stringify(polishBody)).toContain("Return ONLY the JSON object");
+
+    const singlePassBody = buildSinglePassReportRequestBodyForProvider({
+      model: "google/gemini-3-flash-preview",
+      systemPrompt: "system",
+      userText: "user",
+      videoUrl: "https://example.invalid/video.mp4",
+    });
+    expect(singlePassBody).not.toHaveProperty("tools");
+    expect(singlePassBody).not.toHaveProperty("tool_choice");
+    expect(JSON.stringify(singlePassBody)).toContain("file_url");
+    expect(JSON.stringify(singlePassBody)).toContain("Return ONLY the JSON object");
+  });
+
+  it("keeps tool-call report contracts for non-Gemini providers", () => {
+    expect(selectReportProviderContract("openai/gpt-4.1")).toBe("tool_call");
+
+    const polishBody = buildReportPolishRequestBodyForProvider({
+      model: "openai/gpt-4.1",
+      systemPrompt: "system",
+      userText: "user",
+      reportTool: REPORT_TOOL,
+    }) as Record<string, any>;
+    expect(polishBody.tools?.[0]?.function?.name).toBe("submit_audition_report");
+    expect(polishBody.tool_choice).toMatchObject({
+      type: "function",
+      function: { name: "submit_audition_report" },
+    });
+  });
+
+  it("parses plain JSON report content from Gemini-style responses", () => {
+    expect(parseProviderJsonObjectContent('```json\n{"overall_score":82}\n```')).toEqual({
+      overall_score: 82,
+    });
+    expect(
+      parseProviderJsonObjectContent([
+        { type: "text", text: 'Here is the JSON:\n{"mode":"FULL"}' },
+      ]),
+    ).toEqual({ mode: "FULL" });
+  });
+
   it("leaves non-Gemini tools unchanged and normalises Gemini tools", () => {
     const tool = {
       type: "function",
@@ -282,17 +345,23 @@ describe("provider tool schema helpers", () => {
     ).toBe(false);
   });
 
-  it("report polish sends the real provider-safe tool and exposes contract failures distinctly", async () => {
+  it("report polish sends plain JSON requests for Gemini and parses report content", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}"));
-      expect(body.tools?.[0]?.function?.name).toBe("submit_audition_report");
-      expect(hasArrayValuedType(body.tools?.[0])).toBe(false);
-      expect(collectUnsupportedKeys(body.tools?.[0])).toEqual([]);
-      expect(collectOpenObjectSchemas(body.tools?.[0])).toEqual([]);
-      expect(collectNonStringEnums(body.tools?.[0])).toEqual([]);
+      expect(body.tools).toBeUndefined();
+      expect(body.tool_choice).toBeUndefined();
+      expect(JSON.stringify(body.messages)).toContain("Return ONLY the JSON object");
       return new Response(
-        '{"error":{"message":"* GenerateContentRequest.tools[0].function_declarations[0].parameters.properties.note.type: must be specified"}}',
-        { status: 400 },
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: '```json\n{"mode":"FULL","overall_score":88}\n```',
+              },
+            },
+          ],
+        }),
+        { status: 200 },
       );
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -311,9 +380,9 @@ describe("provider tool schema helpers", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.safe_error_category).toBe("provider_request_contract_error");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.report).toMatchObject({ mode: "FULL", overall_score: 88 });
     }
   });
 });

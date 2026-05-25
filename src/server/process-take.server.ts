@@ -101,9 +101,13 @@ import {
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
 import {
+  buildPlainJsonReportInstruction,
   buildProviderToolForModel,
   classifyAiGatewayProviderError,
+  parseProviderJsonObjectContent,
+  selectReportProviderContract,
   shouldRetryWithFreshMuxUrl,
+  type ReportProviderContract,
 } from "./provider-tool-schema.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
@@ -1722,6 +1726,51 @@ export function buildReportToolForProvider(model?: string | null): typeof REPORT
   return buildProviderToolForModel(REPORT_TOOL, model);
 }
 
+export function buildSinglePassReportRequestBodyForProvider(input: {
+  model: string;
+  systemPrompt: string;
+  userText: string;
+  videoUrl: string;
+  reportTool?: typeof REPORT_TOOL;
+  providerContract?: ReportProviderContract;
+}): Record<string, unknown> {
+  const providerContract =
+    input.providerContract ?? selectReportProviderContract(input.model);
+  const userContent = [
+    { type: "text", text: input.userText },
+    { type: "file_url", file_url: { url: input.videoUrl } },
+  ];
+  const base = {
+    model: input.model,
+    // Deterministic generation settings for the S10 single-pass recovery
+    // path. Step 2 fallback must not regress to high-stochasticity output.
+    temperature: 0.2,
+    top_p: 1,
+    messages: [
+      {
+        role: "system",
+        content:
+          providerContract === "plain_json_report"
+            ? `${input.systemPrompt}\n\n${buildPlainJsonReportInstruction()}`
+            : input.systemPrompt,
+      },
+      {
+        role: "user",
+        content: userContent,
+      },
+    ],
+    max_tokens: 8192,
+  };
+
+  if (providerContract === "plain_json_report") return base;
+
+  return {
+    ...base,
+    tools: [buildProviderToolForModel(input.reportTool ?? REPORT_TOOL, input.model)],
+    tool_choice: { type: "function", function: { name: "submit_audition_report" } },
+  };
+}
+
 function buildSystemPrompt(): string {
   return `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
 
@@ -3175,37 +3224,20 @@ export async function runProcessTake(
     }
 
     const callAI = (videoUrl: string, signal: AbortSignal, model: string) => {
-      const reportTool = buildReportToolForProvider(model);
       return fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
+        body: JSON.stringify(buildSinglePassReportRequestBodyForProvider({
           model,
-          // Deterministic generation settings for the S10 single-pass recovery
-          // path. Step 2 fallback must not regress to high-stochasticity output.
-          temperature: 0.2,
-          top_p: 1,
-          messages: [
-            { role: "system", content: buildSystemPrompt() },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: userText },
-                // CRITICAL: video MP4s must be sent as `file_url`, NOT
-                // `image_url`. Gemini via the Lovable AI Gateway rejects
-                // `image_url` for video/mp4 with HTTP 400 ("Unsupported
-                // image format … Supported: PNG, JPEG, WebP, GIF").
-                { type: "file_url", file_url: { url: videoUrl } },
-              ],
-            },
-          ],
-          tools: [reportTool],
-          tool_choice: { type: "function", function: { name: "submit_audition_report" } },
-          max_tokens: 8192,
-        }),
+          systemPrompt: buildSystemPrompt(),
+          userText,
+          // CRITICAL: video MP4s must be sent as `file_url`, NOT `image_url`.
+          // Gemini via the Lovable AI Gateway rejects `image_url` for video/mp4.
+          videoUrl,
+        })),
         signal,
       });
     };
@@ -3593,37 +3625,47 @@ export async function runProcessTake(
       try {
         const json = await aiResp.json();
         const choice = json.choices?.[0];
-        const toolCall = choice?.message?.tool_calls?.[0];
-        if (!toolCall?.function?.arguments) {
-          throw new AnalysisFailure(
-            "analysis_parse_failed",
-            "AI did not return a structured report. Please try again.",
-          );
-        }
-        try {
-          report = JSON.parse(toolCall.function.arguments);
-        } catch (parseErr) {
-          if (choice?.finish_reason === "length") {
+        if (selectReportProviderContract(currentModel) === "plain_json_report") {
+          report = parseProviderJsonObjectContent(choice?.message?.content);
+          if (finaliseExceeded()) {
             throw new AnalysisFailure(
               "analysis_parse_failed",
-              "The AI response was cut off before it finished writing the report. Please retry.",
+              "Parsing the AI response took too long. Please try again.",
             );
           }
-          console.error(
-            "AI JSON parse failed",
-            parseErr,
-            (toolCall.function.arguments as string | undefined)?.slice(-300),
-          );
-          throw new AnalysisFailure(
-            "analysis_parse_failed",
-            "The AI returned an incomplete report. Please retry.",
-          );
-        }
-        if (finaliseExceeded()) {
-          throw new AnalysisFailure(
-            "analysis_parse_failed",
-            "Parsing the AI response took too long. Please try again.",
-          );
+        } else {
+          const toolCall = choice?.message?.tool_calls?.[0];
+          if (!toolCall?.function?.arguments) {
+            throw new AnalysisFailure(
+              "analysis_parse_failed",
+              "AI did not return a structured report. Please try again.",
+            );
+          }
+          try {
+            report = JSON.parse(toolCall.function.arguments);
+          } catch (parseErr) {
+            if (choice?.finish_reason === "length") {
+              throw new AnalysisFailure(
+                "analysis_parse_failed",
+                "The AI response was cut off before it finished writing the report. Please retry.",
+              );
+            }
+            console.error(
+              "AI JSON parse failed",
+              parseErr,
+              (toolCall.function.arguments as string | undefined)?.slice(-300),
+            );
+            throw new AnalysisFailure(
+              "analysis_parse_failed",
+              "The AI returned an incomplete report. Please retry.",
+            );
+          }
+          if (finaliseExceeded()) {
+            throw new AnalysisFailure(
+              "analysis_parse_failed",
+              "Parsing the AI response took too long. Please try again.",
+            );
+          }
         }
       } catch (parseOuter) {
         metric("analysis_parse_failed", {
