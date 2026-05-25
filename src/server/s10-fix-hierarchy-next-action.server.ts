@@ -394,39 +394,6 @@ function addLegacyDiagnosticWarnings(args: {
   }
 }
 
-function fallbackLimitation(warnings: S10ActionContradictionWarning[]): S10FixItem {
-  addWarning(warnings, {
-    affected_field: "s10_fix_hierarchy",
-    original_value: null,
-    corrected_value: "Specific S10 action limitation",
-    reason: "Missing S10.6 AI fix hierarchy output was normalised to a limitation.",
-    source: "s10_normaliser",
-  });
-  return {
-    id: "s10_fix_limitation",
-    title: "Review the S10 report before submitting",
-    issue: "The action hierarchy was not fully available.",
-    why_it_matters:
-      "The report should not invent generic professional fixes when action evidence is thin.",
-    exact_action:
-      "Retry the analysis or review the verified brief-achievement matrix before treating action guidance as final.",
-    source_category: "limitation",
-    urgency: "medium",
-    submission_impact: "review_carefully",
-    linked_requirement_ids: [],
-    linked_matrix_result_ids: [],
-    linked_component_verification_ids: [],
-    linked_readiness_reason_ids: [],
-    evidence_summary: "S10.6 output was missing or too thin.",
-    confidence: "low",
-    is_fix_first_candidate: false,
-    is_generic_fallback: false,
-    source_authority: "limitation",
-    legacy_source_used: false,
-    legacy_source_path: null,
-  };
-}
-
 function normaliseNextActionPlan(input: {
   rawPlan: unknown;
   hierarchy: S10FixHierarchy;
@@ -459,15 +426,12 @@ function normaliseNextActionPlan(input: {
       ...input.hierarchy.must_fix_before_submitting
         .filter((item) => item.submission_impact === "final_check")
         .map((item) => item.exact_action),
-      "Confirm the final file contains all required material before upload.",
-      "Check filename, deadline and upload instructions against the brief.",
     ],
     10,
   );
   const playbackChecks = dedupeStrings(
     [
       ...stringList(raw.playback_checks, 8),
-      "Playback-check the final file from start to finish before upload.",
       ...(input.hierarchy.must_fix_before_submitting.some((item) =>
         /\bcut off|song|package|continuous\b/i.test(`${item.title} ${item.exact_action}`),
       )
@@ -476,16 +440,7 @@ function normaliseNextActionPlan(input: {
     ],
     8,
   );
-  const submitChecklist = dedupeStrings(
-    [
-      ...stringList(raw.submit_checklist, 10),
-      "Confirm the final file contains all required material.",
-      "Check the filename and upload instructions.",
-      "Check the deadline/upload window.",
-      "Playback-check the exported file before upload.",
-    ],
-    10,
-  );
+  const submitChecklist = dedupeStrings([...stringList(raw.submit_checklist, 10)], 10);
   return {
     submit_checklist: retakeNeeded ? [] : submitChecklist,
     retake_plan: retakePlan,
@@ -499,9 +454,7 @@ function normaliseNextActionPlan(input: {
       8,
     ),
     if_time_is_short_guidance: dedupeStrings(stringList(raw.if_time_is_short_guidance, 6), 6),
-    no_retake_needed_reason: retakeNeeded
-      ? null
-      : text(raw.no_retake_needed_reason) || "No mandatory fix is required before submission.",
+    no_retake_needed_reason: retakeNeeded ? null : text(raw.no_retake_needed_reason) || null,
     confidence: oneOf(raw.confidence, ["low", "medium", "high"], "medium") as Confidence,
   };
 }
@@ -620,9 +573,6 @@ export function normaliseS10FixHierarchy(input: {
       source: "s10_ai_judgement",
     });
     fixFirst = null;
-  }
-  if (!fixFirst && dedupedMustFixes.length === 0 && input.readiness.decision !== "submit") {
-    fixFirst = fallbackLimitation(warnings);
   }
   const rawWarnings = Array.isArray(raw.action_contradiction_warnings)
     ? raw.action_contradiction_warnings.filter(isRecord)

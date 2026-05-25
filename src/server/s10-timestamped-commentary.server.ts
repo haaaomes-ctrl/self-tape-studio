@@ -718,12 +718,7 @@ export function normaliseS10TimestampedCommentary(input: {
   }
 
   return {
-    summary: text(
-      record.summary,
-      notes.length
-        ? "Timestamped commentary is limited to verified observed components."
-        : "Timestamped commentary is not assessable from verified timing evidence.",
-    ),
+    summary: text(record.summary),
     notes,
     component_ranges: componentRanges,
     missing_or_unobserved_components: missingComponents,

@@ -272,8 +272,7 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
     );
     expect(result.nextActionPlan.retake_plan.join(" ")).toContain("Side 1");
     expect(result.nextActionPlan.retake_plan.join(" ")).toContain("song");
-    expect(result.nextActionPlan.final_checks.join(" ")).toContain("final file");
-    expect(result.nextActionPlan.playback_checks.join(" ")).toContain("Playback-check");
+    expect(result.nextActionPlan.final_checks.join(" ")).not.toContain("final file");
     expect(result.nextActionPlan.playback_checks.join(" ")).toContain("cut off");
     const performerFacingProjection = JSON.stringify({
       fix_first: report.fix_first,
@@ -371,8 +370,8 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
     expect(result.hierarchy.must_fix_before_submitting).toEqual([]);
     expect(result.hierarchy.fix_first).toBeNull();
     expect(report.fix_first).toBe("No mandatory fix before submission.");
-    expect(result.nextActionPlan.submit_checklist.join(" ")).toContain("filename");
-    expect(result.nextActionPlan.submit_checklist.join(" ")).toContain("Playback-check");
+    expect(result.nextActionPlan.submit_checklist).toEqual([]);
+    expect(result.nextActionPlan.no_retake_needed_reason).toBe("Mandatory material is achieved.");
     expect(result.nextActionPlan.retake_plan).toEqual([]);
     expect(result.hierarchy.optional_polish).toHaveLength(1);
     expect(result.hierarchy.preserve[0]?.exact_action).toContain("Do not rework");
@@ -402,9 +401,11 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
 
     const result = applyS10FixHierarchyNextAction({ report, matrix, readiness });
 
-    expect(result.hierarchy.fix_first?.source_authority).toBe("limitation");
-    expect(result.hierarchy.fix_first?.exact_action).toContain("Retry the analysis");
+    expect(result.hierarchy.fix_first).toBeNull();
+    expect(result.nextActionPlan.submit_checklist).toEqual([]);
+    expect(result.nextActionPlan.final_checks).toEqual([]);
     expect(JSON.stringify(report)).not.toContain("Keep refining the take");
+    expect(JSON.stringify(report)).not.toContain("Retry the analysis");
     expect(result.warnings.every((warning) => warning.internal_only)).toBe(true);
   });
 });

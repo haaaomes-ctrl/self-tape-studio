@@ -216,6 +216,13 @@ describe("S10 report view rendering", () => {
     expect(html).toContain("Strengths and preserve guidance are not available for this report.");
     expect(html).toContain("Fix hierarchy was unavailable for this S10 report.");
     expect(html).toContain("Next action plan was unavailable for this S10 report.");
+    expect(html).not.toContain("Review the S10 report before submitting");
+    expect(html).not.toContain(
+      "Confirm the final file contains all required material before upload.",
+    );
+    expect(html).not.toContain(
+      "Check filename, deadline and upload instructions against the brief.",
+    );
     expect(html).not.toContain("[object Object]");
   });
 

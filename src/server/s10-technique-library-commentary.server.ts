@@ -613,10 +613,6 @@ export function normaliseS10TechniqueCommentary(input: {
     contradiction_warnings: [],
   };
 
-  if (!commentary.summary) {
-    commentary.summary = "Technique commentary is limited to verified S10 observed evidence.";
-  }
-
   if (actingMissing) {
     commentary.acting = blankTechniqueSection(
       "not_assessable",

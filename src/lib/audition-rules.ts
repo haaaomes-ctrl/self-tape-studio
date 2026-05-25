@@ -256,11 +256,9 @@ export function isUsableS10PerformerReportViewModel(value: unknown): value is {
   };
   const hasVisibleRecommendation =
     !!recommendationRecord &&
-    [
-      recommendationRecord.decision,
-      recommendationRecord.headline,
-      recommendationRecord.score_explanation,
-    ].some((item) => typeof item === "string" && item.trim().length > 0);
+    [recommendationRecord.headline, recommendationRecord.score_explanation].some(
+      (item) => typeof item === "string" && item.trim().length > 0,
+    );
   const hasVisibleRecommendationRationale =
     !!recommendationRecord &&
     Array.isArray(recommendationRecord.rationale) &&
@@ -823,14 +821,14 @@ export type ScoreContradictionWarning = {
 };
 
 export type ReadinessAndScoreJudgement = {
-  decision: ReadinessDecision;
+  decision: ReadinessDecision | null;
   headline: string;
   rationale: string[];
   confidence: "low" | "medium" | "high";
   performance_quality_score: number | null;
   brief_completion_score: number | null;
-  overall_submission_readiness_score: number;
-  score_band_label: ReadinessScoreBandLabel;
+  overall_submission_readiness_score: number | null;
+  score_band_label: ReadinessScoreBandLabel | null;
   score_explanation: string;
   brief_blocker_override: boolean;
   performance_quality_summary: string;

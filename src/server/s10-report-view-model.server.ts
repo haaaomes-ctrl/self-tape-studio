@@ -728,7 +728,6 @@ function hasVisibleRecommendationPayload(value: unknown): boolean {
   const recommendation = asRecord(value);
   if (!recommendation) return false;
   return (
-    !!asText(recommendation.decision) ||
     !!asText(recommendation.headline) ||
     !!asText(recommendation.score_explanation) ||
     arrayHasRenderableItems(recommendation.rationale)
@@ -881,11 +880,9 @@ function hasStrengthPayload(value: unknown): boolean {
   const critique = asRecord(value);
   if (!critique) return false;
   return (
-    !!asText(critique.summary) ||
     arrayHasRenderableItems(critique.strengths) ||
     arrayHasRenderableItems(critique.preserve) ||
-    arrayHasRenderableItems(critique.do_not_overfix) ||
-    arrayHasRenderableItems(critique.limitations)
+    arrayHasRenderableItems(critique.do_not_overfix)
   );
 }
 
@@ -893,7 +890,6 @@ function hasVisibleProfessionalCritiquePayload(value: unknown): boolean {
   const critique = asRecord(value);
   if (!critique) return false;
   return (
-    !!asText(critique.summary) ||
     arrayHasRenderableItems(critique.performance_strengths) ||
     arrayHasRenderableItems(critique.brief_package_strengths) ||
     arrayHasRenderableItems(critique.technical_presentation_strengths) ||
@@ -902,8 +898,7 @@ function hasVisibleProfessionalCritiquePayload(value: unknown): boolean {
     arrayHasRenderableItems(critique.movement_or_physical_strengths) ||
     arrayHasRenderableItems(critique.professional_presentation_notes) ||
     arrayHasRenderableItems(critique.preserve) ||
-    arrayHasRenderableItems(critique.do_not_overfix) ||
-    arrayHasRenderableItems(critique.critique_limitations)
+    arrayHasRenderableItems(critique.do_not_overfix)
   );
 }
 
@@ -911,32 +906,25 @@ function hasVisibleTechniqueSectionPayload(value: unknown): boolean {
   const section = asRecord(value);
   if (!section) return false;
   return (
-    !!asText(section.headline) ||
-    !!asText(section.not_assessable_reason) ||
     arrayHasRenderableItems(section.observations) ||
     arrayHasRenderableItems(section.what_is_working) ||
     arrayHasRenderableItems(section.what_could_improve) ||
     arrayHasRenderableItems(section.practical_actions) ||
-    arrayHasRenderableItems(section.preserve) ||
-    arrayHasRenderableItems(section.limitations)
+    arrayHasRenderableItems(section.preserve)
   );
 }
 
 function hasVisibleTechniquePayload(value: unknown): boolean {
   const commentary = asRecord(value);
   if (!commentary) return false;
-  return (
-    !!asText(commentary.summary) ||
-    arrayHasRenderableItems(commentary.limitations) ||
-    [
-      "acting",
-      "vocal_singing",
-      "movement_dance",
-      "musical_theatre_package",
-      "self_tape_presentation",
-      "commercial_screen_task",
-    ].some((key) => hasVisibleTechniqueSectionPayload(commentary[key]))
-  );
+  return [
+    "acting",
+    "vocal_singing",
+    "movement_dance",
+    "musical_theatre_package",
+    "self_tape_presentation",
+    "commercial_screen_task",
+  ].some((key) => hasVisibleTechniqueSectionPayload(commentary[key]));
 }
 
 function hasPresentationPayload(view: Record<string, unknown>): boolean {
@@ -981,12 +969,7 @@ function hasVisibleTimestampLimitations(value: unknown): boolean {
 
 function hasVisibleTimestampedPayload(value: unknown): boolean {
   const timestamped = asRecord(value);
-  return (
-    !!timestamped &&
-    (hasVisibleTimestampedNotes(timestamped.notes) ||
-      hasVisibleTimestampLimitations(timestamped.timestamp_limitations) ||
-      !!asText(timestamped.summary))
-  );
+  return !!timestamped && hasVisibleTimestampedNotes(timestamped.notes);
 }
 
 function hasVisibleSameVideoPayload(value: unknown): boolean {

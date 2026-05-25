@@ -595,11 +595,6 @@ export function normaliseS10ProfessionalCritique(input: {
     contradiction_warnings: [],
   };
 
-  if (!critique.summary) {
-    critique.summary = sideAbsent
-      ? "Professional critique is limited by the missing required Side 1 acting scene."
-      : "Professional critique is limited to verified S10 evidence.";
-  }
   if (sideAbsent) {
     ensureLimitation(
       critique.critique_limitations,

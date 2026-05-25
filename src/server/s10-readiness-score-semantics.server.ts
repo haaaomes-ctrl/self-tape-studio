@@ -69,6 +69,12 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
     : fallback;
 }
 
+function optionalOneOf<T extends string>(value: unknown, allowed: readonly T[]): T | null {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : null;
+}
+
 function clampScore(value: unknown, fallback = 0): number {
   const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.max(0, Math.min(100, Math.round(n)));
@@ -80,13 +86,6 @@ export function readinessBandLabel(score: number): ReadinessScoreBandLabel {
   if (score <= 69) return "review_carefully";
   if (score <= 84) return "submit_if_deadline_is_close";
   return "submit_strong_submission";
-}
-
-function decisionForScore(score: number): ReadinessDecision {
-  if (score <= 54) return "retake_required_if_possible";
-  if (score <= 69) return "review_carefully";
-  if (score <= 84) return "submit_if_deadline_is_close";
-  return "submit";
 }
 
 function scoreForDecision(decision: ReadinessDecision): number {
@@ -288,12 +287,13 @@ export function normaliseReadinessScoreJudgement(input: {
   const raw = isRecord(input.judgement) ? input.judgement : {};
   const constraint = deriveReadinessConstraint(input.matrix);
   const warnings: ScoreContradictionWarning[] = [];
-  const originalReadiness = clampScore(
-    raw.overall_submission_readiness_score,
-    input.currentOverallScore,
-  );
+  const originalReadiness =
+    typeof raw.overall_submission_readiness_score === "number" &&
+    Number.isFinite(raw.overall_submission_readiness_score)
+      ? clampScore(raw.overall_submission_readiness_score)
+      : null;
   let readinessScore = originalReadiness;
-  if (constraint.cap != null && readinessScore > constraint.cap) {
+  if (constraint.cap != null && readinessScore != null && readinessScore > constraint.cap) {
     addWarning(warnings, {
       affected_field: "readiness_score_judgement.overall_submission_readiness_score",
       original_value: originalReadiness,
@@ -304,10 +304,10 @@ export function normaliseReadinessScoreJudgement(input: {
     readinessScore = constraint.cap;
   }
 
-  let decision = oneOf(raw.decision, DECISIONS, decisionForScore(readinessScore));
+  let decision = optionalOneOf(raw.decision, DECISIONS) ?? constraint.decision;
   if (constraint.decision) {
     const maxAllowed = scoreForDecision(constraint.decision);
-    if (scoreForDecision(decision) > maxAllowed) {
+    if (decision && scoreForDecision(decision) > maxAllowed) {
       addWarning(warnings, {
         affected_field: "readiness_score_judgement.decision",
         original_value: decision,
@@ -319,10 +319,10 @@ export function normaliseReadinessScoreJudgement(input: {
     }
   }
 
-  const bandFromScore = readinessBandLabel(readinessScore);
-  const rawBand = oneOf(raw.score_band_label, BAND_LABELS, bandFromScore);
-  const scoreBandLabel = rawBand === bandFromScore ? rawBand : bandFromScore;
-  if (rawBand !== bandFromScore) {
+  const bandFromScore = readinessScore != null ? readinessBandLabel(readinessScore) : null;
+  const rawBand = optionalOneOf(raw.score_band_label, BAND_LABELS);
+  const scoreBandLabel = bandFromScore ?? rawBand;
+  if (bandFromScore && rawBand && rawBand !== bandFromScore) {
     addWarning(warnings, {
       affected_field: "readiness_score_judgement.score_band_label",
       original_value: rawBand,
@@ -357,18 +357,12 @@ export function normaliseReadinessScoreJudgement(input: {
 
   const rawRationale = stringList(raw.rationale);
   const rationale =
-    rawRationale.length > 0
-      ? rawRationale
-      : [
-          constraint.reason ??
-            input.matrix.summary ??
-            "Readiness is constrained by S10 brief achievement.",
-        ];
+    rawRationale.length > 0 ? rawRationale : constraint.reason ? [constraint.reason] : [];
 
   const repairStatus =
     warnings.length > 0 ||
     raw.repair_prompt_status === "classified_contradictory" ||
-    (constraint.cap != null && originalReadiness > constraint.cap)
+    (constraint.cap != null && originalReadiness != null && originalReadiness > constraint.cap)
       ? "classified_contradictory"
       : "not_needed";
 
@@ -406,44 +400,30 @@ export function normaliseReadinessScoreJudgement(input: {
 
   return {
     decision,
-    headline:
-      text(raw.headline) ||
-      (constraint.reason ?? "Readiness is based on verified brief achievement."),
+    headline: text(raw.headline) || (constraint.reason ?? ""),
     rationale,
     confidence: oneOf(raw.confidence, ["low", "medium", "high"], "low"),
     performance_quality_score:
       typeof raw.performance_quality_score === "number"
         ? clampScore(raw.performance_quality_score)
-        : typeof input.currentScores?.acting === "number"
-          ? clampScore(input.currentScores.acting)
-          : input.currentOverallScore,
+        : null,
     brief_completion_score:
       typeof raw.brief_completion_score === "number"
         ? clampScore(raw.brief_completion_score)
-        : typeof input.currentScores?.brief_adherence === "number"
-          ? clampScore(input.currentScores.brief_adherence)
-          : null,
+        : null,
     overall_submission_readiness_score: readinessScore,
     score_band_label: scoreBandLabel,
     score_explanation:
       text(raw.score_explanation) ||
       (constraint.reason
         ? `${constraint.reason} Visible performance strengths may still be recognised separately from submission readiness.`
-        : "Readiness score aligns with verified brief completion and observed performance quality."),
+        : ""),
     brief_blocker_override: Boolean(raw.brief_blocker_override) || constraint.cap != null,
-    performance_quality_summary:
-      text(raw.performance_quality_summary) ||
-      "Performance quality is scored separately from submission readiness.",
+    performance_quality_summary: text(raw.performance_quality_summary),
     brief_completion_summary: text(raw.brief_completion_summary) || input.matrix.summary,
-    technical_assessability_summary:
-      text(raw.technical_assessability_summary) ||
-      "Technical and audio assessability can support confidence but do not override missing mandatory material.",
-    selected_level_calibration_summary:
-      text(raw.selected_level_calibration_summary) ||
-      `Calibrated against the selected level${input.selectedLevel ? `: ${input.selectedLevel}` : ""}.`,
-    professional_nuance_summary:
-      text(raw.professional_nuance_summary) ||
-      "Professional nuance should explain brief precision, observed specificity and optional polish beyond the number.",
+    technical_assessability_summary: text(raw.technical_assessability_summary),
+    selected_level_calibration_summary: text(raw.selected_level_calibration_summary),
+    professional_nuance_summary: text(raw.professional_nuance_summary),
     category_scores: categoryScores,
     category_rationale: isRecord(raw.category_rationale) ? raw.category_rationale : {},
     component_scores: normaliseComponentScores(raw.component_scores, input.matrix, warnings),
@@ -558,7 +538,10 @@ export function applyReadinessScoreSemantics(input: {
   });
   const warnings = [...judgement.score_contradiction_warnings];
   const constraint = deriveReadinessConstraint(input.matrix);
-  let overall = Math.min(input.currentOverallScore, judgement.overall_submission_readiness_score);
+  let overall =
+    judgement.overall_submission_readiness_score != null
+      ? Math.min(input.currentOverallScore, judgement.overall_submission_readiness_score)
+      : input.currentOverallScore;
 
   if (constraint.cap != null && overall > constraint.cap) {
     addWarning(warnings, {

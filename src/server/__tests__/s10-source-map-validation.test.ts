@@ -12,6 +12,7 @@ import {
   buildS10PerformerReportViewModel,
   validateAuthenticatedS10RouteSurface,
 } from "@/server/s10-report-view-model.server";
+import { applyReadinessScoreSemantics } from "@/server/s10-readiness-score-semantics.server";
 import {
   buildS10CanaryAReportInput,
   buildS10CanaryAViewContext,
@@ -82,6 +83,62 @@ describe("S10.P1e source-map validation", () => {
       module: "readiness_score_judgement",
     });
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+  });
+
+  it("does not recover a missing S10 readiness score or decision from legacy scores", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+    report.overall_score = 93;
+    report.overall_score_final = 93;
+    report.scores = { acting: 93, brief_adherence: 100 };
+    report.readiness_score_judgement = {
+      category_scores: [],
+      component_scores: [],
+      rationale: [],
+    };
+
+    applyReadinessScoreSemantics({
+      report,
+      matrix: report.brief_achievement_matrix as never,
+      currentOverallScore: 93,
+      selectedLevel: "professional",
+    });
+    const view = strongView(report);
+
+    expect(view.recommendation?.decision).toBeNull();
+    expect(view.score_summary.overall_submission_readiness_score).toBeNull();
+    expect(view.score_summary.performance_quality_score).toBeNull();
+    expect(view.score_summary.brief_completion_score).toBeNull();
+    expect(view.section_source_map.readiness_header.source).toBe("specific_limitation");
+    expect(view.section_source_map.score_summary.source).toBe("specific_limitation");
+    const html = renderS10View(view);
+    expect(html).not.toContain(">93<");
+    expect(html).toContain("Readiness judgement is not available for this report.");
+    expect(html).toContain("S10 score summary was unavailable for this report.");
+  });
+
+  it("can derive a blocker decision from the S10 matrix without deriving a legacy score", () => {
+    const report = buildS10CanaryAReportInput() as Record<string, unknown>;
+    report.overall_score = 93;
+    report.scores = { acting: 93, brief_adherence: 100 };
+    report.readiness_score_judgement = {
+      category_scores: [],
+      component_scores: [],
+      rationale: [],
+    };
+
+    applyReadinessScoreSemantics({
+      report,
+      matrix: report.brief_achievement_matrix as never,
+      currentOverallScore: 93,
+      selectedLevel: "professional",
+    });
+    const view = canaryView(report);
+
+    expect(view.recommendation?.decision).toBe("retake_required_if_possible");
+    expect(view.score_summary.overall_submission_readiness_score).toBeNull();
+    expect(view.section_source_map.readiness_header.source).toBe("s10_authoritative_module");
+    expect(view.section_source_map.score_summary.source).toBe("specific_limitation");
+    expect(renderS10View(view)).not.toContain(">93<");
   });
 
   it("rejects S10 view models that are missing required source-map entries", () => {
@@ -216,6 +273,10 @@ describe("S10.P1e source-map validation", () => {
     );
     expect(view.section_source_map.fix_hierarchy.source).toBe("specific_limitation");
     expect(view.section_source_map.next_action_plan.source).toBe("specific_limitation");
+    expect(view.section_source_map.professional_critique.source).toBe("specific_limitation");
+    expect(view.section_source_map.strengths_and_preserve.source).toBe("specific_limitation");
+    expect(view.section_source_map.technique_commentary.source).toBe("specific_limitation");
+    expect(view.section_source_map.timestamped_commentary.source).toBe("specific_limitation");
   });
 
   it.each([
@@ -880,7 +941,7 @@ describe("S10.P1e source-map validation", () => {
     expect(html).not.toContain("[object Object]");
   });
 
-  it("validates and renders top-level technique limitations counted as visible", () => {
+  it("does not treat top-level technique limitations as authoritative content", () => {
     const view = strongView();
     view.technique_commentary = {
       summary: null,
@@ -954,10 +1015,19 @@ describe("S10.P1e source-map validation", () => {
     } as never;
     view.section_source_map.technique_commentary.source = "s10_authoritative_module";
 
-    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("missing_visible_payload:technique_commentary");
+
+    view.section_source_map.technique_commentary = {
+      source: "specific_limitation",
+      module: "s10_technique_commentary",
+      limitation: "Technique commentary was limited to verified components.",
+    };
     expect(renderS10View(view)).toContain(
       "Technique commentary was limited to verified components.",
     );
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
   });
 
   it("validates and renders S10 priority fixes when they are the only fix hierarchy content", () => {

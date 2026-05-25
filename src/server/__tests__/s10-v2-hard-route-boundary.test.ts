@@ -167,6 +167,31 @@ describe("S10.P1e hard V2 route boundary", () => {
     }
   });
 
+  it("renders the S10 limitation surface for decision-only view models with valid source maps", () => {
+    const limited = buildS10LimitedV2Report({ auditionType: "musical_theatre", mode: "brief" });
+    const s10_view_model = {
+      ...(limited.s10_view_model as Record<string, unknown>),
+      recommendation: { decision: "submit" },
+      limitations: [],
+    };
+
+    const html = render({
+      schema_version: "v2-component",
+      source_mode: "s10_ai_report_model",
+      s10_view_model,
+      overall_readiness: 93,
+      headline: "Strong for this level",
+      fix_first: "Correct the file naming convention",
+      presentation_notes: ["Single-file submission as requested"],
+    });
+
+    expect(html).toContain("S10 report assembly limitation");
+    expect(html).toContain("No legacy report was used as a substitute.");
+    expect(html).not.toContain("Strong for this level");
+    expect(html).not.toContain("Correct the file naming convention");
+    expect(html).not.toContain("Single-file submission as requested");
+  });
+
   it.each([
     [
       "disallowed readiness source",
