@@ -19,6 +19,7 @@ import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storag
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
+import { Route as ApiPublicAdminSeedVaultReconcilerSecretRouteImport } from './routes/api/public/admin/seed-vault-reconciler-secret'
 
 const NewRoute = NewRouteImport.update({
   id: '/new',
@@ -71,6 +72,12 @@ const ApiPublicAdminConfigRoute = ApiPublicAdminConfigRouteImport.update({
   path: '/api/public/admin-config',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAdminSeedVaultReconcilerSecretRoute =
+  ApiPublicAdminSeedVaultReconcilerSecretRouteImport.update({
+    id: '/api/public/admin/seed-vault-reconciler-secret',
+    path: '/api/public/admin/seed-vault-reconciler-secret',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
+  '/api/public/admin/seed-vault-reconciler-secret': typeof ApiPublicAdminSeedVaultReconcilerSecretRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -95,6 +103,7 @@ export interface FileRoutesByTo {
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
+  '/api/public/admin/seed-vault-reconciler-secret': typeof ApiPublicAdminSeedVaultReconcilerSecretRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -108,6 +117,7 @@ export interface FileRoutesById {
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
+  '/api/public/admin/seed-vault-reconciler-secret': typeof ApiPublicAdminSeedVaultReconcilerSecretRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/api/public/admin-config'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
+    | '/api/public/admin/seed-vault-reconciler-secret'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '/api/public/admin-config'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
+    | '/api/public/admin/seed-vault-reconciler-secret'
   id:
     | '__root__'
     | '/'
@@ -146,6 +158,7 @@ export interface FileRouteTypes {
     | '/api/public/admin-config'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
+    | '/api/public/admin/seed-vault-reconciler-secret'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -159,6 +172,7 @@ export interface RootRouteChildren {
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
+  ApiPublicAdminSeedVaultReconcilerSecretRoute: typeof ApiPublicAdminSeedVaultReconcilerSecretRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -233,6 +247,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAdminConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/admin/seed-vault-reconciler-secret': {
+      id: '/api/public/admin/seed-vault-reconciler-secret'
+      path: '/api/public/admin/seed-vault-reconciler-secret'
+      fullPath: '/api/public/admin/seed-vault-reconciler-secret'
+      preLoaderRoute: typeof ApiPublicAdminSeedVaultReconcilerSecretRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -247,7 +268,18 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
+  ApiPublicAdminSeedVaultReconcilerSecretRoute:
+    ApiPublicAdminSeedVaultReconcilerSecretRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
