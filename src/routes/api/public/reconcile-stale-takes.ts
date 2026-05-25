@@ -5,10 +5,14 @@ import {
   getMux,
   normaliseMuxMp4Url,
 } from "@/server/mux.server";
-import { runProcessTake } from "@/server/process-take.server";
 import { cleanupMuxAssetForCompletedTake } from "@/server/mux-cleanup.server";
-import { scheduleBackground } from "@/worker-entry";
 import { metric } from "@/server/metrics.server";
+import { enqueueAnalysisJobOrMarkFailed } from "@/server/analysis-job-queue.server";
+import {
+  FINALISING_ORPHAN_SECONDS,
+  finalisingOrphanCutoffIso,
+  recoverFinalisingTake,
+} from "@/server/finalising-recovery.server";
 
 // Stale-analysis reconciler.
 //
@@ -19,18 +23,18 @@ import { metric } from "@/server/metrics.server";
 //
 // Recovery rules:
 //   - processing_phase = "analysis_pending" AND updated_at < now - 2 min:
-//     webhook scheduled work but the Worker died before runProcessTake
-//     actually started. Re-schedule.
+//     webhook enqueued work but the queue consumer never picked it up.
+//     Re-enqueue.
 //   - processing_phase = "analysing" AND updated_at < now - 8 min:
 //     analysis started but never finished (Worker killed mid-flight, AI
-//     gateway hung, etc.). Mark as analysis_pending and re-schedule.
+//     gateway hung, etc.). Mark as analysis_pending and re-enqueue.
 //
-// Idempotency is preserved by runProcessTake itself: it only flips a take
+// Idempotency is preserved by runProcessTake itself in the queue consumer: it only flips a take
 // into "analysing"/"processing" once, and refuses to re-enter if the row
 // already shows active processing.
 // Tightened to match the ~1 min target for fast handoff. The in-handler
 // poll loop now owns the long wait (up to 10 min); the reconciler only
-// catches takes whose Worker died before runProcessTake started, or
+// catches takes whose queue consumer died before runProcessTake started, or
 // whose analysing phase truly stalled.
 const STALE_PENDING_SECONDS = 15;
 const STALE_ANALYSING_MINUTES = 11; // > in-handler 10-min ceiling
@@ -50,13 +54,13 @@ const TRANSCODING_HARD_FAIL_MINUTES = 15;
 // "Uploading your tape…" indefinitely otherwise.
 const STALE_UPLOADING_MINUTES = 15;
 // Finalising-orphan window: a take in processing_phase="finalising" whose
-// updated_at hasn't moved for this many minutes is assumed to have died
+// updated_at hasn't moved for this many seconds is assumed to have died
 // during deterministic post-AI processing or final persistence. We force it
 // to error rather than reschedule, so the UI never sits on "Finalising
 // results" indefinitely. Note: long-running AI calls remain in the
 // "analysing" phase and are NOT force-errored at this threshold — they fall
 // under the longer STALE_ANALYSING_MINUTES reschedule policy instead.
-const FINALISING_ORPHAN_MINUTES = 5;
+const FINALISING_ORPHAN_WINDOW_SECONDS = FINALISING_ORPHAN_SECONDS;
 
 type MuxAssetLike = {
   id?: string;
@@ -274,9 +278,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
         // Finalising orphans: rows that entered the deterministic post-AI
         // stage and stalled. Distinct from `analysing` (genuine in-flight AI).
-        const finalisingCutoff = new Date(
-          now - FINALISING_ORPHAN_MINUTES * 60_000,
-        ).toISOString();
+        const finalisingCutoff = finalisingOrphanCutoffIso(now);
         const { data: staleFinalising, error: fErr } = await supabaseAdmin
           .from("takes")
           .select("id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence")
@@ -300,105 +302,25 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const uploadingRecovered: string[] = [];
         const uploadingForcedError: string[] = [];
 
-        // Finalising-orphan force-error loop. These are takes that already
-        // entered deterministic post-AI processing — a worker death here will
-        // never recover by itself, so we mark terminal rather than reschedule.
+        // Finalising-orphan loop. These are takes that already entered
+        // deterministic post-AI processing; a worker death here will never
+        // recover by rerunning blindly. Complete rows with persisted reports,
+        // otherwise force a safe terminal error.
         for (const take of staleFinalising ?? []) {
-          const ageSeconds =
-            (now - new Date(take.created_at).getTime()) / 1000;
-          const idleSeconds =
-            (now - new Date(take.updated_at).getTime()) / 1000;
-
-          // If the report payload landed but the final status flip was lost
-          // (e.g. worker died after persist or QA emission stalled the
-          // post-write tail), surface the completed report rather than
-          // force-erroring a row that already has a usable result.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const reportRow = take as any;
-          const hasReport = reportRow.report && typeof reportRow.report === "object";
-          const hasScores = reportRow.scores && typeof reportRow.scores === "object";
-          if (hasReport && hasScores) {
-            const { error: recoverErr } = await supabaseAdmin
-              .from("takes")
-              .update({
-                status: "complete",
-                processing_phase: "complete",
-                error_message: null,
-              })
-              .eq("id", take.id)
-              .eq("processing_phase", "finalising")
-              .eq("status", "processing");
-            if (recoverErr) {
-              console.error("finalising_orphan_recover_complete_failed", {
-                takeId: take.id,
-                recoverErr,
-              });
-              metric("phase_transition_failure", {
-                take_id: take.id,
-                reason: "finalising_orphan_recover_complete_failed",
-              });
-              continue;
-            }
-            console.warn("[take-pipeline] finalising_orphan_recovered_complete", {
-              take_id: take.id,
-              age_seconds: Math.round(ageSeconds),
-              idle_seconds: Math.round(idleSeconds),
-            });
-            metric("reconciler_recovered_complete", {
-              take_id: take.id,
-              processing_phase: "finalising",
-              reason: "report_present",
-            });
+          const result = await recoverFinalisingTake({
+            takeId: take.id,
+            createdAt: take.created_at,
+            updatedAt: take.updated_at,
+            report: (take as { report?: unknown }).report,
+            scores: (take as { scores?: unknown }).scores,
+            now,
+            source: "reconciler",
+          });
+          if (result === "recovered_complete") {
             finalisingRecoveredComplete.push(take.id);
             continue;
           }
-
-          const { error: failErr } = await supabaseAdmin
-            .from("takes")
-            .update({
-              status: "error",
-              processing_phase: "error",
-              error_message:
-                "[failure_code:finalising_orphan] We couldn’t finish your report this time. Please try again.",
-            })
-            .eq("id", take.id)
-            .eq("processing_phase", "finalising")
-            .eq("status", "processing");
-          if (failErr) {
-            console.error("finalising_orphan_force_error_failed", {
-              takeId: take.id,
-              failErr,
-            });
-            metric("phase_transition_failure", {
-              take_id: take.id,
-              reason: "finalising_orphan_force_error_failed",
-            });
-            continue;
-          }
-          console.warn("[take-pipeline] finalising_orphan_forced_error", {
-            take_id: take.id,
-            age_seconds: Math.round(ageSeconds),
-            idle_seconds: Math.round(idleSeconds),
-            processing_phase: "finalising",
-          });
-          metric("reconciler_forced_error", {
-            take_id: take.id,
-            processing_phase: "finalising",
-            reason: "finalising_orphan",
-            failure_code: "finalising_orphan",
-          });
-          metric("reconciler_forced_error_count", {
-            take_id: take.id,
-            processing_phase: "finalising",
-            failure_code: "finalising_orphan",
-          });
-          metric("analysis_failed", {
-            take_id: take.id,
-            processing_phase: "finalising",
-            reason: "finalising_orphan",
-            failure_code: "finalising_orphan",
-          });
-          finalisingForcedError.push(take.id);
+          if (result === "forced_error") finalisingForcedError.push(take.id);
         }
 
         // Uploading-phase orphan recovery. Two cases:
@@ -662,11 +584,11 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           // Note: takes still in `analysing` past STALE_ANALYSING_MINUTES are
           // genuine in-flight AI calls (or workers that died before finishing
           // the AI step). They are rescheduled below — NOT force-errored at
-          // FINALISING_ORPHAN_MINUTES. The finalising-orphan force-error
+          // FINALISING_ORPHAN_WINDOW_SECONDS. The finalising-orphan force-error
           // path runs only against processing_phase="finalising" rows
           // (handled in the staleFinalising loop above).
 
-          // Reset back to analysis_pending so runProcessTake will pick it up
+          // Reset back to analysis_pending so the queue consumer will pick it up
           // (its idempotency check skips takes that are actively analysing,
           // so we MUST clear the analysing flag before rescheduling).
           const { error: updErr } = await supabaseAdmin
@@ -687,10 +609,11 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             continue;
           }
 
-          console.log("reconcile-stale-takes rescheduling take", {
+          console.log("reconcile-stale-takes enqueueing stale take", {
             takeId: take.id,
             wasPhase: take.processing_phase,
             staleSinceMs: now - new Date(take.updated_at).getTime(),
+            finalising_orphan_window_seconds: FINALISING_ORPHAN_WINDOW_SECONDS,
           });
           metric("reconciler_recovered", {
             take_id: take.id,
@@ -698,18 +621,15 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             duration_ms: now - new Date(take.updated_at).getTime(),
             reason: "rescheduled",
           });
-          scheduleBackground(
-            (async () => {
-              const result = await runProcessTake(take.id);
-              console.log("reconcile-stale-takes runProcessTake completed", {
-                takeId: take.id,
-                result,
-              });
-              return result;
-            })(),
-            `reconcile:${take.id}`,
-          );
-          reconciled.push(take.id);
+          const queued = await enqueueAnalysisJobOrMarkFailed({
+            takeId: take.id,
+            reason:
+              take.processing_phase === "analysing"
+                ? "reconciler_stale_analysing"
+                : "reconciler_stale_pending",
+          });
+          if (queued) reconciled.push(take.id);
+          else giveUp.push(take.id);
         }
 
         // Post-report Mux asset cleanup backfill. Picks up takes that

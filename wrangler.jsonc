@@ -4,4 +4,19 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker-entry.ts",
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYSIS_QUEUE",
+        "queue": "tapecoach-analysis-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "tapecoach-analysis-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5
+      }
+    ]
+  }
 }

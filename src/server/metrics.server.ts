@@ -39,9 +39,12 @@ export type MetricName =
   | "mux_static_rendition_errored"
   | "mux_static_rendition_skipped"
   | "static_rendition_recovered_stale_analysing"
+  | "static_rendition_recovered_stale_finalising"
   | "mux_recovery_attempt"
   | "mux_recovery_success"
   | "mux_recovery_failure"
+  | "analysis_job_enqueued"
+  | "analysis_enqueue_failed"
   // Preparation
   | "preparation_started"
   | "preparation_completed"
