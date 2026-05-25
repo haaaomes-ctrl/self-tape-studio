@@ -1,16 +1,25 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { classifyStaticRenditionReadyTake } from '@/routes/api/public/mux-webhook';
 import { isAuthorisedReconcilerRequest } from '@/routes/api/public/reconcile-stale-takes';
 import {
+  ANALYSING_ORPHAN_MS,
   FINALISING_ORPHAN_MS,
+  analysingOrphanCutoffIso,
   finalisingOrphanCutoffIso,
+  isAnalysingHeartbeatStale,
   isFinalisingHeartbeatStale,
 } from '@/server/finalising-recovery.server';
 import { dispatchAnalysisJob } from '@/server/analysis-job-queue.server';
+import { runReportPolish } from '@/server/report-polish.server';
 
 describe('v3 s9 stale reconcile recovery guardrails', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it('authorises the internal reconciler via custom or bearer secret only', () => {
     const env = { RECONCILER_SECRET: 'expected-secret' };
     const customHeader = new Request('https://example.test/api/public/reconcile-stale-takes', {
@@ -40,6 +49,12 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
       status: 'processing',
       processing_phase: 'analysing',
       stale_heartbeat_ms: 45_000,
+    })).toBe('skip_fresh_inflight');
+
+    expect(classifyStaticRenditionReadyTake({
+      status: 'processing',
+      processing_phase: 'analysing',
+      stale_heartbeat_ms: 120_000,
     })).toBe('recover_stale_analysing');
 
     expect(classifyStaticRenditionReadyTake({
@@ -109,10 +124,83 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     expect(reconciler).toContain('Authorization: Bearer <secret>');
   });
 
+  it('reconciler force-errors stale analysing rows and recovers complete analysing rows with reports', async () => {
+    const reconciler = await readFile(path.join(process.cwd(), 'src/routes/api/public/reconcile-stale-takes.ts'), 'utf8');
+    const recovery = await readFile(path.join(process.cwd(), 'src/server/finalising-recovery.server.ts'), 'utf8');
+    const source = `${reconciler}\n${recovery}`;
+    expect(reconciler).toContain('ANALYSING_ORPHAN_WINDOW_SECONDS');
+    expect(reconciler).toContain('analysingOrphanCutoffIso(now)');
+    expect(reconciler).toContain('staleAnalysingOrphans');
+    expect(reconciler).toContain('recoverAnalysingTake');
+    expect(reconciler).toContain('analysingForcedError');
+    expect(reconciler).toContain('analysingRecoveredComplete');
+    expect(source).toContain('analysing_orphan_recovered_complete');
+    expect(source).toContain('analysing_orphan_forced_error');
+    expect(source).toContain('[failure_code:analysing_orphan]');
+  });
+
   it('finalising orphan threshold is short enough for polling recovery', () => {
     expect(isFinalisingHeartbeatStale(FINALISING_ORPHAN_MS - 1)).toBe(false);
     expect(isFinalisingHeartbeatStale(FINALISING_ORPHAN_MS)).toBe(true);
     expect(finalisingOrphanCutoffIso(100_000 + FINALISING_ORPHAN_MS)).toBe(new Date(100_000).toISOString());
+  });
+
+  it('analysing orphan threshold reaps dead AI workers after the polish window', () => {
+    expect(isAnalysingHeartbeatStale(ANALYSING_ORPHAN_MS - 1)).toBe(false);
+    expect(isAnalysingHeartbeatStale(ANALYSING_ORPHAN_MS)).toBe(true);
+    expect(analysingOrphanCutoffIso(100_000 + ANALYSING_ORPHAN_MS)).toBe(new Date(100_000).toISOString());
+  });
+
+  it('report polish fetch has a bounded timeout', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      })),
+    );
+
+    const resultPromise = runReportPolish({
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      evidence: {
+        evidence_version: 'test',
+        audition_type: 'musical_theatre',
+        detected_components: [],
+        observed_tape_sequence: [],
+        component_verifications: [],
+        media_observation_summary: null,
+        raw_scores: {},
+        core_strengths_evidence: [],
+        core_improvements_evidence: [],
+        fix_first_evidence: null,
+        brief_adherence_evidence: [],
+        category_notes_evidence: {},
+        role_fit_evidence: [],
+        role_fit_modifier_suggested: null,
+        role_fit_confidence: 'low',
+        presentation_evidence: [],
+        risk_evidence: [],
+        timestamped_evidence: [],
+        evidence_sufficiency: {},
+      } as any,
+      briefBlock: 'Brief: test',
+      extractedBlock: 'Extracted brief: test',
+      signalsBlock: 'Signals: test',
+      levelBlock: 'Level: professional',
+      auditionTitle: 'Test audition',
+      reportTool: {},
+    });
+
+    await vi.advanceTimersByTimeAsync(90_000);
+    const result = await resultPromise;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe('report_polish_timeout');
+      expect(result.safe_error_category).toBe('provider_timeout');
+    }
   });
 
   it('mux webhook enqueues analysis jobs instead of running analysis in waitUntil', async () => {
@@ -287,6 +375,16 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     );
   });
 
+  it('process take heartbeats before polish and terminals polish failures', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
+    expect(source).toContain('report_polish_heartbeat_failed');
+    expect(source).toContain('updated_at: new Date().toISOString()');
+    expect(source).toContain('"report_polish_timeout"');
+    expect(source).toContain('"report_polish_failed"');
+    expect(source).toContain('throw new AnalysisFailure(');
+    expect(source).not.toContain('report_polish_failed; falling through to s10 single-pass');
+  });
+
   it('mux webhook logs a safe body summary instead of signed raw upload URLs', async () => {
     const source = await readFile(path.join(process.cwd(), 'src/routes/api/public/mux-webhook.ts'), 'utf8');
     expect(source).toContain('MUX WEBHOOK BODY SUMMARY');
@@ -303,5 +401,16 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     expect(source).toContain("'x-reconciler-secret'");
     expect(source).toContain("vault.decrypted_secrets");
     expect(source).not.toContain('project--af0c387f-c90b-4efa-b943-dc325d1a44f5');
+  });
+
+  it('one-off migration clears the observed stuck analysing live take only if it is still stuck', async () => {
+    const source = await readFile(
+      path.join(process.cwd(), 'supabase/migrations/20260525171000_unblock_stuck_analysing_take.sql'),
+      'utf8',
+    );
+    expect(source).toContain("id = 'fce09a52-f266-4053-9421-ced2d892bc9a'");
+    expect(source).toContain("[failure_code:analysing_orphan]");
+    expect(source).toContain("status = 'processing'");
+    expect(source).toContain("processing_phase = 'analysing'");
   });
 });

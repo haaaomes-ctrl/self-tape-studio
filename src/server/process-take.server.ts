@@ -2426,6 +2426,8 @@ export async function runProcessTake(
     | "ai_credits_exhausted"
     | "ai_non_retryable_4xx"
     | "provider_request_contract_error"
+    | "report_polish_failed"
+    | "report_polish_timeout"
     | "analysis_total_timeout"
     | "analysis_parse_failed"
     | "analysis_persist_failed"
@@ -3333,6 +3335,24 @@ export async function runProcessTake(
         // ---- Step 2: text-only polish ----
         console.log("[take-pipeline] report_polish_started", baseLog);
         metric("report_polish_started", { take_id: takeId });
+        {
+          const { error: heartbeatErr } = await supabaseAdmin
+            .from("takes")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", takeId)
+            .in("status", ["pending", "processing"])
+            .in("processing_phase", ["analysis_pending", "analysing"]);
+          if (heartbeatErr) {
+            console.warn("[take-pipeline] report_polish_heartbeat_failed", {
+              take_id: takeId,
+              error: heartbeatErr.message,
+            });
+            metric("phase_transition_failure", {
+              take_id: takeId,
+              reason: "report_polish_heartbeat_failed",
+            });
+          }
+        }
         const polishAc = new AbortController();
         const polishTimer = setTimeout(() => polishAc.abort(), ANALYSIS_GEMINI_TIMEOUT_MS);
         const polishAttemptStartedAt = Date.now();
@@ -3379,27 +3399,31 @@ export async function runProcessTake(
               "The AI provider rejected the structured report contract. Please try again.",
             );
           }
-          // Step 2 failure → fall through to the active S10 single-pass model
-          // path. Do not produce deterministic generic report filler as the
-          // primary performer-facing report.
-          console.warn("[take-pipeline] report_polish_failed; falling through to s10 single-pass", {
+          const polishFailureCode: FailureCode =
+            polishResult.error === "report_polish_timeout" ||
+            polishResult.safe_error_category === "provider_timeout" ||
+            reportPolishRequestStatus === "timed_out"
+              ? "report_polish_timeout"
+              : "report_polish_failed";
+          console.warn("[take-pipeline] report_polish_failed", {
             ...baseLog,
             http_status: polishResult.httpStatus,
             error: polishResult.error.slice(0, 200),
             duration_ms: polishResult.durationMs,
+            failure_code: polishFailureCode,
           });
           metric("report_polish_failed", {
             take_id: takeId,
             http_status: polishResult.httpStatus,
             duration_ms: polishResult.durationMs,
+            failure_code: polishFailureCode,
           });
-          twoStepFallbackUsed = true;
-          twoStepFallbackReason = polishResult.error.slice(0, 120);
-          reportPolishDurationMs = polishResult.durationMs;
-          metric("two_step_fallback_used", {
-            take_id: takeId,
-            reason: twoStepFallbackReason,
-          });
+          throw new AnalysisFailure(
+            polishFailureCode,
+            polishFailureCode === "report_polish_timeout"
+              ? "The AI report polish step timed out. Please try again."
+              : "The AI report polish step failed. Please try again.",
+          );
         } else {
           reportPolishDurationMs = polishResult.durationMs;
           twoStepReport = polishResult.report;

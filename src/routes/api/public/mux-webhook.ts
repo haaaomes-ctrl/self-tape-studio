@@ -17,7 +17,7 @@ import {
   recoverFinalisingTake,
 } from "@/server/finalising-recovery.server";
 
-const STATIC_RENDITION_HEARTBEAT_STALE_MS = 30_000;
+const STATIC_RENDITION_HEARTBEAT_STALE_MS = 120_000;
 
 export function classifyStaticRenditionReadyTake(input: {
   status?: string | null;

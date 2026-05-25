@@ -29,6 +29,7 @@ import {
 } from "./s10-report-prompt-map.server";
 
 const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
+const POLISH_AI_TIMEOUT_MS = 90_000;
 
 export const POLISH_SYSTEM_PROMPT = `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
 
@@ -203,6 +204,18 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
   ].join("\n\n");
 
   let resp: Response | null = null;
+  const fetchController = new AbortController();
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    fetchController.abort("report_polish_timeout");
+  }, POLISH_AI_TIMEOUT_MS);
+  const abortFromCaller = () => {
+    fetchController.abort(args.signal.reason ?? "report_polish_aborted");
+  };
+  if (args.signal.aborted) abortFromCaller();
+  else args.signal.addEventListener("abort", abortFromCaller, { once: true });
+
   try {
     resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -217,17 +230,21 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
         reportTool: args.reportTool,
         providerContract,
       })),
-      signal: args.signal,
+      signal: fetchController.signal,
     });
   } catch (err) {
+    const error = timedOut ? "report_polish_timeout" : err instanceof Error ? err.message : "network_error";
     return {
       ok: false,
       httpStatus: null,
-      error: err instanceof Error ? err.message : "network_error",
-      safe_error_category: classifyAiGatewayProviderError(null, err),
+      error,
+      safe_error_category: classifyAiGatewayProviderError(null, error),
       durationMs: Date.now() - startedAt,
       model,
     };
+  } finally {
+    clearTimeout(timeoutId);
+    args.signal.removeEventListener("abort", abortFromCaller);
   }
 
   if (!resp.ok) {
