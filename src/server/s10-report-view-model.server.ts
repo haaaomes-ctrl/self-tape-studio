@@ -9,6 +9,7 @@ import {
   S10_REPORT_SOURCE_MODE,
   S10_ROUTE_REQUIRED_SECTION_KEYS,
   isUsableS10PerformerReportViewModel,
+  validateS10RouteSectionSourceEntry,
 } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
@@ -23,6 +24,8 @@ import type {
   S10SameVideoEvidence,
   S10TechniqueCommentary,
   S10TimestampedCommentary,
+  S10RouteSectionKey,
+  S10RouteSectionSource,
 } from "@/lib/audition-rules";
 import type {
   ComponentVerification,
@@ -31,36 +34,9 @@ import type {
 } from "./evidence-pass.server";
 import type { S10ObservationContextSourceKind } from "./s10-observation-context.server";
 
-export type S10SectionSource =
-  | "s10_authoritative_module"
-  | "s10_compatibility_projection"
-  | "specific_limitation"
-  | "not_applicable";
+export type S10SectionSource = S10RouteSectionSource;
 
-export type S10ReportSectionKey =
-  | "readiness_header"
-  | "submission_guidance"
-  | "score_summary"
-  | "category_scores"
-  | "category_rationale"
-  | "brief_adherence_material_compliance"
-  | "brief_context"
-  | "brief_requirements"
-  | "brief_achievement"
-  | "observed_tape"
-  | "component_breakdown"
-  | "fix_hierarchy"
-  | "next_action_plan"
-  | "strengths_and_preserve"
-  | "professional_critique"
-  | "technique_commentary"
-  | "timestamped_commentary"
-  | "presentation_notes"
-  | "submission_risk"
-  | "limitations"
-  | "same_video_status"
-  | "comparison_truth"
-  | "diagnostic_chips";
+export type S10ReportSectionKey = S10RouteSectionKey;
 
 export type S10SectionSourceEntry = {
   source: S10SectionSource;
@@ -704,167 +680,6 @@ export function buildS10LimitedPerformerReportViewModel(
   };
 }
 
-type S10SectionSourceRule = {
-  sources: readonly S10SectionSource[];
-  modules?: readonly RegExp[];
-};
-
-const S10_SECTION_SOURCE_RULES: Record<S10ReportSectionKey, S10SectionSourceRule> = {
-  readiness_header: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^readiness_score_judgement$/],
-  },
-  submission_guidance: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^readiness_score_judgement$/],
-  },
-  score_summary: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^readiness_score_judgement$/],
-  },
-  category_scores: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^readiness_score_judgement\.category_scores$/],
-  },
-  category_rationale: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^readiness_score_judgement\.category_rationale$/],
-  },
-  brief_adherence_material_compliance: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^readiness_score_judgement\.brief_completion_score$/],
-  },
-  brief_context: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^brief_context$/],
-  },
-  brief_requirements: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^brief_requirements$/],
-  },
-  brief_achievement: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^brief_achievement_matrix$/],
-  },
-  observed_tape: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^observed_tape_sequence\/component_verifications$/],
-  },
-  component_breakdown: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^component_verifications$/],
-  },
-  fix_hierarchy: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^s10_fix_hierarchy$/],
-  },
-  next_action_plan: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^s10_next_action_plan$/],
-  },
-  strengths_and_preserve: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^s10_professional_critique$/],
-  },
-  professional_critique: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
-    modules: [/^s10_professional_critique$/],
-  },
-  technique_commentary: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^s10_technique_commentary$/],
-  },
-  timestamped_commentary: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^s10_timestamped_commentary$/],
-  },
-  presentation_notes: {
-    sources: [
-      "s10_authoritative_module",
-      "s10_compatibility_projection",
-      "specific_limitation",
-      "not_applicable",
-    ],
-    modules: [
-      /^s10_professional_critique\/s10_technique_commentary$/,
-      /^s10_professional_critique$/,
-      /^s10_technique_commentary$/,
-    ],
-  },
-  submission_risk: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [
-      /^readiness_score_judgement\/brief_achievement_matrix\/s10_fix_hierarchy$/,
-      /^readiness_score_judgement$/,
-      /^brief_achievement_matrix$/,
-      /^s10_fix_hierarchy$/,
-    ],
-  },
-  limitations: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^s10_view_model$/],
-  },
-  same_video_status: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^s10_same_video_evidence$/],
-  },
-  comparison_truth: {
-    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
-    modules: [/^s10_comparison_truth$/],
-  },
-  diagnostic_chips: {
-    sources: ["not_applicable"],
-  },
-};
-
-const INVALID_SOURCE_TOKENS = [
-  "raw_report",
-  "legacy_report",
-  "legacy_diagnostic_fallback",
-  "unsupported",
-  "score_trace",
-  "detected_components",
-  "category_notes",
-  "legacy_fix_first",
-  "legacy_next_take_plan",
-  "legacy_presentation_notes",
-  "legacy_risk_flags",
-  "legacy_at_risk",
-  "legacy_block_reasons",
-];
-
-function validateSectionSourceEntry(
-  section: S10ReportSectionKey,
-  entry: Record<string, unknown>,
-): string | null {
-  const rule = S10_SECTION_SOURCE_RULES[section];
-  const sourceValue = asText(entry.source);
-  const moduleValue = asText(entry.module);
-  if (!sourceValue) return `invalid_section_source:${section}:missing_source`;
-  if (!rule.sources.includes(sourceValue as S10SectionSource)) {
-    return `invalid_section_source:${section}:${sourceValue}`;
-  }
-  const searchable = `${sourceValue} ${moduleValue ?? ""}`;
-  const invalid = INVALID_SOURCE_TOKENS.find((token) =>
-    searchable.toLowerCase().includes(token.toLowerCase()),
-  );
-  if (invalid) return `invalid_section_source:${section}:${invalid}`;
-  if (
-    (sourceValue === "s10_authoritative_module" ||
-      sourceValue === "s10_compatibility_projection") &&
-    !moduleValue
-  ) {
-    return `invalid_section_module:${section}:missing_module`;
-  }
-  if (moduleValue && rule.modules && !rule.modules.some((pattern) => pattern.test(moduleValue))) {
-    return `invalid_section_module:${section}:${moduleValue}`;
-  }
-  if (sourceValue === "specific_limitation" && !asText(entry.limitation)) {
-    return `invalid_section_limitation:${section}:missing_limitation`;
-  }
-  return null;
-}
-
 function arrayHasItems(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
@@ -1324,7 +1139,7 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     if (!entry) {
       return { ok: false, reason: `missing_section_source:${section}` };
     }
-    const invalidSource = validateSectionSourceEntry(section, entry);
+    const invalidSource = validateS10RouteSectionSourceEntry(section, entry);
     if (invalidSource) return { ok: false, reason: invalidSource };
     const missingPayload = validateSectionVisiblePayload(section, entry, view);
     if (missingPayload) return { ok: false, reason: missingPayload };

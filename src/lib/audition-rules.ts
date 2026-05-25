@@ -37,12 +37,190 @@ export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
   "diagnostic_chips",
 ] as const;
 
-const S10_ROUTE_ALLOWED_SECTION_SOURCES = new Set([
-  "s10_authoritative_module",
-  "s10_compatibility_projection",
-  "specific_limitation",
-  "not_applicable",
-]);
+export type S10RouteSectionKey = (typeof S10_ROUTE_REQUIRED_SECTION_KEYS)[number];
+
+export type S10RouteSectionSource =
+  | "s10_authoritative_module"
+  | "s10_compatibility_projection"
+  | "specific_limitation"
+  | "not_applicable";
+
+type S10RouteSectionSourceRule = {
+  sources: readonly S10RouteSectionSource[];
+  modules?: readonly RegExp[];
+};
+
+export const S10_ROUTE_SECTION_SOURCE_RULES: Record<S10RouteSectionKey, S10RouteSectionSourceRule> =
+  {
+    readiness_header: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement$/],
+    },
+    submission_guidance: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement$/],
+    },
+    score_summary: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement$/],
+    },
+    category_scores: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^readiness_score_judgement\.category_scores$/],
+    },
+    category_rationale: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^readiness_score_judgement\.category_rationale$/],
+    },
+    brief_adherence_material_compliance: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^readiness_score_judgement\.brief_completion_score$/],
+    },
+    brief_context: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^brief_context$/],
+    },
+    brief_requirements: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^brief_requirements$/],
+    },
+    brief_achievement: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^brief_achievement_matrix$/],
+    },
+    observed_tape: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^observed_tape_sequence\/component_verifications$/],
+    },
+    component_breakdown: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^component_verifications$/],
+    },
+    fix_hierarchy: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_fix_hierarchy$/],
+    },
+    next_action_plan: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_next_action_plan$/],
+    },
+    strengths_and_preserve: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_professional_critique$/],
+    },
+    professional_critique: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_professional_critique$/],
+    },
+    technique_commentary: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_technique_commentary$/],
+    },
+    timestamped_commentary: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_timestamped_commentary$/],
+    },
+    presentation_notes: {
+      sources: [
+        "s10_authoritative_module",
+        "s10_compatibility_projection",
+        "specific_limitation",
+        "not_applicable",
+      ],
+      modules: [
+        /^s10_professional_critique\/s10_technique_commentary$/,
+        /^s10_professional_critique$/,
+        /^s10_technique_commentary$/,
+      ],
+    },
+    submission_risk: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [
+        /^readiness_score_judgement\/brief_achievement_matrix\/s10_fix_hierarchy$/,
+        /^readiness_score_judgement$/,
+        /^brief_achievement_matrix$/,
+        /^s10_fix_hierarchy$/,
+      ],
+    },
+    limitations: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_view_model$/],
+    },
+    same_video_status: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_same_video_evidence$/],
+    },
+    comparison_truth: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_comparison_truth$/],
+    },
+    diagnostic_chips: {
+      sources: ["not_applicable"],
+    },
+  };
+
+const S10_ROUTE_INVALID_SOURCE_TOKENS = [
+  "raw_report",
+  "legacy_report",
+  "legacy_diagnostic_fallback",
+  "unsupported",
+  "score_trace",
+  "detected_components",
+  "category_notes",
+  "legacy_fix_first",
+  "legacy_next_take_plan",
+  "legacy_presentation_notes",
+  "legacy_risk_flags",
+  "legacy_at_risk",
+  "legacy_block_reasons",
+];
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+export function validateS10RouteSectionSourceEntry(
+  section: S10RouteSectionKey,
+  entry: unknown,
+): string | null {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return `missing_section_source:${section}`;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const rule = S10_ROUTE_SECTION_SOURCE_RULES[section];
+  const sourceValue = asNonEmptyString(record.source);
+  const moduleValue = asNonEmptyString(record.module);
+
+  if (!sourceValue) return `invalid_section_source:${section}:missing_source`;
+  if (!rule.sources.includes(sourceValue as S10RouteSectionSource)) {
+    return `invalid_section_source:${section}:${sourceValue}`;
+  }
+
+  const searchable = `${sourceValue} ${moduleValue ?? ""}`;
+  const invalid = S10_ROUTE_INVALID_SOURCE_TOKENS.find((token) =>
+    searchable.toLowerCase().includes(token.toLowerCase()),
+  );
+  if (invalid) return `invalid_section_source:${section}:${invalid}`;
+
+  if (
+    (sourceValue === "s10_authoritative_module" ||
+      sourceValue === "s10_compatibility_projection") &&
+    !moduleValue
+  ) {
+    return `invalid_section_module:${section}:missing_module`;
+  }
+
+  if (moduleValue && rule.modules && !rule.modules.some((pattern) => pattern.test(moduleValue))) {
+    return `invalid_section_module:${section}:${moduleValue}`;
+  }
+
+  if (sourceValue === "specific_limitation" && !asNonEmptyString(record.limitation)) {
+    return `invalid_section_limitation:${section}:missing_limitation`;
+  }
+
+  return null;
+}
 
 export function isUsableS10PerformerReportViewModel(value: unknown): value is {
   report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
@@ -94,17 +272,13 @@ export function isUsableS10PerformerReportViewModel(value: unknown): value is {
     Boolean(sectionSourceMap) &&
     typeof sectionSourceMap === "object" &&
     !Array.isArray(sectionSourceMap) &&
-    S10_ROUTE_REQUIRED_SECTION_KEYS.every((section) => {
-      const entry = (sectionSourceMap as Record<string, unknown>)[section];
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
-      const source = (entry as Record<string, unknown>).source;
-      if (typeof source !== "string" || !S10_ROUTE_ALLOWED_SECTION_SOURCES.has(source)) {
-        return false;
-      }
-      if (source !== "specific_limitation") return true;
-      const limitation = (entry as Record<string, unknown>).limitation;
-      return typeof limitation === "string" && limitation.trim().length > 0;
-    });
+    S10_ROUTE_REQUIRED_SECTION_KEYS.every(
+      (section) =>
+        validateS10RouteSectionSourceEntry(
+          section,
+          (sectionSourceMap as Record<string, unknown>)[section],
+        ) === null,
+    );
   return (
     !!record &&
     record.report_version === S10_PERFORMER_REPORT_VIEW_MODEL_VERSION &&

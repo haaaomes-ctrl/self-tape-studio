@@ -167,6 +167,49 @@ describe("S10.P1e hard V2 route boundary", () => {
     }
   });
 
+  it.each([
+    [
+      "disallowed readiness source",
+      "readiness_header",
+      {
+        source: "not_applicable",
+        module: null,
+        limitation: "Readiness is not applicable.",
+      },
+    ],
+    [
+      "missing authoritative score module",
+      "score_summary",
+      {
+        source: "s10_authoritative_module",
+        module: null,
+        limitation: null,
+      },
+    ],
+    [
+      "legacy fix module token",
+      "fix_hierarchy",
+      {
+        source: "s10_authoritative_module",
+        module: "legacy_fix_first",
+        limitation: null,
+      },
+    ],
+  ] as const)("renders the S10 limitation surface for %s", (_label, section, entry) => {
+    const report = buildStrong() as unknown as Record<string, unknown>;
+    const s10 = report.s10_view_model as Record<string, unknown>;
+    const sourceMap = s10.section_source_map as Record<string, unknown>;
+    sourceMap[section] = entry;
+
+    const html = render(report);
+
+    expect(html).toContain("S10 report assembly limitation");
+    expect(html).toContain("No legacy report was used as a substitute.");
+    expect(html).not.toContain("Submit: strong complete professional package");
+    expect(html).not.toContain(">91<");
+    expect(html).not.toContain("Legacy");
+  });
+
   it("builds a valid limited S10 V2 report with a limited view model", () => {
     const limited = buildS10LimitedV2Report({
       auditionType: "musical_theatre",

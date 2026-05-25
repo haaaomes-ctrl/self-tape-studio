@@ -5,6 +5,7 @@ import { V2ReportView } from "@/components/report/V2ReportView";
 import {
   isUsableS10PerformerReportViewModel,
   S10_ROUTE_REQUIRED_SECTION_KEYS,
+  validateS10RouteSectionSourceEntry,
 } from "@/lib/audition-rules";
 import {
   buildS10LimitedPerformerReportViewModel,
@@ -103,6 +104,63 @@ describe("S10.P1e source-map validation", () => {
     expect(result.ok).toBe(false);
     if (!result.ok)
       expect(result.reason).toBe("invalid_section_source:readiness_header:missing_source");
+  });
+
+  it("uses the shared guard to reject disallowed per-section sources", () => {
+    const view = strongView();
+    view.section_source_map.readiness_header = {
+      source: "not_applicable",
+      module: null,
+      limitation: "Readiness is not applicable.",
+    };
+
+    expect(
+      validateS10RouteSectionSourceEntry(
+        "readiness_header",
+        view.section_source_map.readiness_header,
+      ),
+    ).toBe("invalid_section_source:readiness_header:not_applicable");
+    expect(isUsableS10PerformerReportViewModel(view)).toBe(false);
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toBe("invalid_section_source:readiness_header:not_applicable");
+  });
+
+  it("uses the shared guard to reject authoritative entries without required modules", () => {
+    const view = strongView();
+    view.section_source_map.score_summary = {
+      source: "s10_authoritative_module",
+      module: null,
+      limitation: null,
+    };
+
+    expect(
+      validateS10RouteSectionSourceEntry("score_summary", view.section_source_map.score_summary),
+    ).toBe("invalid_section_module:score_summary:missing_module");
+    expect(isUsableS10PerformerReportViewModel(view)).toBe(false);
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toBe("invalid_section_module:score_summary:missing_module");
+  });
+
+  it("uses the shared guard to reject invalid raw and legacy module tokens", () => {
+    const view = strongView();
+    view.section_source_map.fix_hierarchy = {
+      source: "s10_authoritative_module",
+      module: "legacy_fix_first",
+      limitation: null,
+    };
+
+    expect(
+      validateS10RouteSectionSourceEntry("fix_hierarchy", view.section_source_map.fix_hierarchy),
+    ).toBe("invalid_section_source:fix_hierarchy:legacy_fix_first");
+    expect(isUsableS10PerformerReportViewModel(view)).toBe(false);
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toBe("invalid_section_source:fix_hierarchy:legacy_fix_first");
   });
 
   it("maps missing readiness to the readiness limitation when score summary is also unavailable", () => {
