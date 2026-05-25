@@ -1,10 +1,11 @@
 # TapeCoach Requirements — AI-Led Full-Value Self-Tape Report System
 
-**Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.  
-**Purpose:** define the product behaviour, report requirements, AI analysis contract, scoring semantics, comparison handling, QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.  
-**Supersedes:** earlier README/report design notes where they conflict with this document.  
-**Language:** UK English.  
-**Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.  
+**Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.
+**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, professional competitive calibration, comparison handling, QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.
+**Supersedes:** earlier README/report design notes where they conflict with this document.
+**Language:** UK English.
+**Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.
+**Current implementation note:** S10 is already being implemented. The calibration additions in this README are not a new reset; they are controlling amendments to be merged into the relevant in-flight S10 slices.
 **Core correction:** TapeCoach is an AI-led professional critique system. The AI is the report brain. Code asks the right questions, validates, repairs, routes and renders the AI output.
 
 ---
@@ -15,7 +16,7 @@
 
 `AGENTS.md` operationalises this README for implementation agents. It does not override this README.
 
-`docs/tapecoach/s10-target-architecture.md` describes the target architecture. It does not override this README.
+`docs/tapecoach/s10-target-architecture.md` describes the S10 target architecture. It does not override this README.
 
 `docs/tapecoach/s10-ai-prompt-map.md`, `docs/tapecoach/s10-score-calibration.md`, `docs/tapecoach/s10-same-video-handling.md`, and `docs/tapecoach/s10-golden-fixtures.md` are supporting specification documents. They must align with this README.
 
@@ -49,6 +50,10 @@ Mandatory guardrails:
 - Do not add broad safety restrictions beyond the high-risk red lines defined in this README.
 - Do not add environment-variable sprawl for product toggles.
 - Operator assumptions that affect canary acceptance must be confirmed by the operator or marked uncertain.
+- Selected performer level must be used as an assessment standard, not as tone.
+- Scoring basis must be explicit: brief-supplied, partial-brief, no-brief baseline or brief-uncertain.
+- Role/material research may support judgement only where source basis and observed evidence allow.
+- Professional 90+ scores must not collapse into generic excellence language.
 - Canonical run identity is `take-[raw_core]`; `take-take-*` is invalid.
 - Clean generated artefact churn before commit.
 
@@ -58,39 +63,72 @@ Mandatory guardrails:
 
 TapeCoach is an AI-led professional self-tape critique and audition-readiness system.
 
-It reads the supplied brief where present, analyses the self-tape, identifies the discipline and required components, applies a professional judgement layer, and produces a full-value authenticated report for the performer.
+It reads the supplied brief where present, analyses the self-tape, identifies the discipline and required components, applies the selected performer-level standard, resolves role/material context where supplied, calibrates score language to the available evidence, and produces a full-value authenticated report for the performer.
 
 The central product questions are:
 
-> Is this tape ready to submit for this performer’s selected level, audition type and supplied brief / task?  
-> Has the performer achieved the brief?  
-> What does the tape communicate at the selected level?  
-> What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?  
+> Is this tape ready to submit for this performer’s selected level, audition type and supplied brief / task?
+> Has the performer achieved the supplied brief, where one was provided?
+> If no brief was supplied, what can and cannot be assessed from the observable tape?
+> What does the tape communicate at the selected level?
+> Where role/material is supplied, how specifically does the tape serve that task?
+> At Professional level, is this merely competent, or competitive?
+> At Professional 90+, what separates this tape from other already-strong professional submissions?
+> What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?
 > If there are multiple takes, which take or combination of choices best serves the submission, and why?
 
 Every authenticated performer-facing report must help the performer understand:
 
 1. whether to submit, retake or review carefully;
 2. why that recommendation was reached;
-3. what the supplied brief asked for;
-4. what TapeCoach observed in the tape;
-5. what was achieved, missed, incomplete, not assessable or not applicable;
-6. the fix-first item, if a fix is needed;
-7. all useful priority fixes, ranked by importance, without arbitrary item caps;
-8. must-fix items before submission;
-9. should-improve items if retaking;
-10. optional polish, where useful;
-11. what is already working and should be preserved;
-12. relevant technique-library commentary;
-13. timestamped or time-banded commentary where available;
-14. what to do next;
-15. what not to over-fix;
-16. what could not be assessed reliably;
-17. how score and comparison language should be interpreted, where scores or comparisons are visible.
+3. what scoring basis was used;
+4. what selected performer level was applied;
+5. what the supplied brief asked for, if supplied;
+6. what TapeCoach observed in the tape;
+7. what was achieved, missed, incomplete, not assessable or not applicable;
+8. what role/material context was used, if any, and with what source basis;
+9. the fix-first item, if a fix is needed;
+10. all useful priority fixes, ranked by importance, without arbitrary item caps;
+11. must-fix items before submission;
+12. should-improve items if retaking;
+13. optional polish, where useful;
+14. what is already working and should be preserved;
+15. relevant technique-library commentary;
+16. timestamped or time-banded commentary where available;
+17. what to do next;
+18. what not to over-fix;
+19. what could not be assessed reliably;
+20. how score and comparison language should be interpreted, where scores or comparisons are visible;
+21. for Professional 90+ reports, the competitive zone, differentiators, score suppressors and retake strategy.
 
 The judgement should combine practical agent, casting-aware reviewer, acting coach, vocal/singing coach, movement/dance coach, musical-theatre package coach, commercial/screen-task coach, self-tape technician and audition-coach perspectives.
 
 TapeCoach must not become a basic video/audio checker, a compliance wrapper, a JSON projection, or a thin safety shell.
+
+### 0.1 Final operating formula
+
+```text
+Selected level determines the standard.
+Brief determines the task.
+Observed tape provides the evidence.
+Role/material research adds secondary specificity where supported.
+Score expresses readiness against the available evidence.
+Professional 90+ adds competitive nuance.
+The UI must make the source basis visible.
+```
+
+With a brief:
+
+```text
+score can include brief achievement and mandatory blockers.
+```
+
+Without a brief:
+
+```text
+score is a baseline assessment only.
+Brief adherence, mandatory requirements and audition-specific compliance are not assessable.
+```
 
 ---
 
@@ -105,13 +143,17 @@ The AI should provide:
 - observation;
 - interpretation;
 - component detection;
+- scoring-basis classification;
 - brief achievement judgement;
+- role/material calibration where supplied;
+- performer-level calibration;
 - readiness recommendation;
 - performance critique;
 - technique commentary;
 - prioritisation;
 - strengths;
 - optional polish;
+- professional competitive calibration where applicable;
 - comparison judgement;
 - score reasoning;
 - timestamped or time-banded notes;
@@ -151,6 +193,8 @@ Do not build report sections primarily populated by static code fallback.
 The authenticated performer-facing report should use all useful available information, including:
 
 - supplied brief text;
+- selected performer level and level standard;
+- scoring basis and limitations;
 - role/project/material context;
 - audition instructions;
 - deadline, upload, file naming and format requirements;
@@ -158,12 +202,14 @@ The authenticated performer-facing report should use all useful available inform
 - performance critique;
 - acting, vocal, singing, movement and musical-theatre package notes;
 - technique-library commentary;
+- role/material research where source basis is clear;
 - scores and comparison values in authenticated/operator/test mode;
 - timestamped or time-banded notes where available;
 - professional judgement;
+- Professional 90+ competitive calibration where applicable;
 - operator-confirmed assumptions.
 
-Do not suppress content merely because it is detailed, brief-derived, technique-related, score-related, comparison-related, positive, critical or professionally specific.
+Do not suppress content merely because it is detailed, brief-derived, technique-related, score-related, comparison-related, positive, critical, role-specific or professionally specific.
 
 ### 1.4 Narrow high-risk red-line handling only
 
@@ -188,9 +234,22 @@ Everything else should be available to the authenticated report if useful.
 
 This README defines the authenticated performer-facing report.
 
-The authenticated report may show supplied brief content, scores, comparison values, technique commentary and detailed professional critique subject only to the high-risk red lines above.
+The authenticated report may show supplied brief content, selected level, scoring basis, scores, comparison values, technique commentary, role/material context and detailed professional critique subject only to the high-risk red lines above.
 
 A future public share/export mode may apply a stricter redacted policy, but that future mode must not be used to starve the authenticated report.
+
+### 1.6 Calibration doctrine
+
+The AI must resolve and preserve these distinctions:
+
+```text
+Brief-supplied scoring ≠ no-brief baseline scoring.
+Selected level calibration ≠ tone.
+Professional judgement ≠ harsh wording.
+Role/material research ≠ hidden casting requirement.
+High score ≠ no useful feedback.
+Professional 90+ ≠ flat excellence.
+```
 
 ---
 
@@ -202,7 +261,8 @@ The simplest TapeCoach flow is:
    - optional brief;
    - selected skill / performer level;
    - self-tape video;
-   - optional audition type / discipline / comparison selection.
+   - optional audition type / discipline / comparison selection;
+   - optional role, character, production, song, side, copy or material context.
 
 2. **Automated media layer**
    - upload;
@@ -210,28 +270,83 @@ The simplest TapeCoach flow is:
    - media readiness;
    - duration / audio / video / framing / continuity signals where available.
 
-3. **AI intelligence layer**
+3. **Input intelligence layer**
+   - determine scoring mode;
+   - parse supplied brief where present;
+   - preserve useful brief details;
+   - extract role/project/material context;
+   - classify requirements;
+   - resolve whether known role/material research applies.
+
+4. **AI intelligence layer**
    - two-step AI analysis observes the tape and produces professional judgement;
    - AI is prompted module by module;
    - AI repair prompts run if a report module is missing, thin, generic or contradictory;
-   - technique-library and timestamp commentary are attempted by default where evidence allows.
+   - technique-library and timestamp commentary are attempted by default where evidence allows;
+   - performer-level standard is applied before final recommendation;
+   - role/material calibration is applied where source basis and evidence support it;
+   - Professional 90+ competitive calibration is applied where applicable.
 
-4. **Report/UI layer**
+5. **Report/UI layer**
    - code pipes AI outputs into the report model and UI;
    - code formats and renders;
    - code applies only narrow high-risk red-line filtering;
    - code does not invent professional critique.
 
-5. **Operator/QA layer**
+6. **Operator/QA layer**
    - uncertain assumptions are confirmed with the operator where needed;
    - QA artefacts prove what happened;
    - QA failure blocks release proof, not report generation.
+
+Expanded architecture:
+
+```text
+User input
+  - supplied brief, if present
+  - selected performer level
+  - audition type / discipline, if known
+  - role/material context, if supplied
+  - self-tape media
+  - optional comparison takes
+        ↓
+Input context builder
+        ↓
+Brief / no-brief scoring mode resolver
+        ↓
+Brief / material / role resolver
+        ↓
+Role / character / known-material research pass, if applicable
+        ↓
+Known material baseline profile, if applicable
+        ↓
+Media / assessability pass
+        ↓
+AI observation pass
+        ↓
+Brief achievement pass, if brief supplied
+        ↓
+Role/material calibration pass, if applicable
+        ↓
+AI professional judgement pass
+        ↓
+Performer level calibration pass
+        ↓
+Score and recommendation calibration
+        ↓
+Professional 90+ competitive calibration, if applicable
+        ↓
+Report model composer
+        ↓
+Route / UI / PDF rendering
+        ↓
+QA artefacts as proof, not product
+```
 
 ---
 
 ## 3. Input model and submission context
 
-### 3.1 Required inputs
+### 3.1 Required supported inputs
 
 TapeCoach must support:
 
@@ -240,9 +355,32 @@ TapeCoach must support:
 - optional supplied brief;
 - optional audition type;
 - optional discipline;
+- optional role/material context;
 - optional comparison takes.
 
-### 3.2 Supplied brief transparency
+### 3.2 Performer level is a required assessment input
+
+The selected performer level is a first-class assessment standard.
+
+It is not:
+
+- a tone setting;
+- an encouragement setting;
+- a UI label only;
+- a generic “be stricter” instruction.
+
+It is:
+
+- an input to the AI brain;
+- a selector for the standard applied;
+- a modifier of AI questions;
+- a modifier of evidence thresholds;
+- a modifier of score interpretation where scores are visible;
+- a required part of the report explanation.
+
+The same tape may be judged differently when the selected level changes. The observed evidence does not change, but the readiness bar, marginal risks, fix hierarchy, score interpretation and UI wording may change.
+
+### 3.3 Supplied brief transparency
 
 The supplied brief is first-class report input.
 
@@ -263,7 +401,7 @@ The report should show enough of the supplied brief for the performer to underst
 - one-file / continuous-video instructions;
 - logistical constraints relevant to submission readiness.
 
-### 3.3 No-brief behaviour
+### 3.4 No-brief behaviour
 
 If no brief is supplied, TapeCoach must still provide useful performance and self-tape feedback.
 
@@ -273,9 +411,16 @@ It should say clearly:
 
 - brief adherence cannot be assessed;
 - no supplied-brief material requirements were available;
-- performance, presentation and technical feedback are still available where assessable.
+- performance, presentation and technical feedback are still available where assessable;
+- the score, if shown, is a baseline assessment only.
 
-### 3.4 Same video and duplicate uploads
+Short UI language:
+
+```text
+No brief supplied. Score reflects observable performance and setup only; brief fit is not assessed.
+```
+
+### 3.5 Same video and duplicate uploads
 
 TapeCoach must explicitly handle same-video uploads.
 
@@ -285,6 +430,7 @@ A same-video upload may be:
 - an intentional retest / canary rerun;
 - the same media judged against a changed brief;
 - the same media judged at a changed skill level;
+- the same media judged with changed role/material context;
 - the same media rerun after a new AI/report version;
 - a comparison scenario where two takes are actually identical.
 
@@ -292,19 +438,18 @@ The system must not treat an accidental duplicate as a genuinely new performance
 
 If same-video status affects comparison, canary acceptance or report interpretation, it must be confirmed by the operator or marked uncertain.
 
-### 3.5 Same-video statuses
+### 3.6 Same-video statuses
 
-Use the following status language:
-
-| Status                     | Meaning                                                   | Expected behaviour                                                         |
-| -------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `new_media`                | The media appears to be a different self-tape.            | Analyse as a new take.                                                     |
-| `same_video_confirmed`     | Operator or strong signals confirm same underlying video. | Do not imply performance changed; allow retest/regression review.          |
-| `probable_duplicate`       | Signals strongly suggest duplicate, but not confirmed.    | Ask operator or mark uncertain.                                            |
-| `intentional_retest`       | Same video intentionally rerun to test report logic.      | Allow, but mark as retest.                                                 |
-| `same_video_changed_brief` | Same video judged against a different brief.              | Reanalyse brief achievement; do not imply new performance.                 |
-| `same_video_changed_level` | Same video judged at a different level.                   | Recalibrate level-relative commentary.                                     |
-| `duplicate_in_comparison`  | Compared takes are the same media.                        | Do not recommend one as a different performance; explain duplicate status. |
+| Status | Meaning | Expected behaviour |
+|---|---|---|
+| `new_media` | The media appears to be a different self-tape. | Analyse as a new take. |
+| `same_video_confirmed` | Operator or strong signals confirm same underlying video. | Do not imply performance changed; allow retest/regression review. |
+| `probable_duplicate` | Signals strongly suggest duplicate, but not confirmed. | Ask operator or mark uncertain. |
+| `intentional_retest` | Same video intentionally rerun to test report logic. | Allow, but mark as retest. |
+| `same_video_changed_brief` | Same video judged against a different brief. | Reanalyse brief achievement; do not imply new performance. |
+| `same_video_changed_level` | Same video judged at a different level. | Recalibrate level-relative commentary; do not imply performance changed. |
+| `same_video_changed_role_context` | Same video judged with changed role/material context. | Recalibrate task specificity; do not imply performance changed. |
+| `duplicate_in_comparison` | Compared takes are the same media. | Do not recommend one as a different performance; explain duplicate status. |
 
 ---
 
@@ -343,9 +488,21 @@ False audio domination is unacceptable: clear or assessable audio must not becom
 
 ## 5. AI analysis engine
 
-### 5.1 Two-step AI analysis
+### 5.1 AI passes
 
-TapeCoach should use two AI passes where possible.
+TapeCoach should use structured AI passes where possible.
+
+#### Pass 0 — input/scoring context
+
+The AI or deterministic context builder should identify:
+
+- scoring mode;
+- selected performer level;
+- supplied brief status;
+- available role/material context;
+- audition type / discipline where known;
+- comparison context;
+- limitations before analysis.
 
 #### Pass 1 — observation
 
@@ -367,12 +524,15 @@ The AI should identify:
 The AI should provide:
 
 - readiness recommendation;
-- brief achievement judgement;
+- brief achievement judgement where brief exists;
+- role/material calibration where applicable;
+- performer-level calibration;
 - fix hierarchy;
 - strengths and preserve;
 - technique-library commentary;
 - score reasoning;
 - comparison judgement where relevant;
+- Professional competitive calibration where applicable;
 - next action;
 - do-not-overfix;
 - limitations.
@@ -408,6 +568,9 @@ Examples:
 - If next action is empty, ask the AI for a submit checklist or retake plan.
 - If comparison is present but no reasoning exists, ask the AI to compare the takes.
 - If timestamps are unavailable, ask for component-level commentary instead.
+- If scoring basis is missing, ask the AI to classify brief-supplied / partial-brief / no-brief / brief-uncertain.
+- If selected-level reasoning is missing, ask the AI to state the applied level standard.
+- If Professional 90+ nuance is missing, ask the AI to place the tape in a 90–100 competitive zone.
 
 Only after repair fails should the report explain a limitation.
 
@@ -419,10 +582,14 @@ Every visible report section must have an AI question designed to populate it.
 
 The AI must be explicitly asked to populate:
 
+- scoring basis;
+- performer level calibration;
 - brief intelligence;
+- role/material context where supplied;
 - observed tape content;
 - component detection;
 - brief achievement;
+- role/material task calibration;
 - readiness recommendation;
 - why this recommendation;
 - fix hierarchy;
@@ -430,12 +597,42 @@ The AI must be explicitly asked to populate:
 - technique-library commentary;
 - timestamped commentary;
 - scores / calibration where enabled;
+- Professional 90+ competitive calibration where applicable;
 - comparison where enabled;
 - next action;
 - do-not-overfix;
 - not-assessable limitations.
 
-### 6.1 Brief intelligence prompt
+### 6.1 Brief / no-brief scoring mode prompt
+
+Before scoring, determine the scoring mode.
+
+Inputs:
+
+- supplied brief text, if present;
+- uploaded sides/copy/lyrics/material, if present;
+- user-supplied role/material/task context;
+- selected performer level;
+- audition type / discipline;
+- observed tape evidence;
+- media assessability.
+
+Tasks:
+
+1. Classify scoring mode as:
+   - `brief_supplied`;
+   - `partial_brief_supplied`;
+   - `no_brief_baseline`;
+   - `brief_uncertain`.
+2. State what can be scored in this mode.
+3. State what cannot be scored in this mode.
+4. If no brief is supplied, mark brief achievement as not assessable.
+5. If brief status is uncertain, suppress unsupported brief-specific claims and request repair or operator confirmation.
+6. Do not invent requirements, time limits, role demands, sides, upload instructions or package components.
+7. Ensure score language matches the scoring mode.
+8. Ensure the recommendation explains the scoring basis.
+
+### 6.2 Brief intelligence prompt
 
 Ask the AI to:
 
@@ -447,7 +644,52 @@ Ask the AI to:
 - say what evidence should appear in the tape;
 - say how achievement should be judged.
 
-### 6.2 Observed tape prompt
+### 6.3 Role / character research and material calibration prompt
+
+Run this when the brief, uploaded material or user input identifies a production, role, character, scene, song, copy, dance task or known material.
+
+Purpose:
+
+```text
+Resolve the role/material task so the tape can be judged against the supplied brief first, and against known role/material characteristics secondarily.
+```
+
+Inputs:
+
+- supplied brief;
+- uploaded sides/copy/lyrics/material, if available;
+- selected performer level;
+- audition type / discipline;
+- role / character / production / song / scene / copy / routine identifiers;
+- observed tape evidence;
+- research results or known-material profile;
+- media assessability.
+
+Tasks:
+
+1. Identify the production, role, character and material, if supplied.
+2. Separate:
+   - formal supplied-brief requirements;
+   - uploaded-material demands;
+   - user-supplied context;
+   - known-material research;
+   - general professional standards.
+3. State which source has priority.
+4. Extract task-relevant role/material demands.
+5. Mark each demand as:
+   - mandatory from brief;
+   - preferred from brief;
+   - optional from brief;
+   - known-material context only;
+   - ambiguous.
+6. Identify what evidence would need to be visible/audible in the tape.
+7. Compare observed evidence against those demands.
+8. Use known-material research only as secondary nuance unless the brief explicitly requires it.
+9. Do not infer appearance, body/type, marketability, bookability, callback likelihood or hidden casting fit.
+10. Do not use role research to create a mandatory blocker unless the supplied brief or uploaded material supports it.
+11. Preserve uncertainty where role/material identity or source confidence is low.
+
+### 6.4 Observed tape prompt
 
 Ask the AI to:
 
@@ -459,7 +701,7 @@ Ask the AI to:
 - provide timestamps or time bands where possible;
 - state uncertainties clearly.
 
-### 6.3 Brief achievement prompt
+### 6.5 Brief achievement prompt
 
 Ask the AI to compare the observed tape against each brief requirement and classify each as:
 
@@ -476,7 +718,40 @@ For each requirement, it should provide:
 - submission impact;
 - next action where relevant.
 
-### 6.4 Recommendation prompt
+### 6.6 Performer level calibration prompt
+
+Before making a recommendation, apply the selected performer level as the assessment standard.
+
+Inputs:
+
+- selected performer level;
+- audition type / discipline;
+- supplied brief, if present;
+- observed tape evidence;
+- media assessability;
+- required components;
+- role/material context, if applicable;
+- comparison context, if present.
+
+Tasks:
+
+1. State the selected-level standard being applied.
+2. Identify what the tape demonstrates at that level.
+3. Identify what falls short at that level.
+4. Separate:
+   - brief blockers;
+   - assessability blockers;
+   - selected-level performance gaps;
+   - role/material specificity gaps;
+   - technical presentation issues;
+   - optional polish.
+5. Explain whether the selected level changes the recommendation.
+6. Explain what would be different if the same tape were judged at a lower or higher level, only where useful.
+7. Do not imply a higher-level standard has been met unless the evidence supports it.
+8. Do not use guaranteed casting, callback, booking, job or employment language.
+9. Preserve uncertainty where evidence is incomplete or not assessable.
+
+### 6.7 Recommendation prompt
 
 Ask the AI to give one of:
 
@@ -487,14 +762,16 @@ Ask the AI to give one of:
 
 It must explain why in terms of:
 
+- scoring basis;
 - supplied brief;
 - observed tape;
 - selected performer level;
+- role/material context where applicable;
 - audition type / discipline where known;
 - technical assessability;
 - comparison context where relevant.
 
-### 6.5 Fix hierarchy prompt
+### 6.8 Fix hierarchy prompt
 
 Ask the AI to rank all meaningful fixes by submission impact.
 
@@ -512,9 +789,9 @@ For each fix, provide:
 - why it matters;
 - exact action;
 - severity / urgency;
-- category: brief, performance, technical, admin or polish.
+- category: brief, performance, technical, admin, role/material or polish.
 
-### 6.6 Strengths and preserve prompt
+### 6.9 Strengths and preserve prompt
 
 Ask the AI to identify what is already working and should be preserved.
 
@@ -522,12 +799,13 @@ Return:
 
 - performance strengths;
 - brief/package strengths;
+- role/material strengths where supported;
 - technical strengths;
 - specific choices or moments to keep.
 
 Do not accept generic praise as the only strength.
 
-### 6.7 Technique-library prompt
+### 6.10 Technique-library prompt
 
 Ask the AI to attempt technique commentary for:
 
@@ -546,7 +824,7 @@ For each area:
 - what cannot be assessed;
 - practical next action.
 
-### 6.8 Timestamped commentary prompt
+### 6.11 Timestamped commentary prompt
 
 Ask the AI to provide timestamped or time-banded notes where possible.
 
@@ -562,12 +840,14 @@ Include:
 
 If timestamps are unavailable, ask for component-level commentary instead.
 
-### 6.9 Score calibration prompt
+### 6.12 Score calibration prompt
 
 Ask the AI to explain the score in relation to:
 
+- scoring basis;
 - selected performer level;
-- brief completion;
+- brief completion, where brief exists;
+- role/material specificity, where supplied;
 - performance quality;
 - technical assessability;
 - submission readiness;
@@ -575,18 +855,54 @@ Ask the AI to explain the score in relation to:
 
 A score must not be just a number. It must have language.
 
-### 6.10 Comparison prompt
+### 6.13 Professional competitive calibration prompt
+
+Run this prompt when:
+
+- selected performer level is Professional;
+- the tape is assessable;
+- no mandatory brief blocker dominates the recommendation;
+- the total score is 90 or above, or comparison mode includes high-scoring Professional takes.
+
+Purpose:
+
+```text
+Differentiate strong Professional tapes that cluster in the 90–100 range.
+```
+
+Do not treat 90–100 as one flat excellence band.
+
+Tasks:
+
+1. Place the tape in one Professional competitive zone:
+   - 90–91 professionally viable;
+   - 92–93 solid professional contender;
+   - 94–95 strong professional contender;
+   - 96–97 standout professional take;
+   - 98–100 exceptional / benchmark take.
+2. Explain why this zone was chosen.
+3. Identify the top competitive differentiators.
+4. Identify anything suppressing the score from the next zone.
+5. Identify what should be preserved.
+6. State whether a retake is strategically useful or risky.
+7. If comparing takes, explain the competitive advantage of each take.
+8. If the difference between two high-scoring takes is marginal, say so.
+9. Do not imply guaranteed casting, callback, booking or employment outcome.
+10. Preserve uncertainty where the evidence is incomplete.
+
+### 6.14 Comparison prompt
 
 When multiple takes exist, ask the AI to compare:
 
 - which take better meets the brief;
 - performance differences;
 - technical differences;
+- role/material specificity where applicable;
 - strongest choices in each;
 - what should be preserved;
 - whether the comparison is valid or affected by same-video status.
 
-### 6.11 Next action prompt
+### 6.15 Next action prompt
 
 Ask the AI to produce:
 
@@ -596,7 +912,7 @@ Ask the AI to produce:
 
 Do not encourage endless retakes.
 
-### 6.12 Do-not-overfix prompt
+### 6.16 Do-not-overfix prompt
 
 Ask the AI to identify what not to change.
 
@@ -605,9 +921,10 @@ Examples:
 - do not chase audio changes if audio is already assessable;
 - do not rework achieved brief components;
 - do not keep retaking a strong complete package without a concrete purpose;
-- do not spend time on optional polish before missing mandatory material.
+- do not spend time on optional polish before missing mandatory material;
+- do not retake a Professional 96+ tape for vague polish if the likely retake risk is higher than the gain.
 
-### 6.13 Limitations prompt
+### 6.17 Limitations prompt
 
 Ask the AI to list what could not be assessed and why.
 
@@ -624,10 +941,14 @@ The report model should be rich enough to preserve AI judgement.
 Required top-level sections:
 
 ```text
+scoring_context
+level_calibration
+role_material_context
 recommendation
 brief
 observed_tape
 scores
+professional_competitive_calibration
 comparison
 fix_hierarchy
 strengths
@@ -644,25 +965,58 @@ operator_assumptions
 The authenticated report should render:
 
 1. recommendation;
-2. readiness / score / comparison chips where enabled;
-3. why this recommendation;
-4. what the brief asked for;
-5. brief achievement;
-6. what TapeCoach observed;
-7. fix first;
-8. prioritised fixes;
-9. must fix before submitting;
-10. should improve if retaking;
-11. optional polish;
-12. strengths to preserve;
-13. technique-library commentary;
-14. timestamped / time-banded commentary;
-15. next action;
-16. do not over-fix;
-17. not assessable / reliability notes;
-18. operator/test diagnostic notes where applicable.
+2. scoring basis;
+3. judged-against selected performer level;
+4. readiness / score / comparison chips where enabled;
+5. Professional competitive zone where applicable;
+6. why this recommendation;
+7. what the brief asked for, if supplied;
+8. brief achievement, if brief supplied;
+9. role/material context, source basis and uncertainty where applicable;
+10. what TapeCoach observed;
+11. what meets the selected-level standard;
+12. what falls short at the selected level;
+13. fix first;
+14. prioritised fixes;
+15. must fix before submitting;
+16. should improve if retaking;
+17. optional polish;
+18. strengths to preserve;
+19. technique-library commentary;
+20. timestamped / time-banded commentary;
+21. next action;
+22. do not over-fix;
+23. not assessable / reliability notes;
+24. operator/test diagnostic notes where applicable.
 
-### 7.3 Thin-shell anti-regression rule
+### 7.3 Required report labels
+
+Every authenticated report must visibly answer:
+
+```text
+Scoring basis: [brief supplied / partial brief supplied / no brief supplied — baseline assessment only / brief status uncertain]
+Judged against: [selected performer level]
+```
+
+When role/material research applies, it must show:
+
+```text
+Role / material context: [production / role / material]
+Source basis: [brief supplied / uploaded material / user supplied / known-material research]
+Primary standard: [supplied brief]
+Secondary context: [known role/material baseline, if used]
+```
+
+When Professional score is 90+, it must show:
+
+```text
+Professional competitive calibration
+Score zone: [90–91 / 92–93 / 94–95 / 96–97 / 98–100]
+Competitive meaning: [...]
+Retake strategy: [...]
+```
+
+### 7.4 Thin-shell anti-regression rule
 
 A report fails if, despite available brief and media evidence, it collapses to generic copy such as:
 
@@ -672,12 +1026,16 @@ A report fails if, despite available brief and media evidence, it collapses to g
 - generic do-not-over-fix copy without context;
 - a recommendation without concrete reasons;
 - brief achievement without itemised evidence;
+- level calibration without the selected-level standard;
+- score without scoring basis;
+- Professional 90+ score without zone nuance;
+- role/material context without source basis;
 - an empty next-take plan;
 - “report polish unavailable” as a reason to withhold useful guidance.
 
 Thin-shell reports are unacceptable.
 
-### 7.4 Limited report model
+### 7.5 Limited report model
 
 A limited report is allowed only when evidence is genuinely insufficient.
 
@@ -694,41 +1052,588 @@ If limited output is used, the report must say exactly what evidence was insuffi
 
 ---
 
-## 8. Readiness recommendations
+## 8. Performer Level Calibration Architecture
 
-### 8.1 Recommendation options
+### 8.1 Purpose
 
-TapeCoach should use these performer-facing recommendation states:
+TapeCoach must judge every self-tape against the performer level selected by the user.
 
-| State                         | Meaning                                                                                                                                             |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `submit`                      | The tape appears ready to submit for the selected level and supplied task.                                                                          |
-| `submit_if_deadline_is_close` | The tape supports submission; optional polish may exist but should not delay unnecessarily.                                                         |
-| `review_carefully`            | The tape may be usable, but there is meaningful uncertainty or risk to check.                                                                       |
-| `retake_required_if_possible` | A material issue, missing brief component, serious technical issue or performance readability problem means a retake is recommended if time allows. |
+The selected performer level changes:
 
-### 8.2 Recommendation rules
+- AI questions;
+- evidence threshold;
+- readiness interpretation;
+- fix hierarchy;
+- score meaning where scores are visible;
+- level-relative report language;
+- acceptance tests.
 
-The recommendation must be grounded in:
+The same tape may be judged differently at different selected levels because the standard has changed.
 
-- brief requirements;
-- observed tape content;
-- selected performer level;
-- discipline / audition type where known;
-- media assessability;
-- comparison context where applicable.
+### 8.2 Supported levels
 
-Do not use scores alone to determine recommendation.
+```ts
+type PerformerLevel =
+  | "learning_school"
+  | "amateur_community"
+  | "emerging_training"
+  | "professional";
+```
 
-A required brief failure can override a high performance score.
+| Selected level | AI brain emphasis | Evidence threshold | UI wording requirement |
+|---|---|---|---|
+| Learning / School | Is the performer prepared, clear and responding to the task? | Basic task understanding, preparation, intelligibility and early craft evidence. | “Ready for Learning / School level” or “next step before submitting at this level.” |
+| Amateur / Community | Does the tape communicate reliably in a lower-stakes audition context? | Clear, prepared, task-relevant work that can be understood and assessed. | “Strong for Amateur / Community” without implying Professional standard. |
+| Emerging / Training | Is there credible craft and specificity under training or early-career scrutiny? | Specific choices, consistency, assessable technique and clear development direction. | “Strong for Emerging / Training” plus gap to Professional where useful. |
+| Professional | Is this competitive and sendable under casting-facing conditions? | Discipline-specific, evidence-rich, brief-precise, technically assessable work. | “Ready for Professional submission”, “Professional-level gap” or “not yet standout”, with concrete evidence. |
 
-A technically assessable, brief-complete professional take should not collapse to `review_carefully` without a specific reason.
+### 8.3 Level-specific flows
+
+#### Learning / School
+
+```text
+Learning / School selected
+        ↓
+AI applies Learning / School standard
+        ↓
+AI asks:
+- Is the task basically understood?
+- Is the performer prepared enough for this context?
+- Is speech, song or movement intelligible and assessable?
+- Is there early craft evidence?
+- Is the tape complete enough for the assignment or audition context?
+- What is the most useful next correction?
+        ↓
+UI output:
+- “Judged against: Learning / School”
+- readiness at this level
+- main next step
+- what is already working
+- what not to over-fix
+```
+
+A strong Learning / School tape may be excellent for that level. It must not be implied to be Professional-standard unless Professional evidence is independently present.
+
+#### Amateur / Community
+
+```text
+Amateur / Community selected
+        ↓
+AI applies Amateur / Community standard
+        ↓
+AI asks:
+- Is the tape clear, prepared and task-relevant?
+- Does the performance communicate reliably in a lower-stakes audition context?
+- Are the required brief components present, where a brief exists?
+- Is the tape technically assessable?
+- What would most improve readability, confidence or task fit?
+        ↓
+UI output:
+- “Judged against: Amateur / Community”
+- strong / usable / not ready for this level
+- gap to selected level
+- must-fix versus optional polish
+```
+
+A tape may be strong for Amateur / Community without being Professional-ready.
+
+#### Emerging / Training
+
+```text
+Emerging / Training selected
+        ↓
+AI applies Emerging / Training standard
+        ↓
+AI asks:
+- Is there credible craft beyond basic preparation?
+- Are the choices specific rather than general?
+- Does the performer sustain the scene, song, copy or movement task?
+- Is the work ready for training, early-career or semi-professional scrutiny?
+- Is the tape technically clean enough to judge the work fairly?
+- What is the gap to Professional, if useful?
+        ↓
+UI output:
+- “Judged against: Emerging / Training”
+- readiness for this level
+- priority fixes
+- strengths to preserve
+- Professional gap where relevant
+```
+
+Emerging / Training should be developmental without becoming soft or vague.
+
+#### Professional
+
+Professional level is the strictest branch.
+
+```text
+Professional selected
+        ↓
+Load ProfessionalLevelStandard
+        ↓
+AI observation pass:
+- What is actually visible and audible?
+- Which brief components are present?
+- Which components are missing?
+- Which components are incomplete or cut off?
+- What is assessable?
+- What is uncertain?
+        ↓
+AI professional judgement pass:
+- Does this meet the brief at Professional submission standard?
+- Is the work competitive, not merely competent?
+- Are acting, vocal, singing, movement, commercial or self-tape choices discipline-specific?
+- Is the tape technically clean enough not to distract?
+- Is there a casting-facing risk?
+- Is any issue a mandatory blocker, Professional-level gap or optional polish?
+        ↓
+Level calibration pass:
+- What meets Professional standard?
+- What falls short of Professional standard?
+- What might be acceptable at a lower level but exposed here?
+- What is the single highest-impact fix?
+- Is this submit, submit-if-deadline-close, review carefully or retake required at Professional level?
+        ↓
+Professional competitive calibration if score is 90+
+        ↓
+UI output:
+- “Judged against: Professional”
+- recommendation
+- why this recommendation is Professional-level
+- Professional-level evidence that works
+- Professional-level gaps
+- competitive zone if 90+
+- fix first
+- preserve guidance
+- retake strategy
+```
+
+Professional does not mean “use harsher language”. Professional means the AI applies a higher standard and asks higher-resolution questions.
+
+### 8.4 Professional distinction requirements
+
+Professional reports must explicitly distinguish:
+
+```text
+competent vs competitive
+ready vs standout
+technically secure vs artistically compelling
+visible execution vs specialist precision
+good submission quality vs stronger competitive evidence
+```
+
+Professional judgement must consider:
+
+- brief precision;
+- mandatory component completion;
+- performance specificity;
+- discipline-specific evidence;
+- acting / vocal / movement / commercial task fit;
+- camera readability;
+- technical assessability;
+- style / material fit where supported by the brief;
+- role/material specificity where supplied;
+- risk under casting-facing conditions;
+- fix-first urgency;
+- optional polish;
+- retake risk;
+- score-language alignment where scores are visible.
 
 ---
 
-## 9. Scores, score terminology and professional nuance
+## 9. Brief-Supplied and No-Brief Scoring Architecture
 
-### 9.1 Scores are allowed in authenticated/operator/test mode
+### 9.1 Purpose
+
+TapeCoach must make clear whether a score was produced with or without a supplied brief.
+
+A score means different things depending on the available input context.
+
+The report must never imply that the performer achieved a brief if no brief was supplied.
+
+The report must never invent missing brief requirements, time limits, sides, page numbers, role demands, upload instructions, file naming rules or mandatory components.
+
+### 9.2 Scoring modes
+
+```ts
+type ScoringMode =
+  | "brief_supplied"
+  | "partial_brief_supplied"
+  | "no_brief_baseline"
+  | "brief_uncertain";
+```
+
+| Scoring mode | Use when | Score may include | Score must not claim |
+|---|---|---|---|
+| `brief_supplied` | A casting brief, audition instructions, sides, copy, song requirement, role requirement or package requirement is supplied. | Brief achievement, mandatory requirements, preferred/optional handling, role/material specificity where supplied, admin/process readiness, level calibration, technical assessability, performance quality. | Guaranteed outcome, universal quality or hidden casting fit. |
+| `partial_brief_supplied` | Some context is supplied, but formal requirements are incomplete. | Supplied context, observed performance quality, limited task-fit commentary, selected-level calibration, known role/material context if supported. | Full brief compliance, deadline/upload compliance, time-limit compliance or mandatory package completion unless supplied. |
+| `no_brief_baseline` | No brief, role, task, material, copy, song, side or audition instruction is supplied. | Observable performance readability, selected-level calibration, technical assessability, inferred discipline/task evidence, self-tape presentation. | Brief achievement, mandatory component completion, role-specific compliance, project-specific fit or admin compliance. |
+| `brief_uncertain` | Metadata or user input conflicts. | Provisional observed quality/readiness with uncertainty. | Any confident brief-adherence claim. |
+
+### 9.3 Score meaning by mode
+
+With a supplied brief:
+
+```text
+Score = brief achievement + observed performance + selected level + assessability + discipline/task + optional role/material context.
+```
+
+Without a brief:
+
+```text
+Score = observed performance + selected level + assessability + inferred task/discipline only.
+Brief achievement is not scored.
+Brief blockers cannot be invented.
+Known role/material claims must be suppressed unless supplied or confidently observable.
+```
+
+### 9.4 Mode-aware score bands
+
+#### With a supplied brief
+
+| Score band | Meaning with brief |
+|---|---|
+| 0–39 | Not submission-ready / not assessable because serious missing evidence, technical blocker or incomplete required package prevents reliable judgement. |
+| 40–54 | Retake required if possible because a major brief, performance or presentation issue blocks submission readiness. |
+| 55–69 | Review carefully because some usable material exists, but there is meaningful brief, performance, technical or uncertainty risk. |
+| 70–84 | Submit if deadline is close because the tape is submission-supporting, with manageable caveats or optional polish. |
+| 85–100 | Strong submission / submit because the tape is brief-complete or mostly brief-complete, assessable, strong for selected level and not blocked by a mandatory brief issue. |
+
+#### Without a supplied brief
+
+| Score band | Meaning without brief |
+|---|---|
+| 0–39 | Not reliably assessable or not ready on observable performance/setup evidence. |
+| 40–54 | Retake recommended because a major observable performance, task-readability or technical issue limits usefulness. |
+| 55–69 | Review carefully because the tape has usable elements but meaningful observable risk, uncertainty or selected-level gap remains. |
+| 70–84 | Baseline submission-supporting for the selected level, assuming the unseen brief does not add requirements this tape fails. |
+| 85–100 | Strong baseline tape for the selected level, based on observable performance and setup only. Brief achievement is not assessed. |
+
+### 9.5 Required no-brief limitation language
+
+When no brief is supplied, the report must visibly say:
+
+```text
+No casting brief was supplied, so TapeCoach cannot assess brief adherence, required components, role-specific instructions, deadline/upload compliance or whether this tape fulfils the exact audition task.
+
+This score is a baseline assessment of the observable tape against the selected performer level, inferred discipline/task evidence and technical assessability.
+```
+
+### 9.6 No-brief score constraints
+
+A no-brief tape can still score highly, but the meaning must be constrained.
+
+```text
+No-brief score can be high for observable tape quality.
+No-brief score cannot certify audition-specific readiness.
+```
+
+A no-brief tape may score above 85 if the observed performance and setup are strong for the selected level.
+
+However, the report must phrase this as:
+
+```text
+strong baseline assessment
+```
+
+or:
+
+```text
+strong for selected level from observable evidence
+```
+
+not:
+
+```text
+brief-complete
+fully submission-ready for the audition
+```
+
+For Professional:
+
+```text
+A no-brief Professional tape may reach the Professional 90+ competitive zone only as a baseline Professional tape.
+
+It must not be described as fully competitive for a specific role, production, brief or casting task unless that context is supplied or reliably resolved.
+```
+
+### 9.7 Recommendation language by mode
+
+With brief:
+
+```text
+Recommendation:
+Submit.
+
+Why:
+The required material is present, the brief is achieved or mostly achieved, the tape is assessable, and the performance meets the selected-level standard.
+```
+
+Without brief:
+
+```text
+Recommendation:
+Baseline submit-supporting.
+
+Why:
+From the observable evidence, the tape is strong for the selected level and technically assessable. Because no brief was supplied, TapeCoach cannot confirm whether the tape meets the actual audition requirements.
+```
+
+With uncertain brief:
+
+```text
+Recommendation:
+Review carefully.
+
+Why:
+The tape has assessable strengths, but brief status is uncertain. Brief-specific claims have been suppressed until the actual task requirements are confirmed.
+```
+
+---
+
+## 10. Role / Character Research and Known-Material Calibration
+
+### 10.1 Purpose
+
+When the supplied brief defines a role, character, production, scene, song, copy, brand, routine or known material, TapeCoach should research and resolve that material before final judgement.
+
+The AI brain should not judge only against a generic acting / vocal / movement standard when the task is clearly role-specific.
+
+The research layer answers:
+
+```text
+What does this role/material appear to demand?
+Which of those demands are explicitly required by the brief?
+Which are known-material context only?
+Which are visible in the tape?
+Which are not assessable?
+How should this affect readiness at the selected level?
+```
+
+### 10.2 Core rule
+
+```text
+Known role/material research supports the brief.
+It does not outrank the brief.
+```
+
+TapeCoach must not do this:
+
+```text
+Known character lore
+        ↓
+Invent hidden casting requirements
+        ↓
+Penalise the performer for not matching them
+```
+
+TapeCoach must do this:
+
+```text
+Supplied brief
+        ↓
+Extract role / character / material
+        ↓
+Research known role/material baseline if confidence is high enough
+        ↓
+Separate brief requirements from known-material context
+        ↓
+Observe the tape
+        ↓
+Judge performance against:
+  1. the supplied brief;
+  2. observed evidence;
+  3. selected performer level;
+  4. known role/material baseline;
+  5. general professional standard.
+        ↓
+Render clear report with source confidence and uncertainty
+```
+
+### 10.3 Precedence rules
+
+1. Supplied brief is primary.
+2. Observed tape evidence is required for scoring.
+3. Selected level still controls the bar.
+4. Known material cannot invent mandatory blockers.
+5. Role research must avoid unsafe casting language.
+
+Correct wording:
+
+```text
+The supplied brief appears to prioritise guarded vulnerability. Known role context supports moral conviction and outsider pressure, but the report should judge this take primarily against the brief’s requested version.
+```
+
+Incorrect wording:
+
+```text
+This performer is not right for the role.
+This performer does not look like the character.
+The role must always be played this way.
+```
+
+### 10.4 Activation
+
+Run this pass when one or more of the following are present:
+
+- production title;
+- role / character name;
+- scene / side reference;
+- song title;
+- commercial product / campaign context;
+- dance style / routine title;
+- known play, musical, film, series, advert, game or source material;
+- uploaded sides / script / lyrics / copy;
+- user-supplied role or material context.
+
+Do not run the pass as fact if:
+
+- no role or material is supplied;
+- role recognition confidence is low;
+- the title is ambiguous;
+- the role conflicts with the brief;
+- the material is private/confidential and cannot be safely researched or surfaced;
+- research would require guessing protected characteristics or appearance-based fit.
+
+In no-brief mode, use only:
+
+```text
+observed task + selected level + general professional standards
+```
+
+and explicitly say:
+
+```text
+No supplied role or material context was available, so role-specific fit was not assessed.
+```
+
+### 10.5 Research source hierarchy
+
+Use this hierarchy for role/material research:
+
+1. Supplied casting brief.
+2. Uploaded sides / copy / lyrics / material packet.
+3. User-confirmed role/material context.
+4. Official production / publisher / licensing / theatre / education materials.
+5. Reputable theatre, film, literary or industry references.
+6. Internal known-material profile, if already validated.
+7. General model knowledge only as low-confidence context.
+
+### 10.6 Truth-state handling
+
+Every role/material claim must carry a truth state.
+
+```ts
+type RoleResearchTruthState =
+  | "brief_supplied"
+  | "uploaded_material_extracted"
+  | "user_supplied"
+  | "official_source_researched"
+  | "known_material_profile"
+  | "model_inferred_low_confidence"
+  | "observed_in_tape"
+  | "not_available"
+  | "contradicted_or_unreliable";
+```
+
+The report should phrase claims according to source:
+
+```text
+The supplied brief asks for...
+From the uploaded side...
+You supplied...
+Known-material context suggests...
+From the available research...
+This was visible/audible in the tape...
+This was not assessable...
+```
+
+Do not flatten these into one certainty level.
+
+### 10.7 Scoring impact rules
+
+Brief-primary demands can affect:
+
+- brief achievement;
+- mandatory blockers;
+- fix-first;
+- recommendation;
+- score caps;
+- selected-level readiness;
+- Professional 90+ competitive zone.
+
+Secondary known-material demands can affect:
+
+- sub-dimension nuance;
+- role/material specificity;
+- style/genre fit where supported;
+- Professional competitiveness;
+- what to preserve;
+- optional polish;
+- score movement within a band.
+
+Secondary known-material demands must not create:
+
+- mandatory blockers;
+- hidden requirements;
+- appearance/type criticism;
+- casting prediction;
+- guaranteed outcome.
+
+### 10.8 Elphaba / Wicked example
+
+Do not hard-code this as a universal rule. Use it as an example of the process.
+
+```text
+Brief:
+Professional MT audition.
+Role: Elphaba.
+Show: Wicked.
+Material: song cut and side.
+
+Known-material baseline may include:
+- outsider / misunderstood status;
+- moral conviction;
+- self-definition under pressure;
+- relationship stakes where relevant to the supplied material;
+- strong acting-through-song demand where singing is present;
+- role-specific vocal/story integration;
+- high Professional competition if auditioning at Professional level.
+
+Primary judgement:
+Did the performer meet the supplied brief?
+
+Secondary judgement:
+Did the tape show observable role-specific evidence that supports the known material?
+
+Professional 90+ nuance:
+A technically excellent vocal take may still sit at 92–93 rather than 96–97 if the story pressure, lyric intention or character arc is clear but not distinctive.
+```
+
+Correct report language:
+
+```text
+Judged against: Professional.
+Role/material context: Elphaba, Wicked.
+
+The supplied brief is the primary standard. Known-material context suggests the role benefits from clear moral conviction, outsider pressure and story-led vocal choices. In this tape, the vocal line is secure and the final phrase has stronger conviction, but the opening reads more generally intense than specifically role-driven. That keeps this in the solid professional contender zone rather than the standout zone.
+```
+
+Incorrect report language:
+
+```text
+You are not right for Elphaba.
+You do not look like Elphaba.
+This will not book.
+Elphaba must always be played this way.
+The role requires X because fans expect it.
+```
+
+---
+
+## 11. Scores, score terminology and professional nuance
+
+### 11.1 Scores are allowed in authenticated/operator/test mode
 
 Numeric score and comparison chips may be visible in authenticated, operator and test modes.
 
@@ -742,14 +1647,16 @@ The system must distinguish:
 - comparison chip visibility;
 - comparison recommendation approval.
 
-### 9.2 Scores must align with terminology
+### 11.2 Scores must align with terminology
 
 Visible scores must align with report terminology.
 
 A score is not just a number. It must map to:
 
+- scoring basis;
 - readiness language;
 - submission guidance;
+- selected performer level;
 - confidence / reliability;
 - fix hierarchy;
 - comparison wording;
@@ -761,58 +1668,435 @@ Unacceptable contradictions:
 - score suggests low readiness but verdict says submit without explanation;
 - comparison chip shows a large difference but report gives no comparison reasoning;
 - report says “brief achieved” but score language implies a mandatory blocker;
-- report says “no mandatory blocker” but score terminology says “not ready”.
+- report says “no mandatory blocker” but score terminology says “not ready”;
+- report says “no brief supplied” but score language says “brief-complete”.
 
-### 9.3 Professional score nuance
-
-At professional level, many strong performers may score in a high band. TapeCoach must still distinguish professional nuance through written judgement, sub-dimensions, brief achievement, submission readiness, comparison reasoning, technique commentary and next-action guidance.
-
-A professional take scoring above 90 may still differ meaningfully in:
-
-- brief precision;
-- acting specificity;
-- vocal or singing specificity;
-- movement/dance precision;
-- style or genre fit;
-- camera readability;
-- technical presentation;
-- risk under casting conditions;
-- optional polish;
-- comparison against another take.
-
-Scores must not flatten professional feedback into “high score = no useful notes”.
-
-### 9.4 Provisional score-to-language map
-
-Use this default map unless superseded by a calibration document.
-
-| Score band | Terminology                           | Typical meaning                                                                          |
-| ---------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
-| 0–39       | Not submission-ready / not assessable | Serious missing evidence, technical blocker or incomplete package.                       |
-| 40–54      | Retake required if possible           | Major brief, performance or presentation issue blocks submission readiness.              |
-| 55–69      | Review carefully                      | Some usable material, but meaningful risk, uncertainty or important improvement remains. |
-| 70–84      | Submit if deadline is close           | Submission-supporting tape with optional polish or manageable caveats.                   |
-| 85–100     | Strong submission / submit            | Brief-complete, assessable, strong for selected level, no mandatory blocker.             |
-
-The verdict is not determined by score alone.
-
-### 9.5 Score dimensions
+### 11.3 Score dimensions
 
 Scores should be explained through dimensions such as:
 
-- brief completion;
+- scoring basis;
+- brief completion where brief exists;
 - performance readability;
 - acting / vocal / movement quality as relevant;
+- role/material specificity where supplied;
 - technical assessability;
 - self-tape presentation;
 - selected-level calibration;
+- Professional competitive zone where applicable;
 - comparison advantage.
+
+### 11.4 Professional 90–100 Competitive Calibration
+
+At Professional level, many viable performers may score above 90.
+
+A single broad `85–100 = strong submission / submit` band is not enough for Professional decision-making.
+
+A 91, 94, 97 and 99 may all support submission, but they should not produce the same report.
+
+At Professional 90+, TapeCoach must provide competitive clarity:
+
+```text
+What makes this tape competitive?
+What keeps it from the next zone?
+Would another take likely improve it?
+What must be preserved?
+What is optional polish?
+What is the risk in retaking?
+```
+
+Activation rule:
+
+```text
+selected_performer_level = professional
+AND score >= 90
+AND the tape is technically assessable
+AND no mandatory brief blocker dominates the recommendation
+```
+
+If a mandatory brief blocker exists, do not run the 90+ competitive zone as the main recommendation logic. The report should say:
+
+```text
+The performance evidence may be strong, but Professional submission readiness is blocked by missing required material.
+```
+
+### 11.5 Professional 90–100 zone map
+
+| Score zone | Competitive meaning | Report language | Typical action |
+|---|---|---|---|
+| 90–91 | Professionally viable | Good enough to submit, but exposed in a highly competitive field by one or more visible gaps. | Submit if deadline is close; retake only if the fix is clear and low-risk. |
+| 92–93 | Solid professional contender | Competitive and credible, with specific strengths, but not yet clearly standout. | Submit-supporting; retake only for a targeted improvement. |
+| 94–95 | Strong professional contender | Strong, specific and casting-facing, with only limited refinements remaining. | Usually submit; preserve the core choices. |
+| 96–97 | Standout professional take | Highly competitive, distinctive and technically secure; any notes are fine-tuning. | Submit unless there is a brief/admin issue. Do not chase unnecessary retakes. |
+| 98–100 | Exceptional / benchmark take | Rare zone. No visible retake reason from available evidence; differences are likely taste, role fit or comparison-specific. | Submit. Do not retake unless the brief changes or there is a confirmed technical/admin problem. |
+
+A 98–100 score does not mean:
+
+```text
+guaranteed callback
+guaranteed booking
+perfect performance
+objectively best possible take
+```
+
+It means:
+
+```text
+From the available evidence, this is an exceptionally strong Professional submission against the selected level, supplied task and observed tape.
+```
+
+### 11.6 Professional competitive differentiators
+
+When competition is high, professionals distinguish strong tapes through small but meaningful differences.
+
+Evaluate:
+
+- brief precision;
+- role / material fit where supplied;
+- acting specificity;
+- vocal / singing specificity;
+- movement / physical precision;
+- camera and self-tape readability;
+- distinctiveness and memorability;
+- casting-facing risk;
+- retake risk;
+- comparison advantage.
+
+Do not say the performer is “memorable” as generic praise. Say what creates that effect.
+
+At Professional level, retaking a strong tape can make it worse. Ask:
+
+```text
+Is the likely gain from retaking greater than the risk of losing what already works?
+```
+
+The report should say:
+
+```text
+Retake only if you can fix [specific issue] without losing [specific strength].
+```
+
+or:
+
+```text
+Do not retake for general polish. Submit this version.
+```
+
+### 11.7 High-score comparison rules
+
+When comparing high-scoring Professional takes, TapeCoach must not overstate tiny numerical differences.
+
+| Score difference | Interpretation |
+|---|---|
+| 0–1 point | Treat as essentially equivalent unless there is a clear brief, technical or comparison-specific reason. |
+| 2–3 points | Meaningful only if supported by concrete evidence. Explain the specific advantage. |
+| 4–5 points | Likely meaningful. Explain what materially improves competitiveness. |
+| 6+ points | Significant difference, unless same-video / assessability / brief mismatch invalidates comparison. |
+
+If two takes are in the same zone:
+
+```text
+Both takes sit in the same Professional competitive zone. The better choice depends on [brief precision / acting specificity / vocal security / technical clarity / style fit].
+```
+
+If the difference is too close to call:
+
+```text
+The numerical difference is too small to treat as decisive. Choose the take that best matches the brief, or use the one with the cleaner technical presentation.
+```
+
+If the compared takes are the same video:
+
+```text
+The comparison is not valid as a performance comparison because the media appears to be the same underlying tape.
+```
 
 ---
 
-## 10. Brief achievement and requirement itemisation
+## 12. Data model additions
 
-### 10.1 Requirement categories
+These types are illustrative contracts. They may be split across implementation files, but the concepts must exist.
+
+```ts
+type PerformerLevel =
+  | "learning_school"
+  | "amateur_community"
+  | "emerging_training"
+  | "professional";
+
+type PerformerLevelStandard = {
+  level: PerformerLevel;
+  displayLabel: string;
+  assessmentStandard: string;
+  submitReadyRequires: string[];
+  strongEvidenceRequires: string[];
+  commonGaps: string[];
+  highScoreMeaning: string;
+  mustNotImply: string[];
+};
+
+type LevelCalibrationPass = {
+  selectedLevel: PerformerLevel;
+  standardApplied: string;
+  evidenceMeetsLevel: string[];
+  evidenceExceedsLevel?: string[];
+  evidenceFallsShortAtLevel: string[];
+  lowerLevelWouldLikelyReadAs?: string;
+  nextLevelGap?: string[];
+  recommendationImpact:
+    | "supports_submission"
+    | "minor_level_gap"
+    | "material_level_gap"
+    | "not_level_ready"
+    | "overridden_by_brief_blocker"
+    | "overridden_by_assessability_blocker";
+  confidence: "high" | "medium" | "low";
+  uncertaintyNotes: string[];
+};
+
+type ScoringMode =
+  | "brief_supplied"
+  | "partial_brief_supplied"
+  | "no_brief_baseline"
+  | "brief_uncertain";
+
+type BriefScoringContext = {
+  scoringMode: ScoringMode;
+  briefStatus:
+    | "full_brief_available"
+    | "partial_context_available"
+    | "no_brief_available"
+    | "conflicting_signals";
+  canAssessBriefAchievement: boolean;
+  canAssessMandatoryRequirements: boolean;
+  canAssessRoleSpecificFit: boolean;
+  canAssessAdminCompliance: boolean;
+  canAssessObservedPerformance: boolean;
+  canAssessTechnicalSetup: boolean;
+  canAssessSelectedLevelReadiness: boolean;
+  scoreMeaningLabel:
+    | "brief_based_submission_readiness"
+    | "partial_context_readiness"
+    | "no_brief_baseline_quality"
+    | "provisional_due_to_brief_uncertainty";
+  requiredLimitations: string[];
+  forbiddenClaims: string[];
+};
+
+type ScoreCalibration = {
+  totalScore: number;
+  scoreBand: string;
+  scoringMode: ScoringMode;
+  scoreMeaning: string;
+  selectedLevelContribution: string;
+  briefContribution?: string;
+  performanceContribution: string;
+  technicalContribution: string;
+  roleMaterialContribution?: string;
+  whatThisScoreMeans: string;
+  whatThisScoreDoesNotMean: string[];
+  confidence: "high" | "medium" | "low";
+  uncertaintyNotes: string[];
+};
+
+type RoleResearchTruthState =
+  | "brief_supplied"
+  | "uploaded_material_extracted"
+  | "user_supplied"
+  | "official_source_researched"
+  | "known_material_profile"
+  | "model_inferred_low_confidence"
+  | "observed_in_tape"
+  | "not_available"
+  | "contradicted_or_unreliable";
+
+type ResolvedField = {
+  value: string;
+  truthState: RoleResearchTruthState;
+  sourceRef?: string;
+  confidence: "high" | "medium" | "low";
+  publicSafe: boolean;
+};
+
+type RoleMaterialDemand = {
+  id: string;
+  label: string;
+  description: string;
+  sourceTruthState: RoleResearchTruthState;
+  importance:
+    | "mandatory_from_brief"
+    | "preferred_from_brief"
+    | "optional_from_brief"
+    | "known_material_context_only"
+    | "ambiguous";
+  observableEvidenceNeeded: string[];
+  scoringUse:
+    | "can_drive_brief_achievement"
+    | "can_nuance_score"
+    | "report_context_only"
+    | "not_for_scoring";
+  unsafeIfUsedFor?: string[];
+};
+
+type KnownMaterialBaselineProfile = {
+  applies: boolean;
+  productionTitle?: ResolvedField;
+  roleOrCharacter?: ResolvedField;
+  materialUnit?: ResolvedField;
+  disciplineContext:
+    | "acting"
+    | "musical_theatre"
+    | "singing"
+    | "dance_movement"
+    | "commercial"
+    | "screen"
+    | "hybrid"
+    | "unknown";
+  sourceSummary: {
+    sourceType:
+      | "brief"
+      | "uploaded_material"
+      | "user_supplied"
+      | "official_source"
+      | "licensed_or_publisher_source"
+      | "reputable_reference"
+      | "internal_known_material_profile"
+      | "model_inferred_low_confidence";
+    sourceLabel: string;
+    confidence: "high" | "medium" | "low";
+    publicUsable: boolean;
+  }[];
+  roleFunction?: string;
+  characterGivenCircumstances?: string[];
+  relationshipDynamics?: string[];
+  emotionalOrStoryDemands?: string[];
+  vocalOrMusicalDemands?: string[];
+  movementOrPhysicalDemands?: string[];
+  styleGenreDemands?: string[];
+  cameraOrSelfTapeImplications?: string[];
+  briefPrimaryDemands: RoleMaterialDemand[];
+  secondaryKnownMaterialDemands: RoleMaterialDemand[];
+  blockedInferences: string[];
+  confidence: "high" | "medium" | "low";
+  uncertaintyNotes: string[];
+};
+
+type ProfessionalCompetitiveZone =
+  | "90_91_professionally_viable"
+  | "92_93_solid_professional_contender"
+  | "94_95_strong_professional_contender"
+  | "96_97_standout_professional_take"
+  | "98_100_exceptional_benchmark_take";
+
+type ProfessionalRetakeStrategy =
+  | "submit_do_not_retake"
+  | "submit_retake_only_for_specific_fix"
+  | "submit_if_deadline_close_targeted_retake_possible"
+  | "review_before_submit_due_to_specific_risk"
+  | "retake_required_due_to_blocker";
+
+type ProfessionalCompetitiveDimension =
+  | "brief_precision"
+  | "role_or_material_fit"
+  | "acting_specificity"
+  | "vocal_or_singing_specificity"
+  | "movement_or_physical_precision"
+  | "camera_readability"
+  | "technical_presentation"
+  | "distinctiveness"
+  | "casting_facing_risk"
+  | "retake_risk"
+  | "comparison_advantage";
+
+type ProfessionalCompetitiveDimensionJudgement = {
+  dimension: ProfessionalCompetitiveDimension;
+  rating:
+    | "not_assessable"
+    | "professional_viable"
+    | "competitive"
+    | "strong_competitive"
+    | "standout"
+    | "exceptional";
+  evidence: string;
+  impactOnScore:
+    | "raises_score"
+    | "holds_score"
+    | "suppresses_score"
+    | "not_applicable";
+  performerFacingNote: string;
+};
+
+type ProfessionalCompetitiveCalibration = {
+  applies: boolean;
+  selectedLevel: "professional";
+  totalScore: number;
+  zone: ProfessionalCompetitiveZone;
+  zoneLabel: string;
+  zoneSummary: string;
+  whyThisZone: string[];
+  competitiveDifferentiators: string[];
+  scoreSuppressors: string[];
+  preserveAtAllCosts: string[];
+  retakeStrategy: ProfessionalRetakeStrategy;
+  retakeRisk: string;
+  dimensions: ProfessionalCompetitiveDimensionJudgement[];
+  comparisonNotes?: {
+    comparedTakeId?: string;
+    advantage?: string;
+    disadvantage?: string;
+    differenceMagnitude:
+      | "material"
+      | "moderate"
+      | "marginal"
+      | "too_close_to_call"
+      | "invalid_same_video";
+  }[];
+  confidence: "high" | "medium" | "low";
+  uncertaintyNotes: string[];
+};
+```
+
+---
+
+## 13. Readiness recommendations
+
+### 13.1 Recommendation options
+
+TapeCoach should use these performer-facing recommendation states:
+
+| State | Meaning |
+|---|---|
+| `submit` | The tape appears ready to submit for the selected level and supplied task, or is a strong baseline where no brief is supplied and limitations are visible. |
+| `submit_if_deadline_is_close` | The tape supports submission; optional polish may exist but should not delay unnecessarily. |
+| `review_carefully` | The tape may be usable, but there is meaningful uncertainty or risk to check. |
+| `retake_required_if_possible` | A material issue, missing brief component, serious technical issue or performance readability problem means a retake is recommended if time allows. |
+
+### 13.2 Recommendation rules
+
+The recommendation must be grounded in:
+
+- scoring basis;
+- brief requirements where supplied;
+- observed tape content;
+- selected performer level;
+- role/material context where supported;
+- discipline / audition type where known;
+- media assessability;
+- comparison context where applicable.
+
+Do not use scores alone to determine recommendation.
+
+A required brief failure can override a high performance score.
+
+A technically assessable, brief-complete professional take should not collapse to `review_carefully` without a specific reason.
+
+A no-brief report should not claim full audition readiness.
+
+---
+
+## 14. Brief achievement and requirement itemisation
+
+### 14.1 Requirement categories
 
 Classify requirements as:
 
@@ -821,9 +2105,11 @@ Classify requirements as:
 - technical;
 - admin/process;
 - deadline;
-- logistics.
+- logistics;
+- role/material;
+- ambiguous.
 
-### 10.2 Requirement importance
+### 14.2 Requirement importance
 
 Classify importance as:
 
@@ -834,7 +2120,7 @@ Classify importance as:
 
 Ambiguous requirements must remain ambiguous unless evidence or operator confirmation resolves them.
 
-### 10.3 Achievement statuses
+### 14.3 Achievement statuses
 
 Use:
 
@@ -847,7 +2133,7 @@ Use:
 
 Not assessable is a limitation, not criticism.
 
-### 10.4 Brief blockers
+### 14.4 Brief blockers
 
 An assessable mandatory requirement that is not achieved can block submission readiness.
 
@@ -858,7 +2144,7 @@ The report must identify:
 - submission impact;
 - next action.
 
-### 10.5 Positive brief completion
+### 14.5 Positive brief completion
 
 If required brief components are present and assessable, the report should say so and provide positive readiness guidance, strengths, optional polish and a submit checklist.
 
@@ -866,9 +2152,9 @@ A brief-complete take must not receive an empty or thin report merely because th
 
 ---
 
-## 11. Fix hierarchy and next action
+## 15. Fix hierarchy and next action
 
-### 11.1 Fix-first rule
+### 15.1 Fix-first rule
 
 `fix_first` is the highest-impact action before submission.
 
@@ -880,7 +2166,7 @@ No mandatory fix identified before submission.
 
 Do not invent a fix.
 
-### 11.2 Priority fixes
+### 15.2 Priority fixes
 
 Include all meaningful priority fixes. Do not arbitrarily cap useful fixes.
 
@@ -892,7 +2178,7 @@ Each fix should include:
 - urgency / severity;
 - category.
 
-### 11.3 Must-fix, should-improve and optional polish
+### 15.3 Must-fix, should-improve and optional polish
 
 Separate:
 
@@ -902,7 +2188,7 @@ Separate:
 
 This prevents endless retake loops.
 
-### 11.4 Next action
+### 15.4 Next action
 
 Next action should be finite and practical.
 
@@ -919,7 +2205,7 @@ If submitting, provide a final submit checklist such as:
 
 If reviewing carefully, say what specifically needs human/operator confirmation.
 
-### 11.5 Do-not-overfix
+### 15.5 Do-not-overfix
 
 Do-not-overfix guidance must be specific.
 
@@ -928,13 +2214,14 @@ Examples:
 - do not chase audio changes if audio is already assessable;
 - do not rework achieved brief components;
 - do not keep retaking a strong complete package without a concrete purpose;
-- do not spend time on optional polish before missing mandatory material.
+- do not spend time on optional polish before missing mandatory material;
+- do not retake a high-scoring Professional tape unless the likely improvement is specific and worth the risk.
 
 ---
 
-## 12. Strengths, preserve and positive feedback
+## 16. Strengths, preserve and positive feedback
 
-### 12.1 Required strengths
+### 16.1 Required strengths
 
 Every useful report should identify what is working, unless the evidence genuinely cannot support it.
 
@@ -943,11 +2230,12 @@ Strengths should be specific, such as:
 - performance clarity;
 - vocal or acting specificity;
 - achieved brief package;
+- role/material specificity where supported;
 - assessable setup;
 - strong moments;
 - useful choices to preserve.
 
-### 12.2 Generic strengths are not enough
+### 16.2 Generic strengths are not enough
 
 The following must not be the only strength/preserve content:
 
@@ -957,7 +2245,7 @@ The following must not be the only strength/preserve content:
 
 If the AI returns only generic strengths, run a repair prompt.
 
-### 12.3 Strong takes require value
+### 16.3 Strong takes require value
 
 A strong professional complete take must receive a useful report.
 
@@ -967,14 +2255,15 @@ It should include:
 - what specifically works;
 - what to preserve;
 - optional polish, if useful;
+- Professional 90+ competitive zone where applicable;
 - what not to change;
 - final submit checklist.
 
 ---
 
-## 13. Timestamped commentary
+## 17. Timestamped commentary
 
-### 13.1 Requirement
+### 17.1 Requirement
 
 Where timestamps or time-bands are available, TapeCoach should provide timestamped commentary for important observations.
 
@@ -987,13 +2276,13 @@ Timestamped commentary should identify:
 - technical/framing/audio issues;
 - performance moments to refine.
 
-### 13.2 Fallback
+### 17.2 Fallback
 
 If timestamps are unavailable, the report must still provide useful component-level commentary.
 
 Absence of timestamps must not collapse the report into a thin shell.
 
-### 13.3 Timestamp use
+### 17.3 Timestamp use
 
 Timestamped notes may appear in:
 
@@ -1006,15 +2295,15 @@ Timestamped notes may appear in:
 
 ---
 
-## 14. Technique-library commentary
+## 18. Technique-library commentary
 
-### 14.1 Default attempt
+### 18.1 Default attempt
 
 Technique-library commentary should be attempted by default where evidence exists.
 
 Do not avoid technique commentary merely because prior versions over-restricted named technique authority.
 
-### 14.2 Technique areas
+### 18.2 Technique areas
 
 Attempt commentary for:
 
@@ -1025,7 +2314,7 @@ Attempt commentary for:
 - commercial / screen task;
 - self-tape presentation.
 
-### 14.3 Boundaries
+### 18.3 Boundaries
 
 Avoid:
 
@@ -1044,9 +2333,10 @@ Allowed:
 - MT package integration notes;
 - camera/readability feedback;
 - style/genre comments where supported;
+- role/material technique comments where supported;
 - practical coaching actions.
 
-### 14.4 Missing material
+### 18.4 Missing material
 
 If a required component is missing, technique commentary for that component should say it could not be assessed because the component is missing.
 
@@ -1058,7 +2348,7 @@ The acting side could not be assessed because the required Side 1 scene was not 
 
 ---
 
-## 15. Discipline and module detection
+## 19. Discipline and module detection
 
 TapeCoach should detect and activate relevant modules from the supplied brief and observed tape.
 
@@ -1070,13 +2360,14 @@ Supported discipline/module families include:
 - dance / movement;
 - commercial / screen task;
 - self-tape technical presentation;
-- admin/submission package requirements.
+- admin/submission package requirements;
+- role/material-specific task requirements where supplied.
 
 If discipline or module is uncertain, mark it as uncertain and explain why. Do not invent discipline-specific requirements.
 
 ---
 
-## 16. Musical Theatre package requirements
+## 20. Musical Theatre package requirements
 
 Musical Theatre briefs may include:
 
@@ -1085,7 +2376,8 @@ Musical Theatre briefs may include:
 - dance / movement;
 - ident/slate;
 - one continuous video;
-- technical or file instructions.
+- technical or file instructions;
+- role/material expectations.
 
 TapeCoach must judge the package, not only the individual performance elements.
 
@@ -1096,13 +2388,14 @@ For MT package reports, identify:
 - whether dance/movement is required and present;
 - whether the package is continuous / one file;
 - whether any component is missing, incomplete or not assessable;
-- how the package affects submission readiness.
+- how the package affects submission readiness;
+- how role/material context affects interpretation where supplied.
 
 ---
 
-## 17. Comparison requirements
+## 21. Comparison requirements
 
-### 17.1 Comparison modes
+### 21.1 Comparison modes
 
 Comparison may occur in authenticated/operator/test mode.
 
@@ -1110,11 +2403,14 @@ The report may show score/comparison chips in these modes.
 
 The system must distinguish comparison visibility from production/customer approval.
 
-### 17.2 Comparison judgement
+### 21.2 Comparison judgement
 
 When comparison is enabled, ask the AI to compare:
 
+- scoring basis;
 - brief achievement;
+- selected-level calibration;
+- role/material specificity where applicable;
 - performance quality;
 - technical assessability;
 - strongest choices;
@@ -1124,7 +2420,7 @@ When comparison is enabled, ask the AI to compare:
 
 Do not guarantee casting, callback, booking or employment outcomes.
 
-### 17.3 Same-video comparison
+### 21.3 Same-video comparison
 
 If compared takes appear to be the same video, the report must say so or ask for operator confirmation.
 
@@ -1132,9 +2428,9 @@ Do not recommend one duplicate over another as if they were different performanc
 
 ---
 
-## 18. High-risk red-line filter
+## 22. High-risk red-line filter
 
-### 18.1 Filter actions
+### 22.1 Filter actions
 
 The red-line filter may:
 
@@ -1144,19 +2440,19 @@ The red-line filter may:
 
 It must not become a broad lockdown layer.
 
-### 18.2 Rewrite before suppressing
+### 22.2 Rewrite before suppressing
 
 If content is useful but overstrong, rewrite it into safe professional language.
 
-Examples:
-
-| Overstrong / high-risk                    | Preferred rewrite                                                                    |
-| ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| “This guarantees a callback.”             | “This supports submission readiness from the available evidence.”                    |
-| “This proves professional mastery.”       | “This reads strongly against the selected level in the observed areas.”              |
+| Overstrong / high-risk | Preferred rewrite |
+|---|---|
+| “This guarantees a callback.” | “This supports submission readiness from the available evidence.” |
+| “This proves professional mastery.” | “This reads strongly against the selected level in the observed areas.” |
 | “The performer has a vocal health issue.” | “Vocal health cannot be assessed; consider professional advice if there is concern.” |
+| “You are right for this role.” | “The observed tape supports the role/material demands that were assessable from the supplied task.” |
+| “You are not bookable for this.” | “Casting outcome cannot be predicted; the report can only assess the submitted tape against the available evidence.” |
 
-### 18.3 Suppress only true red lines
+### 22.3 Suppress only true red lines
 
 Suppress only the high-risk categories defined in section 1.4.
 
@@ -1164,9 +2460,44 @@ Do not suppress supplied brief text, professional critique, scores, comparison v
 
 ---
 
-## 19. QA artefacts and diagnostics
+## 23. Certainty and ambiguity rules
 
-### 19.1 QA is proof, not product
+The AI must not overstate certainty.
+
+The report may say:
+
+```text
+from the available evidence
+in the observed areas
+not assessable from this tape
+this appears to meet the selected-level standard
+this is exposed at Professional level because...
+known-material context suggests...
+brief fit cannot be confirmed without the brief
+```
+
+The report must not say:
+
+```text
+this guarantees a callback
+this will get the job
+this proves professional mastery
+this is objectively a 92-quality performance in all contexts
+this is Professional-standard
+this is right/wrong for the role
+```
+
+unless the selected level is Professional and the evidence independently supports a safe, non-guaranteed version of the professional-standard statement.
+
+If the selected level affects judgement, the report must say how.
+
+If the selected level does not affect judgement because a mandatory brief blocker or assessability blocker dominates, the report must say that too.
+
+---
+
+## 24. QA artefacts and diagnostics
+
+### 24.1 QA is proof, not product
 
 QA artefacts prove what happened. They do not replace the report.
 
@@ -1176,7 +2507,7 @@ If QA artefacts fail to emit:
 - release proof is blocked;
 - diagnostics must explain the artefact failure.
 
-### 19.2 Required artefacts for proof
+### 24.2 Required artefacts for proof
 
 Where QA is enabled, preferred artefacts include:
 
@@ -1185,6 +2516,10 @@ Where QA is enabled, preferred artefacts include:
 - `ai/judgement_pass.json`;
 - `ai/repair_passes.json` where relevant;
 - `ai/technique_commentary.json`;
+- `ai/level_calibration.json`;
+- `ai/brief_scoring_context.json`;
+- `ai/role_material_calibration.json` where relevant;
+- `ai/professional_competitive_calibration.json` where relevant;
 - `report/full_report_model.json`;
 - `report/authenticated_report_model.json`;
 - `report/rendered_text.txt`;
@@ -1192,7 +2527,7 @@ Where QA is enabled, preferred artefacts include:
 - `qa/report_quality_check.json`;
 - `operator/assumption_log.json`.
 
-### 19.3 Artefact failure handling
+### 24.3 Artefact failure handling
 
 If artefacts are missing, release/canary proof fails until resolved.
 
@@ -1210,9 +2545,9 @@ Never log secrets, signed URLs, private media URLs, raw prompts or raw responses
 
 ---
 
-## 20. Minimal env/config principle
+## 25. Minimal env/config principle
 
-### 20.1 Environment variables
+### 25.1 Environment variables
 
 Use environment variables only for secrets and deployment/runtime basics.
 
@@ -1227,7 +2562,7 @@ Expected categories:
 
 Do not add env vars for ordinary product behaviour.
 
-### 20.2 Product configuration
+### 25.2 Product configuration
 
 Product toggles should live in database/admin config where possible.
 
@@ -1238,11 +2573,13 @@ Examples:
 - `score_chips_visible`;
 - `comparison_chips_visible`;
 - `technique_library_enabled`;
+- `role_material_research_enabled`;
+- `professional_competitive_calibration_enabled`;
 - `report_mode`;
 - `ai_model_primary`;
 - `ai_model_fallback`.
 
-### 20.3 Deployment provenance
+### 25.3 Deployment provenance
 
 Deployment provenance is useful for release proof, not for report value.
 
@@ -1250,7 +2587,7 @@ A missing commit SHA should block release proof, but should not prevent the repo
 
 ---
 
-## 21. Operator-tested assumptions
+## 26. Operator-tested assumptions
 
 Any assumption that affects canary acceptance must be confirmed by the operator or marked uncertain.
 
@@ -1261,6 +2598,10 @@ Examples:
 - fixture type;
 - expected blocker;
 - complete brief package;
+- selected performer level;
+- scoring mode;
+- role/material identity;
+- known material source confidence;
 - score chips intentionally visible;
 - comparison intentionally visible;
 - AI missed a component;
@@ -1273,11 +2614,11 @@ Operator feedback should become a fixture, regression test, prompt improvement o
 
 ---
 
-## 22. Golden fixtures
+## 27. Golden fixtures
 
 Every report-value change must preserve or improve these fixtures.
 
-### 22.1 Fixture A — incomplete mandatory MT package
+### Fixture A — incomplete mandatory MT package
 
 Brief:
 
@@ -1302,7 +2643,7 @@ Expected:
 - no generic fallback copy;
 - finite retake plan.
 
-### 22.2 Fixture B — strong professional complete package
+### Fixture B — strong professional complete package
 
 Brief:
 
@@ -1327,13 +2668,13 @@ Expected:
 - specific do-not-overfix guidance;
 - no thin shell.
 
-### 22.3 Fixture C — old-report usefulness baseline
+### Fixture C — old-report usefulness baseline
 
 The 22 May report is a minimum usefulness floor, not an exact template.
 
 New reports must preserve or exceed its practical specificity while applying only narrow high-risk filtering.
 
-### 22.4 Fixture D — poor assessability
+### Fixture D — poor assessability
 
 Expected:
 
@@ -1342,15 +2683,16 @@ Expected:
 - no invented fixes;
 - no generic shell.
 
-### 22.5 Fixture E — no brief supplied
+### Fixture E — no brief supplied
 
 Expected:
 
 - useful performance/setup feedback;
 - no invented brief requirements;
-- brief adherence marked not assessable.
+- brief adherence marked not assessable;
+- scoring basis shown as no-brief baseline.
 
-### 22.6 Fixture F — same-video duplicate
+### Fixture F — same-video duplicate
 
 Expected:
 
@@ -1358,7 +2700,7 @@ Expected:
 - no misleading comparison of duplicate media as different performances;
 - operator confirmation requested where needed.
 
-### 22.7 Fixture G — comparison
+### Fixture G — comparison
 
 Expected:
 
@@ -1367,9 +2709,209 @@ Expected:
 - same-video safeguards;
 - no guaranteed casting outcome.
 
+### Fixture H — same tape, different selected level
+
+Expected:
+
+- observed evidence remains the same;
+- selected-level standard changes;
+- recommendation may change;
+- fix hierarchy may change;
+- score language, where visible, is level-relative;
+- UI states `Judged against: [selected level]`;
+- Professional run is stricter and identifies Professional-level gaps;
+- lower-level runs do not imply Professional readiness unless independently supported.
+
+### Fixture I — Professional strictness
+
+Expected:
+
+- report does not call a clean but general take standout;
+- AI distinguishes competent from competitive;
+- Professional gaps are concrete;
+- optional polish is separated from must-fix;
+- no guaranteed callback, booking or employment language.
+
+### Fixture J — mandatory blocker overrides level
+
+Expected:
+
+- missing required material remains fix-first at every level;
+- tone and detail may vary by level;
+- recommendation remains driven by brief failure;
+- no level setting hides the mandatory blocker;
+- report says the issue is brief completion, not lack of talent.
+
+### Fixture K — strong lower-level tape, not Professional-ready
+
+Expected:
+
+- lower-level run may be strong or submission-supporting;
+- Professional run should not describe the tape as standout unless evidence supports it;
+- Professional run identifies the higher-level gap;
+- report preserves strengths while explaining why the Professional bar is higher.
+
+### Fixture L — Professional 91: viable but exposed
+
+Expected:
+
+- score zone: 90–91 professionally viable;
+- recommendation supports submission or submit-if-deadline-close;
+- report explains competitive risk;
+- report says what would move the tape into 92–93;
+- no generic “excellent” copy;
+- retake only if a specific low-risk fix is available.
+
+### Fixture M — Professional 94: strong contender
+
+Expected:
+
+- score zone: 94–95 strong professional contender;
+- report explains why this is stronger than merely viable;
+- report explains why it is not yet 96–97;
+- optional polish is separated from must-fix;
+- submit is supported;
+- preserve guidance is specific.
+
+### Fixture N — Professional 97: standout
+
+Expected:
+
+- score zone: 96–97 standout professional take;
+- report identifies standout evidence;
+- no unnecessary retake loop;
+- retake strategy says submit unless a confirmed brief/admin/technical issue exists;
+- optional polish is minimal and clearly labelled.
+
+### Fixture O — Professional 99: exceptional / benchmark
+
+Expected:
+
+- score zone: 98–100 exceptional / benchmark take;
+- report says no visible retake reason from available evidence;
+- no guaranteed outcome language;
+- report preserves uncertainty;
+- next action is a submission checklist, not performance correction.
+
+### Fixture P — two high-scoring Professional takes
+
+Expected:
+
+- both are submit-supporting;
+- the higher score is not treated as better merely because the number is higher;
+- report explains the specific competitive advantage;
+- comparison identifies what each take still does well;
+- recommendation is evidence-led;
+- no guaranteed callback or booking language.
+
+### Fixture Q — tiny high-score difference
+
+Expected:
+
+- report does not overclaim a 1-point difference;
+- if the advantage is marginal, say so;
+- choose based on brief precision, technical clarity or specific performance evidence;
+- if no meaningful difference is visible, mark as too close to call.
+
+### Fixture R — known role with clear brief
+
+Example:
+
+```text
+Professional MT audition.
+Role: Elphaba.
+Show: Wicked.
+Required: specified song and side.
+```
+
+Expected:
+
+- role/material context appears;
+- supplied brief is primary;
+- known role/material baseline is secondary;
+- report references role-specific demands only as task/material context;
+- no appearance/type/castability language;
+- score nuance explains why the take is professionally viable / solid / strong / standout;
+- Professional 90+ zone reflects role-specific competitive clarity.
+
+### Fixture S — known role conflicts with supplied brief
+
+Expected:
+
+- brief wins;
+- report does not penalise the performer simply for not playing a generic version of the role;
+- known-material context is used only to ask whether the brief version still carries stakes and specificity;
+- no hidden requirement is invented.
+
+### Fixture T — known material but missing required component
+
+Expected:
+
+- missing required component is fix-first;
+- role research does not distract from the mandatory blocker;
+- report may say role/material specificity in the present component is assessable, but full package readiness is blocked by missing required material.
+
+### Fixture U — ambiguous role/material
+
+Expected:
+
+- role is not assumed unless the material clearly identifies it;
+- report may say “known material” but must not state role-specific demands unless confidently resolved;
+- uncertainty is visible.
+
+### Fixture V — no brief, user mentions role casually
+
+Expected:
+
+- report treats the role mention as user-supplied focus, not a formal audition requirement;
+- no mandatory role standards;
+- feedback may offer role-context notes cautiously;
+- readiness remains general to selected level unless a formal brief is supplied.
+
+### Fixture W — no brief, strong observable tape
+
+Expected:
+
+- scoring basis: no brief baseline;
+- brief achievement: not assessable;
+- no invented role, time limit, sides, page range or package requirement;
+- high score allowed only as baseline quality/readiness;
+- report says actual audition fit cannot be confirmed without the brief;
+- useful strengths, fixes, preserve guidance and next action still appear.
+
+### Fixture X — brief supplied, missing mandatory component
+
+Expected:
+
+- scoring basis: brief supplied;
+- missing component is a brief blocker;
+- strong observed performance evidence may be acknowledged;
+- overall recommendation is driven by missing required material;
+- score language explains blocker override.
+
+### Fixture Y — partial brief / known role only
+
+Expected:
+
+- scoring basis: partial brief supplied;
+- role/material context may be used cautiously;
+- no full package compliance claim;
+- no deadline/upload/time-limit claim;
+- no hidden mandatory side/song requirement unless supplied;
+- report explains what cannot be confirmed.
+
+### Fixture Z — brief signal conflict
+
+Expected:
+
+- scoring basis: brief uncertain;
+- unsupported brief-specific claims suppressed;
+- repair prompt or operator confirmation requested;
+- report does not publish contradictory score language.
+
 ---
 
-## 23. Route/PDF first acceptance
+## 28. Route/PDF first acceptance
 
 Payloads are not enough.
 
@@ -1378,23 +2920,27 @@ Every report-value slice must inspect or test:
 - rendered route text;
 - exported PDF text;
 - payload model;
-- diagnostics where relevant. QA artefacts may help later proof work but are not required for S10 report-value acceptance.
+- QA artefacts where available.
 
 If the route/PDF is weak, the slice fails even if payload parity passes.
 
 A performer should be able to understand within 60 seconds:
 
 - submit / retake / review;
+- scoring basis;
+- judged-against selected level;
 - why;
 - top fix;
-- brief achievement;
+- brief achievement, where brief exists;
+- role/material source basis, where used;
+- Professional competitive zone, where applicable;
 - next action.
 
 ---
 
-## 24. Testing and acceptance policy
+## 29. Testing and acceptance policy
 
-### 24.1 Required tests for report-value changes
+### 29.1 Required tests for report-value changes
 
 Report-value changes should include tests for:
 
@@ -1402,20 +2948,24 @@ Report-value changes should include tests for:
 - module completeness;
 - repair prompting;
 - route/PDF text;
+- scoring mode classification;
+- performer-level calibration;
 - brief requirement extraction;
 - brief achievement;
+- role/material resolver where relevant;
 - fix hierarchy;
 - positive complete take;
 - incomplete mandatory package;
 - technique commentary;
 - timestamped commentary where available;
 - score terminology alignment;
+- Professional 90+ calibration;
 - same-video handling;
 - comparison handling;
 - red-line filtering;
-- route/PDF content acceptance. QA proof is deferred unless a later non-S10 release/provenance slice explicitly scopes it.
+- QA proof where relevant.
 
-### 24.2 Acceptance hierarchy
+### 29.2 Acceptance hierarchy
 
 A slice is not done unless:
 
@@ -1423,13 +2973,17 @@ A slice is not done unless:
 - route/PDF report surface is useful;
 - relevant golden fixtures are preserved or improved;
 - supplied brief content is not suppressed by default;
+- selected level is visible and used;
+- scoring basis is visible and consistent;
+- role/material context has source basis where used;
 - AI outputs are routed to the UI;
 - no generic thin-shell copy is introduced;
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
+- QA artefact status is clear;
 - production/customer/Level acceptance is not claimed unless explicitly in scope.
 
-### 24.3 QA-only success is not acceptance
+### 29.3 QA-only success is not acceptance
 
 A slice cannot be accepted only because:
 
@@ -1445,24 +2999,22 @@ The route/PDF report must be useful.
 
 ---
 
-## 25. Release and maturity model
+## 30. Release and maturity model
 
-### 25.1 Maturity levels
+### 30.1 Maturity levels
 
 Use maturity levels as release-control language, not as a reason to suppress useful feedback.
 
-Suggested levels:
-
-| Level   | Meaning                                                             |
-| ------- | ------------------------------------------------------------------- |
-| Level 1 | AI-led audition readiness and performance readability report.       |
-| Level 2 | Discipline-specific and technique-aware critique.                   |
-| Level 3 | Brief-intelligent module detection and package analysis.            |
-| Level 4 | Role/material/repertoire-aware feedback.                            |
-| Level 5 | Comparison-aware and competitive readiness feedback.                |
+| Level | Meaning |
+|---|---|
+| Level 1 | AI-led audition readiness and performance readability report. |
+| Level 2 | Discipline-specific and technique-aware critique. |
+| Level 3 | Brief-intelligent module detection and package analysis. |
+| Level 4 | Role/material/repertoire-aware feedback. |
+| Level 5 | Comparison-aware and competitive readiness feedback. |
 | Level 6 | Professional/agent mode with deeper calibration and operator tools. |
 
-### 25.2 Release gates
+### 30.2 Release gates
 
 Production/customer release requires separate acceptance.
 
@@ -1470,43 +3022,41 @@ Visible score/comparison chips in authenticated/operator/test mode do not equal 
 
 Operator/test diagnostics do not equal customer release.
 
-### 25.3 Rollback rule
+### 30.3 Rollback rule
 
 If a release produces a thin shell or materially reduces report usefulness, rollback the report-generation/rendering path while preserving useful infrastructure where possible.
 
 ---
 
-## 26. S10 rebuild sequence
+## 31. S10 rebuild sequence
 
-The corrected S10 rebuild should follow this order:
+S10 is already in implementation. The sequence below remains the controlling order, with calibration amendments merged into relevant slices rather than treated as a separate reset.
 
-1. AI report module question map and active prompt replacement.
-2. Brief intelligence and requirement extraction.
-3. Tape observation and component verification.
-4. Brief achievement matrix.
-5. Readiness recommendation and score semantics.
-6. Fix hierarchy and next-action plan.
-7. Strengths, preserve and professional critique.
-8. Technique-library commentary.
-9. Timestamped/time-banded commentary.
-10. Report model to UI piping.
-11. Canary A incomplete mandatory package fixture.
-12. Strong complete professional fixture.
-13. Same-video and comparison handling.
-14. Operator assumption checkpoints.
-15. Route/PDF content acceptance.
+1. AI-led report module question map.
+2. Performer level calibration architecture.
+3. Full-value authenticated report architecture and types.
+4. Brief intelligence and authenticated brief transparency.
+5. Brief/no-brief scoring basis semantics.
+6. Role / character research and known-material calibration.
+7. AI observation and professional judgement prompts.
+8. Report model to UI piping.
+9. Technique-library commentary.
+10. Timestamped commentary.
+11. Score terminology and professional nuance.
+12. Professional 90–100 competitive calibration.
+13. Same-video / duplicate-upload handling.
+14. Positive brief-complete report path.
+15. Incomplete mandatory package path.
+16. Route/PDF first QA.
+17. QA artefacts as secondary proof.
 
 Do not start with payload gates, source-kind restrictions or QA architecture before the report is useful.
 
-Runtime provenance, GateTrace, ValidatorTrace, public/private payload parity, Level 2 acceptance, production release and full QA artefact reconciliation are post-S10 roadmap work unless explicitly scoped in a later slice.
-
 ---
 
-## 27. Resolved design issues from previous S10 attempts
+## 32. Resolved design issues from previous S10 attempts
 
-This README resolves the following circular or contradictory design issues:
-
-### 27.1 Safety versus usefulness
+### 32.1 Safety versus usefulness
 
 Previous issue:
 
@@ -1520,7 +3070,7 @@ Resolved rule:
 authenticated report = maximum useful information, narrow high-risk red-line filtering only
 ```
 
-### 27.2 QA artefacts versus product
+### 32.2 QA artefacts versus product
 
 Previous issue:
 
@@ -1534,7 +3084,7 @@ Resolved rule:
 QA proves the report; it does not replace report usefulness
 ```
 
-### 27.3 Code versus AI
+### 32.3 Code versus AI
 
 Previous issue:
 
@@ -1548,7 +3098,7 @@ Resolved rule:
 AI is the brain; code repairs, validates, routes and renders
 ```
 
-### 27.4 Brief transparency
+### 32.4 Brief transparency
 
 Previous issue:
 
@@ -1562,7 +3112,7 @@ Resolved rule:
 supplied brief is first-class authenticated report input
 ```
 
-### 27.5 Scoring visibility
+### 32.5 Scoring visibility
 
 Previous issue:
 
@@ -1576,7 +3126,7 @@ Resolved rule:
 score/comparison chips may be visible in authenticated/operator/test mode; production approval is separate
 ```
 
-### 27.6 Professional scoring nuance
+### 32.6 Professional scoring nuance
 
 Previous issue:
 
@@ -1590,7 +3140,7 @@ Resolved rule:
 professional nuance must be expressed through sub-dimensions and written judgement, especially above 90
 ```
 
-### 27.7 Same-video uploads
+### 32.7 Same-video uploads
 
 Previous issue:
 
@@ -1604,9 +3154,51 @@ Resolved rule:
 same-video state must be detected, confirmed or marked uncertain
 ```
 
+### 32.8 Selected level as tone
+
+Previous issue:
+
+```text
+professional = harsher wording
+```
+
+Resolved rule:
+
+```text
+selected level determines the assessment standard before judgement is made
+```
+
+### 32.9 No-brief contradiction
+
+Previous issue:
+
+```text
+no brief supplied, but report still claimed brief achievement
+```
+
+Resolved rule:
+
+```text
+no-brief score is baseline only; brief achievement is not assessable
+```
+
+### 32.10 Role/material specificity
+
+Previous issue:
+
+```text
+known character or material context was either ignored or over-inferred
+```
+
+Resolved rule:
+
+```text
+known material supports the brief, carries truth state and source basis, and cannot invent hidden casting requirements
+```
+
 ---
 
-## 28. Forbidden failure modes
+## 33. Forbidden failure modes
 
 Do not:
 
@@ -1624,11 +3216,18 @@ Do not:
 - proceed when operator assumptions are untested;
 - treat a high score as a substitute for professional feedback;
 - compare duplicate/same-video takes as though they are different performances;
-- let a strong complete take produce an empty or thin report.
+- let a strong complete take produce an empty or thin report;
+- treat selected level as tone or encouragement;
+- let Professional merely mean harsher language;
+- describe lower-level excellence as Professional-standard without evidence;
+- let a no-brief score imply brief achievement;
+- use role/material research to invent mandatory requirements;
+- infer appearance, body/type, marketability, bookability or callback likelihood;
+- flatten Professional scores above 90 into generic “excellent”.
 
 ---
 
-## 29. Final controlling decision
+## 34. Final controlling decision
 
 TapeCoach should feel like:
 
@@ -1658,6 +3257,11 @@ Maximise useful professional information for the authenticated performer.
 Suppress or rewrite only narrow high-risk content.
 Ask the AI the right questions for every report module.
 Pipe the AI output to the UI.
+Use selected level as the standard.
+Use the brief as the task authority.
+Use role/material research only with source basis and observed evidence.
+Make no-brief limitations visible.
+Preserve Professional 90+ nuance.
 Test assumptions with the operator.
 Never accept a report that is safe but useless.
 ```
