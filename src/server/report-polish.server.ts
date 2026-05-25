@@ -9,9 +9,13 @@
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
 import {
+  buildPlainJsonReportInstruction,
   buildProviderToolForModel,
   classifyAiGatewayProviderError,
+  parseProviderJsonObjectContent,
+  selectReportProviderContract,
   type ProviderSafeErrorCategory,
+  type ReportProviderContract,
 } from "./provider-tool-schema.server";
 import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
@@ -139,8 +143,48 @@ export function buildEvidenceBlock(
   )}`;
 }
 
+export function buildReportPolishRequestBodyForProvider(input: {
+  model: string;
+  systemPrompt: string;
+  userText: string;
+  reportTool: unknown;
+  providerContract?: ReportProviderContract;
+}): Record<string, unknown> {
+  const providerContract =
+    input.providerContract ?? selectReportProviderContract(input.model);
+  const base = {
+    model: input.model,
+    temperature: 0.2,
+    top_p: 1,
+    max_tokens: 8192,
+    messages: [
+      {
+        role: "system",
+        content:
+          providerContract === "plain_json_report"
+            ? `${input.systemPrompt}\n\n${buildPlainJsonReportInstruction()}`
+            : input.systemPrompt,
+      },
+      { role: "user", content: input.userText },
+    ],
+  };
+
+  if (providerContract === "plain_json_report") return base;
+
+  const reportTool = buildProviderToolForModel(input.reportTool, input.model);
+  return {
+    ...base,
+    tools: [reportTool],
+    tool_choice: {
+      type: "function",
+      function: { name: "submit_audition_report" },
+    },
+  };
+}
+
 export async function runReportPolish(args: RunReportPolishArgs): Promise<RunReportPolishResult> {
   const model = args.model ?? DEFAULT_MODEL;
+  const providerContract = selectReportProviderContract(model);
   const startedAt = Date.now();
 
   const evidenceBlock = buildEvidenceBlock(args.evidence, {
@@ -160,28 +204,19 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
 
   let resp: Response | null = null;
   try {
-    const reportTool = buildProviderToolForModel(args.reportTool, model);
     resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${args.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.stringify(buildReportPolishRequestBodyForProvider({
         model,
-        temperature: 0.2,
-        top_p: 1,
-        max_tokens: 8192,
-        messages: [
-          { role: "system", content: POLISH_SYSTEM_PROMPT },
-          { role: "user", content: userText },
-        ],
-        tools: [reportTool],
-        tool_choice: {
-          type: "function",
-          function: { name: "submit_audition_report" },
-        },
-      }),
+        systemPrompt: POLISH_SYSTEM_PROMPT,
+        userText,
+        reportTool: args.reportTool,
+        providerContract,
+      })),
       signal: args.signal,
     });
   } catch (err) {
@@ -215,6 +250,17 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
   try {
     const json = await resp.json();
     const choice = json.choices?.[0];
+    if (providerContract === "plain_json_report") {
+      const report = parseProviderJsonObjectContent(choice?.message?.content);
+      return {
+        ok: true,
+        report,
+        durationMs: Date.now() - startedAt,
+        model,
+        httpStatus: resp.status,
+      };
+    }
+
     const tc = choice?.message?.tool_calls?.[0];
     if (!tc?.function?.arguments) {
       return {

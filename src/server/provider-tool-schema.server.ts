@@ -8,6 +8,8 @@ export type ProviderSafeErrorCategory =
   | "parser_error"
   | "unknown_safe_error";
 
+export type ReportProviderContract = "tool_call" | "plain_json_report";
+
 const UNSUPPORTED_PROVIDER_SCHEMA_KEYS = new Set([
   "$defs",
   "$ref",
@@ -152,6 +154,60 @@ export function buildProviderToolForModel<T>(tool: T, model?: string | null): T 
     return cloneForProviderToolSchema(tool);
   }
   return tool;
+}
+
+export function selectReportProviderContract(model?: string | null): ReportProviderContract {
+  const normalisedModel = (model ?? "").trim().toLowerCase();
+  if (normalisedModel.includes("google/gemini")) return "plain_json_report";
+  return "tool_call";
+}
+
+export function buildPlainJsonReportInstruction(toolName = "submit_audition_report"): string {
+  return [
+    `Return ONLY the JSON object that would be passed as arguments to ${toolName}.`,
+    "Do not call a tool. Do not wrap the response in Markdown. Do not include commentary before or after the JSON.",
+    "The top-level value must be a JSON object, not an array or a string.",
+  ].join(" ");
+}
+
+export function providerMessageContentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      const record = asObjectRecord(part);
+      if (!record) return "";
+      if (typeof record.text === "string") return record.text;
+      if (typeof record.content === "string") return record.content;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function stripJsonFence(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1].trim() : trimmed;
+}
+
+export function parseProviderJsonObjectContent(content: unknown): unknown {
+  const text = stripJsonFence(providerMessageContentToText(content));
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  } catch {
+    // Fall through to best-effort extraction below.
+  }
+
+  const firstObjectChar = text.indexOf("{");
+  const lastObjectChar = text.lastIndexOf("}");
+  if (firstObjectChar >= 0 && lastObjectChar > firstObjectChar) {
+    const parsed = JSON.parse(text.slice(firstObjectChar, lastObjectChar + 1));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+  }
+  throw new SyntaxError("provider_content_not_json_object");
 }
 
 function normaliseProviderErrorText(body: unknown): string {
