@@ -1,11 +1,11 @@
 # TapeCoach Requirements — AI-Led Full-Value Self-Tape Report System
 
-**Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.
-**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, professional competitive calibration, comparison handling, QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.
-**Supersedes:** earlier README/report design notes where they conflict with this document.
-**Language:** UK English.
-**Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.
-**Current implementation note:** S10 is already being implemented. The calibration additions in this README are not a new reset; they are controlling amendments to be merged into the relevant in-flight S10 slices.
+**Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.  
+**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, professional competitive calibration, audition take lifecycle, comparison handling, admin QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.  
+**Supersedes:** earlier README/report design notes where they conflict with this document.  
+**Language:** UK English.  
+**Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.  
+**Current implementation note:** S10 is already being implemented. The calibration additions in this README are not a new reset; they are controlling amendments to be merged into the relevant in-flight S10 slices.  
 **Core correction:** TapeCoach is an AI-led professional critique system. The AI is the report brain. Code asks the right questions, validates, repairs, routes and renders the AI output.
 
 ---
@@ -54,6 +54,8 @@ Mandatory guardrails:
 - Scoring basis must be explicit: brief-supplied, partial-brief, no-brief baseline or brief-uncertain.
 - Role/material research may support judgement only where source basis and observed evidence allow.
 - Professional 90+ scores must not collapse into generic excellence language.
+- Each audition supports up to three active take slots; replacing a take creates a new take version and a fresh report/QA run.
+- Ordinary comparison is between the active versions of Take 1, Take 2 and Take 3.
 - Canonical run identity is `take-[raw_core]`; `take-take-*` is invalid.
 - Clean generated artefact churn before commit.
 
@@ -67,15 +69,15 @@ It reads the supplied brief where present, analyses the self-tape, identifies th
 
 The central product questions are:
 
-> Is this tape ready to submit for this performer’s selected level, audition type and supplied brief / task?
-> Has the performer achieved the supplied brief, where one was provided?
-> If no brief was supplied, what can and cannot be assessed from the observable tape?
-> What does the tape communicate at the selected level?
-> Where role/material is supplied, how specifically does the tape serve that task?
-> At Professional level, is this merely competent, or competitive?
-> At Professional 90+, what separates this tape from other already-strong professional submissions?
-> What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?
-> If there are multiple takes, which take or combination of choices best serves the submission, and why?
+> Is this tape ready to submit for this performer’s selected level, audition type and supplied brief / task?  
+> Has the performer achieved the supplied brief, where one was provided?  
+> If no brief was supplied, what can and cannot be assessed from the observable tape?  
+> What does the tape communicate at the selected level?  
+> Where role/material is supplied, how specifically does the tape serve that task?  
+> At Professional level, is this merely competent, or competitive?  
+> At Professional 90+, what separates this tape from other already-strong professional submissions?  
+> What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?  
+> If the audition has up to three active takes, which active take or combination of choices best serves the submission, and why?
 
 Every authenticated performer-facing report must help the performer understand:
 
@@ -99,7 +101,8 @@ Every authenticated performer-facing report must help the performer understand:
 18. what not to over-fix;
 19. what could not be assessed reliably;
 20. how score and comparison language should be interpreted, where scores or comparisons are visible;
-21. for Professional 90+ reports, the competitive zone, differentiators, score suppressors and retake strategy.
+21. for Professional 90+ reports, the competitive zone, differentiators, score suppressors and retake strategy;
+22. where multiple takes exist, which active take versions were analysed or compared, and whether any replacement made a previous comparison stale.
 
 The judgement should combine practical agent, casting-aware reviewer, acting coach, vocal/singing coach, movement/dance coach, musical-theatre package coach, commercial/screen-task coach, self-tape technician and audition-coach perspectives.
 
@@ -112,9 +115,10 @@ Selected level determines the standard.
 Brief determines the task.
 Observed tape provides the evidence.
 Role/material research adds secondary specificity where supported.
+Audition take slots determine which active takes are analysed or compared.
 Score expresses readiness against the available evidence.
 Professional 90+ adds competitive nuance.
-The UI must make the source basis visible.
+The UI and admin surfaces must make the source basis, active take versions and QA status visible where applicable.
 ```
 
 With a brief:
@@ -154,7 +158,8 @@ The AI should provide:
 - strengths;
 - optional polish;
 - professional competitive calibration where applicable;
-- comparison judgement;
+- comparison judgement across active takes;
+- take-slot and active-version awareness;
 - score reasoning;
 - timestamped or time-banded notes;
 - next-action guidance.
@@ -207,6 +212,8 @@ The authenticated performer-facing report should use all useful available inform
 - timestamped or time-banded notes where available;
 - professional judgement;
 - Professional 90+ competitive calibration where applicable;
+- active take slot/version context and comparison context where applicable;
+- per-take and per-comparison QA/admin status where applicable;
 - operator-confirmed assumptions.
 
 Do not suppress content merely because it is detailed, brief-derived, technique-related, score-related, comparison-related, positive, critical, role-specific or professionally specific.
@@ -262,7 +269,8 @@ The simplest TapeCoach flow is:
    - selected skill / performer level;
    - self-tape video;
    - optional audition type / discipline / comparison selection;
-   - optional role, character, production, song, side, copy or material context.
+   - optional role, character, production, song, side, copy or material context;
+   - up to three active audition take slots, with replacement history where relevant.
 
 2. **Automated media layer**
    - upload;
@@ -307,9 +315,11 @@ User input
   - audition type / discipline, if known
   - role/material context, if supplied
   - self-tape media
-  - optional comparison takes
+  - optional comparison takes, limited to three active take slots
         ↓
 Input context builder
+        ↓
+Audition take slot / active version resolver
         ↓
 Brief / no-brief scoring mode resolver
         ↓
@@ -356,7 +366,9 @@ TapeCoach must support:
 - optional audition type;
 - optional discipline;
 - optional role/material context;
-- optional comparison takes.
+- optional audition take slots up to Take 1, Take 2 and Take 3;
+- optional replacement self-tapes for an existing take slot;
+- optional comparison between active take versions.
 
 ### 3.2 Performer level is a required assessment input
 
@@ -451,6 +463,135 @@ If same-video status affects comparison, canary acceptance or report interpretat
 | `same_video_changed_role_context` | Same video judged with changed role/material context. | Recalibrate task specificity; do not imply performance changed. |
 | `duplicate_in_comparison` | Compared takes are the same media. | Do not recommend one as a different performance; explain duplicate status. |
 
+
+### 3.7 Audition take slots, replacement and comparison lifecycle
+
+Each audition may contain up to three active take slots:
+
+```text
+Take 1
+Take 2
+Take 3
+```
+
+An audition may have fewer than three takes, but it must not have more than three active takes.
+
+Comparison is performed between the active takes in those three slots.
+
+```text
+Audition
+  Take 1 active version
+  Take 2 active version
+  Take 3 active version
+        ↓
+Comparison report
+```
+
+Each take slot may be replaced by a newly uploaded self-tape.
+
+Replacing a take must not silently overwrite the previous take analysis. A replacement creates a new take version and a new analysis run.
+
+```text
+Take 2 v1
+  replaced by
+Take 2 v2
+```
+
+Only the latest active version of each take slot participates in the ordinary audition comparison, unless an admin/operator explicitly opens an earlier version for QA, audit or regression review.
+
+Previous versions should remain available in the admin/QA view subject to retention, privacy and deletion policy.
+
+#### Required behaviour
+
+For every uploaded or replaced take, TapeCoach must create:
+
+- a media processing record;
+- an analysis run;
+- an individual take report;
+- a report model;
+- QA artefacts where QA is enabled;
+- admin-visible run status;
+- admin-visible artefact status.
+
+For every comparison run, TapeCoach must create:
+
+- a comparison analysis run;
+- a comparison report;
+- comparison reasoning;
+- same-video / duplicate checks;
+- comparison QA artefacts where QA is enabled;
+- admin-visible comparison status;
+- admin-visible comparison artefact status.
+
+A take replacement must trigger a fresh report for that take.
+
+A take replacement must also invalidate or refresh any comparison that included the replaced active take.
+
+#### Active comparison rule
+
+Ordinary comparison uses the active version of each available take slot:
+
+```text
+active Take 1
+active Take 2
+active Take 3
+```
+
+Do not compare replaced or archived versions against active takes unless the admin/operator explicitly requests a historical, audit or regression comparison.
+
+#### Same-video and duplicate handling
+
+If a replacement or additional take appears to be the same underlying video as an existing take, TapeCoach must apply same-video / duplicate handling.
+
+The system must not create a false winner between duplicate or near-duplicate media.
+
+If the same video is intentionally re-uploaded as a retest, the report and QA artefacts must mark it as an intentional retest or operator-confirmed same-video run.
+
+#### Admin requirements
+
+The admin section must make the take lifecycle inspectable.
+
+For each audition, admin should show:
+
+```text
+Audition
+  Take 1
+    active version
+    previous versions
+    report status
+    QA artefact status
+  Take 2
+    active version
+    previous versions
+    report status
+    QA artefact status
+  Take 3
+    active version
+    previous versions
+    report status
+    QA artefact status
+  Comparison runs
+    compared active versions
+    comparison report status
+    comparison QA artefact status
+```
+
+A report is incomplete from an admin/QA perspective if the performer-facing report renders but the admin cannot see whether the take report, comparison report and QA artefacts were emitted, missing, failed, deferred or not applicable.
+
+#### Performer-facing requirements
+
+The performer-facing audition page should make the active take state clear:
+
+```text
+Take 1
+Take 2
+Take 3
+```
+
+Where a take was replaced, performer-facing UI may show only the current active take unless product policy chooses to expose previous versions.
+
+The performer-facing comparison must not confuse replaced versions with active takes.
+
 ---
 
 ## 4. Media preparation and assessability
@@ -501,6 +642,7 @@ The AI or deterministic context builder should identify:
 - supplied brief status;
 - available role/material context;
 - audition type / discipline where known;
+- active take slot/version context;
 - comparison context;
 - limitations before analysis.
 
@@ -531,7 +673,7 @@ The AI should provide:
 - strengths and preserve;
 - technique-library commentary;
 - score reasoning;
-- comparison judgement where relevant;
+- comparison judgement across active take versions where relevant;
 - Professional competitive calibration where applicable;
 - next action;
 - do-not-overfix;
@@ -582,6 +724,7 @@ Every visible report section must have an AI question designed to populate it.
 
 The AI must be explicitly asked to populate:
 
+- take slot and active version context where applicable;
 - scoring basis;
 - performer level calibration;
 - brief intelligence;
@@ -892,15 +1035,16 @@ Tasks:
 
 ### 6.14 Comparison prompt
 
-When multiple takes exist, ask the AI to compare:
+When multiple active takes exist, ask the AI to compare only the active take versions unless an admin/operator explicitly requests a historical comparison. Ask the AI to compare:
 
-- which take better meets the brief;
+- which active take better meets the brief;
 - performance differences;
 - technical differences;
 - role/material specificity where applicable;
 - strongest choices in each;
 - what should be preserved;
-- whether the comparison is valid or affected by same-video status.
+- whether the comparison is valid or affected by same-video status;
+- which take slots and take version IDs were compared.
 
 ### 6.15 Next action prompt
 
@@ -941,6 +1085,7 @@ The report model should be rich enough to preserve AI judgement.
 Required top-level sections:
 
 ```text
+take_lifecycle
 scoring_context
 level_calibration
 role_material_context
@@ -965,35 +1110,37 @@ operator_assumptions
 The authenticated report should render:
 
 1. recommendation;
-2. scoring basis;
-3. judged-against selected performer level;
-4. readiness / score / comparison chips where enabled;
-5. Professional competitive zone where applicable;
-6. why this recommendation;
-7. what the brief asked for, if supplied;
-8. brief achievement, if brief supplied;
-9. role/material context, source basis and uncertainty where applicable;
-10. what TapeCoach observed;
-11. what meets the selected-level standard;
-12. what falls short at the selected level;
-13. fix first;
-14. prioritised fixes;
-15. must fix before submitting;
-16. should improve if retaking;
-17. optional polish;
-18. strengths to preserve;
-19. technique-library commentary;
-20. timestamped / time-banded commentary;
-21. next action;
-22. do not over-fix;
-23. not assessable / reliability notes;
-24. operator/test diagnostic notes where applicable.
+2. take slot / active take version where relevant;
+3. scoring basis;
+4. judged-against selected performer level;
+5. readiness / score / comparison chips where enabled;
+6. Professional competitive zone where applicable;
+7. why this recommendation;
+8. what the brief asked for, if supplied;
+9. brief achievement, if brief supplied;
+10. role/material context, source basis and uncertainty where applicable;
+11. what TapeCoach observed;
+12. what meets the selected-level standard;
+13. what falls short at the selected level;
+14. fix first;
+15. prioritised fixes;
+16. must fix before submitting;
+17. should improve if retaking;
+18. optional polish;
+19. strengths to preserve;
+20. technique-library commentary;
+21. timestamped / time-banded commentary;
+22. next action;
+23. do not over-fix;
+24. not assessable / reliability notes;
+25. operator/test diagnostic notes where applicable.
 
 ### 7.3 Required report labels
 
 Every authenticated report must visibly answer:
 
 ```text
+Take: [Take 1 / Take 2 / Take 3, where applicable]
 Scoring basis: [brief supplied / partial brief supplied / no brief supplied — baseline assessment only / brief status uncertain]
 Judged against: [selected performer level]
 ```
@@ -1981,6 +2128,83 @@ type KnownMaterialBaselineProfile = {
   uncertaintyNotes: string[];
 };
 
+
+type AuditionTakeSlot = 1 | 2 | 3;
+
+type TakeVersionStatus =
+  | "active"
+  | "replaced"
+  | "processing_failed"
+  | "analysis_failed"
+  | "deleted_by_user"
+  | "archived";
+
+type TakeVersionSummary = {
+  takeVersionId: string;
+  slot: AuditionTakeSlot;
+  uploadedAt: string;
+  status: TakeVersionStatus;
+  mediaAssetId?: string;
+  analysisRunId?: string;
+  reportId?: string;
+  replacedByTakeVersionId?: string;
+  replacementReason?:
+    | "user_replaced"
+    | "admin_retest"
+    | "processing_retry"
+    | "unknown";
+};
+
+type AuditionTakeSlotState = {
+  auditionId: string;
+  slot: AuditionTakeSlot;
+  activeTakeVersionId?: string;
+  versions: TakeVersionSummary[];
+};
+
+type TakeReportRun = {
+  auditionId: string;
+  slot: AuditionTakeSlot;
+  takeVersionId: string;
+  analysisRunId: string;
+  reportId: string;
+  reportStatus:
+    | "pending"
+    | "processing"
+    | "rendered"
+    | "failed"
+    | "limited";
+  qaArtefactStatus:
+    | "not_enabled"
+    | "emitted"
+    | "partially_emitted"
+    | "failed"
+    | "deferred"
+    | "not_applicable";
+};
+
+type AuditionComparisonRun = {
+  auditionId: string;
+  comparisonRunId: string;
+  comparedTakeVersionIds: string[];
+  comparedSlots: AuditionTakeSlot[];
+  comparisonStatus:
+    | "pending"
+    | "processing"
+    | "rendered"
+    | "stale_after_replacement"
+    | "suppressed_same_video"
+    | "too_close_to_call"
+    | "failed";
+  qaArtefactStatus:
+    | "not_enabled"
+    | "emitted"
+    | "partially_emitted"
+    | "failed"
+    | "deferred"
+    | "not_applicable";
+};
+
 type ProfessionalCompetitiveZone =
   | "90_91_professionally_viable"
   | "92_93_solid_professional_contender"
@@ -2395,6 +2619,8 @@ For MT package reports, identify:
 
 ## 21. Comparison requirements
 
+Comparison requirements apply to the active versions of up to three audition take slots unless an admin/operator explicitly runs a historical, audit or regression comparison.
+
 ### 21.1 Comparison modes
 
 Comparison may occur in authenticated/operator/test mode.
@@ -2425,6 +2651,37 @@ Do not guarantee casting, callback, booking or employment outcomes.
 If compared takes appear to be the same video, the report must say so or ask for operator confirmation.
 
 Do not recommend one duplicate over another as if they were different performances.
+
+
+### 21.4 Three-take comparison model
+
+Each audition supports a maximum of three active takes.
+
+Comparison is between the active versions of Take 1, Take 2 and Take 3.
+
+If only two takes are active, compare the two active takes.
+
+If only one take is active, no ordinary comparison should be produced unless an admin/operator is running a historical, audit or regression comparison.
+
+If a take is replaced, the previous comparison is stale because one of its compared inputs is no longer active.
+
+The system should either:
+
+- regenerate the comparison automatically after the replacement report is complete; or
+- mark the comparison as stale and ask the user/admin to rerun comparison.
+
+The comparison report must identify which take versions were compared.
+
+```text
+Compared:
+Take 1 — version [...]
+Take 2 — version [...]
+Take 3 — version [...]
+```
+
+Do not compare hidden replaced versions against active takes unless the admin/operator explicitly requests that historical comparison.
+
+A comparison report is incomplete if it does not identify its compared take slots and active take versions.
 
 ---
 
@@ -2520,6 +2777,8 @@ Where QA is enabled, preferred artefacts include:
 - `ai/brief_scoring_context.json`;
 - `ai/role_material_calibration.json` where relevant;
 - `ai/professional_competitive_calibration.json` where relevant;
+- `take/take_lifecycle.json` where relevant;
+- `comparison/comparison_run.json` where relevant;
 - `report/full_report_model.json`;
 - `report/authenticated_report_model.json`;
 - `report/rendered_text.txt`;
@@ -2543,6 +2802,43 @@ The system should log safe diagnostics:
 
 Never log secrets, signed URLs, private media URLs, raw prompts or raw responses in ordinary logs.
 
+
+### 24.4 Per-take and per-comparison QA in admin
+
+Each take analysis run must have its own QA artefact bundle where QA is enabled.
+
+Each comparison run must have its own comparison QA artefact bundle where QA is enabled.
+
+Admin must show, for each take version:
+
+- audition ID;
+- take slot;
+- take version ID;
+- active/replaced status;
+- media readiness status;
+- analysis run ID;
+- report status;
+- QA artefact status;
+- manifest status;
+- report model status;
+- rendered report status;
+- failure/deferred/not-applicable reason where relevant.
+
+Admin must show, for each comparison run:
+
+- audition ID;
+- compared take slots;
+- compared take version IDs;
+- comparison status;
+- stale-after-replacement status where relevant;
+- same-video / duplicate status;
+- comparison recommendation status;
+- comparison QA artefact status;
+- manifest status;
+- failure/deferred/not-applicable reason where relevant.
+
+QA artefacts are internal/admin proof and must not leak into performer-facing prose.
+
 ---
 
 ## 25. Minimal env/config principle
@@ -2560,7 +2856,7 @@ Expected categories:
 - app environment;
 - deployment commit if automatically provided.
 
-Do not add env vars for ordinary product behaviour.
+Do not add env vars for ordinary product behaviour. The maximum of three active take slots is a product invariant in this README, not an environment toggle.
 
 ### 25.2 Product configuration
 
@@ -2608,6 +2904,11 @@ Examples:
 - AI misclassified material;
 - same video changed brief;
 - same video changed level;
+- active take slot;
+- active take version;
+- replaced take version;
+- replacement reason;
+- comparison stale/refresh decision;
 - intentional retest.
 
 Operator feedback should become a fixture, regression test, prompt improvement or report-quality rule.
@@ -2909,6 +3210,71 @@ Expected:
 - repair prompt or operator confirmation requested;
 - report does not publish contradictory score language.
 
+
+### Fixture AA — three active takes
+
+Input:
+
+```text
+One audition with Take 1, Take 2 and Take 3 active.
+```
+
+Expected:
+
+- all three active takes have individual reports;
+- all three active takes have QA artefact status in admin where QA is enabled;
+- comparison runs across the three active take versions;
+- comparison identifies which take versions were compared;
+- route/PDF/admin surfaces do not imply a fourth active take exists.
+
+### Fixture AB — replace Take 2
+
+Input:
+
+```text
+Audition has Take 1, Take 2 and Take 3.
+User replaces Take 2 with a new self-tape.
+```
+
+Expected:
+
+- Take 2 v1 becomes replaced or archived;
+- Take 2 v2 becomes active;
+- Take 2 v2 receives a new analysis run and individual report;
+- Take 2 v2 receives QA artefact status in admin where QA is enabled;
+- previous comparison is marked stale or regenerated;
+- new comparison uses Take 1 active, Take 2 v2 active and Take 3 active;
+- Take 2 v1 remains inspectable in admin subject to retention policy.
+
+### Fixture AC — replace with same video
+
+Input:
+
+```text
+User replaces Take 3 with the same underlying media.
+```
+
+Expected:
+
+- same-video / duplicate handling activates;
+- replacement is marked duplicate, probable duplicate or intentional retest;
+- new report may be generated for regression/retest, but comparison must not create a false winner;
+- admin shows duplicate/same-video status and QA artefact status.
+
+### Fixture AD — one or two active takes
+
+Input:
+
+```text
+Audition has only Take 1, or only Take 1 and Take 2.
+```
+
+Expected:
+
+- one active take: individual report only, no ordinary comparison;
+- two active takes: comparison between the two active versions only;
+- empty slots are shown as empty, not failed.
+
 ---
 
 ## 28. Route/PDF first acceptance
@@ -2934,6 +3300,8 @@ A performer should be able to understand within 60 seconds:
 - brief achievement, where brief exists;
 - role/material source basis, where used;
 - Professional competitive zone, where applicable;
+- active take slots / compared take versions, where applicable;
+- admin-visible per-take/per-comparison QA status where QA is enabled;
 - next action.
 
 ---
@@ -2961,6 +3329,9 @@ Report-value changes should include tests for:
 - score terminology alignment;
 - Professional 90+ calibration;
 - same-video handling;
+- take slot lifecycle;
+- take replacement invalidation/refresh;
+- per-take and per-comparison admin QA status;
 - comparison handling;
 - red-line filtering;
 - QA proof where relevant.
@@ -2976,6 +3347,8 @@ A slice is not done unless:
 - selected level is visible and used;
 - scoring basis is visible and consistent;
 - role/material context has source basis where used;
+- active take slots and compared take versions are visible where comparison/replacement applies;
+- admin can inspect per-take and per-comparison report/QA status where QA is enabled;
 - AI outputs are routed to the UI;
 - no generic thin-shell copy is introduced;
 - high-risk red-line content is suppressed or rewritten;
@@ -3034,21 +3407,22 @@ S10 is already in implementation. The sequence below remains the controlling ord
 
 1. AI-led report module question map.
 2. Performer level calibration architecture.
-3. Full-value authenticated report architecture and types.
-4. Brief intelligence and authenticated brief transparency.
-5. Brief/no-brief scoring basis semantics.
-6. Role / character research and known-material calibration.
-7. AI observation and professional judgement prompts.
-8. Report model to UI piping.
-9. Technique-library commentary.
-10. Timestamped commentary.
-11. Score terminology and professional nuance.
-12. Professional 90–100 competitive calibration.
-13. Same-video / duplicate-upload handling.
-14. Positive brief-complete report path.
-15. Incomplete mandatory package path.
-16. Route/PDF first QA.
-17. QA artefacts as secondary proof.
+3. Audition take slot lifecycle and admin QA contract.
+4. Full-value authenticated report architecture and types.
+5. Brief intelligence and authenticated brief transparency.
+6. Brief/no-brief scoring basis semantics.
+7. Role / character research and known-material calibration.
+8. AI observation and professional judgement prompts.
+9. Report model to UI piping.
+10. Technique-library commentary.
+11. Timestamped commentary.
+12. Score terminology and professional nuance.
+13. Professional 90–100 competitive calibration.
+14. Same-video / duplicate-upload handling.
+15. Positive brief-complete report path.
+16. Incomplete mandatory package path.
+17. Route/PDF first QA.
+18. QA artefacts as secondary proof.
 
 Do not start with payload gates, source-kind restrictions or QA architecture before the report is useful.
 
@@ -3196,6 +3570,21 @@ Resolved rule:
 known material supports the brief, carries truth state and source basis, and cannot invent hidden casting requirements
 ```
 
+
+### 32.11 Take replacement and comparison lifecycle
+
+Previous issue:
+
+```text
+multiple takes could be compared without a clear active-slot/version lifecycle
+```
+
+Resolved rule:
+
+```text
+each audition has up to three active take slots; replacing a take creates a new version, a new take report and a new QA/admin trail, and stale comparisons must be refreshed or marked stale
+```
+
 ---
 
 ## 33. Forbidden failure modes
@@ -3216,6 +3605,11 @@ Do not:
 - proceed when operator assumptions are untested;
 - treat a high score as a substitute for professional feedback;
 - compare duplicate/same-video takes as though they are different performances;
+- allow more than three active takes for one audition;
+- silently overwrite a replaced take report or QA proof;
+- let comparison mix active and replaced take versions unintentionally;
+- render a comparison without identifying compared take versions;
+- let a take or comparison report render without admin-visible report/QA status where QA is enabled;
 - let a strong complete take produce an empty or thin report;
 - treat selected level as tone or encouragement;
 - let Professional merely mean harsher language;
@@ -3260,6 +3654,7 @@ Pipe the AI output to the UI.
 Use selected level as the standard.
 Use the brief as the task authority.
 Use role/material research only with source basis and observed evidence.
+Use active take slots for comparison and preserve replacement history in admin/QA.
 Make no-brief limitations visible.
 Preserve Professional 90+ nuance.
 Test assumptions with the operator.
