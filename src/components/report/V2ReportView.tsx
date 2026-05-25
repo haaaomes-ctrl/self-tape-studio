@@ -256,6 +256,14 @@ function sourceLimitation(
     : null;
 }
 
+function hasS10SectionRenderAuthority(
+  sourceMap: Record<string, unknown> | null,
+  section: string,
+): boolean {
+  const source = safeStr(safeObj(sourceMap?.[section])?.source);
+  return source === "s10_authoritative_module" || source === "s10_compatibility_projection";
+}
+
 const S10_LIMITED_ROUTE_MESSAGE =
   "TapeCoach could not assemble the full S10 report model for this take. No legacy report was used as a substitute.";
 
@@ -290,7 +298,11 @@ export function V2ReportView({
     safeStr(report.source_mode) === "s10_ai_report_model" ||
     rawS10View != null ||
     hasS10ModuleObject(report);
-  if (isS10 && !usableS10View) {
+  const isLimitedS10Report =
+    isS10 &&
+    (safeStr(report.report_status) === "limited" ||
+      safeStr(report.limitation_reason) === "s10_v2_build_or_validation_failed");
+  if (isLimitedS10Report || (isS10 && !usableS10View)) {
     return (
       <div className="space-y-6">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
@@ -372,25 +384,46 @@ export function V2ReportView({
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );
   const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
+  const s10ScoreAuthorized = hasS10SectionRenderAuthority(s10SectionSourceMap, "score_summary");
+  const s10ReadinessAuthorized = hasS10SectionRenderAuthority(
+    s10SectionSourceMap,
+    "readiness_header",
+  );
+  const s10SubmissionGuidanceAuthorized = hasS10SectionRenderAuthority(
+    s10SectionSourceMap,
+    "submission_guidance",
+  );
   const overall = isS10
-    ? safeNum(s10ScoreSummary?.overall_submission_readiness_score)
+    ? s10ScoreAuthorized
+      ? safeNum(s10ScoreSummary?.overall_submission_readiness_score)
+      : null
     : safeNum(report.overall_readiness);
-  const headline = isS10 ? safeStr(s10Recommendation?.headline) : safeStr(report.headline);
+  const headline = isS10
+    ? s10ReadinessAuthorized
+      ? safeStr(s10Recommendation?.headline)
+      : null
+    : safeStr(report.headline);
   const insight = isS10
-    ? (safeStr(s10Recommendation?.score_explanation) ?? safeStr(s10Matrix?.summary))
+    ? s10ReadinessAuthorized
+      ? safeStr(s10Recommendation?.score_explanation)
+      : null
     : safeStr(report.insight);
   const verdict = isS10
-    ? safeStr(s10Recommendation?.decision)?.replace(/_/g, " ")
+    ? s10SubmissionGuidanceAuthorized
+      ? safeStr(s10Recommendation?.decision)?.replace(/_/g, " ")
+      : null
     : safeStr(report.verdict);
   const reliability = isS10 ? null : safeStr(report.reliability);
   const reliabilityReason = isS10 ? null : safeStr(report.reliability_reason);
   const legacyFixFirst = safeStr(report.fix_first);
-  const s10Decision = safeStr(s10Recommendation?.decision);
+  const s10Decision = s10SubmissionGuidanceAuthorized ? safeStr(s10Recommendation?.decision) : null;
   const s10HasBlockingDecision =
     !!s10Decision && !["submit", "submit_if_deadline_is_close"].includes(s10Decision);
   const s10SubmissionRiskSource = safeObj(s10SectionSourceMap?.submission_risk);
   const s10HasRiskSource = safeStr(s10SubmissionRiskSource?.source) === "s10_authoritative_module";
-  const s10Rationale = renderableListItems(safeArr(s10Recommendation?.rationale));
+  const s10Rationale = s10SubmissionGuidanceAuthorized
+    ? renderableListItems(safeArr(s10Recommendation?.rationale))
+    : [];
   const blockers = (
     isS10 && (s10HasBlockingDecision || s10HasRiskSource)
       ? s10Rationale

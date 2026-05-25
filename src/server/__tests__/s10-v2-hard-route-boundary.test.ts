@@ -192,6 +192,56 @@ describe("S10.P1e hard V2 route boundary", () => {
     expect(html).not.toContain("Single-file submission as requested");
   });
 
+  it("does not render S10 recommendation fields when readiness is source-mapped as a limitation", () => {
+    const limited = buildS10LimitedV2Report({ auditionType: "musical_theatre", mode: "brief" });
+    const s10_view_model = {
+      ...(limited.s10_view_model as Record<string, unknown>),
+      recommendation: {
+        decision: "submit",
+        headline: "Submit: unsupported recommendation",
+        score_explanation: "Unsupported score explanation should not render.",
+        rationale: ["Unsupported positive rationale should not render."],
+      },
+      limitations: ["Readiness judgement is not available for this report."],
+    };
+
+    const html = render({
+      schema_version: "v2-component",
+      source_mode: "s10_ai_report_model",
+      s10_view_model,
+      overall_readiness: 93,
+      headline: "Strong for this level",
+      insight: "Legacy insight should not render.",
+      verdict: "Legacy submit verdict",
+      fix_first: "Correct the file naming convention",
+      presentation_notes: ["Single-file submission as requested"],
+    });
+
+    expect(html).toContain("Readiness judgement is not available for this report.");
+    expect(html).not.toContain("Verdict:");
+    expect(html).not.toContain("submit");
+    expect(html).not.toContain("Submit: unsupported recommendation");
+    expect(html).not.toContain("Unsupported score explanation should not render.");
+    expect(html).not.toContain("Unsupported positive rationale should not render.");
+    expect(html).not.toContain("Why this recommendation");
+    expect(html).not.toContain("Strong for this level");
+    expect(html).not.toContain("Legacy insight should not render");
+    expect(html).not.toContain("Legacy submit verdict");
+    expect(html).not.toContain("Correct the file naming convention");
+    expect(html).not.toContain("Single-file submission as requested");
+  });
+
+  it("renders valid limited S10 V2 reports as the limited surface only", () => {
+    const limited = buildS10LimitedV2Report({ auditionType: "musical_theatre", mode: "brief" });
+
+    const html = render(limited as unknown as Record<string, unknown>);
+
+    expect(html).toContain("S10 report assembly limitation");
+    expect(html).toContain("No legacy report was used as a substitute.");
+    expect(html).not.toContain("Verdict:");
+    expect(html).not.toContain("Why this recommendation");
+  });
+
   it.each([
     [
       "disallowed readiness source",

@@ -529,15 +529,16 @@ export function buildS10PerformerReportViewModel(input: {
     report_version: S10_PERFORMER_REPORT_VIEW_MODEL_VERSION,
     source_mode: S10_REPORT_SOURCE_MODE,
     section_source_map,
-    recommendation: readiness
-      ? {
-          decision: readiness.decision,
-          headline: readiness.headline,
-          rationale: Array.isArray(readiness.rationale) ? readiness.rationale : [],
-          score_explanation: readiness.score_explanation,
-          confidence: readiness.confidence,
-        }
-      : null,
+    recommendation:
+      hasVisibleReadiness && readiness
+        ? {
+            decision: readiness.decision,
+            headline: readiness.headline,
+            rationale: Array.isArray(readiness.rationale) ? readiness.rationale : [],
+            score_explanation: readiness.score_explanation,
+            confidence: readiness.confidence,
+          }
+        : null,
     score_summary: {
       overall_submission_readiness_score: visibleS10Score,
       performance_quality_score:

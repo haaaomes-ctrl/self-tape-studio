@@ -104,7 +104,7 @@ describe("S10.P1e source-map validation", () => {
     });
     const view = strongView(report);
 
-    expect(view.recommendation?.decision).toBeNull();
+    expect(view.recommendation).toBeNull();
     expect(view.score_summary.overall_submission_readiness_score).toBeNull();
     expect(view.score_summary.performance_quality_score).toBeNull();
     expect(view.score_summary.brief_completion_score).toBeNull();
