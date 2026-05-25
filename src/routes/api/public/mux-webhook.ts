@@ -5,14 +5,17 @@ import {
   getMux,
   normaliseMuxMp4Url,
 } from "@/server/mux.server";
-import { runProcessTake } from "@/server/process-take.server";
-import { scheduleBackground } from "@/worker-entry";
 import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
   resolveTakeIdentity,
 } from "@/server/quota.server";
 import { metric } from "@/server/metrics.server";
+import { enqueueAnalysisJobOrMarkFailed } from "@/server/analysis-job-queue.server";
+import {
+  FINALISING_ORPHAN_MS,
+  recoverFinalisingTake,
+} from "@/server/finalising-recovery.server";
 
 const STATIC_RENDITION_HEARTBEAT_STALE_MS = 30_000;
 
@@ -20,15 +23,21 @@ export function classifyStaticRenditionReadyTake(input: {
   status?: string | null;
   processing_phase?: string | null;
   stale_heartbeat_ms: number;
-}): "skip_terminal" | "skip_fresh_inflight" | "recover_stale_analysing" | "continue" {
+}):
+  | "skip_terminal"
+  | "skip_fresh_inflight"
+  | "recover_stale_analysing"
+  | "recover_stale_finalising"
+  | "continue" {
   const staleHeartbeatMs = Number.isFinite(input.stale_heartbeat_ms)
     ? input.stale_heartbeat_ms
     : Number.POSITIVE_INFINITY;
   if (input.status === "complete" || input.status === "error") return "skip_terminal";
-  if (
-    (input.processing_phase === "analysing" || input.processing_phase === "finalising") &&
-    staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS
-  ) {
+  if (input.processing_phase === "finalising" && staleHeartbeatMs >= FINALISING_ORPHAN_MS) {
+    return "recover_stale_finalising";
+  }
+  if (input.processing_phase === "finalising") return "skip_fresh_inflight";
+  if (input.processing_phase === "analysing" && staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS) {
     return "skip_fresh_inflight";
   }
   if (
@@ -37,7 +46,6 @@ export function classifyStaticRenditionReadyTake(input: {
   ) {
     return "recover_stale_analysing";
   }
-  if (input.processing_phase === "finalising") return "skip_fresh_inflight";
   return "continue";
 }
 
@@ -132,7 +140,7 @@ async function scheduleTakeFromStaticRenditionReady(params: {
   const { data: existing } = await supabaseAdmin
     .from("takes")
     .select(
-      "status, processing_phase, created_at, updated_at, audition_id, mux_playback_id, mux_duration_seconds",
+      "status, processing_phase, created_at, updated_at, audition_id, mux_playback_id, mux_duration_seconds, report, scores",
     )
     .eq("id", takeId)
     .single();
@@ -214,6 +222,29 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     });
     return new Response("ok", { status: 200 });
   }
+  if (recoveryAction === "recover_stale_finalising") {
+    const result = await recoverFinalisingTake({
+      takeId,
+      createdAt: existing.created_at,
+      updatedAt: existing.updated_at,
+      report: (existing as { report?: unknown }).report,
+      scores: (existing as { scores?: unknown }).scores,
+      source: "static_rendition.ready",
+    });
+    console.warn("MUX WEBHOOK static_rendition.ready recovered stale finalising take", {
+      takeId,
+      status: existing.status,
+      processing_phase: existing.processing_phase,
+      stale_heartbeat_ms: staleHeartbeatMs,
+      result,
+    });
+    metric("static_rendition_recovered_stale_finalising", {
+      take_id: takeId,
+      stale_heartbeat_ms: staleHeartbeatMs,
+      result,
+    });
+    return new Response("ok", { status: 200 });
+  }
   if (recoveryAction === "recover_stale_analysing") {
     console.warn("MUX WEBHOOK static_rendition.ready recovering stale analysing take", {
       takeId,
@@ -269,28 +300,23 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     .update({ status: "pending", processing_phase: "analysis_pending", error_message: null })
     .eq("id", takeId);
 
-  console.log("MUX WEBHOOK scheduling runProcessTake from static_rendition.ready", {
+  console.log("MUX WEBHOOK enqueueing analysis from static_rendition.ready", {
     takeId,
     stale_heartbeat_ms: staleHeartbeatMs,
     timestamp: new Date().toISOString(),
   });
-  scheduleBackground(
-    (async () => {
-      const result = await runProcessTake(takeId);
-      console.log("MUX WEBHOOK static_rendition.ready runProcessTake completed", {
-        takeId,
-        result,
-      });
-      return result;
-    })(),
-    `runProcessTake:static_rendition_ready:${takeId}`,
-  );
+  await enqueueAnalysisJobOrMarkFailed({
+    takeId,
+    reason: recoveryAction === "recover_stale_analysing"
+      ? "static_rendition_stale_analysing"
+      : "static_rendition_ready",
+  });
 
   return new Response("ok", { status: 200 });
 }
 
 // Mux webhook receiver. Configure in Mux dashboard:
-//   URL:     https://<project>.lovable.app/api/public/mux-webhook
+//   URL:     https://tapecoach.co.uk/api/public/mux-webhook
 //   Secret:  store as MUX_WEBHOOK_SECRET in Lovable secrets
 //
 // We handle:
@@ -528,22 +554,14 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             .update({ status: "pending", processing_phase: "analysis_pending" })
             .eq("id", takeId);
 
-          // Schedule the AI analysis as a background task that the Cloudflare
-          // Worker runtime is required to keep alive past the response via
-          // ctx.waitUntil. No un-awaited promise leak: scheduleBackground
-          // wraps it in waitUntil when an ExecutionContext is available.
-          console.log("MUX WEBHOOK scheduling runProcessTake (waitUntil) →", {
+          // Enqueue the AI analysis into Cloudflare Queues. The webhook must
+          // not run the full model + final persistence lifecycle in
+          // ctx.waitUntil; live runs can exceed that background lifetime.
+          console.log("MUX WEBHOOK enqueueing analysis job", {
             takeId,
             timestamp: new Date().toISOString(),
           });
-          scheduleBackground(
-            (async () => {
-              const result = await runProcessTake(takeId);
-              console.log("MUX WEBHOOK runProcessTake completed", { takeId, result });
-              return result;
-            })(),
-            `runProcessTake:${takeId}`,
-          );
+          await enqueueAnalysisJobOrMarkFailed({ takeId, reason: "mux_asset_ready" });
           return new Response("ok", { status: 200 });
         }
 

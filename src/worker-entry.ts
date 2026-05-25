@@ -12,7 +12,20 @@ export interface RequestExecutionContext {
   passThroughOnException?: () => void;
 }
 
-const ctxStorage = new AsyncLocalStorage<RequestExecutionContext>();
+type RuntimeStore = {
+  ctx: RequestExecutionContext;
+  env: Record<string, unknown>;
+};
+
+type QueueMessage<T = unknown> = {
+  body: T;
+};
+
+type QueueBatch<T = unknown> = {
+  messages: Array<QueueMessage<T>>;
+};
+
+const runtimeStorage = new AsyncLocalStorage<RuntimeStore>();
 
 /**
  * Returns the current request's Cloudflare ExecutionContext, or `null` if
@@ -22,7 +35,11 @@ const ctxStorage = new AsyncLocalStorage<RequestExecutionContext>();
  * with background work that must not be cancelled when the response returns.
  */
 export function getRequestCtx(): RequestExecutionContext | null {
-  return ctxStorage.getStore() ?? null;
+  return runtimeStorage.getStore()?.ctx ?? null;
+}
+
+export function getRequestEnv<T extends Record<string, unknown> = Record<string, unknown>>(): T | null {
+  return (runtimeStorage.getStore()?.env as T | undefined) ?? null;
 }
 
 /**
@@ -49,7 +66,31 @@ export function scheduleBackground(promise: Promise<unknown>, label = "backgroun
 }
 
 export default {
-  async fetch(request: Request, _env: unknown, ctx: RequestExecutionContext): Promise<Response> {
-    return ctxStorage.run(ctx, () => (startEntry as { fetch: (req: Request) => Promise<Response> }).fetch(request));
+  async fetch(request: Request, env: Record<string, unknown>, ctx: RequestExecutionContext): Promise<Response> {
+    return runtimeStorage.run({ ctx, env }, () =>
+      (startEntry as { fetch: (req: Request) => Promise<Response> }).fetch(request),
+    );
+  },
+
+  async queue(batch: QueueBatch, _env: Record<string, unknown>, _ctx: RequestExecutionContext): Promise<void> {
+    const { runProcessTake } = await import("@/server/process-take.server");
+    for (const message of batch.messages) {
+      const body = message.body as { takeId?: unknown; reason?: unknown; enqueuedAt?: unknown };
+      if (typeof body.takeId !== "string" || body.takeId.trim().length === 0) {
+        console.error("[analysis-queue] invalid message body", { body });
+        continue;
+      }
+      console.log("[analysis-queue] job started", {
+        take_id: body.takeId,
+        reason: typeof body.reason === "string" ? body.reason : null,
+        enqueued_at: typeof body.enqueuedAt === "string" ? body.enqueuedAt : null,
+      });
+      const result = await runProcessTake(body.takeId);
+      console.log("[analysis-queue] job completed", {
+        take_id: body.takeId,
+        reason: typeof body.reason === "string" ? body.reason : null,
+        result,
+      });
+    }
   },
 };
