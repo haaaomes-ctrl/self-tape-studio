@@ -6,6 +6,290 @@
 
 export type AuditionLevel = "learning" | "amateur" | "emerging" | "professional";
 
+export const S10_PERFORMER_REPORT_VIEW_MODEL_VERSION =
+  "s10_performer_report_view_model_v1" as const;
+
+export const S10_REPORT_SOURCE_MODE = "s10_ai_report_model" as const;
+
+export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
+  "readiness_header",
+  "submission_guidance",
+  "score_summary",
+  "category_scores",
+  "category_rationale",
+  "brief_adherence_material_compliance",
+  "brief_context",
+  "brief_requirements",
+  "brief_achievement",
+  "observed_tape",
+  "component_breakdown",
+  "fix_hierarchy",
+  "next_action_plan",
+  "strengths_and_preserve",
+  "professional_critique",
+  "technique_commentary",
+  "timestamped_commentary",
+  "presentation_notes",
+  "submission_risk",
+  "limitations",
+  "same_video_status",
+  "comparison_truth",
+  "diagnostic_chips",
+] as const;
+
+export type S10RouteSectionKey = (typeof S10_ROUTE_REQUIRED_SECTION_KEYS)[number];
+
+export type S10RouteSectionSource =
+  | "s10_authoritative_module"
+  | "s10_compatibility_projection"
+  | "specific_limitation"
+  | "not_applicable";
+
+type S10RouteSectionSourceRule = {
+  sources: readonly S10RouteSectionSource[];
+  modules?: readonly RegExp[];
+};
+
+export const S10_ROUTE_SECTION_SOURCE_RULES: Record<S10RouteSectionKey, S10RouteSectionSourceRule> =
+  {
+    readiness_header: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement$/],
+    },
+    submission_guidance: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement$/],
+    },
+    score_summary: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement$/],
+    },
+    category_scores: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^readiness_score_judgement\.category_scores$/],
+    },
+    category_rationale: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^readiness_score_judgement\.category_rationale$/],
+    },
+    brief_adherence_material_compliance: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^readiness_score_judgement\.brief_completion_score$/],
+    },
+    brief_context: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^brief_context$/],
+    },
+    brief_requirements: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^brief_requirements$/],
+    },
+    brief_achievement: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^brief_achievement_matrix$/],
+    },
+    observed_tape: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^observed_tape_sequence\/component_verifications$/],
+    },
+    component_breakdown: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^component_verifications$/],
+    },
+    fix_hierarchy: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_fix_hierarchy$/],
+    },
+    next_action_plan: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_next_action_plan$/],
+    },
+    strengths_and_preserve: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_professional_critique$/],
+    },
+    professional_critique: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^s10_professional_critique$/],
+    },
+    technique_commentary: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_technique_commentary$/],
+    },
+    timestamped_commentary: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_timestamped_commentary$/],
+    },
+    presentation_notes: {
+      sources: [
+        "s10_authoritative_module",
+        "s10_compatibility_projection",
+        "specific_limitation",
+        "not_applicable",
+      ],
+      modules: [
+        /^s10_professional_critique\/s10_technique_commentary$/,
+        /^s10_professional_critique$/,
+        /^s10_technique_commentary$/,
+      ],
+    },
+    submission_risk: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [
+        /^readiness_score_judgement\/brief_achievement_matrix\/s10_fix_hierarchy$/,
+        /^readiness_score_judgement$/,
+        /^brief_achievement_matrix$/,
+        /^s10_fix_hierarchy$/,
+      ],
+    },
+    limitations: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_view_model$/],
+    },
+    same_video_status: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_same_video_evidence$/],
+    },
+    comparison_truth: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^s10_comparison_truth$/],
+    },
+    diagnostic_chips: {
+      sources: ["not_applicable"],
+    },
+  };
+
+const S10_ROUTE_INVALID_SOURCE_TOKENS = [
+  "raw_report",
+  "legacy_report",
+  "legacy_diagnostic_fallback",
+  "unsupported",
+  "score_trace",
+  "detected_components",
+  "category_notes",
+  "legacy_fix_first",
+  "legacy_next_take_plan",
+  "legacy_presentation_notes",
+  "legacy_risk_flags",
+  "legacy_at_risk",
+  "legacy_block_reasons",
+];
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+export function validateS10RouteSectionSourceEntry(
+  section: S10RouteSectionKey,
+  entry: unknown,
+): string | null {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return `missing_section_source:${section}`;
+  }
+
+  const record = entry as Record<string, unknown>;
+  const rule = S10_ROUTE_SECTION_SOURCE_RULES[section];
+  const sourceValue = asNonEmptyString(record.source);
+  const moduleValue = asNonEmptyString(record.module);
+
+  if (!sourceValue) return `invalid_section_source:${section}:missing_source`;
+  if (!rule.sources.includes(sourceValue as S10RouteSectionSource)) {
+    return `invalid_section_source:${section}:${sourceValue}`;
+  }
+
+  const searchable = `${sourceValue} ${moduleValue ?? ""}`;
+  const invalid = S10_ROUTE_INVALID_SOURCE_TOKENS.find((token) =>
+    searchable.toLowerCase().includes(token.toLowerCase()),
+  );
+  if (invalid) return `invalid_section_source:${section}:${invalid}`;
+
+  if (
+    (sourceValue === "s10_authoritative_module" ||
+      sourceValue === "s10_compatibility_projection") &&
+    !moduleValue
+  ) {
+    return `invalid_section_module:${section}:missing_module`;
+  }
+
+  if (moduleValue && rule.modules && !rule.modules.some((pattern) => pattern.test(moduleValue))) {
+    return `invalid_section_module:${section}:${moduleValue}`;
+  }
+
+  if (sourceValue === "specific_limitation" && !asNonEmptyString(record.limitation)) {
+    return `invalid_section_limitation:${section}:missing_limitation`;
+  }
+
+  return null;
+}
+
+export function isUsableS10PerformerReportViewModel(value: unknown): value is {
+  report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
+  source_mode: typeof S10_REPORT_SOURCE_MODE;
+} {
+  const record =
+    Boolean(value) && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const sectionSourceMap = record?.section_source_map;
+  const scoreSummary = record?.score_summary;
+  const recommendation = record?.recommendation;
+  const limitations = record?.limitations;
+  const recommendationRecord =
+    recommendation && typeof recommendation === "object" && !Array.isArray(recommendation)
+      ? (recommendation as Record<string, unknown>)
+      : null;
+  const hasRenderableItemText = (item: unknown): boolean => {
+    if (typeof item === "string" && item.trim().length > 0) return true;
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const record = item as Record<string, unknown>;
+    return [
+      record.title,
+      record.headline,
+      record.point,
+      record.summary,
+      record.detail,
+      record.exact_action,
+      record.evidence_summary,
+      record.why_it_matters,
+      record.recommended_action,
+    ].some((value) => typeof value === "string" && value.trim().length > 0);
+  };
+  const hasVisibleRecommendation =
+    !!recommendationRecord &&
+    [recommendationRecord.headline, recommendationRecord.score_explanation].some(
+      (item) => typeof item === "string" && item.trim().length > 0,
+    );
+  const hasVisibleRecommendationRationale =
+    !!recommendationRecord &&
+    Array.isArray(recommendationRecord.rationale) &&
+    recommendationRecord.rationale.some((item) => hasRenderableItemText(item));
+  const hasVisibleLimitation =
+    Array.isArray(limitations) &&
+    limitations.some((item) => typeof item === "string" && item.trim().length > 0);
+  const hasRequiredSourceMapEntries =
+    Boolean(sectionSourceMap) &&
+    typeof sectionSourceMap === "object" &&
+    !Array.isArray(sectionSourceMap) &&
+    S10_ROUTE_REQUIRED_SECTION_KEYS.every(
+      (section) =>
+        validateS10RouteSectionSourceEntry(
+          section,
+          (sectionSourceMap as Record<string, unknown>)[section],
+        ) === null,
+    );
+  return (
+    !!record &&
+    record.report_version === S10_PERFORMER_REPORT_VIEW_MODEL_VERSION &&
+    record.source_mode === S10_REPORT_SOURCE_MODE &&
+    hasRequiredSourceMapEntries &&
+    Boolean(scoreSummary) &&
+    typeof scoreSummary === "object" &&
+    !Array.isArray(scoreSummary) &&
+    Array.isArray(limitations) &&
+    (hasVisibleRecommendation || hasVisibleRecommendationRationale || hasVisibleLimitation)
+  );
+}
+
 export type AuditionType =
   | "acting_scene"
   | "monologue"
@@ -209,9 +493,12 @@ export function computeBlockers(input: {
   // vocal, or brief_adherence). Pure presentation/technical/audio stacking
   // is handled as a verdict cap, not a blocker.
   const fundamentals: WeightedCategory[] = ["acting", "vocal", "brief_adherence"];
-  const weakEntries = (Object.entries(input.scores) as Array<[string, number | null | undefined]>)
-    .filter(([, s]) => typeof s === "number" && (s as number) < 50);
-  const hasWeakFundamental = weakEntries.some(([k]) => fundamentals.includes(k as WeightedCategory));
+  const weakEntries = (
+    Object.entries(input.scores) as Array<[string, number | null | undefined]>
+  ).filter(([, s]) => typeof s === "number" && (s as number) < 50);
+  const hasWeakFundamental = weakEntries.some(([k]) =>
+    fundamentals.includes(k as WeightedCategory),
+  );
   if (weakEntries.length >= 2 && hasWeakFundamental) {
     blockers.push({
       code: "two_weak_categories",
@@ -369,10 +656,844 @@ export function deterministicCompliance(input: {
 
 // -------------------- Extracted brief schema --------------------
 
+export type BriefRequirementCategory =
+  | "material"
+  | "performance"
+  | "technical"
+  | "admin_process"
+  | "deadline"
+  | "logistics"
+  | "role_context";
+
+export type BriefRequirementImportance = "mandatory" | "preferred" | "optional" | "ambiguous";
+
+export type BriefRequirement = {
+  id: string;
+  brief_text: string;
+  summary: string;
+  category: BriefRequirementCategory;
+  importance: BriefRequirementImportance;
+  expected_evidence_in_tape: string;
+  achievement_test: string;
+  submission_impact_if_missing: string;
+  report_destination: string;
+  confidence: "low" | "medium" | "high";
+};
+
+export type BriefAchievementStatus =
+  | "achieved"
+  | "mostly_achieved"
+  | "partly_achieved"
+  | "not_achieved"
+  | "not_assessable"
+  | "not_applicable";
+
+export type BriefAchievementOverallStatus =
+  | "achieved"
+  | "mostly_achieved"
+  | "partly_achieved"
+  | "not_achieved"
+  | "not_assessable";
+
+export type BriefAchievementMandatoryStatus = "clear" | "some_gaps" | "blocked" | "not_assessable";
+
+export type BriefAchievementReadinessImpact =
+  | "supports_submission"
+  | "review_carefully"
+  | "material_gap"
+  | "submission_blocker"
+  | "not_assessable";
+
+export type BriefAchievementSubmissionImpact =
+  | "supports_submission"
+  | "material_gap"
+  | "submission_blocker"
+  | "optional_polish"
+  | "final_check"
+  | "not_assessable";
+
+export type BriefAchievementFixCategory =
+  | "must_fix"
+  | "should_improve"
+  | "optional_polish"
+  | "preserve"
+  | "final_check"
+  | "none";
+
+export type RequirementAchievementResult = {
+  requirement_id: string;
+  requirement_summary: string;
+  category: BriefRequirementCategory;
+  importance: BriefRequirementImportance;
+  observed_status: "present" | "partially_present" | "absent" | "not_assessable" | "uncertain";
+  completion_status: "complete" | "incomplete" | "cut_off" | "not_applicable" | "uncertain";
+  achievement_status: BriefAchievementStatus;
+  evidence_summary: string;
+  submission_impact: BriefAchievementSubmissionImpact;
+  fix_category: BriefAchievementFixCategory;
+  recommended_action: string;
+  confidence: "low" | "medium" | "high";
+  linked_observed_sequence_ids: string[];
+  linked_component_verification_ids: string[];
+  cannot_infer_from_brief_only: true;
+};
+
+export type BriefAchievementMatrix = {
+  overall_status: BriefAchievementOverallStatus;
+  mandatory_status: BriefAchievementMandatoryStatus;
+  readiness_impact: BriefAchievementReadinessImpact;
+  summary: string;
+  achieved_requirements: string[];
+  missing_or_incomplete_requirements: string[];
+  not_assessable_requirements: string[];
+  final_check_requirements: string[];
+  requirement_results: RequirementAchievementResult[];
+};
+
+export type ReadinessDecision =
+  | "submit"
+  | "submit_if_deadline_is_close"
+  | "review_carefully"
+  | "retake_required_if_possible";
+
+export type ReadinessScoreBandLabel =
+  | "not_submission_ready"
+  | "retake_required_if_possible"
+  | "review_carefully"
+  | "submit_if_deadline_is_close"
+  | "submit_strong_submission";
+
+export type S10CategoryScoreId =
+  | "acting"
+  | "vocal"
+  | "movement"
+  | "dance"
+  | "audio"
+  | "technical"
+  | "brief_adherence"
+  | "professional_presentation"
+  | "self_tape_presentation"
+  | "mt_package"
+  | "other";
+
+export type S10ComponentScoreType =
+  | "acting_scene"
+  | "song"
+  | "dance"
+  | "slate"
+  | "package"
+  | "technical"
+  | "other";
+
+export type CategoryScore = {
+  category_id: S10CategoryScoreId;
+  score: number | null;
+  score_basis: string;
+  what_works: string;
+  why_not_full_score: string;
+  close_gap: string;
+  confidence: "low" | "medium" | "high";
+  blocked_or_not_assessable_reason: string | null;
+};
+
+export type ComponentScore = {
+  component_type: S10ComponentScoreType;
+  linked_requirement_ids: string[];
+  observed_status: "present" | "partially_present" | "absent" | "not_assessable" | "uncertain";
+  completion_status: "complete" | "incomplete" | "cut_off" | "not_applicable" | "uncertain";
+  score: number | null;
+  score_basis: string;
+  confidence: "low" | "medium" | "high";
+  cannot_score_reason: string | null;
+};
+
+export type ScoreContradictionWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  capped_value: string | number | boolean | null;
+  matrix_reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "score_trace"
+    | "detected_components"
+    | "prior_prose";
+};
+
+export type ReadinessAndScoreJudgement = {
+  decision: ReadinessDecision | null;
+  headline: string;
+  rationale: string[];
+  confidence: "low" | "medium" | "high";
+  performance_quality_score: number | null;
+  brief_completion_score: number | null;
+  overall_submission_readiness_score: number | null;
+  score_band_label: ReadinessScoreBandLabel | null;
+  score_explanation: string;
+  brief_blocker_override: boolean;
+  performance_quality_summary: string;
+  brief_completion_summary: string;
+  technical_assessability_summary: string;
+  selected_level_calibration_summary: string;
+  professional_nuance_summary: string;
+  category_scores: CategoryScore[];
+  category_rationale: Record<string, unknown>;
+  component_scores: ComponentScore[];
+  component_score_notes: string[];
+  score_contradiction_warnings: ScoreContradictionWarning[];
+  repair_prompt_status: "not_needed" | "classified_contradictory";
+};
+
+export type S10FixSourceCategory =
+  | "brief"
+  | "performance"
+  | "technical"
+  | "admin_process"
+  | "score_semantics"
+  | "polish"
+  | "limitation";
+
+export type S10FixUrgency = "critical_gap" | "high" | "medium" | "low" | "optional";
+
+export type S10FixSubmissionImpact =
+  | "submission_blocker"
+  | "material_gap"
+  | "review_carefully"
+  | "optional_polish"
+  | "final_check"
+  | "supports_submission";
+
+export type S10ActionSourceAuthority =
+  | "s10_ai_authored"
+  | "s10_normalised"
+  | "legacy_diagnostic_reauthored"
+  | "limitation";
+
+export type S10ActionContradictionWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_improvements"
+    | "legacy_next_take_plan"
+    | "legacy_coaching_drills"
+    | "prior_prose"
+    | "s10_normaliser";
+  internal_only: true;
+};
+
+export type S10FixItem = {
+  id: string;
+  title: string;
+  issue: string;
+  why_it_matters: string;
+  exact_action: string;
+  source_category: S10FixSourceCategory;
+  urgency: S10FixUrgency;
+  submission_impact: S10FixSubmissionImpact;
+  linked_requirement_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_readiness_reason_ids: string[];
+  evidence_summary: string;
+  confidence: "low" | "medium" | "high";
+  is_fix_first_candidate: boolean;
+  is_generic_fallback: false;
+  source_authority: S10ActionSourceAuthority;
+  legacy_source_used: boolean;
+  legacy_source_path?: string | null;
+};
+
+export type S10FixHierarchy = {
+  fix_first: S10FixItem | null;
+  priority_fixes: S10FixItem[];
+  must_fix_before_submitting: S10FixItem[];
+  should_improve_if_retaking: S10FixItem[];
+  optional_polish: S10FixItem[];
+  preserve: S10FixItem[];
+  do_not_overfix: S10FixItem[];
+  action_contradiction_warnings: S10ActionContradictionWarning[];
+};
+
+export type S10NextActionPlan = {
+  submit_checklist: string[];
+  retake_plan: string[];
+  final_checks: string[];
+  playback_checks: string[];
+  do_not_overfix: string[];
+  if_time_is_short_guidance: string[];
+  no_retake_needed_reason: string | null;
+  confidence: "low" | "medium" | "high";
+};
+
+export type S10ProfessionalCritiqueSourceCategory =
+  | "brief"
+  | "performance"
+  | "acting"
+  | "vocal"
+  | "movement"
+  | "technical"
+  | "presentation"
+  | "package"
+  | "limitation";
+
+export type S10ProfessionalCritiqueComponentStatus =
+  | "present"
+  | "partially_present"
+  | "absent"
+  | "not_assessable"
+  | "uncertain"
+  | "not_applicable";
+
+export type S10ProfessionalCritiqueWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_category_rationale"
+    | "legacy_category_notes"
+    | "legacy_coaching_drills"
+    | "legacy_technique_trace"
+    | "prior_prose"
+    | "s10_normaliser";
+  internal_only: true;
+};
+
+export type S10StrengthItem = {
+  id: string;
+  title: string;
+  detail: string;
+  why_it_matters: string;
+  evidence_summary: string;
+  source_category: S10ProfessionalCritiqueSourceCategory;
+  linked_requirement_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_readiness_reason_ids: string[];
+  linked_fix_ids: string[];
+  confidence: "low" | "medium" | "high";
+  is_component_verified: boolean;
+  component_status: S10ProfessionalCritiqueComponentStatus;
+  applies_to_observed_portion_only: boolean;
+  is_generic_fallback: false;
+};
+
+export type S10PreserveItem = {
+  id: string;
+  title: string;
+  detail: string;
+  evidence_summary: string;
+  why_to_preserve: string;
+  linked_component_verification_ids: string[];
+  confidence: "low" | "medium" | "high";
+  is_generic_fallback: false;
+};
+
+export type S10ProfessionalCritique = {
+  summary: string;
+  performance_strengths: S10StrengthItem[];
+  brief_package_strengths: S10StrengthItem[];
+  technical_presentation_strengths: S10StrengthItem[];
+  vocal_or_singing_strengths: S10StrengthItem[];
+  acting_strengths: S10StrengthItem[];
+  movement_or_physical_strengths: S10StrengthItem[];
+  professional_presentation_notes: S10StrengthItem[];
+  preserve: S10PreserveItem[];
+  do_not_overfix: S10PreserveItem[];
+  critique_limitations: string[];
+  contradiction_warnings: S10ProfessionalCritiqueWarning[];
+};
+
+export type S10TechniqueArea =
+  | "acting"
+  | "vocal_singing"
+  | "movement_dance"
+  | "musical_theatre_package"
+  | "self_tape_presentation"
+  | "commercial_screen_task";
+
+export type S10TechniqueSectionStatus =
+  | "assessable"
+  | "partially_assessable"
+  | "not_assessable"
+  | "not_applicable";
+
+export type S10TechniqueComponentStatus = S10ProfessionalCritiqueComponentStatus;
+
+export type S10TechniqueWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_category_rationale"
+    | "legacy_category_notes"
+    | "legacy_coaching_drills"
+    | "legacy_technique_trace"
+    | "prior_prose"
+    | "s10_normaliser"
+    | "public_technique_authority_gate";
+  internal_only: true;
+};
+
+export type S10TechniqueObservation = {
+  id: string;
+  technique_area: S10TechniqueArea;
+  title: string;
+  detail: string;
+  evidence_summary: string;
+  linked_requirement_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_readiness_reason_ids: string[];
+  linked_strength_ids: string[];
+  linked_fix_ids: string[];
+  linked_timestamp_refs: string[];
+  component_status: S10TechniqueComponentStatus;
+  applies_to_observed_portion_only: boolean;
+  confidence: "low" | "medium" | "high";
+  is_named_authority_claim: boolean;
+  is_medical_or_health_claim: boolean;
+  is_body_or_appearance_claim: boolean;
+  is_casting_outcome_claim: boolean;
+  is_generic_fallback: false;
+};
+
+export type S10TechniqueSection = {
+  status: S10TechniqueSectionStatus;
+  headline: string;
+  observations: S10TechniqueObservation[];
+  what_is_working: string[];
+  what_could_improve: string[];
+  practical_actions: string[];
+  preserve: string[];
+  not_assessable_reason: string | null;
+  confidence: "low" | "medium" | "high";
+};
+
+export type S10TechniqueCommentary = {
+  summary: string;
+  acting: S10TechniqueSection;
+  vocal_singing: S10TechniqueSection;
+  movement_dance: S10TechniqueSection;
+  musical_theatre_package: S10TechniqueSection;
+  self_tape_presentation: S10TechniqueSection;
+  commercial_screen_task: S10TechniqueSection;
+  limitations: string[];
+  contradiction_warnings: S10TechniqueWarning[];
+};
+
+export type S10TimestampPrecision =
+  | "exact"
+  | "approximate"
+  | "time_banded"
+  | "order_only"
+  | "unavailable";
+
+export type S10TimestampedSection =
+  | "brief_requirement"
+  | "observed_component"
+  | "strength"
+  | "fix"
+  | "technique"
+  | "technical"
+  | "limitation"
+  | "next_action"
+  | "missing_component";
+
+export type S10TimestampedComponentType =
+  | "ident"
+  | "acting_scene"
+  | "song"
+  | "dance"
+  | "movement"
+  | "transition"
+  | "technical"
+  | "unknown"
+  | "not_applicable";
+
+export type S10TimestampedComponentStatus = S10ProfessionalCritiqueComponentStatus;
+
+export type S10TimestampSourceAuthority =
+  | "s10_ai_authored"
+  | "s10_normalised"
+  | "step1_timestamped_evidence"
+  | "evidence_anchor"
+  | "provider_output"
+  | "legacy_diagnostic_reauthored"
+  | "limitation";
+
+export type S10TimestampedWarning = {
+  affected_field: string;
+  original_value: string | number | boolean | null;
+  corrected_value: string | number | boolean | null;
+  reason: string;
+  source:
+    | "s10_ai_judgement"
+    | "legacy_raw_report"
+    | "legacy_timestamped_notes"
+    | "prior_prose"
+    | "step1_timestamped_evidence"
+    | "evidence_anchor"
+    | "provider_output"
+    | "s10_normaliser";
+  internal_only: true;
+};
+
+export type S10TimestampedNote = {
+  id: string;
+  timecode: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  time_band_label: string | null;
+  display_label: string;
+  timestamp_precision: S10TimestampPrecision;
+  section: S10TimestampedSection;
+  title: string;
+  detail: string;
+  action: string | null;
+  evidence_summary: string;
+  linked_requirement_ids: string[];
+  linked_observed_sequence_ids: string[];
+  linked_component_verification_ids: string[];
+  linked_matrix_result_ids: string[];
+  linked_fix_ids: string[];
+  linked_strength_ids: string[];
+  linked_technique_observation_ids: string[];
+  component_type: S10TimestampedComponentType;
+  component_status: S10TimestampedComponentStatus;
+  applies_to_observed_portion_only: boolean;
+  is_exact_timestamp_supported: boolean;
+  is_legacy_timestamp_projection: boolean;
+  note_source_authority: S10TimestampSourceAuthority;
+  legacy_source_used: boolean;
+  legacy_source_path?: string | null;
+  is_missing_component_note: boolean;
+  is_projection_safe: boolean;
+  projection_block_reason?: string | null;
+  confidence: "high" | "medium" | "low";
+  is_generic_fallback: false;
+};
+
+export type S10ComponentTimeRange = {
+  component_type: S10TimestampedComponentType;
+  label: string;
+  start_time: string | null;
+  end_time: string | null;
+  timestamp_precision: S10TimestampPrecision;
+  observed_status: "present" | "partially_present" | "absent" | "not_assessable" | "uncertain";
+  completion_status: "complete" | "incomplete" | "cut_off" | "not_applicable" | "uncertain";
+  linked_requirement_ids: string[];
+  evidence_summary: string;
+  confidence: "high" | "medium" | "low";
+};
+
+export type S10TimestampProjectionNote = {
+  timestamp: string;
+  note: string;
+  source_note_id: string;
+  timestamp_precision: S10TimestampPrecision;
+};
+
+export type S10TimestampedCommentary = {
+  summary: string;
+  notes: S10TimestampedNote[];
+  component_ranges: S10ComponentTimeRange[];
+  missing_or_unobserved_components: string[];
+  timestamp_limitations: string[];
+  projection_notes: S10TimestampProjectionNote[];
+  legacy_projection_blocked_count: number;
+  exact_timestamp_supported_count: number;
+  time_banded_note_count: number;
+  order_only_note_count: number;
+  missing_component_note_count: number;
+  contradiction_warnings: S10TimestampedWarning[];
+};
+
+export type S10SameVideoStatus =
+  | "new_media"
+  | "same_video_confirmed"
+  | "probable_duplicate"
+  | "possible_duplicate"
+  | "intentional_retest"
+  | "same_video_changed_brief"
+  | "same_video_changed_level"
+  | "same_video_changed_report_version"
+  | "duplicate_in_comparison"
+  | "uncertain";
+
+export type S10SameVideoConfidence = "decisive" | "high" | "medium" | "low" | "uncertain";
+
+export type S10SameVideoChangedContext =
+  | "same_brief"
+  | "changed_brief"
+  | "same_level"
+  | "changed_level"
+  | "same_report_version"
+  | "changed_report_version"
+  | "unknown";
+
+export type S10MediaIdentitySignalName =
+  | "original_upload_file_hash"
+  | "file_size_bytes"
+  | "video_duration_ms"
+  | "metadata_file_name"
+  | "original_file_name"
+  | "mux_asset_id"
+  | "mux_playback_id"
+  | "safe_media_fingerprint"
+  | "opening_video_sample_hash"
+  | "closing_video_sample_hash"
+  | "opening_audio_profile_hash"
+  | "closing_audio_profile_hash";
+
+export type S10MediaIdentitySignalStatus =
+  | "available"
+  | "unavailable"
+  | "matched"
+  | "mismatched"
+  | "inconclusive";
+
+export type S10MediaIdentitySignalConfidenceRole = "decisive" | "strong" | "medium" | "weak";
+
+export type S10MediaIdentitySignal = {
+  signal_name: S10MediaIdentitySignalName;
+  status: S10MediaIdentitySignalStatus;
+  confidence_role: S10MediaIdentitySignalConfidenceRole;
+  safe_value_summary: string | null;
+  value_hash: string | null;
+  source: string | null;
+  limitation: string | null;
+};
+
+export type S10SameVideoEvidence = {
+  status: S10SameVideoStatus;
+  confidence: S10SameVideoConfidence;
+  compared_take_ids: string[];
+  current_take_id: string;
+  matching_take_ids: string[];
+  evidence_signals: S10MediaIdentitySignal[];
+  operator_confirmation: string | null;
+  changed_context: S10SameVideoChangedContext[];
+  report_implication: string;
+  performer_facing_summary: string;
+  comparison_warning: string | null;
+  should_compare_as_distinct_performances: boolean;
+  should_reanalyse_against_context: boolean;
+  limitations: string[];
+};
+
+export type S10ComparisonMode =
+  | "single_take"
+  | "distinct_takes"
+  | "same_video_duplicate"
+  | "same_video_retest"
+  | "same_video_changed_context"
+  | "mixed_same_video_and_distinct_takes"
+  | "uncertain";
+
+export type S10ComparisonRecommendationPolicy =
+  | "compare_distinct_performances"
+  | "compare_contextual_outputs"
+  | "do_not_pick_winner"
+  | "operator_confirmation_required";
+
+export type S10ComparisonDisplayMode =
+  | "hidden"
+  | "single_take"
+  | "same_video_notice"
+  | "comparison_caution"
+  | "contextual_comparison";
+
+export type S10ComparedTakeSummary = {
+  take_id: string;
+  label: string;
+  media_identity_summary: string;
+  report_context_summary: string | null;
+};
+
+export type S10PairwiseSameVideoRelationship =
+  | "same_media"
+  | "distinct_media"
+  | "possible_duplicate"
+  | "uncertain";
+
+export type S10PairwiseSameVideoMatch = {
+  take_a_label: string;
+  take_b_label: string;
+  relationship: S10PairwiseSameVideoRelationship;
+  confidence: S10SameVideoConfidence;
+  matching_signal_names: S10MediaIdentitySignalName[];
+  limitations: string[];
+};
+
+export type S10ComparisonTruth = {
+  comparison_mode: S10ComparisonMode;
+  compared_take_summaries: S10ComparedTakeSummary[];
+  same_video_status: S10SameVideoEvidence | null;
+  recommendation_policy: S10ComparisonRecommendationPolicy;
+  performer_facing_summary: string;
+  limitations: string[];
+  pairwise_matches?: S10PairwiseSameVideoMatch[];
+  duplicate_subsets?: string[][];
+};
+
+export type S10OperatorDeclaredFixtureType =
+  | "incomplete_mandatory_package"
+  | "strong_complete_professional"
+  | "same_video_duplicate"
+  | "same_video_retest"
+  | "same_video_changed_brief"
+  | "same_video_changed_level"
+  | "same_video_changed_report_version"
+  | "same_video_uncertain"
+  | "unknown";
+
+export type S10OperatorCheckpointConfidence = "confirmed" | "likely" | "uncertain" | "contradicted";
+
+export type S10OperatorCheckpointScope =
+  | "deterministic_fixture"
+  | "canary_review"
+  | "operator_test"
+  | "local_dev"
+  | "unknown";
+
+export type S10OperatorSameMediaIdentity =
+  | "confirmed"
+  | "probable"
+  | "possible"
+  | "distinct"
+  | "uncertain"
+  | "not_applicable";
+
+export type S10OperatorRerunIntent =
+  | "accidental_duplicate"
+  | "intentional_retest"
+  | "changed_brief"
+  | "changed_level"
+  | "changed_report_version"
+  | "not_applicable"
+  | "unknown";
+
+export type S10OperatorAssumptionCheckpoint = {
+  checkpoint_id: string;
+  fixture_id: string;
+  take_id: string | null;
+  audition_id: string | null;
+  report_context: string;
+  declared_fixture_type: S10OperatorDeclaredFixtureType;
+  declared_expected_outcome: string;
+  same_brief_confirmed: boolean | null;
+  same_video_confirmed: boolean | null;
+  same_media_identity: S10OperatorSameMediaIdentity;
+  rerun_intent: S10OperatorRerunIntent;
+  strong_complete_take_confirmed: boolean | null;
+  incomplete_mandatory_package_confirmed: boolean | null;
+  expected_primary_blocker: string | null;
+  expected_secondary_notes: string[];
+  score_chips_intentionally_visible: boolean;
+  comparison_chips_intentionally_visible: boolean;
+  comparison_context: string | null;
+  changed_brief_confirmed: boolean | null;
+  changed_level_confirmed: boolean | null;
+  changed_report_version_confirmed: boolean | null;
+  operator_notes: string[];
+  created_by_role: "operator" | "developer" | "test" | "system";
+  created_at: string;
+  confidence: S10OperatorCheckpointConfidence;
+  scope: S10OperatorCheckpointScope;
+};
+
+export type S10OperatorExpectation = {
+  expected_recommendation: ReadinessDecision | null;
+  expected_brief_achievement_status: BriefAchievementOverallStatus | null;
+  expected_missing_requirements: string[];
+  expected_present_requirements: string[];
+  expected_not_assessable_areas: string[];
+  expected_fix_first: string | null;
+  expected_score_band: ReadinessScoreBandLabel | null;
+  expected_same_video_status: S10SameVideoStatus | null;
+  expected_comparison_policy: S10ComparisonRecommendationPolicy | null;
+  expected_forbidden_phrases: string[];
+  expected_required_phrases: string[];
+};
+
+export type S10OperatorAssumptionMismatchType =
+  | "brief_extraction_mismatch"
+  | "component_observation_mismatch"
+  | "brief_achievement_mismatch"
+  | "readiness_score_mismatch"
+  | "fix_hierarchy_mismatch"
+  | "professional_critique_mismatch"
+  | "technique_commentary_mismatch"
+  | "timestamped_commentary_mismatch"
+  | "route_projection_mismatch"
+  | "same_video_classification_mismatch"
+  | "fixture_expectation_mismatch"
+  | "operator_assumption_missing"
+  | "operator_assumption_uncertain";
+
+export type S10OperatorAssumptionComparisonStatus =
+  | "matches_operator_expectation"
+  | "partially_matches_operator_expectation"
+  | "contradicts_operator_expectation"
+  | "assumption_missing"
+  | "assumption_uncertain"
+  | "not_applicable";
+
+export type S10OperatorAssumptionNextStep =
+  | "accept_fixture"
+  | "review_ai_observation"
+  | "review_prompt_contract"
+  | "review_route_projection"
+  | "ask_operator"
+  | "not_applicable";
+
+export type S10OperatorAssumptionMismatch = {
+  mismatch_type: S10OperatorAssumptionMismatchType;
+  field: string;
+  expected: string | number | boolean | null;
+  actual: string | number | boolean | null;
+  message: string;
+};
+
+export type S10OperatorAssumptionComparison = {
+  checkpoint_id: string | null;
+  report_id_or_fixture_id: string | null;
+  comparison_status: S10OperatorAssumptionComparisonStatus;
+  mismatches: S10OperatorAssumptionMismatch[];
+  matched_expectations: string[];
+  unresolved_assumptions: string[];
+  recommended_next_step: S10OperatorAssumptionNextStep;
+};
+
+export type BriefContext = {
+  project_name?: string | null;
+  role_name?: string | null;
+  discipline?: string | null;
+  audition_type?: string | null;
+  material_package_summary?: string | null;
+  role_description_summary?: string | null;
+  deadline_summary?: string | null;
+  upload_summary?: string | null;
+  file_naming_summary?: string | null;
+};
+
 export type ExtractedBrief = {
   audition_type: AuditionType;
   role_name?: string | null;
   show_or_project?: string | null;
+  brief_context?: BriefContext | null;
+  brief_requirements?: BriefRequirement[];
+  brief_intelligence_prompt_version?: string | null;
   character_descriptors?: string[];
   tone_or_world?: string | null;
   performance_style?: string | null;

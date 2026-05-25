@@ -1,11 +1,11 @@
 # TapeCoach Requirements — AI-Led Full-Value Self-Tape Report System
 
-**Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.  
-**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, professional competitive calibration, comparison handling, QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.  
-**Supersedes:** earlier README/report design notes where they conflict with this document.  
-**Language:** UK English.  
-**Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.  
-**Current implementation note:** S10 is already being implemented. The calibration additions in this README are not a new reset; they are controlling amendments to be merged into the relevant in-flight S10 slices.  
+**Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.
+**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, professional competitive calibration, comparison handling, QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.
+**Supersedes:** earlier README/report design notes where they conflict with this document.
+**Language:** UK English.
+**Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.
+**Current implementation note:** S10 is already being implemented. The calibration additions in this README are not a new reset; they are controlling amendments to be merged into the relevant in-flight S10 slices.
 **Core correction:** TapeCoach is an AI-led professional critique system. The AI is the report brain. Code asks the right questions, validates, repairs, routes and renders the AI output.
 
 ---
@@ -67,14 +67,14 @@ It reads the supplied brief where present, analyses the self-tape, identifies th
 
 The central product questions are:
 
-> Is this tape ready to submit for this performer’s selected level, audition type and supplied brief / task?  
-> Has the performer achieved the supplied brief, where one was provided?  
-> If no brief was supplied, what can and cannot be assessed from the observable tape?  
-> What does the tape communicate at the selected level?  
-> Where role/material is supplied, how specifically does the tape serve that task?  
-> At Professional level, is this merely competent, or competitive?  
-> At Professional 90+, what separates this tape from other already-strong professional submissions?  
-> What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?  
+> Is this tape ready to submit for this performer’s selected level, audition type and supplied brief / task?
+> Has the performer achieved the supplied brief, where one was provided?
+> If no brief was supplied, what can and cannot be assessed from the observable tape?
+> What does the tape communicate at the selected level?
+> Where role/material is supplied, how specifically does the tape serve that task?
+> At Professional level, is this merely competent, or competitive?
+> At Professional 90+, what separates this tape from other already-strong professional submissions?
+> What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?
 > If there are multiple takes, which take or combination of choices best serves the submission, and why?
 
 Every authenticated performer-facing report must help the performer understand:

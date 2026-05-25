@@ -12,18 +12,21 @@
 // orchestrator in process-take.server.ts keeps it in memory for Step 2 and
 // then derives a small, non-sensitive summary into `score_breakdown.two_step`.
 
-const DEFAULT_MODEL =
-  process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
+import {
+  S10_OBSERVATION_MODULE_SYSTEM_PROMPT,
+  S10_OBSERVATION_PROMPT_VERSION,
+} from "./s10-report-prompt-map.server";
 
-const COMPACT_STEP1_SCHEMA_VERSION = "tapecoach_step1_observable_evidence_v2";
+const DEFAULT_MODEL = process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
+
+const COMPACT_STEP1_SCHEMA_VERSION = "tapecoach_step1_observable_evidence_v3";
 const SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS = new Set([
   "tapecoach_step1_observable_evidence_v1",
+  "tapecoach_step1_observable_evidence_v2",
   COMPACT_STEP1_SCHEMA_VERSION,
 ]);
 
-export type EvidencePassProviderContract =
-  | "tool_call"
-  | "plain_json_observations";
+export type EvidencePassProviderContract = "tool_call" | "plain_json_observations";
 
 type CompactStep1Family =
   | "video_observable"
@@ -55,17 +58,93 @@ export type CompactStep1Observation = {
 type CompactStep1EvidenceResponse = {
   schema_version: string;
   observations: CompactStep1Observation[];
+  observed_tape_sequence?: ObservedTapeSequence[];
+  component_verifications?: ComponentVerification[];
+  media_observation_summary?: MediaObservationSummary;
   unavailable_families?: Array<{ family?: CompactStep1Family; reason?: string }>;
   rejected_or_uncertain?: Array<{ reason?: string; summary?: string }>;
 };
 
-const COMPACT_STEP1_SYSTEM_PROMPT = `You are an internal Step 1 observable-evidence extractor for a self-tape audition.
+export type ObservedTapeComponentType =
+  | "ident"
+  | "acting_scene"
+  | "song"
+  | "dance"
+  | "movement"
+  | "transition"
+  | "technical"
+  | "unknown";
+
+export type ObservedTapePresentStatus =
+  | "present"
+  | "partially_present"
+  | "absent"
+  | "not_assessable"
+  | "uncertain";
+
+export type ObservedTapeCompletionStatus =
+  | "complete"
+  | "incomplete"
+  | "cut_off"
+  | "not_applicable"
+  | "uncertain";
+
+export type ObservedTapeEvidenceBasis =
+  | "observed_audio_video"
+  | "deterministic_metadata"
+  | "brief_text_only"
+  | "uncertainty";
+
+export type ObservedTapeConfidence = "high" | "medium" | "low";
+
+export type ObservedTapeSequence = {
+  id: string;
+  label: string;
+  component_type: ObservedTapeComponentType;
+  linked_requirement_ids: string[];
+  start_time: string | null;
+  end_time: string | null;
+  present_status: ObservedTapePresentStatus;
+  completion_status: ObservedTapeCompletionStatus;
+  evidence_summary: string;
+  observed_from_media: boolean;
+  evidence_basis: ObservedTapeEvidenceBasis;
+  confidence: ObservedTapeConfidence;
+  assessability_notes: string;
+};
+
+export type ComponentVerification = {
+  requirement_id: string;
+  requirement_summary: string;
+  observed_status: ObservedTapePresentStatus;
+  completion_status: ObservedTapeCompletionStatus;
+  evidence_summary: string;
+  observed_from_media: boolean;
+  evidence_basis: ObservedTapeEvidenceBasis;
+  timestamp_refs: string[];
+  confidence: ObservedTapeConfidence;
+  cannot_infer_from_brief_only: true;
+  assessability_notes?: string;
+};
+
+export type MediaObservationSummary = {
+  audio_assessable: boolean | null;
+  video_assessable: boolean | null;
+  framing_assessable: boolean | null;
+  continuity_assessable: boolean | null;
+  abrupt_cutoff_detected: boolean | null;
+  one_continuous_video_observed: boolean | null;
+  duration_summary: string;
+  uncertainties: string[];
+};
+
+const COMPACT_STEP1_SYSTEM_PROMPT = `${S10_OBSERVATION_MODULE_SYSTEM_PROMPT}
 
 Return ONLY valid JSON. Do not use markdown. Do not call tools.
 
 Schema:
 {
-  "schema_version": "tapecoach_step1_observable_evidence_v2",
+  "schema_version": "tapecoach_step1_observable_evidence_v3",
   "observations": [
     {
       "family": "video_observable | audio_observable | material_specific | material_specific_performance | performance_observable | candidate_technique | assessability_limit",
@@ -78,6 +157,48 @@ Schema:
       "limitations": ["short safe limitation strings"]
     }
   ],
+  "observed_tape_sequence": [
+    {
+      "id": "section_1",
+      "label": "short observed section label",
+      "component_type": "ident | acting_scene | song | dance | movement | transition | technical | unknown",
+      "linked_requirement_ids": ["brief requirement ids where relevant"],
+      "start_time": "MM:SS or approximate time-band start or null",
+      "end_time": "MM:SS or approximate time-band end or null",
+      "present_status": "present | partially_present | absent | not_assessable | uncertain",
+      "completion_status": "complete | incomplete | cut_off | not_applicable | uncertain",
+      "evidence_summary": "media evidence only; never the brief request as proof",
+      "observed_from_media": true,
+      "evidence_basis": "observed_audio_video | deterministic_metadata | brief_text_only | uncertainty",
+      "confidence": "low | medium | high",
+      "assessability_notes": "short limitation or empty string"
+    }
+  ],
+  "component_verifications": [
+    {
+      "requirement_id": "BriefRequirement id",
+      "requirement_summary": "brief requirement being checked",
+      "observed_status": "present | partially_present | absent | not_assessable | uncertain",
+      "completion_status": "complete | incomplete | cut_off | not_applicable | uncertain",
+      "evidence_summary": "what the tape itself proves or fails to prove",
+      "observed_from_media": true,
+      "evidence_basis": "observed_audio_video | deterministic_metadata | brief_text_only | uncertainty",
+      "timestamp_refs": ["MM:SS or time-band strings"],
+      "confidence": "low | medium | high",
+      "cannot_infer_from_brief_only": true,
+      "assessability_notes": "short limitation or empty string"
+    }
+  ],
+  "media_observation_summary": {
+    "audio_assessable": true,
+    "video_assessable": true,
+    "framing_assessable": true,
+    "continuity_assessable": true,
+    "abrupt_cutoff_detected": false,
+    "one_continuous_video_observed": true,
+    "duration_summary": "short factual duration/media-state note",
+    "uncertainties": ["short uncertainty strings"]
+  },
   "unavailable_families": [
     {
       "family": "video_observable | audio_observable | material_specific_performance | performance_observable | candidate_technique",
@@ -88,6 +209,20 @@ Schema:
     { "reason": "short safe reason", "summary": "short safe summary" }
   ]
 }
+
+S10 module mapping requirements:
+- Include the prompt version "${S10_OBSERVATION_PROMPT_VERSION}" in your internal self-check and use only the top-level fields defined in this schema.
+- This is the active v3 schema; legacy v2 "tapecoach_step1_observable_evidence_v2" remains parse-compatible only.
+- Use observed_tape_sequence to describe what appears first and the sequence of visible/audible sections.
+- Use component_verifications to check every S10 BriefRequirement against media evidence.
+- For every component verification, requested material and observed material must remain separate.
+- A component can only be present, partially_present or complete when observed_from_media is true and evidence_basis is observed_audio_video.
+- brief_text_only and deterministic_metadata can describe what to look for or assessability context, but they cannot prove component presence or completion.
+- raw_report.detected_components, prior report prose, material compliance fields or requested-material text cannot override component_verifications.
+- Use material_specific_performance observations for observed component events such as Side 1 acting scene, song, slate, monologue, dance/movement, commercial task, transition, incomplete component, cut-off, or abrupt ending.
+- Use material_specific observations only for supplied/declared brief context that is not observed in the media.
+- Use assessability_limit observations for absent, uncertain or not-assessable required components.
+- If the brief requests a component but you do not observe it, do not mark it present. Record the absence, uncertainty or limitation instead.
 
 Allowed observations:
 - video_observable: framing, orientation, lighting visibility, background visibility, camera stability, slate visibility or visual assessability limitations.
@@ -127,6 +262,8 @@ const EVIDENCE_TOOL = {
         },
         detected_components: {
           type: "array",
+          description:
+            "Legacy diagnostic component list only. S10 component truth comes from component_verifications.",
           items: {
             type: "object",
             properties: {
@@ -149,6 +286,145 @@ const EVIDENCE_TOOL = {
             required: ["type", "weight", "score", "note"],
           },
         },
+        observed_tape_sequence: {
+          type: "array",
+          description:
+            "S10 observed media sequence. Describe what appears in order; requested brief material alone is never proof of observed material.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              label: { type: "string", maxLength: 120 },
+              component_type: {
+                type: "string",
+                enum: [
+                  "ident",
+                  "acting_scene",
+                  "song",
+                  "dance",
+                  "movement",
+                  "transition",
+                  "technical",
+                  "unknown",
+                ],
+              },
+              linked_requirement_ids: { type: "array", items: { type: "string" }, maxItems: 12 },
+              start_time: { type: ["string", "null"] },
+              end_time: { type: ["string", "null"] },
+              present_status: {
+                type: "string",
+                enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+              },
+              completion_status: {
+                type: "string",
+                enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+              },
+              evidence_summary: { type: "string", maxLength: 280 },
+              observed_from_media: { type: "boolean" },
+              evidence_basis: {
+                type: "string",
+                enum: [
+                  "observed_audio_video",
+                  "deterministic_metadata",
+                  "brief_text_only",
+                  "uncertainty",
+                ],
+              },
+              confidence: { type: "string", enum: ["low", "medium", "high"] },
+              assessability_notes: { type: "string", maxLength: 240 },
+            },
+            required: [
+              "id",
+              "label",
+              "component_type",
+              "linked_requirement_ids",
+              "start_time",
+              "end_time",
+              "present_status",
+              "completion_status",
+              "evidence_summary",
+              "observed_from_media",
+              "evidence_basis",
+              "confidence",
+              "assessability_notes",
+            ],
+          },
+          maxItems: 30,
+        },
+        component_verifications: {
+          type: "array",
+          description:
+            "S10 requirement-by-requirement media verification. Do not mark components present or complete from brief text, raw_report.detected_components, material compliance fields or duration metadata.",
+          items: {
+            type: "object",
+            properties: {
+              requirement_id: { type: "string" },
+              requirement_summary: { type: "string", maxLength: 180 },
+              observed_status: {
+                type: "string",
+                enum: ["present", "partially_present", "absent", "not_assessable", "uncertain"],
+              },
+              completion_status: {
+                type: "string",
+                enum: ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
+              },
+              evidence_summary: { type: "string", maxLength: 280 },
+              observed_from_media: { type: "boolean" },
+              evidence_basis: {
+                type: "string",
+                enum: [
+                  "observed_audio_video",
+                  "deterministic_metadata",
+                  "brief_text_only",
+                  "uncertainty",
+                ],
+              },
+              timestamp_refs: { type: "array", items: { type: "string" }, maxItems: 12 },
+              confidence: { type: "string", enum: ["low", "medium", "high"] },
+              cannot_infer_from_brief_only: { type: "boolean" },
+              assessability_notes: { type: "string", maxLength: 240 },
+            },
+            required: [
+              "requirement_id",
+              "requirement_summary",
+              "observed_status",
+              "completion_status",
+              "evidence_summary",
+              "observed_from_media",
+              "evidence_basis",
+              "timestamp_refs",
+              "confidence",
+              "cannot_infer_from_brief_only",
+              "assessability_notes",
+            ],
+          },
+          maxItems: 40,
+        },
+        media_observation_summary: {
+          type: "object",
+          description:
+            "S10 media assessability and continuity summary. Duration/readiness can support assessability only; it cannot prove component completion.",
+          properties: {
+            audio_assessable: { type: ["boolean", "null"] },
+            video_assessable: { type: ["boolean", "null"] },
+            framing_assessable: { type: ["boolean", "null"] },
+            continuity_assessable: { type: ["boolean", "null"] },
+            abrupt_cutoff_detected: { type: ["boolean", "null"] },
+            one_continuous_video_observed: { type: ["boolean", "null"] },
+            duration_summary: { type: "string", maxLength: 240 },
+            uncertainties: { type: "array", items: { type: "string" }, maxItems: 12 },
+          },
+          required: [
+            "audio_assessable",
+            "video_assessable",
+            "framing_assessable",
+            "continuity_assessable",
+            "abrupt_cutoff_detected",
+            "one_continuous_video_observed",
+            "duration_summary",
+            "uncertainties",
+          ],
+        },
         candidate_technique_evidence: {
           type: "array",
           description:
@@ -163,11 +439,7 @@ const EVIDENCE_TOOL = {
               },
               observation_type: {
                 type: "string",
-                enum: [
-                  "internal_shadow",
-                  "limitation_only",
-                  "public_safe_descriptor_candidate",
-                ],
+                enum: ["internal_shadow", "limitation_only", "public_safe_descriptor_candidate"],
               },
               timestamp: { type: "string" },
             },
@@ -283,8 +555,7 @@ const EVIDENCE_TOOL = {
         },
         risk_evidence: {
           type: "array",
-          description:
-            "Concrete, observation-grounded risks. Highest severity first.",
+          description: "Concrete, observation-grounded risks. Highest severity first.",
           items: {
             type: "object",
             properties: {
@@ -293,11 +564,7 @@ const EVIDENCE_TOOL = {
               why: { type: "string", maxLength: 200 },
               recall_impact: {
                 type: "string",
-                enum: [
-                  "unlikely_to_affect",
-                  "may_reduce",
-                  "likely_to_block",
-                ],
+                enum: ["unlikely_to_affect", "may_reduce", "likely_to_block"],
               },
             },
             required: ["severity", "flag", "why", "recall_impact"],
@@ -326,12 +593,7 @@ const EVIDENCE_TOOL = {
                 ],
               },
             },
-            required: [
-              "timestamp",
-              "observation",
-              "why_it_matters",
-              "linked_category",
-            ],
+            required: ["timestamp", "observation", "why_it_matters", "linked_category"],
           },
           maxItems: 36,
         },
@@ -363,6 +625,9 @@ const EVIDENCE_TOOL = {
         "evidence_version",
         "audition_type",
         "detected_components",
+        "observed_tape_sequence",
+        "component_verifications",
+        "media_observation_summary",
         "raw_scores",
         "core_strengths_evidence",
         "core_improvements_evidence",
@@ -381,9 +646,22 @@ const EVIDENCE_TOOL = {
   },
 };
 
-const EVIDENCE_SYSTEM_PROMPT = `You are an evidence collector for a self-tape audition. Your ONLY job is to return factual observations and per-category scores. Do NOT write prose feedback, recommendations, or coaching. Do NOT polish.
+const EVIDENCE_SYSTEM_PROMPT = `${S10_OBSERVATION_MODULE_SYSTEM_PROMPT}
+
+You are using the tool-call Step 1 contract. Your ONLY job is to return factual observations and provisional evidence fields. Do NOT write prose feedback, recommendations, final readiness, or coaching. Do NOT polish.
 
 Rules:
+- Active prompt version is "${S10_OBSERVATION_PROMPT_VERSION}".
+- Use the S10 BriefRequirement list from the structured brief as the checklist of requested material, package, technical, admin and role-context requirements.
+- Component presence must be observed from the tape, not inferred from the brief.
+- Populate observed_tape_sequence with the visible/audible order of the tape.
+- Populate component_verifications for every S10 BriefRequirement. Every item must keep requested material separate from observed material and set cannot_infer_from_brief_only=true.
+- A component may only be present, partially_present or complete when observed_from_media=true and evidence_basis=observed_audio_video. brief_text_only and deterministic_metadata can never prove component presence or completion.
+- raw_report.detected_components, legacy report prose, material compliance fields, prior report scores and requested-material text are diagnostic only and cannot override component_verifications.
+- Populate media_observation_summary with audio/video/framing/continuity assessability, abrupt cut-off, one-continuous-video observation, duration summary and uncertainties.
+- Before any provisional scoring field, verify required brief components as present, absent, partial, cut off, uncertain, or not assessable.
+- Use detected_components only for components actually observed in the tape. If Side 1 is requested but absent, do not include acting_scene as achieved.
+- Use brief_adherence_evidence and risk_evidence to record missing mandatory material, partial song/package, abrupt cut-off, or continuous one-file/package uncertainty.
 - Observations must be directly visible or audible in the tape. No interpretation, no advice.
 - Use British English in any free text.
 - Timestamps must be MM:SS, within the tape's actual duration. Absolute technical maximum 36.
@@ -428,6 +706,9 @@ export type EvidencePass = {
   step1_provider_contract?: EvidencePassProviderContract;
   step1_observations?: CompactStep1Observation[];
   audition_type: string;
+  observed_tape_sequence?: ObservedTapeSequence[];
+  component_verifications?: ComponentVerification[];
+  media_observation_summary?: MediaObservationSummary;
   detected_components: Array<{
     type: string;
     weight: number;
@@ -505,10 +786,7 @@ export type EvidencePass = {
 
 const TS_RE = /^([0-5]?\d):([0-5]\d)$/;
 
-export function isValidTimestamp(
-  ts: string,
-  durationSeconds?: number | null,
-): boolean {
+export function isValidTimestamp(ts: string, durationSeconds?: number | null): boolean {
   if (typeof ts !== "string") return false;
   const m = TS_RE.exec(ts);
   if (!m) return false;
@@ -574,23 +852,29 @@ export type RunEvidencePassResult =
       model: string;
     };
 
-type EvidencePassSafeErrorCategory =
-  Extract<RunEvidencePassResult, { ok: false }>["safe_error_category"];
+type EvidencePassSafeErrorCategory = Extract<
+  RunEvidencePassResult,
+  { ok: false }
+>["safe_error_category"];
 
 export function classifyEvidencePassSafeErrorCategory(
   httpStatus: number | null,
   error?: unknown,
 ): EvidencePassSafeErrorCategory {
-  const message = error instanceof Error
-    ? error.message
-    : (typeof error === "string" ? error : "");
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
   if (message.toLowerCase().includes("abort") || message.toLowerCase().includes("timeout")) {
     return "provider_timeout";
   }
   if (httpStatus === 400 || httpStatus === 422) return "provider_request_contract_error";
   if (httpStatus === 408 || httpStatus === 504) return "provider_timeout";
-  if (httpStatus === 429 || (typeof httpStatus === "number" && httpStatus >= 500)) return "provider_unavailable";
-  if (error instanceof SyntaxError || message.includes("JSON") || message.toLowerCase().includes("parse")) return "parser_error";
+  if (httpStatus === 429 || (typeof httpStatus === "number" && httpStatus >= 500))
+    return "provider_unavailable";
+  if (
+    error instanceof SyntaxError ||
+    message.includes("JSON") ||
+    message.toLowerCase().includes("parse")
+  )
+    return "parser_error";
   if (message === "evidence_pass_no_tool_call") return "provider_response_schema_error";
   return "unknown_safe_error";
 }
@@ -700,21 +984,23 @@ function parseJsonObjectFromModelText(text: string): Record<string, unknown> {
 }
 
 function isCompactStep1Family(value: unknown): value is CompactStep1Family {
-  return value === "video_observable"
-    || value === "audio_observable"
-    || value === "material_specific"
-    || value === "material_specific_performance"
-    || value === "performance_observable"
-    || value === "candidate_technique"
-    || value === "assessability_limit";
+  return (
+    value === "video_observable" ||
+    value === "audio_observable" ||
+    value === "material_specific" ||
+    value === "material_specific_performance" ||
+    value === "performance_observable" ||
+    value === "candidate_technique" ||
+    value === "assessability_limit"
+  );
 }
 
 function normaliseCompactSourceBasis(value: unknown): CompactStep1SourceBasis | null {
-  return value === "observed_video"
-    || value === "observed_audio"
-    || value === "supplied_context"
-    || value === "assessability_limit"
-    || value === "internal_shadow"
+  return value === "observed_video" ||
+    value === "observed_audio" ||
+    value === "supplied_context" ||
+    value === "assessability_limit" ||
+    value === "internal_shadow"
     ? value
     : null;
 }
@@ -744,41 +1030,52 @@ export function parseCompactStep1EvidenceContent(content: unknown): CompactStep1
       family: record.family,
       kind: typeof record.kind === "string" ? record.kind.trim().slice(0, 80) : null,
       summary,
-      timestamp_start_sec: typeof record.timestamp_start_sec === "number" && Number.isFinite(record.timestamp_start_sec)
-        ? Math.max(0, record.timestamp_start_sec)
-        : null,
-      timestamp_end_sec: typeof record.timestamp_end_sec === "number" && Number.isFinite(record.timestamp_end_sec)
-        ? Math.max(0, record.timestamp_end_sec)
-        : null,
+      timestamp_start_sec:
+        typeof record.timestamp_start_sec === "number" &&
+        Number.isFinite(record.timestamp_start_sec)
+          ? Math.max(0, record.timestamp_start_sec)
+          : null,
+      timestamp_end_sec:
+        typeof record.timestamp_end_sec === "number" && Number.isFinite(record.timestamp_end_sec)
+          ? Math.max(0, record.timestamp_end_sec)
+          : null,
       source_basis: normaliseCompactSourceBasis(record.source_basis),
       confidence: normaliseCompactConfidence(record.confidence),
       limitations: Array.isArray(record.limitations)
-        ? record.limitations.map((item) => safeStep1Text(item)).filter((item): item is string => Boolean(item)).slice(0, 6)
+        ? record.limitations
+            .map((item) => safeStep1Text(item))
+            .filter((item): item is string => Boolean(item))
+            .slice(0, 6)
         : [],
     });
   });
   const unavailable_families = Array.isArray(parsed.unavailable_families)
     ? parsed.unavailable_families.slice(0, 12).flatMap((entry) => {
-      if (!entry || typeof entry !== "object") return [];
-      const record = entry as Record<string, unknown>;
-      if (!isCompactStep1Family(record.family)) return [];
-      const reason = safeStep1Text(record.reason);
-      return [{ family: record.family, reason: reason || "no_observation_returned" }];
-    })
+        if (!entry || typeof entry !== "object") return [];
+        const record = entry as Record<string, unknown>;
+        if (!isCompactStep1Family(record.family)) return [];
+        const reason = safeStep1Text(record.reason);
+        return [{ family: record.family, reason: reason || "no_observation_returned" }];
+      })
     : [];
   const rejected_or_uncertain = Array.isArray(parsed.rejected_or_uncertain)
     ? parsed.rejected_or_uncertain.slice(0, 20).flatMap((entry) => {
-      if (!entry || typeof entry !== "object") return [];
-      const record = entry as Record<string, unknown>;
-      const reason = safeStep1Text(record.reason);
-      const summary = safeStep1Text(record.summary);
-      if (!reason && !summary) return [];
-      return [{ reason: reason || "uncertain", summary: summary || "" }];
-    })
+        if (!entry || typeof entry !== "object") return [];
+        const record = entry as Record<string, unknown>;
+        const reason = safeStep1Text(record.reason);
+        const summary = safeStep1Text(record.summary);
+        if (!reason && !summary) return [];
+        return [{ reason: reason || "uncertain", summary: summary || "" }];
+      })
     : [];
   return {
     schema_version: schemaVersion,
     observations,
+    observed_tape_sequence: normaliseS10ObservedTapeSequence(parsed.observed_tape_sequence),
+    component_verifications: normaliseS10ComponentVerifications(parsed.component_verifications),
+    media_observation_summary: normaliseS10MediaObservationSummary(
+      parsed.media_observation_summary,
+    ),
     unavailable_families,
     rejected_or_uncertain,
   };
@@ -800,6 +1097,9 @@ export function normaliseCompactStep1EvidenceForEvidencePass(
     step1_provider_contract: "plain_json_observations",
     step1_observations: compact.observations,
     audition_type: "unknown",
+    observed_tape_sequence: compact.observed_tape_sequence ?? [],
+    component_verifications: compact.component_verifications ?? [],
+    media_observation_summary: compact.media_observation_summary,
     detected_components: [],
     candidate_technique_evidence: [],
     raw_scores: {
@@ -850,20 +1150,31 @@ export function normaliseCompactStep1EvidenceForEvidencePass(
   };
   compact.observations.forEach((observation) => {
     if (observation.family === "video_observable") {
-      if (observation.source_basis === "assessability_limit") ev.evidence_sufficiency.video_assessable = false;
+      if (observation.source_basis === "assessability_limit")
+        ev.evidence_sufficiency.video_assessable = false;
       return;
     }
     if (observation.family === "audio_observable") {
-      if (observation.source_basis === "assessability_limit") ev.evidence_sufficiency.audio_assessable = false;
+      if (observation.source_basis === "assessability_limit")
+        ev.evidence_sufficiency.audio_assessable = false;
       return;
     }
   });
+  if (compact.media_observation_summary) {
+    if (compact.media_observation_summary.audio_assessable === false)
+      ev.evidence_sufficiency.audio_assessable = false;
+    if (compact.media_observation_summary.video_assessable === false)
+      ev.evidence_sufficiency.video_assessable = false;
+    if (compact.media_observation_summary.framing_assessable === false)
+      ev.evidence_sufficiency.movement_assessable = false;
+    if (compact.media_observation_summary.uncertainties.length > 0) {
+      ev.evidence_sufficiency.notes = compact.media_observation_summary.uncertainties.join("; ");
+    }
+  }
   return ev;
 }
 
-export async function runEvidencePass(
-  args: RunEvidencePassArgs,
-): Promise<RunEvidencePassResult> {
+export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvidencePassResult> {
   const model = args.model ?? DEFAULT_MODEL;
   const startedAt = Date.now();
   const withDims = !!args.withFutureDimensions;
@@ -878,9 +1189,8 @@ export async function runEvidencePass(
     // Clone the tool and add an OPTIONAL future_components array. Existing
     // required fields are not touched.
     const cloned = buildEvidencePassToolForProvider();
-    (cloned.function.parameters.properties as Record<string, unknown>)[
-      "future_components"
-    ] = dims.FUTURE_COMPONENTS_SCHEMA;
+    (cloned.function.parameters.properties as Record<string, unknown>)["future_components"] =
+      dims.FUTURE_COMPONENTS_SCHEMA;
     toolForCall = cloned;
   }
 
@@ -893,14 +1203,16 @@ export async function runEvidencePass(
         Authorization: `Bearer ${args.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildEvidencePassRequestBodyForProvider({
-        model,
-        contextText: args.contextText,
-        videoUrl: args.videoUrl,
-        systemPrompt,
-        toolForCall,
-        providerContract,
-      })),
+      body: JSON.stringify(
+        buildEvidencePassRequestBodyForProvider({
+          model,
+          contextText: args.contextText,
+          videoUrl: args.videoUrl,
+          systemPrompt,
+          toolForCall,
+          providerContract,
+        }),
+      ),
       signal: args.signal,
     });
   } catch (err) {
@@ -945,7 +1257,10 @@ export async function runEvidencePass(
           ok: false,
           httpStatus: resp.status,
           error: "evidence_pass_no_tool_call",
-          safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, "evidence_pass_no_tool_call"),
+          safe_error_category: classifyEvidencePassSafeErrorCategory(
+            resp.status,
+            "evidence_pass_no_tool_call",
+          ),
           durationMs: Date.now() - startedAt,
           model,
         };
@@ -967,6 +1282,9 @@ export async function runEvidencePass(
   const ev = parsed as EvidencePass;
   ev.evidence_version = "1";
   ev.step1_provider_contract = ev.step1_provider_contract ?? providerContract;
+  ev.observed_tape_sequence = normaliseS10ObservedTapeSequence(ev.observed_tape_sequence);
+  ev.component_verifications = normaliseS10ComponentVerifications(ev.component_verifications);
+  ev.media_observation_summary = normaliseS10MediaObservationSummary(ev.media_observation_summary);
   if (!ev.raw_scores || typeof ev.raw_scores !== "object") {
     ev.raw_scores = {
       technical: 0,
@@ -994,22 +1312,16 @@ export async function runEvidencePass(
     .filter((t) => isValidTimestamp(t.timestamp, args.durationSeconds))
     .sort((a, b) => tsToSeconds(a.timestamp) - tsToSeconds(b.timestamp))
     .slice(0, 36);
-  const timestamps_dropped = Math.max(
-    0,
-    beforeTsCount - ev.timestamped_evidence.length,
-  );
+  const timestamps_dropped = Math.max(0, beforeTsCount - ev.timestamped_evidence.length);
 
-  if (!Array.isArray(ev.core_strengths_evidence))
-    ev.core_strengths_evidence = [];
-  if (!Array.isArray(ev.core_improvements_evidence))
-    ev.core_improvements_evidence = [];
+  if (!Array.isArray(ev.core_strengths_evidence)) ev.core_strengths_evidence = [];
+  if (!Array.isArray(ev.core_improvements_evidence)) ev.core_improvements_evidence = [];
   if (!Array.isArray(ev.presentation_evidence)) ev.presentation_evidence = [];
   if (!Array.isArray(ev.risk_evidence)) ev.risk_evidence = [];
   // Severity ordering.
   ev.risk_evidence.sort(
     (a, b) =>
-      (SEVERITY_ORDER[a?.severity ?? "low"] ?? 2) -
-      (SEVERITY_ORDER[b?.severity ?? "low"] ?? 2),
+      (SEVERITY_ORDER[a?.severity ?? "low"] ?? 2) - (SEVERITY_ORDER[b?.severity ?? "low"] ?? 2),
   );
   if (!Array.isArray(ev.detected_components)) ev.detected_components = [];
 
@@ -1028,10 +1340,7 @@ export async function runEvidencePass(
   }
 
   // Brief adherence evidence must exist.
-  if (
-    !ev.brief_adherence_evidence ||
-    typeof ev.brief_adherence_evidence !== "object"
-  ) {
+  if (!ev.brief_adherence_evidence || typeof ev.brief_adherence_evidence !== "object") {
     const ba = ev.raw_scores?.brief_adherence ?? 0;
     ev.brief_adherence_evidence = {
       material_compliance: "",
@@ -1045,10 +1354,7 @@ export async function runEvidencePass(
     };
   }
 
-  if (
-    !ev.category_notes_evidence ||
-    typeof ev.category_notes_evidence !== "object"
-  ) {
+  if (!ev.category_notes_evidence || typeof ev.category_notes_evidence !== "object") {
     ev.category_notes_evidence = {
       technical: "",
       audio: "",
@@ -1068,10 +1374,7 @@ export async function runEvidencePass(
     delete (ev as unknown as Record<string, unknown>).future_components;
     try {
       const dims = await import("./dimensions");
-      futureDimensions = dims.validateFutureComponents(
-        rawFuture,
-        args.durationSeconds,
-      );
+      futureDimensions = dims.validateFutureComponents(rawFuture, args.durationSeconds);
     } catch (err) {
       console.warn("[evidence] future_dimensions_dropped", {
         reason: err instanceof Error ? err.message : "validate_error",
@@ -1102,6 +1405,8 @@ export async function runEvidencePass(
 export function summariseEvidence(ev: EvidencePass) {
   return {
     timestamped_evidence_count: ev.timestamped_evidence.length,
+    observed_tape_sequence_count: ev.observed_tape_sequence?.length ?? 0,
+    component_verification_count: ev.component_verifications?.length ?? 0,
     evidence_sufficiency: {
       audio_assessable: !!ev.evidence_sufficiency?.audio_assessable,
       video_assessable: !!ev.evidence_sufficiency?.video_assessable,
@@ -1119,7 +1424,14 @@ type Step1EvidenceFamily = "video" | "audio" | "material" | "performance" | "can
 export type FilteredStep1EvidenceItem = {
   evidence_item_id: string;
   evidence_family: Step1EvidenceFamily;
-  evidence_modality: "video" | "audio" | "material" | "submission_context" | "resolver_truth" | "media_readiness" | "unknown";
+  evidence_modality:
+    | "video"
+    | "audio"
+    | "material"
+    | "submission_context"
+    | "resolver_truth"
+    | "media_readiness"
+    | "unknown";
   evidence_kind: string;
   safe_evidence_summary: string;
   source_artefact_id: "run_evidence_pass";
@@ -1147,7 +1459,13 @@ export type FilteredRunEvidencePassStep1 = {
     performance: boolean;
     candidate_technique: boolean;
   };
-  evidence_family_status_by_id: Record<Step1EvidenceFamily, "partial" | "not_extracted" | "blocked">;
+  evidence_family_status_by_id: Record<
+    Step1EvidenceFamily,
+    "partial" | "not_extracted" | "blocked"
+  >;
+  observed_tape_sequence: ObservedTapeSequence[];
+  component_verifications: ComponentVerification[];
+  media_observation_summary: MediaObservationSummary;
   video_observable_evidence_items: FilteredStep1EvidenceItem[];
   audio_observable_evidence_items: FilteredStep1EvidenceItem[];
   material_observable_evidence_items: FilteredStep1EvidenceItem[];
@@ -1239,6 +1557,229 @@ function safeStep1Text(value: unknown): string | null {
   return text.slice(0, 280);
 }
 
+function normaliseObservedTapeComponentType(value: unknown): ObservedTapeComponentType {
+  return value === "ident" ||
+    value === "acting_scene" ||
+    value === "song" ||
+    value === "dance" ||
+    value === "movement" ||
+    value === "transition" ||
+    value === "technical" ||
+    value === "unknown"
+    ? value
+    : "unknown";
+}
+
+function normaliseObservedTapePresentStatus(value: unknown): ObservedTapePresentStatus {
+  return value === "present" ||
+    value === "partially_present" ||
+    value === "absent" ||
+    value === "not_assessable" ||
+    value === "uncertain"
+    ? value
+    : "uncertain";
+}
+
+function normaliseObservedTapeCompletionStatus(value: unknown): ObservedTapeCompletionStatus {
+  return value === "complete" ||
+    value === "incomplete" ||
+    value === "cut_off" ||
+    value === "not_applicable" ||
+    value === "uncertain"
+    ? value
+    : "uncertain";
+}
+
+function normaliseObservedTapeEvidenceBasis(value: unknown): ObservedTapeEvidenceBasis {
+  return value === "observed_audio_video" ||
+    value === "deterministic_metadata" ||
+    value === "brief_text_only" ||
+    value === "uncertainty"
+    ? value
+    : "uncertainty";
+}
+
+function normaliseObservedTapeConfidence(value: unknown): ObservedTapeConfidence {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
+function safeStep1StringList(value: unknown, maxItems = 12): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => safeStep1Text(item))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, maxItems);
+}
+
+function normaliseStep1TimeRef(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/\s+/g, " ").slice(0, 40);
+  if (!text) return null;
+  if (UNSAFE_STEP1_TEXT_RE.test(text)) return null;
+  return text;
+}
+
+function normaliseStep1BooleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function s10PresenceClaim(status: ObservedTapePresentStatus): boolean {
+  return status === "present" || status === "partially_present";
+}
+
+function s10CompletionClaim(status: ObservedTapeCompletionStatus): boolean {
+  return status === "complete";
+}
+
+function summaryLooksBriefOnly(value: string): boolean {
+  const mentionsBriefRequest =
+    /\b(brief|requirement|requested|required|supplied context|operator[- ]declared|declared material|asked for)\b/i.test(
+      value,
+    );
+  if (!mentionsBriefRequest) return false;
+  return !/\b(observed|identified|present|included|complete|heard|visible|audible|seen|appears|tape|video|audio|media|section|sings|singing|cuts? off|ends?|starts?)\b/i.test(
+    value,
+  );
+}
+
+function validS10MediaObservationClaim(input: {
+  observed_from_media: boolean;
+  evidence_basis: ObservedTapeEvidenceBasis;
+  evidence_summary: string;
+}): boolean {
+  if (!input.observed_from_media) return false;
+  if (input.evidence_basis !== "observed_audio_video") return false;
+  if (summaryLooksBriefOnly(input.evidence_summary)) return false;
+  return true;
+}
+
+function appendAssessabilityNote(existing: string | undefined, note: string): string {
+  const base = typeof existing === "string" ? existing.trim() : "";
+  if (!base) return note;
+  if (base.includes(note)) return base;
+  return `${base}; ${note}`;
+}
+
+export function normaliseS10ObservedTapeSequence(value: unknown): ObservedTapeSequence[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 30).flatMap((entry, index) => {
+    if (!isRecord(entry)) return [];
+    const evidenceSummary = safeStep1Text(entry.evidence_summary);
+    if (!evidenceSummary) return [];
+    let presentStatus = normaliseObservedTapePresentStatus(entry.present_status);
+    let completionStatus = normaliseObservedTapeCompletionStatus(entry.completion_status);
+    const evidenceBasis = normaliseObservedTapeEvidenceBasis(entry.evidence_basis);
+    const observedFromMedia = entry.observed_from_media === true;
+    let assessabilityNotes = safeStep1Text(entry.assessability_notes) ?? "";
+    const hasPresenceOrCompletionClaim =
+      s10PresenceClaim(presentStatus) || s10CompletionClaim(completionStatus);
+    if (
+      hasPresenceOrCompletionClaim &&
+      !validS10MediaObservationClaim({
+        observed_from_media: observedFromMedia,
+        evidence_basis: evidenceBasis,
+        evidence_summary: evidenceSummary,
+      })
+    ) {
+      if (s10PresenceClaim(presentStatus)) presentStatus = "uncertain";
+      if (s10CompletionClaim(completionStatus)) completionStatus = "uncertain";
+      assessabilityNotes = appendAssessabilityNote(
+        assessabilityNotes,
+        "S10 downgraded presence/completion because this was not proven from observed media.",
+      );
+    }
+    return [
+      {
+        id: safeStep1Text(entry.id) ?? `observed-section-${index + 1}`,
+        label: safeStep1Text(entry.label) ?? `Observed section ${index + 1}`,
+        component_type: normaliseObservedTapeComponentType(entry.component_type),
+        linked_requirement_ids: safeStep1StringList(entry.linked_requirement_ids),
+        start_time: normaliseStep1TimeRef(entry.start_time),
+        end_time: normaliseStep1TimeRef(entry.end_time),
+        present_status: presentStatus,
+        completion_status: completionStatus,
+        evidence_summary: evidenceSummary,
+        observed_from_media: observedFromMedia,
+        evidence_basis: evidenceBasis,
+        confidence: normaliseObservedTapeConfidence(entry.confidence),
+        assessability_notes: assessabilityNotes,
+      },
+    ];
+  });
+}
+
+export function normaliseS10ComponentVerifications(value: unknown): ComponentVerification[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 40).flatMap((entry, index) => {
+    if (!isRecord(entry)) return [];
+    const requirementSummary = safeStep1Text(entry.requirement_summary);
+    const evidenceSummary = safeStep1Text(entry.evidence_summary);
+    if (!requirementSummary || !evidenceSummary) return [];
+    let observedStatus = normaliseObservedTapePresentStatus(entry.observed_status);
+    let completionStatus = normaliseObservedTapeCompletionStatus(entry.completion_status);
+    const evidenceBasis = normaliseObservedTapeEvidenceBasis(entry.evidence_basis);
+    const observedFromMedia = entry.observed_from_media === true;
+    let assessabilityNotes = safeStep1Text(entry.assessability_notes) ?? "";
+    const hasPresenceOrCompletionClaim =
+      s10PresenceClaim(observedStatus) || s10CompletionClaim(completionStatus);
+    if (
+      hasPresenceOrCompletionClaim &&
+      !validS10MediaObservationClaim({
+        observed_from_media: observedFromMedia,
+        evidence_basis: evidenceBasis,
+        evidence_summary: evidenceSummary,
+      })
+    ) {
+      if (s10PresenceClaim(observedStatus)) observedStatus = "uncertain";
+      if (s10CompletionClaim(completionStatus)) completionStatus = "uncertain";
+      assessabilityNotes = appendAssessabilityNote(
+        assessabilityNotes,
+        "S10 downgraded presence/completion because brief text, deterministic metadata or prior report fields cannot prove observed component presence.",
+      );
+    }
+    return [
+      {
+        requirement_id: safeStep1Text(entry.requirement_id) ?? `requirement-${index + 1}`,
+        requirement_summary: requirementSummary,
+        observed_status: observedStatus,
+        completion_status: completionStatus,
+        evidence_summary: evidenceSummary,
+        observed_from_media: observedFromMedia,
+        evidence_basis: evidenceBasis,
+        timestamp_refs: safeStep1StringList(entry.timestamp_refs),
+        confidence: normaliseObservedTapeConfidence(entry.confidence),
+        cannot_infer_from_brief_only: true,
+        assessability_notes: assessabilityNotes,
+      },
+    ];
+  });
+}
+
+export function normaliseS10MediaObservationSummary(value: unknown): MediaObservationSummary {
+  if (!isRecord(value)) {
+    return {
+      audio_assessable: null,
+      video_assessable: null,
+      framing_assessable: null,
+      continuity_assessable: null,
+      abrupt_cutoff_detected: null,
+      one_continuous_video_observed: null,
+      duration_summary: "",
+      uncertainties: [],
+    };
+  }
+  return {
+    audio_assessable: normaliseStep1BooleanOrNull(value.audio_assessable),
+    video_assessable: normaliseStep1BooleanOrNull(value.video_assessable),
+    framing_assessable: normaliseStep1BooleanOrNull(value.framing_assessable),
+    continuity_assessable: normaliseStep1BooleanOrNull(value.continuity_assessable),
+    abrupt_cutoff_detected: normaliseStep1BooleanOrNull(value.abrupt_cutoff_detected),
+    one_continuous_video_observed: normaliseStep1BooleanOrNull(value.one_continuous_video_observed),
+    duration_summary: safeStep1Text(value.duration_summary) ?? "",
+    uncertainties: safeStep1StringList(value.uncertainties),
+  };
+}
+
 function familyForLinkedCategory(category: unknown): Step1EvidenceFamily {
   switch (String(category ?? "").toLowerCase()) {
     case "technical":
@@ -1256,13 +1797,21 @@ function familyForLinkedCategory(category: unknown): Step1EvidenceFamily {
   }
 }
 
-function normaliseDeclaredStep1Modality(value: unknown): FilteredStep1EvidenceItem["evidence_modality"] | null {
+function normaliseDeclaredStep1Modality(
+  value: unknown,
+): FilteredStep1EvidenceItem["evidence_modality"] | null {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
   if (!raw) return null;
   if (raw === "video" || raw === "visual" || raw === "movement") return "video";
   if (raw === "audio" || raw === "vocal" || raw === "voice") return "audio";
   if (raw === "material" || raw === "brief" || raw === "brief_adherence") return "material";
-  if (raw === "submission_context" || raw === "resolver_truth" || raw === "media_readiness" || raw === "unknown") return raw;
+  if (
+    raw === "submission_context" ||
+    raw === "resolver_truth" ||
+    raw === "media_readiness" ||
+    raw === "unknown"
+  )
+    return raw;
   return null;
 }
 
@@ -1307,10 +1856,14 @@ function compactEvidenceKind(
   compactFamily: unknown,
   value: unknown,
 ): string {
-  const raw = typeof value === "string" && value.trim()
-    ? value.trim().slice(0, 80)
-    : `${family}_observable_event`;
-  if (compactFamily === "material_specific_performance" && !raw.includes("material_specific_performance")) {
+  const raw =
+    typeof value === "string" && value.trim()
+      ? value.trim().slice(0, 80)
+      : `${family}_observable_event`;
+  if (
+    compactFamily === "material_specific_performance" &&
+    !raw.includes("material_specific_performance")
+  ) {
     return `material_specific_performance_${raw}`;
   }
   if (compactFamily === "material_specific" && !raw.includes("material_specific")) {
@@ -1355,6 +1908,9 @@ export function filterRunEvidencePassForStep1(
       material: [],
       performance: [],
       technique: [],
+      observedTapeSequence: [],
+      componentVerifications: [],
+      mediaObservationSummary: normaliseS10MediaObservationSummary(null),
       malformed: true,
     });
   }
@@ -1368,6 +1924,11 @@ export function filterRunEvidencePassForStep1(
   const material: FilteredStep1EvidenceItem[] = [];
   const performance: FilteredStep1EvidenceItem[] = [];
   const technique: FilteredStep1EvidenceItem[] = [];
+  const observedTapeSequence = normaliseS10ObservedTapeSequence(input.observed_tape_sequence);
+  const componentVerifications = normaliseS10ComponentVerifications(input.component_verifications);
+  const mediaObservationSummary = normaliseS10MediaObservationSummary(
+    input.media_observation_summary,
+  );
 
   const addItem = (
     family: Step1EvidenceFamily,
@@ -1378,6 +1939,8 @@ export function filterRunEvidencePassForStep1(
     limitations: string[] = [],
     declaredModality?: unknown,
     sourceContext?: unknown,
+    blockerCodes: string[] = [],
+    componentId: string | null = null,
   ) => {
     const target =
       family === "video"
@@ -1400,23 +1963,31 @@ export function filterRunEvidencePassForStep1(
       source_path: sourcePath,
       timestamp,
       timestamp_range: null,
-      timestamp_source: timestamp ? "runEvidencePass_validated_timestamp" : "not_timestamped_observation",
-      component_id: null,
+      timestamp_source: timestamp
+        ? "runEvidencePass_validated_timestamp"
+        : "not_timestamped_observation",
+      component_id: componentId,
       linked_truth_state_ids: [],
       assessability_limitations: [
         ...limitations,
-        ...(family === "performance" && evidenceModality === "unknown" ? ["performance_modality_unavailable"] : []),
+        ...(family === "performance" && evidenceModality === "unknown"
+          ? ["performance_modality_unavailable"]
+          : []),
       ],
       confidence_or_strength: "runEvidencePass_observation",
       public_display_status: "internal_only",
-      blocker_codes: [],
+      blocker_codes: blockerCodes,
     };
     target.push(item);
   };
 
   const compactObservations = Array.isArray(input.step1_observations)
     ? input.step1_observations
-    : (typeof input.schema_version === "string" && SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS.has(input.schema_version) && Array.isArray(input.observations) ? input.observations : []);
+    : typeof input.schema_version === "string" &&
+        SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS.has(input.schema_version) &&
+        Array.isArray(input.observations)
+      ? input.observations
+      : [];
   compactObservations.forEach((entry, index) => {
     if (!isRecord(entry)) {
       addRejected(rejected, `step1_observations[${index}]`);
@@ -1430,9 +2001,21 @@ export function filterRunEvidencePassForStep1(
     }
     const timestamp = secondsToTimestamp(entry.timestamp_start_sec);
     const limitations = Array.isArray(entry.limitations)
-      ? entry.limitations.map((item) => safeStep1Text(item)).filter((item): item is string => Boolean(item)).slice(0, 6)
+      ? entry.limitations
+          .map((item) => safeStep1Text(item))
+          .filter((item): item is string => Boolean(item))
+          .slice(0, 6)
       : [];
     const sourceBasis = typeof entry.source_basis === "string" ? entry.source_basis : null;
+    const compactBlockers =
+      entry.family === "material_specific_performance" &&
+      sourceBasis !== "observed_audio" &&
+      sourceBasis !== "observed_video"
+        ? [
+            "material_specific_performance_requires_observed_media",
+            "requested_material_cannot_satisfy_observed_component_presence",
+          ]
+        : [];
     addItem(
       family,
       `step1_observations[${index}].summary`,
@@ -1445,6 +2028,7 @@ export function filterRunEvidencePassForStep1(
       ],
       compactDeclaredModality(family, sourceBasis),
       sourceBasis,
+      compactBlockers,
     );
   });
 
@@ -1456,14 +2040,17 @@ export function filterRunEvidencePassForStep1(
       return;
     }
     const observation = safeStep1Text(entry.observation);
-    const timestamp = typeof entry.timestamp === "string" && isValidTimestamp(entry.timestamp, options.durationSeconds)
-      ? entry.timestamp
-      : null;
+    const timestamp =
+      typeof entry.timestamp === "string" &&
+      isValidTimestamp(entry.timestamp, options.durationSeconds)
+        ? entry.timestamp
+        : null;
     if (!observation) {
       addRejected(rejected, `timestamped_evidence[${index}].observation`);
       return;
     }
-    if (!timestamp && typeof entry.timestamp === "string") addRejected(rejected, `timestamped_evidence[${index}].timestamp`);
+    if (!timestamp && typeof entry.timestamp === "string")
+      addRejected(rejected, `timestamped_evidence[${index}].timestamp`);
     const family = familyForLinkedCategory(entry.linked_category);
     addItem(
       family,
@@ -1489,14 +2076,71 @@ export function filterRunEvidencePassForStep1(
     }
   });
 
-  const detectedComponents = Array.isArray(input.detected_components) ? input.detected_components : [];
+  componentVerifications.forEach((verification, index) => {
+    const hasPresenceOrCompletionClaim =
+      s10PresenceClaim(verification.observed_status) ||
+      s10CompletionClaim(verification.completion_status);
+    const mediaGrounded = validS10MediaObservationClaim(verification);
+    const wasDowngradedByS10Guard = /S10 downgraded/i.test(verification.assessability_notes ?? "");
+    const limitationBlockers: string[] = [];
+    if ((hasPresenceOrCompletionClaim || wasDowngradedByS10Guard) && !mediaGrounded) {
+      limitationBlockers.push("s10_component_verification_requires_observed_media");
+      if (verification.evidence_basis === "brief_text_only") {
+        limitationBlockers.push("brief_text_only_not_component_presence");
+      }
+      if (verification.evidence_basis === "deterministic_metadata") {
+        limitationBlockers.push("deterministic_metadata_not_component_completion");
+      }
+      if (!verification.observed_from_media) {
+        limitationBlockers.push("observed_from_media_false_not_component_presence");
+      }
+    }
+    const sourceKind = limitationBlockers.length
+      ? "s10_component_verification_diagnostic_blocked"
+      : `s10_component_verification_${verification.observed_status}_${verification.completion_status}`;
+    const exactTimestampRef =
+      verification.timestamp_refs.find((ref) => isValidTimestamp(ref, options.durationSeconds)) ??
+      null;
+    addItem(
+      "material",
+      `component_verifications[${index}].evidence_summary`,
+      sourceKind,
+      verification.evidence_summary,
+      exactTimestampRef,
+      [
+        verification.assessability_notes ?? "",
+        ...(verification.evidence_basis === "deterministic_metadata"
+          ? ["deterministic_metadata_supports_assessability_only"]
+          : []),
+        ...(verification.evidence_basis === "brief_text_only"
+          ? ["brief_text_only_cannot_prove_observed_component"]
+          : []),
+      ].filter(Boolean),
+      "material",
+      verification.evidence_basis,
+      limitationBlockers,
+      verification.requirement_id,
+    );
+  });
+
+  const detectedComponents = Array.isArray(input.detected_components)
+    ? input.detected_components
+    : [];
   detectedComponents.forEach((entry, index) => {
     if (!isRecord(entry) || typeof entry.type !== "string") {
       addRejected(rejected, `detected_components[${index}]`);
       return;
     }
     const type = entry.type.trim().toLowerCase();
-    const allowedTypes = new Set(["acting_scene", "song", "monologue", "dance", "commercial", "slate", "other"]);
+    const allowedTypes = new Set([
+      "acting_scene",
+      "song",
+      "monologue",
+      "dance",
+      "commercial",
+      "slate",
+      "other",
+    ]);
     if (!allowedTypes.has(type)) {
       addRejected(rejected, `detected_components[${index}].type`);
       return;
@@ -1504,16 +2148,19 @@ export function filterRunEvidencePassForStep1(
     addItem(
       "material",
       `detected_components[${index}].type`,
-      "material_component_presence_observed",
-      `Observed component presence: ${type.replace(/_/g, " ")}`,
+      "legacy_detected_component_diagnostic_only",
+      `Legacy detected component diagnostic only: ${type.replace(/_/g, " ")}`,
       null,
-      [],
+      ["legacy_detected_components_cannot_override_s10_component_verification"],
       "material",
       type,
+      ["legacy_detected_components_not_s10_component_verification"],
     );
   });
 
-  const presentation = Array.isArray(input.presentation_evidence) ? input.presentation_evidence : [];
+  const presentation = Array.isArray(input.presentation_evidence)
+    ? input.presentation_evidence
+    : [];
   presentation.forEach((entry, index) => {
     const text = safeStep1Text(entry);
     if (!text) {
@@ -1527,13 +2174,34 @@ export function filterRunEvidencePassForStep1(
   if (sufficiency) {
     const notes = safeStep1Text(sufficiency.notes);
     if (sufficiency.video_assessable === false) {
-      addItem("video", "evidence_sufficiency.video_assessable", "video_assessability_limitation", notes ?? "Video assessability limitation recorded", null, ["video_not_fully_assessable"]);
+      addItem(
+        "video",
+        "evidence_sufficiency.video_assessable",
+        "video_assessability_limitation",
+        notes ?? "Video assessability limitation recorded",
+        null,
+        ["video_not_fully_assessable"],
+      );
     }
     if (sufficiency.audio_assessable === false) {
-      addItem("audio", "evidence_sufficiency.audio_assessable", "audio_assessability_limitation", notes ?? "Audio assessability limitation recorded", null, ["audio_not_fully_assessable"]);
+      addItem(
+        "audio",
+        "evidence_sufficiency.audio_assessable",
+        "audio_assessability_limitation",
+        notes ?? "Audio assessability limitation recorded",
+        null,
+        ["audio_not_fully_assessable"],
+      );
     }
     if (sufficiency.movement_assessable === false) {
-      addItem("video", "evidence_sufficiency.movement_assessable", "movement_visibility_limitation", notes ?? "Movement assessability limitation recorded", null, ["movement_not_fully_assessable"]);
+      addItem(
+        "video",
+        "evidence_sufficiency.movement_assessable",
+        "movement_visibility_limitation",
+        notes ?? "Movement assessability limitation recorded",
+        null,
+        ["movement_not_fully_assessable"],
+      );
     }
   }
 
@@ -1545,11 +2213,11 @@ export function filterRunEvidencePassForStep1(
       ? (entry.safe_evidence_summary ?? entry.evidence ?? entry.label)
       : entry;
     const text = safeStep1Text(rawText);
-    const hasUnsafeAuthority = isRecord(entry) && (
-      typeof entry.score === "number"
-      || entry.authoritative === true
-      || PROHIBITED_STEP1_TEXT_RE.test(String(entry.diagnosis ?? ""))
-    );
+    const hasUnsafeAuthority =
+      isRecord(entry) &&
+      (typeof entry.score === "number" ||
+        entry.authoritative === true ||
+        PROHIBITED_STEP1_TEXT_RE.test(String(entry.diagnosis ?? "")));
     if (!text || hasUnsafeAuthority) {
       addRejected(rejected, `candidate_technique_evidence[${index}]`);
       return;
@@ -1576,6 +2244,9 @@ export function filterRunEvidencePassForStep1(
     material,
     performance,
     technique,
+    observedTapeSequence,
+    componentVerifications,
+    mediaObservationSummary,
     malformed: false,
   });
 }
@@ -1588,6 +2259,9 @@ function buildFilteredStep1Result(args: {
   material: FilteredStep1EvidenceItem[];
   performance: FilteredStep1EvidenceItem[];
   technique: FilteredStep1EvidenceItem[];
+  observedTapeSequence: ObservedTapeSequence[];
+  componentVerifications: ComponentVerification[];
+  mediaObservationSummary: MediaObservationSummary;
   malformed: boolean;
 }): FilteredRunEvidencePassStep1 {
   const evidence_family_coverage = {
@@ -1598,22 +2272,30 @@ function buildFilteredStep1Result(args: {
     candidate_technique: args.technique.length > 0,
   };
   const familyStatus = (present: boolean): "partial" | "not_extracted" | "blocked" =>
-    args.malformed ? "blocked" : (present ? "partial" : "not_extracted");
-  const evidence_family_status_by_id: Record<Step1EvidenceFamily, "partial" | "not_extracted" | "blocked"> = {
+    args.malformed ? "blocked" : present ? "partial" : "not_extracted";
+  const evidence_family_status_by_id: Record<
+    Step1EvidenceFamily,
+    "partial" | "not_extracted" | "blocked"
+  > = {
     video: familyStatus(evidence_family_coverage.video),
     audio: familyStatus(evidence_family_coverage.audio),
     material: familyStatus(evidence_family_coverage.material),
     performance: familyStatus(evidence_family_coverage.performance),
     candidate_technique: familyStatus(evidence_family_coverage.candidate_technique),
   };
-  const unsupported_or_unavailable_evidence = (Object.entries(evidence_family_status_by_id) as Array<[Step1EvidenceFamily, "partial" | "not_extracted" | "blocked"]>)
+  const unsupported_or_unavailable_evidence = (
+    Object.entries(evidence_family_status_by_id) as Array<
+      [Step1EvidenceFamily, "partial" | "not_extracted" | "blocked"]
+    >
+  )
     .filter(([, status]) => status !== "partial")
     .map(([family, status]) => ({
       evidence_kind: `${family}_observable_evidence_${status}`,
       status: status as "not_extracted" | "blocked",
-      reason: status === "blocked"
-        ? "runEvidencePass output was malformed or unsafe for this evidence family"
-        : `${family} observable evidence was not extracted from runEvidencePass`,
+      reason:
+        status === "blocked"
+          ? "runEvidencePass output was malformed or unsafe for this evidence family"
+          : `${family} observable evidence was not extracted from runEvidencePass`,
       blocker_codes: [`${family}_observable_evidence_${status}`],
     }));
   const rejectedKeys = [...args.rejected].sort();
@@ -1629,12 +2311,21 @@ function buildFilteredStep1Result(args: {
     extraction_status: args.malformed ? "blocked" : "partial",
     evidence_family_coverage,
     evidence_family_status_by_id,
+    observed_tape_sequence: args.observedTapeSequence,
+    component_verifications: args.componentVerifications,
+    media_observation_summary: args.mediaObservationSummary,
     video_observable_evidence_items: args.video,
     audio_observable_evidence_items: args.audio,
     material_observable_evidence_items: args.material,
     performance_observable_evidence_items: args.performance,
     candidate_technique_evidence: args.technique,
-    observable_evidence_items: [...args.video, ...args.audio, ...args.material, ...args.performance, ...args.technique],
+    observable_evidence_items: [
+      ...args.video,
+      ...args.audio,
+      ...args.material,
+      ...args.performance,
+      ...args.technique,
+    ],
     unsupported_or_unavailable_evidence,
     rejected_or_filtered_fields: rejectedKeys,
     prohibited_field_filter_summary: {
@@ -1642,7 +2333,9 @@ function buildFilteredStep1Result(args: {
       rejected_field_keys: rejectedKeys,
       raw_values_persisted: false,
     },
-    assessability_limitations: unsupported_or_unavailable_evidence.map((item) => item.evidence_kind),
+    assessability_limitations: unsupported_or_unavailable_evidence.map(
+      (item) => item.evidence_kind,
+    ),
     blocker_codes,
   };
 }
