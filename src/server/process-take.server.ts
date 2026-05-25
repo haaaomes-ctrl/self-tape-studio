@@ -3335,7 +3335,7 @@ export async function runProcessTake(
         // ---- Step 2: text-only polish ----
         console.log("[take-pipeline] report_polish_started", baseLog);
         metric("report_polish_started", { take_id: takeId });
-        {
+        const writeAnalysingHeartbeat = async (label: string) => {
           const { error: heartbeatErr } = await supabaseAdmin
             .from("takes")
             .update({ updated_at: new Date().toISOString() })
@@ -3345,6 +3345,7 @@ export async function runProcessTake(
           if (heartbeatErr) {
             console.warn("[take-pipeline] report_polish_heartbeat_failed", {
               take_id: takeId,
+              label,
               error: heartbeatErr.message,
             });
             metric("phase_transition_failure", {
@@ -3352,7 +3353,15 @@ export async function runProcessTake(
               reason: "report_polish_heartbeat_failed",
             });
           }
-        }
+        };
+        await writeAnalysingHeartbeat("polish_start");
+        // Periodic heartbeat keeps the row's updated_at fresh so the
+        // analysing-orphan reconciler (idle >180s) does not force-error an
+        // in-flight analysis when Step 2 runs longer than the reconciler
+        // window. Cleared in the .finally() once polish settles.
+        const polishHeartbeatInterval = setInterval(() => {
+          void writeAnalysingHeartbeat("polish_tick");
+        }, 60_000);
         const polishAc = new AbortController();
         const polishTimer = setTimeout(() => polishAc.abort(), ANALYSIS_GEMINI_TIMEOUT_MS);
         const polishAttemptStartedAt = Date.now();
@@ -3369,7 +3378,10 @@ export async function runProcessTake(
           levelBlock,
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
-        }).finally(() => clearTimeout(polishTimer));
+        }).finally(() => {
+          clearTimeout(polishTimer);
+          clearInterval(polishHeartbeatInterval);
+        });
         reportPolishCompletedAtIso = new Date().toISOString();
         reportPolishModel = polishResult.model;
         reportPolishHttpStatus = polishResult.httpStatus;
