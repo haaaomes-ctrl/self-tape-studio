@@ -779,12 +779,12 @@ export function V2ReportView({
                             <span className="font-medium">
                               {safeStr(r.requirement_summary) ?? "Requirement result"}
                             </span>
-                            {" — "}
-                            <span className="capitalize">
-                              {statusParts.length > 0
-                                ? statusParts.join(" / ")
-                                : "status unavailable"}
-                            </span>
+                            {statusParts.length > 0 && (
+                              <>
+                                {" — "}
+                                <span className="capitalize">{statusParts.join(" / ")}</span>
+                              </>
+                            )}
                             {safeStr(r.evidence_summary) && (
                               <p className="mt-0.5 text-xs text-muted-foreground">
                                 Evidence: {safeStr(r.evidence_summary)}

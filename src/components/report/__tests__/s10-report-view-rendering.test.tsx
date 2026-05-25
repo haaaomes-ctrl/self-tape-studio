@@ -255,6 +255,31 @@ describe("S10 report view rendering", () => {
     expect(html).not.toContain("status unavailable");
   });
 
+  it("renders evidence-only and action-only S10 brief achievement rows without fallback status copy", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.brief_achievement_matrix = {
+      requirement_results: [
+        {
+          requirement_summary: "Side 1",
+          evidence_summary: "The acting side is visible and assessable.",
+        },
+        {
+          requirement_summary: "Song",
+          recommended_action: "Keep the current song take in the package.",
+        },
+      ],
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("Side 1");
+    expect(html).toContain("The acting side is visible and assessable.");
+    expect(html).toContain("Song");
+    expect(html).toContain("Keep the current song take in the package.");
+    expect(html).not.toContain("status unavailable");
+  });
+
   it("renders object-shaped S10 retake plan items without object-string output", () => {
     const report = strongCompleteV2Report();
     const view = report.s10_view_model as Record<string, any>;

@@ -37,6 +37,13 @@ export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
   "diagnostic_chips",
 ] as const;
 
+const S10_ROUTE_ALLOWED_SECTION_SOURCES = new Set([
+  "s10_authoritative_module",
+  "s10_compatibility_projection",
+  "specific_limitation",
+  "not_applicable",
+]);
+
 export function isUsableS10PerformerReportViewModel(value: unknown): value is {
   report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
   source_mode: typeof S10_REPORT_SOURCE_MODE;
@@ -89,7 +96,14 @@ export function isUsableS10PerformerReportViewModel(value: unknown): value is {
     !Array.isArray(sectionSourceMap) &&
     S10_ROUTE_REQUIRED_SECTION_KEYS.every((section) => {
       const entry = (sectionSourceMap as Record<string, unknown>)[section];
-      return Boolean(entry) && typeof entry === "object" && !Array.isArray(entry);
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+      const source = (entry as Record<string, unknown>).source;
+      if (typeof source !== "string" || !S10_ROUTE_ALLOWED_SECTION_SOURCES.has(source)) {
+        return false;
+      }
+      if (source !== "specific_limitation") return true;
+      const limitation = (entry as Record<string, unknown>).limitation;
+      return typeof limitation === "string" && limitation.trim().length > 0;
     });
   return (
     !!record &&

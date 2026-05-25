@@ -2,6 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { V2ReportView } from "@/components/report/V2ReportView";
+import { S10_ROUTE_REQUIRED_SECTION_KEYS } from "@/lib/audition-rules";
 import {
   buildS10LimitedV2Report,
   buildRouteReportForPersistence,
@@ -121,6 +122,18 @@ describe("S10.P1e hard V2 route boundary", () => {
         score_summary: {},
         recommendation: null,
         limitations: ["  "],
+      },
+      {
+        report_version: "s10_performer_report_view_model_v1",
+        source_mode: "s10_ai_report_model",
+        section_source_map: Object.fromEntries(
+          S10_ROUTE_REQUIRED_SECTION_KEYS.map((section) => [section, {}]),
+        ),
+        score_summary: {},
+        recommendation: {
+          decision: "submit",
+        },
+        limitations: [],
       },
     ]) {
       const html = render({

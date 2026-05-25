@@ -1189,6 +1189,7 @@ function hasVisibleComparisonTruthPayload(value: unknown): boolean {
   if (!comparison) return false;
   return (
     !!asText(comparison.performer_facing_summary) ||
+    !!asText(comparison.comparison_warning) ||
     arrayHasRenderableStrings(comparison.limitations)
   );
 }
@@ -1306,13 +1307,13 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     } {
   const view = asRecord(viewModel);
   if (!view) return { ok: false, reason: "s10_view_model_not_object" };
-  if (!isUsableS10PerformerReportViewModel(viewModel)) {
-    if (view.report_version !== S10_PERFORMER_REPORT_VIEW_MODEL_VERSION) {
-      return { ok: false, reason: "s10_view_model_wrong_version" };
-    }
-    if (view.source_mode !== S10_REPORT_SOURCE_MODE) {
-      return { ok: false, reason: "s10_view_model_wrong_source_mode" };
-    }
+  if (view.report_version !== S10_PERFORMER_REPORT_VIEW_MODEL_VERSION) {
+    return { ok: false, reason: "s10_view_model_wrong_version" };
+  }
+  if (view.source_mode !== S10_REPORT_SOURCE_MODE) {
+    return { ok: false, reason: "s10_view_model_wrong_source_mode" };
+  }
+  if (!isRecord(view.score_summary) || !Array.isArray(view.limitations)) {
     return { ok: false, reason: "s10_view_model_incomplete_shape" };
   }
   const sourceMap = asRecord(view.section_source_map);
@@ -1327,6 +1328,9 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     if (invalidSource) return { ok: false, reason: invalidSource };
     const missingPayload = validateSectionVisiblePayload(section, entry, view);
     if (missingPayload) return { ok: false, reason: missingPayload };
+  }
+  if (!isUsableS10PerformerReportViewModel(viewModel)) {
+    return { ok: false, reason: "s10_view_model_incomplete_shape" };
   }
   const json = JSON.stringify(view);
   for (const key of INTERNAL_KEYS) {

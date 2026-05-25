@@ -3,6 +3,10 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { V2ReportView } from "@/components/report/V2ReportView";
 import {
+  isUsableS10PerformerReportViewModel,
+  S10_ROUTE_REQUIRED_SECTION_KEYS,
+} from "@/lib/audition-rules";
+import {
   buildS10LimitedPerformerReportViewModel,
   buildS10PerformerReportViewModel,
   validateAuthenticatedS10RouteSurface,
@@ -85,7 +89,20 @@ describe("S10.P1e source-map validation", () => {
 
     const result = validateAuthenticatedS10RouteSurface(view);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("s10_view_model_incomplete_shape");
+    if (!result.ok) expect(result.reason).toBe("missing_section_source:comparison_truth");
+  });
+
+  it("rejects S10 view models with empty required source-map entries", () => {
+    const view = strongView();
+    view.section_source_map = Object.fromEntries(
+      S10_ROUTE_REQUIRED_SECTION_KEYS.map((section) => [section, {}]),
+    ) as never;
+
+    expect(isUsableS10PerformerReportViewModel(view)).toBe(false);
+    const result = validateAuthenticatedS10RouteSurface(view);
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toBe("invalid_section_source:readiness_header:missing_source");
   });
 
   it("maps missing readiness to the readiness limitation when score summary is also unavailable", () => {
@@ -564,6 +581,22 @@ describe("S10.P1e source-map validation", () => {
     view.section_source_map.limitations = {
       source: "s10_authoritative_module",
       module: "s10_view_model",
+      limitation: null,
+    };
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
+  });
+
+  it("accepts authoritative comparison truth when only comparison_warning is route-visible", () => {
+    const view = strongView();
+    view.comparison_display_mode = "comparison_caution";
+    view.comparison_truth = {
+      comparison_warning: "Do not choose a winner from this duplicate subset.",
+      limitations: [],
+    } as never;
+    view.section_source_map.comparison_truth = {
+      source: "s10_authoritative_module",
+      module: "s10_comparison_truth",
       limitation: null,
     };
 
