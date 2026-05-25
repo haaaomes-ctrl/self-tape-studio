@@ -81,6 +81,11 @@ type NormalisedTake = {
   values: Record<S10MediaIdentitySignalName, string | number | null>;
 };
 
+type InternalPairwiseSameVideoMatch = S10PairwiseSameVideoMatch & {
+  take_a_id: string;
+  take_b_id: string;
+};
+
 const SIGNAL_ROLES: Record<S10MediaIdentitySignalName, S10MediaIdentitySignalConfidenceRole> = {
   original_upload_file_hash: "decisive",
   file_size_bytes: "medium",
@@ -492,32 +497,80 @@ function pairwiseSignals(
 }
 
 function buildPairwiseMatches(
-  current: NormalisedTake,
-  others: NormalisedTake[],
+  takes: NormalisedTake[],
   supportedScope: boolean,
   scopeLimitation: string | null,
-): S10PairwiseSameVideoMatch[] {
-  return others.map((other) => {
-    if (!supportedScope) {
-      return {
-        take_a_label: current.label,
-        take_b_label: other.label,
-        relationship: "uncertain",
-        confidence: "uncertain",
-        matching_signal_names: [],
-        limitations: [scopeLimitation ?? "Pairwise comparison scope is not confirmed."],
-      };
+): InternalPairwiseSameVideoMatch[] {
+  const matches: InternalPairwiseSameVideoMatch[] = [];
+  for (let i = 0; i < takes.length; i += 1) {
+    for (let j = i + 1; j < takes.length; j += 1) {
+      const takeA = takes[i];
+      const takeB = takes[j];
+      if (!takeA || !takeB) continue;
+      if (!supportedScope) {
+        matches.push({
+          take_a_id: takeA.take_id,
+          take_b_id: takeB.take_id,
+          take_a_label: takeA.label,
+          take_b_label: takeB.label,
+          relationship: "uncertain",
+          confidence: "uncertain",
+          matching_signal_names: [],
+          limitations: [scopeLimitation ?? "Pairwise comparison scope is not confirmed."],
+        });
+        continue;
+      }
+      const result = pairwiseSignals(takeA, takeB);
+      matches.push({
+        take_a_id: takeA.take_id,
+        take_b_id: takeB.take_id,
+        take_a_label: takeA.label,
+        take_b_label: takeB.label,
+        relationship: result.relationship,
+        confidence: result.confidence,
+        matching_signal_names: result.signals,
+        limitations: result.limitations,
+      });
     }
-    const result = pairwiseSignals(current, other);
-    return {
-      take_a_label: current.label,
-      take_b_label: other.label,
-      relationship: result.relationship,
-      confidence: result.confidence,
-      matching_signal_names: result.signals,
-      limitations: result.limitations,
-    };
-  });
+  }
+  return matches;
+}
+
+function duplicateSubsetsFromPairs(
+  takes: NormalisedTake[],
+  sameMediaPairs: InternalPairwiseSameVideoMatch[],
+): string[][] {
+  const ids = new Set(takes.map((take) => take.take_id));
+  const labelsById = new Map(takes.map((take) => [take.take_id, take.label] as const));
+  const parent = new Map<string, string>();
+  for (const id of ids) parent.set(id, id);
+
+  const find = (id: string): string => {
+    const current = parent.get(id) ?? id;
+    if (current === id) return current;
+    const root = find(current);
+    parent.set(id, root);
+    return root;
+  };
+
+  const union = (a: string, b: string) => {
+    if (!ids.has(a) || !ids.has(b)) return;
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  for (const pair of sameMediaPairs) union(pair.take_a_id, pair.take_b_id);
+
+  const components = new Map<string, string[]>();
+  for (const take of takes) {
+    const root = find(take.take_id);
+    const group = components.get(root) ?? [];
+    group.push(labelsById.get(take.take_id) ?? take.label);
+    components.set(root, group);
+  }
+
+  return Array.from(components.values()).filter((group) => group.length > 1);
 }
 
 export function classifyS10SameVideoComparison(
@@ -566,13 +619,14 @@ export function classifyS10SameVideoComparison(
   const evidenceSignals = SIGNALS.map((signal) => compareSignal(signal, current, others));
   const scope = scopeSupport(input, takes);
   const supportedScope = scope.supported;
-  const pairwiseMatches = buildPairwiseMatches(current, others, supportedScope, scope.limitation);
+  const pairwiseMatches = buildPairwiseMatches(takes, supportedScope, scope.limitation);
   const sameMediaPairs = pairwiseMatches.filter((match) => match.relationship === "same_media");
   const distinctMediaPairs = pairwiseMatches.filter(
     (match) => match.relationship === "distinct_media",
   );
+  const duplicateSubsets = duplicateSubsetsFromPairs(takes, sameMediaPairs);
   const allComparedMediaMatches =
-    pairwiseMatches.length > 0 && sameMediaPairs.length === pairwiseMatches.length;
+    takes.length > 1 && duplicateSubsets.some((subset) => subset.length === takes.length);
   const mixedSameAndDistinct = sameMediaPairs.length > 0 && distinctMediaPairs.length > 0;
   if (!supportedScope) {
     limitations.push(scope.limitation ?? "Same-video comparison scope is not confirmed.");
@@ -646,7 +700,13 @@ export function classifyS10SameVideoComparison(
     ? matchingIds("original_upload_file_hash", current, others)
     : sameMediaPairs.length > 0
       ? others
-          .filter((take) => sameMediaPairs.some((match) => match.take_b_label === take.label))
+          .filter((take) =>
+            sameMediaPairs.some(
+              (match) =>
+                (match.take_a_id === current.take_id && match.take_b_id === take.take_id) ||
+                (match.take_b_id === current.take_id && match.take_a_id === take.take_id),
+            ),
+          )
           .map((take) => take.take_id)
       : weakMatchedCount >= 2
         ? Array.from(
@@ -676,17 +736,20 @@ export function classifyS10SameVideoComparison(
     limitations,
   };
 
-  const takeSummaries: S10ComparedTakeSummary[] = takes.map((take) => ({
-    take_id: take.take_id,
-    label: take.label,
-    media_identity_summary:
-      status === "new_media"
-        ? "Different media identity from the current take."
-        : matchedIds.includes(take.take_id) || take.take_id === current.take_id
-          ? "Appears to share the same underlying video."
-          : "Media identity relationship is not confirmed.",
-    report_context_summary: evidence.changed_context.join(", ").replace(/_/g, " "),
-  }));
+  const takeSummaries: S10ComparedTakeSummary[] = takes.map((take) => {
+    const duplicateSubset = duplicateSubsets.find((subset) => subset.includes(take.label));
+    return {
+      take_id: take.take_id,
+      label: take.label,
+      media_identity_summary:
+        status === "new_media"
+          ? "Different media identity from the current take."
+          : duplicateSubset
+            ? "Appears to share the same underlying video with another compared take."
+            : "Media identity relationship is not confirmed.",
+      report_context_summary: evidence.changed_context.join(", ").replace(/_/g, " "),
+    };
+  });
 
   const comparisonTruth: S10ComparisonTruth = {
     comparison_mode: mixedSameAndDistinct
@@ -697,11 +760,8 @@ export function classifyS10SameVideoComparison(
     recommendation_policy: policy,
     performer_facing_summary: text.performer_facing_summary,
     limitations,
-    pairwise_matches: pairwiseMatches,
-    duplicate_subsets:
-      sameMediaPairs.length > 0
-        ? [[current.label, ...sameMediaPairs.map((match) => match.take_b_label)]]
-        : [],
+    pairwise_matches: pairwiseMatches.map(({ take_a_id, take_b_id, ...match }) => match),
+    duplicate_subsets: duplicateSubsets,
   };
 
   return {

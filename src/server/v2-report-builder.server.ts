@@ -425,12 +425,14 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
           readiness_impact: s10View.brief_achievement_matrix?.readiness_impact ?? null,
         }
       : (asObj(r.brief_adherence_breakdown) ?? null),
-    reliability:
-      asStr(r.feedback_reliability_override) ??
-      asStr(r.feedback_reliability) ??
-      asStr(r.reliability),
-    reliability_reason:
-      asStr(r.feedback_reliability_reason_code) ?? asStr(r.confidence_reason) ?? null,
+    reliability: s10View
+      ? null
+      : (asStr(r.feedback_reliability_override) ??
+        asStr(r.feedback_reliability) ??
+        asStr(r.reliability)),
+    reliability_reason: s10View
+      ? null
+      : (asStr(r.feedback_reliability_reason_code) ?? asStr(r.confidence_reason) ?? null),
     confidence: asNum(r.confidence),
     components: buildComponents(args),
     consistency_modifier: asNum(r.consistency_modifier),
@@ -476,7 +478,7 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     at_risk: s10View ? false : asBool(r.at_risk),
   };
 
-  if (args.mode === "brief") {
+  if (!s10View && args.mode === "brief") {
     v2.role_fit = {
       notes: asStr(r.role_fit_notes),
       modifier: asNum(r.role_fit_modifier),
@@ -541,6 +543,10 @@ export type RouteReportPersistenceResult =
   | { outcome: "s10_limited_v2_persisted"; reportToPersist: V2Report; reason: string }
   | { outcome: "s10_unrecoverable"; reportToPersist: null; reason: string };
 
+function isS10V2Candidate(value: unknown): boolean {
+  return hasS10AuthoritativeModules(value);
+}
+
 export function buildRouteReportForPersistence(
   args: BuildV2ReportArgs & {
     futureReportEnabled: boolean;
@@ -563,13 +569,20 @@ export function buildRouteReportForPersistence(
       mode: args.mode,
       s10Context: args.s10Context,
     });
+    const candidateHasS10ReportModel = isS10V2Candidate(v2Candidate);
     const check = validate(v2Candidate, args.legacyReport as Record<string, unknown> | null);
-    if (check.ok) {
+    const candidateDroppedS10Boundary = hasS10ReportModel && !candidateHasS10ReportModel;
+    if (check.ok && !candidateDroppedS10Boundary) {
       return { outcome: "v2_persisted", reportToPersist: v2Candidate };
     }
-    if (!hasS10ReportModel) {
+    if (!hasS10ReportModel && !candidateHasS10ReportModel) {
       return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
     }
+    const failureReason = candidateDroppedS10Boundary
+      ? "s10_candidate_lost_source_mode"
+      : check.ok
+        ? "s10_candidate_invalid"
+        : check.reason;
     const limited = buildS10LimitedV2Report({
       auditionType: args.auditionType,
       mode: args.mode,
@@ -580,7 +593,7 @@ export function buildRouteReportForPersistence(
       return {
         outcome: "s10_limited_v2_persisted",
         reportToPersist: limited,
-        reason: check.reason,
+        reason: failureReason,
       };
     }
     return {
@@ -718,13 +731,24 @@ export function validateV2PublicBoundary(
   const forbidden = findForbiddenKey(o);
   if (forbidden) return { ok: false, reason: `forbidden_key:${forbidden}` };
 
-  if (o.s10_view_model !== undefined) {
+  const s10Mode = o.source_mode === "s10_ai_report_model";
+  const hasS10ViewModel = o.s10_view_model !== undefined;
+  const hasS10RouteSignal = hasS10AuthoritativeModules(o);
+  if (hasS10ViewModel && !s10Mode) {
+    return { ok: false, reason: "s10_view_model_source_mode_mismatch" };
+  }
+  if (hasS10RouteSignal && !s10Mode) {
+    return { ok: false, reason: "s10_module_source_mode_mismatch" };
+  }
+  if (s10Mode && !hasS10ViewModel) {
+    return { ok: false, reason: "missing_s10_view_model" };
+  }
+  if (hasS10ViewModel) {
     const s10Check = validateAuthenticatedS10RouteSurface(o.s10_view_model);
     if (!s10Check.ok) return { ok: false, reason: s10Check.reason };
   }
 
   // Production scores must round-trip when legacy had any.
-  const s10Mode = o.source_mode === "s10_ai_report_model";
   const legacyScores = s10Mode ? null : asScores(legacyReport?.scores);
   if (legacyScores) {
     const v2scores = asScores(o.scores);

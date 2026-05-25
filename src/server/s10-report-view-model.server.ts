@@ -261,18 +261,30 @@ function comparisonDisplayModeFor(
   }
 }
 
+const S10_AUTHORITATIVE_MODULE_KEYS = [
+  "brief_achievement_matrix",
+  "readiness_score_judgement",
+  "s10_fix_hierarchy",
+  "s10_next_action_plan",
+  "s10_professional_critique",
+  "s10_technique_commentary",
+  "s10_timestamped_commentary",
+] as const;
+
+function hasActualS10AuthoritativeModuleObjects(report: unknown): boolean {
+  const r = asRecord(report);
+  if (!r) return false;
+  return S10_AUTHORITATIVE_MODULE_KEYS.some((key) => isRecord(r[key]));
+}
+
 export function hasS10AuthoritativeModules(report: unknown): boolean {
   const r = asRecord(report);
   if (!r) return false;
-  return [
-    "brief_achievement_matrix",
-    "readiness_score_judgement",
-    "s10_fix_hierarchy",
-    "s10_next_action_plan",
-    "s10_professional_critique",
-    "s10_technique_commentary",
-    "s10_timestamped_commentary",
-  ].some((key) => isRecord(r[key]));
+  return (
+    r.source_mode === "s10_ai_report_model" ||
+    isRecord(r.s10_view_model) ||
+    hasActualS10AuthoritativeModuleObjects(r)
+  );
 }
 
 export function buildS10PerformerReportViewModel(input: {
@@ -280,7 +292,7 @@ export function buildS10PerformerReportViewModel(input: {
   context?: S10ViewModelContext | null;
 }): S10PerformerReportViewModel | null {
   const report = asRecord(input.report);
-  if (!report || !hasS10AuthoritativeModules(report)) return null;
+  if (!report || !hasActualS10AuthoritativeModuleObjects(report)) return null;
 
   const readiness = cloneForRouteSurface(
     report.readiness_score_judgement,
@@ -467,7 +479,10 @@ export function buildS10PerformerReportViewModel(input: {
           limitation: null,
         }
       : notApplicable("No S10 submission-risk section is rendered for this report."),
-    limitations: { source: "s10_authoritative_module", module: "s10_view_model", limitation: null },
+    limitations:
+      limitations.length > 0
+        ? sourceModule("s10_view_model")
+        : notApplicable("No S10 limitations are rendered for this report."),
     same_video_status: {
       source: sameVideoEvidence ? "s10_authoritative_module" : "not_applicable",
       module: sameVideoEvidence ? "s10_same_video_evidence" : null,
@@ -741,7 +756,7 @@ const S10_SECTION_SOURCE_RULES: Record<S10ReportSectionKey, S10SectionSourceRule
     ],
   },
   limitations: {
-    sources: ["s10_authoritative_module", "specific_limitation"],
+    sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
     modules: [/^s10_view_model$/],
   },
   same_video_status: {
@@ -799,7 +814,253 @@ function validateSectionSourceEntry(
   if (moduleValue && rule.modules && !rule.modules.some((pattern) => pattern.test(moduleValue))) {
     return `invalid_section_module:${section}:${moduleValue}`;
   }
+  if (sourceValue === "specific_limitation" && !asText(entry.limitation)) {
+    return `invalid_section_limitation:${section}:missing_limitation`;
+  }
   return null;
+}
+
+function arrayHasItems(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function hasVisibleCategoryScoreRows(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((row) => {
+    const record = asRecord(row);
+    return !!record && !!asText(record.category_id) && asNumber(record.score) != null;
+  });
+}
+
+function hasScoreRowRationale(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  return value.some((row) => {
+    const record = asRecord(row);
+    return (
+      !!record &&
+      !!asText(record.category_id) &&
+      Boolean(
+        asText(record.score_basis) ?? asText(record.why_not_full_score) ?? asText(record.close_gap),
+      )
+    );
+  });
+}
+
+function hasFixHierarchyPayload(value: unknown): boolean {
+  const hierarchy = asRecord(value);
+  if (!hierarchy) return false;
+  return (
+    !!asRecord(hierarchy.fix_first) ||
+    arrayHasItems(hierarchy.must_fix_before_submitting) ||
+    arrayHasItems(hierarchy.should_improve_if_retaking) ||
+    arrayHasItems(hierarchy.optional_polish) ||
+    arrayHasItems(hierarchy.preserve)
+  );
+}
+
+function hasNextActionPayload(value: unknown): boolean {
+  const plan = asRecord(value);
+  if (!plan) return false;
+  return (
+    arrayHasItems(plan.submit_checklist) ||
+    arrayHasItems(plan.retake_plan) ||
+    arrayHasItems(plan.final_checks) ||
+    arrayHasItems(plan.playback_checks) ||
+    !!asText(plan.no_retake_needed_reason)
+  );
+}
+
+function hasStrengthPayload(value: unknown): boolean {
+  const critique = asRecord(value);
+  if (!critique) return false;
+  return (
+    !!asText(critique.summary) ||
+    arrayHasItems(critique.strengths) ||
+    arrayHasItems(critique.preserve) ||
+    arrayHasItems(critique.do_not_overfix) ||
+    arrayHasItems(critique.limitations)
+  );
+}
+
+function hasVisibleProfessionalCritiquePayload(value: unknown): boolean {
+  const critique = asRecord(value);
+  if (!critique) return false;
+  return (
+    !!asText(critique.summary) ||
+    arrayHasItems(critique.performance_strengths) ||
+    arrayHasItems(critique.brief_package_strengths) ||
+    arrayHasItems(critique.technical_presentation_strengths) ||
+    arrayHasItems(critique.vocal_or_singing_strengths) ||
+    arrayHasItems(critique.acting_strengths) ||
+    arrayHasItems(critique.movement_or_physical_strengths) ||
+    arrayHasItems(critique.professional_presentation_notes) ||
+    arrayHasItems(critique.preserve) ||
+    arrayHasItems(critique.do_not_overfix) ||
+    arrayHasItems(critique.critique_limitations)
+  );
+}
+
+function hasVisibleTechniqueSectionPayload(value: unknown): boolean {
+  const section = asRecord(value);
+  if (!section) return false;
+  return (
+    !!asText(section.headline) ||
+    !!asText(section.not_assessable_reason) ||
+    arrayHasItems(section.observations) ||
+    arrayHasItems(section.what_is_working) ||
+    arrayHasItems(section.what_could_improve) ||
+    arrayHasItems(section.practical_actions) ||
+    arrayHasItems(section.preserve) ||
+    arrayHasItems(section.limitations)
+  );
+}
+
+function hasVisibleTechniquePayload(value: unknown): boolean {
+  const commentary = asRecord(value);
+  if (!commentary) return false;
+  return (
+    !!asText(commentary.summary) ||
+    arrayHasItems(commentary.limitations) ||
+    [
+      "acting",
+      "vocal_singing",
+      "movement_dance",
+      "musical_theatre_package",
+      "self_tape_presentation",
+      "commercial_screen_task",
+    ].some((key) => hasVisibleTechniqueSectionPayload(commentary[key]))
+  );
+}
+
+function hasPresentationPayload(view: Record<string, unknown>): boolean {
+  const technique = asRecord(view.technique_commentary);
+  const selfTape = asRecord(technique?.self_tape_presentation);
+  const critique = asRecord(view.professional_critique);
+  return (
+    arrayHasItems(selfTape?.what_is_working) ||
+    arrayHasItems(critique?.professional_presentation_notes)
+  );
+}
+
+function hasSubmissionRiskPayload(view: Record<string, unknown>): boolean {
+  const recommendation = asRecord(view.recommendation);
+  const matrix = asRecord(view.brief_achievement_matrix);
+  const fixHierarchy = asRecord(view.fix_hierarchy);
+  const decision = asText(recommendation?.decision);
+  return (
+    (!!decision && decision !== "submit" && decision !== "submit_if_deadline_is_close") ||
+    asText(matrix?.readiness_impact) === "material_gap" ||
+    asText(matrix?.readiness_impact) === "submission_blocker" ||
+    !!asRecord(fixHierarchy?.fix_first) ||
+    arrayHasItems(fixHierarchy?.must_fix_before_submitting)
+  );
+}
+
+function validateSectionVisiblePayload(
+  section: S10ReportSectionKey,
+  entry: Record<string, unknown>,
+  view: Record<string, unknown>,
+): string | null {
+  const sourceValue = asText(entry.source);
+  if (
+    sourceValue !== "s10_authoritative_module" &&
+    sourceValue !== "s10_compatibility_projection"
+  ) {
+    return null;
+  }
+
+  const scoreSummary = asRecord(view.score_summary);
+  const observedTape = asRecord(view.observed_tape);
+  let hasVisiblePayload = true;
+  switch (section) {
+    case "readiness_header":
+    case "submission_guidance": {
+      const recommendation = asRecord(view.recommendation);
+      hasVisiblePayload =
+        !!recommendation &&
+        Boolean(
+          asText(recommendation.decision) ||
+          asText(recommendation.headline) ||
+          asText(recommendation.score_explanation) ||
+          arrayHasItems(recommendation.rationale),
+        );
+      break;
+    }
+    case "score_summary":
+      hasVisiblePayload = asNumber(scoreSummary?.overall_submission_readiness_score) != null;
+      break;
+    case "category_scores":
+      hasVisiblePayload = hasVisibleCategoryScoreRows(scoreSummary?.category_scores);
+      break;
+    case "category_rationale":
+      hasVisiblePayload = hasScoreRowRationale(scoreSummary?.category_scores);
+      break;
+    case "brief_adherence_material_compliance":
+      hasVisiblePayload = asNumber(scoreSummary?.brief_completion_score) != null;
+      break;
+    case "brief_context":
+      hasVisiblePayload = !!asRecord(view.brief_context);
+      break;
+    case "brief_requirements":
+      hasVisiblePayload = arrayHasItems(view.brief_requirements);
+      break;
+    case "brief_achievement":
+      hasVisiblePayload = !!asRecord(view.brief_achievement_matrix);
+      break;
+    case "observed_tape":
+      hasVisiblePayload =
+        arrayHasItems(observedTape?.observed_tape_sequence) ||
+        arrayHasItems(observedTape?.component_verifications);
+      break;
+    case "component_breakdown":
+      hasVisiblePayload = arrayHasItems(view.component_breakdown);
+      break;
+    case "fix_hierarchy":
+      hasVisiblePayload = hasFixHierarchyPayload(view.fix_hierarchy);
+      break;
+    case "next_action_plan":
+      hasVisiblePayload = hasNextActionPayload(view.next_action_plan);
+      break;
+    case "strengths_and_preserve":
+      hasVisiblePayload = hasStrengthPayload(view.strengths_and_preserve);
+      break;
+    case "professional_critique":
+      hasVisiblePayload = hasVisibleProfessionalCritiquePayload(view.professional_critique);
+      break;
+    case "technique_commentary":
+      hasVisiblePayload = hasVisibleTechniquePayload(view.technique_commentary);
+      break;
+    case "timestamped_commentary": {
+      const timestamped = asRecord(view.timestamped_commentary);
+      hasVisiblePayload =
+        !!timestamped &&
+        (arrayHasItems(timestamped.notes) ||
+          arrayHasItems(timestamped.timestamp_limitations) ||
+          !!asText(timestamped.summary));
+      break;
+    }
+    case "presentation_notes":
+      hasVisiblePayload = hasPresentationPayload(view);
+      break;
+    case "submission_risk":
+      hasVisiblePayload = hasSubmissionRiskPayload(view);
+      break;
+    case "limitations":
+      hasVisiblePayload = arrayHasItems(view.limitations);
+      break;
+    case "same_video_status":
+      hasVisiblePayload = !!asRecord(view.same_video_status);
+      break;
+    case "comparison_truth":
+      hasVisiblePayload = !!asRecord(view.comparison_truth);
+      break;
+    case "diagnostic_chips":
+      hasVisiblePayload = arrayHasItems(view.diagnostic_chips);
+      break;
+    default:
+      hasVisiblePayload = true;
+  }
+  return hasVisiblePayload ? null : `missing_visible_payload:${section}`;
 }
 
 export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
@@ -852,6 +1113,8 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
     }
     const invalidSource = validateSectionSourceEntry(section, entry);
     if (invalidSource) return { ok: false, reason: invalidSource };
+    const missingPayload = validateSectionVisiblePayload(section, entry, view);
+    if (missingPayload) return { ok: false, reason: missingPayload };
   }
   const json = JSON.stringify(view);
   for (const key of INTERNAL_KEYS) {

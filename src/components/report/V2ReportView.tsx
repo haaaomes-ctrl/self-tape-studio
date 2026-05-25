@@ -135,6 +135,23 @@ function sourceLimitation(
     : null;
 }
 
+const S10_LIMITED_ROUTE_MESSAGE =
+  "TapeCoach could not assemble the full S10 report model for this take. No legacy report was used as a substitute.";
+
+const S10_MODULE_KEYS = [
+  "brief_achievement_matrix",
+  "readiness_score_judgement",
+  "s10_fix_hierarchy",
+  "s10_next_action_plan",
+  "s10_professional_critique",
+  "s10_technique_commentary",
+  "s10_timestamped_commentary",
+] as const;
+
+function hasS10ModuleObject(report: V2): boolean {
+  return S10_MODULE_KEYS.some((key) => safeObj(report[key]) !== null);
+}
+
 export function V2ReportView({
   report,
   takeNumber,
@@ -147,6 +164,30 @@ export function V2ReportView({
   if (!report || typeof report !== "object") return null;
 
   const s10 = safeObj(report.s10_view_model);
+  const isS10 =
+    safeStr(report.source_mode) === "s10_ai_report_model" || !!s10 || hasS10ModuleObject(report);
+  if (isS10 && !s10) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+          <div className="flex flex-wrap items-center gap-2">
+            {typeof takeNumber === "number" && (
+              <Badge variant="outline" className="font-medium">
+                Take {takeNumber}
+              </Badge>
+            )}
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+              S10 AI report model
+            </Badge>
+          </div>
+          <p className="mt-3 font-display text-xl font-semibold leading-snug">
+            S10 report assembly limitation
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{S10_LIMITED_ROUTE_MESSAGE}</p>
+        </div>
+      </div>
+    );
+  }
   const s10SectionSourceMap = safeObj(s10?.section_source_map);
   const s10Recommendation = safeObj(s10?.recommendation);
   const s10ScoreSummary = safeObj(s10?.score_summary);
@@ -193,37 +234,51 @@ export function V2ReportView({
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );
   const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
-  const overall = s10
+  const overall = isS10
     ? safeNum(s10ScoreSummary?.overall_submission_readiness_score)
     : safeNum(report.overall_readiness);
-  const headline = s10 ? safeStr(s10Recommendation?.headline) : safeStr(report.headline);
-  const insight = s10
+  const headline = isS10 ? safeStr(s10Recommendation?.headline) : safeStr(report.headline);
+  const insight = isS10
     ? (safeStr(s10Recommendation?.score_explanation) ?? safeStr(s10Matrix?.summary))
     : safeStr(report.insight);
-  const verdict = s10
+  const verdict = isS10
     ? safeStr(s10Recommendation?.decision)?.replace(/_/g, " ")
     : safeStr(report.verdict);
-  const reliability = safeStr(report.reliability);
-  const reliabilityReason = safeStr(report.reliability_reason);
+  const reliability = isS10 ? null : safeStr(report.reliability);
+  const reliabilityReason = isS10 ? null : safeStr(report.reliability_reason);
   const legacyFixFirst = safeStr(report.fix_first);
+  const s10Decision = safeStr(s10Recommendation?.decision);
+  const s10HasBlockingDecision =
+    !!s10Decision && !["submit", "submit_if_deadline_is_close"].includes(s10Decision);
+  const s10SubmissionRiskSource = safeObj(s10SectionSourceMap?.submission_risk);
+  const s10HasRiskSource = safeStr(s10SubmissionRiskSource?.source) === "s10_authoritative_module";
+  const s10Rationale = safeArr<string>(s10Recommendation?.rationale).filter(
+    (b): b is string => typeof b === "string" && b.trim().length > 0,
+  );
   const blockers = (
-    s10 ? safeArr<string>(s10Recommendation?.rationale) : safeArr<string>(report.block_reasons)
+    isS10 && (s10HasBlockingDecision || s10HasRiskSource)
+      ? s10Rationale
+      : !isS10
+        ? safeArr<string>(report.block_reasons)
+        : []
   ).filter((b): b is string => typeof b === "string");
+  const recommendationRationale =
+    isS10 && !s10HasBlockingDecision && !s10HasRiskSource ? s10Rationale : [];
   const strengths = safeArr(report.strengths);
   const legacyImprovements = safeArr(report.improvements);
   const tsNotes = safeArr<{ timestamp?: string; note?: string }>(report.timestamped_notes);
   const s10SelfTapePresentation = safeObj(s10Technique?.self_tape_presentation);
-  const presentation = s10
+  const presentation = isS10
     ? [
         ...displayStrings(s10SelfTapePresentation?.what_is_working),
         ...displayStrings(s10ProfessionalCritique?.professional_presentation_notes),
       ].slice(0, 6)
     : safeArr<string>(report.presentation_notes).filter((s): s is string => typeof s === "string");
-  const riskFlags = s10 ? [] : safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
+  const riskFlags = isS10 ? [] : safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
   const s10CategoryRows = safeArr<Record<string, unknown>>(s10ScoreSummary?.category_scores);
   const s10ComponentScores = safeArr<Record<string, unknown>>(s10ScoreSummary?.component_scores);
   const s10ComponentBreakdown = safeArr<Record<string, unknown>>(s10?.component_breakdown);
-  const components = s10
+  const components = isS10
     ? s10ComponentBreakdown.map((c, index) => {
         const requirementId = safeStr(c.requirement_id);
         const scoreRow = s10ComponentScores.find((row) =>
@@ -276,7 +331,7 @@ export function V2ReportView({
         style_or_task_confidence?: string | null;
       }>(report.components);
   const scores = (() => {
-    if (!s10) {
+    if (!isS10) {
       return report.scores && typeof report.scores === "object"
         ? (report.scores as Record<string, number | null>)
         : null;
@@ -290,7 +345,7 @@ export function V2ReportView({
     return Object.keys(rows).length > 0 ? rows : null;
   })();
   const categoryNotes = (() => {
-    if (!s10) {
+    if (!isS10) {
       return report.category_notes && typeof report.category_notes === "object"
         ? (report.category_notes as Record<string, string>)
         : null;
@@ -308,7 +363,7 @@ export function V2ReportView({
     (report.next_take_plan && (report.next_take_plan as { steps?: unknown }).steps) ?? [],
   ).filter((s): s is string => typeof s === "string");
   const roleFit =
-    report.role_fit && typeof report.role_fit === "object"
+    !isS10 && report.role_fit && typeof report.role_fit === "object"
       ? (report.role_fit as {
           notes?: string | null;
           modifier?: number | null;
@@ -339,7 +394,7 @@ export function V2ReportView({
               <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
                 Component report
               </Badge>
-              {s10 && (
+              {isS10 && (
                 <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
                   S10 AI report model
                 </Badge>
@@ -380,7 +435,22 @@ export function V2ReportView({
             </ul>
           </div>
         )}
-        {!s10 && report.at_risk && blockers.length === 0 && (
+        {recommendationRationale.length > 0 && (
+          <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Why this recommendation
+            </p>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {recommendationRationale.map((item, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-muted-foreground">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {!isS10 && report.at_risk && blockers.length === 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
             <p>
@@ -391,7 +461,7 @@ export function V2ReportView({
         )}
       </div>
 
-      {s10 &&
+      {isS10 &&
         s10ComparisonDisplayMode &&
         !["hidden", "single_take"].includes(s10ComparisonDisplayMode) &&
         (s10ComparisonSummary || s10ComparisonWarning || s10ComparisonLimitations.length > 0) && (
@@ -425,10 +495,10 @@ export function V2ReportView({
           </Section>
         )}
 
-      {s10 && (
+      {isS10 && (
         <>
           {(() => {
-            const reqs = safeArr<Record<string, unknown>>(s10.brief_requirements);
+            const reqs = safeArr<Record<string, unknown>>(s10?.brief_requirements);
             const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results);
             if (!s10Matrix && reqs.length === 0) return null;
             return (
@@ -505,10 +575,10 @@ export function V2ReportView({
 
           {(() => {
             const sequence = safeArr<Record<string, unknown>>(
-              safeObj(s10.observed_tape)?.observed_tape_sequence,
+              safeObj(s10?.observed_tape)?.observed_tape_sequence,
             );
             const verifications = safeArr<Record<string, unknown>>(
-              safeObj(s10.observed_tape)?.component_verifications,
+              safeObj(s10?.observed_tape)?.component_verifications,
             );
             if (sequence.length === 0 && verifications.length === 0) return null;
             return (
@@ -897,7 +967,7 @@ export function V2ReportView({
         </Section>
       )}
 
-      {!s10 && strengths.length > 0 && (
+      {!isS10 && strengths.length > 0 && (
         <Section title="Strengths">
           <ul className="space-y-2 text-sm">
             {strengths.map((s, i) => (
@@ -912,7 +982,7 @@ export function V2ReportView({
         </Section>
       )}
 
-      {!s10 && legacyImprovements.length > 0 && (
+      {!isS10 && legacyImprovements.length > 0 && (
         <Section title="Improvements">
           <ul className="space-y-2 text-sm">
             {legacyImprovements.map((s, i) => (
@@ -1030,7 +1100,7 @@ export function V2ReportView({
         </Section>
       )}
 
-      {!s10 && tsNotes.length > 0 && (
+      {!isS10 && tsNotes.length > 0 && (
         <Section title="Timestamped notes">
           <ul className="space-y-2 text-sm">
             {tsNotes.slice(0, 36).map((n, i) => (
@@ -1095,13 +1165,13 @@ export function V2ReportView({
         </Section>
       )}
 
-      {s10 && !s10NextActionPlan && s10NextActionLimitation && (
+      {isS10 && !s10NextActionPlan && s10NextActionLimitation && (
         <Section title="Next action plan">
           <p className="text-sm text-muted-foreground">{s10NextActionLimitation}</p>
         </Section>
       )}
 
-      {!s10 && legacyNextPlan.length > 0 && (
+      {!isS10 && legacyNextPlan.length > 0 && (
         <Section title="Next steps">
           <ol className="list-decimal space-y-1.5 pl-5 text-sm">
             {legacyNextPlan.map((s, i) => (
