@@ -133,10 +133,13 @@ export async function dispatchAnalysisJob(params: {
 }, deps: AnalysisDispatchDeps = {}): Promise<AnalysisDispatchResult> {
   const queue = getAnalysisQueue(deps);
   if (!queue) {
-    console.warn("[analysis-queue] ANALYSIS_QUEUE binding unavailable; using waitUntil fallback", {
-      take_id: params.takeId,
-      reason: params.reason,
-    });
+    console.error(
+      "[analysis-queue] ANALYSIS_QUEUE binding unavailable; using waitUntil fallback — analysis may be terminated mid-flight by the request worker. Verify the Cloudflare Queue 'tapecoach-analysis-jobs' is provisioned and the producer binding is attached.",
+      {
+        take_id: params.takeId,
+        reason: params.reason,
+      },
+    );
     metric("analysis_enqueue_failed", {
       take_id: params.takeId,
       reason: params.reason,
