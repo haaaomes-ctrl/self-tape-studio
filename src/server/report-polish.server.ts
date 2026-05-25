@@ -9,6 +9,11 @@
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
 import {
+  buildProviderToolForModel,
+  classifyAiGatewayProviderError,
+  type ProviderSafeErrorCategory,
+} from "./provider-tool-schema.server";
+import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
   S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
@@ -95,6 +100,7 @@ export type RunReportPolishResult =
       ok: false;
       httpStatus: number | null;
       error: string;
+      safe_error_category: ProviderSafeErrorCategory;
       durationMs: number;
       model: string;
     };
@@ -154,6 +160,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
 
   let resp: Response | null = null;
   try {
+    const reportTool = buildProviderToolForModel(args.reportTool, model);
     resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -169,7 +176,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
           { role: "system", content: POLISH_SYSTEM_PROMPT },
           { role: "user", content: userText },
         ],
-        tools: [args.reportTool],
+        tools: [reportTool],
         tool_choice: {
           type: "function",
           function: { name: "submit_audition_report" },
@@ -182,6 +189,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       ok: false,
       httpStatus: null,
       error: err instanceof Error ? err.message : "network_error",
+      safe_error_category: classifyAiGatewayProviderError(null, err),
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -198,6 +206,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       ok: false,
       httpStatus: resp.status,
       error: `report_polish_http_${resp.status}: ${body.slice(0, 200)}`,
+      safe_error_category: classifyAiGatewayProviderError(resp.status, body),
       durationMs: Date.now() - startedAt,
       model,
     };
@@ -212,6 +221,10 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
         ok: false,
         httpStatus: resp.status,
         error: "report_polish_no_tool_call",
+        safe_error_category: classifyAiGatewayProviderError(
+          resp.status,
+          "report_polish_no_tool_call",
+        ),
         durationMs: Date.now() - startedAt,
         model,
       };
@@ -229,6 +242,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       ok: false,
       httpStatus: resp.status,
       error: err instanceof Error ? err.message : "report_polish_parse_error",
+      safe_error_category: classifyAiGatewayProviderError(resp.status, err),
       durationMs: Date.now() - startedAt,
       model,
     };

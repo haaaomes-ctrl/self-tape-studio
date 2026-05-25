@@ -16,6 +16,7 @@ import {
   S10_OBSERVATION_MODULE_SYSTEM_PROMPT,
   S10_OBSERVATION_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
+import { cloneForProviderToolSchema } from "./provider-tool-schema.server";
 
 const DEFAULT_MODEL = process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
 
@@ -877,21 +878,6 @@ export function classifyEvidencePassSafeErrorCategory(
     return "parser_error";
   if (message === "evidence_pass_no_tool_call") return "provider_response_schema_error";
   return "unknown_safe_error";
-}
-
-function cloneForProviderToolSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => cloneForProviderToolSchema(item));
-  if (!value || typeof value !== "object") return value;
-  const out: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (key === "type" && Array.isArray(child)) {
-      const nonNullType = child.find((item) => item !== "null");
-      out.type = typeof nonNullType === "string" ? nonNullType : "string";
-      continue;
-    }
-    out[key] = cloneForProviderToolSchema(child);
-  }
-  return out;
 }
 
 export function buildEvidencePassToolForProvider(): typeof EVIDENCE_TOOL {
