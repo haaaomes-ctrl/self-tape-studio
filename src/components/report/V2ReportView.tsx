@@ -124,6 +124,17 @@ function displayStrings(value: unknown): string[] {
     .filter((item): item is string => item.trim().length > 0);
 }
 
+function sourceLimitation(
+  sourceMap: Record<string, unknown> | null,
+  section: string,
+  fallback: string,
+): string | null {
+  const entry = safeObj(sourceMap?.[section]);
+  return safeStr(entry?.source) === "specific_limitation"
+    ? (safeStr(entry?.limitation) ?? fallback)
+    : null;
+}
+
 export function V2ReportView({
   report,
   takeNumber,
@@ -143,18 +154,26 @@ export function V2ReportView({
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
   const s10NextActionPlan = safeObj(s10?.next_action_plan);
   const s10ProfessionalCritique = safeObj(s10?.professional_critique);
-  const s10FixHierarchySource = safeObj(s10SectionSourceMap?.fix_hierarchy);
-  const s10NextActionSource = safeObj(s10SectionSourceMap?.next_action_plan);
-  const s10FixHierarchyLimitation =
-    safeStr(s10FixHierarchySource?.source) === "specific_limitation"
-      ? (safeStr(s10FixHierarchySource?.limitation) ??
-        "Fix hierarchy was unavailable for this S10 report.")
-      : null;
-  const s10NextActionLimitation =
-    safeStr(s10NextActionSource?.source) === "specific_limitation"
-      ? (safeStr(s10NextActionSource?.limitation) ??
-        "Next action plan was unavailable for this S10 report.")
-      : null;
+  const s10FixHierarchyLimitation = sourceLimitation(
+    s10SectionSourceMap,
+    "fix_hierarchy",
+    "Fix hierarchy was unavailable for this S10 report.",
+  );
+  const s10NextActionLimitation = sourceLimitation(
+    s10SectionSourceMap,
+    "next_action_plan",
+    "Next action plan was unavailable for this S10 report.",
+  );
+  const s10CategoryScoresLimitation = sourceLimitation(
+    s10SectionSourceMap,
+    "category_scores",
+    "S10 category score semantics are not available for this report.",
+  );
+  const s10ComponentBreakdownLimitation = sourceLimitation(
+    s10SectionSourceMap,
+    "component_breakdown",
+    "Component verification was unavailable for this S10 report.",
+  );
   const s10StrengthsAndPreserve = safeObj(s10?.strengths_and_preserve);
   const s10Technique = safeObj(s10?.technique_commentary);
   const s10Timestamped = safeObj(s10?.timestamped_commentary);
@@ -174,16 +193,16 @@ export function V2ReportView({
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );
   const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
-  const overall =
-    safeNum(s10ScoreSummary?.overall_submission_readiness_score) ??
-    safeNum(report.overall_readiness);
-  const headline = safeStr(s10Recommendation?.headline) ?? safeStr(report.headline);
-  const insight =
-    safeStr(s10Recommendation?.score_explanation) ??
-    safeStr(s10Matrix?.summary) ??
-    safeStr(report.insight);
-  const verdict =
-    safeStr(s10Recommendation?.decision)?.replace(/_/g, " ") ?? safeStr(report.verdict);
+  const overall = s10
+    ? safeNum(s10ScoreSummary?.overall_submission_readiness_score)
+    : safeNum(report.overall_readiness);
+  const headline = s10 ? safeStr(s10Recommendation?.headline) : safeStr(report.headline);
+  const insight = s10
+    ? (safeStr(s10Recommendation?.score_explanation) ?? safeStr(s10Matrix?.summary))
+    : safeStr(report.insight);
+  const verdict = s10
+    ? safeStr(s10Recommendation?.decision)?.replace(/_/g, " ")
+    : safeStr(report.verdict);
   const reliability = safeStr(report.reliability);
   const reliabilityReason = safeStr(report.reliability_reason);
   const legacyFixFirst = safeStr(report.fix_first);
@@ -201,33 +220,90 @@ export function V2ReportView({
       ].slice(0, 6)
     : safeArr<string>(report.presentation_notes).filter((s): s is string => typeof s === "string");
   const riskFlags = s10 ? [] : safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
-  const components = safeArr<{
-    type?: string;
-    component_type?: string | null;
-    label?: string | null;
-    weight?: number | null;
-    score?: number | null;
-    note?: string | null;
-    subtype?: string | null;
-    style?: string | null;
-    form?: string | null;
-    start?: string | null;
-    end?: string | null;
-    what_it_shows?: string | null;
-    what_is_assessable?: string | null;
-    key_evidence?: string | null;
-    score_driver?: string | null;
-    close_gap?: string | null;
-    style_or_task_confidence?: string | null;
-  }>(report.components);
-  const scores =
-    report.scores && typeof report.scores === "object"
-      ? (report.scores as Record<string, number | null>)
-      : null;
-  const categoryNotes =
-    report.category_notes && typeof report.category_notes === "object"
-      ? (report.category_notes as Record<string, string>)
-      : null;
+  const s10CategoryRows = safeArr<Record<string, unknown>>(s10ScoreSummary?.category_scores);
+  const s10ComponentScores = safeArr<Record<string, unknown>>(s10ScoreSummary?.component_scores);
+  const s10ComponentBreakdown = safeArr<Record<string, unknown>>(s10?.component_breakdown);
+  const components = s10
+    ? s10ComponentBreakdown.map((c, index) => {
+        const requirementId = safeStr(c.requirement_id);
+        const scoreRow = s10ComponentScores.find((row) =>
+          safeArr<string>(row.linked_requirement_ids).includes(requirementId ?? ""),
+        );
+        const label =
+          safeStr(c.requirement_summary) ??
+          safeStr(c.requirement_id) ??
+          safeStr(c.observed_status) ??
+          `Component ${index + 1}`;
+        return {
+          type: label,
+          component_type: safeStr(c.requirement_summary) ?? safeStr(c.observed_status),
+          label,
+          weight: null,
+          score: safeNum(scoreRow?.score),
+          note: safeStr(c.evidence_summary),
+          subtype: null,
+          style: null,
+          form: null,
+          start: safeArr<string>(c.timestamp_refs)[0] ?? null,
+          end: null,
+          what_it_shows: c.observed_from_media
+            ? "Observed from submitted media."
+            : "Not verified from submitted media.",
+          what_is_assessable: `${labelize(c.observed_status)} / ${labelize(c.completion_status)}`,
+          key_evidence: safeStr(c.evidence_summary),
+          score_driver: safeStr(scoreRow?.score_basis),
+          close_gap: safeStr(scoreRow?.cannot_score_reason),
+          style_or_task_confidence: safeStr(c.confidence),
+        };
+      })
+    : safeArr<{
+        type?: string;
+        component_type?: string | null;
+        label?: string | null;
+        weight?: number | null;
+        score?: number | null;
+        note?: string | null;
+        subtype?: string | null;
+        style?: string | null;
+        form?: string | null;
+        start?: string | null;
+        end?: string | null;
+        what_it_shows?: string | null;
+        what_is_assessable?: string | null;
+        key_evidence?: string | null;
+        score_driver?: string | null;
+        close_gap?: string | null;
+        style_or_task_confidence?: string | null;
+      }>(report.components);
+  const scores = (() => {
+    if (!s10) {
+      return report.scores && typeof report.scores === "object"
+        ? (report.scores as Record<string, number | null>)
+        : null;
+    }
+    const rows = s10CategoryRows.reduce<Record<string, number | null>>((acc, row) => {
+      const category = safeStr(row.category_id);
+      const score = safeNum(row.score);
+      if (category && score != null) acc[category] = score;
+      return acc;
+    }, {});
+    return Object.keys(rows).length > 0 ? rows : null;
+  })();
+  const categoryNotes = (() => {
+    if (!s10) {
+      return report.category_notes && typeof report.category_notes === "object"
+        ? (report.category_notes as Record<string, string>)
+        : null;
+    }
+    const rows = s10CategoryRows.reduce<Record<string, string>>((acc, row) => {
+      const category = safeStr(row.category_id);
+      const note =
+        safeStr(row.score_basis) ?? safeStr(row.why_not_full_score) ?? safeStr(row.close_gap);
+      if (category && note) acc[category] = note;
+      return acc;
+    }, {});
+    return Object.keys(rows).length > 0 ? rows : null;
+  })();
   const legacyNextPlan = safeArr<string>(
     (report.next_take_plan && (report.next_take_plan as { steps?: unknown }).steps) ?? [],
   ).filter((s): s is string => typeof s === "string");
@@ -653,104 +729,130 @@ export function V2ReportView({
       })()}
 
       {/* Categories */}
-      {scores && (
-        <Section
-          title="Category scores"
-          hint="Discipline-aware labels. Backend score keys are unchanged."
-        >
-          <div className="space-y-3">
-            {CATEGORY_KEYS.map((key) => {
-              const value = scores[key];
-              if (typeof value !== "number") return null;
-              if (key === "vocal" && !shouldShowVocal(t, scores)) return null;
-              return (
-                <div key={key}>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-sm font-medium">{getCategoryLabel(t, key)}</span>
-                    <span className="text-sm font-semibold tabular-nums">{value}</span>
-                  </div>
-                  <ScoreBar value={value} />
-                  {categoryNotes?.[key] && (
-                    <p className="mt-1 text-xs text-muted-foreground">{categoryNotes[key]}</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+      {(() => {
+        if (scores) {
+          return (
+            <Section
+              title="Category scores"
+              hint="Discipline-aware labels. Backend score keys are unchanged."
+            >
+              <div className="space-y-3">
+                {CATEGORY_KEYS.map((key) => {
+                  const value = scores[key];
+                  if (typeof value !== "number") return null;
+                  if (key === "vocal" && !shouldShowVocal(t, scores)) return null;
+                  return (
+                    <div key={key}>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm font-medium">{getCategoryLabel(t, key)}</span>
+                        <span className="text-sm font-semibold tabular-nums">{value}</span>
+                      </div>
+                      <ScoreBar value={value} />
+                      {categoryNotes?.[key] && (
+                        <p className="mt-1 text-xs text-muted-foreground">{categoryNotes[key]}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          );
+        }
+        if (s10 && s10CategoryScoresLimitation) {
+          return (
+            <Section title="Category scores">
+              <p className="text-sm text-muted-foreground">{s10CategoryScoresLimitation}</p>
+            </Section>
+          );
+        }
+        return null;
+      })()}
 
       {/* Components */}
-      {components.length > 0 && (
-        <Section
-          title="Component breakdown"
-          hint="Each performance component is assessed separately."
-        >
-          <div className="space-y-4">
-            {components.map((c, i) => {
-              const type = safeStr(c.type) ?? "component";
-              const score = safeNum(c.score);
-              const weight = safeNum(c.weight);
-              const meta = [c.subtype, c.style, c.form]
-                .filter((s): s is string => typeof s === "string" && !!s)
-                .join(" · ");
-              return (
-                <div key={i}>
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="text-sm font-medium capitalize">
-                      {type.replace(/_/g, " ")}
-                      {weight != null && (
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          weight {Math.round(weight * 100)}%
+      {(() => {
+        if (components.length > 0) {
+          return (
+            <Section
+              title="Component breakdown"
+              hint="Each performance component is assessed separately."
+            >
+              <div className="space-y-4">
+                {components.map((c, i) => {
+                  const type = safeStr(c.type) ?? "component";
+                  const score = safeNum(c.score);
+                  const weight = safeNum(c.weight);
+                  const meta = [c.subtype, c.style, c.form]
+                    .filter((s): s is string => typeof s === "string" && !!s)
+                    .join(" · ");
+                  return (
+                    <div key={i}>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-medium capitalize">
+                          {type.replace(/_/g, " ")}
+                          {weight != null && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              weight {Math.round(weight * 100)}%
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    {score != null && (
-                      <span className="font-display text-lg font-semibold tabular-nums">
-                        {score}
-                      </span>
-                    )}
-                  </div>
-                  {score != null && <ScoreBar value={score} />}
-                  {meta && <p className="mt-1 text-xs text-muted-foreground">{meta}</p>}
-                  {c.start && c.end && (
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {c.start} – {c.end}
-                    </p>
-                  )}
-                  {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
-                  {(() => {
-                    const detailRows: Array<[string, string]> = [];
-                    if (safeStr(c.what_it_shows))
-                      detailRows.push(["What it shows", c.what_it_shows!]);
-                    if (safeStr(c.what_is_assessable))
-                      detailRows.push(["What's assessable", c.what_is_assessable!]);
-                    if (safeStr(c.key_evidence)) detailRows.push(["Key evidence", c.key_evidence!]);
-                    if (safeStr(c.score_driver)) detailRows.push(["Score driver", c.score_driver!]);
-                    if (safeStr(c.close_gap)) detailRows.push(["Close the gap", c.close_gap!]);
-                    if (detailRows.length === 0 && !c.style_or_task_confidence) return null;
-                    return (
-                      <div className="mt-2 space-y-1.5 text-xs">
-                        {detailRows.map(([label, value]) => (
-                          <p key={label}>
-                            <span className="font-medium text-foreground">{label}:</span>{" "}
-                            <span className="text-muted-foreground">{value}</span>
-                          </p>
-                        ))}
-                        {c.style_or_task_confidence && (
-                          <p className="text-[11px] text-muted-foreground">
-                            style/task confidence: {c.style_or_task_confidence}
-                          </p>
+                        {score != null && (
+                          <span className="font-display text-lg font-semibold tabular-nums">
+                            {score}
+                          </span>
                         )}
                       </div>
-                    );
-                  })()}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      )}
+                      {score != null && <ScoreBar value={score} />}
+                      {meta && <p className="mt-1 text-xs text-muted-foreground">{meta}</p>}
+                      {c.start && c.end && (
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {c.start} – {c.end}
+                        </p>
+                      )}
+                      {c.note && <p className="mt-1.5 text-xs text-muted-foreground">{c.note}</p>}
+                      {(() => {
+                        const detailRows: Array<[string, string]> = [];
+                        if (safeStr(c.what_it_shows))
+                          detailRows.push(["What it shows", c.what_it_shows!]);
+                        if (safeStr(c.what_is_assessable))
+                          detailRows.push(["What's assessable", c.what_is_assessable!]);
+                        if (safeStr(c.key_evidence))
+                          detailRows.push(["Key evidence", c.key_evidence!]);
+                        if (safeStr(c.score_driver))
+                          detailRows.push(["Score driver", c.score_driver!]);
+                        if (safeStr(c.close_gap)) detailRows.push(["Close the gap", c.close_gap!]);
+                        if (detailRows.length === 0 && !c.style_or_task_confidence) return null;
+                        return (
+                          <div className="mt-2 space-y-1.5 text-xs">
+                            {detailRows.map(([label, value]) => (
+                              <p key={label}>
+                                <span className="font-medium text-foreground">{label}:</span>{" "}
+                                <span className="text-muted-foreground">{value}</span>
+                              </p>
+                            ))}
+                            {c.style_or_task_confidence && (
+                              <p className="text-[11px] text-muted-foreground">
+                                style/task confidence: {c.style_or_task_confidence}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          );
+        }
+        if (s10 && s10ComponentBreakdownLimitation) {
+          return (
+            <Section title="Component breakdown">
+              <p className="text-sm text-muted-foreground">{s10ComponentBreakdownLimitation}</p>
+            </Section>
+          );
+        }
+        return null;
+      })()}
 
       {s10StrengthsAndPreserve && (
         <Section title="Strengths and preserve">

@@ -449,7 +449,7 @@ describe("S10.15 route/PDF content acceptance harness", () => {
     const { v2, html } = buildCanaryV2();
     const badView = structuredClone(v2.s10_view_model) as NonNullable<V2Report["s10_view_model"]>;
     badView.section_source_map.score_summary = {
-      source: "legacy_diagnostic_fallback",
+      source: "legacy_diagnostic_fallback" as never,
       module: "raw_report.overall_score",
       limitation: null,
     };

@@ -6,6 +6,7 @@ import type {
   S10MediaIdentitySignal,
   S10MediaIdentitySignalConfidenceRole,
   S10MediaIdentitySignalName,
+  S10PairwiseSameVideoMatch,
   S10SameVideoChangedContext,
   S10SameVideoConfidence,
   S10SameVideoEvidence,
@@ -213,7 +214,19 @@ function compareSignal(
       limitation: `${signal} is only partially available.`,
     };
   }
-  const matched = comparedValues.some((value) => value === currentValue);
+  const matchedCount = comparedValues.filter((value) => value === currentValue).length;
+  if (matchedCount > 0 && matchedCount < comparedValues.length) {
+    return {
+      signal_name: signal,
+      status: "inconclusive",
+      confidence_role: SIGNAL_ROLES[signal],
+      safe_value_summary: `${signal} matches only a subset of compared takes.`,
+      value_hash: null,
+      source: "upload_identity_or_media_metadata",
+      limitation: `${signal} matches only a subset of compared takes.`,
+    };
+  }
+  const matched = matchedCount === comparedValues.length;
   return {
     signal_name: signal,
     status: matched ? "matched" : "mismatched",
@@ -225,22 +238,47 @@ function compareSignal(
   };
 }
 
-function scopeIsSupported(input: S10SameVideoComparisonInput, takes: NormalisedTake[]): boolean {
+function scopeSupport(
+  input: S10SameVideoComparisonInput,
+  takes: NormalisedTake[],
+): { supported: boolean; limitation: string | null } {
   const scope = input.scope ?? "unknown";
   if (scope === "broader_scope_explicitly_supported" || scope === "operator_confirmed_scope") {
-    return true;
+    return { supported: true, limitation: null };
   }
   if (scope === "same_user_same_submission") {
-    const submissionIds = new Set(takes.map((take) => take.submission_id).filter(Boolean));
-    const userIds = new Set(takes.map((take) => take.user_id).filter(Boolean));
-    return submissionIds.size <= 1 && userIds.size <= 1;
+    const missing = takes.some((take) => !take.user_id || !take.submission_id);
+    const submissionIds = new Set(takes.map((take) => take.submission_id));
+    const userIds = new Set(takes.map((take) => take.user_id));
+    const supported = !missing && submissionIds.size === 1 && userIds.size === 1;
+    return {
+      supported,
+      limitation: supported
+        ? null
+        : missing
+          ? "Same-video classification is limited because same-user/same-submission scope IDs are incomplete."
+          : "Same-video classification is limited because the compared takes are not in one confirmed same-user/same-submission scope.",
+    };
   }
   if (scope === "same_user_same_audition") {
-    const auditionIds = new Set(takes.map((take) => take.audition_id).filter(Boolean));
-    const userIds = new Set(takes.map((take) => take.user_id).filter(Boolean));
-    return auditionIds.size <= 1 && userIds.size <= 1;
+    const missing = takes.some((take) => !take.user_id || !take.audition_id);
+    const auditionIds = new Set(takes.map((take) => take.audition_id));
+    const userIds = new Set(takes.map((take) => take.user_id));
+    const supported = !missing && auditionIds.size === 1 && userIds.size === 1;
+    return {
+      supported,
+      limitation: supported
+        ? null
+        : missing
+          ? "Same-video classification is limited because same-user/same-audition scope IDs are incomplete."
+          : "Same-video classification is limited because the compared takes are not in one confirmed same-user/same-audition scope.",
+    };
   }
-  return false;
+  return {
+    supported: false,
+    limitation:
+      "Same-video classification is limited because the comparison scope is not same-user/same-audition, same-user/same-submission, or explicitly supported.",
+  };
 }
 
 function changedContext(input: S10SameVideoComparisonInput): S10SameVideoChangedContext[] {
@@ -395,6 +433,93 @@ function matchingIds(
   return others.filter((take) => take.values[signal] === currentValue).map((take) => take.take_id);
 }
 
+function pairwiseSignals(
+  current: NormalisedTake,
+  other: NormalisedTake,
+): {
+  relationship: S10PairwiseSameVideoMatch["relationship"];
+  confidence: S10SameVideoConfidence;
+  signals: S10MediaIdentitySignalName[];
+  limitations: string[];
+} {
+  const currentHash = current.values.original_upload_file_hash;
+  const otherHash = other.values.original_upload_file_hash;
+  if (currentHash != null && otherHash != null) {
+    return currentHash === otherHash
+      ? {
+          relationship: "same_media",
+          confidence: "decisive",
+          signals: ["original_upload_file_hash"],
+          limitations: [],
+        }
+      : {
+          relationship: "distinct_media",
+          confidence: "high",
+          signals: ["original_upload_file_hash"],
+          limitations: [],
+        };
+  }
+
+  const weakMatches = [
+    "file_size_bytes",
+    "video_duration_ms",
+    "metadata_file_name",
+    "original_file_name",
+  ].filter((signal): signal is S10MediaIdentitySignalName => {
+    const currentValue = current.values[signal as S10MediaIdentitySignalName];
+    return (
+      currentValue != null && currentValue === other.values[signal as S10MediaIdentitySignalName]
+    );
+  });
+
+  if (weakMatches.length >= 2) {
+    return {
+      relationship: "possible_duplicate",
+      confidence: "medium",
+      signals: weakMatches,
+      limitations: [
+        "Only supporting media identity signals match; original upload hash is unavailable.",
+      ],
+    };
+  }
+
+  return {
+    relationship: "uncertain",
+    confidence: "uncertain",
+    signals: weakMatches,
+    limitations: ["Pairwise media identity is uncertain from the available signals."],
+  };
+}
+
+function buildPairwiseMatches(
+  current: NormalisedTake,
+  others: NormalisedTake[],
+  supportedScope: boolean,
+  scopeLimitation: string | null,
+): S10PairwiseSameVideoMatch[] {
+  return others.map((other) => {
+    if (!supportedScope) {
+      return {
+        take_a_label: current.label,
+        take_b_label: other.label,
+        relationship: "uncertain",
+        confidence: "uncertain",
+        matching_signal_names: [],
+        limitations: [scopeLimitation ?? "Pairwise comparison scope is not confirmed."],
+      };
+    }
+    const result = pairwiseSignals(current, other);
+    return {
+      take_a_label: current.label,
+      take_b_label: other.label,
+      relationship: result.relationship,
+      confidence: result.confidence,
+      matching_signal_names: result.signals,
+      limitations: result.limitations,
+    };
+  });
+}
+
 export function classifyS10SameVideoComparison(
   input: S10SameVideoComparisonInput,
 ): S10SameVideoClassificationResult {
@@ -431,23 +556,32 @@ export function classifyS10SameVideoComparison(
         recommendation_policy: "operator_confirmation_required",
         performer_facing_summary: evidence.performer_facing_summary,
         limitations: evidence.limitations,
+        pairwise_matches: [],
+        duplicate_subsets: [],
       },
       comparison_display_mode: "comparison_caution",
     };
   }
 
   const evidenceSignals = SIGNALS.map((signal) => compareSignal(signal, current, others));
-  const supportedScope = scopeIsSupported(input, takes);
+  const scope = scopeSupport(input, takes);
+  const supportedScope = scope.supported;
+  const pairwiseMatches = buildPairwiseMatches(current, others, supportedScope, scope.limitation);
+  const sameMediaPairs = pairwiseMatches.filter((match) => match.relationship === "same_media");
+  const distinctMediaPairs = pairwiseMatches.filter(
+    (match) => match.relationship === "distinct_media",
+  );
+  const allComparedMediaMatches =
+    pairwiseMatches.length > 0 && sameMediaPairs.length === pairwiseMatches.length;
+  const mixedSameAndDistinct = sameMediaPairs.length > 0 && distinctMediaPairs.length > 0;
   if (!supportedScope) {
-    limitations.push(
-      "Same-video classification is limited because the comparison scope is not same-user/same-audition, same-user/same-submission, or explicitly supported.",
-    );
+    limitations.push(scope.limitation ?? "Same-video comparison scope is not confirmed.");
   }
 
   const hashSignal = evidenceSignals.find(
     (signal) => signal.signal_name === "original_upload_file_hash",
   );
-  const hashMatched = supportedScope && hashSignal?.status === "matched";
+  const hashMatched = supportedScope && hashSignal?.status === "matched" && allComparedMediaMatches;
   const hashMismatched = supportedScope && hashSignal?.status === "mismatched";
   const weakMatchedCount = evidenceSignals.filter(
     (signal) =>
@@ -477,7 +611,12 @@ export function classifyS10SameVideoComparison(
   }
 
   let status: S10SameVideoStatus;
-  if (!supportedScope) {
+  if (mixedSameAndDistinct) {
+    status = "possible_duplicate";
+    limitations.push(
+      "Some compared takes appear to share the same media while at least one compared take appears distinct.",
+    );
+  } else if (!supportedScope) {
     status = "uncertain";
   } else if (hashMatched) {
     status = statusForSameMedia(input);
@@ -489,21 +628,36 @@ export function classifyS10SameVideoComparison(
     status = "uncertain";
   }
 
-  const text = evidenceText(status);
+  const mixedText = mixedSameAndDistinct
+    ? {
+        performer_facing_summary:
+          "Some compared takes appear to use the same underlying video, while at least one compared take appears to use different media.",
+        comparison_warning: "Do not treat the duplicate subset as different performances.",
+        report_implication:
+          "Duplicate subsets should be labelled, but distinct media may still support distinct-performance comparison.",
+      }
+    : null;
+  const text = mixedText ?? evidenceText(status);
   const confidence = confidenceForStatus(status, hashMatched);
-  const policy = recommendationPolicy(status);
+  const policy = mixedSameAndDistinct
+    ? "compare_distinct_performances"
+    : recommendationPolicy(status);
   const matchedIds = hashMatched
     ? matchingIds("original_upload_file_hash", current, others)
-    : weakMatchedCount >= 2
-      ? Array.from(
-          new Set([
-            ...matchingIds("file_size_bytes", current, others),
-            ...matchingIds("video_duration_ms", current, others),
-            ...matchingIds("metadata_file_name", current, others),
-            ...matchingIds("original_file_name", current, others),
-          ]),
-        )
-      : [];
+    : sameMediaPairs.length > 0
+      ? others
+          .filter((take) => sameMediaPairs.some((match) => match.take_b_label === take.label))
+          .map((take) => take.take_id)
+      : weakMatchedCount >= 2
+        ? Array.from(
+            new Set([
+              ...matchingIds("file_size_bytes", current, others),
+              ...matchingIds("video_duration_ms", current, others),
+              ...matchingIds("metadata_file_name", current, others),
+              ...matchingIds("original_file_name", current, others),
+            ]),
+          )
+        : [];
 
   const evidence: S10SameVideoEvidence = {
     status,
@@ -535,17 +689,24 @@ export function classifyS10SameVideoComparison(
   }));
 
   const comparisonTruth: S10ComparisonTruth = {
-    comparison_mode: comparisonMode(status),
+    comparison_mode: mixedSameAndDistinct
+      ? "mixed_same_video_and_distinct_takes"
+      : comparisonMode(status),
     compared_take_summaries: takeSummaries,
     same_video_status: evidence,
     recommendation_policy: policy,
     performer_facing_summary: text.performer_facing_summary,
     limitations,
+    pairwise_matches: pairwiseMatches,
+    duplicate_subsets:
+      sameMediaPairs.length > 0
+        ? [[current.label, ...sameMediaPairs.map((match) => match.take_b_label)]]
+        : [],
   };
 
   return {
     evidence,
     comparison_truth: comparisonTruth,
-    comparison_display_mode: displayMode(status),
+    comparison_display_mode: mixedSameAndDistinct ? "comparison_caution" : displayMode(status),
   };
 }

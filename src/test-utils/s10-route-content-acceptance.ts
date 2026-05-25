@@ -262,7 +262,10 @@ function checkSourceMap(
         ? true
         : matchesSourceModule(module, expectation.expected_module);
 
-    const invalidLegacySource = /raw_report|legacy/i.test(`${source ?? ""} ${module ?? ""}`);
+    const invalidLegacySource =
+      /raw_report|legacy|unsupported|score_trace|detected_components|category_notes|legacy_fix_first|legacy_next_take_plan|legacy_presentation_notes|legacy_risk_flags/i.test(
+        `${source ?? ""} ${module ?? ""}`,
+      );
     if (!sourceOk || !moduleOk || invalidLegacySource) {
       addFailure(failures, {
         category: "source_map",
@@ -291,7 +294,11 @@ function checkSourceMap(
       const entry = isRecord(rawEntry) ? rawEntry : null;
       const source = asText(entry?.source);
       const module = asText(entry?.module);
-      if (/raw_report|legacy/i.test(`${source ?? ""} ${module ?? ""}`)) {
+      if (
+        /raw_report|legacy|unsupported|score_trace|detected_components|category_notes|legacy_fix_first|legacy_next_take_plan|legacy_presentation_notes|legacy_risk_flags/i.test(
+          `${source ?? ""} ${module ?? ""}`,
+        )
+      ) {
         addFailure(failures, {
           category: "source_map",
           fixture_id: input.fixture_id,

@@ -17,8 +17,10 @@
 
 import type { FutureDimensionsResult, FutureComponent } from "./dimensions";
 import {
+  buildS10LimitedPerformerReportViewModel,
   buildS10PerformerReportViewModel,
   hasS10AuthoritativeModules,
+  S10_LIMITED_REPORT_MESSAGE,
   validateAuthenticatedS10RouteSurface,
   type S10PerformerReportViewModel,
   type S10ViewModelContext,
@@ -51,9 +53,7 @@ export interface V2SectionSourceEntry {
     | "s10_authoritative_module"
     | "s10_compatibility_projection"
     | "specific_limitation"
-    | "not_applicable"
-    | "legacy_diagnostic_fallback"
-    | "unsupported";
+    | "not_applicable";
   module: string | null;
   limitation: string | null;
   source_kind?: string | null;
@@ -63,6 +63,8 @@ export interface V2Report {
   schema_version: "v2-component";
   mode: "brief" | "baseline";
   source_mode?: "s10_ai_report_model" | "legacy_projection";
+  report_status?: "limited" | null;
+  limitation_reason?: "s10_v2_build_or_validation_failed" | null;
   s10_view_model?: S10PerformerReportViewModel;
   section_source_map?: Record<string, V2SectionSourceEntry>;
   audition_type: string | null;
@@ -483,6 +485,132 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
   }
 
   return v2;
+}
+
+export function buildS10LimitedV2Report(args: {
+  auditionType: string | null | undefined;
+  mode: "brief" | "baseline";
+  message?: string | null;
+}): V2Report {
+  const message = args.message ?? S10_LIMITED_REPORT_MESSAGE;
+  const s10View = buildS10LimitedPerformerReportViewModel(message);
+  return {
+    schema_version: "v2-component",
+    mode: args.mode,
+    source_mode: "s10_ai_report_model",
+    report_status: "limited",
+    limitation_reason: "s10_v2_build_or_validation_failed",
+    s10_view_model: s10View,
+    section_source_map: s10View.section_source_map,
+    audition_type: args.auditionType ?? null,
+    headline: s10View.recommendation?.headline ?? null,
+    insight: message,
+    verdict: s10View.recommendation?.decision ?? null,
+    overall_readiness: null,
+    scores: null,
+    category_notes: null,
+    brief_adherence_breakdown: {
+      summary: message,
+      material_compliance: null,
+      readiness_impact: null,
+    },
+    reliability: null,
+    reliability_reason: null,
+    confidence: null,
+    components: [],
+    consistency_modifier: null,
+    public_categories: PUBLIC_CATEGORIES,
+    strengths: [],
+    improvements: [],
+    fix_first: null,
+    priority_fixes: [],
+    category_rationale: null,
+    timestamped_notes: [],
+    next_take_plan: null,
+    risk_flags: [],
+    risk_explanations: [],
+    presentation_notes: [],
+    block_reasons: [message],
+    at_risk: false,
+  };
+}
+
+export type RouteReportPersistenceResult =
+  | { outcome: "legacy_passthrough"; reportToPersist: Record<string, unknown> | null | undefined }
+  | { outcome: "v2_persisted"; reportToPersist: V2Report }
+  | { outcome: "s10_limited_v2_persisted"; reportToPersist: V2Report; reason: string }
+  | { outcome: "s10_unrecoverable"; reportToPersist: null; reason: string };
+
+export function buildRouteReportForPersistence(
+  args: BuildV2ReportArgs & {
+    futureReportEnabled: boolean;
+    buildV2?: (args: BuildV2ReportArgs) => V2Report;
+    validateV2?: (v2: unknown, legacyReport?: Record<string, unknown> | null) => V2ValidationResult;
+  },
+): RouteReportPersistenceResult {
+  const hasS10ReportModel = hasS10AuthoritativeModules(args.legacyReport);
+  if (!args.futureReportEnabled && !hasS10ReportModel) {
+    return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
+  }
+
+  const build = args.buildV2 ?? buildV2Report;
+  const validate = args.validateV2 ?? validateV2PublicBoundary;
+  try {
+    const v2Candidate = build({
+      legacyReport: args.legacyReport,
+      futureDimensions: args.futureDimensions,
+      auditionType: args.auditionType,
+      mode: args.mode,
+      s10Context: args.s10Context,
+    });
+    const check = validate(v2Candidate, args.legacyReport as Record<string, unknown> | null);
+    if (check.ok) {
+      return { outcome: "v2_persisted", reportToPersist: v2Candidate };
+    }
+    if (!hasS10ReportModel) {
+      return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
+    }
+    const limited = buildS10LimitedV2Report({
+      auditionType: args.auditionType,
+      mode: args.mode,
+      message: S10_LIMITED_REPORT_MESSAGE,
+    });
+    const limitedCheck = validate(limited, null);
+    if (limitedCheck.ok) {
+      return {
+        outcome: "s10_limited_v2_persisted",
+        reportToPersist: limited,
+        reason: check.reason,
+      };
+    }
+    return {
+      outcome: "s10_unrecoverable",
+      reportToPersist: null,
+      reason: `limited_v2_invalid:${limitedCheck.reason}`,
+    };
+  } catch (error) {
+    if (!hasS10ReportModel) {
+      return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
+    }
+    const limited = buildS10LimitedV2Report({
+      auditionType: args.auditionType,
+      mode: args.mode,
+      message: S10_LIMITED_REPORT_MESSAGE,
+    });
+    const limitedCheck = validate(limited, null);
+    if (limitedCheck.ok) {
+      return {
+        outcome: "s10_limited_v2_persisted",
+        reportToPersist: limited,
+        reason: error instanceof Error ? error.message.slice(0, 200) : "build_threw",
+      };
+    }
+    return {
+      outcome: "s10_unrecoverable",
+      reportToPersist: null,
+      reason: `limited_v2_invalid:${limitedCheck.reason}`,
+    };
+  }
 }
 
 export { hasS10AuthoritativeModules };

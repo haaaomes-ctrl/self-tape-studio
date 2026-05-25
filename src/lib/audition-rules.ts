@@ -1013,6 +1013,7 @@ export type S10ComparisonMode =
   | "same_video_duplicate"
   | "same_video_retest"
   | "same_video_changed_context"
+  | "mixed_same_video_and_distinct_takes"
   | "uncertain";
 
 export type S10ComparisonRecommendationPolicy =
@@ -1035,6 +1036,21 @@ export type S10ComparedTakeSummary = {
   report_context_summary: string | null;
 };
 
+export type S10PairwiseSameVideoRelationship =
+  | "same_media"
+  | "distinct_media"
+  | "possible_duplicate"
+  | "uncertain";
+
+export type S10PairwiseSameVideoMatch = {
+  take_a_label: string;
+  take_b_label: string;
+  relationship: S10PairwiseSameVideoRelationship;
+  confidence: S10SameVideoConfidence;
+  matching_signal_names: S10MediaIdentitySignalName[];
+  limitations: string[];
+};
+
 export type S10ComparisonTruth = {
   comparison_mode: S10ComparisonMode;
   compared_take_summaries: S10ComparedTakeSummary[];
@@ -1042,6 +1058,8 @@ export type S10ComparisonTruth = {
   recommendation_policy: S10ComparisonRecommendationPolicy;
   performer_facing_summary: string;
   limitations: string[];
+  pairwise_matches?: S10PairwiseSameVideoMatch[];
+  duplicate_subsets?: string[][];
 };
 
 export type S10OperatorDeclaredFixtureType =

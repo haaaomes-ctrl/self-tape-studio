@@ -4700,57 +4700,76 @@ export async function runProcessTake(
     }
 
     // ---- S10.10 / Phase 3B — v2 persistence selection ----
-    // S10 reports use the authenticated S10 view model as the route source
-    // once it validates. Legacy non-S10 reports keep the existing feature flag
-    // behaviour. v1 fallback covers builder errors and route-surface
-    // validation failures.
+    // S10 reports use the authenticated S10 view model as the route source.
+    // If S10 route assembly fails, persist a validated S10 limitation report or
+    // fail generation explicitly; never substitute the legacy v1 report.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let reportToPersist: any = report;
+    let v2HasS10ReportModel = [
+      "brief_achievement_matrix",
+      "readiness_score_judgement",
+      "s10_fix_hierarchy",
+      "s10_next_action_plan",
+      "s10_professional_critique",
+      "s10_technique_commentary",
+      "s10_timestamped_commentary",
+    ].some((key) => Boolean((report as Record<string, unknown>)[key]));
     try {
       const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
       const cfg3b = await getCfg3b();
-      const { buildV2Report, validateV2PublicBoundary, hasS10AuthoritativeModules } =
+      const { buildRouteReportForPersistence, hasS10AuthoritativeModules } =
         await import("./v2-report-builder.server");
       const hasS10ReportModel = hasS10AuthoritativeModules(report as Record<string, unknown>);
-      if (cfg3b.future_report_enabled || hasS10ReportModel) {
-        const v2Candidate = buildV2Report({
-          legacyReport: report as Record<string, unknown>,
-          futureDimensions: capturedFutureDimensions ?? null,
-          auditionType: (report.audition_type as string | null) ?? null,
-          mode: audition.brief ? "brief" : "baseline",
-          s10Context: hasS10ReportModel
-            ? {
-                briefContext: extractedBrief?.brief_context ?? null,
-                briefRequirements: extractedBrief?.brief_requirements ?? [],
-                observedTapeSequence: s10ObservationContext.observed_tape_sequence,
-                componentVerifications: s10ObservationContext.component_verifications,
-                mediaObservationSummary: s10ObservationContext.media_observation_summary,
-                observationSourceKind: s10ObservationContext.source_kind,
-              }
-            : null,
+      v2HasS10ReportModel = hasS10ReportModel;
+      const persistence = buildRouteReportForPersistence({
+        legacyReport: report as Record<string, unknown>,
+        futureDimensions: capturedFutureDimensions ?? null,
+        auditionType: (report.audition_type as string | null) ?? null,
+        mode: audition.brief ? "brief" : "baseline",
+        futureReportEnabled: cfg3b.future_report_enabled,
+        s10Context: hasS10ReportModel
+          ? {
+              briefContext: extractedBrief?.brief_context ?? null,
+              briefRequirements: extractedBrief?.brief_requirements ?? [],
+              observedTapeSequence: s10ObservationContext.observed_tape_sequence,
+              componentVerifications: s10ObservationContext.component_verifications,
+              mediaObservationSummary: s10ObservationContext.media_observation_summary,
+              observationSourceKind: s10ObservationContext.source_kind,
+            }
+          : null,
+      });
+      if (persistence.outcome === "s10_unrecoverable") {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "TapeCoach could not assemble the S10 report surface. Please try again.",
+        );
+      }
+      if (
+        persistence.outcome === "v2_persisted" ||
+        persistence.outcome === "s10_limited_v2_persisted"
+      ) {
+        reportToPersist = persistence.reportToPersist;
+        console.log("[take-pipeline] v2_report_persisted", {
+          take_id: takeId,
+          schema_version: persistence.reportToPersist.schema_version,
+          outcome: persistence.outcome,
+          components: persistence.reportToPersist.components.length,
+          from_future_dimensions: !!capturedFutureDimensions,
         });
-        const check = validateV2PublicBoundary(v2Candidate, report as Record<string, unknown>);
-        if (check.ok) {
-          reportToPersist = v2Candidate;
-          console.log("[take-pipeline] v2_report_persisted", {
-            take_id: takeId,
-            schema_version: v2Candidate.schema_version,
-            components: v2Candidate.components.length,
-            from_future_dimensions: !!capturedFutureDimensions,
-          });
-        } else {
-          console.warn("[take-pipeline] v2_report_fallback_to_v1", {
-            take_id: takeId,
-            reason: check.reason,
-          });
-        }
       }
     } catch (err) {
-      console.warn("[take-pipeline] v2_report_fallback_to_v1", {
+      console.warn("[take-pipeline] v2_report_build_failed", {
         take_id: takeId,
         reason: "build_threw",
         error: err instanceof Error ? err.message.slice(0, 200) : "unknown",
       });
+      if (err instanceof AnalysisFailure) throw err;
+      if (v2HasS10ReportModel) {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "TapeCoach could not assemble the S10 report surface. Please try again.",
+        );
+      }
       reportToPersist = report;
     }
 

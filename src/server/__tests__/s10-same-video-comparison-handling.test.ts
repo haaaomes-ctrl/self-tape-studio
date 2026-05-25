@@ -150,7 +150,118 @@ describe("S10.13 same-video and comparison handling", () => {
     expect(v2.s10_view_model?.comparison_display_mode).toBe("hidden");
     expect(v2.s10_view_model?.same_video_status).toBeNull();
     expect(v2.s10_view_model?.comparison_truth).toBeNull();
-    expect(v2.s10_view_model?.section_source_map.same_video_status.source).toBe("unsupported");
+    expect(v2.s10_view_model?.section_source_map.same_video_status.source).toBe("not_applicable");
+  });
+
+  it("does not treat matching hashes as decisive when same-user/same-audition scope IDs are missing", () => {
+    const result = classifyS10SameVideoComparison({
+      current_take_id: "take-a",
+      scope: "same_user_same_audition",
+      comparison_present: true,
+      compared_takes: [
+        {
+          take_id: "take-a",
+          label: "Take 1",
+          original_upload_file_hash: `sha256:${"c".repeat(64)}`,
+          file_size_bytes: 111,
+          video_duration_ms: 90000,
+        },
+        {
+          take_id: "take-b",
+          label: "Take 2",
+          original_upload_file_hash: `sha256:${"c".repeat(64)}`,
+          file_size_bytes: 111,
+          video_duration_ms: 90000,
+        },
+      ],
+    });
+
+    expect(result.evidence.confidence).not.toBe("decisive");
+    expect(result.evidence.status).toBe("uncertain");
+    expect(result.evidence.limitations.join(" ")).toMatch(/scope IDs are incomplete/i);
+    expect(result.comparison_truth.recommendation_policy).toBe("operator_confirmation_required");
+  });
+
+  it("records mixed duplicate/distinct comparisons without making the whole comparison a duplicate", () => {
+    const result = classifyS10SameVideoComparison({
+      current_take_id: "take-a",
+      scope: "same_user_same_audition",
+      comparison_present: true,
+      compared_takes: [
+        {
+          take_id: "take-a",
+          label: "Take 1",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"d".repeat(64)}`,
+        },
+        {
+          take_id: "take-b",
+          label: "Take 2 duplicate",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"d".repeat(64)}`,
+        },
+        {
+          take_id: "take-c",
+          label: "Take 3 distinct",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"e".repeat(64)}`,
+        },
+      ],
+    });
+
+    expect(result.comparison_truth.comparison_mode).toBe("mixed_same_video_and_distinct_takes");
+    expect(result.comparison_truth.recommendation_policy).toBe("compare_distinct_performances");
+    expect(result.evidence.status).toBe("possible_duplicate");
+    expect(result.evidence.confidence).not.toBe("decisive");
+    expect(result.comparison_truth.duplicate_subsets).toEqual([["Take 1", "Take 2 duplicate"]]);
+    expect(result.comparison_truth.pairwise_matches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ take_b_label: "Take 2 duplicate", relationship: "same_media" }),
+        expect.objectContaining({
+          take_b_label: "Take 3 distinct",
+          relationship: "distinct_media",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps whole-comparison no-winner policy only when all compared media match", () => {
+    const result = classifyS10SameVideoComparison({
+      current_take_id: "take-a",
+      scope: "same_user_same_audition",
+      comparison_present: true,
+      compared_takes: [
+        {
+          take_id: "take-a",
+          label: "Take 1",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"f".repeat(64)}`,
+        },
+        {
+          take_id: "take-b",
+          label: "Take 2",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"f".repeat(64)}`,
+        },
+        {
+          take_id: "take-c",
+          label: "Take 3",
+          user_id: "user-1",
+          audition_id: "audition-1",
+          original_upload_file_hash: `sha256:${"f".repeat(64)}`,
+        },
+      ],
+    });
+
+    expect(result.evidence.confidence).toBe("decisive");
+    expect(result.comparison_truth.comparison_mode).toBe("same_video_duplicate");
+    expect(result.comparison_truth.recommendation_policy).toBe("do_not_pick_winner");
+    expect(result.comparison_truth.duplicate_subsets).toEqual([["Take 1", "Take 2", "Take 3"]]);
   });
 
   it("preserves Canary A and strong-complete fixture polarity", () => {
