@@ -8,6 +8,7 @@ import {
   finalisingOrphanCutoffIso,
   isFinalisingHeartbeatStale,
 } from '@/server/finalising-recovery.server';
+import { dispatchAnalysisJob } from '@/server/analysis-job-queue.server';
 
 describe('v3 s9 stale reconcile recovery guardrails', () => {
   it('authorises the internal reconciler via custom or bearer secret only', () => {
@@ -135,6 +136,140 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     expect(source).toContain('"binding": "ANALYSIS_QUEUE"');
     expect(source).toContain('"queue": "tapecoach-analysis-jobs"');
     expect(source).toContain('"max_batch_size": 1');
+  });
+
+  it('analysis dispatch uses queue when the binding is available', async () => {
+    const sent: unknown[] = [];
+    const scheduled: Promise<unknown>[] = [];
+    const result = await dispatchAnalysisJob(
+      { takeId: 'take-queue', reason: 'mux_asset_ready' },
+      {
+        env: {
+          ANALYSIS_QUEUE: {
+            send: async (message) => {
+              sent.push(message);
+            },
+          },
+        },
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => ({ ok: true }),
+      },
+    );
+
+    expect(result).toEqual({ ok: true, method: 'queue' });
+    expect(sent).toHaveLength(1);
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it('analysis dispatch falls back to waitUntil when queue binding is missing', async () => {
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    const result = await dispatchAnalysisJob(
+      { takeId: 'take-fallback', reason: 'mux_asset_ready' },
+      {
+        env: {},
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+    await Promise.all(scheduled);
+
+    expect(result).toEqual({ ok: true, method: 'wait_until_fallback' });
+    expect(scheduled).toHaveLength(1);
+    expect(runCount).toBe(1);
+  });
+
+  it('analysis dispatch falls back to waitUntil when queue send fails', async () => {
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    const result = await dispatchAnalysisJob(
+      { takeId: 'take-send-failure', reason: 'static_rendition_ready' },
+      {
+        env: {
+          ANALYSIS_QUEUE: {
+            send: async () => {
+              throw new Error('queue unavailable');
+            },
+          },
+        },
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+    await Promise.all(scheduled);
+
+    expect(result).toEqual({ ok: true, method: 'wait_until_fallback' });
+    expect(scheduled).toHaveLength(1);
+    expect(runCount).toBe(1);
+  });
+
+  it('analysis dispatch fails only when queue and waitUntil fallback are unavailable', async () => {
+    const scheduled: Promise<unknown>[] = [];
+    const result = await dispatchAnalysisJob(
+      { takeId: 'take-no-dispatch', reason: 'mux_asset_ready' },
+      {
+        env: {},
+        hasRequestContext: () => false,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => ({ ok: true }),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: 'none',
+      failureCode: 'analysis_dispatch_unavailable',
+    });
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it('analysis dispatch returns a safe failure when fallback scheduling throws', async () => {
+    let runCount = 0;
+    const result = await dispatchAnalysisJob(
+      { takeId: 'take-scheduler-failure', reason: 'mux_asset_ready' },
+      {
+        env: {},
+        hasRequestContext: () => true,
+        scheduleBackground: () => {
+          throw new Error('waitUntil unavailable');
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: 'none',
+      failureCode: 'analysis_dispatch_unavailable',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(runCount).toBe(0);
+  });
+
+  it('missing queue binding is not a performer-facing terminal failure by itself', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/analysis-job-queue.server.ts'), 'utf8');
+    expect(source).toContain('ANALYSIS_QUEUE binding unavailable; using waitUntil fallback');
+    expect(source).not.toContain('[failure_code:analysis_queue_unavailable] We couldn');
   });
 
   it('finalising terminal writes only mark ownership after the DB update succeeds', async () => {
