@@ -100,6 +100,11 @@ import {
   scrubS10TimestampedCommentaryProjection,
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
+import {
+  buildProviderToolForModel,
+  classifyAiGatewayProviderError,
+  shouldRetryWithFreshMuxUrl,
+} from "./provider-tool-schema.server";
 
 // Two-step pipeline feature flag (safe default: OFF unless explicitly "true").
 function isTwoStepEnabled(): boolean {
@@ -2126,6 +2131,7 @@ export async function runProcessTake(
     | "ai_network_error"
     | "ai_credits_exhausted"
     | "ai_non_retryable_4xx"
+    | "provider_request_contract_error"
     | "analysis_total_timeout"
     | "analysis_parse_failed"
     | "analysis_persist_failed"
@@ -2147,6 +2153,78 @@ export async function runProcessTake(
   // Hoisted so the outer catch can attribute failures to the finalising
   // substage. 0 = AI hasn't returned yet; >0 = post-AI work in progress.
   let finaliseStartedAt = 0;
+  const preReportQaArtefactIds: string[] = [];
+  const preReportQaBlockedArtefactIds: string[] = [];
+  let preReportFailureManifestEmitted = false;
+
+  const rememberPreReportQa = (result: {
+    emitted_artefact_ids?: string[];
+    emitted_blocked_artefact_ids?: string[];
+  }) => {
+    for (const id of result.emitted_artefact_ids ?? []) {
+      if (!preReportQaArtefactIds.includes(id)) preReportQaArtefactIds.push(id);
+    }
+    for (const id of result.emitted_blocked_artefact_ids ?? []) {
+      if (!preReportQaBlockedArtefactIds.includes(id)) preReportQaBlockedArtefactIds.push(id);
+    }
+  };
+
+  const emitPreReportFailureManifest = async (
+    code: FailureCode,
+    message: string,
+  ): Promise<void> => {
+    if (preReportFailureManifestEmitted) return;
+    if (preReportQaArtefactIds.length === 0 && preReportQaBlockedArtefactIds.length === 0) return;
+    preReportFailureManifestEmitted = true;
+    try {
+      const deferredArtefacts = [
+        "raw_report",
+        "evidence_anchors",
+        "public_claim_trace",
+        "claim_candidate_trace",
+        "technique_observation_trace",
+        "score_trace",
+        "model_run_trace",
+        "no_export_proof",
+        "parity_report",
+      ];
+      const out = await emitQAManifestForAnalysisRun({
+        run_id: `take-${takeId}`,
+        submission_id: audition.id,
+        take_ids: [takeId],
+        route_module: "runProcessTake",
+        internal_qa_emit: process.env.V3_QA_ARTIFACTS_ENABLED === "true",
+        mux_playback_ids: take.mux_playback_id
+          ? { take_1_mux_playback_id: take.mux_playback_id }
+          : {},
+        commit_sha: process.env.GIT_COMMIT_SHA,
+        branch_name: process.env.GIT_BRANCH_NAME,
+        emitted_artefact_ids: preReportQaArtefactIds,
+        emitted_blocked_artefact_ids: preReportQaBlockedArtefactIds,
+        deferred_artefact_ids: deferredArtefacts,
+        defect_risk_ids: [`analysis_generation_failed:${code}`],
+        model_run_trace_summary: {
+          model_run_trace_gate_status: "insufficient",
+          failed_stage: "analysis_step_2_judgement_or_report_generation",
+          failure_code: code,
+          safe_error_message: message.slice(0, 180),
+        },
+      });
+      console.warn("[take-pipeline] pre_report_failure_qa_manifest_emitted", {
+        take_id: takeId,
+        failure_code: code,
+        written: out.written,
+        emitted_artefact_ids: preReportQaArtefactIds,
+        deferred_artefact_ids: deferredArtefacts,
+      });
+    } catch (qaErr) {
+      console.warn("[take-pipeline] pre_report_failure_qa_manifest_failed", {
+        take_id: takeId,
+        failure_code: code,
+        warning: qaErr instanceof Error ? qaErr.message : "unknown",
+      });
+    }
+  };
 
   const markTerminalFailure = async (
     code: FailureCode,
@@ -2408,9 +2486,10 @@ export async function runProcessTake(
     // Default is 90s — long enough for normal post-processing + persistence,
     // short enough that we never leave a take stuck on "Finalising results".
     const POST_AI_FINALISE_TIMEOUT_MS = Number(process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000);
-    finaliseStartedAt = Date.now();
-    const finaliseExceeded = () => Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
-    const finaliseElapsedMs = () => Date.now() - finaliseStartedAt;
+    const finaliseExceeded = () =>
+      finaliseStartedAt > 0 && Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
+    const finaliseElapsedMs = () =>
+      finaliseStartedAt > 0 ? Date.now() - finaliseStartedAt : 0;
     // Emit a finalising_timeout marker + throw a tagged failure so the
     // outer catch parks the take in `error` with a recoverable message.
     const throwFinaliseTimeout = (substage: string): never => {
@@ -2755,6 +2834,7 @@ export async function runProcessTake(
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
+        rememberPreReportQa(preStep2InputArtefacts);
         const filteredStep1Evidence = filterRunEvidencePassForStep1(twoStepEvidence, {
           model: evResult.model,
           durationSeconds: take.mux_duration_seconds ?? null,
@@ -2809,6 +2889,7 @@ export async function runProcessTake(
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
+        rememberPreReportQa(preStep2ResolverTruth);
         const preStep2ResolverTruthIdentity = {
           expectedRunId: `take-${takeId}`,
           expectedAnalysisRunId: `take-${takeId}`,
@@ -2896,6 +2977,7 @@ export async function runProcessTake(
           unavailable_fields: qaStep1Context.unavailableInputFields,
           internal_qa_emit: internalQaEmit,
         });
+        rememberPreReportQa(preStep2AnalysisEvidenceState);
         const step1Dependency = evaluateStep1EvidenceForStep2({
           analysisEvidenceState: preStep2AnalysisEvidenceState,
           expectedRunId: `take-${takeId}`,
@@ -2983,6 +3065,24 @@ export async function runProcessTake(
         reportPolishParseStatus = polishResult.ok ? "completed" : "unknown";
 
         if (!polishResult.ok) {
+          if (polishResult.safe_error_category === "provider_request_contract_error") {
+            console.error("[take-pipeline] report_polish_provider_contract_failed", {
+              ...baseLog,
+              http_status: polishResult.httpStatus,
+              error: polishResult.error.slice(0, 200),
+              duration_ms: polishResult.durationMs,
+            });
+            metric("report_polish_failed", {
+              take_id: takeId,
+              http_status: polishResult.httpStatus,
+              duration_ms: polishResult.durationMs,
+              failure_code: "provider_request_contract_error",
+            });
+            throw new AnalysisFailure(
+              "provider_request_contract_error",
+              "The AI provider rejected the structured report contract. Please try again.",
+            );
+          }
           // Step 2 failure → fall through to the active S10 single-pass model
           // path. Do not produce deterministic generic report filler as the
           // primary performer-facing report.
@@ -3070,8 +3170,9 @@ export async function runProcessTake(
       }
     }
 
-    const callAI = (videoUrl: string, signal: AbortSignal, model: string) =>
-      fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const callAI = (videoUrl: string, signal: AbortSignal, model: string) => {
+      const reportTool = buildProviderToolForModel(REPORT_TOOL, model);
+      return fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -3097,12 +3198,13 @@ export async function runProcessTake(
               ],
             },
           ],
-          tools: [REPORT_TOOL],
+          tools: [reportTool],
           tool_choice: { type: "function", function: { name: "submit_audition_report" } },
           max_tokens: 8192,
         }),
         signal,
       });
+    };
 
     // ---- Strict Gemini retry policy ----
     // Attempt 1 = primary model. On retryable failure (timeout / 429 / 500 /
@@ -3190,6 +3292,7 @@ export async function runProcessTake(
         playbackId: take.mux_playback_id,
         kind: "gemini",
       });
+      let didMuxUrlRecoveryRetry = false;
       while (true) {
         // Total-budget guard BEFORE each attempt — prevents starting an attempt
         // we know we can't complete inside the wall-clock budget.
@@ -3258,19 +3361,26 @@ export async function runProcessTake(
         // Success.
         if (aiResp && aiResp.ok) break;
 
-        // One-shot stale-URL recovery for 400 — preserve existing fallback.
-        // Does NOT count against the retry budget (URL/schema recovery).
+        const aiErrorBody = aiResp ? await aiResp.text().catch(() => "") : "";
+        const providerErrorCategory = classifyAiGatewayProviderError(status, aiErrorBody);
+
+        // One-shot stale-URL recovery for real media URL rejections only.
+        // Gemini tool/function schema errors are provider request-contract
+        // failures and retrying with the same Mux URL cannot repair them.
+        // Does NOT count against the retry budget.
         if (
-          aiResp &&
-          aiResp.status === 400 &&
-          take.mux_playback_id &&
-          urlForCall === resolvedProbeUrl
+          shouldRetryWithFreshMuxUrl({
+            httpStatus: status,
+            body: aiErrorBody,
+            didMuxUrlRecoveryRetry,
+            hasPlaybackId: Boolean(take.mux_playback_id),
+          })
         ) {
-          const errText = await aiResp.text();
           console.warn(
             "AI gateway rejected URL; retrying once with fresh Mux URL",
-            errText.slice(0, 200),
+            aiErrorBody.slice(0, 200),
           );
+          didMuxUrlRecoveryRetry = true;
           urlForCall = ensureValidMuxMp4Url({
             url: buildMuxHighestMp4Url(take.mux_playback_id),
             playbackId: take.mux_playback_id,
@@ -3309,14 +3419,15 @@ export async function runProcessTake(
         else if (status === 429) failureCode = "gemini_429";
         else if (status !== null && status >= 500 && status < 600) failureCode = "gemini_5xx";
         else if (networkThrow) failureCode = "ai_network_error";
+        else if (providerErrorCategory === "provider_request_contract_error")
+          failureCode = "provider_request_contract_error";
         else if (status !== null && status >= 400 && status < 500)
           failureCode = "ai_non_retryable_4xx";
         else failureCode = "ai_network_error";
 
         // Non-retryable (parse/validation/4xx other than 429): terminate now.
         if (!transient) {
-          const t = aiResp ? await aiResp.text().catch(() => "") : "";
-          console.error("AI gateway hard error", status, t.slice(0, 500));
+          console.error("AI gateway hard error", status, aiErrorBody.slice(0, 500));
           metric("gemini_failed", {
             take_id: takeId,
             retry_count: geminiRetryCount,
@@ -3466,6 +3577,7 @@ export async function runProcessTake(
 
       // ---- Parse stage (timed, tagged) ----
 
+      if (finaliseStartedAt === 0) finaliseStartedAt = Date.now();
       const parseStartedAt = Date.now();
       metric("analysis_parse_started", { take_id: takeId, model: currentModel });
       console.log("[take-pipeline] analysis_parse_started", {
@@ -3536,7 +3648,8 @@ export async function runProcessTake(
     //  Bounded by POST_AI_FINALISE_TIMEOUT_MS. Each substage is logged so
     //  hangs can be attributed in production logs.
     // ====================================================================
-    const finalisingStartedAt = Date.now();
+    if (finaliseStartedAt === 0) finaliseStartedAt = Date.now();
+    const finalisingStartedAt = finaliseStartedAt;
     console.log("[take-pipeline] finalising_started", {
       take_id: takeId,
       processing_phase: "analysing",
@@ -5921,9 +6034,9 @@ export async function runProcessTake(
     console.error("runProcessTake failed", message);
     // If the failure happened after we entered the finalising stage,
     // emit a dedicated marker so log-side dashboards can attribute hangs
-    // to the right substage. `finaliseStartedAt` is initialised before
-    // the AI call; any failure with a non-zero finalising elapsed time
-    // is meaningful.
+    // to the right substage. `finaliseStartedAt` is set after report generation
+    // succeeds, before parse/post-processing begins; any non-zero elapsed time
+    // is therefore post-AI finalisation work.
     try {
       if (finaliseStartedAt > 0) {
         console.warn("[take-pipeline] finalising_failed", {
@@ -5946,8 +6059,10 @@ export async function runProcessTake(
     // Otherwise write the legacy untagged error_message and tag the metric
     // stream as analysis_no_terminal_state-equivalent generic failure.
     if (err instanceof AnalysisFailure) {
+      await emitPreReportFailureManifest(err.failureCode, message);
       await markTerminalFailure(err.failureCode, message);
     } else if (!terminalWritten) {
+      await emitPreReportFailureManifest("analysis_no_terminal_state", message);
       terminalWritten = true;
       try {
         await supabaseAdmin

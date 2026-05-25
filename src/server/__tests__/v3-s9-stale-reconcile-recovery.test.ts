@@ -54,11 +54,40 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     expect(source).toContain("internal_qa_emit_warning");
   });
 
+  it('classifies provider contract failures without Mux URL retry loops and emits failure QA context', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
+    expect(source).toContain('provider_request_contract_error');
+    expect(source).toContain('shouldRetryWithFreshMuxUrl');
+    expect(source).toContain('didMuxUrlRecoveryRetry');
+    expect(source).toContain('emitPreReportFailureManifest');
+    expect(source).toContain('pre_report_failure_qa_manifest_emitted');
+    expect(source).not.toContain('urlForCall === resolvedProbeUrl');
+  });
+
   it('reconciler reschedules stale analysing rows instead of leaving them stranded', async () => {
     const source = await readFile(path.join(process.cwd(), 'src/routes/api/public/reconcile-stale-takes.ts'), 'utf8');
     expect(source).toContain('.eq("processing_phase", "analysing")');
     expect(source).toContain('status: "pending"');
     expect(source).toContain('processing_phase: "analysis_pending"');
     expect(source).toContain('runProcessTake(take.id)');
+  });
+
+  it('reconciler force-errors stale finalising rows and keeps the cron endpoint authenticated', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/routes/api/public/reconcile-stale-takes.ts'), 'utf8');
+    expect(source).toContain('FINALISING_ORPHAN_MINUTES');
+    expect(source).toContain('.eq("processing_phase", "finalising")');
+    expect(source).toContain('finalising_orphan_forced_error');
+    expect(source).toContain('x-reconciler-secret');
+    expect(source).toContain('Authorization: Bearer <secret>');
+  });
+
+  it('cron migration targets the canonical production reconciler URL with the secret header', async () => {
+    const source = await readFile(
+      path.join(process.cwd(), 'supabase/migrations/20260525143000_reconcile_stale_takes_canonical_url.sql'),
+      'utf8',
+    );
+    expect(source).toContain('https://tapecoach.co.uk/api/public/reconcile-stale-takes');
+    expect(source).toContain("'x-reconciler-secret'");
+    expect(source).toContain("vault.decrypted_secrets");
   });
 });
