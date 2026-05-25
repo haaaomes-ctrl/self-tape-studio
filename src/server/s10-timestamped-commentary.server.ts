@@ -528,6 +528,21 @@ function normaliseNote(
   let out = { ...note };
 
   if (
+    !context.requiredActingMissing &&
+    out.is_missing_component_note &&
+    (out.component_type === "acting_scene" || noteContainsActingSceneClaim(out))
+  ) {
+    addWarning(context.warnings, {
+      affected_field: `s10_timestamped_commentary.notes[${index}]`,
+      original_value: combined,
+      corrected_value: "removed",
+      reason: "S10 component verification confirms the required acting scene, so stale missing-Side-1 notes must not render.",
+      source: out.legacy_source_used ? "legacy_timestamped_notes" : "s10_ai_judgement",
+    });
+    return null;
+  }
+
+  if (
     context.requiredActingMissing &&
     out.component_type === "acting_scene" &&
     !out.is_missing_component_note

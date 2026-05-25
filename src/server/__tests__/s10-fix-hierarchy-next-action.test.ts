@@ -378,6 +378,92 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
     expect(result.hierarchy.do_not_overfix[0]?.exact_action).toContain("Do not retake");
   });
 
+  it("removes stale missing Side 1 fix-first when package components are verified", () => {
+    const requirements = [
+      requirement("req002", "Record Side 1 acting scene", "material"),
+      requirement("req003", "Record the contemporary legit MT song", "material"),
+      requirement("req004", "Only record Side 1 and the song for the initial self-tape", "material"),
+      requirement("req005", "Upload as one continuous final video", "technical"),
+    ];
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: {
+        requirement_results: [
+          {
+            requirement_id: "req004",
+            observed_status: "partially_present",
+            completion_status: "incomplete",
+            achievement_status: "partly_achieved",
+            evidence_summary: "Legacy/raw report said Side 1 must be recorded.",
+            submission_impact: "material_gap",
+            fix_category: "must_fix",
+          },
+        ],
+      },
+      briefRequirements: requirements,
+      componentVerifications: [
+        verification("req002", "Record Side 1 acting scene", "present", "complete", "Side 1 is complete."),
+        verification("req003", "Record the contemporary legit MT song", "present", "complete", "Song is complete."),
+        verification("req005", "Upload as one continuous final video", "present", "complete", "One continuous video is complete."),
+      ],
+      observedTapeSequence: [],
+      mediaObservationSummary: {
+        audio_assessable: true,
+        video_assessable: true,
+        framing_assessable: true,
+        continuity_assessable: true,
+        abrupt_cutoff_detected: false,
+        one_continuous_video_observed: true,
+        duration_summary: "Continuous package.",
+        uncertainties: [],
+      },
+    });
+    const readiness: ReadinessAndScoreJudgement = {
+      ...canaryReadiness,
+      decision: "submit_if_deadline_is_close",
+      overall_submission_readiness_score: 84,
+      score_band_label: "submit_if_deadline_is_close",
+      brief_blocker_override: false,
+      rationale: ["Verified package is complete."],
+    };
+    const report: Record<string, unknown> = {
+      s10_fix_hierarchy: {
+        fix_first: fixItem({
+          id: "stale_side_1",
+          title: "Record/include Side 1",
+          exact_action: "Record/include the required Side 1 acting scene before submitting.",
+          source_category: "brief",
+          urgency: "critical_gap",
+          submission_impact: "material_gap",
+          linked_requirement_ids: ["req004"],
+        }),
+        priority_fixes: [],
+        must_fix_before_submitting: [],
+        should_improve_if_retaking: [],
+        optional_polish: [],
+        preserve: [],
+        do_not_overfix: [],
+        action_contradiction_warnings: [],
+      },
+      s10_next_action_plan: {
+        submit_checklist: [],
+        retake_plan: [],
+        final_checks: [],
+        playback_checks: [],
+        do_not_overfix: [],
+        if_time_is_short_guidance: [],
+        no_retake_needed_reason: null,
+        confidence: "high",
+      },
+    };
+
+    const result = applyS10FixHierarchyNextAction({ report, matrix, readiness });
+
+    expect(matrix.missing_or_incomplete_requirements).not.toContain("req004");
+    expect(result.hierarchy.fix_first).toBeNull();
+    expect(result.hierarchy.must_fix_before_submitting).toEqual([]);
+    expect(String(report.fix_first)).not.toMatch(/Record\/include.*Side 1/i);
+  });
+
   it("turns missing S10.6 AI output into a specific limitation instead of generic filler", () => {
     const matrix = normaliseBriefAchievementMatrix({
       matrix: {

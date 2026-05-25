@@ -153,6 +153,19 @@ function isMandatoryGap(item: BriefAchievementMatrix["requirement_results"][numb
   );
 }
 
+function matrixHasClearMandatoryMaterial(matrix: BriefAchievementMatrix): boolean {
+  return !matrix.requirement_results.some(isMandatoryMaterialOrPackageBlocker);
+}
+
+function mentionsStaleMandatoryPackageGap(value: string): boolean {
+  return (
+    /\b(mandatory|required|package|material|side\s*1|side one|acting scene)\b/i.test(value) &&
+    /\b(missing|incomplete|not observed|not identified|record|include|fix[-\s]?first|not ready)\b/i.test(
+      value,
+    )
+  );
+}
+
 export function deriveReadinessConstraint(matrix: BriefAchievementMatrix | null | undefined): {
   cap: number | null;
   decision: ReadinessDecision | null;
@@ -317,6 +330,39 @@ export function normaliseReadinessScoreJudgement(input: {
       });
       decision = constraint.decision;
     }
+  }
+
+  const stalePackageGapText = [
+    raw.headline,
+    raw.score_explanation,
+    raw.brief_completion_summary,
+    raw.technical_assessability_summary,
+    ...stringList(raw.rationale),
+  ]
+    .map((item) => text(item))
+    .filter(Boolean)
+    .join(" ");
+  if (
+    !constraint.decision &&
+    matrixHasClearMandatoryMaterial(input.matrix) &&
+    (decision === "review_carefully" || decision === "retake_required_if_possible") &&
+    mentionsStaleMandatoryPackageGap(stalePackageGapText)
+  ) {
+    const correctedDecision =
+      Math.max(readinessScore ?? input.currentOverallScore, input.currentOverallScore) >= 85
+        ? "submit"
+        : "submit_if_deadline_is_close";
+    addWarning(warnings, {
+      affected_field: "readiness_score_judgement.decision",
+      original_value: decision,
+      capped_value: correctedDecision,
+      matrix_reason:
+        "S10.4 reconciled matrix verifies mandatory package material, so stale missing-package readiness language was removed.",
+      source: "s10_ai_judgement",
+    });
+    decision = correctedDecision;
+    const minimumScore = correctedDecision === "submit" ? 85 : 70;
+    readinessScore = Math.max(readinessScore ?? input.currentOverallScore, minimumScore);
   }
 
   const bandFromScore = readinessScore != null ? readinessBandLabel(readinessScore) : null;

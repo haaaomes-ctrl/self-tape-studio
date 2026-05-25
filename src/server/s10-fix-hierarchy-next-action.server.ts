@@ -110,6 +110,14 @@ function hasForbiddenActionPhrase(value: string): boolean {
   return S10_FORBIDDEN_ACTION_PHRASES.some((phrase) => key.includes(normaliseKey(phrase)));
 }
 
+function isStaleMissingMaterialAction(value: string): boolean {
+  const key = normaliseKey(value);
+  return (
+    /\b(record|include|add|film|capture)\b/i.test(key) &&
+    /\b(side 1|side one|acting scene|song|package)\b/i.test(key)
+  );
+}
+
 function actionKey(item: Pick<S10FixItem, "title" | "exact_action">): string {
   return normaliseKey(`${item.title} ${item.exact_action}`);
 }
@@ -563,7 +571,8 @@ export function normaliseS10FixHierarchy(input: {
   } else if (
     fixFirst &&
     (hasForbiddenActionPhrase(`${fixFirst.title} ${fixFirst.exact_action}`) ||
-      fixFirst.submission_impact === "submission_blocker")
+      fixFirst.submission_impact === "submission_blocker" ||
+      isStaleMissingMaterialAction(`${fixFirst.title} ${fixFirst.exact_action}`))
   ) {
     addWarning(warnings, {
       affected_field: "s10_fix_hierarchy.fix_first",

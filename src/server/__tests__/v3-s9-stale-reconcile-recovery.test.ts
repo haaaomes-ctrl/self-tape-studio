@@ -76,9 +76,27 @@ describe('v3 s9 stale reconcile recovery guardrails', () => {
     const source = await readFile(path.join(process.cwd(), 'src/routes/api/public/reconcile-stale-takes.ts'), 'utf8');
     expect(source).toContain('FINALISING_ORPHAN_MINUTES');
     expect(source).toContain('.eq("processing_phase", "finalising")');
+    expect(source).toContain('finalising_orphan_recovered_complete');
+    expect(source).toContain('reason: "report_present"');
     expect(source).toContain('finalising_orphan_forced_error');
+    expect(source).toContain('[failure_code:finalising_orphan]');
     expect(source).toContain('x-reconciler-secret');
     expect(source).toContain('Authorization: Bearer <secret>');
+  });
+
+  it('finalising terminal writes only mark ownership after the DB update succeeds', async () => {
+    const source = await readFile(path.join(process.cwd(), 'src/server/process-take.server.ts'), 'utf8');
+    const helperStart = source.indexOf('const markTerminalFailure = async');
+    const helperEnd = source.indexOf('// Carries a failure_code', helperStart);
+    const helper = source.slice(helperStart, helperEnd);
+
+    expect(helperStart).toBeGreaterThan(0);
+    expect(helper).toContain('status: "error"');
+    expect(helper).toContain('processing_phase: "error"');
+    expect(helper.indexOf('if (writeErr) throw writeErr')).toBeGreaterThan(0);
+    expect(helper.indexOf('terminalWritten = true')).toBeGreaterThan(
+      helper.indexOf('if (writeErr) throw writeErr'),
+    );
   });
 
   it('mux webhook logs a safe body summary instead of signed raw upload URLs', async () => {
