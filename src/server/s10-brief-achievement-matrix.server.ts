@@ -25,6 +25,25 @@ import type {
   ObservedTapeSequence,
 } from "./evidence-pass.server";
 
+export type S10RequirementEvidenceClass =
+  | "material_performance"
+  | "technical_video_audio"
+  | "admin_process";
+
+export type S10TechnicalMediaSignals = {
+  width?: number | null;
+  height?: number | null;
+  orientation?: string | null;
+  landscape?: boolean | null;
+  audioAssessable?: boolean | null;
+  videoAssessable?: boolean | null;
+  framingAssessable?: boolean | null;
+  headAndShouldersObserved?: boolean | null;
+  oneContinuousVideoObserved?: boolean | null;
+  safeFileMetadataPresent?: boolean | null;
+  evidenceSummaries?: string[];
+};
+
 const ACHIEVEMENT_STATUSES: BriefAchievementStatus[] = [
   "achieved",
   "mostly_achieved",
@@ -118,22 +137,170 @@ function isPositiveAchievement(value: BriefAchievementStatus): boolean {
   return value === "achieved" || value === "mostly_achieved";
 }
 
+function lowerRequirementText(requirement: BriefRequirement): string {
+  return [
+    requirement.summary,
+    requirement.brief_text,
+    requirement.expected_evidence_in_tape,
+    requirement.achievement_test,
+    requirement.submission_impact_if_missing,
+  ]
+    .map((item) => text(item).toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function requirementEvidenceClass(requirement: BriefRequirement): S10RequirementEvidenceClass {
+  const value = lowerRequirementText(requirement);
+  const materialPerformance =
+    requirement.category === "material" ||
+    requirement.category === "performance" ||
+    /\b(side\s*1|side one|acting scene|monologue|scene|song|singing|dance|movement|choreo|choreography|package material|material package)\b/i.test(
+      value,
+    ) ||
+    (/\b(slate|ident|introduction)\b/i.test(value) &&
+      !/\b(file|filename|upload|deadline|export|format)\b/i.test(value));
+  if (materialPerformance) return "material_performance";
+
+  const technical =
+    requirement.category === "technical" ||
+    /\b(landscape|portrait|orientation|framing|frame|head[-\s]?and[-\s]?shoulders|head\s*&\s*shoulders|close[-\s]?up|lighting|audio|sound|audible|video assess|visual assess|camera|shot)\b/i.test(
+      value,
+    );
+  if (technical) return "technical_video_audio";
+
+  return "admin_process";
+}
+
 function isMaterialRequirement(requirement: BriefRequirement): boolean {
-  return requirement.category === "material" || requirement.category === "performance";
+  return requirementEvidenceClass(requirement) === "material_performance";
 }
 
 function isAdminLikeRequirement(requirement: BriefRequirement): boolean {
+  return requirementEvidenceClass(requirement) === "admin_process";
+}
+
+function technicalSignalsEvidenceSummary(signals: S10TechnicalMediaSignals): string {
+  return [
+    ...(Array.isArray(signals.evidenceSummaries) ? signals.evidenceSummaries : []),
+    signals.width && signals.height ? `${signals.width}x${signals.height} media metadata` : "",
+    signals.orientation ? `orientation ${signals.orientation}` : "",
+  ]
+    .map((item) => text(item))
+    .filter(Boolean)
+    .join("; ");
+}
+
+function hasLandscapeSignal(signals: S10TechnicalMediaSignals): boolean {
+  if (signals.landscape === true) return true;
+  if (typeof signals.orientation === "string" && signals.orientation.toLowerCase() === "landscape") {
+    return true;
+  }
   return (
-    requirement.category === "admin_process" ||
-    requirement.category === "deadline" ||
-    requirement.category === "logistics"
+    typeof signals.width === "number" &&
+    typeof signals.height === "number" &&
+    Number.isFinite(signals.width) &&
+    Number.isFinite(signals.height) &&
+    signals.width > signals.height
   );
+}
+
+function hasHeadAndShouldersSignal(signals: S10TechnicalMediaSignals): boolean {
+  if (signals.headAndShouldersObserved === true) return true;
+  const summary = technicalSignalsEvidenceSummary(signals);
+  return (
+    signals.framingAssessable === true &&
+    /\b(head[-\s]?and[-\s]?shoulders|head\s*&\s*shoulders|head and shoulders|shoulders|upper body|close[-\s]?up|framing|frame)\b/i.test(
+      summary,
+    )
+  );
+}
+
+function technicalSignalForRequirement(
+  requirement: BriefRequirement,
+  signals: S10TechnicalMediaSignals | null | undefined,
+): {
+  observedStatus: ObservedTapePresentStatus;
+  completionStatus: ObservedTapeCompletionStatus;
+  evidenceSummary: string;
+  confidence: "low" | "medium" | "high";
+} | null {
+  if (!signals) return null;
+  const evidenceClass = requirementEvidenceClass(requirement);
+  if (evidenceClass === "material_performance") return null;
+
+  const value = lowerRequirementText(requirement);
+  const summary = technicalSignalsEvidenceSummary(signals);
+  const hasLandscape = hasLandscapeSignal(signals);
+  const hasFraming = signals.framingAssessable === true || hasHeadAndShouldersSignal(signals);
+  const hasAudio = signals.audioAssessable === true;
+  const hasVideo = signals.videoAssessable === true || signals.framingAssessable === true;
+  const hasContinuity = signals.oneContinuousVideoObserved === true;
+
+  if (/\b(landscape|orientation)\b/i.test(value) && hasLandscape) {
+    return {
+      observedStatus: "present",
+      completionStatus: "complete",
+      evidenceSummary:
+        summary || "Safe media metadata confirms the submitted video is landscape orientation.",
+      confidence: "high",
+    };
+  }
+  if (/\b(head[-\s]?and[-\s]?shoulders|head\s*&\s*shoulders|framing|frame|close[-\s]?up|shot)\b/i.test(value) && hasFraming) {
+    return {
+      observedStatus: "present",
+      completionStatus: "complete",
+      evidenceSummary:
+        summary || "S10 media observation confirms assessable head-and-shoulders framing.",
+      confidence: hasHeadAndShouldersSignal(signals) ? "high" : "medium",
+    };
+  }
+  if (/\b(audio|sound|audible|hear|heard)\b/i.test(value) && hasAudio) {
+    return {
+      observedStatus: "present",
+      completionStatus: "complete",
+      evidenceSummary: summary || "S10 media observation confirms the audio is assessable.",
+      confidence: "high",
+    };
+  }
+  if (/\b(video assess|visual assess|visible|camera|lighting|lit)\b/i.test(value) && hasVideo) {
+    return {
+      observedStatus: "present",
+      completionStatus: "complete",
+      evidenceSummary: summary || "S10 media observation confirms the video is assessable.",
+      confidence: "high",
+    };
+  }
+  if (/\b(one continuous|continuous video|single video|one video|final video)\b/i.test(value) && hasContinuity) {
+    return {
+      observedStatus: "present",
+      completionStatus: "complete",
+      evidenceSummary:
+        summary || "S10 media observation confirms this appears to be one continuous video.",
+      confidence: "high",
+    };
+  }
+  if (
+    evidenceClass === "admin_process" &&
+    /\b(file|filename|file name|upload|export|format)\b/i.test(value) &&
+    signals.safeFileMetadataPresent === true
+  ) {
+    return {
+      observedStatus: "uncertain",
+      completionStatus: "uncertain",
+      evidenceSummary:
+        summary || "Safe upload metadata is available; final naming/export checks remain admin checks.",
+      confidence: "medium",
+    };
+  }
+
+  return null;
 }
 
 function mediaEvidenceSummaryLooksSupported(value: string): boolean {
   if (!value) return false;
   const mentionsBriefOnly =
-    /\b(brief|requirement|requested|required|supplied context|operator[- ]declared|declared material|raw report|detected component|material compliance|score trace|previous report|score)\b/i.test(
+    /\b(brief|requirement|requested|required|supplied context|operator[- ]declared|declared material|raw[_\s-]?report|detected component|material compliance|score trace|previous report|score)\b/i.test(
       value,
     );
   const mentionsMedia =
@@ -269,14 +436,22 @@ function normaliseRequirementResult(args: {
   raw: unknown;
   verification: ComponentVerification | null;
   observedTapeSequence: ObservedTapeSequence[];
+  technicalMediaSignals?: S10TechnicalMediaSignals | null;
 }): RequirementAchievementResult {
   const { requirement, verification } = args;
   const record = isRecord(args.raw) ? args.raw : {};
   const hasVerification = verification != null;
+  const technicalSupport =
+    verification == null
+      ? technicalSignalForRequirement(requirement, args.technicalMediaSignals)
+      : null;
+  const hasTechnicalSupport = technicalSupport != null;
   const rawAchievement = oneOf(record.achievement_status, ACHIEVEMENT_STATUSES, "not_assessable");
   const positiveClaimFromAi = isPositiveAchievement(rawAchievement);
   const observedStatus = verification
     ? verification.observed_status
+    : technicalSupport
+      ? technicalSupport.observedStatus
     : oneOf<ObservedTapePresentStatus>(
         record.observed_status,
         ["present", "partially_present", "absent", "not_assessable", "uncertain"],
@@ -284,14 +459,17 @@ function normaliseRequirementResult(args: {
       );
   const completionStatus = verification
     ? verification.completion_status
+    : technicalSupport
+      ? technicalSupport.completionStatus
     : oneOf<ObservedTapeCompletionStatus>(
         record.completion_status,
         ["complete", "incomplete", "cut_off", "not_applicable", "uncertain"],
         "uncertain",
       );
   const evidenceSummary =
-    text(record.evidence_summary) ||
     verification?.evidence_summary ||
+    technicalSupport?.evidenceSummary ||
+    text(record.evidence_summary) ||
     `S10 could not assess this requirement from observed component verification: ${requirement.summary}`;
 
   const derived = deriveAchievementFromObservation({
@@ -299,7 +477,7 @@ function normaliseRequirementResult(args: {
     observedStatus,
     completionStatus,
     evidenceSummary,
-    hasVerification,
+    hasVerification: hasVerification || hasTechnicalSupport,
     positiveClaimFromAi,
   });
 
@@ -334,6 +512,7 @@ function normaliseRequirementResult(args: {
   if (
     isPositiveAchievement(achievement) &&
     !hasVerification &&
+    !hasTechnicalSupport &&
     !mediaEvidenceSummaryLooksSupported(evidenceSummary)
   ) {
     const downgraded = deriveAchievementFromObservation({
@@ -359,6 +538,7 @@ function normaliseRequirementResult(args: {
     ...new Set([
       ...stringList(record.linked_component_verification_ids),
       ...(verification ? [verification.requirement_id] : []),
+      ...(hasTechnicalSupport ? [requirement.id] : []),
     ]),
   ];
 
@@ -383,7 +563,7 @@ function normaliseRequirementResult(args: {
     confidence: oneOf(
       record.confidence,
       ["low", "medium", "high"],
-      verification?.confidence ?? "low",
+      verification?.confidence ?? technicalSupport?.confidence ?? "low",
     ),
     linked_observed_sequence_ids: linkedObservedSequenceIds,
     linked_component_verification_ids: linkedComponentVerificationIds,
@@ -424,10 +604,12 @@ function aggregateMatrix(args: {
     mandatory.length > 0 && mandatory.every((item) => item.achievement_status === "not_assessable");
   const missingOrIncomplete = args.results.filter(
     (item) =>
-      item.achievement_status === "not_achieved" ||
-      item.achievement_status === "partly_achieved" ||
+      item.fix_category === "must_fix" ||
       item.submission_impact === "material_gap" ||
-      item.submission_impact === "submission_blocker",
+      item.submission_impact === "submission_blocker" ||
+      (item.importance === "mandatory" &&
+        item.fix_category !== "final_check" &&
+        (item.completion_status === "incomplete" || item.completion_status === "cut_off")),
   );
   const notAssessable = args.results.filter((item) => item.achievement_status === "not_assessable");
   const finalCheck = args.results.filter((item) => item.fix_category === "final_check");
@@ -459,14 +641,41 @@ function aggregateMatrix(args: {
     overallStatus = "not_assessable";
   } else if (mandatoryFinalCheck) {
     mandatoryStatus = mandatoryStatus === "blocked" ? "blocked" : "some_gaps";
-    readinessImpact =
-      readinessImpact === "supports_submission" ? "review_carefully" : readinessImpact;
-    overallStatus = overallStatus === "achieved" ? "mostly_achieved" : overallStatus;
+    if (
+      readinessImpact === "supports_submission" ||
+      readinessImpact === "material_gap" ||
+      readinessImpact === "submission_blocker" ||
+      readinessImpact === "not_assessable"
+    ) {
+      readinessImpact = "review_carefully";
+    }
+    if (
+      overallStatus === "achieved" ||
+      overallStatus === "not_achieved" ||
+      overallStatus === "partly_achieved" ||
+      overallStatus === "not_assessable"
+    ) {
+      overallStatus = "mostly_achieved";
+    }
   } else if (
     mandatory.length > 0 &&
     mandatory.every((item) => isPositiveAchievement(item.achievement_status))
   ) {
     mandatoryStatus = mandatoryStatus === "blocked" ? "blocked" : "clear";
+    if (
+      readinessImpact === "material_gap" ||
+      readinessImpact === "submission_blocker" ||
+      readinessImpact === "not_assessable"
+    ) {
+      readinessImpact = "supports_submission";
+    }
+    if (
+      overallStatus === "not_achieved" ||
+      overallStatus === "partly_achieved" ||
+      overallStatus === "not_assessable"
+    ) {
+      overallStatus = "achieved";
+    }
   }
 
   if ((mandatoryMaterialBlocked || mandatoryMaterialGap) && overallStatus === "achieved") {
@@ -484,12 +693,153 @@ function aggregateMatrix(args: {
   };
 }
 
+function requirementResultText(item: RequirementAchievementResult): string {
+  return `${item.requirement_summary} ${item.evidence_summary} ${item.recommended_action}`.toLowerCase();
+}
+
+function isSideOneRequirementText(value: string): boolean {
+  return /\b(side\s*1|side one|acting scene|acting side|scene)\b/i.test(value);
+}
+
+function isSongRequirementText(value: string): boolean {
+  return /\b(song|singing|vocal selection|mt song|musical theatre song|musical-theatre song)\b/i.test(
+    value,
+  );
+}
+
+function isContinuousPackageRequirementText(value: string): boolean {
+  return /\b(one continuous|continuous video|single video|one video|final video|full package|complete package)\b/i.test(
+    value,
+  );
+}
+
+function isCompoundSideAndSongPackageRequirement(result: RequirementAchievementResult): boolean {
+  const value = requirementResultText(result);
+  return (
+    /\b(only record|only include|record only|include only|initial self[-\s]?tape|package)\b/i.test(
+      value,
+    ) &&
+    isSideOneRequirementText(value) &&
+    isSongRequirementText(value)
+  );
+}
+
+function resultIsVerifiedComplete(result: RequirementAchievementResult): boolean {
+  return (
+    result.observed_status === "present" &&
+    (result.completion_status === "complete" || result.completion_status === "not_applicable") &&
+    isPositiveAchievement(result.achievement_status) &&
+    result.submission_impact !== "material_gap" &&
+    result.submission_impact !== "submission_blocker"
+  );
+}
+
+function verificationIsVerifiedComplete(
+  verification: ComponentVerification,
+  matcher: (value: string) => boolean,
+): boolean {
+  const value = `${verification.requirement_summary} ${verification.evidence_summary}`.toLowerCase();
+  return (
+    matcher(value) &&
+    verification.observed_from_media === true &&
+    verification.evidence_basis === "observed_audio_video" &&
+    verification.observed_status === "present" &&
+    (verification.completion_status === "complete" ||
+      verification.completion_status === "not_applicable")
+  );
+}
+
+function hasVerifiedComponent(args: {
+  results: RequirementAchievementResult[];
+  componentVerifications: ComponentVerification[];
+  matcher: (value: string) => boolean;
+}): boolean {
+  return (
+    args.results.some((result) => args.matcher(requirementResultText(result)) && resultIsVerifiedComplete(result)) ||
+    args.componentVerifications.some((verification) =>
+      verificationIsVerifiedComplete(verification, args.matcher),
+    )
+  );
+}
+
+function extraMaterialStatus(observedTapeSequence: ObservedTapeSequence[]): "clear" | "observed" | "uncertain" {
+  const materialSections = observedTapeSequence.filter(
+    (item) =>
+      item.observed_from_media === true &&
+      item.present_status === "present" &&
+      !["acting_scene", "song", "ident", "transition", "technical"].includes(item.component_type),
+  );
+  if (materialSections.length > 0) return "observed";
+  return observedTapeSequence.length > 0 ? "clear" : "uncertain";
+}
+
+function reconcileCompoundPackageRequirements(args: {
+  results: RequirementAchievementResult[];
+  componentVerifications: ComponentVerification[];
+  observedTapeSequence: ObservedTapeSequence[];
+  mediaObservationSummary?: MediaObservationSummary | null;
+}): RequirementAchievementResult[] {
+  const sideVerified = hasVerifiedComponent({
+    results: args.results,
+    componentVerifications: args.componentVerifications,
+    matcher: isSideOneRequirementText,
+  });
+  const songVerified = hasVerifiedComponent({
+    results: args.results,
+    componentVerifications: args.componentVerifications,
+    matcher: isSongRequirementText,
+  });
+  const continuousVerified =
+    args.mediaObservationSummary?.one_continuous_video_observed === true ||
+    hasVerifiedComponent({
+      results: args.results,
+      componentVerifications: args.componentVerifications,
+      matcher: isContinuousPackageRequirementText,
+    });
+  const extraStatus = extraMaterialStatus(args.observedTapeSequence);
+
+  return args.results.map((result) => {
+    if (!isCompoundSideAndSongPackageRequirement(result) || !sideVerified || !songVerified) {
+      return result;
+    }
+
+    if (extraStatus === "observed") return result;
+
+    const finalCheck = extraStatus === "uncertain" || !continuousVerified;
+    const evidenceBits = [
+      "S10 component verification confirms Side 1 is present and complete.",
+      "S10 component verification confirms the song is present and complete.",
+      continuousVerified
+        ? "S10 media/component evidence supports the continuous final-video package condition."
+        : "The inclusion requirements are verified; the continuous/final-video condition remains a final check.",
+      extraStatus === "clear"
+        ? "No additional prohibited material is observed in the S10 tape sequence."
+        : "No additional prohibited material was verified, so this remains a final check rather than a missing-material blocker.",
+    ];
+
+    return {
+      ...result,
+      observed_status: "present",
+      completion_status: continuousVerified ? "complete" : "not_applicable",
+      achievement_status: finalCheck ? "mostly_achieved" : "achieved",
+      evidence_summary: evidenceBits.join(" "),
+      submission_impact: finalCheck ? "final_check" : "supports_submission",
+      fix_category: finalCheck ? "final_check" : "preserve",
+      recommended_action: finalCheck
+        ? "Keep the verified Side 1 and song package; complete the final upload/export check before submitting."
+        : "Keep the verified Side 1 and song package.",
+      confidence: continuousVerified ? "high" : "medium",
+    };
+  });
+}
+
 export function normaliseBriefAchievementMatrix(input: {
   matrix: unknown;
   briefRequirements?: BriefRequirement[] | null;
   componentVerifications?: ComponentVerification[] | null;
   observedTapeSequence?: ObservedTapeSequence[] | null;
   mediaObservationSummary?: MediaObservationSummary | null;
+  technicalMediaSignals?: S10TechnicalMediaSignals | null;
 }): BriefAchievementMatrix {
   const requirements = Array.isArray(input.briefRequirements) ? input.briefRequirements : [];
   const componentVerifications = Array.isArray(input.componentVerifications)
@@ -509,14 +859,21 @@ export function normaliseBriefAchievementMatrix(input: {
     if (id) resultsById.set(id, item);
   }
 
-  const requirementResults = requirements.map((requirement) =>
+  const rawRequirementResults = requirements.map((requirement) =>
     normaliseRequirementResult({
       requirement,
       raw: resultsById.get(requirement.id),
       verification: findVerification(requirement, componentVerifications),
       observedTapeSequence,
+      technicalMediaSignals: input.technicalMediaSignals,
     }),
   );
+  const requirementResults = reconcileCompoundPackageRequirements({
+    results: rawRequirementResults,
+    componentVerifications,
+    observedTapeSequence,
+    mediaObservationSummary: input.mediaObservationSummary,
+  });
 
   const aggregate = aggregateMatrix({ rawMatrix, results: requirementResults });
   const summary =

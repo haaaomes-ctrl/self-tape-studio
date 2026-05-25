@@ -301,6 +301,67 @@ describe("S10.5 readiness recommendation and score semantics", () => {
     expect(result.warnings).toHaveLength(0);
   });
 
+  it("removes stale missing-package readiness when compound package evidence is verified", () => {
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: {
+        requirement_results: [
+          {
+            requirement_id: "req004",
+            observed_status: "partially_present",
+            completion_status: "incomplete",
+            achievement_status: "partly_achieved",
+            evidence_summary: "Legacy/raw report said mandatory package evidence is incomplete.",
+            submission_impact: "material_gap",
+            fix_category: "must_fix",
+          },
+        ],
+      },
+      briefRequirements: [
+        requirement("req002", "Record Side 1 acting scene", "material"),
+        requirement("req003", "Record the contemporary legit MT song", "material"),
+        requirement("req004", "Only record Side 1 and the song for the initial self-tape", "material"),
+        requirement("req005", "Upload as one continuous final video", "technical"),
+      ],
+      componentVerifications: [
+        verification("req002", "Record Side 1 acting scene", "present", "complete", "Side 1 is complete."),
+        verification("req003", "Record the contemporary legit MT song", "present", "complete", "Song is complete."),
+        verification("req005", "Upload as one continuous final video", "present", "complete", "One continuous video is complete."),
+      ],
+      observedTapeSequence: [],
+      mediaObservationSummary: {
+        audio_assessable: true,
+        video_assessable: true,
+        framing_assessable: true,
+        continuity_assessable: true,
+        abrupt_cutoff_detected: false,
+        one_continuous_video_observed: true,
+        duration_summary: "One continuous package.",
+        uncertainties: [],
+      },
+    });
+    const judgement = normaliseReadinessScoreJudgement({
+      judgement: {
+        decision: "review_carefully",
+        headline: "Mandatory required material or package evidence is incomplete.",
+        rationale: ["Record/include Side 1 before submitting."],
+        overall_submission_readiness_score: 69,
+        score_band_label: "review_carefully",
+        score_explanation: "Mandatory package evidence is incomplete.",
+      },
+      matrix,
+      currentOverallScore: 88,
+      currentScores: { acting: 90, vocal: 90, brief_adherence: 90 },
+      selectedLevel: "professional",
+    });
+
+    expect(matrix.missing_or_incomplete_requirements).not.toContain("req004");
+    expect(["submit", "submit_if_deadline_is_close"]).toContain(judgement.decision);
+    expect(judgement.overall_submission_readiness_score).toBeGreaterThanOrEqual(70);
+    expect(judgement.score_contradiction_warnings[0]?.matrix_reason).toMatch(
+      /reconciled matrix verifies mandatory package/i,
+    );
+  });
+
   it("allows strong complete professional scores with nuance and no invented blocker", () => {
     const requirements = [
       requirement("req_scene", "Full acting scene", "material"),

@@ -84,6 +84,7 @@ import {
 import {
   applyBriefAchievementCompatibilityCaps,
   normaliseBriefAchievementMatrix,
+  type S10TechnicalMediaSignals,
 } from "./s10-brief-achievement-matrix.server";
 import { applyReadinessScoreSemantics } from "./s10-readiness-score-semantics.server";
 import { applyS10FixHierarchyNextAction } from "./s10-fix-hierarchy-next-action.server";
@@ -101,6 +102,10 @@ import {
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
 import {
+  classifyS10SameVideoComparison,
+  type S10SameVideoClassificationResult,
+} from "./s10-same-video-comparison.server";
+import {
   buildPlainJsonReportInstruction,
   buildProviderToolForModel,
   classifyAiGatewayProviderError,
@@ -117,6 +122,242 @@ function isTwoStepEnabled(): boolean {
 
 function isRuntimeRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function runtimeNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function runtimeString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function nestedRuntimeValue(source: unknown, path: string[]): unknown {
+  let current: unknown = source;
+  for (const key of path) {
+    if (!isRuntimeRecord(current)) return null;
+    current = current[key];
+  }
+  return current;
+}
+
+function firstRuntimeNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = runtimeNumber(value);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
+function firstRuntimeString(...values: unknown[]): string | null {
+  for (const value of values) {
+    const parsed = runtimeString(value);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function mediaEvidenceSummariesFromContext(input: {
+  observedTapeSequence?: Array<{ evidence_summary?: string; component_type?: string }>;
+  componentVerifications?: Array<{ evidence_summary?: string; requirement_summary?: string }>;
+  mediaObservationSummary?: { duration_summary?: string; uncertainties?: string[] } | null;
+}): string[] {
+  return [
+    ...(input.observedTapeSequence ?? []).flatMap((item) => [
+      item.evidence_summary,
+      item.component_type,
+    ]),
+    ...(input.componentVerifications ?? []).flatMap((item) => [
+      item.requirement_summary,
+      item.evidence_summary,
+    ]),
+    input.mediaObservationSummary?.duration_summary,
+    ...(input.mediaObservationSummary?.uncertainties ?? []),
+  ]
+    .map((item) => runtimeString(item))
+    .filter((item): item is string => Boolean(item))
+    .slice(0, 40);
+}
+
+function buildTechnicalMediaSignals(input: {
+  signals: unknown;
+  checklist: unknown;
+  mediaObservationSummary: {
+    audio_assessable?: boolean | null;
+    video_assessable?: boolean | null;
+    framing_assessable?: boolean | null;
+    one_continuous_video_observed?: boolean | null;
+    duration_summary?: string;
+    uncertainties?: string[];
+  } | null;
+  observedTapeSequence?: Array<{ evidence_summary?: string; component_type?: string }>;
+  componentVerifications?: Array<{ evidence_summary?: string; requirement_summary?: string }>;
+}): S10TechnicalMediaSignals {
+  const signals = isRuntimeRecord(input.signals) ? input.signals : {};
+  const checklist = isRuntimeRecord(input.checklist) ? input.checklist : {};
+  const width = firstRuntimeNumber(
+    signals.width,
+    signals.video_width,
+    signals.resolution_width,
+    nestedRuntimeValue(signals, ["resolution", "width"]),
+    nestedRuntimeValue(signals, ["video", "width"]),
+    checklist.width,
+    nestedRuntimeValue(checklist, ["resolution", "width"]),
+  );
+  const height = firstRuntimeNumber(
+    signals.height,
+    signals.video_height,
+    signals.resolution_height,
+    nestedRuntimeValue(signals, ["resolution", "height"]),
+    nestedRuntimeValue(signals, ["video", "height"]),
+    checklist.height,
+    nestedRuntimeValue(checklist, ["resolution", "height"]),
+  );
+  const orientation = firstRuntimeString(
+    signals.orientation,
+    nestedRuntimeValue(signals, ["orientation", "value"]),
+    checklist.orientation,
+    nestedRuntimeValue(checklist, ["orientation", "value"]),
+  )?.toLowerCase();
+  const evidenceSummaries = mediaEvidenceSummariesFromContext({
+    observedTapeSequence: input.observedTapeSequence,
+    componentVerifications: input.componentVerifications,
+    mediaObservationSummary: input.mediaObservationSummary,
+  });
+  const evidenceText = evidenceSummaries.join(" ");
+  const headAndShouldersObserved =
+    /\b(head[-\s]?and[-\s]?shoulders|head\s*&\s*shoulders|head and shoulders|shoulders|upper body|close[-\s]?up)\b/i.test(
+      evidenceText,
+    );
+  const landscapeObserved =
+    /\b(landscape frame|landscape orientation|landscape video|landscape shot|1280\s*x\s*720|16\s*:\s*9)\b/i.test(
+      evidenceText,
+    );
+  return {
+    width,
+    height,
+    orientation,
+    landscape:
+      orientation === "landscape" ||
+      (width != null && height != null && width > height) ||
+      landscapeObserved,
+    audioAssessable: input.mediaObservationSummary?.audio_assessable ?? null,
+    videoAssessable: input.mediaObservationSummary?.video_assessable ?? null,
+    framingAssessable: input.mediaObservationSummary?.framing_assessable ?? null,
+    headAndShouldersObserved,
+    oneContinuousVideoObserved:
+      input.mediaObservationSummary?.one_continuous_video_observed ?? null,
+    safeFileMetadataPresent: Boolean(
+      nestedRuntimeValue(signals, ["safe_upload_identity"]) ||
+        nestedRuntimeValue(signals, ["upload_identity"]) ||
+        signals.file_size_bytes ||
+        signals.metadata_file_name_safe_basename,
+    ),
+    evidenceSummaries,
+  };
+}
+
+async function classifyLiveSameVideoContext(input: {
+  take: {
+    id: string;
+    user_id: string | null;
+    audition_id: string | null;
+    signals?: unknown;
+    checklist?: unknown;
+    mux_duration_seconds?: number | null;
+  };
+}): Promise<S10SameVideoClassificationResult | null> {
+  if (!input.take.user_id || !input.take.audition_id) return null;
+
+  const currentIdentity = extractUploadIdentitySignals({
+    signals: input.take.signals,
+    checklist: input.take.checklist,
+    muxDurationSeconds: input.take.mux_duration_seconds,
+  });
+  if (!currentIdentity.original_upload_file_hash || currentIdentity.file_size_bytes == null) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("takes")
+      .select("id, user_id, audition_id, signals, checklist, mux_duration_seconds, created_at")
+      .eq("user_id", input.take.user_id)
+      .eq("audition_id", input.take.audition_id)
+      .neq("id", input.take.id)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) {
+      console.warn("[take-pipeline] same_video_lookup_failed", {
+        take_id: input.take.id,
+        error: String(error.message ?? error),
+      });
+      return null;
+    }
+
+    const compared = (data ?? []).filter((row) => {
+      const identity = extractUploadIdentitySignals({
+        signals: row.signals,
+        checklist: row.checklist,
+        muxDurationSeconds: row.mux_duration_seconds,
+      });
+      return (
+        identity.original_upload_file_hash === currentIdentity.original_upload_file_hash &&
+        identity.file_size_bytes != null &&
+        identity.file_size_bytes === currentIdentity.file_size_bytes
+      );
+    });
+    if (compared.length === 0) return null;
+
+    return classifyS10SameVideoComparison({
+      current_take_id: input.take.id,
+      scope: "same_user_same_audition",
+      comparison_present: false,
+      operator_confirmation: "none",
+      compared_takes: [
+        {
+          take_id: input.take.id,
+          label: "Current take",
+          user_id: input.take.user_id,
+          audition_id: input.take.audition_id,
+          original_upload_file_hash: currentIdentity.original_upload_file_hash,
+          file_size_bytes: currentIdentity.file_size_bytes,
+          video_duration_ms: currentIdentity.video_duration_ms,
+          metadata_file_name: currentIdentity.metadata_file_name,
+          original_file_name: currentIdentity.original_file_name,
+        },
+        ...compared.map((row, index) => {
+          const identity = extractUploadIdentitySignals({
+            signals: row.signals,
+            checklist: row.checklist,
+            muxDurationSeconds: row.mux_duration_seconds,
+          });
+          return {
+            take_id: row.id,
+            label: `Earlier take ${index + 1}`,
+            user_id: row.user_id,
+            audition_id: row.audition_id,
+            original_upload_file_hash: identity.original_upload_file_hash,
+            file_size_bytes: identity.file_size_bytes,
+            video_duration_ms: identity.video_duration_ms,
+            metadata_file_name: identity.metadata_file_name,
+            original_file_name: identity.original_file_name,
+          };
+        }),
+      ],
+    });
+  } catch (error) {
+    console.warn("[take-pipeline] same_video_classification_failed", {
+      take_id: input.take.id,
+      error: error instanceof Error ? error.message.slice(0, 160) : "unknown",
+    });
+    return null;
+  }
 }
 
 function runtimeRecordArray(value: unknown): Array<Record<string, unknown>> {
@@ -2285,10 +2526,9 @@ export async function runProcessTake(
     extra: Record<string, unknown> = {},
   ): Promise<void> => {
     if (terminalWritten) return;
-    terminalWritten = true;
     const errorMessage = `[failure_code:${code}] ${message}`;
     try {
-      await supabaseAdmin
+      const { error: writeErr } = await supabaseAdmin
         .from("takes")
         .update({
           status: "error",
@@ -2296,8 +2536,11 @@ export async function runProcessTake(
           error_message: errorMessage,
         })
         .eq("id", takeId);
+      if (writeErr) throw writeErr;
+      terminalWritten = true;
     } catch (writeErr) {
       console.error("[take-pipeline] markTerminalFailure write error", writeErr);
+      return;
     }
     metric("analysis_terminal", {
       take_id: takeId,
@@ -3809,12 +4052,20 @@ export async function runProcessTake(
     // The AI authors the matrix; code validates against S10.2 requirements
     // and S10.3 observed component verification before legacy score fields
     // can influence verdict/readiness semantics.
+    const technicalMediaSignals = buildTechnicalMediaSignals({
+      signals: take.signals,
+      checklist: take.checklist,
+      mediaObservationSummary: s10ObservationContext.media_observation_summary,
+      observedTapeSequence: s10ObservationContext.observed_tape_sequence,
+      componentVerifications: s10ObservationContext.component_verifications,
+    });
     report.brief_achievement_matrix = normaliseBriefAchievementMatrix({
       matrix: (report as Record<string, unknown>).brief_achievement_matrix,
       briefRequirements: extractedBrief?.brief_requirements ?? [],
       componentVerifications: s10ObservationContext.component_verifications,
       observedTapeSequence: s10ObservationContext.observed_tape_sequence,
       mediaObservationSummary: s10ObservationContext.media_observation_summary,
+      technicalMediaSignals,
     });
     const s10BriefAchievementCap = applyBriefAchievementCompatibilityCaps(
       report as Record<string, unknown>,
@@ -4858,6 +5109,28 @@ export async function runProcessTake(
       (report as Record<string, unknown>).schema_version = "v1-legacy";
     }
 
+    const liveSameVideoContext = await classifyLiveSameVideoContext({
+      take: {
+        id: take.id,
+        user_id: take.user_id,
+        audition_id: take.audition_id,
+        signals: take.signals,
+        checklist: take.checklist,
+        mux_duration_seconds: take.mux_duration_seconds,
+      },
+    });
+    if (liveSameVideoContext) {
+      report.s10_same_video_evidence = liveSameVideoContext.evidence;
+      report.s10_comparison_truth = liveSameVideoContext.comparison_truth;
+      report.comparison_display_mode = liveSameVideoContext.comparison_display_mode;
+      console.log("[take-pipeline] s10_same_video_classified", {
+        take_id: takeId,
+        status: liveSameVideoContext.evidence.status,
+        confidence: liveSameVideoContext.evidence.confidence,
+        comparison_display_mode: liveSameVideoContext.comparison_display_mode,
+      });
+    }
+
     // ---- S10.10 / Phase 3B — v2 persistence selection ----
     // S10 reports use the authenticated S10 view model as the route source.
     // If S10 route assembly fails, persist a validated S10 limitation report or
@@ -4897,6 +5170,9 @@ export async function runProcessTake(
               observedTapeSequence: s10ObservationContext.observed_tape_sequence,
               componentVerifications: s10ObservationContext.component_verifications,
               mediaObservationSummary: s10ObservationContext.media_observation_summary,
+              sameVideoEvidence: liveSameVideoContext?.evidence ?? null,
+              comparisonTruth: liveSameVideoContext?.comparison_truth ?? null,
+              comparisonDisplayMode: liveSameVideoContext?.comparison_display_mode ?? null,
               observationSourceKind: s10ObservationContext.source_kind,
             }
           : null,
@@ -6109,12 +6385,13 @@ export async function runProcessTake(
       await markTerminalFailure(err.failureCode, message);
     } else if (!terminalWritten) {
       await emitPreReportFailureManifest("analysis_no_terminal_state", message);
-      terminalWritten = true;
       try {
-        await supabaseAdmin
+        const { error: writeErr } = await supabaseAdmin
           .from("takes")
           .update({ status: "error", processing_phase: "error", error_message: message })
           .eq("id", takeId);
+        if (writeErr) throw writeErr;
+        terminalWritten = true;
       } catch (writeErr) {
         console.error("[take-pipeline] terminal write failed", writeErr);
       }

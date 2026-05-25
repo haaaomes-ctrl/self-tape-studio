@@ -359,7 +359,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               status: "error",
               processing_phase: "error",
               error_message:
-                "We couldn’t finish your report this time. Please try again.",
+                "[failure_code:finalising_orphan] We couldn’t finish your report this time. Please try again.",
             })
             .eq("id", take.id)
             .eq("processing_phase", "finalising")

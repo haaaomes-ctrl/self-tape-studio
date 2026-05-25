@@ -272,6 +272,254 @@ describe("S10.4 brief achievement matrix", () => {
     expect(matrix.overall_status).not.toBe("achieved");
   });
 
+  it("uses technical media signals for landscape, framing, and audio requirements only", () => {
+    const requirements = [
+      requirement("req_landscape", "Landscape orientation required", "technical"),
+      requirement("req_framing", "Head-and-shoulders framing", "technical"),
+      requirement("req_audio", "Audio must be assessable", "technical"),
+      requirement("req_side", "Side 1 acting scene", "material"),
+      requirement("req_song", "Contemporary MT song", "material"),
+    ];
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: {
+        requirement_results: [
+          {
+            requirement_id: "req_side",
+            observed_status: "present",
+            completion_status: "complete",
+            achievement_status: "achieved",
+            evidence_summary: "1280x720 deterministic metadata exists.",
+            submission_impact: "supports_submission",
+            fix_category: "preserve",
+          },
+          {
+            requirement_id: "req_song",
+            observed_status: "present",
+            completion_status: "complete",
+            achievement_status: "achieved",
+            evidence_summary: "1280x720 deterministic metadata exists.",
+            submission_impact: "supports_submission",
+            fix_category: "preserve",
+          },
+        ],
+      },
+      briefRequirements: requirements,
+      componentVerifications: [],
+      observedTapeSequence: [],
+      mediaObservationSummary: {
+        audio_assessable: true,
+        video_assessable: true,
+        framing_assessable: true,
+        continuity_assessable: null,
+        abrupt_cutoff_detected: null,
+        one_continuous_video_observed: null,
+        duration_summary: "The performer is visible in a head-and-shoulders landscape frame.",
+        uncertainties: [],
+      },
+      technicalMediaSignals: {
+        width: 1280,
+        height: 720,
+        landscape: true,
+        audioAssessable: true,
+        videoAssessable: true,
+        framingAssessable: true,
+        headAndShouldersObserved: true,
+        evidenceSummaries: [
+          "1280x720 landscape metadata.",
+          "The performer is visible in a head-and-shoulders frame.",
+          "Audio is assessable.",
+        ],
+      },
+    });
+
+    const byId = new Map(matrix.requirement_results.map((item) => [item.requirement_id, item]));
+    expect(byId.get("req_landscape")).toMatchObject({
+      achievement_status: "achieved",
+      submission_impact: "supports_submission",
+    });
+    expect(byId.get("req_framing")).toMatchObject({
+      achievement_status: "achieved",
+      submission_impact: "supports_submission",
+    });
+    expect(byId.get("req_audio")).toMatchObject({
+      achievement_status: "achieved",
+      submission_impact: "supports_submission",
+    });
+    expect(byId.get("req_side")).toMatchObject({
+      achievement_status: "not_assessable",
+      submission_impact: "not_assessable",
+    });
+    expect(byId.get("req_song")).toMatchObject({
+      achievement_status: "not_assessable",
+      submission_impact: "not_assessable",
+    });
+  });
+
+  it("does not let raw_report presentation prose prove technical requirements", () => {
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: {
+        requirement_results: [
+          {
+            requirement_id: "req_landscape",
+            observed_status: "present",
+            completion_status: "complete",
+            achievement_status: "achieved",
+            evidence_summary: "raw_report.presentation_notes say the landscape framing is fine.",
+            submission_impact: "supports_submission",
+            fix_category: "preserve",
+          },
+        ],
+      },
+      briefRequirements: [requirement("req_landscape", "Landscape framing", "technical")],
+      componentVerifications: [],
+      observedTapeSequence: [],
+      technicalMediaSignals: null,
+    });
+
+    expect(matrix.requirement_results[0]).toMatchObject({
+      achievement_status: "not_assessable",
+      submission_impact: "not_assessable",
+    });
+  });
+
+  it("keeps file naming metadata as an admin final check rather than a material blocker or achieved row", () => {
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: { requirement_results: [] },
+      briefRequirements: [
+        requirement("req_filename", "Use the requested file naming format", "admin_process"),
+        requirement("req_one_file", "One final upload file", "admin_process"),
+      ],
+      componentVerifications: [],
+      observedTapeSequence: [],
+      technicalMediaSignals: {
+        oneContinuousVideoObserved: true,
+        safeFileMetadataPresent: true,
+        evidenceSummaries: ["Safe upload metadata is present."],
+      },
+    });
+
+    expect(matrix.requirement_results[0]).toMatchObject({
+      achievement_status: "partly_achieved",
+      submission_impact: "final_check",
+      fix_category: "final_check",
+    });
+    expect(matrix.missing_or_incomplete_requirements).toEqual([]);
+    expect(matrix.final_check_requirements).toContain("req_filename");
+    expect(matrix.requirement_results[1]).toMatchObject({
+      achievement_status: "partly_achieved",
+      submission_impact: "final_check",
+      fix_category: "final_check",
+    });
+    expect(matrix.final_check_requirements).toContain("req_one_file");
+  });
+
+  it("reconciles the live-shape Side 1 and song package from verified components", () => {
+    const requirements = [
+      requirement("req002", "Record Side 1 acting scene", "material"),
+      requirement("req003", "Record the contemporary legit MT song", "material"),
+      requirement("req004", "Only record Side 1 and the song for the initial self-tape", "material"),
+      requirement("req005", "Upload as one continuous final video", "technical"),
+      requirement("req006", "Use the requested file naming format", "admin_process"),
+    ];
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: {
+        overall_status: "partly_achieved",
+        mandatory_status: "some_gaps",
+        readiness_impact: "material_gap",
+        requirement_results: [
+          {
+            requirement_id: "req004",
+            observed_status: "partially_present",
+            completion_status: "incomplete",
+            achievement_status: "partly_achieved",
+            evidence_summary:
+              "Legacy/raw report claimed mandatory package evidence is incomplete and Side 1 must be recorded.",
+            submission_impact: "material_gap",
+            fix_category: "must_fix",
+          },
+        ],
+      },
+      briefRequirements: requirements,
+      componentVerifications: [
+        verification(
+          "req002",
+          "Record Side 1 acting scene",
+          "present",
+          "complete",
+          "Side 1 is observed from beginning to end.",
+        ),
+        verification(
+          "req003",
+          "Record the contemporary legit MT song",
+          "present",
+          "complete",
+          "The song is heard and reaches a clear ending.",
+        ),
+        verification(
+          "req005",
+          "Upload as one continuous final video",
+          "present",
+          "complete",
+          "The package appears as one continuous final video.",
+        ),
+      ],
+      observedTapeSequence: [
+        {
+          id: "side",
+          label: "Side 1",
+          component_type: "acting_scene",
+          linked_requirement_ids: ["req002"],
+          start_time: "00:00",
+          end_time: "01:10",
+          present_status: "present",
+          completion_status: "complete",
+          evidence_summary: "Side 1 is present.",
+          observed_from_media: true,
+          evidence_basis: "observed_audio_video",
+          confidence: "high",
+          assessability_notes: "",
+        },
+        {
+          id: "song",
+          label: "Song",
+          component_type: "song",
+          linked_requirement_ids: ["req003"],
+          start_time: "01:10",
+          end_time: "02:20",
+          present_status: "present",
+          completion_status: "complete",
+          evidence_summary: "Song is present.",
+          observed_from_media: true,
+          evidence_basis: "observed_audio_video",
+          confidence: "high",
+          assessability_notes: "",
+        },
+      ],
+      mediaObservationSummary: {
+        audio_assessable: true,
+        video_assessable: true,
+        framing_assessable: true,
+        continuity_assessable: true,
+        abrupt_cutoff_detected: false,
+        one_continuous_video_observed: true,
+        duration_summary: "One continuous package is observed.",
+        uncertainties: [],
+      },
+    });
+
+    const byId = new Map(matrix.requirement_results.map((item) => [item.requirement_id, item]));
+    expect(byId.get("req004")).toMatchObject({
+      observed_status: "present",
+      completion_status: "complete",
+      achievement_status: "achieved",
+      submission_impact: "supports_submission",
+      fix_category: "preserve",
+    });
+    expect(byId.get("req004")?.recommended_action).not.toMatch(/record\/include/i);
+    expect(matrix.missing_or_incomplete_requirements).not.toContain("req004");
+    expect(matrix.readiness_impact).not.toBe("material_gap");
+  });
+
   it("fills missing AI rows as not-assessable or final-check rows instead of achieved rows", () => {
     const matrix = normaliseBriefAchievementMatrix({
       matrix: { requirement_results: [] },

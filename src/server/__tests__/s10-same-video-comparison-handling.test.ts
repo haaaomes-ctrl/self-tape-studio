@@ -182,6 +182,59 @@ describe("S10.13 same-video and comparison handling", () => {
     expect(result.comparison_truth.recommendation_policy).toBe("operator_confirmation_required");
   });
 
+  it("classifies Take 2/Take 3-shaped same upload identity within confirmed scope without rendering raw identity", () => {
+    const result = classifyS10SameVideoComparison({
+      current_take_id: "7cdbea37-edbc-4e5b-9ed6-d8bbf85b4252",
+      scope: "same_user_same_audition",
+      comparison_present: false,
+      compared_takes: [
+        {
+          take_id: "7cdbea37-edbc-4e5b-9ed6-d8bbf85b4252",
+          label: "Take 3",
+          user_id: "user-canary-b",
+          audition_id: "audition-canary-b",
+          original_upload_file_hash: `sha256:${"8".repeat(64)}`,
+          file_size_bytes: 46_392_888,
+        },
+        {
+          take_id: "d5c54637-3a30-48a9-b240-8409a0e602d1",
+          label: "Take 2",
+          user_id: "user-canary-b",
+          audition_id: "audition-canary-b",
+          original_upload_file_hash: `sha256:${"8".repeat(64)}`,
+          file_size_bytes: 46_392_888,
+        },
+      ],
+    });
+
+    expect(result.evidence.status).toBe("same_video_confirmed");
+    expect(result.evidence.confidence).toBe("decisive");
+    expect(result.evidence.should_compare_as_distinct_performances).toBe(false);
+    expect(result.comparison_truth.recommendation_policy).toBe("do_not_pick_winner");
+    expect(result.evidence.performer_facing_summary).toContain("same underlying video");
+
+    const v2 = buildV2Report({
+      legacyReport: buildS10SameVideoBaseReportInput(),
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: {
+        ...buildS10SameVideoBaseViewContext(),
+        sameVideoEvidence: result.evidence,
+        comparisonTruth: result.comparison_truth,
+        comparisonDisplayMode: result.comparison_display_mode,
+      } as never,
+    });
+    const routeSurface = JSON.stringify(v2.s10_view_model);
+
+    expect(routeSurface).toContain("same underlying video");
+    expect(routeSurface).not.toContain("sha256");
+    expect(routeSurface).not.toContain("7cdbea37");
+    expect(routeSurface).not.toContain("d5c54637");
+    expect(routeSurface).not.toContain("46_392_888");
+    expect(routeSurface).not.toContain("46392888");
+  });
+
   it("records mixed duplicate/distinct comparisons without making the whole comparison a duplicate", () => {
     const result = classifyS10SameVideoComparison({
       current_take_id: "take-a",

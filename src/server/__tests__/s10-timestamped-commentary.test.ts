@@ -598,6 +598,89 @@ describe("S10.9 timestamped and time-banded commentary", () => {
     expect(result.projection_notes.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("removes stale missing Side 1 timestamp notes when Side 1 is verified", () => {
+    const completeMatrix = matrix({
+      overall_status: "achieved",
+      mandatory_status: "clear",
+      readiness_impact: "supports_submission",
+      missing_or_incomplete_requirements: [],
+      requirement_results: [
+        {
+          ...matrix().requirement_results[0],
+          observed_status: "present",
+          completion_status: "complete",
+          achievement_status: "achieved",
+          submission_impact: "supports_submission",
+          fix_category: "preserve",
+          evidence_summary: "The required Side 1 acting scene is observed from media.",
+        },
+        {
+          ...matrix().requirement_results[1],
+          observed_status: "present",
+          completion_status: "complete",
+          achievement_status: "achieved",
+          submission_impact: "supports_submission",
+          fix_category: "preserve",
+        },
+      ],
+    });
+    const completeVerifications: ComponentVerification[] = [
+      {
+        ...verifications[0],
+        observed_status: "present",
+        completion_status: "complete",
+        evidence_summary: "The required Side 1 acting scene is observed from media.",
+      },
+      {
+        ...verifications[1],
+        observed_status: "present",
+        completion_status: "complete",
+        evidence_summary: "The full song is observed from media.",
+      },
+    ];
+
+    const result = normaliseS10TimestampedCommentary({
+      commentary: commentary([
+        note({
+          id: "stale_missing_side_1",
+          timecode: null,
+          start_time: null,
+          timestamp_precision: "unavailable",
+          section: "missing_component",
+          title: "Required Side 1 not observed",
+          detail: "The required Side 1 acting scene was not identified in the submitted tape.",
+          action: "Record or include the required Side 1.",
+          component_type: "acting_scene",
+          component_status: "absent",
+          linked_component_verification_ids: ["req_side_1"],
+          is_exact_timestamp_supported: false,
+          is_missing_component_note: true,
+          is_projection_safe: false,
+        }),
+      ]),
+      matrix: completeMatrix,
+      readiness: { ...readiness, decision: "submit", brief_blocker_override: false },
+      fixHierarchy,
+      nextActionPlan,
+      professionalCritique: critique,
+      techniqueCommentary: technique,
+      observedTapeSequence,
+      componentVerifications: completeVerifications,
+      timestampedEvidence,
+    });
+
+    expect(result.notes).toHaveLength(0);
+    expect(JSON.stringify(result.notes)).not.toMatch(/Side 1 not observed/i);
+    expect(JSON.stringify(result.projection_notes)).not.toMatch(/Side 1 not observed/i);
+    expect(result.contradiction_warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reason: expect.stringContaining("confirms the required acting scene"),
+        }),
+      ]),
+    );
+  });
+
   it("keeps the Step 1 lock and projects S10.9 notes only after normalisation", () => {
     const report: Record<string, unknown> = {
       timestamped_notes: [
