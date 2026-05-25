@@ -253,10 +253,6 @@ export type Database = {
           quota_enabled: boolean
         }[]
       }
-      seed_reconciler_vault_secret: {
-        Args: { p_value: string }
-        Returns: string
-      }
     }
     Enums: {
       [_ in never]: never

@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.seed_reconciler_vault_secret(text);
