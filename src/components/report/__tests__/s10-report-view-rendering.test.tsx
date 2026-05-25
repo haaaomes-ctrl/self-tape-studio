@@ -131,4 +131,105 @@ describe("S10 report view rendering", () => {
     expect(html).not.toContain("better performance");
     expect(html).not.toContain("sha256:");
   });
+
+  it("renders S10 section limitations instead of empty strengths, fix, or next-action shells", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.strengths_and_preserve = {
+      summary: "",
+      strengths: [],
+      preserve: [],
+      do_not_overfix: [],
+      limitations: [],
+    };
+    view.fix_hierarchy = {
+      fix_first: {},
+      priority_fixes: [],
+      must_fix_before_submitting: [],
+      should_improve_if_retaking: [],
+      optional_polish: [],
+      preserve: [],
+      do_not_overfix: [],
+    };
+    view.next_action_plan = {
+      submit_checklist: [],
+      retake_plan: [],
+      final_checks: [],
+      playback_checks: [],
+      no_retake_needed_reason: null,
+    };
+    view.section_source_map.strengths_and_preserve = {
+      source: "specific_limitation",
+      module: "s10_professional_critique",
+      limitation: "Strengths and preserve guidance are not available for this report.",
+    };
+    view.section_source_map.fix_hierarchy = {
+      source: "specific_limitation",
+      module: "s10_fix_hierarchy",
+      limitation: "Fix hierarchy was unavailable for this S10 report.",
+    };
+    view.section_source_map.next_action_plan = {
+      source: "specific_limitation",
+      module: "s10_next_action_plan",
+      limitation: "Next action plan was unavailable for this S10 report.",
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("Strengths and preserve guidance are not available for this report.");
+    expect(html).toContain("Fix hierarchy was unavailable for this S10 report.");
+    expect(html).toContain("Next action plan was unavailable for this S10 report.");
+    expect(html).not.toContain("[object Object]");
+  });
+
+  it("does not use S10 requirement IDs as visible component labels", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.component_breakdown = [
+      {
+        requirement_id: "req_internal_side_1",
+        observed_status: "present",
+        evidence_summary: "The acting side is visible and assessable.",
+      },
+    ];
+    view.section_source_map.component_breakdown = {
+      source: "s10_authoritative_module",
+      module: "component_verifications",
+      limitation: null,
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("The acting side is visible and assessable.");
+    expect(html).not.toContain("req_internal_side_1");
+  });
+
+  it("renders object-shaped S10 retake plan items without object-string output", () => {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, any>;
+    view.next_action_plan = {
+      submit_checklist: [],
+      retake_plan: [
+        {
+          title: "Record the missing side first.",
+          detail: "Keep the song take only after the full acting side is captured.",
+        },
+      ],
+      final_checks: [],
+      playback_checks: [],
+      no_retake_needed_reason: null,
+    };
+    view.section_source_map.next_action_plan = {
+      source: "s10_authoritative_module",
+      module: "s10_next_action_plan",
+      limitation: null,
+    };
+
+    const html = render(report);
+
+    expect(html).toContain("Retake plan");
+    expect(html).toContain("Record the missing side first.");
+    expect(html).toContain("Keep the song take only after the full acting side is captured.");
+    expect(html).not.toContain("[object Object]");
+  });
 });

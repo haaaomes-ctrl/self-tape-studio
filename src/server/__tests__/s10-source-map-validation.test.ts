@@ -96,6 +96,44 @@ describe("S10.P1e source-map validation", () => {
     });
   });
 
+  it("adds performer-facing limitations for empty S10 modules", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+    report.s10_fix_hierarchy = {
+      fix_first: {},
+      priority_fixes: [],
+      must_fix_before_submitting: [],
+      should_improve_if_retaking: [],
+      optional_polish: [],
+      preserve: [],
+      do_not_overfix: [],
+    };
+    report.s10_next_action_plan = {
+      submit_checklist: [],
+      retake_plan: [],
+      final_checks: [],
+      playback_checks: [],
+      no_retake_needed_reason: null,
+    };
+    report.s10_professional_critique = { confidence: "high" };
+    report.s10_technique_commentary = { confidence: "high" };
+    report.s10_timestamped_commentary = {
+      summary: "",
+      notes: [],
+      timestamp_limitations: [],
+    };
+    const view = strongView(report);
+
+    expect(view.limitations).toContain("Fix hierarchy was unavailable for this S10 report.");
+    expect(view.limitations).toContain("Next action plan was unavailable for this S10 report.");
+    expect(view.limitations).toContain("Professional critique is not available for this report.");
+    expect(view.limitations).toContain("Technique commentary is not available for this report.");
+    expect(view.limitations).toContain(
+      "Timestamped or time-banded commentary is not available for this report.",
+    );
+    expect(view.section_source_map.fix_hierarchy.source).toBe("specific_limitation");
+    expect(view.section_source_map.next_action_plan.source).toBe("specific_limitation");
+  });
+
   it.each([
     [
       "readiness_header",
@@ -122,9 +160,31 @@ describe("S10.P1e source-map validation", () => {
       },
     ],
     [
+      "brief_requirements",
+      (view: ReturnType<typeof strongView>) => {
+        view.brief_requirements = [{ report_destination: "brief_achievement" } as never];
+      },
+    ],
+    [
       "brief_achievement",
       (view: ReturnType<typeof strongView>) => {
         view.brief_achievement_matrix = {} as never;
+      },
+    ],
+    [
+      "brief_achievement",
+      (view: ReturnType<typeof strongView>) => {
+        view.brief_achievement_matrix = {
+          requirement_results: [{ fix_category: "must_fix" } as never],
+        } as never;
+      },
+    ],
+    [
+      "brief_achievement",
+      (view: ReturnType<typeof strongView>) => {
+        view.brief_achievement_matrix = {
+          requirement_results: [{ requirement_summary: "Side 1 acting scene" } as never],
+        } as never;
       },
     ],
     [
@@ -133,6 +193,16 @@ describe("S10.P1e source-map validation", () => {
         view.observed_tape = {
           observed_tape_sequence: [{} as never],
           component_verifications: [{} as never],
+          media_observation_summary: null,
+        };
+      },
+    ],
+    [
+      "observed_tape",
+      (view: ReturnType<typeof strongView>) => {
+        view.observed_tape = {
+          observed_tape_sequence: [{ label: "Song" } as never],
+          component_verifications: [{ requirement_summary: "Song" } as never],
           media_observation_summary: null,
         };
       },
@@ -178,6 +248,12 @@ describe("S10.P1e source-map validation", () => {
       "component_breakdown",
       (view: ReturnType<typeof strongView>) => {
         view.component_breakdown = [{ requirement_id: "req_side_1" } as never];
+      },
+    ],
+    [
+      "component_breakdown",
+      (view: ReturnType<typeof strongView>) => {
+        view.component_breakdown = [{ requirement_summary: "Side 1" } as never];
       },
     ],
     [
@@ -285,6 +361,88 @@ describe("S10.P1e source-map validation", () => {
         } as never;
       },
     ],
+    [
+      "same_video_status",
+      (view: ReturnType<typeof strongView>) => {
+        view.same_video_status = {} as never;
+        view.section_source_map.same_video_status = {
+          source: "s10_authoritative_module",
+          module: "s10_same_video_evidence",
+          limitation: null,
+        };
+      },
+    ],
+    [
+      "same_video_status",
+      (view: ReturnType<typeof strongView>) => {
+        view.same_video_status = { status: "same_video_confirmed" } as never;
+        view.section_source_map.same_video_status = {
+          source: "s10_authoritative_module",
+          module: "s10_same_video_evidence",
+          limitation: null,
+        };
+      },
+    ],
+    [
+      "same_video_status",
+      (view: ReturnType<typeof strongView>) => {
+        view.same_video_status = {
+          report_implication: "Do not compare these as separate takes.",
+        } as never;
+        view.section_source_map.same_video_status = {
+          source: "s10_authoritative_module",
+          module: "s10_same_video_evidence",
+          limitation: null,
+        };
+      },
+    ],
+    [
+      "comparison_truth",
+      (view: ReturnType<typeof strongView>) => {
+        view.comparison_truth = {} as never;
+        view.section_source_map.comparison_truth = {
+          source: "s10_authoritative_module",
+          module: "s10_comparison_truth",
+          limitation: null,
+        };
+      },
+    ],
+    [
+      "comparison_truth",
+      (view: ReturnType<typeof strongView>) => {
+        view.comparison_truth = { comparison_mode: "same_video_duplicate" } as never;
+        view.section_source_map.comparison_truth = {
+          source: "s10_authoritative_module",
+          module: "s10_comparison_truth",
+          limitation: null,
+        };
+      },
+    ],
+    [
+      "comparison_truth",
+      (view: ReturnType<typeof strongView>) => {
+        view.comparison_truth = { recommendation_policy: "do_not_pick_winner" } as never;
+        view.section_source_map.comparison_truth = {
+          source: "s10_authoritative_module",
+          module: "s10_comparison_truth",
+          limitation: null,
+        };
+      },
+    ],
+    [
+      "limitations",
+      (view: ReturnType<typeof strongView>) => {
+        view.limitations = [{} as never];
+        view.section_source_map.limitations.module = "s10_view_model";
+      },
+    ],
+    [
+      "limitations",
+      (view: ReturnType<typeof strongView>) => {
+        view.limitations = ["  "];
+        view.section_source_map.limitations.module = "s10_view_model";
+      },
+    ],
   ] as const)("rejects authoritative %s without visible route payload", (section, mutate) => {
     const view = strongView();
     mutate(view);
@@ -351,6 +509,38 @@ describe("S10.P1e source-map validation", () => {
     expect(html).not.toContain("Observed component");
     expect(html).not.toContain("Component 1");
     expect(html).not.toContain("Timing unavailable");
+  });
+
+  it("accepts route-visible same-video, comparison, and limitation text", () => {
+    const view = strongView();
+    view.same_video_status = {
+      performer_facing_summary: "These uploads appear to be the same underlying tape.",
+      comparison_warning: null,
+      limitations: [],
+    } as never;
+    view.comparison_truth = {
+      performer_facing_summary: "Comparison should focus on report context rather than a winner.",
+      limitations: [],
+      same_video_status: view.same_video_status,
+    } as never;
+    view.limitations = ["Timestamped notes were not available for this report."];
+    view.section_source_map.same_video_status = {
+      source: "s10_authoritative_module",
+      module: "s10_same_video_evidence",
+      limitation: null,
+    };
+    view.section_source_map.comparison_truth = {
+      source: "s10_authoritative_module",
+      module: "s10_comparison_truth",
+      limitation: null,
+    };
+    view.section_source_map.limitations = {
+      source: "s10_authoritative_module",
+      module: "s10_view_model",
+      limitation: null,
+    };
+
+    expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
   });
 
   it("does not treat positive submit-ready rationale as submission risk payload", () => {

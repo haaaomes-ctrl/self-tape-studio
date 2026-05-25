@@ -372,30 +372,47 @@ export function buildS10PerformerReportViewModel(input: {
   const visibleS10Score =
     asNumber((readiness as Record<string, unknown> | null)?.overall_submission_readiness_score) ??
     null;
+  const hasVisibleReadiness = hasVisibleRecommendationPayload(readiness);
+  const hasVisibleBriefAchievement = hasVisibleBriefAchievementPayload(matrix);
+  const hasVisibleComponentVerification =
+    hasVisibleComponentVerificationRows(componentVerifications);
+  const hasVisibleFixHierarchy = hasFixHierarchyPayload(fixHierarchy);
+  const hasVisibleNextActionPlan = hasNextActionPayload(nextActionPlan);
+  const hasVisibleProfessionalCritique =
+    hasVisibleProfessionalCritiquePayload(professionalCritique);
+  const hasVisibleTechniqueCommentary = hasVisibleTechniquePayload(techniqueCommentary);
+  const hasVisibleTimestampedCommentary = hasVisibleTimestampedPayload(timestampedCommentary);
 
   const limitations = [
-    ...(matrix ? [] : ["Brief achievement details are not available for this report."]),
-    ...(readiness ? [] : ["Readiness judgement is not available for this report."]),
+    ...(hasVisibleBriefAchievement
+      ? []
+      : ["Brief achievement details are not available for this report."]),
+    ...(hasVisibleReadiness ? [] : ["Readiness judgement is not available for this report."]),
     ...(visibleS10Score != null ? [] : ["S10 score summary was unavailable for this report."]),
-    ...(componentVerifications.length > 0
+    ...(hasVisibleComponentVerification
       ? []
       : ["Observed component verification is not available for this report."]),
-    ...(fixHierarchy ? [] : ["Fix hierarchy was unavailable for this S10 report."]),
-    ...(nextActionPlan ? [] : ["Next action plan was unavailable for this S10 report."]),
-    ...(techniqueCommentary ? [] : ["Technique commentary is not available for this report."]),
-    ...(timestampedCommentary
+    ...(hasVisibleFixHierarchy ? [] : ["Fix hierarchy was unavailable for this S10 report."]),
+    ...(hasVisibleNextActionPlan ? [] : ["Next action plan was unavailable for this S10 report."]),
+    ...(hasVisibleProfessionalCritique
+      ? []
+      : ["Professional critique is not available for this report."]),
+    ...(hasVisibleTechniqueCommentary
+      ? []
+      : ["Technique commentary is not available for this report."]),
+    ...(hasVisibleTimestampedCommentary
       ? []
       : ["Timestamped or time-banded commentary is not available for this report."]),
   ];
 
   const section_source_map: S10PerformerReportViewModel["section_source_map"] = {
     readiness_header: source(
-      hasVisibleRecommendationPayload(readiness),
+      hasVisibleReadiness,
       "readiness_score_judgement",
       "Readiness judgement is not available for this report.",
     ),
     submission_guidance: source(
-      hasVisibleRecommendationPayload(readiness),
+      hasVisibleReadiness,
       "readiness_score_judgement",
       "Submission guidance is not available for this report.",
     ),
@@ -430,7 +447,7 @@ export function buildS10PerformerReportViewModel(input: {
       "Brief requirements are not available for this report.",
     ),
     brief_achievement: source(
-      hasVisibleBriefAchievementPayload(matrix),
+      hasVisibleBriefAchievement,
       "brief_achievement_matrix",
       "Brief achievement matrix is not available for this report.",
     ),
@@ -441,43 +458,38 @@ export function buildS10PerformerReportViewModel(input: {
       "Observed tape sequence is not available for this report.",
     ),
     component_breakdown: observationSource(
-      hasVisibleComponentVerificationRows(componentVerifications),
+      hasVisibleComponentVerification,
       "component_verifications",
       "Component verification was unavailable for this S10 report.",
       observationSourceKind,
     ),
     fix_hierarchy: source(
-      hasFixHierarchyPayload(fixHierarchy),
+      hasVisibleFixHierarchy,
       "s10_fix_hierarchy",
       "Fix hierarchy was unavailable for this S10 report.",
     ),
     next_action_plan: source(
-      hasNextActionPayload(nextActionPlan),
+      hasVisibleNextActionPlan,
       "s10_next_action_plan",
       "Next action plan was unavailable for this S10 report.",
     ),
     strengths_and_preserve: source(
-      hasVisibleProfessionalCritiquePayload(professionalCritique),
+      hasVisibleProfessionalCritique,
       "s10_professional_critique",
       "Strengths and preserve guidance are not available for this report.",
     ),
     professional_critique: source(
-      hasVisibleProfessionalCritiquePayload(professionalCritique),
+      hasVisibleProfessionalCritique,
       "s10_professional_critique",
       "Professional critique is not available for this report.",
     ),
     technique_commentary: source(
-      hasVisibleTechniquePayload(techniqueCommentary),
+      hasVisibleTechniqueCommentary,
       "s10_technique_commentary",
       "Technique commentary is not available for this report.",
     ),
     timestamped_commentary: source(
-      !!timestampedCommentary &&
-        (hasVisibleTimestampedNotes((timestampedCommentary as Record<string, unknown>).notes) ||
-          hasVisibleTimestampLimitations(
-            (timestampedCommentary as Record<string, unknown>).timestamp_limitations,
-          ) ||
-          !!asText((timestampedCommentary as Record<string, unknown>).summary)),
+      hasVisibleTimestampedCommentary,
       "s10_timestamped_commentary",
       "Timestamped commentary is not available for this report.",
     ),
@@ -500,16 +512,20 @@ export function buildS10PerformerReportViewModel(input: {
         ? sourceModule("s10_view_model")
         : notApplicable("No S10 limitations are rendered for this report."),
     same_video_status: {
-      source: sameVideoEvidence ? "s10_authoritative_module" : "not_applicable",
-      module: sameVideoEvidence ? "s10_same_video_evidence" : null,
-      limitation: sameVideoEvidence
+      source: hasVisibleSameVideoPayload(sameVideoEvidence)
+        ? "s10_authoritative_module"
+        : "not_applicable",
+      module: hasVisibleSameVideoPayload(sameVideoEvidence) ? "s10_same_video_evidence" : null,
+      limitation: hasVisibleSameVideoPayload(sameVideoEvidence)
         ? null
         : "Same-video status is not available in this report model.",
     },
     comparison_truth: {
-      source: comparisonTruth ? "s10_authoritative_module" : "not_applicable",
-      module: comparisonTruth ? "s10_comparison_truth" : null,
-      limitation: comparisonTruth
+      source: hasVisibleComparisonTruthPayload(comparisonTruth)
+        ? "s10_authoritative_module"
+        : "not_applicable",
+      module: hasVisibleComparisonTruthPayload(comparisonTruth) ? "s10_comparison_truth" : null,
+      limitation: hasVisibleComparisonTruthPayload(comparisonTruth)
         ? null
         : "Comparison truth is not available or not relevant for this report.",
     },
@@ -876,6 +892,10 @@ function arrayHasRenderableItems(value: unknown): boolean {
   return Array.isArray(value) && value.some((item) => hasRenderableItemText(item));
 }
 
+function arrayHasRenderableStrings(value: unknown): boolean {
+  return Array.isArray(value) && value.some((item) => !!asText(item));
+}
+
 function hasVisibleRecommendationPayload(value: unknown): boolean {
   const recommendation = asRecord(value);
   if (!recommendation) return false;
@@ -912,7 +932,6 @@ function hasVisibleBriefRequirementRow(value: unknown): boolean {
     row.expected_evidence_in_tape,
     row.achievement_test,
     row.submission_impact_if_missing,
-    row.report_destination,
   ].some((candidate) => !!asText(candidate));
 }
 
@@ -924,13 +943,11 @@ function hasVisibleBriefAchievementRow(value: unknown): boolean {
   const row = asRecord(value);
   if (!row) return false;
   return [
-    row.requirement_summary,
     row.observed_status,
     row.completion_status,
     row.achievement_status,
     row.evidence_summary,
     row.submission_impact,
-    row.fix_category,
     row.recommended_action,
   ].some((candidate) => !!asText(candidate));
 }
@@ -952,7 +969,6 @@ function hasVisibleObservedTapeSequenceRow(value: unknown): boolean {
   const row = asRecord(value);
   if (!row) return false;
   return [
-    row.label,
     row.present_status,
     row.completion_status,
     row.evidence_summary,
@@ -968,7 +984,6 @@ function hasVisibleComponentVerificationRow(value: unknown): boolean {
   const row = asRecord(value);
   if (!row) return false;
   return [
-    row.requirement_summary,
     row.observed_status,
     row.completion_status,
     row.evidence_summary,
@@ -1136,6 +1151,36 @@ function hasVisibleTimestampLimitations(value: unknown): boolean {
   return Array.isArray(value) && value.some((item) => hasRenderableItemText(item));
 }
 
+function hasVisibleTimestampedPayload(value: unknown): boolean {
+  const timestamped = asRecord(value);
+  return (
+    !!timestamped &&
+    (hasVisibleTimestampedNotes(timestamped.notes) ||
+      hasVisibleTimestampLimitations(timestamped.timestamp_limitations) ||
+      !!asText(timestamped.summary))
+  );
+}
+
+function hasVisibleSameVideoPayload(value: unknown): boolean {
+  const evidence = asRecord(value);
+  if (!evidence) return false;
+  return (
+    !!asText(evidence.performer_facing_summary) ||
+    !!asText(evidence.comparison_warning) ||
+    arrayHasRenderableStrings(evidence.limitations)
+  );
+}
+
+function hasVisibleComparisonTruthPayload(value: unknown): boolean {
+  const comparison = asRecord(value);
+  if (!comparison) return false;
+  return (
+    !!asText(comparison.performer_facing_summary) ||
+    arrayHasRenderableStrings(comparison.limitations) ||
+    hasVisibleSameVideoPayload(comparison.same_video_status)
+  );
+}
+
 function validateSectionVisiblePayload(
   section: S10ReportSectionKey,
   entry: Record<string, unknown>,
@@ -1203,12 +1248,7 @@ function validateSectionVisiblePayload(
       hasVisiblePayload = hasVisibleTechniquePayload(view.technique_commentary);
       break;
     case "timestamped_commentary": {
-      const timestamped = asRecord(view.timestamped_commentary);
-      hasVisiblePayload =
-        !!timestamped &&
-        (hasVisibleTimestampedNotes(timestamped.notes) ||
-          hasVisibleTimestampLimitations(timestamped.timestamp_limitations) ||
-          !!asText(timestamped.summary));
+      hasVisiblePayload = hasVisibleTimestampedPayload(view.timestamped_commentary);
       break;
     }
     case "presentation_notes":
@@ -1218,13 +1258,13 @@ function validateSectionVisiblePayload(
       hasVisiblePayload = hasSubmissionRiskPayload(view);
       break;
     case "limitations":
-      hasVisiblePayload = arrayHasItems(view.limitations);
+      hasVisiblePayload = arrayHasRenderableStrings(view.limitations);
       break;
     case "same_video_status":
-      hasVisiblePayload = !!asRecord(view.same_video_status);
+      hasVisiblePayload = hasVisibleSameVideoPayload(view.same_video_status);
       break;
     case "comparison_truth":
-      hasVisiblePayload = !!asRecord(view.comparison_truth);
+      hasVisiblePayload = hasVisibleComparisonTruthPayload(view.comparison_truth);
       break;
     case "diagnostic_chips":
       hasVisiblePayload = arrayHasItems(view.diagnostic_chips);
