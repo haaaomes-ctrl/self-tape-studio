@@ -9,8 +9,11 @@ import { cleanupMuxAssetForCompletedTake } from "@/server/mux-cleanup.server";
 import { metric } from "@/server/metrics.server";
 import { enqueueAnalysisJobOrMarkFailed } from "@/server/analysis-job-queue.server";
 import {
+  ANALYSING_ORPHAN_SECONDS,
+  analysingOrphanCutoffIso,
   FINALISING_ORPHAN_SECONDS,
   finalisingOrphanCutoffIso,
+  recoverAnalysingTake,
   recoverFinalisingTake,
 } from "@/server/finalising-recovery.server";
 
@@ -22,12 +25,12 @@ import {
 // even though it lives under /api/public/.
 //
 // Recovery rules:
-//   - processing_phase = "analysis_pending" AND updated_at < now - 2 min:
+//   - processing_phase = "analysis_pending" AND updated_at < now - 15 sec:
 //     webhook enqueued work but the queue consumer never picked it up.
 //     Re-enqueue.
-//   - processing_phase = "analysing" AND updated_at < now - 8 min:
-//     analysis started but never finished (Worker killed mid-flight, AI
-//     gateway hung, etc.). Mark as analysis_pending and re-enqueue.
+//   - processing_phase = "analysing" or "analysis_pending" AND updated_at
+//     < now - 3 min: analysis worker/polish likely died. Complete if report
+//     already exists, otherwise force a safe terminal error.
 //
 // Idempotency is preserved by runProcessTake itself in the queue consumer: it only flips a take
 // into "analysing"/"processing" once, and refuses to re-enter if the row
@@ -58,9 +61,9 @@ const STALE_UPLOADING_MINUTES = 15;
 // during deterministic post-AI processing or final persistence. We force it
 // to error rather than reschedule, so the UI never sits on "Finalising
 // results" indefinitely. Note: long-running AI calls remain in the
-// "analysing" phase and are NOT force-errored at this threshold — they fall
-// under the longer STALE_ANALYSING_MINUTES reschedule policy instead.
+// "analysing" phase and are handled by the analysing-orphan sweep below.
 const FINALISING_ORPHAN_WINDOW_SECONDS = FINALISING_ORPHAN_SECONDS;
+const ANALYSING_ORPHAN_WINDOW_SECONDS = ANALYSING_ORPHAN_SECONDS;
 
 type MuxAssetLike = {
   id?: string;
@@ -287,8 +290,23 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           .lt("updated_at", finalisingCutoff)
           .limit(MAX_BATCH);
 
-        if (pErr || aErr || tErr || uErr || fErr) {
-          console.error("reconcile-stale-takes select failed", { pErr, aErr, tErr, uErr, fErr });
+        // Analysing orphans: rows that were running AI or waiting to start
+        // analysis but have had no heartbeat for long enough that the worker
+        // is presumed dead. This is separate from the short stale-pending
+        // reschedule path and prevents indefinite "Finalising results" /
+        // "Watching your tape" spinners when waitUntil fallback work is
+        // cancelled by the host.
+        const analysingOrphanCutoff = analysingOrphanCutoffIso(now);
+        const { data: staleAnalysingOrphans, error: aoErr } = await supabaseAdmin
+          .from("takes")
+          .select("id, updated_at, created_at, status, processing_phase, attempt_count, report, scores, overall_score, confidence")
+          .in("processing_phase", ["analysis_pending", "analysing"])
+          .in("status", ["pending", "processing"])
+          .lt("updated_at", analysingOrphanCutoff)
+          .limit(MAX_BATCH);
+
+        if (pErr || aErr || tErr || uErr || fErr || aoErr) {
+          console.error("reconcile-stale-takes select failed", { pErr, aErr, tErr, uErr, fErr, aoErr });
           return new Response("db error", { status: 500 });
         }
 
@@ -297,6 +315,8 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const giveUp: string[] = [];
         const finalisingForcedError: string[] = [];
         const finalisingRecoveredComplete: string[] = [];
+        const analysingForcedError: string[] = [];
+        const analysingRecoveredComplete: string[] = [];
         const transcodingRecovered: string[] = [];
         const transcodingForcedError: string[] = [];
         const uploadingRecovered: string[] = [];
@@ -321,6 +341,33 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             continue;
           }
           if (result === "forced_error") finalisingForcedError.push(take.id);
+        }
+
+        // Analysing-orphan loop. These rows may have been killed during the
+        // AI call, report polish, or fallback waitUntil execution. Complete
+        // if a report was persisted; otherwise force a safe retryable error.
+        const analysingTerminalIds = new Set<string>();
+        for (const take of staleAnalysingOrphans ?? []) {
+          const result = await recoverAnalysingTake({
+            takeId: take.id,
+            createdAt: take.created_at,
+            updatedAt: take.updated_at,
+            status: (take as { status?: string | null }).status ?? null,
+            processingPhase: take.processing_phase,
+            report: (take as { report?: unknown }).report,
+            scores: (take as { scores?: unknown }).scores,
+            now,
+            source: "reconciler",
+          });
+          if (result === "recovered_complete") {
+            analysingRecoveredComplete.push(take.id);
+            analysingTerminalIds.add(take.id);
+            continue;
+          }
+          if (result === "forced_error") {
+            analysingForcedError.push(take.id);
+            analysingTerminalIds.add(take.id);
+          }
         }
 
         // Uploading-phase orphan recovery. Two cases:
@@ -511,6 +558,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         }
 
         for (const take of candidates) {
+          if (analysingTerminalIds.has(take.id)) continue;
           const attempts = take.attempt_count ?? 0;
           const ageSeconds = (now - new Date(take.created_at).getTime()) / 1000;
           const exceededAttempts = attempts >= MAX_ATTEMPTS;
@@ -581,12 +629,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             continue;
           }
 
-          // Note: takes still in `analysing` past STALE_ANALYSING_MINUTES are
-          // genuine in-flight AI calls (or workers that died before finishing
-          // the AI step). They are rescheduled below — NOT force-errored at
-          // FINALISING_ORPHAN_WINDOW_SECONDS. The finalising-orphan force-error
-          // path runs only against processing_phase="finalising" rows
-          // (handled in the staleFinalising loop above).
+          // Note: fresh takes in `analysis_pending` can still be rescheduled.
+          // Older `analysis_pending`/`analysing` rows are handled by the
+          // analysing-orphan sweep above so they do not loop forever through
+          // waitUntil fallback.
 
           // Reset back to analysis_pending so the queue consumer will pick it up
           // (its idempotency check skips takes that are actively analysing,
@@ -668,10 +714,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           staleTranscoding: staleTranscoding?.length ?? 0,
           staleUploading: staleUploading?.length ?? 0,
           staleFinalising: staleFinalising?.length ?? 0,
+          staleAnalysingOrphans: staleAnalysingOrphans?.length ?? 0,
           reconciled,
           giveUp,
           finalisingForcedError,
           finalisingRecoveredComplete,
+          analysingForcedError,
+          analysingRecoveredComplete,
           transcodingRecovered,
           transcodingForcedError,
           uploadingRecovered,
