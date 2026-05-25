@@ -1,11 +1,11 @@
 # TapeCoach v3 Roadmap — Product and Delivery Plan Including S10
 
-**Document status:** product roadmap and delivery sequencing layer.
-**Current reset point:** S9-19.
-**Current active phase:** S10 — AI-led full-value authenticated report reset.
-**Current implementation note:** S10 is already being implemented. The additional calibration slices in this roadmap are amendments to be merged into the in-flight S10 work, not a new reset or reason to discard useful accepted implementation.
-**Language:** UK English.
-**Release philosophy:** small, frequent, reversible releases that preserve or improve performer-facing report value.
+**Document status:** product roadmap and delivery sequencing layer.  
+**Current reset point:** S9-19.  
+**Current active phase:** S10 — AI-led full-value authenticated report reset.  
+**Current implementation note:** S10 is already being implemented. The additional calibration slices in this roadmap are amendments to be merged into the in-flight S10 work, not a new reset or reason to discard useful accepted implementation.  
+**Language:** UK English.  
+**Release philosophy:** small, frequent, reversible releases that preserve or improve performer-facing report value.  
 **Primary correction after S10 rollback:** the AI is the report brain; code orchestrates, validates, routes, renders and applies narrow high-risk filtering only.
 
 ---
