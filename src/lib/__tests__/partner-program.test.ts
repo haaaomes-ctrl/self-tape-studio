@@ -75,6 +75,7 @@ describe("partner programme foundation", () => {
       }),
     ).toEqual({
       partner_id: "partner-1",
+      partner_credit_pool_id: null,
       code_hash: "a".repeat(64),
       code_display_hint: "TCSC...2026",
       version: 1,

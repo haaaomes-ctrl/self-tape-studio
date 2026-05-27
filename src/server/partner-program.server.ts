@@ -3,12 +3,14 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import {
   buildPartnerCodeDraft,
+  buildPartnerCreditPoolDraft,
   buildPartnerDraft,
   normaliseAllowedEmailDomains,
   normalisePartnerCode,
   partnerCodeDisplayHint,
   type PartnerCodeInput,
   type PartnerCodeStatus,
+  type PartnerCreditPoolInput,
   type PartnerInput,
 } from "@/lib/partner-program";
 
@@ -50,6 +52,26 @@ export type FlagPartnerCodeAbuseInput = {
   admin_actor_user_id?: string | null;
   reason?: string | null;
   flagged_at?: string | Date;
+};
+
+export type AdminTopUpPartnerCreditPoolInput = {
+  partner_credit_pool_id: string;
+  credit_amount: number;
+  admin_actor_user_id?: string | null;
+  reason?: string | null;
+  metadata?: Record<string, unknown>;
+  idempotency_key?: string | null;
+};
+
+export type AdminTopUpPartnerMembershipInput = {
+  partner_membership_id: string;
+  credit_amount: number;
+  admin_actor_user_id?: string | null;
+  reason?: string | null;
+  cap_override?: boolean;
+  cap_override_reason?: string | null;
+  metadata?: Record<string, unknown>;
+  idempotency_key?: string | null;
 };
 
 function throwPartnerProgramError(operation: string, error: { message?: string }): never {
@@ -112,6 +134,18 @@ export async function createPartnerCode(input: CreatePartnerCodeInput) {
 
   if (error || !data) throwPartnerProgramError("create_partner_code", error ?? {});
   return { partner_code_id: data.id };
+}
+
+export async function createPartnerCreditPool(input: PartnerCreditPoolInput) {
+  const draft = buildPartnerCreditPoolDraft(input);
+  const { data, error } = await supabaseAdmin
+    .from("partner_credit_pools")
+    .insert({ ...draft, metadata: metadataAsJson(draft.metadata) })
+    .select("id")
+    .single();
+
+  if (error || !data) throwPartnerProgramError("create_partner_credit_pool", error ?? {});
+  return { partner_credit_pool_id: data.id };
 }
 
 export async function rotatePartnerCode(input: RotatePartnerCodeInput) {
@@ -182,4 +216,34 @@ export async function activatePartnerCode(input: ActivatePartnerCodeInput) {
 
   if (error || !data) throwPartnerProgramError("activate_partner_code", error ?? {});
   return { partner_membership_id: data };
+}
+
+export async function adminTopUpPartnerCreditPool(input: AdminTopUpPartnerCreditPoolInput) {
+  const { data, error } = await supabaseAdmin.rpc("admin_top_up_partner_credit_pool", {
+    p_partner_credit_pool_id: input.partner_credit_pool_id,
+    p_credit_amount: input.credit_amount,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
+    p_reason: input.reason ?? null,
+    p_metadata: metadataAsJson(input.metadata),
+    p_idempotency_key: input.idempotency_key ?? null,
+  });
+
+  if (error || !data) throwPartnerProgramError("admin_top_up_partner_credit_pool", error ?? {});
+  return { partner_credit_pool_event_id: data };
+}
+
+export async function adminTopUpPartnerMembership(input: AdminTopUpPartnerMembershipInput) {
+  const { data, error } = await supabaseAdmin.rpc("admin_top_up_partner_membership", {
+    p_partner_membership_id: input.partner_membership_id,
+    p_credit_amount: input.credit_amount,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
+    p_reason: input.reason ?? null,
+    p_cap_override: input.cap_override ?? false,
+    p_cap_override_reason: input.cap_override_reason ?? null,
+    p_metadata: metadataAsJson(input.metadata),
+    p_idempotency_key: input.idempotency_key ?? null,
+  });
+
+  if (error || !data) throwPartnerProgramError("admin_top_up_partner_membership", error ?? {});
+  return { credit_grant_id: data };
 }
