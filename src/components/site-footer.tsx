@@ -31,7 +31,13 @@ export function SiteFooter() {
           </p>
         </div>
 
-        <nav aria-label="Legal" className="mt-10 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        <nav aria-label="Footer links" className="mt-10 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link
+            to="/credits"
+            className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+          >
+            Credits
+          </Link>
           {LEGAL_POLICY_LINKS.map((link) => (
             <Link
               key={link.slug}
