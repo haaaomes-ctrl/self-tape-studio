@@ -8,7 +8,7 @@ TapeCoach is an AI-led professional self-tape critique system. The performer-fac
 
 Do not optimise for a clean internal proof layer at the expense of performer-facing usefulness.
 
-S10 is already being implemented. The performer-level, brief/no-brief, role/material and Professional 90+ calibration rules in this file are controlling amendments to merge into the relevant in-flight S10 work. They are not a reason to discard useful implementation that already satisfies the README.
+S10 is already being implemented. The performer-level, brief/no-brief, role/material, Professional 90+ calibration and audition take lifecycle rules in this file are controlling amendments to merge into the relevant in-flight S10 work. They are not a reason to discard useful implementation that already satisfies the README.
 
 ---
 
@@ -20,6 +20,202 @@ S10 is already being implemented. The performer-level, brief/no-brief, role/mate
 4. This `AGENTS.md` defines implementation operating rules for agents.
 
 If there is a conflict, `README.md` wins.
+
+---
+
+## Codex automation delivery-slice operating contract
+
+These rules apply when Codex automation is working through monday.com delivery-slice items, including the S10.1 B2B-funded delivery plan.
+
+### Intended automation runtime
+
+Use the automation's configured model and reasoning settings.
+
+Default expectation for unattended repository work:
+
+```toml
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+```
+
+This is workspace-limited read/write with network enabled. It is not `danger-full-access`.
+
+Do not instruct the runtime to switch to Full Access / `danger-full-access` unless that is already the intentionally configured mode for the automation.
+
+Do not ask the operator for interactive approval to read or write local Git, GitHub or monday.com during an automation run. If an action is blocked by auth, permissions, sandboxing, branch protection, required review, CI, unavailable network or a tool failure, diagnose once, retry only if safe, then record the concrete blocker in monday.com where possible and stop cleanly.
+
+### S10.1 monday.com source of truth
+
+For the S10.1 B2B-funded delivery automation, monday.com is the source of truth.
+
+Use:
+
+```text
+board: 5097223350
+group: S10.1 — Consolidated Delivery Plan
+order: S10.1 Delivery Slice, DS-01 through DS-22
+```
+
+Retrieve the full candidate set before selecting work, including item title, item ID, status, delivery-slice value, updates, subitems, linked docs/files and relevant columns.
+
+Skip items that are:
+
+- `Done`;
+- `Deferred`;
+- parked;
+- blocked;
+- awaiting a user/operator answer;
+- explicitly outside the current S10.1 active delivery scope;
+- already represented by an open Codex branch or PR.
+
+If all active S10.1 items are complete and there are no open S10.1 Codex branches or PRs, add a summary update to DS-22 and stop without code changes.
+
+### Start-of-run preflight
+
+Before editing files, the automation must:
+
+1. Confirm the repository is `self-tape-studio`.
+2. Confirm the Git remote points to the expected GitHub repository.
+3. Fetch `origin`.
+4. Confirm `main` exists locally or remotely.
+5. Confirm GitHub access is available for branch push, PR creation, PR status checks and merge operations.
+6. Confirm monday.com access is available for board `5097223350` and group `S10.1 — Consolidated Delivery Plan`.
+7. Read `README.md` and all applicable `AGENTS.md` files before making changes.
+8. If running in Local mode, check for uncommitted user changes before editing. If the working tree is dirty with user work, do not overwrite it. Record the blocker and stop.
+9. If any preflight step fails, record the exact blocker and stop without code changes.
+
+Prefer an automation worktree for unattended runs where available. If running in Local mode, the dirty-working-tree guard is mandatory.
+
+### Item selection and idempotency
+
+Each automation run must select at most one delivery-slice item.
+
+Selection rules:
+
+1. First check for any DS item already marked `In Progress` with an open Codex branch or PR matching `codex/s10-1-ds-*`. If found, resume that item instead of starting a new one.
+2. Otherwise select the lowest-numbered eligible active DS item, DS-01 through DS-22.
+3. If a candidate item has unresolved ambiguity, add a monday.com update with the exact question, mark it parked/blocked if the board supports that status, then continue to the next eligible DS item only if progress can be made safely.
+4. Claim exactly one DS item by marking it `In Progress` and adding a monday.com update containing the automation start, selected item ID/title, intended branch name and initial task interpretation.
+5. After claiming, re-check that no duplicate branch or PR already exists. If a duplicate exists, record the conflict and stop.
+
+Do not silently start a second DS item in the same run after one item has been implemented, PR'd, merged, parked or blocked.
+
+### Branch discipline
+
+Never work or commit directly on `main`.
+
+For each DS item:
+
+1. Start from up-to-date `origin/main`.
+2. Create or resume a branch named:
+
+```text
+codex/s10-1-ds-XX-short-title
+```
+
+3. Use lowercase kebab-case for the short title.
+4. If a matching local or remote branch already exists for the same DS item, resume it rather than creating a duplicate.
+5. If a branch exists but appears to belong to a different DS item, stop and report the conflict.
+
+### Implementation scope
+
+Implement only the selected DS item.
+
+Before editing, inspect the selected monday.com item content, updates, subitems, links and files.
+
+Do not broaden the task into adjacent DS items, product rewrites or opportunistic cleanup.
+
+Do not edit blocked S10 report intelligence, prompt logic, comparison code, performer reports or the analysis chain unless the selected DS item explicitly requires it and the required surface is not parked/blocked by the operator. If the selected DS item appears to require touching a protected surface, park that specific work and add a monday.com update with the exact surface and question.
+
+For DS-15 support/contact links, use:
+
+```text
+support@tapecoach.co.uk
+```
+
+Do not introduce thin fallbacks, placeholder behaviour, generic report copy or mock implementations unless the selected DS item explicitly calls for temporary scaffolding and the limitation is documented.
+
+Preserve existing product contracts, routing behaviour, data structures and performer-facing copy unless the DS item explicitly requires a change.
+
+### Checks before commit
+
+Run focused local checks appropriate to the changed surface.
+
+At minimum consider:
+
+- lint;
+- typecheck;
+- build;
+- unit tests;
+- integration tests;
+- relevant app checks;
+- route/PDF text checks for report-value changes;
+- QA artefact checks where QA is in scope.
+
+Run the meaningful subset for the DS item.
+
+If a check cannot run, record the exact command attempted and the reason it could not run.
+
+Before committing, inspect changed files for regressions, broken routing, missing tests, accidental broad changes, protected-surface violations, product-contract violations and thin-shell report risks.
+
+### Commit, PR, CI and merge workflow
+
+After implementation:
+
+1. Confirm at least one new commit exists for the DS item, unless it is a documented no-code completion.
+2. Confirm the working tree is clean.
+3. Confirm the current branch is not `main`.
+4. Confirm the branch name starts with `codex/`.
+5. Push the branch to `origin` and set upstream tracking.
+6. Open a draft PR against `main`.
+7. Include summary, tests run, risks, follow-up notes and the monday.com DS item link or item ID.
+8. Re-run or confirm relevant checks.
+9. Inspect changed files again for regressions, thin fallbacks, broken routing, missing tests and product-contract violations.
+10. Check GitHub Actions status once CI starts.
+11. Apply focused fixes only, commit fixes separately where useful and push updates.
+12. Confirm the PR description still matches the final change.
+13. Mark the PR ready for review only when local checks and CI are passing, or when the only blocker is external required review.
+14. Do not bypass branch protection.
+15. Do not self-approve if required review is enforced.
+16. Squash merge only after checks pass and required review is satisfied.
+17. If branch protection, required review or unavailable permissions prevent merge, leave the PR ready for review, update monday.com with the blocker and stop cleanly.
+
+After successful merge only:
+
+1. Switch back to `main`.
+2. Pull latest `main`.
+3. Delete the local feature branch.
+4. Delete/prune the remote branch if GitHub did not.
+5. Run `git fetch --prune`.
+6. Confirm `main` is clean and aligned with `origin/main`.
+
+### monday.com final update
+
+At the end of every automation run, update the selected DS item with:
+
+- DS item ID and title;
+- final status;
+- branch name;
+- PR link;
+- commit hash or hashes;
+- implementation summary;
+- tests/checks run with exact commands;
+- checks that could not run and why;
+- CI status;
+- merge status;
+- cleanup status;
+- residual risks;
+- blockers or questions, if any.
+
+Status rules:
+
+- Mark the DS item `Done` only after the PR is merged into `main`, or after a documented no-code completion.
+- Leave the DS item `In Progress` if a PR exists but is awaiting CI, review or merge.
+- Mark or leave the DS item blocked/parked if user clarification, protected-surface approval, missing access, failing external service or branch protection prevents completion.
+- Do not mark a code-changing DS item `Done` merely because a PR was opened.
 
 ---
 
@@ -52,7 +248,9 @@ TapeCoach’s simplest flow is:
    - self-tape video;
    - optional audition type / discipline;
    - optional role, character, production, song, side, copy or material context;
-   - optional comparison selection.
+   - up to three active audition take slots;
+   - optional take replacement;
+   - optional comparison selection across active takes.
 2. Automated media layer:
    - Mux prepares the media;
    - system records media readiness and assessability.
@@ -85,6 +283,7 @@ Selected level determines the standard.
 Brief determines the task.
 Observed tape provides the evidence.
 Role/material research adds secondary specificity where supported.
+Audition take slots determine which active takes are analysed or compared.
 Score expresses readiness against the available evidence.
 Professional 90+ adds competitive nuance.
 The UI must make the source basis visible.
@@ -113,7 +312,8 @@ Every authenticated performer-facing report must help the performer understand:
 - what to do next;
 - what could not be assessed;
 - what the score means, where visible;
-- what Professional 90+ zone applies, where applicable.
+- what Professional 90+ zone applies, where applicable;
+- which active take versions were analysed or compared, where applicable.
 
 A safe but unhelpful report fails.
 
@@ -136,6 +336,7 @@ Authenticated performer-facing reports should use all useful available informati
 - role/material calibration where source basis supports it;
 - scores and comparison values in authenticated/operator/test mode;
 - Professional 90+ competitive calibration where applicable;
+- take slot/version context and comparison context where applicable;
 - timestamped or time-banded notes where available;
 - professional judgement;
 - operator-confirmed assumptions.
@@ -470,6 +671,7 @@ The AI should be explicitly asked to populate:
 - scores / calibration where enabled;
 - Professional 90+ competitive calibration where applicable;
 - comparison where enabled;
+- active take slot/version context where comparison is enabled;
 - next action;
 - do-not-overfix;
 - not-assessable limitations.
@@ -509,7 +711,8 @@ The AI should provide:
 - strengths;
 - optional polish;
 - Professional 90+ competitive calibration where applicable;
-- comparison judgement;
+- comparison judgement across active take versions;
+- take slot/version awareness;
 - timestamped notes;
 - next-take actions.
 
@@ -528,6 +731,8 @@ The code should provide:
 - AI repair prompting;
 - red-line filtering;
 - rendering;
+- take lifecycle state management;
+- per-take and per-comparison admin status;
 - QA artefacts.
 
 The code must not invent professional feedback such as strengths, technique notes, optional polish, level reasoning, role/material judgement, score explanation or readiness rationale.
@@ -548,6 +753,7 @@ The UI may:
 - show judged-against level;
 - show role/material source basis;
 - show Professional competitive calibration;
+- show take slot and compared take version context where applicable;
 - show timestamped notes;
 - highlight fix-first and must-fix items.
 
@@ -596,7 +802,8 @@ Examples:
 - If strengths are generic, ask the AI for specific strengths from the tape.
 - If technique commentary is missing despite visible evidence, ask the AI for technique commentary.
 - If next action is empty, ask the AI for a submit checklist or retake plan.
-- If comparison is present but no reasoning exists, ask the AI to compare the takes.
+- If comparison is present but no reasoning exists, ask the AI to compare the active takes.
+- If comparison does not identify compared take versions, repair the comparison context before rendering.
 - If timestamps are unavailable, ask for component-level commentary instead.
 - If scoring basis is missing, ask the AI to classify scoring mode.
 - If selected-level reasoning is missing, ask the AI to state the level standard applied.
@@ -699,7 +906,7 @@ The verdict is not determined by score alone. Required brief failures, missing m
 
 ## Score and comparison display modes
 
-Numeric score and comparison chips may remain visible in authenticated/operator/test mode.
+Numeric score and comparison chips may remain visible in authenticated/operator/test mode. Comparison chips apply to active take versions unless an admin/operator explicitly requests a historical comparison.
 
 If visible, they must be treated as diagnostic or authenticated report information, not production/customer release approval.
 
@@ -714,6 +921,65 @@ The system must distinguish:
 Visible score/comparison chips do not by themselves mean public scoring or comparison recommendation is production-approved.
 
 ---
+
+
+## Audition take slots, replacement and admin QA
+
+Each audition supports up to three active take slots:
+
+```text
+Take 1
+Take 2
+Take 3
+```
+
+Do not implement arbitrary active take counts unless `README.md` is updated.
+
+Each take slot may be replaced by a newly uploaded self-tape.
+
+Replacing a take must create a new take version and a new analysis/report run. Do not silently overwrite the previous take report or QA proof.
+
+Ordinary comparison uses the active version of each available take slot.
+
+If a take is replaced, any comparison that used the previous active version is stale and must be regenerated or clearly marked stale.
+
+Each take version must produce:
+
+- media processing status;
+- analysis run status;
+- individual report status;
+- QA artefact status where QA is enabled;
+- admin-visible diagnostics.
+
+Each comparison run must produce:
+
+- comparison report status;
+- compared take version IDs;
+- same-video / duplicate status;
+- comparison QA artefact status where QA is enabled;
+- admin-visible diagnostics.
+
+Admin must be able to inspect:
+
+```text
+Audition
+  Take 1 active/replaced versions
+  Take 2 active/replaced versions
+  Take 3 active/replaced versions
+  Individual take reports
+  Individual take QA artefacts
+  Comparison reports
+  Comparison QA artefacts
+```
+
+A slice fails if:
+
+- more than three active takes can exist for one audition;
+- replacing a take destroys or hides prior QA proof without policy;
+- comparison mixes active and replaced versions unintentionally;
+- comparison does not identify which take versions were compared;
+- a take report renders but admin cannot see report/QA status;
+- comparison renders but admin cannot see comparison/QA status.
 
 ## Same video and duplicate upload handling
 
@@ -753,7 +1019,10 @@ Same-video handling matters because the system must not treat an accidental dupl
 6. Same video with new AI/report version:
    - analysis may be rerun for regression testing;
    - report artefacts should record the analysis/report version where available.
-7. Comparison mode:
+7. Replacement with same media:
+   - same-video / duplicate handling applies;
+   - the new take version may be valid for retest/regression, but comparison must not create a false winner.
+8. Comparison mode:
    - if two compared takes are actually the same video, the system must say so or ask the operator;
    - do not recommend one duplicate over another as if they were different performances.
 
@@ -980,6 +1249,45 @@ Expected:
 - operator confirmation requested where needed;
 - comparison does not recommend one duplicate over another as different performances.
 
+
+### Fixture L — three active takes
+
+Expected:
+
+- one audition has Take 1, Take 2 and Take 3 active;
+- all three active takes have individual reports;
+- all three active takes have QA artefact status in admin where QA is enabled;
+- comparison identifies the active take versions compared;
+- no fourth active take is possible.
+
+### Fixture M — replace Take 2
+
+Expected:
+
+- Take 2 v1 becomes replaced or archived;
+- Take 2 v2 becomes active;
+- Take 2 v2 receives a new analysis run and individual report;
+- previous comparison is marked stale or regenerated;
+- new comparison uses active versions only;
+- admin can inspect Take 2 v1 and Take 2 v2 subject to retention policy.
+
+### Fixture N — replace with same video
+
+Expected:
+
+- same-video / duplicate handling activates;
+- replacement is marked duplicate, probable duplicate or intentional retest;
+- comparison does not create a false winner;
+- admin shows duplicate/same-video status and QA artefact status.
+
+### Fixture O — one or two active takes
+
+Expected:
+
+- one active take produces an individual report only;
+- two active takes produce comparison between the two active versions only;
+- empty slots are empty, not failed.
+
 ---
 
 ## Route/PDF first acceptance
@@ -1004,6 +1312,7 @@ A performer should be able to understand within 60 seconds:
 - top fix;
 - brief achievement where applicable;
 - role/material source basis where applicable;
+- active take/comparison version context where applicable;
 - next action.
 
 ---
@@ -1023,12 +1332,15 @@ Do not let QA artefact work starve report value.
 Preferred artefacts include:
 
 - input context;
+- take lifecycle context;
 - observation pass;
 - judgement pass;
 - scoring context;
 - level calibration;
 - role/material calibration where applicable;
 - Professional competitive calibration where applicable;
+- per-take report/QA status where applicable;
+- comparison run status where applicable;
 - report model;
 - rendered text;
 - red-line trace;
@@ -1053,6 +1365,9 @@ Examples:
 - known material source confidence;
 - score chips intentionally visible;
 - comparison intentionally visible;
+- active take slot/version;
+- replacement reason;
+- stale comparison handling;
 - AI missed a component;
 - AI misclassified material.
 
@@ -1064,7 +1379,7 @@ Operator feedback should become a fixture, regression test or prompt improvement
 
 ## Minimal env/config principle
 
-Do not add environment variables for ordinary product behaviour.
+Do not add environment variables for ordinary product behaviour. The maximum of three active take slots is a product invariant, not an environment variable.
 
 Use env vars only for secrets and deployment/runtime basics.
 
@@ -1089,12 +1404,13 @@ When rebuilding S10, work in this order, allowing in-flight work to be amended r
 1. Define AI questions for each report module.
 2. Add performer-level calibration questions and schema.
 3. Add scoring basis / brief-no-brief semantics.
-4. Add role/material resolver where supplied.
-5. Validate AI output quality.
-6. Pipe AI output to the report UI.
-7. Add Professional 90+ competitive calibration.
-8. Test route/PDF usefulness.
-9. Add QA artefacts and release proof.
+4. Add audition take slot lifecycle and replacement handling.
+5. Add role/material resolver where supplied.
+6. Validate AI output quality.
+7. Pipe AI output to the report UI.
+8. Add Professional 90+ competitive calibration.
+9. Test route/PDF usefulness.
+10. Add QA artefacts and release proof.
 
 Do not start with payload gates, source-kind restrictions or QA artefact architecture before the report is useful.
 
@@ -1112,12 +1428,17 @@ A slice is not done unless:
 - scoring basis is visible and consistent;
 - no-brief reports do not claim brief achievement;
 - role/material context has source basis and does not invent requirements;
+- active take slots and compared take versions are clear where comparison applies;
+- admin can inspect per-take and per-comparison report/QA status where QA is enabled;
 - AI outputs are routed to the UI;
 - no generic thin-shell copy is introduced;
 - Professional 90+ reports include competitive nuance where applicable;
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
 - QA artefact status is clear;
+- for monday.com delivery-slice work, the selected item has a final update with branch, PR, commit, checks, CI, merge, cleanup, residual risks and blockers/questions;
+- for code-changing delivery-slice work, `Done` is used only after merge into `main`, unless the item is a documented no-code completion;
+- automation runs stop after one DS item is implemented, PR'd, merged, parked or blocked;
 - production/customer/Level 2 approval is not claimed unless explicitly in scope.
 
 ---
@@ -1147,7 +1468,18 @@ Do not:
 - treat a high score as a substitute for professional feedback;
 - flatten Professional scores above 90 into generic “excellent”;
 - compare duplicate/same-video takes as though they are different performances;
-- let a strong complete take produce an empty or thin report.
+- allow more than three active takes for one audition;
+- silently overwrite replaced take reports or QA proof;
+- compare active and replaced take versions unintentionally;
+- render comparison without compared take version IDs;
+- let a take or comparison report render without admin-visible QA/report status where QA is enabled;
+- let a strong complete take produce an empty or thin report;
+- allow an automation to overwrite uncommitted local user work;
+- let an automation work on `main` directly;
+- create duplicate branches or PRs for the same DS item;
+- mark a monday.com DS item `Done` before merge or documented no-code completion;
+- begin a second DS item in the same automation run;
+- silently skip GitHub, CI, monday.com or cleanup failures without recording the blocker.
 
 ---
 
@@ -1175,4 +1507,5 @@ Brief achievement: [...]
 Role / material context: [...]
 Professional competitive zone: [...]
 Comparison reasoning: [...]
+Active take versions compared: [...]
 ```
