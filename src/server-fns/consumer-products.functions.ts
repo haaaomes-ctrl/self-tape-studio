@@ -33,6 +33,7 @@ export const createConsumerTopUpCheckout = createServerFn({ method: "POST" })
     z
       .object({
         sku: z.string().min(3).max(81),
+        analyticsAttribution: z.record(z.string(), z.unknown()).optional(),
       })
       .parse(data),
   )
@@ -42,6 +43,7 @@ export const createConsumerTopUpCheckout = createServerFn({ method: "POST" })
         userId: context.userId,
         sku: data.sku,
         origin: resolveCheckoutOrigin(),
+        analyticsAttribution: data.analyticsAttribution,
       });
     } catch (err) {
       metric("consumer_checkout_failed", {

@@ -27,6 +27,7 @@ import {
   getCreditBalance,
 } from "@/server-fns/credit-balance.functions";
 import { cn } from "@/lib/utils";
+import { rememberPartnerCodeAttribution, trackAnalyticsEvent } from "@/lib/analytics-attribution";
 
 type CreditBalancePanelProps = {
   className?: string;
@@ -129,6 +130,12 @@ export function CreditBalancePanel({ className, showTopUpLink = true }: CreditBa
     setActivationError(null);
     try {
       const next = (await activateCode({ data: { code: trimmed } })) as CreditBalanceSnapshot;
+      rememberPartnerCodeAttribution(trimmed);
+      void trackAnalyticsEvent({
+        eventName: "partner_code_activation",
+        objectType: "partner_code",
+        properties: { source: "credit_balance_panel" },
+      });
       setSnapshot(next);
       setCode("");
       toast.success("Partner code activated.");

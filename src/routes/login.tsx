@@ -19,6 +19,11 @@ import {
   validateAccountRouteFormState,
 } from "@/lib/account-compliance";
 import { saveAccountCompliance } from "@/lib/account-compliance-client";
+import {
+  buildAnalyticsAttributionAuthMetadata,
+  readStoredAnalyticsAttribution,
+  trackAnalyticsEvent,
+} from "@/lib/analytics-attribution";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -70,11 +75,19 @@ function LoginPage() {
           password: parsed.data.password,
           options: {
             emailRedirectTo: redirectTo,
-            data: buildAccountComplianceAuthMetadata(accountRouteForm),
+            data: {
+              ...buildAccountComplianceAuthMetadata(accountRouteForm),
+              ...buildAnalyticsAttributionAuthMetadata(readStoredAnalyticsAttribution()),
+            },
           },
         });
         if (error) throw error;
         if (data.user) {
+          void trackAnalyticsEvent({
+            eventName: "signup",
+            objectType: "user",
+            objectId: data.user.id,
+          });
           try {
             await saveAccountCompliance(data.user.id, accountRouteForm);
           } catch (saveErr) {

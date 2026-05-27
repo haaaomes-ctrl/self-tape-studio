@@ -50,6 +50,11 @@ import { trackVideoDurationUploadEvent } from "@/server-fns/video-duration-event
 import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server-fns/process-take.functions";
 import { brandTitle } from "@/config/brand";
+import {
+  buildAnalyticsAttributionMetadata,
+  readStoredAnalyticsAttribution,
+  trackAnalyticsEvent,
+} from "@/lib/analytics-attribution";
 
 export const Route = createFileRoute("/new")({
   head: () => ({ meta: [{ title: brandTitle("New audition") }] }),
@@ -189,6 +194,9 @@ function NewAuditionPage() {
       }
 
       // 2. Create audition
+      const analyticsAttribution = buildAnalyticsAttributionMetadata(
+        readStoredAnalyticsAttribution(),
+      );
       const { data: aud, error: audErr } = await supabase
         .from("auditions")
         .insert([
@@ -199,6 +207,7 @@ function NewAuditionPage() {
             brief_source: briefSource,
             mode,
             audition_level: auditionLevel,
+            analytics_attribution: analyticsAttribution as never,
           },
         ])
         .select("id")
@@ -233,12 +242,21 @@ function NewAuditionPage() {
             processing_phase: "uploading",
             signals: signals as never,
             checklist: (checklist ?? null) as never,
+            analytics_attribution: analyticsAttribution as never,
           },
         ])
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
       takeIdRef.current = take.id;
+      void trackAnalyticsEvent({
+        eventName: "upload",
+        objectType: "take",
+        objectId: take.id,
+        auditionId: aud.id,
+        takeId: take.id,
+        properties: { upload_surface: "new_audition_upload" },
+      });
 
       // 4. Ask the server for a Mux direct-upload URL (server enforces daily cap)
       let uploadUrl: string | undefined;

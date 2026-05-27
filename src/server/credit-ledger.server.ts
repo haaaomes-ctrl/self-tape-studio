@@ -15,6 +15,7 @@ import {
   type CreditSourceFinanceSummary,
   type ReportCreditReservationStatus,
 } from "@/lib/credit-ledger";
+import { recordServerAnalyticsEvent } from "@/server/analytics-events.server";
 
 export type RecordCreditConsumptionInput = {
   user_id: string;
@@ -109,6 +110,18 @@ export async function grantFundedCredits(input: CreditGrantInput) {
   });
 
   if (error || !data) throwCreditLedgerError("grant_funded_credits", error ?? {});
+  if (draft.source === "free_signup" || draft.source === "free_monthly") {
+    void recordServerAnalyticsEvent({
+      eventName: "free_credit_grant",
+      userId: draft.user_id,
+      objectType: "credit_grant",
+      objectId: data,
+      properties: {
+        credit_source: draft.source,
+        credit_amount: draft.original_credits,
+      },
+    });
+  }
   return { credit_grant_id: data };
 }
 

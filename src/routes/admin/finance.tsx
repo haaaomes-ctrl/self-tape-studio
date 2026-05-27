@@ -135,6 +135,9 @@ function AdminFinancePage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
+            <Link to="/admin/analytics">Analytics dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link to="/admin/storage-downloads">Storage downloads</Link>
           </Button>
           {serverIsAdmin ? (
@@ -220,7 +223,9 @@ function Diagnostics({
       <div className="mb-2 font-semibold">Diagnostics</div>
       <dl className="grid gap-y-1 font-mono text-xs sm:grid-cols-[220px_1fr]">
         <dt>pathname</dt>
-        <dd>{typeof window !== "undefined" ? window.location.pathname : "(ssr)"}</dd>
+        <dd>
+          <ClientPathname />
+        </dd>
         <dt>client.loading</dt>
         <dd>{String(loading)}</dd>
         <dt>client.hasSession</dt>
@@ -242,6 +247,14 @@ function Diagnostics({
       </dl>
     </div>
   );
+}
+
+function ClientPathname() {
+  const [pathname, setPathname] = useState("(ssr)");
+  useEffect(() => {
+    setPathname(window.location.pathname);
+  }, []);
+  return pathname;
 }
 
 function FinanceDashboard({ snapshot }: { snapshot: CfoDashboardSnapshot }) {
