@@ -108,6 +108,12 @@ export type MetricName =
   | "report_credit_consumed"
   | "report_credit_released"
   | "report_credit_rejected"
+  // Consumer Stripe checkout
+  | "consumer_checkout_created"
+  | "consumer_checkout_failed"
+  | "consumer_payment_succeeded"
+  | "consumer_payment_failed"
+  | "consumer_payment_reversed"
   // Two-step pipeline
   | "evidence_pass_started"
   | "evidence_pass_completed"

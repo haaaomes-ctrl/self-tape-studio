@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CreditsSuccessRouteImport } from './routes/credits-success'
+import { Route as CreditsCancelledRouteImport } from './routes/credits-cancelled'
 import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
@@ -22,6 +24,7 @@ import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
 import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-report-disclaimer'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
+import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
@@ -40,6 +43,16 @@ const LoginRoute = LoginRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreditsSuccessRoute = CreditsSuccessRouteImport.update({
+  id: '/credits-success',
+  path: '/credits-success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreditsCancelledRoute = CreditsCancelledRouteImport.update({
+  id: '/credits-cancelled',
+  path: '/credits-cancelled',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CreditsRoute = CreditsRouteImport.update({
@@ -92,6 +105,11 @@ const AdminStorageDownloadsRoute = AdminStorageDownloadsRouteImport.update({
   path: '/admin/storage-downloads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicStripeWebhookRoute = ApiPublicStripeWebhookRouteImport.update({
+  id: '/api/public/stripe-webhook',
+  path: '/api/public/stripe-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicReconcileStaleTakesRoute =
   ApiPublicReconcileStaleTakesRouteImport.update({
     id: '/api/public/reconcile-stale-takes',
@@ -119,6 +137,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/credits': typeof CreditsRoute
+  '/credits-cancelled': typeof CreditsCancelledRoute
+  '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
@@ -133,11 +153,14 @@ export interface FileRoutesByFullPath {
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
+  '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/credits': typeof CreditsRoute
+  '/credits-cancelled': typeof CreditsCancelledRoute
+  '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
@@ -152,12 +175,15 @@ export interface FileRoutesByTo {
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
+  '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/credits': typeof CreditsRoute
+  '/credits-cancelled': typeof CreditsCancelledRoute
+  '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
@@ -172,6 +198,7 @@ export interface FileRoutesById {
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
+  '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -179,6 +206,8 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/credits'
+    | '/credits-cancelled'
+    | '/credits-success'
     | '/dashboard'
     | '/login'
     | '/new'
@@ -193,11 +222,14 @@ export interface FileRouteTypes {
     | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
+    | '/api/public/stripe-webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/credits'
+    | '/credits-cancelled'
+    | '/credits-success'
     | '/dashboard'
     | '/login'
     | '/new'
@@ -212,11 +244,14 @@ export interface FileRouteTypes {
     | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
+    | '/api/public/stripe-webhook'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/credits'
+    | '/credits-cancelled'
+    | '/credits-success'
     | '/dashboard'
     | '/login'
     | '/new'
@@ -231,12 +266,15 @@ export interface FileRouteTypes {
     | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
+    | '/api/public/stripe-webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   CreditsRoute: typeof CreditsRoute
+  CreditsCancelledRoute: typeof CreditsCancelledRoute
+  CreditsSuccessRoute: typeof CreditsSuccessRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
@@ -251,6 +289,7 @@ export interface RootRouteChildren {
   ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
+  ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -274,6 +313,20 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credits-success': {
+      id: '/credits-success'
+      path: '/credits-success'
+      fullPath: '/credits-success'
+      preLoaderRoute: typeof CreditsSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credits-cancelled': {
+      id: '/credits-cancelled'
+      path: '/credits-cancelled'
+      fullPath: '/credits-cancelled'
+      preLoaderRoute: typeof CreditsCancelledRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/credits': {
@@ -346,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminStorageDownloadsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/stripe-webhook': {
+      id: '/api/public/stripe-webhook'
+      path: '/api/public/stripe-webhook'
+      fullPath: '/api/public/stripe-webhook'
+      preLoaderRoute: typeof ApiPublicStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/reconcile-stale-takes': {
       id: '/api/public/reconcile-stale-takes'
       path: '/api/public/reconcile-stale-takes'
@@ -381,6 +441,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   CreditsRoute: CreditsRoute,
+  CreditsCancelledRoute: CreditsCancelledRoute,
+  CreditsSuccessRoute: CreditsSuccessRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
@@ -395,6 +457,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
+  ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
