@@ -19,13 +19,28 @@ export const CREDIT_LEDGER_ENTRY_TYPES = [
 
 export const CREDIT_ROLLOVER_POLICIES = ["rollover", "no_rollover", "funding_period"] as const;
 export const CREDIT_GRANT_STATUSES = ["active", "exhausted", "expired", "revoked"] as const;
+export const REPORT_CREDIT_RESERVATION_STATUSES = [
+  "reserved",
+  "consumed",
+  "released",
+  "refunded",
+] as const;
 
 export const FREE_MONTHLY_CREDIT_VALIDITY_DAYS = 31;
+export const REPORT_CREDIT_AMOUNT = 1;
+export const REPORT_CREDIT_REQUIRED_ERROR_CODE = "CREDIT_REQUIRED";
+export const REPORT_CREDIT_REQUIRED_MESSAGE =
+  "You need 1 TapeCoach credit to generate a self-tape report. Activate a partner code, use an available funded credit or add credits before trying again.";
+export const REPORT_CREDIT_RESTORED_MESSAGE =
+  "Your TapeCoach credit was returned automatically because the report did not complete.";
+export const REPORT_CREDIT_REPLACEMENT_COPY =
+  "Replacing a take uses another TapeCoach credit if it generates a fresh report.";
 
 export type CreditSource = (typeof CREDIT_SOURCES)[number];
 export type CreditLedgerEntryType = (typeof CREDIT_LEDGER_ENTRY_TYPES)[number];
 export type CreditRolloverPolicy = (typeof CREDIT_ROLLOVER_POLICIES)[number];
 export type CreditGrantStatus = (typeof CREDIT_GRANT_STATUSES)[number];
+export type ReportCreditReservationStatus = (typeof REPORT_CREDIT_RESERVATION_STATUSES)[number];
 
 export type CreditGrantInput = {
   user_id: string;
@@ -91,6 +106,7 @@ export type CreditSourceFinanceSummary = {
 };
 
 const CREDIT_SOURCE_SET = new Set<string>(CREDIT_SOURCES);
+const REPORT_CREDIT_RESERVATION_STATUS_SET = new Set<string>(REPORT_CREDIT_RESERVATION_STATUSES);
 
 function toDate(value: string | Date | undefined, fallback: Date): Date {
   if (!value) return new Date(fallback.getTime());
@@ -139,6 +155,47 @@ export function isCreditSource(value: unknown): value is CreditSource {
 export function assertCreditSource(value: unknown): CreditSource {
   if (isCreditSource(value)) return value;
   throw new Error("unknown credit source");
+}
+
+export function isReportCreditReservationStatus(
+  value: unknown,
+): value is ReportCreditReservationStatus {
+  return typeof value === "string" && REPORT_CREDIT_RESERVATION_STATUS_SET.has(value);
+}
+
+export function assertReportCreditReservationStatus(value: unknown): ReportCreditReservationStatus {
+  if (isReportCreditReservationStatus(value)) return value;
+  throw new Error("unknown report credit reservation status");
+}
+
+export function formatReportCreditRequiredError(): string {
+  return `${REPORT_CREDIT_REQUIRED_ERROR_CODE}: ${REPORT_CREDIT_REQUIRED_MESSAGE}`;
+}
+
+export function isReportCreditRequiredMessage(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  return value.startsWith(`${REPORT_CREDIT_REQUIRED_ERROR_CODE}:`);
+}
+
+export function reportCreditLifecycleStatusFor(
+  status: ReportCreditReservationStatus,
+  syntheticUsage = false,
+): string {
+  if (!syntheticUsage) return status;
+  return `synthetic_${status}`;
+}
+
+export type ReportCreditTerminalAction = "consume" | "release" | "refund" | "none";
+
+export function resolveReportCreditTerminalAction(input: {
+  reportPersisted: boolean;
+  cancelledBeforeAnalysis?: boolean;
+  failureCode?: string | null;
+}): ReportCreditTerminalAction {
+  if (input.reportPersisted) return "consume";
+  if (input.cancelledBeforeAnalysis) return "release";
+  if (input.failureCode) return "refund";
+  return "none";
 }
 
 export function resolveCreditGrantPolicy(

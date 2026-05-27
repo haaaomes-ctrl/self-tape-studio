@@ -297,6 +297,107 @@ export type Database = {
           },
         ];
       };
+      report_credit_reservations: {
+        Row: {
+          audition_id: string | null;
+          commercial_metrics_excluded: boolean;
+          consumed_at: string | null;
+          consumption_ledger_entry_id: string | null;
+          created_at: string;
+          credit_amount: number;
+          credit_grant_id: string | null;
+          failure_code: string | null;
+          id: string;
+          idempotency_key: string | null;
+          metadata: Json;
+          refunded_at: string | null;
+          release_reason: string | null;
+          released_at: string | null;
+          reserved_at: string;
+          source: Database["public"]["Enums"]["credit_source"] | null;
+          status: Database["public"]["Enums"]["report_credit_reservation_status"];
+          synthetic_usage: boolean;
+          take_id: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          audition_id?: string | null;
+          commercial_metrics_excluded?: boolean;
+          consumed_at?: string | null;
+          consumption_ledger_entry_id?: string | null;
+          created_at?: string;
+          credit_amount?: number;
+          credit_grant_id?: string | null;
+          failure_code?: string | null;
+          id?: string;
+          idempotency_key?: string | null;
+          metadata?: Json;
+          refunded_at?: string | null;
+          release_reason?: string | null;
+          released_at?: string | null;
+          reserved_at?: string;
+          source?: Database["public"]["Enums"]["credit_source"] | null;
+          status?: Database["public"]["Enums"]["report_credit_reservation_status"];
+          synthetic_usage?: boolean;
+          take_id?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          audition_id?: string | null;
+          commercial_metrics_excluded?: boolean;
+          consumed_at?: string | null;
+          consumption_ledger_entry_id?: string | null;
+          created_at?: string;
+          credit_amount?: number;
+          credit_grant_id?: string | null;
+          failure_code?: string | null;
+          id?: string;
+          idempotency_key?: string | null;
+          metadata?: Json;
+          refunded_at?: string | null;
+          release_reason?: string | null;
+          released_at?: string | null;
+          reserved_at?: string;
+          source?: Database["public"]["Enums"]["credit_source"] | null;
+          status?: Database["public"]["Enums"]["report_credit_reservation_status"];
+          synthetic_usage?: boolean;
+          take_id?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "report_credit_reservations_audition_id_fkey";
+            columns: ["audition_id"];
+            isOneToOne: false;
+            referencedRelation: "auditions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "report_credit_reservations_consumption_ledger_entry_id_fkey";
+            columns: ["consumption_ledger_entry_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_ledger_entries";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "report_credit_reservations_credit_grant_id_fkey";
+            columns: ["credit_grant_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_grants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "report_credit_reservations_take_id_fkey";
+            columns: ["take_id"];
+            isOneToOne: false;
+            referencedRelation: "takes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       partner_credit_allocations: {
         Row: {
           allocated_at: string;
@@ -1103,6 +1204,10 @@ export type Database = {
           confidence: number | null;
           created_at: string;
           credit_consumption_ledger_entry_id: string | null;
+          credit_is_synthetic_usage: boolean;
+          credit_lifecycle_metadata: Json;
+          credit_lifecycle_status: string | null;
+          credit_reservation_id: string | null;
           error_message: string | null;
           id: string;
           mux_asset_id: string | null;
@@ -1134,6 +1239,10 @@ export type Database = {
           confidence?: number | null;
           created_at?: string;
           credit_consumption_ledger_entry_id?: string | null;
+          credit_is_synthetic_usage?: boolean;
+          credit_lifecycle_metadata?: Json;
+          credit_lifecycle_status?: string | null;
+          credit_reservation_id?: string | null;
           error_message?: string | null;
           id?: string;
           mux_asset_id?: string | null;
@@ -1165,6 +1274,10 @@ export type Database = {
           confidence?: number | null;
           created_at?: string;
           credit_consumption_ledger_entry_id?: string | null;
+          credit_is_synthetic_usage?: boolean;
+          credit_lifecycle_metadata?: Json;
+          credit_lifecycle_status?: string | null;
+          credit_reservation_id?: string | null;
           error_message?: string | null;
           id?: string;
           mux_asset_id?: string | null;
@@ -1201,6 +1314,13 @@ export type Database = {
             referencedRelation: "credit_ledger_entries";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "takes_credit_reservation_id_fkey";
+            columns: ["credit_reservation_id"];
+            isOneToOne: false;
+            referencedRelation: "report_credit_reservations";
+            referencedColumns: ["id"];
+          },
         ];
       };
     };
@@ -1218,6 +1338,57 @@ export type Database = {
           source: Database["public"]["Enums"]["credit_source"];
         };
         Relationships: [];
+      };
+      report_credit_lifecycle_summary: {
+        Row: {
+          audition_id: string | null;
+          commercial_metrics_excluded: boolean | null;
+          consumed_at: string | null;
+          consumption_ledger_entry_id: string | null;
+          credit_amount: number | null;
+          credit_grant_id: string | null;
+          failure_code: string | null;
+          refunded_at: string | null;
+          release_reason: string | null;
+          released_at: string | null;
+          reservation_id: string | null;
+          reserved_at: string | null;
+          source: Database["public"]["Enums"]["credit_source"] | null;
+          status: Database["public"]["Enums"]["report_credit_reservation_status"] | null;
+          synthetic_usage: boolean | null;
+          take_id: string | null;
+          user_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "report_credit_reservations_audition_id_fkey";
+            columns: ["audition_id"];
+            isOneToOne: false;
+            referencedRelation: "auditions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "report_credit_reservations_consumption_ledger_entry_id_fkey";
+            columns: ["consumption_ledger_entry_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_ledger_entries";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "report_credit_reservations_credit_grant_id_fkey";
+            columns: ["credit_grant_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_grants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "report_credit_reservations_take_id_fkey";
+            columns: ["take_id"];
+            isOneToOne: false;
+            referencedRelation: "takes";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       partner_credit_pool_usage_summary: {
         Row: {
@@ -1397,6 +1568,16 @@ export type Database = {
           quota_enabled: boolean;
         }[];
       };
+      consume_report_credit_reservation: {
+        Args: {
+          p_idempotency_key: string | null;
+          p_metadata: Json;
+          p_report_generated_at: string;
+          p_reservation_id: string;
+          p_take_id: string | null;
+        };
+        Returns: string | null;
+      };
       grant_funded_credits: {
         Args: {
           p_admin_actor_user_id: string | null;
@@ -1474,6 +1655,26 @@ export type Database = {
         };
         Returns: string;
       };
+      release_report_credit_reservation: {
+        Args: {
+          p_failure_code: string | null;
+          p_metadata: Json;
+          p_release_reason: string | null;
+          p_release_status: Database["public"]["Enums"]["report_credit_reservation_status"];
+          p_reservation_id: string;
+        };
+        Returns: string;
+      };
+      reserve_report_credit_for_take: {
+        Args: {
+          p_idempotency_key: string | null;
+          p_metadata: Json;
+          p_requested_by_user_id: string | null;
+          p_synthetic_usage: boolean;
+          p_take_id: string;
+        };
+        Returns: string;
+      };
       rotate_partner_code: {
         Args: {
           p_admin_actor_user_id: string | null;
@@ -1533,6 +1734,7 @@ export type Database = {
       partner_usage_alert_status: "triggered" | "acknowledged";
       partner_visibility_acceptance_status: "active" | "revoked";
       partner_visibility_scope: "aggregate_only" | "limited_usage_readiness" | "named_progress";
+      report_credit_reservation_status: "reserved" | "consumed" | "released" | "refunded";
     };
     CompositeTypes: {
       [_ in never]: never;

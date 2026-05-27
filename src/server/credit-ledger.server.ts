@@ -3,13 +3,17 @@ import type { Json } from "@/integrations/supabase/types";
 import {
   allocateCreditsForConsumption,
   assertCreditSource,
+  assertReportCreditReservationStatus,
   buildAdminAdjustmentEntry,
   buildCreditGrantDraft,
+  formatReportCreditRequiredError,
+  isReportCreditRequiredMessage,
   summariseCreditEntriesBySource,
   type CreditGrantBalance,
   type CreditGrantInput,
   type CreditLedgerEntrySummary,
   type CreditSourceFinanceSummary,
+  type ReportCreditReservationStatus,
 } from "@/lib/credit-ledger";
 
 export type RecordCreditConsumptionInput = {
@@ -34,8 +38,52 @@ export type RecordAdminCreditAdjustmentInput = {
   idempotency_key?: string | null;
 };
 
+export type ReserveReportCreditInput = {
+  take_id: string;
+  requested_by_user_id?: string | null;
+  synthetic_usage?: boolean;
+  metadata?: Record<string, unknown>;
+  idempotency_key?: string | null;
+};
+
+export type ConsumeReportCreditReservationInput = {
+  credit_reservation_id: string;
+  take_id?: string | null;
+  report_generated_at?: string | null;
+  metadata?: Record<string, unknown>;
+  idempotency_key?: string | null;
+};
+
+export type ReleaseReportCreditReservationInput = {
+  credit_reservation_id: string;
+  release_status: Extract<ReportCreditReservationStatus, "released" | "refunded">;
+  release_reason?: string | null;
+  failure_code?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export class ReportCreditRequiredError extends Error {
+  readonly code = "CREDIT_REQUIRED";
+
+  constructor(message = formatReportCreditRequiredError()) {
+    super(message);
+  }
+}
+
 function throwCreditLedgerError(operation: string, error: { message?: string }): never {
   console.error(`[credit-ledger] ${operation}_failed`, { error: error.message });
+  throw new Error(`${operation} failed`);
+}
+
+function throwReportCreditLifecycleError(operation: string, error: { message?: string }): never {
+  const message = error.message ?? "";
+  if (isReportCreditRequiredMessage(message)) {
+    throw new ReportCreditRequiredError(message);
+  }
+  if (message.startsWith("TAKE_NOT_FOUND:") || message.startsWith("FORBIDDEN:")) {
+    throw new Error(message);
+  }
+  console.error(`[credit-ledger] ${operation}_failed`, { error: message });
   throw new Error(`${operation} failed`);
 }
 
@@ -114,6 +162,93 @@ export async function recordAdminCreditAdjustment(input: RecordAdminCreditAdjust
 
   if (error || !data) throwCreditLedgerError("record_admin_credit_adjustment", error ?? {});
   return { credit_ledger_entry_id: data };
+}
+
+export async function reserveReportCreditForTake(input: ReserveReportCreditInput) {
+  const { data, error } = await supabaseAdmin.rpc("reserve_report_credit_for_take", {
+    p_take_id: input.take_id,
+    p_requested_by_user_id: input.requested_by_user_id ?? null,
+    p_synthetic_usage: input.synthetic_usage ?? false,
+    p_metadata: metadataAsJson(input.metadata ?? {}),
+    p_idempotency_key: input.idempotency_key ?? null,
+  });
+
+  if (error || !data)
+    throwReportCreditLifecycleError("reserve_report_credit_for_take", error ?? {});
+
+  const { data: reservation, error: readError } = await supabaseAdmin
+    .from("report_credit_reservations")
+    .select("synthetic_usage")
+    .eq("id", data)
+    .maybeSingle();
+
+  if (readError) throwReportCreditLifecycleError("read_report_credit_reservation", readError);
+
+  return {
+    credit_reservation_id: data,
+    synthetic_usage: reservation?.synthetic_usage ?? input.synthetic_usage ?? false,
+  };
+}
+
+export async function consumeReportCreditReservation(input: ConsumeReportCreditReservationInput) {
+  const { data, error } = await supabaseAdmin.rpc("consume_report_credit_reservation", {
+    p_reservation_id: input.credit_reservation_id,
+    p_take_id: input.take_id ?? null,
+    p_report_generated_at: input.report_generated_at ?? new Date().toISOString(),
+    p_metadata: metadataAsJson(input.metadata ?? {}),
+    p_idempotency_key: input.idempotency_key ?? null,
+  });
+
+  if (error) throwReportCreditLifecycleError("consume_report_credit_reservation", error);
+  return { credit_ledger_entry_id: data ?? null };
+}
+
+export async function releaseReportCreditReservation(input: ReleaseReportCreditReservationInput) {
+  const releaseStatus = assertReportCreditReservationStatus(input.release_status);
+  if (releaseStatus !== "released" && releaseStatus !== "refunded") {
+    throw new Error("report credit release status must be released or refunded");
+  }
+
+  const { data, error } = await supabaseAdmin.rpc("release_report_credit_reservation", {
+    p_reservation_id: input.credit_reservation_id,
+    p_release_status: releaseStatus,
+    p_release_reason: input.release_reason ?? null,
+    p_failure_code: input.failure_code ?? null,
+    p_metadata: metadataAsJson(input.metadata ?? {}),
+  });
+
+  if (error || !data)
+    throwReportCreditLifecycleError("release_report_credit_reservation", error ?? {});
+  return { credit_reservation_id: data };
+}
+
+export async function releaseReportCreditForTake(input: {
+  take_id: string;
+  release_status: Extract<ReportCreditReservationStatus, "released" | "refunded">;
+  release_reason?: string | null;
+  failure_code?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const { data, error } = await supabaseAdmin
+    .from("takes")
+    .select("credit_reservation_id")
+    .eq("id", input.take_id)
+    .maybeSingle();
+
+  if (error) throwReportCreditLifecycleError("read_take_credit_reservation", error);
+  if (!data?.credit_reservation_id) {
+    return { credit_reservation_id: null, released: false as const };
+  }
+
+  const released = await releaseReportCreditReservation({
+    credit_reservation_id: data.credit_reservation_id,
+    release_status: input.release_status,
+    release_reason: input.release_reason,
+    failure_code: input.failure_code,
+    metadata: input.metadata,
+  });
+
+  return { ...released, released: true as const };
 }
 
 export async function getCreditSourceFinanceSummary(): Promise<CreditSourceFinanceSummary[]> {

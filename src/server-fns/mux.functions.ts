@@ -8,6 +8,10 @@ import { assertWithinAnalysisQuota, QuotaExceededError } from "@/server/quota.se
 import { getResolvedConfig } from "@/server/app-config.server";
 import { metric } from "@/server/metrics.server";
 import { assertAccountComplianceForReport } from "@/server/account-compliance.server";
+import {
+  ReportCreditRequiredError,
+  reserveReportCreditForTake,
+} from "@/server/credit-ledger.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
@@ -131,6 +135,49 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
           `QUOTA_EXCEEDED: This audition already has the maximum of ${cfg.max_takes_per_audition} takes. Delete an existing take to add a new one.`,
         );
       }
+    }
+
+    // 3.6 Funded-credit reservation gate. This is the commercial source of
+    // truth for report generation: no funded credit means no Mux upload URL
+    // for a report-generating take. The reservation is consumed only after the
+    // report is persisted; cancellation/failure releases it.
+    try {
+      await reserveReportCreditForTake({
+        take_id: takeId,
+        requested_by_user_id: userId,
+        metadata: {
+          trigger: "create_mux_direct_upload",
+          report_credit_amount: 1,
+          same_video_credit_policy: "consume_only_if_report_generated",
+          commercial_metrics_excluded: false,
+        },
+      });
+      metric("report_credit_reserved", {
+        take_id: takeId,
+        reason: "create_mux_direct_upload",
+      });
+    } catch (err) {
+      if (err instanceof ReportCreditRequiredError) {
+        console.warn("[mux-upload] report_credit_rejected", {
+          take_id: takeId,
+          user_id: userId,
+        });
+        metric("report_credit_rejected", {
+          take_id: takeId,
+          reason: "no_funded_credit",
+        });
+        metric("upload_url_failure", { take_id: takeId, reason: "credit_required" });
+        await supabaseAdmin
+          .from("takes")
+          .update({
+            status: "error",
+            processing_phase: "error",
+            error_message: err.message,
+          })
+          .eq("id", takeId);
+        throw new Error(err.message);
+      }
+      throw err;
     }
 
     // 4. Idempotency: reuse an in-flight upload for this take if Mux still has it.

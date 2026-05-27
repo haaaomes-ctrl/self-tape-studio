@@ -12,6 +12,11 @@ import {
 } from "@/server/quota.server";
 import { metric } from "@/server/metrics.server";
 import { assertAccountComplianceForReport } from "@/server/account-compliance.server";
+import {
+  ReportCreditRequiredError,
+  releaseReportCreditForTake,
+  reserveReportCreditForTake,
+} from "@/server/credit-ledger.server";
 
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin
@@ -90,6 +95,37 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       }
       throw err;
     }
+    try {
+      await reserveReportCreditForTake({
+        take_id: data.takeId,
+        requested_by_user_id: context.userId,
+        metadata: {
+          trigger: "retry_process_take",
+          report_credit_amount: 1,
+          same_video_credit_policy: "consume_only_if_report_generated",
+          commercial_metrics_excluded: false,
+        },
+      });
+      metric("report_credit_reserved", {
+        take_id: data.takeId,
+        reason: "retry_process_take",
+      });
+    } catch (err) {
+      if (err instanceof ReportCreditRequiredError) {
+        metric("report_credit_rejected", {
+          take_id: data.takeId,
+          reason: "retry_no_funded_credit",
+        });
+        throw new Response(
+          JSON.stringify({ error: err.message, code: err.code, promptTopUp: true }),
+          {
+            status: 402,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+      throw err;
+    }
     return runProcessTake(data.takeId, data.allowOriginal);
   });
 
@@ -108,6 +144,21 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { takeId, signals, checklist } = data;
     await assertTakeOwnership(takeId, context.userId, "resetTakeForReupload");
+    await releaseReportCreditForTake({
+      take_id: takeId,
+      release_status: "released",
+      release_reason: "take_replaced_before_report_generated",
+      metadata: {
+        trigger: "reset_take_for_reupload",
+        report_credit_restored_message:
+          "A reserved TapeCoach credit was returned before the replacement upload.",
+      },
+    }).catch((err) => {
+      console.warn("[credit-ledger] reset_take_for_reupload_release_failed", {
+        take_id: takeId,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    });
     const replacementSignals = replaceReuploadUploadIdentitySignals(signals);
     await supabaseAdmin
       .from("takes")
@@ -131,6 +182,14 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
         mux_mp4_high_url: null,
         mux_duration_seconds: null,
         video_path: null,
+        credit_reservation_id: null,
+        credit_consumption_ledger_entry_id: null,
+        credit_lifecycle_status: null,
+        credit_lifecycle_metadata: {
+          trigger: "reset_take_for_reupload",
+          replacement_credit_policy: "new_report_generation_requires_new_credit",
+        } as never,
+        credit_is_synthetic_usage: false,
       })
       .eq("id", takeId);
     return { ok: true };
@@ -150,12 +209,28 @@ export const resetTake = createServerFn({ method: "POST" })
       .select("processing_phase, created_at")
       .eq("id", data.takeId)
       .single();
+    await releaseReportCreditForTake({
+      take_id: data.takeId,
+      release_status: "released",
+      release_reason: "user_cancelled_before_report_generated",
+      metadata: {
+        trigger: "reset_take",
+        report_credit_restored_message:
+          "A reserved TapeCoach credit was returned because the report was cancelled before completion.",
+      },
+    }).catch((err) => {
+      console.warn("[credit-ledger] reset_take_release_failed", {
+        take_id: data.takeId,
+        error: err instanceof Error ? err.message : "unknown",
+      });
+    });
     await supabaseAdmin
       .from("takes")
       .update({
         status: "error",
         processing_phase: "error",
         error_message: "Cancelled by user — upload a new take to retry.",
+        credit_lifecycle_status: "released",
       })
       .eq("id", data.takeId);
     metric("cancel", {

@@ -103,6 +103,11 @@ export type MetricName =
   // Quota
   | "quota_rejection"
   | "quota_check"
+  // Report credit lifecycle
+  | "report_credit_reserved"
+  | "report_credit_consumed"
+  | "report_credit_released"
+  | "report_credit_rejected"
   // Two-step pipeline
   | "evidence_pass_started"
   | "evidence_pass_completed"
