@@ -24,6 +24,7 @@ import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
 import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-report-disclaimer'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
+import { Route as AdminFinanceRouteImport } from './routes/admin/finance'
 import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
@@ -105,6 +106,11 @@ const AdminStorageDownloadsRoute = AdminStorageDownloadsRouteImport.update({
   path: '/admin/storage-downloads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminFinanceRoute = AdminFinanceRouteImport.update({
+  id: '/admin/finance',
+  path: '/admin/finance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicStripeWebhookRoute = ApiPublicStripeWebhookRouteImport.update({
   id: '/api/public/stripe-webhook',
   path: '/api/public/stripe-webhook',
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
@@ -164,6 +171,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/admin/finance': typeof AdminFinanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/admin/finance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/legal/ai-report-disclaimer'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/admin/finance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/legal/ai-report-disclaimer'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/admin/finance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/legal/ai-report-disclaimer'
@@ -278,6 +290,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
+  AdminFinanceRoute: typeof AdminFinanceRoute
   AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
   LegalAiReportDisclaimerRoute: typeof LegalAiReportDisclaimerRoute
@@ -399,6 +412,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminStorageDownloadsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/finance': {
+      id: '/admin/finance'
+      path: '/admin/finance'
+      fullPath: '/admin/finance'
+      preLoaderRoute: typeof AdminFinanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/stripe-webhook': {
       id: '/api/public/stripe-webhook'
       path: '/api/public/stripe-webhook'
@@ -446,6 +466,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
+  AdminFinanceRoute: AdminFinanceRoute,
   AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
   LegalAiReportDisclaimerRoute: LegalAiReportDisclaimerRoute,

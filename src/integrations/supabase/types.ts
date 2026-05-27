@@ -1719,6 +1719,220 @@ export type Database = {
           },
         ];
       };
+      cfo_report_funding_dashboard: {
+        Row: {
+          average_ai_cost_gbp: number | null;
+          average_ai_cost_usd: number | null;
+          commercial_metrics_excluded: boolean | null;
+          cost_fx_source: string | null;
+          credit_source: string | null;
+          duration_status: string | null;
+          estimated_ai_cost_gbp: number | null;
+          estimated_ai_cost_usd: number | null;
+          funding_bucket: string | null;
+          month_start: string | null;
+          partner_id: string | null;
+          partner_name: string | null;
+          partner_type: Database["public"]["Enums"]["partner_type"] | null;
+          planning_usd_to_gbp_rate: number | null;
+          report_count: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partners_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cfo_report_cost_by_report_dashboard: {
+        Row: {
+          ai_call_count: number | null;
+          audition_id: string | null;
+          commercial_metrics_excluded: boolean | null;
+          cost_fx_source: string | null;
+          credit_source: string | null;
+          duration_status: string | null;
+          estimated_ai_cost_gbp: number | null;
+          estimated_ai_cost_usd: number | null;
+          failed_call_count: number | null;
+          fallback_call_count: number | null;
+          funding_bucket: string | null;
+          last_ai_usage_at: string | null;
+          month_start: string | null;
+          overall_score: number | null;
+          partner_id: string | null;
+          partner_name: string | null;
+          partner_type: Database["public"]["Enums"]["partner_type"] | null;
+          planning_usd_to_gbp_rate: number | null;
+          repair_call_count: number | null;
+          report_cost_source: string | null;
+          report_created_at: string | null;
+          take_id: string | null;
+          take_status: string | null;
+          user_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "takes_audition_id_fkey";
+            columns: ["audition_id"];
+            isOneToOne: false;
+            referencedRelation: "auditions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partners_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cfo_partner_revenue_source_dashboard: {
+        Row: {
+          allocated_credits: number | null;
+          consumed_credits: number | null;
+          package_billing_period: string | null;
+          package_name: string | null;
+          package_sku: string | null;
+          package_unit_amount_pence: number | null;
+          partner_credit_pool_id: string | null;
+          partner_id: string | null;
+          partner_name: string | null;
+          partner_revenue_gbp: number | null;
+          partner_revenue_pence: number | null;
+          partner_revenue_source: string | null;
+          partner_type: Database["public"]["Enums"]["partner_type"] | null;
+          period_end: string | null;
+          period_start: string | null;
+          period_type: Database["public"]["Enums"]["partner_credit_pool_period_type"] | null;
+          per_user_cap: number | null;
+          pool_name: string | null;
+          revenue_month: string | null;
+          total_credits: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cfo_revenue_ledger_dashboard: {
+        Row: {
+          gross_revenue_pence: number | null;
+          month_start: string | null;
+          net_revenue_pence: number | null;
+          partner_id: string | null;
+          partner_name: string | null;
+          partner_type: Database["public"]["Enums"]["partner_type"] | null;
+          refunds_or_disputes_pence: number | null;
+          revenue_source: string | null;
+          revenue_stream: string | null;
+          transaction_count: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partners_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cfo_partner_margin_dashboard: {
+        Row: {
+          estimated_ai_cost_gbp: number | null;
+          estimated_ai_cost_usd: number | null;
+          gross_margin_gbp: number | null;
+          gross_margin_guardrail_status: string | null;
+          gross_margin_rate: number | null;
+          latest_report_cost_at: string | null;
+          paid_pack_margin_guardrail: number | null;
+          partner_funded_report_count: number | null;
+          partner_id: string | null;
+          partner_name: string | null;
+          partner_revenue_gbp: number | null;
+          partner_revenue_pence: number | null;
+          partner_revenue_source: string | null;
+          partner_type: Database["public"]["Enums"]["partner_type"] | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partners_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cfo_free_report_subsidy_dashboard: {
+        Row: {
+          average_free_report_cost_gbp: number | null;
+          average_free_report_cost_usd: number | null;
+          cost_fx_source: string | null;
+          credit_source: string | null;
+          duration_status: string | null;
+          estimated_subsidy_cost_gbp: number | null;
+          estimated_subsidy_cost_usd: number | null;
+          free_report_count: number | null;
+          month_start: string | null;
+        };
+        Relationships: [];
+      };
+      cfo_paid_credit_liability_summary: {
+        Row: {
+          catalogue_priced_grants: number | null;
+          estimated_unused_paid_credit_liability_gbp: number | null;
+          estimated_unused_paid_credit_liability_pence: number | null;
+          liability_pricing_status: string | null;
+          original_paid_credits: number | null;
+          paid_credit_grant_count: number | null;
+          payment_priced_grants: number | null;
+          product_sku: string | null;
+          unpriced_grants: number | null;
+          unused_paid_credits: number | null;
+        };
+        Relationships: [];
+      };
+      cfo_monthly_burn_dashboard: {
+        Row: {
+          ai_variable_cost_gbp: number | null;
+          break_even_gap_gbp: number | null;
+          chatgpt_codex_monthly_cost_gbp: number | null;
+          contribution_after_ai_cost_gbp: number | null;
+          free_report_count: number | null;
+          gross_revenue_gbp: number | null;
+          lovable_monthly_cost_gbp: number | null;
+          month_start: string | null;
+          net_revenue_gbp: number | null;
+          partner_funded_report_count: number | null;
+          planning_fixed_monthly_burn_gbp: number | null;
+          report_count: number | null;
+          total_monthly_burn_gbp: number | null;
+          user_paid_report_count: number | null;
+        };
+        Relationships: [];
+      };
+      cfo_revenue_milestone_dashboard: {
+        Row: {
+          current_month_net_revenue_gbp: number | null;
+          milestone_gbp: number | null;
+          month_start: string | null;
+          progress_rate: number | null;
+          reached: boolean | null;
+          remaining_gbp: number | null;
+        };
+        Relationships: [];
+      };
       report_credit_lifecycle_summary: {
         Row: {
           audition_id: string | null;
