@@ -17,6 +17,7 @@ import {
   S10_OBSERVATION_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import { cloneForProviderToolSchema } from "./provider-tool-schema.server";
+import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 
 const DEFAULT_MODEL = process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
 
@@ -826,6 +827,7 @@ export type RunEvidencePassArgs = {
    * internal logging. Default: false.
    */
   withFutureDimensions?: boolean;
+  usageContext?: TakeAiUsageContext;
 };
 
 export type RunEvidencePassResult =
@@ -1182,6 +1184,30 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
 
   let resp: Response | null = null;
   const providerContract = selectEvidencePassProviderContract(model);
+  const recordUsage = async (input: {
+    status: "success" | "failure" | "timeout";
+    httpStatus?: number | null;
+    failureReason?: string | null;
+    tokenPayload?: unknown;
+  }) => {
+    if (!args.usageContext) return;
+    await recordTakeAiUsage({
+      ...args.usageContext,
+      step: "evidence_pass",
+      model,
+      promptVersion: S10_OBSERVATION_PROMPT_VERSION,
+      providerContract,
+      status: input.status,
+      httpStatus: input.httpStatus,
+      failureReason: input.failureReason,
+      latencyMs: Date.now() - startedAt,
+      tokenUsage: extractAiTokenUsage(input.tokenPayload),
+      metadata: {
+        source_stage: "analysis_step_1_evidence_mapping",
+        with_future_dimensions: withDims,
+      },
+    });
+  };
   try {
     resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -1202,6 +1228,13 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       signal: args.signal,
     });
   } catch (err) {
+    await recordUsage({
+      status: args.signal.aborted ? "timeout" : "failure",
+      httpStatus: null,
+      failureReason: args.signal.aborted
+        ? "evidence_pass_timeout_or_abort"
+        : "evidence_pass_network_or_timeout_error",
+    });
     return {
       ok: false,
       httpStatus: null,
@@ -1219,6 +1252,11 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
     } catch {
       /* ignore */
     }
+    await recordUsage({
+      status: "failure",
+      httpStatus: resp.status,
+      failureReason: `evidence_pass_http_${resp.status}`,
+    });
     return {
       ok: false,
       httpStatus: resp.status,
@@ -1230,8 +1268,10 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
   }
 
   let parsed: EvidencePass | null = null;
+  let tokenPayload: unknown = null;
   try {
     const json = await resp.json();
+    tokenPayload = json;
     const choice = json.choices?.[0];
     if (providerContract === "plain_json_observations") {
       const compact = parseCompactStep1EvidenceContent(choice?.message?.content);
@@ -1239,6 +1279,12 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
     } else {
       const tc = choice?.message?.tool_calls?.[0];
       if (!tc?.function?.arguments) {
+        await recordUsage({
+          status: "failure",
+          httpStatus: resp.status,
+          failureReason: "evidence_pass_no_tool_call",
+          tokenPayload,
+        });
         return {
           ok: false,
           httpStatus: resp.status,
@@ -1254,6 +1300,12 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       parsed = JSON.parse(tc.function.arguments) as EvidencePass;
     }
   } catch (err) {
+    await recordUsage({
+      status: "failure",
+      httpStatus: resp.status,
+      failureReason: "evidence_pass_parse_error",
+      tokenPayload,
+    });
     return {
       ok: false,
       httpStatus: resp.status,
@@ -1371,6 +1423,12 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
     // Belt-and-braces: if the model emits the field unsolicited, strip it.
     delete (ev as unknown as Record<string, unknown>).future_components;
   }
+
+  await recordUsage({
+    status: "success",
+    httpStatus: resp.status,
+    tokenPayload,
+  });
 
   return {
     ok: true,

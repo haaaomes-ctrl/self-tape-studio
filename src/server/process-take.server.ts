@@ -11,6 +11,7 @@ import { buildMuxHighestMp4Url, isValidMuxMp4Url, normaliseMuxMp4Url } from "./m
 import { deriveS10BriefRuntimeFacts, extractBriefFromText } from "./extract-brief.server";
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
+import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 import {
   runEvidencePass,
   filterRunEvidencePassForStep1,
@@ -2302,6 +2303,14 @@ export async function runProcessTake(
 
   const auditionLevel = ((audition as { audition_level?: string }).audition_level ??
     "emerging") as AuditionLevel;
+  const aiUsageContext: TakeAiUsageContext = {
+    takeId,
+    auditionId: audition.id,
+    userId: take.user_id ?? null,
+    muxDurationSeconds: take.mux_duration_seconds ?? null,
+    signals: take.signals ?? null,
+    checklist: take.checklist ?? null,
+  };
 
   // Structured brief extraction (cached on the audition row). Skip in baseline
   // mode (no brief) or when we've already extracted previously.
@@ -2597,7 +2606,7 @@ export async function runProcessTake(
     }
 
     if (!extractedBrief && suppliedBriefText.length > 5) {
-      const result = await extractBriefFromText(suppliedBriefText);
+      const result = await extractBriefFromText(suppliedBriefText, aiUsageContext);
       if (result) {
         extractedBrief = result.brief;
         extractionConfidence = result.extraction_confidence;
@@ -3053,6 +3062,7 @@ export async function runProcessTake(
         contextText: evidenceContext,
         durationSeconds: take.mux_duration_seconds ?? null,
         withFutureDimensions,
+        usageContext: aiUsageContext,
       }).finally(() => clearTimeout(evTimer));
       evidencePassCompletedAtIso = new Date().toISOString();
       evidencePassDurationMs = evResult.durationMs;
@@ -3452,6 +3462,7 @@ export async function runProcessTake(
           levelBlock,
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
+          usageContext: aiUsageContext,
         }).finally(() => {
           clearTimeout(polishTimer);
           clearInterval(polishHeartbeatInterval);
@@ -3620,6 +3631,10 @@ export async function runProcessTake(
       });
     }
     let currentModel = initialModel;
+    const isSinglePassFallbackAttempt = (model: string): boolean =>
+      model === ANALYSIS_MODEL_FALLBACK || circuitOpenAtStart;
+    const singlePassUsageStep = (model: string) =>
+      isSinglePassFallbackAttempt(model) ? "fallback" : "single_pass_report";
 
     const isCancelled = async (): Promise<boolean> => {
       const { data } = await supabaseAdmin
@@ -3777,6 +3792,25 @@ export async function runProcessTake(
             playbackId: take.mux_playback_id,
             kind: "gemini",
           });
+          await recordTakeAiUsage({
+            ...aiUsageContext,
+            step: singlePassUsageStep(currentModel),
+            model: currentModel,
+            promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+            providerContract: selectReportProviderContract(currentModel),
+            status: "failure",
+            httpStatus: status,
+            failureReason: "mux_url_recovery_retry",
+            latencyMs: Date.now() - attemptStart,
+            fallbackUsed: isSinglePassFallbackAttempt(currentModel),
+            metadata: {
+              source_stage: "single_pass_report_generation",
+              gemini_attempt: geminiAttempt,
+              retry_count: geminiRetryCount,
+              analysis_tier: tier,
+              stale_url_recovery: true,
+            },
+          });
           // Roll back the attempt counter so this doesn't consume a retry slot.
           geminiAttempt -= 1;
           continue;
@@ -3784,6 +3818,24 @@ export async function runProcessTake(
 
         // Hard, non-retryable: 402 (credits).
         if (aiResp && aiResp.status === 402) {
+          await recordTakeAiUsage({
+            ...aiUsageContext,
+            step: singlePassUsageStep(currentModel),
+            model: currentModel,
+            promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+            providerContract: selectReportProviderContract(currentModel),
+            status: "failure",
+            httpStatus: 402,
+            failureReason: "ai_credits_exhausted",
+            latencyMs: Date.now() - attemptStart,
+            fallbackUsed: isSinglePassFallbackAttempt(currentModel),
+            metadata: {
+              source_stage: "single_pass_report_generation",
+              gemini_attempt: geminiAttempt,
+              retry_count: geminiRetryCount,
+              analysis_tier: tier,
+            },
+          });
           metric("gemini_failed", {
             take_id: takeId,
             retry_count: geminiRetryCount,
@@ -3815,6 +3867,27 @@ export async function runProcessTake(
         else if (status !== null && status >= 400 && status < 500)
           failureCode = "ai_non_retryable_4xx";
         else failureCode = "ai_network_error";
+
+        await recordTakeAiUsage({
+          ...aiUsageContext,
+          step: singlePassUsageStep(currentModel),
+          model: currentModel,
+          promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+          providerContract: selectReportProviderContract(currentModel),
+          status: timedOut ? "timeout" : "failure",
+          httpStatus: status,
+          failureReason: failureCode,
+          latencyMs: Date.now() - attemptStart,
+          fallbackUsed: isSinglePassFallbackAttempt(currentModel),
+          metadata: {
+            source_stage: "single_pass_report_generation",
+            gemini_attempt: geminiAttempt,
+            retry_count: geminiRetryCount,
+            analysis_tier: tier,
+            provider_error_category: providerErrorCategory,
+            transient,
+          },
+        });
 
         // Non-retryable (parse/validation/4xx other than 429): terminate now.
         if (!transient) {
@@ -3977,8 +4050,10 @@ export async function runProcessTake(
       });
 
       // (report variable is hoisted above; assigned here for the single-pass path)
+      let singlePassTokenUsagePayload: unknown = null;
       try {
         const json = await aiResp.json();
+        singlePassTokenUsagePayload = json;
         const choice = json.choices?.[0];
         if (selectReportProviderContract(currentModel) === "plain_json_report") {
           report = parseProviderJsonObjectContent(choice?.message?.content);
@@ -4022,7 +4097,45 @@ export async function runProcessTake(
             );
           }
         }
+        await recordTakeAiUsage({
+          ...aiUsageContext,
+          step: singlePassUsageStep(currentModel),
+          model: currentModel,
+          promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+          providerContract: selectReportProviderContract(currentModel),
+          status: "success",
+          httpStatus: lastAttemptHttpStatus,
+          latencyMs: lastAttemptDurationMs ?? Date.now() - geminiStartedAt,
+          tokenUsage: extractAiTokenUsage(singlePassTokenUsagePayload),
+          fallbackUsed: isSinglePassFallbackAttempt(currentModel),
+          metadata: {
+            source_stage: "single_pass_report_generation",
+            gemini_attempt: geminiAttempt,
+            retry_count: geminiRetryCount,
+            analysis_tier: tier,
+          },
+        });
       } catch (parseOuter) {
+        await recordTakeAiUsage({
+          ...aiUsageContext,
+          step: singlePassUsageStep(currentModel),
+          model: currentModel,
+          promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+          providerContract: selectReportProviderContract(currentModel),
+          status: "failure",
+          httpStatus: lastAttemptHttpStatus,
+          failureReason: "analysis_parse_failed",
+          latencyMs: lastAttemptDurationMs ?? Date.now() - geminiStartedAt,
+          tokenUsage: extractAiTokenUsage(singlePassTokenUsagePayload),
+          fallbackUsed: isSinglePassFallbackAttempt(currentModel),
+          metadata: {
+            source_stage: "single_pass_report_generation",
+            gemini_attempt: geminiAttempt,
+            retry_count: geminiRetryCount,
+            analysis_tier: tier,
+            parse_error_name: parseOuter instanceof Error ? parseOuter.name : "unknown",
+          },
+        });
         metric("analysis_parse_failed", {
           take_id: takeId,
           duration_ms: Date.now() - parseStartedAt,

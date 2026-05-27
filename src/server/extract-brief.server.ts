@@ -13,6 +13,7 @@ import type {
   ExtractedBrief,
   MaterialPolicy,
 } from "@/lib/audition-rules";
+import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 import { S10_BRIEF_INTELLIGENCE_PROMPT_VERSION } from "./s10-report-prompt-map.server";
 
 export type ExtractionConfidence = "low" | "medium" | "high";
@@ -494,6 +495,7 @@ function buildSafeFallbackBrief(briefText: string): ExtractedBriefWithMeta {
 
 export async function extractBriefFromText(
   briefText: string,
+  usageContext?: TakeAiUsageContext,
 ): Promise<ExtractedBriefWithMeta | null> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) {
@@ -505,6 +507,32 @@ export async function extractBriefFromText(
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), BRIEF_EXTRACTION_TIMEOUT_MS);
   let timedOut = false;
+  const startedAt = Date.now();
+  const model = "google/gemini-2.5-flash";
+  const recordUsage = async (input: {
+    status: "success" | "failure" | "timeout";
+    httpStatus?: number | null;
+    failureReason?: string | null;
+    tokenPayload?: unknown;
+  }) => {
+    if (!usageContext) return;
+    await recordTakeAiUsage({
+      ...usageContext,
+      step: "brief_extraction",
+      model,
+      promptVersion: S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
+      providerContract: "tool_call",
+      status: input.status,
+      httpStatus: input.httpStatus,
+      failureReason: input.failureReason,
+      latencyMs: Date.now() - startedAt,
+      tokenUsage: extractAiTokenUsage(input.tokenPayload),
+      metadata: {
+        timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
+        source_stage: "brief_intelligence",
+      },
+    });
+  };
 
   try {
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -522,11 +550,24 @@ export async function extractBriefFromText(
         status: resp.status,
         timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
       });
+      await recordUsage({
+        status: "failure",
+        httpStatus: resp.status,
+        failureReason: `brief_extraction_http_${resp.status}`,
+      });
       return buildSafeFallbackBrief(briefText);
     }
     const json = await resp.json();
     const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (!args) return buildSafeFallbackBrief(briefText);
+    if (!args) {
+      await recordUsage({
+        status: "failure",
+        httpStatus: resp.status,
+        failureReason: "brief_extraction_no_tool_call",
+        tokenPayload: json,
+      });
+      return buildSafeFallbackBrief(briefText);
+    }
     const parsed = JSON.parse(args) as ExtractedBrief & {
       extraction_confidence?: ExtractionConfidence;
     };
@@ -607,6 +648,12 @@ export async function extractBriefFromText(
       source: "ai",
     });
 
+    await recordUsage({
+      status: "success",
+      httpStatus: resp.status,
+      tokenPayload: json,
+    });
+
     return { brief: briefOut, extraction_confidence: conf, source: "ai" };
   } catch (err) {
     timedOut = (err instanceof Error && err.name === "AbortError") || controller.signal.aborted;
@@ -614,11 +661,21 @@ export async function extractBriefFromText(
       console.warn("[take-pipeline] brief_extraction_timeout", {
         timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
       });
+      await recordUsage({
+        status: "timeout",
+        httpStatus: null,
+        failureReason: "brief_extraction_timeout",
+      });
     } else {
       console.warn("[take-pipeline] brief_extraction_failed", {
         reason: "network_or_parse_error",
         error_name: err instanceof Error ? err.name : "unknown",
         timeout_ms: BRIEF_EXTRACTION_TIMEOUT_MS,
+      });
+      await recordUsage({
+        status: "failure",
+        httpStatus: null,
+        failureReason: err instanceof Error ? err.name : "brief_extraction_failed",
       });
     }
     return buildSafeFallbackBrief(briefText);
