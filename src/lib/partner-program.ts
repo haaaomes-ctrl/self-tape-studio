@@ -20,6 +20,13 @@ export const PARTNER_CREDIT_POOL_STATUSES = [
 export const PARTNER_USAGE_ALERT_THRESHOLDS = [50, 80, 100] as const;
 export const PARTNER_ALLOWANCE_EXHAUSTED_MESSAGE =
   "Your partner-funded TapeCoach allowance is exhausted. Ask your school, coach or agent for more credits, or use another available credit balance.";
+export const PARTNER_VISIBILITY_POLICY_VERSION = "partner-visibility-2026-05-27";
+export const PARTNER_VISIBILITY_SCOPES = [
+  "aggregate_only",
+  "limited_usage_readiness",
+  "named_progress",
+] as const;
+export const PARTNER_VISIBILITY_ACCEPTANCE_STATUSES = ["active", "revoked"] as const;
 
 export type PartnerType = (typeof PARTNER_TYPES)[number];
 export type PartnerStatus = (typeof PARTNER_STATUSES)[number];
@@ -28,6 +35,9 @@ export type PartnerMembershipStatus = (typeof PARTNER_MEMBERSHIP_STATUSES)[numbe
 export type PartnerCreditPoolPeriodType = (typeof PARTNER_CREDIT_POOL_PERIOD_TYPES)[number];
 export type PartnerCreditPoolStatus = (typeof PARTNER_CREDIT_POOL_STATUSES)[number];
 export type PartnerUsageAlertThreshold = (typeof PARTNER_USAGE_ALERT_THRESHOLDS)[number];
+export type PartnerVisibilityScope = (typeof PARTNER_VISIBILITY_SCOPES)[number];
+export type PartnerVisibilityAcceptanceStatus =
+  (typeof PARTNER_VISIBILITY_ACCEPTANCE_STATUSES)[number];
 
 export const PARTNER_TYPE_CREDIT_SOURCE: Record<PartnerType, CreditSource> = {
   school: "school_funded",
@@ -158,11 +168,94 @@ export type PartnerPoolUsageSummary = {
   crossed_alert_thresholds: PartnerUsageAlertThreshold[];
 };
 
+export type PartnerDataVisibilityPolicy = {
+  partner_type: PartnerType;
+  default_scope: PartnerVisibilityScope;
+  requires_member_acceptance: boolean;
+  requires_parent_guardian_confirmation_for_under_13: boolean;
+  allows_named_progress: boolean;
+  allows_limited_usage_readiness: boolean;
+  allows_full_report_sharing: boolean;
+  allows_uploaded_media_sharing: boolean;
+  allows_brief_sharing: boolean;
+  full_report_visible_by_default: boolean;
+  uploaded_media_visible_by_default: boolean;
+  brief_visible_by_default: boolean;
+  leaderboard_allowed: boolean;
+};
+
+export type PartnerVisibilityAcceptanceInput = {
+  partner_membership_id: string;
+  partner_id: string;
+  user_id: string;
+  partner_type: PartnerType;
+  account_route?: "self_service_13_plus" | "parent_guardian" | "under_13" | null;
+  visibility_scope?: PartnerVisibilityScope | null;
+  status?: PartnerVisibilityAcceptanceStatus;
+  parent_guardian_confirmed?: boolean;
+  full_report_sharing_enabled?: boolean;
+  uploaded_media_sharing_enabled?: boolean;
+  brief_sharing_enabled?: boolean;
+  accepted_at?: string | Date;
+  revoked_at?: string | Date | null;
+  metadata?: Record<string, unknown>;
+  idempotency_key?: string | null;
+};
+
+export type PartnerVisibilityAcceptanceDraft = {
+  partner_membership_id: string;
+  partner_id: string;
+  user_id: string;
+  partner_type: PartnerType;
+  visibility_scope: PartnerVisibilityScope;
+  status: PartnerVisibilityAcceptanceStatus;
+  policy_version: string;
+  parent_guardian_confirmed: boolean;
+  full_report_sharing_enabled: boolean;
+  uploaded_media_sharing_enabled: boolean;
+  brief_sharing_enabled: boolean;
+  leaderboard_enabled: false;
+  accepted_at: string;
+  revoked_at: string | null;
+  metadata: Record<string, unknown>;
+  idempotency_key: string | null;
+};
+
+export type PartnerProgressDashboardDisclosureInput = {
+  partner_type: PartnerType;
+  visibility_scope: PartnerVisibilityScope;
+  performer_name?: string | null;
+  latest_score?: number | null;
+  score_trend?: number | null;
+  readiness_band?: string | null;
+  fix_first_category?: string | null;
+  latest_report_at?: string | null;
+  report_dates?: string[];
+};
+
+export type PartnerProgressDashboardDisclosure = {
+  performer_name: string | null;
+  latest_score: number | null;
+  score_trend: number | null;
+  readiness_band: string | null;
+  fix_first_category: string | null;
+  latest_report_at: string | null;
+  report_dates: string[];
+  full_report_visible: false;
+  uploaded_media_visible: false;
+  brief_visible: false;
+  leaderboard_visible: false;
+};
+
 const PARTNER_TYPE_SET = new Set<string>(PARTNER_TYPES);
 const PARTNER_STATUS_SET = new Set<string>(PARTNER_STATUSES);
 const PARTNER_CODE_STATUS_SET = new Set<string>(PARTNER_CODE_STATUSES);
 const PARTNER_CREDIT_POOL_PERIOD_TYPE_SET = new Set<string>(PARTNER_CREDIT_POOL_PERIOD_TYPES);
 const PARTNER_CREDIT_POOL_STATUS_SET = new Set<string>(PARTNER_CREDIT_POOL_STATUSES);
+const PARTNER_VISIBILITY_SCOPE_SET = new Set<string>(PARTNER_VISIBILITY_SCOPES);
+const PARTNER_VISIBILITY_ACCEPTANCE_STATUS_SET = new Set<string>(
+  PARTNER_VISIBILITY_ACCEPTANCE_STATUSES,
+);
 const CODE_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const EMAIL_DOMAIN_PATTERN =
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
@@ -248,6 +341,28 @@ export function isPartnerCreditPoolStatus(value: unknown): value is PartnerCredi
 export function assertPartnerCreditPoolStatus(value: unknown): PartnerCreditPoolStatus {
   if (isPartnerCreditPoolStatus(value)) return value;
   throw new Error("unknown partner credit pool status");
+}
+
+export function isPartnerVisibilityScope(value: unknown): value is PartnerVisibilityScope {
+  return typeof value === "string" && PARTNER_VISIBILITY_SCOPE_SET.has(value);
+}
+
+export function assertPartnerVisibilityScope(value: unknown): PartnerVisibilityScope {
+  if (isPartnerVisibilityScope(value)) return value;
+  throw new Error("unknown partner visibility scope");
+}
+
+export function isPartnerVisibilityAcceptanceStatus(
+  value: unknown,
+): value is PartnerVisibilityAcceptanceStatus {
+  return typeof value === "string" && PARTNER_VISIBILITY_ACCEPTANCE_STATUS_SET.has(value);
+}
+
+export function assertPartnerVisibilityAcceptanceStatus(
+  value: unknown,
+): PartnerVisibilityAcceptanceStatus {
+  if (isPartnerVisibilityAcceptanceStatus(value)) return value;
+  throw new Error("unknown partner visibility acceptance status");
 }
 
 export function creditSourceForPartnerType(type: PartnerType): CreditSource {
@@ -545,6 +660,186 @@ export function summarisePartnerPoolUsage(input: {
       nextAllocatedCredits,
       totalCredits,
     ),
+  };
+}
+
+export const PARTNER_DATA_VISIBILITY_POLICIES: Record<PartnerType, PartnerDataVisibilityPolicy> = {
+  school: {
+    partner_type: "school",
+    default_scope: "named_progress",
+    requires_member_acceptance: true,
+    requires_parent_guardian_confirmation_for_under_13: true,
+    allows_named_progress: true,
+    allows_limited_usage_readiness: true,
+    allows_full_report_sharing: true,
+    allows_uploaded_media_sharing: false,
+    allows_brief_sharing: false,
+    full_report_visible_by_default: false,
+    uploaded_media_visible_by_default: false,
+    brief_visible_by_default: false,
+    leaderboard_allowed: false,
+  },
+  coach: {
+    partner_type: "coach",
+    default_scope: "named_progress",
+    requires_member_acceptance: true,
+    requires_parent_guardian_confirmation_for_under_13: true,
+    allows_named_progress: true,
+    allows_limited_usage_readiness: true,
+    allows_full_report_sharing: true,
+    allows_uploaded_media_sharing: false,
+    allows_brief_sharing: false,
+    full_report_visible_by_default: false,
+    uploaded_media_visible_by_default: false,
+    brief_visible_by_default: false,
+    leaderboard_allowed: false,
+  },
+  agent: {
+    partner_type: "agent",
+    default_scope: "limited_usage_readiness",
+    requires_member_acceptance: true,
+    requires_parent_guardian_confirmation_for_under_13: true,
+    allows_named_progress: false,
+    allows_limited_usage_readiness: true,
+    allows_full_report_sharing: true,
+    allows_uploaded_media_sharing: false,
+    allows_brief_sharing: false,
+    full_report_visible_by_default: false,
+    uploaded_media_visible_by_default: false,
+    brief_visible_by_default: false,
+    leaderboard_allowed: false,
+  },
+  sponsor: {
+    partner_type: "sponsor",
+    default_scope: "aggregate_only",
+    requires_member_acceptance: false,
+    requires_parent_guardian_confirmation_for_under_13: false,
+    allows_named_progress: false,
+    allows_limited_usage_readiness: false,
+    allows_full_report_sharing: false,
+    allows_uploaded_media_sharing: false,
+    allows_brief_sharing: false,
+    full_report_visible_by_default: false,
+    uploaded_media_visible_by_default: false,
+    brief_visible_by_default: false,
+    leaderboard_allowed: false,
+  },
+  platform: {
+    partner_type: "platform",
+    default_scope: "limited_usage_readiness",
+    requires_member_acceptance: true,
+    requires_parent_guardian_confirmation_for_under_13: true,
+    allows_named_progress: false,
+    allows_limited_usage_readiness: true,
+    allows_full_report_sharing: false,
+    allows_uploaded_media_sharing: false,
+    allows_brief_sharing: false,
+    full_report_visible_by_default: false,
+    uploaded_media_visible_by_default: false,
+    brief_visible_by_default: false,
+    leaderboard_allowed: false,
+  },
+};
+
+export function defaultPartnerDataVisibilityPolicy(type: PartnerType): PartnerDataVisibilityPolicy {
+  return PARTNER_DATA_VISIBILITY_POLICIES[assertPartnerType(type)];
+}
+
+export function assertPartnerVisibilityScopeAllowed(
+  type: PartnerType,
+  scope: PartnerVisibilityScope,
+): PartnerVisibilityScope {
+  const policy = defaultPartnerDataVisibilityPolicy(type);
+  const value = assertPartnerVisibilityScope(scope);
+
+  if (value === "named_progress" && !policy.allows_named_progress) {
+    throw new Error("partner type cannot access named progress data");
+  }
+  if (value === "limited_usage_readiness" && !policy.allows_limited_usage_readiness) {
+    throw new Error("partner type cannot access limited usage/readiness data");
+  }
+  if (value === "aggregate_only") {
+    return value;
+  }
+  return value;
+}
+
+export function buildPartnerVisibilityAcceptanceDraft(
+  input: PartnerVisibilityAcceptanceInput,
+): PartnerVisibilityAcceptanceDraft {
+  const partnerType = assertPartnerType(input.partner_type);
+  const policy = defaultPartnerDataVisibilityPolicy(partnerType);
+  const visibilityScope = assertPartnerVisibilityScopeAllowed(
+    partnerType,
+    input.visibility_scope ?? policy.default_scope,
+  );
+  const parentGuardianConfirmed = input.parent_guardian_confirmed ?? false;
+  const fullReportSharingEnabled = input.full_report_sharing_enabled ?? false;
+  const uploadedMediaSharingEnabled = input.uploaded_media_sharing_enabled ?? false;
+  const briefSharingEnabled = input.brief_sharing_enabled ?? false;
+  const status = input.status ? assertPartnerVisibilityAcceptanceStatus(input.status) : "active";
+  const revokedAt = isoDateOrNull(input.revoked_at);
+
+  if (
+    policy.requires_parent_guardian_confirmation_for_under_13 &&
+    input.account_route === "under_13" &&
+    !parentGuardianConfirmed
+  ) {
+    throw new Error("under-13 partner linking requires parent/guardian confirmation");
+  }
+  if (fullReportSharingEnabled && !policy.allows_full_report_sharing) {
+    throw new Error("partner type cannot access full reports");
+  }
+  if (uploadedMediaSharingEnabled || briefSharingEnabled) {
+    throw new Error("uploaded video and brief sharing are not enabled by default");
+  }
+  if (policy.leaderboard_allowed) {
+    throw new Error("partner leaderboard access is not allowed");
+  }
+  if (status === "revoked" && !revokedAt) {
+    throw new Error("revoked partner visibility acceptance requires revoked_at");
+  }
+
+  return {
+    partner_membership_id: input.partner_membership_id,
+    partner_id: input.partner_id,
+    user_id: input.user_id,
+    partner_type: partnerType,
+    visibility_scope: visibilityScope,
+    status,
+    policy_version: PARTNER_VISIBILITY_POLICY_VERSION,
+    parent_guardian_confirmed: parentGuardianConfirmed,
+    full_report_sharing_enabled: fullReportSharingEnabled,
+    uploaded_media_sharing_enabled: false,
+    brief_sharing_enabled: false,
+    leaderboard_enabled: false,
+    accepted_at: isoDate(input.accepted_at, new Date()),
+    revoked_at: revokedAt,
+    metadata: metadataObject(input.metadata),
+    idempotency_key: input.idempotency_key ?? null,
+  };
+}
+
+export function redactPartnerProgressDashboardDisclosure(
+  input: PartnerProgressDashboardDisclosureInput,
+): PartnerProgressDashboardDisclosure {
+  const partnerType = assertPartnerType(input.partner_type);
+  const visibilityScope = assertPartnerVisibilityScopeAllowed(partnerType, input.visibility_scope);
+  const namedProgress = visibilityScope === "named_progress";
+  const limitedReadiness = visibilityScope === "limited_usage_readiness";
+
+  return {
+    performer_name: namedProgress ? input.performer_name?.trim() || null : null,
+    latest_score: namedProgress ? (input.latest_score ?? null) : null,
+    score_trend: namedProgress ? (input.score_trend ?? null) : null,
+    readiness_band: namedProgress || limitedReadiness ? (input.readiness_band ?? null) : null,
+    fix_first_category: namedProgress ? (input.fix_first_category ?? null) : null,
+    latest_report_at: namedProgress || limitedReadiness ? (input.latest_report_at ?? null) : null,
+    report_dates: namedProgress ? (input.report_dates ?? []) : [],
+    full_report_visible: false,
+    uploaded_media_visible: false,
+    brief_visible: false,
+    leaderboard_visible: false,
   };
 }
 

@@ -594,6 +594,93 @@ export type Database = {
           },
         ];
       };
+      partner_visibility_acceptances: {
+        Row: {
+          accepted_at: string;
+          brief_sharing_enabled: boolean;
+          created_at: string;
+          full_report_sharing_enabled: boolean;
+          id: string;
+          idempotency_key: string | null;
+          leaderboard_enabled: boolean;
+          metadata: Json;
+          parent_guardian_confirmed: boolean;
+          partner_id: string;
+          partner_membership_id: string;
+          partner_type: Database["public"]["Enums"]["partner_type"];
+          policy_version: string;
+          revocation_reason: string | null;
+          revoked_at: string | null;
+          revoked_by_user_id: string | null;
+          status: Database["public"]["Enums"]["partner_visibility_acceptance_status"];
+          updated_at: string;
+          uploaded_media_sharing_enabled: boolean;
+          user_id: string;
+          visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"];
+        };
+        Insert: {
+          accepted_at?: string;
+          brief_sharing_enabled?: boolean;
+          created_at?: string;
+          full_report_sharing_enabled?: boolean;
+          id?: string;
+          idempotency_key?: string | null;
+          leaderboard_enabled?: boolean;
+          metadata?: Json;
+          parent_guardian_confirmed?: boolean;
+          partner_id: string;
+          partner_membership_id: string;
+          partner_type: Database["public"]["Enums"]["partner_type"];
+          policy_version: string;
+          revocation_reason?: string | null;
+          revoked_at?: string | null;
+          revoked_by_user_id?: string | null;
+          status?: Database["public"]["Enums"]["partner_visibility_acceptance_status"];
+          updated_at?: string;
+          uploaded_media_sharing_enabled?: boolean;
+          user_id: string;
+          visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"];
+        };
+        Update: {
+          accepted_at?: string;
+          brief_sharing_enabled?: boolean;
+          created_at?: string;
+          full_report_sharing_enabled?: boolean;
+          id?: string;
+          idempotency_key?: string | null;
+          leaderboard_enabled?: boolean;
+          metadata?: Json;
+          parent_guardian_confirmed?: boolean;
+          partner_id?: string;
+          partner_membership_id?: string;
+          partner_type?: Database["public"]["Enums"]["partner_type"];
+          policy_version?: string;
+          revocation_reason?: string | null;
+          revoked_at?: string | null;
+          revoked_by_user_id?: string | null;
+          status?: Database["public"]["Enums"]["partner_visibility_acceptance_status"];
+          updated_at?: string;
+          uploaded_media_sharing_enabled?: boolean;
+          user_id?: string;
+          visibility_scope?: Database["public"]["Enums"]["partner_visibility_scope"];
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_membership_id_fkey";
+            columns: ["partner_membership_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_memberships";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       partner_codes: {
         Row: {
           abuse_flag_reason: string | null;
@@ -1087,6 +1174,66 @@ export type Database = {
           },
         ];
       };
+      partner_aggregate_dashboard_summary: {
+        Row: {
+          active_member_count: number;
+          average_latest_score: number | null;
+          credits_used: number;
+          latest_report_at: string | null;
+          partner_id: string;
+          partner_name: string;
+          partner_type: Database["public"]["Enums"]["partner_type"];
+          report_count: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partners_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      partner_progress_dashboard_summary: {
+        Row: {
+          brief_visible: boolean;
+          credits_used: number;
+          fix_first_category: string | null;
+          full_report_visible: boolean;
+          latest_report_at: string | null;
+          latest_score: number | null;
+          leaderboard_visible: boolean;
+          partner_id: string;
+          partner_membership_id: string;
+          partner_name: string;
+          partner_type: Database["public"]["Enums"]["partner_type"];
+          performer_name: string | null;
+          readiness_band: string | null;
+          report_count: number;
+          report_dates: string[];
+          score_trend: number | null;
+          uploaded_media_visible: boolean;
+          user_id: string;
+          visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"];
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_memberships_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_membership_id_fkey";
+            columns: ["partner_membership_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_memberships";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Functions: {
       activate_partner_code: {
@@ -1097,6 +1244,21 @@ export type Database = {
           p_metadata: Json;
           p_user_email: string | null;
           p_user_id: string;
+        };
+        Returns: string;
+      };
+      accept_partner_visibility: {
+        Args: {
+          p_accepted_at: string;
+          p_brief_sharing_enabled: boolean;
+          p_full_report_sharing_enabled: boolean;
+          p_idempotency_key: string | null;
+          p_metadata: Json;
+          p_parent_guardian_confirmed: boolean;
+          p_partner_membership_id: string;
+          p_uploaded_media_sharing_enabled: boolean;
+          p_user_id: string;
+          p_visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"] | null;
         };
         Returns: string;
       };
@@ -1192,12 +1354,27 @@ export type Database = {
         };
         Returns: string | null;
       };
+      partner_default_visibility_scope: {
+        Args: {
+          p_partner_type: Database["public"]["Enums"]["partner_type"];
+        };
+        Returns: Database["public"]["Enums"]["partner_visibility_scope"];
+      };
       record_partner_pool_alerts: {
         Args: {
           p_now: string;
           p_partner_credit_pool_id: string;
         };
         Returns: number;
+      };
+      revoke_partner_visibility_acceptance: {
+        Args: {
+          p_partner_visibility_acceptance_id: string;
+          p_revocation_reason: string | null;
+          p_revoked_at: string;
+          p_revoked_by_user_id: string | null;
+        };
+        Returns: string;
       };
       record_admin_credit_adjustment: {
         Args: {
@@ -1282,6 +1459,8 @@ export type Database = {
       partner_status: "active" | "paused" | "archived";
       partner_type: "school" | "coach" | "agent" | "sponsor" | "platform";
       partner_usage_alert_status: "triggered" | "acknowledged";
+      partner_visibility_acceptance_status: "active" | "revoked";
+      partner_visibility_scope: "aggregate_only" | "limited_usage_readiness" | "named_progress";
     };
     CompositeTypes: {
       [_ in never]: never;
