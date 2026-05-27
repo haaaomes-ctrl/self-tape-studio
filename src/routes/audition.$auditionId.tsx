@@ -45,6 +45,11 @@ import { cn } from "@/lib/utils";
 import { brandTitle } from "@/config/brand";
 import { readReportSchemaVersion } from "@/lib/report-schema";
 import { V2ReportView } from "@/components/report/V2ReportView";
+import {
+  buildAnalyticsAttributionMetadata,
+  readStoredAnalyticsAttribution,
+  trackAnalyticsEvent,
+} from "@/lib/analytics-attribution";
 
 // Public-safe headline picker for v1 + v2 reports. Mirrors the server-side
 // helper in `report-output-enforcement.server.ts` (kept local to avoid
@@ -254,6 +259,7 @@ function AuditionPage() {
   // becoming terminal — useful for confirming the polling/revalidation path
   // actually delivered the DB truth to the client.
   const loggedTerminalRef = useRef<Set<string>>(new Set());
+  const trackedReportViewRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     for (const t of takes) {
       if (
@@ -267,8 +273,18 @@ function AuditionPage() {
           processing_phase: t.processing_phase ?? null,
         });
       }
+      if (t.status === "complete" && t.report && !trackedReportViewRef.current.has(t.id)) {
+        trackedReportViewRef.current.add(t.id);
+        void trackAnalyticsEvent({
+          eventName: "report_viewed",
+          objectType: "report",
+          objectId: t.id,
+          auditionId,
+          takeId: t.id,
+        });
+      }
     }
-  }, [takes]);
+  }, [auditionId, takes]);
 
   if (!audition) {
     return (
@@ -1916,6 +1932,9 @@ function AddTakeBlock({
     setUploadPct(0);
     try {
       const signals = await buildTakeUploadSignals(file, checklist);
+      const analyticsAttribution = buildAnalyticsAttributionMetadata(
+        readStoredAnalyticsAttribution(),
+      );
       const { data: take, error: takeErr } = await supabase
         .from("takes")
         .insert([
@@ -1929,12 +1948,21 @@ function AddTakeBlock({
             processing_phase: "uploading",
             signals: signals as never,
             checklist: (checklist ?? null) as never,
+            analytics_attribution: analyticsAttribution as never,
           },
         ])
         .select("id")
         .single();
       if (takeErr || !take) throw takeErr ?? new Error("Could not create take");
       takeIdRef.current = take.id;
+      void trackAnalyticsEvent({
+        eventName: "upload",
+        objectType: "take",
+        objectId: take.id,
+        auditionId: audition.id,
+        takeId: take.id,
+        properties: { upload_surface: "add_take_upload" },
+      });
 
       let uploadUrl: string | undefined;
       try {

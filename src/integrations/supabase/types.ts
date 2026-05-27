@@ -68,6 +68,164 @@ export type Database = {
         };
         Relationships: [];
       };
+      analytics_events: {
+        Row: {
+          attribution_key: string | null;
+          audition_id: string | null;
+          consent_state: string;
+          created_at: string;
+          creator_code: string | null;
+          event_name: string;
+          event_properties: Json;
+          event_source: string;
+          id: string;
+          landing_path: string | null;
+          object_id: string | null;
+          object_type: string | null;
+          occurred_at: string;
+          partner_code_hint: string | null;
+          referrer_host: string | null;
+          session_key: string | null;
+          take_id: string | null;
+          user_id: string | null;
+          utm_campaign: string | null;
+          utm_content: string | null;
+          utm_medium: string | null;
+          utm_source: string | null;
+          utm_term: string | null;
+        };
+        Insert: {
+          attribution_key?: string | null;
+          audition_id?: string | null;
+          consent_state?: string;
+          created_at?: string;
+          creator_code?: string | null;
+          event_name: string;
+          event_properties?: Json;
+          event_source?: string;
+          id?: string;
+          landing_path?: string | null;
+          object_id?: string | null;
+          object_type?: string | null;
+          occurred_at?: string;
+          partner_code_hint?: string | null;
+          referrer_host?: string | null;
+          session_key?: string | null;
+          take_id?: string | null;
+          user_id?: string | null;
+          utm_campaign?: string | null;
+          utm_content?: string | null;
+          utm_medium?: string | null;
+          utm_source?: string | null;
+          utm_term?: string | null;
+        };
+        Update: {
+          attribution_key?: string | null;
+          audition_id?: string | null;
+          consent_state?: string;
+          created_at?: string;
+          creator_code?: string | null;
+          event_name?: string;
+          event_properties?: Json;
+          event_source?: string;
+          id?: string;
+          landing_path?: string | null;
+          object_id?: string | null;
+          object_type?: string | null;
+          occurred_at?: string;
+          partner_code_hint?: string | null;
+          referrer_host?: string | null;
+          session_key?: string | null;
+          take_id?: string | null;
+          user_id?: string | null;
+          utm_campaign?: string | null;
+          utm_content?: string | null;
+          utm_medium?: string | null;
+          utm_source?: string | null;
+          utm_term?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "analytics_events_audition_id_fkey";
+            columns: ["audition_id"];
+            isOneToOne: false;
+            referencedRelation: "auditions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "analytics_events_take_id_fkey";
+            columns: ["take_id"];
+            isOneToOne: false;
+            referencedRelation: "takes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      analytics_user_attribution: {
+        Row: {
+          attribution_key: string | null;
+          consent_state: string;
+          first_creator_code: string | null;
+          first_landing_path: string | null;
+          first_partner_code_hint: string | null;
+          first_referrer_host: string | null;
+          first_seen_at: string;
+          first_utm_campaign: string | null;
+          first_utm_content: string | null;
+          first_utm_medium: string | null;
+          first_utm_source: string | null;
+          first_utm_term: string | null;
+          signup_at: string | null;
+          signup_event_id: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attribution_key?: string | null;
+          consent_state?: string;
+          first_creator_code?: string | null;
+          first_landing_path?: string | null;
+          first_partner_code_hint?: string | null;
+          first_referrer_host?: string | null;
+          first_seen_at?: string;
+          first_utm_campaign?: string | null;
+          first_utm_content?: string | null;
+          first_utm_medium?: string | null;
+          first_utm_source?: string | null;
+          first_utm_term?: string | null;
+          signup_at?: string | null;
+          signup_event_id?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attribution_key?: string | null;
+          consent_state?: string;
+          first_creator_code?: string | null;
+          first_landing_path?: string | null;
+          first_partner_code_hint?: string | null;
+          first_referrer_host?: string | null;
+          first_seen_at?: string;
+          first_utm_campaign?: string | null;
+          first_utm_content?: string | null;
+          first_utm_medium?: string | null;
+          first_utm_source?: string | null;
+          first_utm_term?: string | null;
+          signup_at?: string | null;
+          signup_event_id?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "analytics_user_attribution_signup_event_id_fkey";
+            columns: ["signup_event_id"];
+            isOneToOne: false;
+            referencedRelation: "analytics_events";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       app_config: {
         Row: {
           daily_submission_cap: number;
@@ -1342,6 +1500,7 @@ export type Database = {
       };
       auditions: {
         Row: {
+          analytics_attribution: Json;
           anon_id: string | null;
           audition_level: string;
           brief: string | null;
@@ -1355,6 +1514,7 @@ export type Database = {
           user_id: string | null;
         };
         Insert: {
+          analytics_attribution?: Json;
           anon_id?: string | null;
           audition_level?: string;
           brief?: string | null;
@@ -1368,6 +1528,7 @@ export type Database = {
           user_id?: string | null;
         };
         Update: {
+          analytics_attribution?: Json;
           anon_id?: string | null;
           audition_level?: string;
           brief?: string | null;
@@ -1432,6 +1593,7 @@ export type Database = {
       takes: {
         Row: {
           analysis_tier: string | null;
+          analytics_attribution: Json;
           anon_id: string | null;
           attempt_count: number;
           audition_id: string;
@@ -1467,6 +1629,7 @@ export type Database = {
         };
         Insert: {
           analysis_tier?: string | null;
+          analytics_attribution?: Json;
           anon_id?: string | null;
           attempt_count?: number;
           audition_id: string;
@@ -1502,6 +1665,7 @@ export type Database = {
         };
         Update: {
           analysis_tier?: string | null;
+          analytics_attribution?: Json;
           anon_id?: string | null;
           attempt_count?: number;
           audition_id?: string;
@@ -1561,6 +1725,74 @@ export type Database = {
       };
     };
     Views: {
+      analytics_attribution_dashboard: {
+        Row: {
+          attribution_source: string | null;
+          creator_code: string | null;
+          distinct_user_count: number | null;
+          partner_code_hint: string | null;
+          purchase_completed_count: number | null;
+          purchase_started_count: number | null;
+          report_completed_count: number | null;
+          report_viewed_count: number | null;
+          signup_count: number | null;
+          upload_count: number | null;
+          utm_campaign: string | null;
+          utm_medium: string | null;
+          utm_source: string | null;
+        };
+        Relationships: [];
+      };
+      analytics_b2b_leads_dashboard: {
+        Row: {
+          attribution_source: string | null;
+          creator_code: string | null;
+          distinct_user_count: number | null;
+          lead_count: number | null;
+          lead_day: string | null;
+          lead_type: string | null;
+          partner_code_hint: string | null;
+          utm_campaign: string | null;
+        };
+        Relationships: [];
+      };
+      analytics_funnel_dashboard: {
+        Row: {
+          attribution_source: string | null;
+          creator_code: string | null;
+          distinct_user_count: number | null;
+          event_count: number | null;
+          event_day: string | null;
+          event_name: string | null;
+          partner_code_hint: string | null;
+          utm_campaign: string | null;
+          utm_medium: string | null;
+        };
+        Relationships: [];
+      };
+      analytics_habit_dashboard: {
+        Row: {
+          cohort_month: string | null;
+          completed_report_count: number | null;
+          users_returned_after_30_days_count: number | null;
+          users_returned_after_7_days_count: number | null;
+          users_with_auditions_count: number | null;
+          users_with_more_than_one_audition_count: number | null;
+        };
+        Relationships: [];
+      };
+      analytics_report_completion_dashboard: {
+        Row: {
+          month_start: string | null;
+          report_completed_count: number | null;
+          report_completion_rate: number | null;
+          report_started_count: number | null;
+          report_viewed_count: number | null;
+          report_viewing_user_count: number | null;
+          users_with_completed_report_count: number | null;
+        };
+        Relationships: [];
+      };
       consumer_credit_payment_reconciliation: {
         Row: {
           amount_total_pence: number | null;
@@ -2073,6 +2305,29 @@ export type Database = {
       };
     };
     Functions: {
+      record_analytics_event: {
+        Args: {
+          p_attribution_key?: string | null;
+          p_audition_id?: string | null;
+          p_consent_state?: string;
+          p_creator_code?: string | null;
+          p_event_name: string;
+          p_event_properties?: Json;
+          p_landing_path?: string | null;
+          p_object_id?: string | null;
+          p_object_type?: string | null;
+          p_partner_code_hint?: string | null;
+          p_referrer_host?: string | null;
+          p_session_key?: string | null;
+          p_take_id?: string | null;
+          p_utm_campaign?: string | null;
+          p_utm_content?: string | null;
+          p_utm_medium?: string | null;
+          p_utm_source?: string | null;
+          p_utm_term?: string | null;
+        };
+        Returns: string | null;
+      };
       activate_partner_code: {
         Args: {
           p_activated_at: string;

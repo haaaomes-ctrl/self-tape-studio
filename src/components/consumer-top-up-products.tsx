@@ -13,6 +13,11 @@ import {
   createConsumerTopUpCheckout,
   listConsumerTopUpCatalogue,
 } from "@/server-fns/consumer-products.functions";
+import {
+  buildAnalyticsAttributionMetadata,
+  readStoredAnalyticsAttribution,
+  trackAnalyticsEvent,
+} from "@/lib/analytics-attribution";
 
 const DEFAULT_CATALOGUE: ConsumerTopUpCatalogue = {
   products: sortConsumerTopUpProducts(LAUNCH_CONSUMER_TOP_UP_PRODUCTS),
@@ -48,12 +53,23 @@ export function ConsumerTopUpProducts() {
     setPendingSku(sku);
     setCheckoutError(null);
     try {
-      const result = (await createCheckout({ data: { sku } })) as {
+      const analyticsAttribution = buildAnalyticsAttributionMetadata(
+        readStoredAnalyticsAttribution(),
+      );
+      const result = (await createCheckout({
+        data: { sku, analyticsAttribution },
+      })) as {
+        checkout_session_id?: string;
         checkout_url?: string;
       };
       if (!result.checkout_url) {
         throw new Error("Stripe Checkout did not return a redirect URL.");
       }
+      void trackAnalyticsEvent({
+        eventName: "purchase_started",
+        objectType: "purchase",
+        properties: { sku, checkout_session_recorded: Boolean(result.checkout_session_id) },
+      });
       window.location.assign(result.checkout_url);
     } catch (err) {
       setCheckoutError(err instanceof Error ? err.message : "Checkout could not be started.");

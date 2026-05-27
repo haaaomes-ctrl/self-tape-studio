@@ -77,6 +77,10 @@ import {
   reserveReportCreditForTake,
 } from "./credit-ledger.server";
 import {
+  recordSecondReportEventIfNeeded,
+  recordServerAnalyticsEvent,
+} from "./analytics-events.server";
+import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
@@ -2593,6 +2597,18 @@ export async function runProcessTake(
         take_id: takeId,
         reason: "run_process_take",
         synthetic_usage: reservation.synthetic_usage,
+      });
+      void recordServerAnalyticsEvent({
+        eventName: "report_started",
+        userId: take.user_id,
+        objectType: "take",
+        objectId: takeId,
+        auditionId: take.audition_id,
+        takeId,
+        properties: {
+          processing_phase: take.processing_phase,
+          synthetic_usage: reservation.synthetic_usage,
+        },
       });
     } catch (creditErr) {
       if (creditErr instanceof ReportCreditRequiredError) {
@@ -5624,6 +5640,27 @@ export async function runProcessTake(
         reason: "report_persisted",
         synthetic_usage: activeReportCreditSyntheticUsage,
         credit_ledger_entry_id: creditConsumption.credit_ledger_entry_id,
+      });
+      void recordServerAnalyticsEvent({
+        eventName: "report_completed",
+        userId: take.user_id,
+        objectType: "report",
+        objectId: takeId,
+        auditionId: take.audition_id,
+        takeId,
+        properties: {
+          overall_score: overall,
+          synthetic_usage: activeReportCreditSyntheticUsage,
+          schema_version:
+            typeof (reportToPersist as Record<string, unknown>).schema_version === "string"
+              ? ((reportToPersist as Record<string, unknown>).schema_version as string)
+              : null,
+        },
+      });
+      void recordSecondReportEventIfNeeded({
+        userId: take.user_id,
+        auditionId: take.audition_id,
+        takeId,
       });
       activeReportCreditReservationId = null;
     } catch (creditErr) {

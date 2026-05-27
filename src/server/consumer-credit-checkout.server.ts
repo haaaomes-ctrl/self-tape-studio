@@ -10,6 +10,7 @@ import {
 } from "@/lib/consumer-credit-checkout";
 import { getConsumerTopUpProductBySku } from "@/server/consumer-credit-products.server";
 import { metric } from "@/server/metrics.server";
+import { recordServerAnalyticsEvent } from "@/server/analytics-events.server";
 
 type StripeObject = Record<string, unknown>;
 
@@ -139,6 +140,7 @@ export async function createConsumerTopUpCheckoutSession(input: {
   userId: string;
   sku: string;
   origin: string;
+  analyticsAttribution?: Record<string, unknown>;
 }): Promise<ConsumerCheckoutSessionResult> {
   const product = await getConsumerTopUpProductBySku(input.sku);
   if (!product || !product.active) {
@@ -177,6 +179,7 @@ export async function createConsumerTopUpCheckoutSession(input: {
       source: "consumer_top_up_checkout",
       stripe_checkout_session_id: sessionId,
       stripe_payment_intent_id: stringValue(session.payment_intent),
+      analytics_attribution: input.analyticsAttribution ?? null,
     }),
   });
   if (error) {
@@ -249,6 +252,17 @@ async function completePaymentFromStripeObject(input: {
   metric("consumer_payment_succeeded", {
     stripe_event_type: input.event.type,
     product_sku: payload.product_sku ?? "unknown",
+  });
+  void recordServerAnalyticsEvent({
+    eventName: "purchase_completed",
+    userId: payload.user_id,
+    objectType: "purchase",
+    properties: {
+      product_sku: payload.product_sku ?? "unknown",
+      credit_amount: payload.credit_amount,
+      amount_total_pence: payload.amount_total_pence,
+      stripe_event_type: input.event.type,
+    },
   });
 }
 
