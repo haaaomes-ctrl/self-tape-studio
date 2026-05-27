@@ -4,8 +4,16 @@ import {
   buildAdminAdjustmentEntry,
   buildCreditGrantDraft,
   CREDIT_SOURCES,
+  formatReportCreditRequiredError,
   FREE_MONTHLY_CREDIT_VALIDITY_DAYS,
+  REPORT_CREDIT_AMOUNT,
+  REPORT_CREDIT_REPLACEMENT_COPY,
+  REPORT_CREDIT_REQUIRED_MESSAGE,
+  REPORT_CREDIT_RESERVATION_STATUSES,
+  REPORT_CREDIT_RESTORED_MESSAGE,
   resolveCreditGrantPolicy,
+  resolveReportCreditTerminalAction,
+  reportCreditLifecycleStatusFor,
   summariseCreditEntriesBySource,
 } from "@/lib/credit-ledger";
 
@@ -178,5 +186,45 @@ describe("credit ledger foundation", () => {
         entry_count: 2,
       },
     ]);
+  });
+
+  it("defines DS-12 one-credit report lifecycle statuses and copy", () => {
+    expect(REPORT_CREDIT_AMOUNT).toBe(1);
+    expect(REPORT_CREDIT_RESERVATION_STATUSES).toEqual([
+      "reserved",
+      "consumed",
+      "released",
+      "refunded",
+    ]);
+    expect(formatReportCreditRequiredError()).toBe(
+      `CREDIT_REQUIRED: ${REPORT_CREDIT_REQUIRED_MESSAGE}`,
+    );
+    expect(REPORT_CREDIT_RESTORED_MESSAGE).toMatch(/returned automatically/i);
+    expect(REPORT_CREDIT_REPLACEMENT_COPY).toMatch(
+      /Replacing a take uses another TapeCoach credit/i,
+    );
+  });
+
+  it("maps report terminal states to consume, release or refund", () => {
+    expect(resolveReportCreditTerminalAction({ reportPersisted: true })).toBe("consume");
+    expect(
+      resolveReportCreditTerminalAction({
+        reportPersisted: false,
+        cancelledBeforeAnalysis: true,
+      }),
+    ).toBe("release");
+    expect(
+      resolveReportCreditTerminalAction({
+        reportPersisted: false,
+        failureCode: "analysis_parse_failed",
+      }),
+    ).toBe("refund");
+    expect(resolveReportCreditTerminalAction({ reportPersisted: false })).toBe("none");
+  });
+
+  it("keeps synthetic admin/test usage separate from commercial lifecycle labels", () => {
+    expect(reportCreditLifecycleStatusFor("reserved")).toBe("reserved");
+    expect(reportCreditLifecycleStatusFor("reserved", true)).toBe("synthetic_reserved");
+    expect(reportCreditLifecycleStatusFor("consumed", true)).toBe("synthetic_consumed");
   });
 });

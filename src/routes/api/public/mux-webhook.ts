@@ -1,21 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  buildMuxHighestMp4Url,
-  getMux,
-  normaliseMuxMp4Url,
-} from "@/server/mux.server";
-import {
-  assertWithinAnalysisQuota,
-  QuotaExceededError,
-  resolveTakeIdentity,
-} from "@/server/quota.server";
+import { buildMuxHighestMp4Url, getMux, normaliseMuxMp4Url } from "@/server/mux.server";
 import { metric } from "@/server/metrics.server";
 import { enqueueAnalysisJobOrMarkFailed } from "@/server/analysis-job-queue.server";
+import { FINALISING_ORPHAN_MS, recoverFinalisingTake } from "@/server/finalising-recovery.server";
 import {
-  FINALISING_ORPHAN_MS,
-  recoverFinalisingTake,
-} from "@/server/finalising-recovery.server";
+  ReportCreditRequiredError,
+  reserveReportCreditForTake,
+} from "@/server/credit-ledger.server";
 
 const STATIC_RENDITION_HEARTBEAT_STALE_MS = 120_000;
 
@@ -37,7 +29,10 @@ export function classifyStaticRenditionReadyTake(input: {
     return "recover_stale_finalising";
   }
   if (input.processing_phase === "finalising") return "skip_fresh_inflight";
-  if (input.processing_phase === "analysing" && staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS) {
+  if (
+    input.processing_phase === "analysing" &&
+    staleHeartbeatMs < STATIC_RENDITION_HEARTBEAT_STALE_MS
+  ) {
     return "skip_fresh_inflight";
   }
   if (
@@ -70,7 +65,9 @@ function summariseMuxWebhookBody(rawBody: string): Record<string, unknown> {
       duration?: number;
       resolution?: string;
       resolution_tier?: string;
-      static_renditions?: { files?: Array<{ status?: string; resolution?: string; name?: string }> };
+      static_renditions?: {
+        files?: Array<{ status?: string; resolution?: string; name?: string }>;
+      };
       playback_ids?: Array<{ id?: string; policy?: string }>;
     };
     return {
@@ -89,15 +86,17 @@ function summariseMuxWebhookBody(rawBody: string): Record<string, unknown> {
       duration: data.duration ?? null,
       resolution: data.resolution ?? null,
       resolution_tier: data.resolution_tier ?? null,
-      static_rendition_files: data.static_renditions?.files?.map((file) => ({
-        status: file.status ?? null,
-        resolution: file.resolution ?? null,
-        name: file.name ?? null,
-      })) ?? null,
-      playback_ids: data.playback_ids?.map((playback) => ({
-        id: playback.id ?? null,
-        policy: playback.policy ?? null,
-      })) ?? null,
+      static_rendition_files:
+        data.static_renditions?.files?.map((file) => ({
+          status: file.status ?? null,
+          resolution: file.resolution ?? null,
+          name: file.name ?? null,
+        })) ?? null,
+      playback_ids:
+        data.playback_ids?.map((playback) => ({
+          id: playback.id ?? null,
+          policy: playback.policy ?? null,
+        })) ?? null,
       created_at: payload.created_at ?? null,
     };
   } catch {
@@ -129,6 +128,45 @@ async function resolveTakeIdForMuxEvent(data: {
   }
 
   return take?.id ?? null;
+}
+
+async function reserveReportCreditBeforeAnalysis(params: {
+  takeId: string;
+  trigger: string;
+}): Promise<boolean> {
+  try {
+    await reserveReportCreditForTake({
+      take_id: params.takeId,
+      metadata: {
+        trigger: params.trigger,
+        report_credit_amount: 1,
+        same_video_credit_policy: "consume_only_if_report_generated",
+        commercial_metrics_excluded: false,
+      },
+    });
+    metric("report_credit_reserved", {
+      take_id: params.takeId,
+      reason: params.trigger,
+    });
+    return true;
+  } catch (err) {
+    if (err instanceof ReportCreditRequiredError) {
+      metric("report_credit_rejected", {
+        take_id: params.takeId,
+        reason: `${params.trigger}_no_funded_credit`,
+      });
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          status: "error",
+          processing_phase: "error",
+          error_message: err.message,
+        })
+        .eq("id", params.takeId);
+      return false;
+    }
+    throw err;
+  }
 }
 
 async function scheduleTakeFromStaticRenditionReady(params: {
@@ -269,30 +307,12 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     return new Response("ok", { status: 200 });
   }
 
-  const identity = await resolveTakeIdentity(takeId);
-  if (identity) {
-    try {
-      await assertWithinAnalysisQuota(identity, "mux-webhook:static-rendition.ready");
-    } catch (qerr) {
-      if (qerr instanceof QuotaExceededError) {
-        metric("quota_rejection", {
-          take_id: takeId,
-          reason: qerr.scope,
-          cap: qerr.cap,
-          count: qerr.count,
-        });
-        await supabaseAdmin
-          .from("takes")
-          .update({
-            status: "error",
-            processing_phase: "error",
-            error_message: qerr.message,
-          })
-          .eq("id", takeId);
-        return new Response("ok", { status: 200 });
-      }
-      throw qerr;
-    }
+  const creditReserved = await reserveReportCreditBeforeAnalysis({
+    takeId,
+    trigger: "mux_webhook_static_rendition_ready",
+  });
+  if (!creditReserved) {
+    return new Response("ok", { status: 200 });
   }
 
   await supabaseAdmin
@@ -307,9 +327,10 @@ async function scheduleTakeFromStaticRenditionReady(params: {
   });
   await enqueueAnalysisJobOrMarkFailed({
     takeId,
-    reason: recoveryAction === "recover_stale_analysing"
-      ? "static_rendition_stale_analysing"
-      : "static_rendition_ready",
+    reason:
+      recoveryAction === "recover_stale_analysing"
+        ? "static_rendition_stale_analysing"
+        : "static_rendition_ready",
   });
 
   return new Response("ok", { status: 200 });
@@ -377,7 +398,9 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             type: peek?.type ?? "(unknown)",
           });
         } catch {
-          console.warn("MUX WEBHOOK body is not valid JSON (pre-verify)", { timestamp: receivedAt });
+          console.warn("MUX WEBHOOK body is not valid JSON (pre-verify)", {
+            timestamp: receivedAt,
+          });
         }
 
         console.log("MUX WEBHOOK verifying signature…", { timestamp: receivedAt });
@@ -515,34 +538,15 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             return new Response("ok", { status: 200 });
           }
 
-          // Quota gate before triggering AI: covers the case where the row
-          // was created before this cap existed, or where a race slipped
-          // past createMuxDirectUpload. We mark the take as errored and
-          // skip the AI call rather than burning credits.
-          const identity = await resolveTakeIdentity(takeId);
-          if (identity) {
-            try {
-              await assertWithinAnalysisQuota(identity, "mux-webhook:asset.ready");
-            } catch (qerr) {
-              if (qerr instanceof QuotaExceededError) {
-                metric("quota_rejection", {
-                  take_id: takeId,
-                  reason: qerr.scope,
-                  cap: qerr.cap,
-                  count: qerr.count,
-                });
-                await supabaseAdmin
-                  .from("takes")
-                  .update({
-                    status: "error",
-                    processing_phase: "error",
-                    error_message: qerr.message,
-                  })
-                  .eq("id", takeId);
-                return new Response("ok", { status: 200 });
-              }
-              throw qerr;
-            }
+          // Funded-credit gate before triggering AI. This covers legacy rows,
+          // webhook races and retry paths where the upload URL was minted
+          // before DS-12 reservation existed.
+          const creditReserved = await reserveReportCreditBeforeAnalysis({
+            takeId,
+            trigger: "mux_webhook_asset_ready",
+          });
+          if (!creditReserved) {
+            return new Response("ok", { status: 200 });
           }
 
           // Mark the take as queued — runProcessTake itself will flip the
@@ -580,8 +584,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
         }
 
         if (type === "video.asset.errored" || type === "video.upload.errored") {
-          const msg =
-            data.errors?.messages?.join("; ") ?? "Mux failed to transcode the upload.";
+          const msg = data.errors?.messages?.join("; ") ?? "Mux failed to transcode the upload.";
           await supabaseAdmin
             .from("takes")
             .update({

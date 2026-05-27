@@ -70,6 +70,12 @@ import {
 } from "./v3/qa-step2-dependency.server";
 import { extractUploadIdentitySignals } from "./v3/media-identity-upload-signals.server";
 import {
+  consumeReportCreditReservation,
+  releaseReportCreditForTake,
+  ReportCreditRequiredError,
+  reserveReportCreditForTake,
+} from "./credit-ledger.server";
+import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
@@ -254,9 +260,9 @@ function buildTechnicalMediaSignals(input: {
       input.mediaObservationSummary?.one_continuous_video_observed ?? null,
     safeFileMetadataPresent: Boolean(
       nestedRuntimeValue(signals, ["safe_upload_identity"]) ||
-        nestedRuntimeValue(signals, ["upload_identity"]) ||
-        signals.file_size_bytes ||
-        signals.metadata_file_name_safe_basename,
+      nestedRuntimeValue(signals, ["upload_identity"]) ||
+      signals.file_size_bytes ||
+      signals.metadata_file_name_safe_basename,
     ),
     evidenceSummaries,
   };
@@ -1975,8 +1981,7 @@ export function buildSinglePassReportRequestBodyForProvider(input: {
   reportTool?: typeof REPORT_TOOL;
   providerContract?: ReportProviderContract;
 }): Record<string, unknown> {
-  const providerContract =
-    input.providerContract ?? selectReportProviderContract(input.model);
+  const providerContract = input.providerContract ?? selectReportProviderContract(input.model);
   const userContent = [
     { type: "text", text: input.userText },
     { type: "file_url", file_url: { url: input.videoUrl } },
@@ -2214,7 +2219,7 @@ export async function runProcessTake(
   const { data: take, error: takeErr } = await supabaseAdmin
     .from("takes")
     .select(
-      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_asset_id, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url, mux_duration_seconds, created_at, updated_at, error_message",
+      "id, user_id, audition_id, signals, checklist, status, processing_phase, attempt_count, mux_status, mux_asset_id, mux_playback_id, mux_mp4_standard_url, mux_mp4_high_url, mux_duration_seconds, created_at, updated_at, error_message, credit_reservation_id, credit_lifecycle_status, credit_is_synthetic_usage",
     )
     .eq("id", takeId)
     .single();
@@ -2348,53 +2353,6 @@ export async function runProcessTake(
     });
   }
 
-  if (!extractedBrief && suppliedBriefText.length > 5) {
-    const result = await extractBriefFromText(suppliedBriefText);
-    if (result) {
-      extractedBrief = result.brief;
-      extractionConfidence = result.extraction_confidence;
-
-      const hasExistingAiCache = rawCached != null && cachedSource === "ai";
-      const shouldPersist =
-        result.source === "ai"
-          ? true // AI success: always persist (overwrites any fallback cache)
-          : !hasExistingAiCache; // fallback: persist only if no AI cache exists
-
-      if (shouldPersist) {
-        await supabaseAdmin
-          .from("auditions")
-          .update({
-            extracted_brief: {
-              ...result.brief,
-              _extraction_confidence: result.extraction_confidence,
-              _source: result.source,
-            } as never,
-          })
-          .eq("id", audition.id);
-        if (result.source === "ai") {
-          console.info("[take-pipeline] brief_extraction_ai_cached", {
-            audition_id: audition.id,
-            extraction_confidence: result.extraction_confidence,
-          });
-        }
-      }
-
-      if (result.source === "fallback") {
-        console.info("[take-pipeline] brief_extraction_fallback_used", {
-          audition_id: audition.id,
-          persisted: shouldPersist,
-          had_existing_ai_cache: hasExistingAiCache,
-        });
-      }
-    }
-  }
-  const s10BriefRuntimeFacts = deriveS10BriefRuntimeFacts(extractedBrief);
-  const s10BriefRequirementsReady =
-    suppliedBriefText.length <= 5 ||
-    (extractedBrief?.brief_intelligence_prompt_version === S10_BRIEF_INTELLIGENCE_PROMPT_VERSION &&
-      Array.isArray(extractedBrief.brief_requirements) &&
-      extractedBrief.brief_requirements.length > 0);
-
   // Stay in analysis_pending while we poll for the static MP4 rendition.
   // We DON'T flip to "analysing" yet — that would mislead the UI into
   // showing "Watching your tape" while we're actually still waiting on Mux
@@ -2437,7 +2395,8 @@ export async function runProcessTake(
     | "mux_static_rendition_timeout"
     | "mux_static_rendition_errored"
     | "mux_static_rendition_skipped"
-    | "stale_timeout";
+    | "stale_timeout"
+    | "report_credit_unavailable";
 
   // Terminal-state tracking: any path that writes status=error/complete must
   // flip this to true so the finally-block fallback doesn't double-write.
@@ -2452,6 +2411,43 @@ export async function runProcessTake(
   const preReportQaArtefactIds: string[] = [];
   const preReportQaBlockedArtefactIds: string[] = [];
   let preReportFailureManifestEmitted = false;
+  let activeReportCreditReservationId: string | null =
+    (take as { credit_reservation_id?: string | null }).credit_reservation_id ?? null;
+  let activeReportCreditSyntheticUsage =
+    (take as { credit_is_synthetic_usage?: boolean | null }).credit_is_synthetic_usage === true;
+
+  const refundActiveReportCredit = async (failureCode: string, message: string): Promise<void> => {
+    if (!activeReportCreditReservationId) return;
+    try {
+      await releaseReportCreditForTake({
+        take_id: takeId,
+        release_status: "refunded",
+        release_reason: "report_generation_failed",
+        failure_code: failureCode,
+        metadata: {
+          trigger: "run_process_take_failure",
+          failure_code: failureCode,
+          safe_error_message: message.slice(0, 180),
+          report_credit_restored_message:
+            "Your TapeCoach credit was returned automatically because the report did not complete.",
+          synthetic_usage: activeReportCreditSyntheticUsage,
+        },
+      });
+      metric("report_credit_released", {
+        take_id: takeId,
+        reason: failureCode,
+        release_status: "refunded",
+        synthetic_usage: activeReportCreditSyntheticUsage,
+      });
+      activeReportCreditReservationId = null;
+    } catch (creditErr) {
+      console.error("[take-pipeline] report_credit_refund_failed", {
+        take_id: takeId,
+        failure_code: failureCode,
+        error: creditErr instanceof Error ? creditErr.message : "unknown",
+      });
+    }
+  };
 
   const rememberPreReportQa = (result: {
     emitted_artefact_ids?: string[];
@@ -2528,6 +2524,7 @@ export async function runProcessTake(
     extra: Record<string, unknown> = {},
   ): Promise<void> => {
     if (terminalWritten) return;
+    await refundActiveReportCredit(code, message);
     const errorMessage = `[failure_code:${code}] ${message}`;
     try {
       const { error: writeErr } = await supabaseAdmin
@@ -2570,6 +2567,84 @@ export async function runProcessTake(
   }
 
   try {
+    try {
+      const reservation = await reserveReportCreditForTake({
+        take_id: takeId,
+        requested_by_user_id: take.user_id,
+        metadata: {
+          trigger: "run_process_take",
+          report_credit_amount: 1,
+          same_video_credit_policy: "consume_only_if_report_generated",
+          commercial_metrics_excluded: false,
+        },
+      });
+      activeReportCreditReservationId = reservation.credit_reservation_id;
+      activeReportCreditSyntheticUsage = reservation.synthetic_usage;
+      metric("report_credit_reserved", {
+        take_id: takeId,
+        reason: "run_process_take",
+        synthetic_usage: reservation.synthetic_usage,
+      });
+    } catch (creditErr) {
+      if (creditErr instanceof ReportCreditRequiredError) {
+        metric("report_credit_rejected", {
+          take_id: takeId,
+          reason: "run_process_take_no_funded_credit",
+        });
+        throw new AnalysisFailure("report_credit_unavailable", creditErr.message);
+      }
+      throw creditErr;
+    }
+
+    if (!extractedBrief && suppliedBriefText.length > 5) {
+      const result = await extractBriefFromText(suppliedBriefText);
+      if (result) {
+        extractedBrief = result.brief;
+        extractionConfidence = result.extraction_confidence;
+
+        const hasExistingAiCache = rawCached != null && cachedSource === "ai";
+        const shouldPersist =
+          result.source === "ai"
+            ? true // AI success: always persist (overwrites any fallback cache)
+            : !hasExistingAiCache; // fallback: persist only if no AI cache exists
+
+        if (shouldPersist) {
+          await supabaseAdmin
+            .from("auditions")
+            .update({
+              extracted_brief: {
+                ...result.brief,
+                _extraction_confidence: result.extraction_confidence,
+                _source: result.source,
+              } as never,
+            })
+            .eq("id", audition.id);
+          if (result.source === "ai") {
+            console.info("[take-pipeline] brief_extraction_ai_cached", {
+              audition_id: audition.id,
+              extraction_confidence: result.extraction_confidence,
+            });
+          }
+        }
+
+        if (result.source === "fallback") {
+          console.info("[take-pipeline] brief_extraction_fallback_used", {
+            audition_id: audition.id,
+            persisted: shouldPersist,
+            had_existing_ai_cache: hasExistingAiCache,
+          });
+        }
+      }
+    }
+
+    const s10BriefRuntimeFacts = deriveS10BriefRuntimeFacts(extractedBrief);
+    const s10BriefRequirementsReady =
+      suppliedBriefText.length <= 5 ||
+      (extractedBrief?.brief_intelligence_prompt_version ===
+        S10_BRIEF_INTELLIGENCE_PROMPT_VERSION &&
+        Array.isArray(extractedBrief.brief_requirements) &&
+        extractedBrief.brief_requirements.length > 0);
+
     if (!s10BriefRequirementsReady) {
       console.warn("[take-pipeline] s10_brief_requirements_missing_before_analysis", {
         take_id: takeId,
@@ -2786,8 +2861,7 @@ export async function runProcessTake(
     const POST_AI_FINALISE_TIMEOUT_MS = Number(process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000);
     const finaliseExceeded = () =>
       finaliseStartedAt > 0 && Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
-    const finaliseElapsedMs = () =>
-      finaliseStartedAt > 0 ? Date.now() - finaliseStartedAt : 0;
+    const finaliseElapsedMs = () => (finaliseStartedAt > 0 ? Date.now() - finaliseStartedAt : 0);
     // Emit a finalising_timeout marker + throw a tagged failure so the
     // outer catch parks the take in `error` with a recoverable message.
     const throwFinaliseTimeout = (substage: string): never => {
@@ -2840,8 +2914,8 @@ export async function runProcessTake(
     let reportPolishHttpStatus: number | null = null;
     let reportPolishRequestStatus: "completed" | "failed" | "timed_out" | null = null;
     let reportPolishParseStatus: "completed" | "unknown" = "unknown";
-    let twoStepFallbackUsed = false;
-    let twoStepFallbackReason: string | null = null;
+    const twoStepFallbackUsed = false;
+    const twoStepFallbackReason: string | null = null;
     let evidencePassStartedAtIso: string | null = null;
     let evidencePassCompletedAtIso: string | null = null;
     let evidencePassModel: string | null = null;
@@ -3509,14 +3583,16 @@ export async function runProcessTake(
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildSinglePassReportRequestBodyForProvider({
-          model,
-          systemPrompt: buildSystemPrompt(),
-          userText,
-          // CRITICAL: video MP4s must be sent as `file_url`, NOT `image_url`.
-          // Gemini via the Lovable AI Gateway rejects `image_url` for video/mp4.
-          videoUrl,
-        })),
+        body: JSON.stringify(
+          buildSinglePassReportRequestBodyForProvider({
+            model,
+            systemPrompt: buildSystemPrompt(),
+            userText,
+            // CRITICAL: video MP4s must be sent as `file_url`, NOT `image_url`.
+            // Gemini via the Lovable AI Gateway rejects `image_url` for video/mp4.
+            videoUrl,
+          }),
+        ),
         signal,
       });
     };
@@ -5401,6 +5477,53 @@ export async function runProcessTake(
       terminalWritten = true; // another path owns the terminal state
       return { ok: true, alreadyDone: true };
     }
+
+    if (!activeReportCreditReservationId) {
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "TapeCoach could not confirm the reserved report credit. Please try again.",
+      );
+    }
+
+    try {
+      const creditConsumption = await consumeReportCreditReservation({
+        credit_reservation_id: activeReportCreditReservationId,
+        take_id: takeId,
+        report_generated_at: new Date().toISOString(),
+        idempotency_key: `report-credit-consume:${activeReportCreditReservationId}`,
+        metadata: {
+          trigger: "run_process_take_report_persisted",
+          report_credit_amount: 1,
+          report_persisted: true,
+          report_viewable: true,
+          overall_score: overall,
+          schema_version:
+            typeof (reportToPersist as Record<string, unknown>).schema_version === "string"
+              ? (reportToPersist as Record<string, unknown>).schema_version
+              : null,
+          same_video_status: liveSameVideoContext?.evidence.status ?? null,
+          same_video_confidence: liveSameVideoContext?.evidence.confidence ?? null,
+          synthetic_usage: activeReportCreditSyntheticUsage,
+        },
+      });
+      metric("report_credit_consumed", {
+        take_id: takeId,
+        reason: "report_persisted",
+        synthetic_usage: activeReportCreditSyntheticUsage,
+        credit_ledger_entry_id: creditConsumption.credit_ledger_entry_id,
+      });
+      activeReportCreditReservationId = null;
+    } catch (creditErr) {
+      console.error("[take-pipeline] report_credit_consume_failed", {
+        take_id: takeId,
+        error: creditErr instanceof Error ? creditErr.message : "unknown",
+      });
+      throw new AnalysisFailure(
+        "analysis_persist_failed",
+        "TapeCoach saved the report but could not finalise the credit lifecycle. Please try again.",
+      );
+    }
+
     metric("analysis_persist_completed", {
       take_id: takeId,
       duration_ms: Date.now() - persistStartedAt,
@@ -6421,6 +6544,7 @@ export async function runProcessTake(
       await markTerminalFailure(err.failureCode, message);
     } else if (!terminalWritten) {
       await emitPreReportFailureManifest("analysis_no_terminal_state", message);
+      await refundActiveReportCredit("analysis_no_terminal_state", message);
       try {
         const { error: writeErr } = await supabaseAdmin
           .from("takes")

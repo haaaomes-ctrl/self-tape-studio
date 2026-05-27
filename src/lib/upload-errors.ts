@@ -6,6 +6,7 @@ export interface UploadErrorInfo {
   message: string;
   kind:
     | "quota"
+    | "credit_required"
     | "auth"
     | "policy_acceptance"
     | "config"
@@ -42,6 +43,9 @@ export function describeUploadError(err: unknown): UploadErrorInfo {
 
   if (raw.startsWith("QUOTA_EXCEEDED:")) {
     return { kind: "quota", message: raw.replace(/^QUOTA_EXCEEDED:\s*/, "") };
+  }
+  if (raw.startsWith("CREDIT_REQUIRED:")) {
+    return { kind: "credit_required", message: raw.replace(/^CREDIT_REQUIRED:\s*/, "") };
   }
   if (raw.startsWith("POLICY_ACCEPTANCE_REQUIRED:")) {
     return {
