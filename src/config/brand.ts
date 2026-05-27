@@ -22,16 +22,16 @@ export const brand = {
   /** Alternate, shorter tagline for tight spaces and CTAs. */
   taglineShort: "Send your strongest take.",
   /** Footer mission statement. */
-  mission: "Private self-tape feedback before you submit.",
+  mission: "Private self-tape feedback for performers, schools and coaches.",
   /** Short value proposition used across landing/marketing surfaces. */
   description:
-    "Private self-tape review. Structured feedback on performance, voice, setup and brief fit — give yourself the best chance of sending a stronger take.",
+    "Private self-tape review for performers, schools and coaches. Structured feedback on performance, voice, setup and brief fit before submission.",
   /** Compact OG/Twitter description. */
   shareDescription:
-    "A private second look at your self-tape — structured feedback so you can submit with more confidence.",
+    "A private second look at your self-tape, with school and coach pathways for funded reviews.",
   /** Twitter-card description (audience-focused). */
   twitterDescription:
-    "Private self-tape review for performers, agents and teachers. Reduce avoidable mistakes before submission.",
+    "Private self-tape review for performers, schools and coaches. Reduce avoidable mistakes before submission.",
 
   /** Logo + favicon assets. */
   assets: {
