@@ -17,6 +17,7 @@ import {
   type ProviderSafeErrorCategory,
   type ReportProviderContract,
 } from "./provider-tool-schema.server";
+import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
@@ -90,6 +91,7 @@ export type RunReportPolishArgs = {
   auditionTitle: string;
   reportTool: unknown;
   model?: string;
+  usageContext?: TakeAiUsageContext;
 };
 
 export type RunReportPolishResult =
@@ -151,8 +153,7 @@ export function buildReportPolishRequestBodyForProvider(input: {
   reportTool: unknown;
   providerContract?: ReportProviderContract;
 }): Record<string, unknown> {
-  const providerContract =
-    input.providerContract ?? selectReportProviderContract(input.model);
+  const providerContract = input.providerContract ?? selectReportProviderContract(input.model);
   const base = {
     model: input.model,
     temperature: 0.2,
@@ -187,6 +188,29 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
   const model = args.model ?? DEFAULT_MODEL;
   const providerContract = selectReportProviderContract(model);
   const startedAt = Date.now();
+  const recordUsage = async (input: {
+    status: "success" | "failure" | "timeout";
+    httpStatus?: number | null;
+    failureReason?: string | null;
+    tokenPayload?: unknown;
+  }) => {
+    if (!args.usageContext) return;
+    await recordTakeAiUsage({
+      ...args.usageContext,
+      step: "report_polish",
+      model,
+      promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
+      providerContract,
+      status: input.status,
+      httpStatus: input.httpStatus,
+      failureReason: input.failureReason,
+      latencyMs: Date.now() - startedAt,
+      tokenUsage: extractAiTokenUsage(input.tokenPayload),
+      metadata: {
+        source_stage: "analysis_step_2_report_polish",
+      },
+    });
+  };
 
   const evidenceBlock = buildEvidenceBlock(args.evidence, {
     briefContext: args.briefContext,
@@ -223,17 +247,28 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
         Authorization: `Bearer ${args.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildReportPolishRequestBodyForProvider({
-        model,
-        systemPrompt: POLISH_SYSTEM_PROMPT,
-        userText,
-        reportTool: args.reportTool,
-        providerContract,
-      })),
+      body: JSON.stringify(
+        buildReportPolishRequestBodyForProvider({
+          model,
+          systemPrompt: POLISH_SYSTEM_PROMPT,
+          userText,
+          reportTool: args.reportTool,
+          providerContract,
+        }),
+      ),
       signal: fetchController.signal,
     });
   } catch (err) {
-    const error = timedOut ? "report_polish_timeout" : err instanceof Error ? err.message : "network_error";
+    const error = timedOut
+      ? "report_polish_timeout"
+      : err instanceof Error
+        ? err.message
+        : "network_error";
+    await recordUsage({
+      status: timedOut || args.signal.aborted ? "timeout" : "failure",
+      httpStatus: null,
+      failureReason: error,
+    });
     return {
       ok: false,
       httpStatus: null,
@@ -254,6 +289,11 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     } catch {
       /* ignore */
     }
+    await recordUsage({
+      status: "failure",
+      httpStatus: resp.status,
+      failureReason: `report_polish_http_${resp.status}`,
+    });
     return {
       ok: false,
       httpStatus: resp.status,
@@ -264,11 +304,18 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     };
   }
 
+  let tokenPayload: unknown = null;
   try {
     const json = await resp.json();
+    tokenPayload = json;
     const choice = json.choices?.[0];
     if (providerContract === "plain_json_report") {
       const report = parseProviderJsonObjectContent(choice?.message?.content);
+      await recordUsage({
+        status: "success",
+        httpStatus: resp.status,
+        tokenPayload,
+      });
       return {
         ok: true,
         report,
@@ -280,6 +327,12 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
 
     const tc = choice?.message?.tool_calls?.[0];
     if (!tc?.function?.arguments) {
+      await recordUsage({
+        status: "failure",
+        httpStatus: resp.status,
+        failureReason: "report_polish_no_tool_call",
+        tokenPayload,
+      });
       return {
         ok: false,
         httpStatus: resp.status,
@@ -293,6 +346,11 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       };
     }
     const report = JSON.parse(tc.function.arguments);
+    await recordUsage({
+      status: "success",
+      httpStatus: resp.status,
+      tokenPayload,
+    });
     return {
       ok: true,
       report,
@@ -301,6 +359,12 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       httpStatus: resp.status,
     };
   } catch (err) {
+    await recordUsage({
+      status: "failure",
+      httpStatus: resp.status,
+      failureReason: err instanceof Error ? err.message : "report_polish_parse_error",
+      tokenPayload,
+    });
     return {
       ok: false,
       httpStatus: resp.status,
