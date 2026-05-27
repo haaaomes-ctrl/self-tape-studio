@@ -14,6 +14,11 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LegalTermsRouteImport } from './routes/legal/terms'
+import { Route as LegalRefundCreditPolicyRouteImport } from './routes/legal/refund-credit-policy'
+import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
+import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
+import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-report-disclaimer'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
@@ -43,6 +48,31 @@ const AboutRoute = AboutRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalTermsRoute = LegalTermsRouteImport.update({
+  id: '/legal/terms',
+  path: '/legal/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalRefundCreditPolicyRoute = LegalRefundCreditPolicyRouteImport.update({
+  id: '/legal/refund-credit-policy',
+  path: '/legal/refund-credit-policy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalPrivacyRoute = LegalPrivacyRouteImport.update({
+  id: '/legal/privacy',
+  path: '/legal/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalCookiesRoute = LegalCookiesRouteImport.update({
+  id: '/legal/cookies',
+  path: '/legal/cookies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalAiReportDisclaimerRoute = LegalAiReportDisclaimerRouteImport.update({
+  id: '/legal/ai-report-disclaimer',
+  path: '/legal/ai-report-disclaimer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
@@ -80,6 +110,11 @@ export interface FileRoutesByFullPath {
   '/new': typeof NewRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
+  '/legal/cookies': typeof LegalCookiesRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
@@ -92,6 +127,11 @@ export interface FileRoutesByTo {
   '/new': typeof NewRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
+  '/legal/cookies': typeof LegalCookiesRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
@@ -105,6 +145,11 @@ export interface FileRoutesById {
   '/new': typeof NewRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
+  '/legal/cookies': typeof LegalCookiesRoute
+  '/legal/privacy': typeof LegalPrivacyRoute
+  '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
+  '/legal/terms': typeof LegalTermsRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
@@ -119,6 +164,11 @@ export interface FileRouteTypes {
     | '/new'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/legal/ai-report-disclaimer'
+    | '/legal/cookies'
+    | '/legal/privacy'
+    | '/legal/refund-credit-policy'
+    | '/legal/terms'
     | '/api/public/admin-config'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
@@ -131,6 +181,11 @@ export interface FileRouteTypes {
     | '/new'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/legal/ai-report-disclaimer'
+    | '/legal/cookies'
+    | '/legal/privacy'
+    | '/legal/refund-credit-policy'
+    | '/legal/terms'
     | '/api/public/admin-config'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
@@ -143,6 +198,11 @@ export interface FileRouteTypes {
     | '/new'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/legal/ai-report-disclaimer'
+    | '/legal/cookies'
+    | '/legal/privacy'
+    | '/legal/refund-credit-policy'
+    | '/legal/terms'
     | '/api/public/admin-config'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
@@ -156,6 +216,11 @@ export interface RootRouteChildren {
   NewRoute: typeof NewRoute
   AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
+  LegalAiReportDisclaimerRoute: typeof LegalAiReportDisclaimerRoute
+  LegalCookiesRoute: typeof LegalCookiesRoute
+  LegalPrivacyRoute: typeof LegalPrivacyRoute
+  LegalRefundCreditPolicyRoute: typeof LegalRefundCreditPolicyRoute
+  LegalTermsRoute: typeof LegalTermsRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
@@ -196,6 +261,41 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/terms': {
+      id: '/legal/terms'
+      path: '/legal/terms'
+      fullPath: '/legal/terms'
+      preLoaderRoute: typeof LegalTermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/refund-credit-policy': {
+      id: '/legal/refund-credit-policy'
+      path: '/legal/refund-credit-policy'
+      fullPath: '/legal/refund-credit-policy'
+      preLoaderRoute: typeof LegalRefundCreditPolicyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/privacy': {
+      id: '/legal/privacy'
+      path: '/legal/privacy'
+      fullPath: '/legal/privacy'
+      preLoaderRoute: typeof LegalPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/cookies': {
+      id: '/legal/cookies'
+      path: '/legal/cookies'
+      fullPath: '/legal/cookies'
+      preLoaderRoute: typeof LegalCookiesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/ai-report-disclaimer': {
+      id: '/legal/ai-report-disclaimer'
+      path: '/legal/ai-report-disclaimer'
+      fullPath: '/legal/ai-report-disclaimer'
+      preLoaderRoute: typeof LegalAiReportDisclaimerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/audition/$auditionId': {
@@ -244,6 +344,11 @@ const rootRouteChildren: RootRouteChildren = {
   NewRoute: NewRoute,
   AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
+  LegalAiReportDisclaimerRoute: LegalAiReportDisclaimerRoute,
+  LegalCookiesRoute: LegalCookiesRoute,
+  LegalPrivacyRoute: LegalPrivacyRoute,
+  LegalRefundCreditPolicyRoute: LegalRefundCreditPolicyRoute,
+  LegalTermsRoute: LegalTermsRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
@@ -251,3 +356,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

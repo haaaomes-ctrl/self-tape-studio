@@ -1,14 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import { brand } from "@/config/brand";
 import { BrandMark } from "@/components/brand-mark";
+import { LEGAL_POLICY_LINKS } from "@/lib/legal-policies";
 
-// Footer link groups and social media icons are intentionally hidden until
-// those destinations exist. Restore FOOTER_GROUPS / SOCIALS arrays and the
-// matching JSX below once the pages and social accounts are live.
+// Social media icons are intentionally hidden until those destinations exist.
 
 export function SiteFooter() {
   return (
-    <footer role="contentinfo" className="border-t border-sidebar-border bg-sidebar text-sidebar-foreground">
+    <footer
+      role="contentinfo"
+      className="border-t border-sidebar-border bg-sidebar text-sidebar-foreground"
+    >
       <div className="mx-auto max-w-6xl px-6 py-14">
         <div>
           <Link
@@ -28,6 +30,18 @@ export function SiteFooter() {
             {brand.mission}
           </p>
         </div>
+
+        <nav aria-label="Legal" className="mt-10 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          {LEGAL_POLICY_LINKS.map((link) => (
+            <Link
+              key={link.slug}
+              to={link.to}
+              className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
 
         <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-sidebar-foreground/10 pt-6 text-xs text-sidebar-foreground/60 sm:flex-row sm:items-center">
           <p>{brand.legal.copyright()}</p>

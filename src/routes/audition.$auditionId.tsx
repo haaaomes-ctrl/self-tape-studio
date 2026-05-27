@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
+import { UploadPolicyNotice } from "@/components/legal-policy-links";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -506,6 +507,7 @@ function FailedTakeView({ take }: { take: Take }) {
         {take.error_message ??
           "We couldn't complete this attempt. Try again without re-uploading if your video is already saved."}
       </p>
+      <UploadPolicyNotice className="mt-3" />
       <div className="mt-5 flex flex-wrap gap-2">
         <input
           ref={fileRef}
@@ -1899,6 +1901,7 @@ function AddTakeBlock({
       <p className="mt-1 text-sm text-muted-foreground">
         Same brief, same scoring weights — easy to compare.
       </p>
+      <UploadPolicyNotice className="mt-3" />
       <div className="mt-4 flex items-center gap-3">
         <input
           ref={fileRef}

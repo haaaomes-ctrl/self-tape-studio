@@ -1,4 +1,5 @@
 import { Checkbox } from "@/components/ui/checkbox";
+import { LegalPolicyLink } from "@/components/legal-policy-links";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -104,21 +105,35 @@ export function AccountRouteFields({ value, onChange, disabled = false }: Accoun
           checked={value.termsAccepted}
           disabled={disabled}
           onCheckedChange={(checked) => onChange({ ...value, termsAccepted: checked })}
-          label="I accept the Terms of Service."
+          label={
+            <>
+              I accept the <LegalPolicyLink slug="terms">Terms of Service</LegalPolicyLink>.
+            </>
+          }
         />
         <CheckboxRow
           id="privacy-accepted"
           checked={value.privacyAccepted}
           disabled={disabled}
           onCheckedChange={(checked) => onChange({ ...value, privacyAccepted: checked })}
-          label="I accept the Privacy Policy."
+          label={
+            <>
+              I accept the <LegalPolicyLink slug="privacy">Privacy Policy</LegalPolicyLink>.
+            </>
+          }
         />
         <CheckboxRow
           id="ai-disclaimer-accepted"
           checked={value.aiDisclaimerAccepted}
           disabled={disabled}
           onCheckedChange={(checked) => onChange({ ...value, aiDisclaimerAccepted: checked })}
-          label="I understand TapeCoach uses AI analysis and cannot guarantee casting, callback, booking or employment outcomes."
+          label={
+            <>
+              I understand TapeCoach uses AI analysis, as described in the{" "}
+              <LegalPolicyLink slug="ai-report-disclaimer">AI report disclaimer</LegalPolicyLink>,
+              and cannot guarantee casting, callback, booking or employment outcomes.
+            </>
+          }
         />
       </div>
 
@@ -146,7 +161,7 @@ function CheckboxRow({
   checked: boolean;
   disabled: boolean;
   onCheckedChange: (checked: boolean) => void;
-  label: string;
+  label: React.ReactNode;
   helper?: string;
 }) {
   return (
