@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/types";
+import type { Json, Tables } from "@/integrations/supabase/types";
 import {
   buildPartnerCodeDraft,
   buildPartnerCreditPoolDraft,
   buildPartnerDraft,
+  buildPartnerVisibilityAcceptanceDraft,
   normaliseAllowedEmailDomains,
   normalisePartnerCode,
   partnerCodeDisplayHint,
@@ -12,6 +13,7 @@ import {
   type PartnerCodeStatus,
   type PartnerCreditPoolInput,
   type PartnerInput,
+  type PartnerVisibilityAcceptanceInput,
 } from "@/lib/partner-program";
 
 export type CreatePartnerCodeInput = Omit<PartnerCodeInput, "code_hash" | "code_display_hint"> & {
@@ -73,6 +75,18 @@ export type AdminTopUpPartnerMembershipInput = {
   metadata?: Record<string, unknown>;
   idempotency_key?: string | null;
 };
+
+export type AcceptPartnerVisibilityInput = PartnerVisibilityAcceptanceInput;
+
+export type RevokePartnerVisibilityAcceptanceInput = {
+  partner_visibility_acceptance_id: string;
+  revoked_by_user_id?: string | null;
+  revocation_reason?: string | null;
+  revoked_at?: string | Date;
+};
+
+export type PartnerProgressDashboardRow = Tables<"partner_progress_dashboard_summary">;
+export type PartnerAggregateDashboardRow = Tables<"partner_aggregate_dashboard_summary">;
 
 function throwPartnerProgramError(operation: string, error: { message?: string }): never {
   console.error(`[partner-program] ${operation}_failed`, { error: error.message });
@@ -246,4 +260,65 @@ export async function adminTopUpPartnerMembership(input: AdminTopUpPartnerMember
 
   if (error || !data) throwPartnerProgramError("admin_top_up_partner_membership", error ?? {});
   return { credit_grant_id: data };
+}
+
+export async function acceptPartnerVisibility(input: AcceptPartnerVisibilityInput) {
+  const draft = buildPartnerVisibilityAcceptanceDraft(input);
+  const { data, error } = await supabaseAdmin.rpc("accept_partner_visibility", {
+    p_partner_membership_id: draft.partner_membership_id,
+    p_user_id: draft.user_id,
+    p_visibility_scope: draft.visibility_scope,
+    p_parent_guardian_confirmed: draft.parent_guardian_confirmed,
+    p_full_report_sharing_enabled: draft.full_report_sharing_enabled,
+    p_uploaded_media_sharing_enabled: draft.uploaded_media_sharing_enabled,
+    p_brief_sharing_enabled: draft.brief_sharing_enabled,
+    p_accepted_at: draft.accepted_at,
+    p_metadata: metadataAsJson(draft.metadata),
+    p_idempotency_key: draft.idempotency_key,
+  });
+
+  if (error || !data) throwPartnerProgramError("accept_partner_visibility", error ?? {});
+  return { partner_visibility_acceptance_id: data };
+}
+
+export async function revokePartnerVisibilityAcceptance(
+  input: RevokePartnerVisibilityAcceptanceInput,
+) {
+  const { data, error } = await supabaseAdmin.rpc("revoke_partner_visibility_acceptance", {
+    p_partner_visibility_acceptance_id: input.partner_visibility_acceptance_id,
+    p_revoked_by_user_id: input.revoked_by_user_id ?? null,
+    p_revocation_reason: input.revocation_reason ?? null,
+    p_revoked_at: isoOrNow(input.revoked_at),
+  });
+
+  if (error || !data) {
+    throwPartnerProgramError("revoke_partner_visibility_acceptance", error ?? {});
+  }
+  return { partner_visibility_acceptance_id: data };
+}
+
+export async function listPartnerProgressDashboardRows(partnerId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("partner_progress_dashboard_summary")
+    .select("*")
+    .eq("partner_id", partnerId)
+    .order("latest_report_at", { ascending: false, nullsFirst: false });
+
+  if (error) throwPartnerProgramError("list_partner_progress_dashboard_rows", error);
+  return (data ?? []) as PartnerProgressDashboardRow[];
+}
+
+export async function listPartnerAggregateDashboardRows(partnerId?: string | null) {
+  let query = supabaseAdmin
+    .from("partner_aggregate_dashboard_summary")
+    .select("*")
+    .order("partner_name", { ascending: true });
+
+  if (partnerId) {
+    query = query.eq("partner_id", partnerId);
+  }
+
+  const { data, error } = await query;
+  if (error) throwPartnerProgramError("list_partner_aggregate_dashboard_rows", error);
+  return (data ?? []) as PartnerAggregateDashboardRow[];
 }
