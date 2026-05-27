@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
@@ -23,6 +24,7 @@ import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$audit
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
+import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 
 const NewRoute = NewRouteImport.update({
@@ -38,6 +40,11 @@ const LoginRoute = LoginRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CreditsRoute = CreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -96,6 +103,12 @@ const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   path: '/api/public/mux-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAdminProductCatalogueRoute =
+  ApiPublicAdminProductCatalogueRouteImport.update({
+    id: '/api/public/admin-product-catalogue',
+    path: '/api/public/admin-product-catalogue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicAdminConfigRoute = ApiPublicAdminConfigRouteImport.update({
   id: '/api/public/admin-config',
   path: '/api/public/admin-config',
@@ -105,6 +118,7 @@ const ApiPublicAdminConfigRoute = ApiPublicAdminConfigRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
@@ -116,12 +130,14 @@ export interface FileRoutesByFullPath {
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
+  '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
@@ -133,6 +149,7 @@ export interface FileRoutesByTo {
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
+  '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -140,6 +157,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/credits': typeof CreditsRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
@@ -151,6 +169,7 @@ export interface FileRoutesById {
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
+  '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -159,6 +178,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/credits'
     | '/dashboard'
     | '/login'
     | '/new'
@@ -170,12 +190,14 @@ export interface FileRouteTypes {
     | '/legal/refund-credit-policy'
     | '/legal/terms'
     | '/api/public/admin-config'
+    | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/credits'
     | '/dashboard'
     | '/login'
     | '/new'
@@ -187,12 +209,14 @@ export interface FileRouteTypes {
     | '/legal/refund-credit-policy'
     | '/legal/terms'
     | '/api/public/admin-config'
+    | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   id:
     | '__root__'
     | '/'
     | '/about'
+    | '/credits'
     | '/dashboard'
     | '/login'
     | '/new'
@@ -204,6 +228,7 @@ export interface FileRouteTypes {
     | '/legal/refund-credit-policy'
     | '/legal/terms'
     | '/api/public/admin-config'
+    | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
   fileRoutesById: FileRoutesById
@@ -211,6 +236,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  CreditsRoute: typeof CreditsRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
@@ -222,6 +248,7 @@ export interface RootRouteChildren {
   LegalRefundCreditPolicyRoute: typeof LegalRefundCreditPolicyRoute
   LegalTermsRoute: typeof LegalTermsRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
+  ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
 }
@@ -247,6 +274,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/credits': {
+      id: '/credits'
+      path: '/credits'
+      fullPath: '/credits'
+      preLoaderRoute: typeof CreditsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -326,6 +360,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/admin-product-catalogue': {
+      id: '/api/public/admin-product-catalogue'
+      path: '/api/public/admin-product-catalogue'
+      fullPath: '/api/public/admin-product-catalogue'
+      preLoaderRoute: typeof ApiPublicAdminProductCatalogueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/admin-config': {
       id: '/api/public/admin-config'
       path: '/api/public/admin-config'
@@ -339,6 +380,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  CreditsRoute: CreditsRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
@@ -350,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalRefundCreditPolicyRoute: LegalRefundCreditPolicyRoute,
   LegalTermsRoute: LegalTermsRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
+  ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
 }

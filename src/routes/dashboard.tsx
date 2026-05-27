@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
+import { ConsumerTopUpProducts } from "@/components/consumer-top-up-products";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -101,6 +102,7 @@ function DashboardPage() {
         }
       />
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 pb-20 pt-12">
+        {user && !compliance.loading && compliance.complete ? <ConsumerTopUpProducts /> : null}
         <div className="mt-10">
           {user && !compliance.loading && !compliance.complete ? (
             <AccountCompliancePanel userId={user.id} onCompleted={compliance.refresh} />
