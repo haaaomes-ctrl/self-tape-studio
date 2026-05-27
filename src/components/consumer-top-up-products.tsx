@@ -1,14 +1,18 @@
 import { useServerFn } from "@tanstack/react-start";
-import { CreditCard } from "lucide-react";
+import { CreditCard, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   CONSUMER_TOP_UP_SECONDARY_MESSAGE,
   LAUNCH_CONSUMER_TOP_UP_PRODUCTS,
   sortConsumerTopUpProducts,
   type ConsumerTopUpCatalogue,
 } from "@/lib/consumer-credit-products";
-import { listConsumerTopUpCatalogue } from "@/server-fns/consumer-products.functions";
+import {
+  createConsumerTopUpCheckout,
+  listConsumerTopUpCatalogue,
+} from "@/server-fns/consumer-products.functions";
 
 const DEFAULT_CATALOGUE: ConsumerTopUpCatalogue = {
   products: sortConsumerTopUpProducts(LAUNCH_CONSUMER_TOP_UP_PRODUCTS),
@@ -18,7 +22,10 @@ const DEFAULT_CATALOGUE: ConsumerTopUpCatalogue = {
 
 export function ConsumerTopUpProducts() {
   const listCatalogue = useServerFn(listConsumerTopUpCatalogue);
+  const createCheckout = useServerFn(createConsumerTopUpCheckout);
   const [catalogue, setCatalogue] = useState<ConsumerTopUpCatalogue>(DEFAULT_CATALOGUE);
+  const [pendingSku, setPendingSku] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +43,23 @@ export function ConsumerTopUpProducts() {
 
   const products = catalogue.products.filter((product) => product.active);
   if (!products.length) return null;
+
+  const startCheckout = async (sku: string) => {
+    setPendingSku(sku);
+    setCheckoutError(null);
+    try {
+      const result = (await createCheckout({ data: { sku } })) as {
+        checkout_url?: string;
+      };
+      if (!result.checkout_url) {
+        throw new Error("Stripe Checkout did not return a redirect URL.");
+      }
+      window.location.assign(result.checkout_url);
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : "Checkout could not be started.");
+      setPendingSku(null);
+    }
+  };
 
   return (
     <section className="rounded-md border border-border bg-secondary/30 p-4">
@@ -78,9 +102,28 @@ export function ConsumerTopUpProducts() {
                 ) : null}
               </div>
             </div>
+            <Button
+              type="button"
+              size="sm"
+              className="mt-4 w-full"
+              disabled={!product.checkout_ready || pendingSku !== null}
+              onClick={() => void startCheckout(product.sku)}
+            >
+              {pendingSku === product.sku ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              {product.checkout_ready ? "Buy credits" : "Unavailable"}
+            </Button>
           </div>
         ))}
       </div>
+      {checkoutError ? (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {checkoutError}
+        </p>
+      ) : null}
     </section>
   );
 }
