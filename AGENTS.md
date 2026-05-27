@@ -1220,63 +1220,137 @@ Do not start with payload gates, source-kind restrictions or QA artefact archite
 
 ---
 
+## Automation planning and sequencing
 
-## Automation sequencing rule
+Automation work may be organised into labelled, ordered work items.
 
-S10.1 delivery-slice automations may run in either of two modes.
-
-### Single-slice mode
-
-A single-slice automation may:
-
-- select one eligible DS item;
-- plan, implement, test, PR, merge, clean up and update monday.com for that item;
-- stop after that DS item reaches a terminal state.
-
-### Sequential backlog-drainer mode
-
-A sequential backlog-drainer automation may:
-
-- select one eligible DS item at a time;
-- plan, implement, test, PR, merge, clean up and update monday.com for that item;
-- after that DS item reaches a terminal state, select the next eligible DS item;
-- continue sequentially until the backlog is complete or a real blocker prevents safe progress.
-
-A backlog-drainer automation must never work on more than one DS item at the same time.
-
-The controlling rule is:
+A work item may use any current project prefix, for example:
 
 ```text
-At most one active DS item at a time.
-Not necessarily at most one DS item per automation run.
+DS-01
+DS-02
+FX-01
+FX-02
+QA-01
+MIG-01
 ```
 
-If an automation prompt explicitly says it is a sequential backlog drainer, the automation may complete multiple DS items in one run, provided each DS item reaches a terminal state before the next begins.
+Do not hard-code a specific prefix such as `DS`.
 
-Terminal states are:
+Use the source-of-truth backlog, board, group, ordering column, title, item key, delivery plan, or automation prompt to determine:
 
-- merged, cleaned up and marked Done in monday.com;
-- verified already complete and marked Done in monday.com;
-- parked or blocked with the exact blocker recorded;
-- stopped because Git, GitHub, monday.com, CI, approval, authentication, branch protection, connector policy or runtime constraints prevent safe progress.
+- the current work item prefix;
+- the ordered sequence;
+- the next eligible item;
+- whether an item is Done, Deferred, parked, blocked or active.
 
-Do not start a later DS item while an earlier DS item has:
+In this file, “work item” means the current ordered unit of implementation, whatever prefix or label the active plan uses. Existing wording such as “slice” means the same thing where the context is implementation sequencing.
 
-- an open branch;
-- an open PR;
-- pending CI;
-- an unresolved merge;
-- pending monday.com final sync;
-- an unresolved recovery checkpoint;
-- unclear status.
+Every work item must have its own planning pass before implementation.
 
-A stale instruction that says an automation run must select or complete at most one delivery-slice item is obsolete for backlog-drainer automations. Replace it with the one-active-DS-at-a-time rule above.
+A fresh planning pass is a required step before each work item. It is not a reason to stop the automation.
+
+For backlog-drainer automations, the intended sequence is:
+
+```text
+Select next eligible work item
+Run fresh planning pass
+Implement if safe
+Test
+PR
+Merge or close down according to branch-protection rules
+Clean up
+Sync source of truth
+Select next eligible work item
+Run fresh planning pass
+Continue
+```
+
+The controlling invariant is:
+
+```text
+At most one active work item at a time.
+Not at most one work item per automation run.
+Not at most one planning pass per automation run.
+```
+
+A backlog-drainer automation may complete multiple ordered work items in one run, provided each work item is separately planned, implemented, tested, merged or otherwise closed down, cleaned up and synced before the next work item begins.
+
+Do not stop merely because the next work item:
+
+- has a different prefix;
+- starts a new phase;
+- is larger;
+- is higher risk;
+- is runtime-facing;
+- is credit-facing;
+- is migration-facing;
+- is integration-facing;
+- touches a different product surface;
+- requires fresh planning.
+
+Stop only when the fresh planning pass identifies a real blocker, such as:
+
+- unresolved product decision;
+- protected-surface change requiring explicit user direction;
+- unsafe ambiguity;
+- failing source-of-truth access;
+- Git, GitHub, monday.com, CI, authentication, branch-protection or connector-policy blocker;
+- dirty working tree or conflicting branch / PR;
+- context or runtime limits that make continuation unsafe.
+
+If the plan is safe, continue automatically.
+
+A planning pass should review:
+
+- the selected source-of-truth work item;
+- item updates, subitems, blockers, links and files where available;
+- `README.md`;
+- applicable `AGENTS.md` files;
+- current repository implementation;
+- relevant tests;
+- recently completed related work items where visible;
+- open or recently merged related branches / PRs where visible.
+
+A planning pass should produce a concise implementation plan covering:
+
+- selected item key, item ID where known and title;
+- current interpretation of the item;
+- whether the original item wording still matches the current repository state;
+- whether previous work has refined, narrowed or superseded the expected deliverable;
+- smallest useful implementation scope;
+- files and product surfaces expected to change;
+- protected or high-risk surfaces to avoid;
+- implementation sequence;
+- acceptance criteria;
+- checks and tests to run;
+- risks, assumptions and blockers.
+
+A backlog-drainer automation may refine, narrow, verify, park or resequence work during planning. It must not broaden scope, merge unrelated work items, or skip the source-of-truth status for convenience.
+
+If the automation prompt explicitly says it is a sequential backlog drainer, any older instruction that says “complete only one item per run” is obsolete. The intended rule is one active work item at a time, not one work item per run.
+
+Preferred branch naming for automation work:
+
+```text
+codex/<item-key-lowercase>-short-title
+```
+
+Examples:
+
+```text
+codex/ds-12-credit-reservation
+codex/fx-01-feedback-flow
+codex/qa-03-report-fixtures
+```
+
+Use the current item key in the branch name. Do not assume the key prefix is always `DS`.
 
 ---
 
 ## Definition of done
 
-A slice is not done unless:
+A work item / slice is not done unless:
 
 - source/tests/build pass;
 - route/PDF report surface is useful;
@@ -1334,7 +1408,7 @@ Do not:
 
 ## Final rule
 
-If the performer would not find the report useful within 60 seconds, the slice fails.
+If the performer would not find the report useful within 60 seconds, the work item / slice fails.
 
 The report should make these visible:
 
