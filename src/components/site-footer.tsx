@@ -27,6 +27,15 @@ export function SiteFooter() {
           <p className="mt-4 max-w-md text-sm leading-relaxed text-sidebar-foreground/75">
             {brand.mission}
           </p>
+          <p className="mt-4 text-sm text-sidebar-foreground/75">
+            Support:{" "}
+            <a
+              className="underline underline-offset-4 hover:text-sidebar-foreground"
+              href="mailto:support@tapecoach.co.uk"
+            >
+              support@tapecoach.co.uk
+            </a>
+          </p>
         </div>
 
         <div className="mt-10 flex flex-col items-start justify-between gap-3 border-t border-sidebar-foreground/10 pt-6 text-xs text-sidebar-foreground/60 sm:flex-row sm:items-center">
