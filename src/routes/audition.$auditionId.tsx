@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
+import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +14,19 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useAccountCompliance } from "@/lib/account-compliance-client";
 import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
-import { buildUploadIdentityMetadata, preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
-import { retryProcessTake, resetTake, resetTakeForReupload } from "@/server-fns/process-take.functions";
+import {
+  buildUploadIdentityMetadata,
+  preflightVideoBasics,
+  uploadFileToMux,
+  UploadCancelledError,
+} from "@/lib/mux-upload";
+import {
+  retryProcessTake,
+  resetTake,
+  resetTakeForReupload,
+} from "@/server-fns/process-take.functions";
 import { deleteTake, deleteAudition } from "@/server-fns/delete.functions";
 import { createMuxDirectUpload } from "@/server-fns/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
@@ -77,6 +88,7 @@ interface Audition {
 function AuditionPage() {
   const { auditionId } = Route.useParams();
   const { user, loading } = useAuth();
+  const compliance = useAccountCompliance(user);
   const navigate = useNavigate();
   const [audition, setAudition] = useState<Audition | null>(null);
   const [takes, setTakes] = useState<Take[]>([]);
@@ -108,9 +120,7 @@ function AuditionPage() {
       if (!activeTakeId && next.length) setActiveTakeId(next[next.length - 1].id);
       // Lightweight observability — confirms the UI received DB truth and
       // detects stuck-tab scenarios. No PII, no payload contents.
-      const anyTerminal = next.some(
-        (t) => t.status === "error" || t.status === "complete",
-      );
+      const anyTerminal = next.some((t) => t.status === "error" || t.status === "complete");
       console.log("ui_poll_refresh", {
         reason,
         takes: next.length,
@@ -143,7 +153,6 @@ function AuditionPage() {
       void refreshRef.current();
     }, 4000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [processingSignature, user]);
 
   // Revalidate on tab focus / visibility change. Browsers throttle or freeze
@@ -184,9 +193,8 @@ function AuditionPage() {
       });
       if (stale) {
         console.warn("ui_stale_processing_revalidated", {
-          processing_count: takes.filter(
-            (t) => t.status === "pending" || t.status === "processing",
-          ).length,
+          processing_count: takes.filter((t) => t.status === "pending" || t.status === "processing")
+            .length,
         });
         void refreshRef.current();
       }
@@ -219,7 +227,27 @@ function AuditionPage() {
     return (
       <div className="flex min-h-screen flex-col bg-background">
         <SiteHeader />
-        <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16 text-sm text-muted-foreground">Loading…</main>
+        <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16 text-sm text-muted-foreground">
+          Loading…
+        </main>
+        <SiteFooter />
+      </div>
+    );
+  }
+
+  if (user && !compliance.loading && !compliance.complete) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <SiteHeader />
+        <PageHeader
+          eyebrow="Account route"
+          title="Complete account setup"
+          subtitle="Complete account setup before uploading or re-running analysis."
+          variant="app"
+        />
+        <main className="mx-auto w-full max-w-3xl flex-1 px-6 pb-24 pt-12">
+          <AccountCompliancePanel userId={user.id} onCompleted={compliance.refresh} />
+        </main>
         <SiteFooter />
       </div>
     );
@@ -237,13 +265,21 @@ function AuditionPage() {
         variant="app"
         actions={
           <>
-            <Button asChild variant="secondary" className="bg-white/10 text-white hover:bg-white/15">
+            <Button
+              asChild
+              variant="secondary"
+              className="bg-white/10 text-white hover:bg-white/15"
+            >
               <Link to="/dashboard">
                 <ArrowLeft className="mr-2 h-4 w-4" /> All auditions
               </Link>
             </Button>
             {takes.length < 3 && (
-              <Button variant="secondary" className="bg-white text-foreground hover:bg-white/90" onClick={() => setShowAdd(true)}>
+              <Button
+                variant="secondary"
+                className="bg-white text-foreground hover:bg-white/90"
+                onClick={() => setShowAdd(true)}
+              >
                 <Plus className="mr-2 h-4 w-4" /> Add take
               </Button>
             )}
@@ -268,9 +304,7 @@ function AuditionPage() {
                   toast.success("Audition deleted");
                   navigate({ to: "/dashboard" });
                 } catch (err) {
-                  toast.error(
-                    err instanceof Error ? err.message : "Could not delete audition",
-                  );
+                  toast.error(err instanceof Error ? err.message : "Could not delete audition");
                 }
               }}
             />
@@ -278,7 +312,6 @@ function AuditionPage() {
         }
       />
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 pb-24 pt-10">
-
         {showAdd && takes.length < 3 && (
           <AddTakeBlock
             audition={audition}
@@ -299,9 +332,7 @@ function AuditionPage() {
           <div className="mt-8">
             {(() => {
               const hasRecommendation = completed.length >= 2;
-              const defaultTab = hasRecommendation
-                ? "recommend"
-                : (activeTakeId ?? takes[0].id);
+              const defaultTab = hasRecommendation ? "recommend" : (activeTakeId ?? takes[0].id);
               const tabValue =
                 activeTakeId === "recommend" || takes.some((t) => t.id === activeTakeId)
                   ? activeTakeId!
@@ -309,11 +340,7 @@ function AuditionPage() {
               return (
                 <Tabs value={tabValue} onValueChange={setActiveTakeId}>
                   <TabsList>
-                    {hasRecommendation && (
-                      <TabsTrigger value="recommend">
-                        Comparison
-                      </TabsTrigger>
-                    )}
+                    {hasRecommendation && <TabsTrigger value="recommend">Comparison</TabsTrigger>}
                     {takes.map((t) => (
                       <TabsTrigger key={t.id} value={t.id}>
                         Take {t.take_number}
@@ -366,11 +393,7 @@ function AuditionPage() {
                           }}
                         />
                       </div>
-                      <TakeView
-                        take={t}
-                        audition={audition}
-                        isSoleTake={completed.length <= 1}
-                      />
+                      <TakeView take={t} audition={audition} isSoleTake={completed.length <= 1} />
                     </TabsContent>
                   ))}
                 </Tabs>
@@ -379,9 +402,7 @@ function AuditionPage() {
           </div>
         )}
 
-        {!activeTake && (
-          <p className="mt-10 text-sm text-muted-foreground">No takes yet.</p>
-        )}
+        {!activeTake && <p className="mt-10 text-sm text-muted-foreground">No takes yet.</p>}
       </main>
       <SiteFooter />
     </div>
@@ -434,11 +455,7 @@ function FailedTakeView({ take }: { take: Take }) {
       }
 
       if (checklist) {
-        const pf = preflightVideoBasics(
-          f,
-          checklist.duration.seconds,
-          checklist.audio.peak,
-        );
+        const pf = preflightVideoBasics(f, checklist.duration.seconds, checklist.audio.peak);
         if (!pf.ok) {
           toast.error(pf.error ?? "Video failed pre-upload checks");
           return;
@@ -468,7 +485,8 @@ function FailedTakeView({ take }: { take: Take }) {
         const info = describeUploadError(err);
         throw new Error(info.message);
       }
-      if (!uploadUrl) throw new Error("Video service did not return an upload URL. Please try again.");
+      if (!uploadUrl)
+        throw new Error("Video service did not return an upload URL. Please try again.");
       await uploadFileToMux(uploadUrl, f);
       toast.success("Replacement uploaded — optimising and analysing now");
     } catch (err) {
@@ -513,12 +531,12 @@ function FailedTakeView({ take }: { take: Take }) {
         >
           Try again
         </Button>
-        <Button
-          variant="outline"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-        >
-          {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+        <Button variant="outline" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Upload className="mr-2 h-4 w-4" />
+          )}
           Replace video
         </Button>
       </div>
@@ -582,8 +600,7 @@ function ProcessingTakeView({ take }: { take: Take }) {
   const phase = (take.processing_phase ?? "uploading") as StageKey | string;
   const [busy, setBusy] = useState(false);
 
-  const analysisElapsed =
-    phase === "analysing" || phase === "analysis_pending" ? elapsed : 0;
+  const analysisElapsed = phase === "analysing" || phase === "analysis_pending" ? elapsed : 0;
   const activeIdx = stageIndexFor(phase, analysisElapsed);
 
   // Per-stage copy. The system owns retries — copy is reassuring at every
@@ -592,12 +609,10 @@ function ProcessingTakeView({ take }: { take: Take }) {
   let sub: string;
   if (phase === "uploading") {
     title = "Uploading your tape…";
-    sub =
-      "Sending to secure storage. This is the only step that depends on your connection.";
+    sub = "Sending to secure storage. This is the only step that depends on your connection.";
   } else if (phase === "transcoding") {
     title = "Optimising your video…";
-    sub =
-      "Standardising format for fast, accurate analysis. Your performance is not altered.";
+    sub = "Standardising format for fast, accurate analysis. Your performance is not altered.";
   } else if (phase === "analysis_pending") {
     title = "Preparing your video for analysis";
     sub =
@@ -607,12 +622,10 @@ function ProcessingTakeView({ take }: { take: Take }) {
     sub = "Almost there — preparing your report.";
   } else if (analysisElapsed < TIER_REASSURE_SECONDS) {
     title = "Watching your tape";
-    sub =
-      "We're reviewing the performance, brief, sound and technical setup.";
+    sub = "We're reviewing the performance, brief, sound and technical setup.";
   } else if (analysisElapsed < 90) {
     title = "Writing your feedback";
-    sub =
-      "We're turning the analysis into clear notes and next steps.";
+    sub = "We're turning the analysis into clear notes and next steps.";
   } else {
     title = "Finalising your results";
     sub = "Almost there — preparing your report.";
@@ -623,8 +636,7 @@ function ProcessingTakeView({ take }: { take: Take }) {
   if (elapsed >= TIER_VERY_LONG_WAIT_SECONDS) {
     longWaitNote = "Still working. Longer videos can take up to 10 minutes.";
   } else if (elapsed >= TIER_LONG_WAIT_SECONDS) {
-    longWaitNote =
-      "Still working — this is taking longer than usual, but it has not failed.";
+    longWaitNote = "Still working — this is taking longer than usual, but it has not failed.";
   } else if (elapsed >= 60) {
     longWaitNote =
       "Longer videos or larger files can take longer. In some cases, analysis can take up to 10 minutes.";
@@ -644,9 +656,7 @@ function ProcessingTakeView({ take }: { take: Take }) {
         We're still working. If anything fails, we'll retry automatically.
       </p>
       {longWaitNote && (
-        <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-          {longWaitNote}
-        </p>
+        <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">{longWaitNote}</p>
       )}
       {elapsed >= TIER_LONG_WAIT_SECONDS && (
         <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
@@ -716,23 +726,69 @@ function scoreBand(score: number | null | undefined): {
   tone: string;
 } {
   if (score == null) {
-    return { label: "Not scored", blurb: "Not enough signal to score this area.", tone: "text-muted-foreground" };
+    return {
+      label: "Not scored",
+      blurb: "Not enough signal to score this area.",
+      tone: "text-muted-foreground",
+    };
   }
-  if (score >= 90) return { label: "Submission-ready", blurb: "Meets a professional bar — send as-is.", tone: "text-success" };
-  if (score >= 80) return { label: "Strong, refine if time", blurb: "Solid work; small polish would lift it further.", tone: "text-success" };
-  if (score >= 70) return { label: "Usable, but needs work", blurb: "Reads on tape, but has noticeable rough edges.", tone: "text-warning" };
-  return { label: "Re-record recommended", blurb: "Below the bar for a confident submission.", tone: "text-destructive" };
+  if (score >= 90)
+    return {
+      label: "Submission-ready",
+      blurb: "Meets a professional bar — send as-is.",
+      tone: "text-success",
+    };
+  if (score >= 80)
+    return {
+      label: "Strong, refine if time",
+      blurb: "Solid work; small polish would lift it further.",
+      tone: "text-success",
+    };
+  if (score >= 70)
+    return {
+      label: "Usable, but needs work",
+      blurb: "Reads on tape, but has noticeable rough edges.",
+      tone: "text-warning",
+    };
+  return {
+    label: "Re-record recommended",
+    blurb: "Below the bar for a confident submission.",
+    tone: "text-destructive",
+  };
 }
 
 // Brief-fit specific phrasing — same numeric bands, casting-language labels.
-function briefFitBand(score: number | null | undefined): { label: string; blurb: string; tone: string } {
-  if (score == null) return { label: "Not assessed", blurb: "No brief to align against.", tone: "text-muted-foreground" };
-  if (score >= 90) return { label: "Fully aligned", blurb: "Hits the brief's key requirements clearly.", tone: "text-success" };
-  if (score >= 80) return { label: "Mostly aligned", blurb: "On-brief with minor gaps.", tone: "text-success" };
-  if (score >= 70) return { label: "Partially aligned", blurb: "Some brief points missed — check before sending.", tone: "text-warning" };
-  return { label: "Off-brief", blurb: "Important brief requirements not met.", tone: "text-destructive" };
+function briefFitBand(score: number | null | undefined): {
+  label: string;
+  blurb: string;
+  tone: string;
+} {
+  if (score == null)
+    return {
+      label: "Not assessed",
+      blurb: "No brief to align against.",
+      tone: "text-muted-foreground",
+    };
+  if (score >= 90)
+    return {
+      label: "Fully aligned",
+      blurb: "Hits the brief's key requirements clearly.",
+      tone: "text-success",
+    };
+  if (score >= 80)
+    return { label: "Mostly aligned", blurb: "On-brief with minor gaps.", tone: "text-success" };
+  if (score >= 70)
+    return {
+      label: "Partially aligned",
+      blurb: "Some brief points missed — check before sending.",
+      tone: "text-warning",
+    };
+  return {
+    label: "Off-brief",
+    blurb: "Important brief requirements not met.",
+    tone: "text-destructive",
+  };
 }
-
 
 // Translates the underlying confidence + signal data into a friendly,
 // non-technical reliability indicator. Never surfaces the numeric score or
@@ -745,7 +801,10 @@ function buildTrustIndicator(
   report: any,
   take: Take,
 ): {
-  label: "Feedback reliability: High" | "Feedback reliability: Medium" | "Feedback reliability: Low";
+  label:
+    | "Feedback reliability: High"
+    | "Feedback reliability: Medium"
+    | "Feedback reliability: Low";
   reason: string;
   tone: string;
 } {
@@ -849,7 +908,15 @@ function buildTrustIndicator(
   return { label, reason, tone };
 }
 
-function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Audition; isSoleTake?: boolean }) {
+function TakeView({
+  take,
+  audition,
+  isSoleTake,
+}: {
+  take: Take;
+  audition: Audition;
+  isSoleTake?: boolean;
+}) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
   }
@@ -946,7 +1013,12 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
             <p className="mt-1 font-display text-7xl font-bold leading-none text-primary tabular-nums">
               {r.overall_score_final ?? take.overall_score ?? "—"}
             </p>
-            <p className={cn("mt-2 text-xs font-semibold", scoreBand(r.overall_score_final ?? take.overall_score).tone)}>
+            <p
+              className={cn(
+                "mt-2 text-xs font-semibold",
+                scoreBand(r.overall_score_final ?? take.overall_score).tone,
+              )}
+            >
               {scoreBand(r.overall_score_final ?? take.overall_score).label}
             </p>
           </div>
@@ -960,7 +1032,12 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                 Submission guidance
               </p>
             </div>
-            <p className={cn("mt-2 font-display text-xl font-semibold leading-snug", verdictTone(readiness))}>
+            <p
+              className={cn(
+                "mt-2 font-display text-xl font-semibold leading-snug",
+                verdictTone(readiness),
+              )}
+            >
               {recommendation}
             </p>
             <p className="mt-2 text-sm text-muted-foreground">{guidanceReason}</p>
@@ -988,7 +1065,8 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
               Fix this first
             </p>
             <p className="mt-1 text-sm font-medium text-foreground">
-              {r.fix_first ?? (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
+              {r.fix_first ??
+                (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
             </p>
           </div>
         </div>
@@ -1013,7 +1091,10 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
         {r.at_risk && blockers.length === 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning-foreground">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
-            <p>This tape is flagged <strong>at risk</strong> — a brief requirement appears to be missing.</p>
+            <p>
+              This tape is flagged <strong>at risk</strong> — a brief requirement appears to be
+              missing.
+            </p>
           </div>
         )}
         {r.extraction_confidence === "low" && (
@@ -1063,9 +1144,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
       )}
 
       {/* Sole-take re-record drills (kept; complements the action summary) */}
-      {isSoleTake && (
-        <SoleTakeDecisionPanel take={take} />
-      )}
+      {isSoleTake && <SoleTakeDecisionPanel take={take} />}
 
       {/* Casting headline — interpretive context for the score */}
       <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
@@ -1116,11 +1195,13 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 What this means for casting
               </p>
-              {(r.casting_risk_explanations as Array<{
-                flag: string;
-                casting_impact: string;
-                recall_impact: "unlikely_to_affect" | "may_reduce" | "likely_to_block";
-              }>).map((e, i) => {
+              {(
+                r.casting_risk_explanations as Array<{
+                  flag: string;
+                  casting_impact: string;
+                  recall_impact: "unlikely_to_affect" | "may_reduce" | "likely_to_block";
+                }>
+              ).map((e, i) => {
                 const recallLabel =
                   e.recall_impact === "likely_to_block"
                     ? "Likely to block recall"
@@ -1164,9 +1245,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                 </span>
               )}
               {r.role_fit_confidence && (
-                <span className="text-muted-foreground">
-                  confidence: {r.role_fit_confidence}
-                </span>
+                <span className="text-muted-foreground">confidence: {r.role_fit_confidence}</span>
               )}
             </div>
           </div>
@@ -1216,7 +1295,9 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                       </span>
                     </span>
                     <span className="flex items-baseline gap-2">
-                      <span className="font-display text-lg font-semibold tabular-nums">{c.score}</span>
+                      <span className="font-display text-lg font-semibold tabular-nums">
+                        {c.score}
+                      </span>
                       <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
                     </span>
                   </div>
@@ -1255,15 +1336,18 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
           {categories.map((c) => {
             const score = r.scores?.[c.key];
             if (score == null) return null;
-            const band = c.key === "brief_adherence" && r.mode === "brief"
-              ? briefFitBand(score)
-              : scoreBand(score);
+            const band =
+              c.key === "brief_adherence" && r.mode === "brief"
+                ? briefFitBand(score)
+                : scoreBand(score);
             return (
               <div key={c.key}>
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-xs font-medium text-muted-foreground">{c.label}</span>
                   <span className="flex items-baseline gap-2">
-                    <span className="text-sm font-semibold tabular-nums text-foreground">{score}</span>
+                    <span className="text-sm font-semibold tabular-nums text-foreground">
+                      {score}
+                    </span>
                     <span className={cn("text-[11px] font-medium", band.tone)}>· {band.label}</span>
                   </span>
                 </div>
@@ -1311,10 +1395,7 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
                     <span className={cn("text-xs font-medium", band.tone)}>· {band.label}</span>
                   </div>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border">
-                    <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width: `${v}%` }}
-                    />
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${v}%` }} />
                   </div>
                 </div>
               );
@@ -1325,7 +1406,6 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
       )}
 
       {/* Fix first — moved up as a prominent coaching card (see above) */}
-
 
       {/* Strengths + improvements */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -1358,14 +1438,12 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
           <h3 className="font-display text-base font-semibold">Timestamped notes</h3>
           <ul className="mt-4 space-y-3 text-sm">
-            {r.timestamped_notes.map(
-              (n: { timestamp: string; note: string }, i: number) => (
-                <li key={i} className="flex gap-4 border-b border-border pb-3 last:border-0">
-                  <span className="font-mono text-xs tabular-nums text-primary">{n.timestamp}</span>
-                  <span className="flex-1 text-foreground">{n.note}</span>
-                </li>
-              ),
-            )}
+            {r.timestamped_notes.map((n: { timestamp: string; note: string }, i: number) => (
+              <li key={i} className="flex gap-4 border-b border-border pb-3 last:border-0">
+                <span className="font-mono text-xs tabular-nums text-primary">{n.timestamp}</span>
+                <span className="flex-1 text-foreground">{n.note}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}
@@ -1402,15 +1480,13 @@ function TakeView({ take, audition, isSoleTake }: { take: Take; audition: Auditi
 
 function getVerdictLabel(take: Take): string {
   const r = take.report;
-  return (
-    r?.verdict_final ??
-    r?.submission_verdict?.label ??
-    deriveVerdictLabel(take.overall_score)
-  );
+  return r?.verdict_final ?? r?.submission_verdict?.label ?? deriveVerdictLabel(take.overall_score);
 }
 
 function isReadyVerdict(label: string): boolean {
-  return label === "Ready to submit" || label === "Strong for this level" || label === "Strong submit";
+  return (
+    label === "Ready to submit" || label === "Strong for this level" || label === "Strong submit"
+  );
 }
 
 function SoleTakeDecisionPanel({ take }: { take: Take }) {
@@ -1453,7 +1529,8 @@ function SoleTakeDecisionPanel({ take }: { take: Take }) {
             What to fix first
           </p>
           <p className="mt-2 text-sm font-medium text-foreground">
-            {fixFirst ?? (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
+            {fixFirst ??
+              (ready ? "Nothing critical — you're good to send." : "See improvements below.")}
           </p>
         </div>
         <div>
@@ -1487,9 +1564,7 @@ function RecommendationView({
   takes: Take[];
   onOpenTake: (id: string) => void;
 }) {
-  const ranked = [...takes].sort(
-    (a, b) => (b.overall_score ?? 0) - (a.overall_score ?? 0),
-  );
+  const ranked = [...takes].sort((a, b) => (b.overall_score ?? 0) - (a.overall_score ?? 0));
   const best = ranked[0];
   const bestVerdict = getVerdictLabel(best);
   const bestReady = isReadyVerdict(bestVerdict);
@@ -1524,9 +1599,7 @@ function RecommendationView({
         </p>
         {(() => {
           const h = pickHeadline(best.report);
-          return h ? (
-            <p className="mt-2 text-sm text-muted-foreground">"{h}"</p>
-          ) : null;
+          return h ? <p className="mt-2 text-sm text-muted-foreground">"{h}"</p> : null;
         })()}
         <div className="mt-4 flex flex-wrap gap-2">
           <Button size="sm" variant="outline" onClick={() => onOpenTake(best.id)}>
@@ -1655,7 +1728,10 @@ function CompareView({ takes }: { takes: Take[] }) {
                     else val = t.scores?.[c.key] ?? null;
                     if (c.key === "confidence") {
                       return (
-                        <td key={t.id} className="py-3 pr-2 text-right text-xs tabular-nums text-muted-foreground">
+                        <td
+                          key={t.id}
+                          className="py-3 pr-2 text-right text-xs tabular-nums text-muted-foreground"
+                        >
                           {val ?? "—"}
                         </td>
                       );
@@ -1790,7 +1866,8 @@ function AddTakeBlock({
         const info = describeUploadError(err);
         throw new Error(info.message);
       }
-      if (!uploadUrl) throw new Error("Video service did not return an upload URL. Please try again.");
+      if (!uploadUrl)
+        throw new Error("Video service did not return an upload URL. Please try again.");
       const controller = new AbortController();
       abortRef.current = controller;
       await uploadFileToMux(uploadUrl, file, setUploadPct, controller.signal);

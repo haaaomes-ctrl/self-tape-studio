@@ -8,8 +8,10 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
+import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { useAccountCompliance } from "@/lib/account-compliance-client";
 import { deleteAudition } from "@/server-fns/delete.functions";
 import { brandTitle } from "@/config/brand";
 
@@ -26,11 +28,18 @@ interface AuditionRow {
   brief_source: string;
   mode: string;
   created_at: string;
-  takes: { id: string; status: string; overall_score: number | null; confidence: number | null; take_number: number }[];
+  takes: {
+    id: string;
+    status: string;
+    overall_score: number | null;
+    confidence: number | null;
+    take_number: number;
+  }[];
 }
 
 function DashboardPage() {
   const { user, loading } = useAuth();
+  const compliance = useAccountCompliance(user);
   const navigate = useNavigate();
   const [items, setItems] = useState<AuditionRow[] | null>(null);
 
@@ -69,21 +78,33 @@ function DashboardPage() {
       <SiteHeader />
       <PageHeader
         eyebrow="Your work"
-        title="Your auditions"
-        subtitle="Each audition holds up to 3 takes you can compare side by side."
+        title={compliance.complete ? "Your auditions" : "Account route"}
+        subtitle={
+          compliance.complete
+            ? "Each audition holds up to 3 takes you can compare side by side."
+            : "Complete account setup before uploading for analysis."
+        }
         variant="app"
         actions={
-          <Button asChild size="lg" variant="secondary" className="bg-white text-foreground hover:bg-white/90">
-            <Link to="/new">
-              <Plus className="mr-2 h-4 w-4" /> New audition
-            </Link>
-          </Button>
+          compliance.complete ? (
+            <Button
+              asChild
+              size="lg"
+              variant="secondary"
+              className="bg-white text-foreground hover:bg-white/90"
+            >
+              <Link to="/new">
+                <Plus className="mr-2 h-4 w-4" /> New audition
+              </Link>
+            </Button>
+          ) : null
         }
       />
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 pb-20 pt-12">
-
         <div className="mt-10">
-          {items === null ? (
+          {user && !compliance.loading && !compliance.complete ? (
+            <AccountCompliancePanel userId={user.id} onCompleted={compliance.refresh} />
+          ) : items === null ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : items.length === 0 ? (
             <EmptyState />

@@ -11,6 +11,7 @@ import {
   quotaErrorToResponse,
 } from "@/server/quota.server";
 import { metric } from "@/server/metrics.server";
+import { assertAccountComplianceForReport } from "@/server/account-compliance.server";
 
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin
@@ -46,6 +47,7 @@ export const retryProcessTake = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertTakeOwnership(data.takeId, context.userId, "retryProcessTake");
+    await assertAccountComplianceForReport(context.userId);
     // Pre-flight: never spawn a duplicate pipeline. If a poll loop or Gemini
     // call is already in flight for this take, return immediately so the UI
     // keeps polling the existing run instead of starting a second one.
@@ -75,10 +77,7 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       return { ok: true as const, alreadyRunning: true as const };
     }
     try {
-      await assertWithinAnalysisQuota(
-        { kind: "user", userId: context.userId },
-        "retryProcessTake",
-      );
+      await assertWithinAnalysisQuota({ kind: "user", userId: context.userId }, "retryProcessTake");
     } catch (err) {
       if (err instanceof QuotaExceededError) {
         metric("quota_rejection", {
@@ -101,9 +100,7 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
     z
       .object({
         takeId: z.string().uuid(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         signals: z.any().optional(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         checklist: z.any().optional(),
       })
       .parse(data),
@@ -164,9 +161,7 @@ export const resetTake = createServerFn({ method: "POST" })
     metric("cancel", {
       take_id: data.takeId,
       processing_phase: pre?.processing_phase ?? null,
-      duration_ms: pre?.created_at
-        ? Date.now() - new Date(pre.created_at).getTime()
-        : undefined,
+      duration_ms: pre?.created_at ? Date.now() - new Date(pre.created_at).getTime() : undefined,
       reason: "user_initiated",
     });
     return { ok: true };
