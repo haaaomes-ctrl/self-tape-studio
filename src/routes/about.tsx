@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, Layers, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Clock, Layers, ShieldCheck, Sparkles } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { brand, brandTitle } from "@/config/brand";
+import { VIDEO_DURATION_SUPPORT_EMAIL } from "@/lib/video-duration-policy";
 
 const ABOUT_TITLE = `How ${brand.name} reviews your self-tape`;
 const ABOUT_DESC = `${brand.name} gives you a private second look at your self-tape — structured feedback on performance, voice, setup and brief fit, so you can submit with more confidence.`;
@@ -34,9 +35,9 @@ function AboutPage() {
         title="A private second look — before your tape reaches the room."
         subtitle={
           <>
-            {brand.name} gives you structured, performer-friendly feedback on your
-            self-tape. It is built to feel like a trusted reader on call — quiet,
-            supportive, and focused on helping you send your strongest take.
+            {brand.name} gives you structured, performer-friendly feedback on your self-tape. It is
+            built to feel like a trusted reader on call — quiet, supportive, and focused on helping
+            you send your strongest take.
           </>
         }
       />
@@ -73,6 +74,28 @@ function AboutPage() {
                 <p className="mt-3">
                   Audio that is too quiet to judge fairly is flagged, not punished. Brief-required
                   elements that are missing are surfaced clearly so nothing slips past you.
+                </p>
+              </>
+            }
+          />
+          <Block
+            icon={Clock}
+            title="How long should my video be?"
+            body={
+              <>
+                <p>
+                  Videos up to 5 minutes do not show a length warning. From 5:01 to 10:00, TapeCoach
+                  shows guidance, but you can continue if your brief asks for a longer tape or
+                  multiple components.
+                </p>
+                <p className="mt-3">
+                  Videos over 10 minutes are blocked before upload and report generation. Keep the
+                  required audition material from your brief and trim unrelated lead-in, dead time
+                  or unused footage. If the brief specifically requires a longer tape, contact{" "}
+                  <a className="underline" href={`mailto:${VIDEO_DURATION_SUPPORT_EMAIL}`}>
+                    {VIDEO_DURATION_SUPPORT_EMAIL}
+                  </a>
+                  .
                 </p>
               </>
             }

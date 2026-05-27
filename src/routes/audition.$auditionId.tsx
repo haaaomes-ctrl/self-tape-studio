@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { CreditUseNotice } from "@/components/credit-balance-panel";
+import { VideoDurationNotice } from "@/components/video-duration-notice";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { UploadPolicyNotice } from "@/components/legal-policy-links";
 import { Button } from "@/components/ui/button";
@@ -25,12 +26,20 @@ import {
   UploadCancelledError,
 } from "@/lib/mux-upload";
 import {
+  buildVideoDurationDecision,
+  buildVideoDurationSignals,
+  VIDEO_DURATION_SUPPORT_EMAIL,
+  type VideoDurationEventName,
+  type VideoDurationStatus,
+} from "@/lib/video-duration-policy";
+import {
   retryProcessTake,
   resetTake,
   resetTakeForReupload,
 } from "@/server-fns/process-take.functions";
 import { deleteTake, deleteAudition } from "@/server-fns/delete.functions";
 import { createMuxDirectUpload } from "@/server-fns/mux.functions";
+import { trackVideoDurationUploadEvent } from "@/server-fns/video-duration-events.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { cn } from "@/lib/utils";
 import { brandTitle } from "@/config/brand";
@@ -48,6 +57,42 @@ function pickHeadline(report: unknown): string | null {
     if (typeof v === "string" && v.trim().length > 0) return v.trim();
   }
   return null;
+}
+
+type VideoDurationUploadSurface = "add_take_upload" | "replace_failed_take";
+
+function recordVideoDurationEvent(
+  eventName: VideoDurationEventName,
+  durationSeconds: number,
+  durationStatus: VideoDurationStatus,
+  surface: VideoDurationUploadSurface,
+) {
+  void trackVideoDurationUploadEvent({
+    data: {
+      eventName,
+      durationSeconds,
+      durationStatus,
+      surface,
+    },
+  }).catch(() => {});
+}
+
+async function buildTakeUploadSignals(file: File, checklist: ChecklistResult | null) {
+  if (!checklist) {
+    return { upload_identity: await buildUploadIdentityMetadata(file, null) };
+  }
+
+  return {
+    orientation: checklist.orientation.value,
+    width: checklist.resolution.width,
+    height: checklist.resolution.height,
+    duration: checklist.duration.seconds,
+    ...buildVideoDurationSignals(checklist.duration.seconds),
+    brightness: checklist.brightness.value,
+    audio_peak: checklist.audio.peak,
+    audio_rms: checklist.audio.rms,
+    upload_identity: await buildUploadIdentityMetadata(file, checklist.duration.seconds),
+  };
 }
 
 export const Route = createFileRoute("/audition/$auditionId")({
@@ -457,26 +502,47 @@ function FailedTakeView({ take }: { take: Take }) {
       }
 
       if (checklist) {
+        const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
+        if (!durationDecision.canUpload) {
+          recordVideoDurationEvent(
+            "video_duration_hard_cap_blocked",
+            durationDecision.durationSeconds,
+            durationDecision.status,
+            "replace_failed_take",
+          );
+          toast.error(
+            `${durationDecision.message ?? "This video is over TapeCoach's upload limit."} ${VIDEO_DURATION_SUPPORT_EMAIL}`,
+          );
+          return;
+        }
+        if (durationDecision.requiresAcknowledgement) {
+          recordVideoDurationEvent(
+            "video_duration_warning_shown",
+            durationDecision.durationSeconds,
+            durationDecision.status,
+            "replace_failed_take",
+          );
+          const proceed = window.confirm(
+            `${durationDecision.message}\n\nContinue with this video?`,
+          );
+          if (!proceed) return;
+          recordVideoDurationEvent(
+            "video_duration_warning_accepted",
+            durationDecision.durationSeconds,
+            durationDecision.status,
+            "replace_failed_take",
+          );
+        }
+
         const pf = preflightVideoBasics(f, checklist.duration.seconds, checklist.audio.peak);
         if (!pf.ok) {
           toast.error(pf.error ?? "Video failed pre-upload checks");
           return;
         }
-        if (pf.warning) toast.warning(pf.warning);
+        if (pf.warning && pf.durationStatus !== "over_soft_guidance") toast.warning(pf.warning);
       }
 
-      const signals = checklist
-        ? {
-            orientation: checklist.orientation.value,
-            width: checklist.resolution.width,
-            height: checklist.resolution.height,
-            duration: checklist.duration.seconds,
-            brightness: checklist.brightness.value,
-            audio_peak: checklist.audio.peak,
-            audio_rms: checklist.audio.rms,
-            upload_identity: await buildUploadIdentityMetadata(f, checklist.duration.seconds),
-          }
-        : { upload_identity: await buildUploadIdentityMetadata(f, null) };
+      const signals = await buildTakeUploadSignals(f, checklist);
 
       await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
       let uploadUrl: string | undefined;
@@ -1795,6 +1861,7 @@ function AddTakeBlock({
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
+  const [durationWarningAccepted, setDurationWarningAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -1807,6 +1874,7 @@ function AddTakeBlock({
   async function pick(f: File | null) {
     setFile(f);
     setChecklist(null);
+    setDurationWarningAccepted(false);
     if (!f) return;
     try {
       setChecklist(await analyzeVideoFile(f));
@@ -1819,29 +1887,35 @@ function AddTakeBlock({
     if (!file || !user) return;
 
     if (checklist) {
+      const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
+      if (!durationDecision.canUpload) {
+        recordVideoDurationEvent(
+          "video_duration_hard_cap_blocked",
+          durationDecision.durationSeconds,
+          durationDecision.status,
+          "add_take_upload",
+        );
+        toast.error(durationDecision.message ?? "This video is over TapeCoach's upload limit.");
+        return;
+      }
+      if (durationDecision.requiresAcknowledgement && !durationWarningAccepted) {
+        toast.warning(
+          durationDecision.message ?? "Review the video length guidance before upload.",
+        );
+        return;
+      }
       const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
       if (!pf.ok) {
         toast.error(pf.error ?? "Video failed pre-upload checks");
         return;
       }
-      if (pf.warning) toast.warning(pf.warning);
+      if (pf.warning && pf.durationStatus !== "over_soft_guidance") toast.warning(pf.warning);
     }
 
     setBusy(true);
     setUploadPct(0);
     try {
-      const signals = checklist
-        ? {
-            orientation: checklist.orientation.value,
-            width: checklist.resolution.width,
-            height: checklist.resolution.height,
-            duration: checklist.duration.seconds,
-            brightness: checklist.brightness.value,
-            audio_peak: checklist.audio.peak,
-            audio_rms: checklist.audio.rms,
-            upload_identity: await buildUploadIdentityMetadata(file, checklist.duration.seconds),
-          }
-        : { upload_identity: await buildUploadIdentityMetadata(file, null) };
+      const signals = await buildTakeUploadSignals(file, checklist);
       const { data: take, error: takeErr } = await supabase
         .from("takes")
         .insert([
@@ -1934,6 +2008,31 @@ function AddTakeBlock({
       {checklist && (
         <div className="mt-4">
           <ChecklistView checklist={checklist} briefSource={audition.brief_source} />
+          <VideoDurationNotice
+            className="mt-4"
+            seconds={checklist.duration.seconds}
+            accepted={durationWarningAccepted}
+            onShown={(status) => {
+              if (status !== "over_soft_guidance") return;
+              recordVideoDurationEvent(
+                "video_duration_warning_shown",
+                checklist.duration.seconds,
+                status,
+                "add_take_upload",
+              );
+            }}
+            onAccept={() => {
+              const decision = buildVideoDurationDecision(checklist.duration.seconds);
+              setDurationWarningAccepted(true);
+              recordVideoDurationEvent(
+                "video_duration_warning_accepted",
+                decision.durationSeconds,
+                decision.status,
+                "add_take_upload",
+              );
+            }}
+            onChooseShorter={() => fileRef.current?.click()}
+          />
         </div>
       )}
       <div className="mt-5 flex justify-end gap-2">

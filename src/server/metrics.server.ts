@@ -108,6 +108,10 @@ export type MetricName =
   | "report_credit_consumed"
   | "report_credit_released"
   | "report_credit_rejected"
+  // Upload duration policy
+  | "video_duration_warning_shown"
+  | "video_duration_warning_accepted"
+  | "video_duration_hard_cap_blocked"
   // Consumer Stripe checkout
   | "consumer_checkout_created"
   | "consumer_checkout_failed"

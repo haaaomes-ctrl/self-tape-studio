@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { CreditUseNotice } from "@/components/credit-balance-panel";
+import { VideoDurationNotice } from "@/components/video-duration-notice";
 import { UploadPolicyNotice } from "@/components/legal-policy-links";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +39,14 @@ import {
   uploadFileToMux,
   UploadCancelledError,
 } from "@/lib/mux-upload";
+import {
+  buildVideoDurationDecision,
+  buildVideoDurationSignals,
+  type VideoDurationEventName,
+  type VideoDurationStatus,
+} from "@/lib/video-duration-policy";
 import { createMuxDirectUpload } from "@/server-fns/mux.functions";
+import { trackVideoDurationUploadEvent } from "@/server-fns/video-duration-events.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server-fns/process-take.functions";
 import { brandTitle } from "@/config/brand";
@@ -49,6 +57,21 @@ export const Route = createFileRoute("/new")({
 });
 
 const titleSchema = z.string().trim().min(1).max(120);
+
+function recordVideoDurationEvent(
+  eventName: VideoDurationEventName,
+  durationSeconds: number,
+  durationStatus: VideoDurationStatus,
+) {
+  void trackVideoDurationUploadEvent({
+    data: {
+      eventName,
+      durationSeconds,
+      durationStatus,
+      surface: "new_audition_upload",
+    },
+  }).catch(() => {});
+}
 
 function NewAuditionPage() {
   const { user, loading } = useAuth();
@@ -70,6 +93,7 @@ function NewAuditionPage() {
   const [file, setFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
+  const [durationWarningAccepted, setDurationWarningAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -88,6 +112,7 @@ function NewAuditionPage() {
   async function onPickFile(f: File | null) {
     setFile(f);
     setChecklist(null);
+    setDurationWarningAccepted(false);
     if (!f) return;
     setChecking(true);
     try {
@@ -119,12 +144,28 @@ function NewAuditionPage() {
 
     // Pre-upload preflight: hard reject oversized / overlong files.
     if (checklist) {
+      const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
+      if (!durationDecision.canUpload) {
+        recordVideoDurationEvent(
+          "video_duration_hard_cap_blocked",
+          durationDecision.durationSeconds,
+          durationDecision.status,
+        );
+        toast.error(durationDecision.message ?? "This video is over TapeCoach's upload limit.");
+        return;
+      }
+      if (durationDecision.requiresAcknowledgement && !durationWarningAccepted) {
+        toast.warning(
+          durationDecision.message ?? "Review the video length guidance before upload.",
+        );
+        return;
+      }
       const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
       if (!pf.ok) {
         toast.error(pf.error ?? "Video failed pre-upload checks");
         return;
       }
-      if (pf.warning) toast.warning(pf.warning);
+      if (pf.warning && pf.durationStatus !== "over_soft_guidance") toast.warning(pf.warning);
     }
 
     setSubmitting(true);
@@ -171,6 +212,7 @@ function NewAuditionPage() {
             width: checklist.resolution.width,
             height: checklist.resolution.height,
             duration: checklist.duration.seconds,
+            ...buildVideoDurationSignals(checklist.duration.seconds),
             brightness: checklist.brightness.value,
             audio_peak: checklist.audio.peak,
             audio_rms: checklist.audio.rms,
@@ -420,8 +462,8 @@ function NewAuditionPage() {
             <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
               <h2 className="font-display text-lg font-semibold">Upload video</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                MP4 or MOV, up to 750MB. Large files are automatically optimised for fast, accurate
-                feedback — your performance is not altered.
+                MP4 or MOV. Large files are automatically optimised for fast, accurate feedback —
+                your performance is not altered.
               </p>
               <UploadPolicyNotice className="mt-3" />
               <CreditUseNotice className="mt-4" enabled={Boolean(user && compliance.complete)} />
@@ -466,6 +508,29 @@ function NewAuditionPage() {
                         ? (guided.reader as "yes" | "no")
                         : undefined
                     }
+                  />
+                  <VideoDurationNotice
+                    className="mt-4"
+                    seconds={checklist.duration.seconds}
+                    accepted={durationWarningAccepted}
+                    onShown={(status) => {
+                      if (status !== "over_soft_guidance") return;
+                      recordVideoDurationEvent(
+                        "video_duration_warning_shown",
+                        checklist.duration.seconds,
+                        status,
+                      );
+                    }}
+                    onAccept={() => {
+                      const decision = buildVideoDurationDecision(checklist.duration.seconds);
+                      setDurationWarningAccepted(true);
+                      recordVideoDurationEvent(
+                        "video_duration_warning_accepted",
+                        decision.durationSeconds,
+                        decision.status,
+                      );
+                    }}
+                    onChooseShorter={() => fileRef.current?.click()}
                   />
                 </div>
               )}

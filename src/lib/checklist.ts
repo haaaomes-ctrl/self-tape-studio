@@ -1,3 +1,8 @@
+import {
+  buildVideoDurationDecision,
+  VIDEO_DURATION_HARD_CAP_COPY,
+} from "@/lib/video-duration-policy";
+
 // Build a synthetic brief from guided-prompt fields. Returns null if no fields filled.
 export interface GuidedFields {
   roleType?: string;
@@ -22,7 +27,11 @@ export function buildGuidedBrief(g: GuidedFields): string | null {
 
 // Lightweight client-side checks on a video file before upload.
 export interface ChecklistResult {
-  orientation: { value: "landscape" | "portrait" | "square"; status: "ok" | "warn" | "fail"; note: string };
+  orientation: {
+    value: "landscape" | "portrait" | "square";
+    status: "ok" | "warn" | "fail";
+    note: string;
+  };
   duration: { seconds: number; status: "ok" | "warn" | "fail"; note: string };
   resolution: { width: number; height: number; status: "ok" | "warn" | "fail"; note: string };
   brightness: { value: number; status: "ok" | "warn" | "fail"; note: string };
@@ -57,11 +66,17 @@ export async function analyzeVideoFile(
           ? "ok"
           : "warn";
 
+    const durationDecision = buildVideoDurationDecision(video.duration);
     const durationStatus: "ok" | "warn" | "fail" =
-      video.duration < 10 ? "fail" : video.duration > 300 ? "warn" : "ok";
+      video.duration < 10
+        ? "fail"
+        : durationDecision.status === "over_hard_cap"
+          ? "fail"
+          : durationDecision.status === "over_soft_guidance"
+            ? "warn"
+            : "ok";
 
-    const resolutionStatus: "ok" | "warn" | "fail" =
-      h < 480 ? "fail" : h < 720 ? "warn" : "ok";
+    const resolutionStatus: "ok" | "warn" | "fail" = h < 480 ? "fail" : h < 720 ? "warn" : "ok";
 
     // Sample a frame for brightness
     let brightnessVal = 0.5;
@@ -103,8 +118,9 @@ export async function analyzeVideoFile(
         throw new Error("file too large for in-browser audio probe");
       }
       const arrayBuf = await file.arrayBuffer();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const Ctx: typeof AudioContext = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
+      const browserWindow = window as Window & { webkitAudioContext?: typeof AudioContext };
+      const Ctx = globalThis.AudioContext ?? browserWindow.webkitAudioContext;
+      if (!Ctx) throw new Error("AudioContext unavailable");
       const audioCtx = new Ctx();
       try {
         const decoded = await audioCtx.decodeAudioData(arrayBuf.slice(0));
@@ -130,7 +146,15 @@ export async function analyzeVideoFile(
     }
 
     const audioStatus: "ok" | "warn" | "fail" =
-      peak === 0 ? "warn" : peak < 0.05 ? "fail" : peak > 0.99 ? "warn" : rms < 0.01 ? "warn" : "ok";
+      peak === 0
+        ? "warn"
+        : peak < 0.05
+          ? "fail"
+          : peak > 0.99
+            ? "warn"
+            : rms < 0.01
+              ? "warn"
+              : "ok";
 
     return {
       orientation: {
@@ -148,9 +172,11 @@ export async function analyzeVideoFile(
         status: durationStatus,
         note:
           durationStatus === "fail"
-            ? "Very short — under 10 seconds. Make sure the take is complete."
+            ? video.duration < 10
+              ? "Very short — under 10 seconds. Make sure the take is complete."
+              : VIDEO_DURATION_HARD_CAP_COPY
             : durationStatus === "warn"
-              ? "Quite long — most casting briefs prefer under 5 minutes."
+              ? (durationDecision.message ?? "This video is over the target length.")
               : `${Math.round(video.duration)}s — within range.`,
       },
       resolution: {
