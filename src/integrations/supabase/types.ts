@@ -297,6 +297,303 @@ export type Database = {
           },
         ];
       };
+      partner_credit_allocations: {
+        Row: {
+          allocated_at: string;
+          cap_override: boolean;
+          cap_override_reason: string | null;
+          created_at: string;
+          created_by_user_id: string | null;
+          credit_amount: number;
+          credit_grant_id: string | null;
+          id: string;
+          metadata: Json;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          partner_membership_id: string | null;
+          source: Database["public"]["Enums"]["partner_credit_allocation_source"];
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          allocated_at?: string;
+          cap_override?: boolean;
+          cap_override_reason?: string | null;
+          created_at?: string;
+          created_by_user_id?: string | null;
+          credit_amount: number;
+          credit_grant_id?: string | null;
+          id?: string;
+          metadata?: Json;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          partner_membership_id?: string | null;
+          source: Database["public"]["Enums"]["partner_credit_allocation_source"];
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          allocated_at?: string;
+          cap_override?: boolean;
+          cap_override_reason?: string | null;
+          created_at?: string;
+          created_by_user_id?: string | null;
+          credit_amount?: number;
+          credit_grant_id?: string | null;
+          id?: string;
+          metadata?: Json;
+          partner_credit_pool_id?: string;
+          partner_id?: string;
+          partner_membership_id?: string | null;
+          source?: Database["public"]["Enums"]["partner_credit_allocation_source"];
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_credit_allocations_credit_grant_id_fkey";
+            columns: ["credit_grant_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_grants";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_credit_allocations_partner_credit_pool_id_fkey";
+            columns: ["partner_credit_pool_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_credit_pools";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_credit_allocations_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_credit_allocations_partner_membership_id_fkey";
+            columns: ["partner_membership_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_memberships";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      partner_credit_pool_events: {
+        Row: {
+          admin_actor_user_id: string | null;
+          created_at: string;
+          credit_delta: number;
+          event_type: Database["public"]["Enums"]["partner_credit_pool_event_type"];
+          id: string;
+          idempotency_key: string | null;
+          metadata: Json;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          reason: string | null;
+          related_alert_id: string | null;
+          related_allocation_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          admin_actor_user_id?: string | null;
+          created_at?: string;
+          credit_delta?: number;
+          event_type: Database["public"]["Enums"]["partner_credit_pool_event_type"];
+          id?: string;
+          idempotency_key?: string | null;
+          metadata?: Json;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          reason?: string | null;
+          related_alert_id?: string | null;
+          related_allocation_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          admin_actor_user_id?: string | null;
+          created_at?: string;
+          credit_delta?: number;
+          event_type?: Database["public"]["Enums"]["partner_credit_pool_event_type"];
+          id?: string;
+          idempotency_key?: string | null;
+          metadata?: Json;
+          partner_credit_pool_id?: string;
+          partner_id?: string;
+          reason?: string | null;
+          related_alert_id?: string | null;
+          related_allocation_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_credit_pool_events_partner_credit_pool_id_fkey";
+            columns: ["partner_credit_pool_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_credit_pools";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_credit_pool_events_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_credit_pool_events_related_alert_id_fkey";
+            columns: ["related_alert_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_usage_alerts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_credit_pool_events_related_allocation_id_fkey";
+            columns: ["related_allocation_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_credit_allocations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      partner_credit_pools: {
+        Row: {
+          allocated_credits: number;
+          consumed_credits: number;
+          created_at: string;
+          created_by_user_id: string | null;
+          currency: string;
+          id: string;
+          metadata: Json;
+          name: string;
+          overage_allowed: boolean;
+          overage_price_pence: number | null;
+          partner_id: string;
+          period_end: string;
+          period_start: string;
+          period_type: Database["public"]["Enums"]["partner_credit_pool_period_type"];
+          per_user_cap: number;
+          status: Database["public"]["Enums"]["partner_credit_pool_status"];
+          total_credits: number;
+          updated_at: string;
+        };
+        Insert: {
+          allocated_credits?: number;
+          consumed_credits?: number;
+          created_at?: string;
+          created_by_user_id?: string | null;
+          currency?: string;
+          id?: string;
+          metadata?: Json;
+          name: string;
+          overage_allowed?: boolean;
+          overage_price_pence?: number | null;
+          partner_id: string;
+          period_end: string;
+          period_start: string;
+          period_type: Database["public"]["Enums"]["partner_credit_pool_period_type"];
+          per_user_cap: number;
+          status?: Database["public"]["Enums"]["partner_credit_pool_status"];
+          total_credits: number;
+          updated_at?: string;
+        };
+        Update: {
+          allocated_credits?: number;
+          consumed_credits?: number;
+          created_at?: string;
+          created_by_user_id?: string | null;
+          currency?: string;
+          id?: string;
+          metadata?: Json;
+          name?: string;
+          overage_allowed?: boolean;
+          overage_price_pence?: number | null;
+          partner_id?: string;
+          period_end?: string;
+          period_start?: string;
+          period_type?: Database["public"]["Enums"]["partner_credit_pool_period_type"];
+          per_user_cap?: number;
+          status?: Database["public"]["Enums"]["partner_credit_pool_status"];
+          total_credits?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      partner_usage_alerts: {
+        Row: {
+          acknowledged_at: string | null;
+          acknowledged_by_user_id: string | null;
+          allocated_credits: number;
+          created_at: string;
+          id: string;
+          metadata: Json;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          status: Database["public"]["Enums"]["partner_usage_alert_status"];
+          threshold_percent: number;
+          total_credits: number;
+          triggered_at: string;
+          updated_at: string;
+          usage_percent: number;
+        };
+        Insert: {
+          acknowledged_at?: string | null;
+          acknowledged_by_user_id?: string | null;
+          allocated_credits: number;
+          created_at?: string;
+          id?: string;
+          metadata?: Json;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          status?: Database["public"]["Enums"]["partner_usage_alert_status"];
+          threshold_percent: number;
+          total_credits: number;
+          triggered_at?: string;
+          updated_at?: string;
+          usage_percent: number;
+        };
+        Update: {
+          acknowledged_at?: string | null;
+          acknowledged_by_user_id?: string | null;
+          allocated_credits?: number;
+          created_at?: string;
+          id?: string;
+          metadata?: Json;
+          partner_credit_pool_id?: string;
+          partner_id?: string;
+          status?: Database["public"]["Enums"]["partner_usage_alert_status"];
+          threshold_percent?: number;
+          total_credits?: number;
+          triggered_at?: string;
+          updated_at?: string;
+          usage_percent?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_usage_alerts_partner_credit_pool_id_fkey";
+            columns: ["partner_credit_pool_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_credit_pools";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_usage_alerts_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       partner_codes: {
         Row: {
           abuse_flag_reason: string | null;
@@ -314,6 +611,7 @@ export type Database = {
           idempotency_key: string | null;
           max_activations: number | null;
           metadata: Json;
+          partner_credit_pool_id: string | null;
           partner_id: string;
           revoked_at: string | null;
           revoked_by_user_id: string | null;
@@ -341,6 +639,7 @@ export type Database = {
           idempotency_key?: string | null;
           max_activations?: number | null;
           metadata?: Json;
+          partner_credit_pool_id?: string | null;
           partner_id: string;
           revoked_at?: string | null;
           revoked_by_user_id?: string | null;
@@ -368,6 +667,7 @@ export type Database = {
           idempotency_key?: string | null;
           max_activations?: number | null;
           metadata?: Json;
+          partner_credit_pool_id?: string | null;
           partner_id?: string;
           revoked_at?: string | null;
           revoked_by_user_id?: string | null;
@@ -380,6 +680,13 @@ export type Database = {
           version?: number;
         };
         Relationships: [
+          {
+            foreignKeyName: "partner_codes_partner_credit_pool_id_fkey";
+            columns: ["partner_credit_pool_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_credit_pools";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "partner_codes_partner_id_fkey";
             columns: ["partner_id"];
@@ -417,6 +724,7 @@ export type Database = {
           id: string;
           metadata: Json;
           partner_code_id: string;
+          partner_credit_pool_id: string | null;
           partner_id: string;
           partner_type: Database["public"]["Enums"]["partner_type"];
           status: Database["public"]["Enums"]["partner_membership_status"];
@@ -436,6 +744,7 @@ export type Database = {
           id?: string;
           metadata?: Json;
           partner_code_id: string;
+          partner_credit_pool_id?: string | null;
           partner_id: string;
           partner_type: Database["public"]["Enums"]["partner_type"];
           status?: Database["public"]["Enums"]["partner_membership_status"];
@@ -455,6 +764,7 @@ export type Database = {
           id?: string;
           metadata?: Json;
           partner_code_id?: string;
+          partner_credit_pool_id?: string | null;
           partner_id?: string;
           partner_type?: Database["public"]["Enums"]["partner_type"];
           status?: Database["public"]["Enums"]["partner_membership_status"];
@@ -474,6 +784,13 @@ export type Database = {
             columns: ["partner_code_id"];
             isOneToOne: false;
             referencedRelation: "partner_codes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "partner_memberships_partner_credit_pool_id_fkey";
+            columns: ["partner_credit_pool_id"];
+            isOneToOne: false;
+            referencedRelation: "partner_credit_pools";
             referencedColumns: ["id"];
           },
           {
@@ -743,6 +1060,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      partner_credit_pool_usage_summary: {
+        Row: {
+          allocated_credits: number;
+          allocated_usage_percent: number;
+          consumed_credits: number;
+          name: string;
+          overage_allowed: boolean;
+          partner_credit_pool_id: string;
+          partner_id: string;
+          period_end: string;
+          period_start: string;
+          period_type: Database["public"]["Enums"]["partner_credit_pool_period_type"];
+          per_user_cap: number;
+          remaining_credits: number;
+          status: Database["public"]["Enums"]["partner_credit_pool_status"];
+          total_credits: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey";
+            columns: ["partner_id"];
+            isOneToOne: false;
+            referencedRelation: "partners";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Functions: {
       activate_partner_code: {
@@ -752,6 +1096,46 @@ export type Database = {
           p_idempotency_key: string | null;
           p_metadata: Json;
           p_user_email: string | null;
+          p_user_id: string;
+        };
+        Returns: string;
+      };
+      admin_top_up_partner_credit_pool: {
+        Args: {
+          p_admin_actor_user_id: string | null;
+          p_credit_amount: number;
+          p_idempotency_key: string | null;
+          p_metadata: Json;
+          p_partner_credit_pool_id: string;
+          p_reason: string | null;
+        };
+        Returns: string;
+      };
+      admin_top_up_partner_membership: {
+        Args: {
+          p_admin_actor_user_id: string | null;
+          p_cap_override: boolean;
+          p_cap_override_reason: string | null;
+          p_credit_amount: number;
+          p_idempotency_key: string | null;
+          p_metadata: Json;
+          p_partner_membership_id: string;
+          p_reason: string | null;
+        };
+        Returns: string;
+      };
+      allocate_partner_pool_credits: {
+        Args: {
+          p_allocated_at: string;
+          p_cap_override: boolean;
+          p_cap_override_reason: string | null;
+          p_created_by_user_id: string | null;
+          p_credit_amount: number;
+          p_credit_grant_id: string | null;
+          p_metadata: Json;
+          p_partner_credit_pool_id: string;
+          p_partner_membership_id: string | null;
+          p_source: Database["public"]["Enums"]["partner_credit_allocation_source"];
           p_user_id: string;
         };
         Returns: string;
@@ -807,6 +1191,13 @@ export type Database = {
           p_email: string;
         };
         Returns: string | null;
+      };
+      record_partner_pool_alerts: {
+        Args: {
+          p_now: string;
+          p_partner_credit_pool_id: string;
+        };
+        Returns: number;
       };
       record_admin_credit_adjustment: {
         Args: {
@@ -874,10 +1265,23 @@ export type Database = {
         | "sponsor_campaign"
         | "user_paid"
         | "admin_grant";
+      partner_credit_allocation_source:
+        | "code_activation"
+        | "admin_partner_top_up"
+        | "admin_performer_top_up";
+      partner_credit_pool_event_type:
+        | "pool_created"
+        | "partner_top_up"
+        | "performer_allocation"
+        | "performer_top_up"
+        | "usage_alert";
+      partner_credit_pool_period_type: "monthly" | "term" | "annual" | "fixed_campaign";
+      partner_credit_pool_status: "active" | "paused" | "exhausted" | "expired" | "archived";
       partner_code_status: "active" | "paused" | "revoked" | "rotated" | "expired";
       partner_membership_status: "active" | "revoked" | "expired";
       partner_status: "active" | "paused" | "archived";
       partner_type: "school" | "coach" | "agent" | "sponsor" | "platform";
+      partner_usage_alert_status: "triggered" | "acknowledged";
     };
     CompositeTypes: {
       [_ in never]: never;
