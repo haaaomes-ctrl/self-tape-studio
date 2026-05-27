@@ -23,202 +23,6 @@ If there is a conflict, `README.md` wins.
 
 ---
 
-## Codex automation delivery-slice operating contract
-
-These rules apply when Codex automation is working through monday.com delivery-slice items, including the S10.1 B2B-funded delivery plan.
-
-### Intended automation runtime
-
-Use the automation's configured model and reasoning settings.
-
-Default expectation for unattended repository work:
-
-```toml
-approval_policy = "never"
-sandbox_mode = "workspace-write"
-
-[sandbox_workspace_write]
-network_access = true
-```
-
-This is workspace-limited read/write with network enabled. It is not `danger-full-access`.
-
-Do not instruct the runtime to switch to Full Access / `danger-full-access` unless that is already the intentionally configured mode for the automation.
-
-Do not ask the operator for interactive approval to read or write local Git, GitHub or monday.com during an automation run. If an action is blocked by auth, permissions, sandboxing, branch protection, required review, CI, unavailable network or a tool failure, diagnose once, retry only if safe, then record the concrete blocker in monday.com where possible and stop cleanly.
-
-### S10.1 monday.com source of truth
-
-For the S10.1 B2B-funded delivery automation, monday.com is the source of truth.
-
-Use:
-
-```text
-board: 5097223350
-group: S10.1 — Consolidated Delivery Plan
-order: S10.1 Delivery Slice, DS-01 through DS-22
-```
-
-Retrieve the full candidate set before selecting work, including item title, item ID, status, delivery-slice value, updates, subitems, linked docs/files and relevant columns.
-
-Skip items that are:
-
-- `Done`;
-- `Deferred`;
-- parked;
-- blocked;
-- awaiting a user/operator answer;
-- explicitly outside the current S10.1 active delivery scope;
-- already represented by an open Codex branch or PR.
-
-If all active S10.1 items are complete and there are no open S10.1 Codex branches or PRs, add a summary update to DS-22 and stop without code changes.
-
-### Start-of-run preflight
-
-Before editing files, the automation must:
-
-1. Confirm the repository is `self-tape-studio`.
-2. Confirm the Git remote points to the expected GitHub repository.
-3. Fetch `origin`.
-4. Confirm `main` exists locally or remotely.
-5. Confirm GitHub access is available for branch push, PR creation, PR status checks and merge operations.
-6. Confirm monday.com access is available for board `5097223350` and group `S10.1 — Consolidated Delivery Plan`.
-7. Read `README.md` and all applicable `AGENTS.md` files before making changes.
-8. If running in Local mode, check for uncommitted user changes before editing. If the working tree is dirty with user work, do not overwrite it. Record the blocker and stop.
-9. If any preflight step fails, record the exact blocker and stop without code changes.
-
-Prefer an automation worktree for unattended runs where available. If running in Local mode, the dirty-working-tree guard is mandatory.
-
-### Item selection and idempotency
-
-Each automation run must select at most one delivery-slice item.
-
-Selection rules:
-
-1. First check for any DS item already marked `In Progress` with an open Codex branch or PR matching `codex/s10-1-ds-*`. If found, resume that item instead of starting a new one.
-2. Otherwise select the lowest-numbered eligible active DS item, DS-01 through DS-22.
-3. If a candidate item has unresolved ambiguity, add a monday.com update with the exact question, mark it parked/blocked if the board supports that status, then continue to the next eligible DS item only if progress can be made safely.
-4. Claim exactly one DS item by marking it `In Progress` and adding a monday.com update containing the automation start, selected item ID/title, intended branch name and initial task interpretation.
-5. After claiming, re-check that no duplicate branch or PR already exists. If a duplicate exists, record the conflict and stop.
-
-Do not silently start a second DS item in the same run after one item has been implemented, PR'd, merged, parked or blocked.
-
-### Branch discipline
-
-Never work or commit directly on `main`.
-
-For each DS item:
-
-1. Start from up-to-date `origin/main`.
-2. Create or resume a branch named:
-
-```text
-codex/s10-1-ds-XX-short-title
-```
-
-3. Use lowercase kebab-case for the short title.
-4. If a matching local or remote branch already exists for the same DS item, resume it rather than creating a duplicate.
-5. If a branch exists but appears to belong to a different DS item, stop and report the conflict.
-
-### Implementation scope
-
-Implement only the selected DS item.
-
-Before editing, inspect the selected monday.com item content, updates, subitems, links and files.
-
-Do not broaden the task into adjacent DS items, product rewrites or opportunistic cleanup.
-
-Do not edit blocked S10 report intelligence, prompt logic, comparison code, performer reports or the analysis chain unless the selected DS item explicitly requires it and the required surface is not parked/blocked by the operator. If the selected DS item appears to require touching a protected surface, park that specific work and add a monday.com update with the exact surface and question.
-
-For DS-15 support/contact links, use:
-
-```text
-support@tapecoach.co.uk
-```
-
-Do not introduce thin fallbacks, placeholder behaviour, generic report copy or mock implementations unless the selected DS item explicitly calls for temporary scaffolding and the limitation is documented.
-
-Preserve existing product contracts, routing behaviour, data structures and performer-facing copy unless the DS item explicitly requires a change.
-
-### Checks before commit
-
-Run focused local checks appropriate to the changed surface.
-
-At minimum consider:
-
-- lint;
-- typecheck;
-- build;
-- unit tests;
-- integration tests;
-- relevant app checks;
-- route/PDF text checks for report-value changes;
-- QA artefact checks where QA is in scope.
-
-Run the meaningful subset for the DS item.
-
-If a check cannot run, record the exact command attempted and the reason it could not run.
-
-Before committing, inspect changed files for regressions, broken routing, missing tests, accidental broad changes, protected-surface violations, product-contract violations and thin-shell report risks.
-
-### Commit, PR, CI and merge workflow
-
-After implementation:
-
-1. Confirm at least one new commit exists for the DS item, unless it is a documented no-code completion.
-2. Confirm the working tree is clean.
-3. Confirm the current branch is not `main`.
-4. Confirm the branch name starts with `codex/`.
-5. Push the branch to `origin` and set upstream tracking.
-6. Open a draft PR against `main`.
-7. Include summary, tests run, risks, follow-up notes and the monday.com DS item link or item ID.
-8. Re-run or confirm relevant checks.
-9. Inspect changed files again for regressions, thin fallbacks, broken routing, missing tests and product-contract violations.
-10. Check GitHub Actions status once CI starts.
-11. Apply focused fixes only, commit fixes separately where useful and push updates.
-12. Confirm the PR description still matches the final change.
-13. Mark the PR ready for review only when local checks and CI are passing, or when the only blocker is external required review.
-14. Do not bypass branch protection.
-15. Do not self-approve if required review is enforced.
-16. Squash merge only after checks pass and required review is satisfied.
-17. If branch protection, required review or unavailable permissions prevent merge, leave the PR ready for review, update monday.com with the blocker and stop cleanly.
-
-After successful merge only:
-
-1. Switch back to `main`.
-2. Pull latest `main`.
-3. Delete the local feature branch.
-4. Delete/prune the remote branch if GitHub did not.
-5. Run `git fetch --prune`.
-6. Confirm `main` is clean and aligned with `origin/main`.
-
-### monday.com final update
-
-At the end of every automation run, update the selected DS item with:
-
-- DS item ID and title;
-- final status;
-- branch name;
-- PR link;
-- commit hash or hashes;
-- implementation summary;
-- tests/checks run with exact commands;
-- checks that could not run and why;
-- CI status;
-- merge status;
-- cleanup status;
-- residual risks;
-- blockers or questions, if any.
-
-Status rules:
-
-- Mark the DS item `Done` only after the PR is merged into `main`, or after a documented no-code completion.
-- Leave the DS item `In Progress` if a PR exists but is awaiting CI, review or merge.
-- Mark or leave the DS item blocked/parked if user clarification, protected-surface approval, missing access, failing external service or branch protection prevents completion.
-- Do not mark a code-changing DS item `Done` merely because a PR was opened.
-
----
-
 ## Core doctrine
 
 The AI is the report brain.
@@ -1416,6 +1220,60 @@ Do not start with payload gates, source-kind restrictions or QA artefact archite
 
 ---
 
+
+## Automation sequencing rule
+
+S10.1 delivery-slice automations may run in either of two modes.
+
+### Single-slice mode
+
+A single-slice automation may:
+
+- select one eligible DS item;
+- plan, implement, test, PR, merge, clean up and update monday.com for that item;
+- stop after that DS item reaches a terminal state.
+
+### Sequential backlog-drainer mode
+
+A sequential backlog-drainer automation may:
+
+- select one eligible DS item at a time;
+- plan, implement, test, PR, merge, clean up and update monday.com for that item;
+- after that DS item reaches a terminal state, select the next eligible DS item;
+- continue sequentially until the backlog is complete or a real blocker prevents safe progress.
+
+A backlog-drainer automation must never work on more than one DS item at the same time.
+
+The controlling rule is:
+
+```text
+At most one active DS item at a time.
+Not necessarily at most one DS item per automation run.
+```
+
+If an automation prompt explicitly says it is a sequential backlog drainer, the automation may complete multiple DS items in one run, provided each DS item reaches a terminal state before the next begins.
+
+Terminal states are:
+
+- merged, cleaned up and marked Done in monday.com;
+- verified already complete and marked Done in monday.com;
+- parked or blocked with the exact blocker recorded;
+- stopped because Git, GitHub, monday.com, CI, approval, authentication, branch protection, connector policy or runtime constraints prevent safe progress.
+
+Do not start a later DS item while an earlier DS item has:
+
+- an open branch;
+- an open PR;
+- pending CI;
+- an unresolved merge;
+- pending monday.com final sync;
+- an unresolved recovery checkpoint;
+- unclear status.
+
+A stale instruction that says an automation run must select or complete at most one delivery-slice item is obsolete for backlog-drainer automations. Replace it with the one-active-DS-at-a-time rule above.
+
+---
+
 ## Definition of done
 
 A slice is not done unless:
@@ -1436,9 +1294,6 @@ A slice is not done unless:
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
 - QA artefact status is clear;
-- for monday.com delivery-slice work, the selected item has a final update with branch, PR, commit, checks, CI, merge, cleanup, residual risks and blockers/questions;
-- for code-changing delivery-slice work, `Done` is used only after merge into `main`, unless the item is a documented no-code completion;
-- automation runs stop after one DS item is implemented, PR'd, merged, parked or blocked;
 - production/customer/Level 2 approval is not claimed unless explicitly in scope.
 
 ---
@@ -1473,13 +1328,7 @@ Do not:
 - compare active and replaced take versions unintentionally;
 - render comparison without compared take version IDs;
 - let a take or comparison report render without admin-visible QA/report status where QA is enabled;
-- let a strong complete take produce an empty or thin report;
-- allow an automation to overwrite uncommitted local user work;
-- let an automation work on `main` directly;
-- create duplicate branches or PRs for the same DS item;
-- mark a monday.com DS item `Done` before merge or documented no-code completion;
-- begin a second DS item in the same automation run;
-- silently skip GitHub, CI, monday.com or cleanup failures without recording the blocker.
+- let a strong complete take produce an empty or thin report.
 
 ---
 
