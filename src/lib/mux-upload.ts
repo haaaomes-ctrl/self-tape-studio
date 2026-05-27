@@ -1,6 +1,11 @@
 // Direct upload helper: PUTs a File to a Mux direct-upload URL.
 // Mux uses a signed Google Cloud Storage URL that accepts a single PUT for
 // files up to a few GB. We stream progress via XHR so the UI can show %.
+import {
+  buildVideoDurationDecision,
+  VIDEO_DURATION_HARD_CAP_COPY,
+} from "@/lib/video-duration-policy";
+
 export class UploadCancelledError extends Error {
   constructor() {
     super("Upload cancelled");
@@ -50,17 +55,19 @@ function dedupe(values: Array<string | null | undefined>): string[] {
 
 function looksLikeUnsafePrivateValue(value: string): boolean {
   const lower = value.toLowerCase();
-  return lower.includes("://")
-    || lower.includes("signed")
-    || lower.includes("token")
-    || lower.includes("secret")
-    || lower.includes("authorization")
-    || lower.includes("bearer")
-    || lower.includes("x-amz")
-    || lower.includes("sig=")
-    || lower.includes("access_key")
-    || lower.includes("apikey")
-    || lower.includes("api_key");
+  return (
+    lower.includes("://") ||
+    lower.includes("signed") ||
+    lower.includes("token") ||
+    lower.includes("secret") ||
+    lower.includes("authorization") ||
+    lower.includes("bearer") ||
+    lower.includes("x-amz") ||
+    lower.includes("sig=") ||
+    lower.includes("access_key") ||
+    lower.includes("apikey") ||
+    lower.includes("api_key")
+  );
 }
 
 export function safeUploadBasename(value: unknown): string | null {
@@ -70,7 +77,8 @@ export function safeUploadBasename(value: unknown): string | null {
   const queryIndex = trimmed.search(/[?#]/);
   const withoutQuery = queryIndex >= 0 ? trimmed.slice(0, queryIndex) : trimmed;
   const basename = withoutQuery.replace(/\\/g, "/").split("/").filter(Boolean).pop()?.trim() ?? "";
-  if (!basename || looksLikeUnsafePrivateValue(trimmed) || looksLikeUnsafePrivateValue(basename)) return null;
+  if (!basename || looksLikeUnsafePrivateValue(trimmed) || looksLikeUnsafePrivateValue(basename))
+    return null;
   return basename.slice(0, 160);
 }
 
@@ -97,16 +105,20 @@ function safePositiveNumber(value: unknown): number | null {
 function normaliseUploadHashRecord(value: unknown): OriginalUploadFileHash | null {
   const rawValue = isRecord(value) ? value.value : value;
   if (typeof rawValue !== "string") return null;
-  const match = rawValue.trim().toLowerCase().match(/^(?:sha256:)?([a-f0-9]{64})$/);
+  const match = rawValue
+    .trim()
+    .toLowerCase()
+    .match(/^(?:sha256:)?([a-f0-9]{64})$/);
   if (!match) return null;
   return {
     algorithm: "sha256",
     value: match[1],
     source_stage: "client_pre_upload",
     source_module: "src/lib/mux-upload.ts",
-    captured_at: typeof (isRecord(value) ? value.captured_at : null) === "string"
-      ? String((value as Record<string, unknown>).captured_at)
-      : new Date().toISOString(),
+    captured_at:
+      typeof (isRecord(value) ? value.captured_at : null) === "string"
+        ? String((value as Record<string, unknown>).captured_at)
+        : new Date().toISOString(),
     confidence_role: "decisive",
     raw_value_redacted: false,
   };
@@ -151,20 +163,21 @@ function hasExplicitUploadIdentityField(value: Record<string, unknown> | null): 
 
 function hasHashUnavailableSignal(value: Record<string, unknown> | null): boolean {
   if (!value) return false;
-  return value.hash_capture_status === "failed"
-    || value.hash_capture_status === "unavailable"
-    || uploadIdentityBlockerCodes(value).some((code) =>
-      code === "upload_hash_computation_failed"
-      || code === "upload_hash_unavailable_browser_crypto_missing"
-      || code === "upload_hash_unavailable_no_file_object"
-      || code === "original_upload_file_hash_unavailable"
-    );
+  return (
+    value.hash_capture_status === "failed" ||
+    value.hash_capture_status === "unavailable" ||
+    uploadIdentityBlockerCodes(value).some(
+      (code) =>
+        code === "upload_hash_computation_failed" ||
+        code === "upload_hash_unavailable_browser_crypto_missing" ||
+        code === "upload_hash_unavailable_no_file_object" ||
+        code === "original_upload_file_hash_unavailable",
+    )
+  );
 }
 
 function bytesToHex(bytes: ArrayBuffer): string {
-  return [...new Uint8Array(bytes)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export async function computeOriginalUploadFileSha256(file: File): Promise<string | null> {
@@ -196,7 +209,12 @@ export async function buildUploadIdentityMetadata(
     }
   }
   if (!hashValue) {
-    blockerCodes.push(hashBlockerCode ?? (hashStatus === "failed" ? "upload_hash_computation_failed" : "original_upload_file_hash_unavailable"));
+    blockerCodes.push(
+      hashBlockerCode ??
+        (hashStatus === "failed"
+          ? "upload_hash_computation_failed"
+          : "original_upload_file_hash_unavailable"),
+    );
   }
   const safeName = safeUploadBasename(file.name);
   if (!safeName) blockerCodes.push("original_file_name_unavailable_or_redacted");
@@ -204,10 +222,14 @@ export async function buildUploadIdentityMetadata(
   if (!safeMime) blockerCodes.push("mime_type_unavailable_or_redacted");
   const size = Number.isFinite(file.size) && file.size >= 0 ? file.size : null;
   if (size === null) blockerCodes.push("file_size_unavailable");
-  const lastModified = Number.isFinite(file.lastModified) && file.lastModified > 0 ? Math.round(file.lastModified) : null;
-  const durationMs = typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0
-    ? Math.round(durationSeconds * 1000)
-    : null;
+  const lastModified =
+    Number.isFinite(file.lastModified) && file.lastModified > 0
+      ? Math.round(file.lastModified)
+      : null;
+  const durationMs =
+    typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? Math.round(durationSeconds * 1000)
+      : null;
   return {
     schema_version: "tapecoach_upload_identity_v1",
     internal_only: true,
@@ -240,9 +262,10 @@ export function buildUnavailableUploadIdentityMetadata(
   reason: UploadIdentityUnavailableReason,
   durationSeconds?: number | null,
 ): UploadIdentityMetadata {
-  const durationMs = typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0
-    ? Math.round(durationSeconds * 1000)
-    : null;
+  const durationMs =
+    typeof durationSeconds === "number" && Number.isFinite(durationSeconds) && durationSeconds > 0
+      ? Math.round(durationSeconds * 1000)
+      : null;
   return {
     schema_version: "tapecoach_upload_identity_v1",
     internal_only: true,
@@ -271,13 +294,20 @@ export function mergeSafeUploadIdentity(
 
   const existingHash = normaliseUploadHashRecord(existingRecord?.original_upload_file_hash);
   const incomingHash = normaliseUploadHashRecord(incomingRecord?.original_upload_file_hash);
-  const invalidIncomingHash = incomingRecord && "original_upload_file_hash" in incomingRecord && incomingRecord.original_upload_file_hash != null && !incomingHash;
-  const incomingExplicitUploadIdentity = hasExplicitUploadIdentityField(incomingRecord) || hasHashUnavailableSignal(incomingRecord);
+  const invalidIncomingHash =
+    incomingRecord &&
+    "original_upload_file_hash" in incomingRecord &&
+    incomingRecord.original_upload_file_hash != null &&
+    !incomingHash;
+  const incomingExplicitUploadIdentity =
+    hasExplicitUploadIdentityField(incomingRecord) || hasHashUnavailableSignal(incomingRecord);
   const incomingCannotProvideHash = incomingExplicitUploadIdentity && !incomingHash;
   const staleHashSuppressed = incomingCannotProvideHash && Boolean(existingHash);
   const hash = incomingHash ?? (incomingCannotProvideHash ? null : existingHash);
 
-  const pickName = (key: "original_file_name_safe_basename" | "metadata_file_name_safe_basename") =>
+  const pickName = (
+    key: "original_file_name_safe_basename" | "metadata_file_name_safe_basename",
+  ) =>
     incomingExplicitUploadIdentity
       ? safeUploadBasename(incomingRecord?.[key])
       : safeUploadBasename(existingRecord?.[key]);
@@ -307,21 +337,31 @@ export function mergeSafeUploadIdentity(
     mime_type_safe_summary: pickMime(),
     last_modified_ms: pickNumber("last_modified_ms"),
     video_duration_ms: pickNumber("video_duration_ms"),
-    upload_metadata_source: safeUploadMetadataSource(incomingExplicitUploadIdentity ? incomingRecord?.upload_metadata_source : existingRecord?.upload_metadata_source),
+    upload_metadata_source: safeUploadMetadataSource(
+      incomingExplicitUploadIdentity
+        ? incomingRecord?.upload_metadata_source
+        : existingRecord?.upload_metadata_source,
+    ),
     hash_capture_status: hash
       ? "captured"
-      : (incomingRecord?.hash_capture_status === "failed" || (!incomingExplicitUploadIdentity && existingRecord?.hash_capture_status === "failed") ? "failed" : "unavailable"),
+      : incomingRecord?.hash_capture_status === "failed" ||
+          (!incomingExplicitUploadIdentity && existingRecord?.hash_capture_status === "failed")
+        ? "failed"
+        : "unavailable",
     blocker_codes: blockerCodes,
     public_output_unchanged: true,
   };
 }
 
-export function replaceReuploadUploadIdentitySignals(incoming: unknown): Record<string, unknown> | null {
+export function replaceReuploadUploadIdentitySignals(
+  incoming: unknown,
+): Record<string, unknown> | null {
   const incomingRecord = isRecord(incoming) ? incoming : {};
   const replacementSignals: Record<string, unknown> = { ...incomingRecord };
-  const nestedUploadIdentity = "upload_identity" in incomingRecord
-    ? mergeSafeUploadIdentity(null, incomingRecord.upload_identity)
-    : null;
+  const nestedUploadIdentity =
+    "upload_identity" in incomingRecord
+      ? mergeSafeUploadIdentity(null, incomingRecord.upload_identity)
+      : null;
   const topLevelUploadIdentity = nestedUploadIdentity
     ? null
     : mergeSafeUploadIdentity(null, incomingRecord);
@@ -376,6 +416,7 @@ export interface PreflightResult {
   ok: boolean;
   error?: string;
   warning?: string;
+  durationStatus?: "within_target" | "over_soft_guidance" | "over_hard_cap";
 }
 
 export function preflightVideoBasics(
@@ -397,12 +438,19 @@ export function preflightVideoBasics(
       ).toFixed(0)}MB. Re-export at a lower bitrate.`,
     };
   }
-  if (durationSeconds > maxSeconds) {
+  const durationDecision = buildVideoDurationDecision(durationSeconds);
+  if (durationSeconds > maxSeconds || durationDecision.status === "over_hard_cap") {
     return {
       ok: false,
-      error: `Video is ${Math.round(
-        durationSeconds,
-      )}s — limit is ${maxSeconds}s. Trim to a shorter take.`,
+      error: VIDEO_DURATION_HARD_CAP_COPY,
+      durationStatus: "over_hard_cap",
+    };
+  }
+  if (durationDecision.status === "over_soft_guidance") {
+    return {
+      ok: true,
+      warning: durationDecision.message ?? undefined,
+      durationStatus: "over_soft_guidance",
     };
   }
   if (audioPeak === 0) {
@@ -410,7 +458,8 @@ export function preflightVideoBasics(
       ok: true,
       warning:
         "We couldn't detect any audio in this file — the analysis will continue but audio scoring may be unreliable.",
+      durationStatus: durationDecision.status,
     };
   }
-  return { ok: true };
+  return { ok: true, durationStatus: durationDecision.status };
 }
