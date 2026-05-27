@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { CreditBalancePanel } from "@/components/credit-balance-panel";
 import { ConsumerTopUpProducts } from "@/components/consumer-top-up-products";
 import { PageHeader } from "@/components/page-header";
 import { SiteFooter } from "@/components/site-footer";
@@ -30,7 +31,10 @@ function CreditsPage() {
         variant="app"
       />
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-        <ConsumerTopUpProducts />
+        <CreditBalancePanel showTopUpLink={false} />
+        <div className="mt-6">
+          <ConsumerTopUpProducts />
+        </div>
       </main>
       <SiteFooter />
     </div>
