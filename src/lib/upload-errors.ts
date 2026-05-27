@@ -4,7 +4,15 @@
 
 export interface UploadErrorInfo {
   message: string;
-  kind: "quota" | "auth" | "config" | "mux" | "not_found" | "forbidden" | "unknown";
+  kind:
+    | "quota"
+    | "auth"
+    | "policy_acceptance"
+    | "config"
+    | "mux"
+    | "not_found"
+    | "forbidden"
+    | "unknown";
 }
 
 export function describeUploadError(err: unknown): UploadErrorInfo {
@@ -22,12 +30,7 @@ export function describeUploadError(err: unknown): UploadErrorInfo {
     };
   }
 
-  const raw =
-    err instanceof Error
-      ? err.message
-      : typeof err === "string"
-        ? err
-        : "";
+  const raw = err instanceof Error ? err.message : typeof err === "string" ? err : "";
 
   // Auth middleware errors often surface as plain strings with "Unauthorized".
   if (/unauthorized|no authorization header|invalid token/i.test(raw)) {
@@ -39,6 +42,12 @@ export function describeUploadError(err: unknown): UploadErrorInfo {
 
   if (raw.startsWith("QUOTA_EXCEEDED:")) {
     return { kind: "quota", message: raw.replace(/^QUOTA_EXCEEDED:\s*/, "") };
+  }
+  if (raw.startsWith("POLICY_ACCEPTANCE_REQUIRED:")) {
+    return {
+      kind: "policy_acceptance",
+      message: raw.replace(/^POLICY_ACCEPTANCE_REQUIRED:\s*/, ""),
+    };
   }
   if (raw.startsWith("MUX_CONFIG:")) {
     return { kind: "config", message: raw.replace(/^MUX_CONFIG:\s*/, "") };

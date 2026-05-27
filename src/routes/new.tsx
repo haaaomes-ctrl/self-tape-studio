@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
+import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,8 +23,19 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { analyzeVideoFile, buildGuidedBrief, type ChecklistResult, type GuidedFields } from "@/lib/checklist";
-import { buildUploadIdentityMetadata, preflightVideoBasics, uploadFileToMux, UploadCancelledError } from "@/lib/mux-upload";
+import { useAccountCompliance } from "@/lib/account-compliance-client";
+import {
+  analyzeVideoFile,
+  buildGuidedBrief,
+  type ChecklistResult,
+  type GuidedFields,
+} from "@/lib/checklist";
+import {
+  buildUploadIdentityMetadata,
+  preflightVideoBasics,
+  uploadFileToMux,
+  UploadCancelledError,
+} from "@/lib/mux-upload";
 import { createMuxDirectUpload } from "@/server-fns/mux.functions";
 import { describeUploadError } from "@/lib/upload-errors";
 import { resetTake } from "@/server-fns/process-take.functions";
@@ -38,6 +50,7 @@ const titleSchema = z.string().trim().min(1).max(120);
 
 function NewAuditionPage() {
   const { user, loading } = useAuth();
+  const compliance = useAccountCompliance(user);
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -76,8 +89,7 @@ function NewAuditionPage() {
     if (!f) return;
     setChecking(true);
     try {
-      const requiresLandscape =
-        briefMode === "guided" && guided.orientation === "landscape";
+      const requiresLandscape = briefMode === "guided" && guided.orientation === "landscape";
       const result = await analyzeVideoFile(f, { requiresLandscape });
       setChecklist(result);
     } catch (err) {
@@ -89,6 +101,10 @@ function NewAuditionPage() {
 
   async function submit() {
     if (!user) return;
+    if (!compliance.complete) {
+      toast.error("Complete account route and required policy acceptance before uploading.");
+      return;
+    }
     if (!file) {
       toast.error("Pick a video file first");
       return;
@@ -101,11 +117,7 @@ function NewAuditionPage() {
 
     // Pre-upload preflight: hard reject oversized / overlong files.
     if (checklist) {
-      const pf = preflightVideoBasics(
-        file,
-        checklist.duration.seconds,
-        checklist.audio.peak,
-      );
+      const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
       if (!pf.ok) {
         toast.error(pf.error ?? "Video failed pre-upload checks");
         return;
@@ -193,7 +205,8 @@ function NewAuditionPage() {
         const info = describeUploadError(err);
         throw new Error(info.message);
       }
-      if (!uploadUrl) throw new Error("Video service did not return an upload URL. Please try again.");
+      if (!uploadUrl)
+        throw new Error("Video service did not return an upload URL. Please try again.");
 
       // 5. PUT the file straight to Mux. Webhook fires processTake when ready.
       const controller = new AbortController();
@@ -224,253 +237,265 @@ function NewAuditionPage() {
       <SiteHeader />
       <PageHeader
         eyebrow="New audition"
-        title="Set up a new audition"
-        subtitle="Add the brief if you have it — it makes the feedback much more accurate."
+        title={
+          user && !compliance.loading && !compliance.complete
+            ? "Account route"
+            : "Set up a new audition"
+        }
+        subtitle={
+          user && !compliance.loading && !compliance.complete
+            ? "Complete account setup before uploading for analysis."
+            : "Add the brief if you have it — it makes the feedback much more accurate."
+        }
         variant="app"
       />
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 pb-24 pt-12">
-        <div className="space-y-8">
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-            <Label htmlFor="title" className="text-sm font-medium">
-              Audition title
-            </Label>
-            <Input
-              id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Wicked — Elphaba sides"
-              className="mt-2"
-              maxLength={120}
-            />
-
-            <div className="mt-5">
-              <Label className="text-sm font-medium">Your level</Label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                We calibrate feedback and submission bands to your level.
-              </p>
-              <Select
-                value={auditionLevel}
-                onValueChange={(v) =>
-                  setAuditionLevel(v as "learning" | "amateur" | "emerging" | "professional")
-                }
-              >
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="learning">Learning / School</SelectItem>
-                  <SelectItem value="amateur">Amateur / Community</SelectItem>
-                  <SelectItem value="emerging">Emerging / Training</SelectItem>
-                  <SelectItem value="professional">Professional</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-            <h2 className="font-display text-lg font-semibold">Casting brief</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Optional but recommended. With a brief we can score against the actual ask.
-            </p>
-
-            <Tabs
-              value={briefMode}
-              onValueChange={(v) => setBriefMode(v as "full" | "guided" | "skip")}
-              className="mt-5"
-            >
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="full">Paste brief</TabsTrigger>
-                <TabsTrigger value="guided">Quick prompt</TabsTrigger>
-                <TabsTrigger value="skip">Skip</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="full" className="mt-5">
-                <Textarea
-                  value={fullBrief}
-                  onChange={(e) => setFullBrief(e.target.value)}
-                  placeholder="Paste the casting brief, sides notes, or any instructions you were given…"
-                  className="min-h-[160px]"
-                  maxLength={8000}
-                />
-              </TabsContent>
-
-              <TabsContent value="guided" className="mt-5 space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor="role">Role / character type</Label>
-                    <Input
-                      id="role"
-                      value={guided.roleType ?? ""}
-                      onChange={(e) => setGuided({ ...guided, roleType: e.target.value })}
-                      placeholder="e.g. comedic ingénue"
-                      className="mt-2"
-                      maxLength={120}
-                    />
-                  </div>
-                  <div>
-                    <Label>Material</Label>
-                    <Select
-                      value={guided.material}
-                      onValueChange={(v) => setGuided({ ...guided, material: v })}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="song">Song</SelectItem>
-                        <SelectItem value="scene">Scene / monologue</SelectItem>
-                        <SelectItem value="mixed">Song + scene</SelectItem>
-                        <SelectItem value="dance">Dance / movement</SelectItem>
-                        <SelectItem value="commercial">Commercial / screen</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Reader present?</Label>
-                    <Select
-                      value={guided.reader}
-                      onValueChange={(v) => setGuided({ ...guided, reader: v })}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="n_a">Not applicable</SelectItem>
-                        <SelectItem value="yes">Yes — reader off-camera</SelectItem>
-                        <SelectItem value="no">No — solo to camera</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Orientation</Label>
-                    <Select
-                      value={guided.orientation}
-                      onValueChange={(v) => setGuided({ ...guided, orientation: v })}
-                    >
-                      <SelectTrigger className="mt-2">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="either">Either is fine</SelectItem>
-                        <SelectItem value="landscape">Landscape required</SelectItem>
-                        <SelectItem value="portrait">Portrait required</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="accent">Accent / dialect</Label>
-                    <Input
-                      id="accent"
-                      value={guided.accent ?? ""}
-                      onChange={(e) => setGuided({ ...guided, accent: e.target.value })}
-                      placeholder="e.g. RP, Standard American"
-                      className="mt-2"
-                      maxLength={80}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="instr">Special instructions</Label>
-                    <Input
-                      id="instr"
-                      value={guided.instructions ?? ""}
-                      onChange={(e) => setGuided({ ...guided, instructions: e.target.value })}
-                      placeholder="e.g. slate first, 32-bar cut"
-                      className="mt-2"
-                      maxLength={200}
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="skip" className="mt-5">
-                <p className="rounded-md border border-border bg-secondary/60 p-4 text-sm text-muted-foreground">
-                  We'll apply the professional baseline rubric and lower the confidence score.
-                  You can still get useful, coach-like feedback.
-                </p>
-              </TabsContent>
-            </Tabs>
-          </section>
-
-          <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-            <h2 className="font-display text-lg font-semibold">Upload video</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              MP4 or MOV, up to 750MB. Large files are automatically optimised for fast,
-              accurate feedback — your performance is not altered.
-            </p>
-            <div className="mt-5 flex items-center gap-3">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="video/mp4,video/quicktime,video/*"
-                className="hidden"
-                onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
+        {user && !compliance.loading && !compliance.complete ? (
+          <AccountCompliancePanel userId={user.id} onCompleted={compliance.refresh} />
+        ) : (
+          <div className="space-y-8">
+            <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+              <Label htmlFor="title" className="text-sm font-medium">
+                Audition title
+              </Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Wicked — Elphaba sides"
+                className="mt-2"
+                maxLength={120}
               />
-              <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
-                <Upload className="mr-2 h-4 w-4" /> {file ? "Change file" : "Choose file"}
-              </Button>
-              {file && (
-                <span className="truncate text-sm text-muted-foreground">
-                  {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
-                </span>
-              )}
-            </div>
 
-            {checking && (
-              <p className="mt-5 inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Running checks…
+              <div className="mt-5">
+                <Label className="text-sm font-medium">Your level</Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  We calibrate feedback and submission bands to your level.
+                </p>
+                <Select
+                  value={auditionLevel}
+                  onValueChange={(v) =>
+                    setAuditionLevel(v as "learning" | "amateur" | "emerging" | "professional")
+                  }
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="learning">Learning / School</SelectItem>
+                    <SelectItem value="amateur">Amateur / Community</SelectItem>
+                    <SelectItem value="emerging">Emerging / Training</SelectItem>
+                    <SelectItem value="professional">Professional</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+              <h2 className="font-display text-lg font-semibold">Casting brief</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Optional but recommended. With a brief we can score against the actual ask.
               </p>
-            )}
 
-            {checklist && (
-              <div className="mt-6">
-                <p className="mb-2 text-sm font-medium">Pre-upload checklist</p>
-                <ChecklistView
-                  checklist={checklist}
-                  briefSource={
-                    briefMode === "full" && fullBrief.trim()
-                      ? "full"
-                      : briefMode === "guided" && buildGuidedBrief(guided)
-                        ? "guided"
-                        : "none"
-                  }
-                  readerDeclared={
-                    briefMode === "guided" && (guided.reader === "yes" || guided.reader === "no")
-                      ? (guided.reader as "yes" | "no")
-                      : undefined
-                  }
+              <Tabs
+                value={briefMode}
+                onValueChange={(v) => setBriefMode(v as "full" | "guided" | "skip")}
+                className="mt-5"
+              >
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="full">Paste brief</TabsTrigger>
+                  <TabsTrigger value="guided">Quick prompt</TabsTrigger>
+                  <TabsTrigger value="skip">Skip</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="full" className="mt-5">
+                  <Textarea
+                    value={fullBrief}
+                    onChange={(e) => setFullBrief(e.target.value)}
+                    placeholder="Paste the casting brief, sides notes, or any instructions you were given…"
+                    className="min-h-[160px]"
+                    maxLength={8000}
+                  />
+                </TabsContent>
+
+                <TabsContent value="guided" className="mt-5 space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="role">Role / character type</Label>
+                      <Input
+                        id="role"
+                        value={guided.roleType ?? ""}
+                        onChange={(e) => setGuided({ ...guided, roleType: e.target.value })}
+                        placeholder="e.g. comedic ingénue"
+                        className="mt-2"
+                        maxLength={120}
+                      />
+                    </div>
+                    <div>
+                      <Label>Material</Label>
+                      <Select
+                        value={guided.material}
+                        onValueChange={(v) => setGuided({ ...guided, material: v })}
+                      >
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="song">Song</SelectItem>
+                          <SelectItem value="scene">Scene / monologue</SelectItem>
+                          <SelectItem value="mixed">Song + scene</SelectItem>
+                          <SelectItem value="dance">Dance / movement</SelectItem>
+                          <SelectItem value="commercial">Commercial / screen</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Reader present?</Label>
+                      <Select
+                        value={guided.reader}
+                        onValueChange={(v) => setGuided({ ...guided, reader: v })}
+                      >
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="n_a">Not applicable</SelectItem>
+                          <SelectItem value="yes">Yes — reader off-camera</SelectItem>
+                          <SelectItem value="no">No — solo to camera</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Orientation</Label>
+                      <Select
+                        value={guided.orientation}
+                        onValueChange={(v) => setGuided({ ...guided, orientation: v })}
+                      >
+                        <SelectTrigger className="mt-2">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="either">Either is fine</SelectItem>
+                          <SelectItem value="landscape">Landscape required</SelectItem>
+                          <SelectItem value="portrait">Portrait required</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="accent">Accent / dialect</Label>
+                      <Input
+                        id="accent"
+                        value={guided.accent ?? ""}
+                        onChange={(e) => setGuided({ ...guided, accent: e.target.value })}
+                        placeholder="e.g. RP, Standard American"
+                        className="mt-2"
+                        maxLength={80}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="instr">Special instructions</Label>
+                      <Input
+                        id="instr"
+                        value={guided.instructions ?? ""}
+                        onChange={(e) => setGuided({ ...guided, instructions: e.target.value })}
+                        placeholder="e.g. slate first, 32-bar cut"
+                        className="mt-2"
+                        maxLength={200}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="skip" className="mt-5">
+                  <p className="rounded-md border border-border bg-secondary/60 p-4 text-sm text-muted-foreground">
+                    We'll apply the professional baseline rubric and lower the confidence score. You
+                    can still get useful, coach-like feedback.
+                  </p>
+                </TabsContent>
+              </Tabs>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+              <h2 className="font-display text-lg font-semibold">Upload video</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                MP4 or MOV, up to 750MB. Large files are automatically optimised for fast, accurate
+                feedback — your performance is not altered.
+              </p>
+              <div className="mt-5 flex items-center gap-3">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/*"
+                  className="hidden"
+                  onChange={(e) => onPickFile(e.target.files?.[0] ?? null)}
                 />
+                <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}>
+                  <Upload className="mr-2 h-4 w-4" /> {file ? "Change file" : "Choose file"}
+                </Button>
+                {file && (
+                  <span className="truncate text-sm text-muted-foreground">
+                    {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
+                  </span>
+                )}
               </div>
-            )}
-          </section>
 
-          {submitting && uploadPct > 0 && uploadPct < 100 && (
-            <div className="space-y-2">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="text-muted-foreground">Uploading to secure storage…</span>
-                <span className="tabular-nums font-medium">{uploadPct}%</span>
-              </div>
-              <Progress value={uploadPct} />
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            {submitting && uploadPct < 100 && (
-              <Button size="lg" variant="ghost" onClick={cancelUpload}>
-                <X className="mr-2 h-4 w-4" /> Cancel upload
-              </Button>
-            )}
-            <Button size="lg" onClick={submit} disabled={!file || submitting || checking}>
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {uploadPct >= 100 ? "Finalising…" : "Uploading…"}
-                </>
-              ) : (
-                "Upload & analyse"
+              {checking && (
+                <p className="mt-5 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Running checks…
+                </p>
               )}
-            </Button>
+
+              {checklist && (
+                <div className="mt-6">
+                  <p className="mb-2 text-sm font-medium">Pre-upload checklist</p>
+                  <ChecklistView
+                    checklist={checklist}
+                    briefSource={
+                      briefMode === "full" && fullBrief.trim()
+                        ? "full"
+                        : briefMode === "guided" && buildGuidedBrief(guided)
+                          ? "guided"
+                          : "none"
+                    }
+                    readerDeclared={
+                      briefMode === "guided" && (guided.reader === "yes" || guided.reader === "no")
+                        ? (guided.reader as "yes" | "no")
+                        : undefined
+                    }
+                  />
+                </div>
+              )}
+            </section>
+
+            {submitting && uploadPct > 0 && uploadPct < 100 && (
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between text-sm">
+                  <span className="text-muted-foreground">Uploading to secure storage…</span>
+                  <span className="tabular-nums font-medium">{uploadPct}%</span>
+                </div>
+                <Progress value={uploadPct} />
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              {submitting && uploadPct < 100 && (
+                <Button size="lg" variant="ghost" onClick={cancelUpload}>
+                  <X className="mr-2 h-4 w-4" /> Cancel upload
+                </Button>
+              )}
+              <Button size="lg" onClick={submit} disabled={!file || submitting || checking}>
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {uploadPct >= 100 ? "Finalising…" : "Uploading…"}
+                  </>
+                ) : (
+                  "Upload & analyse"
+                )}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </main>
       <SiteFooter />
     </div>

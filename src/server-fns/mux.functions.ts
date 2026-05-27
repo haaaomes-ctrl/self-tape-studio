@@ -4,12 +4,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { getMux } from "@/server/mux.server";
-import {
-  assertWithinAnalysisQuota,
-  QuotaExceededError,
-} from "@/server/quota.server";
+import { assertWithinAnalysisQuota, QuotaExceededError } from "@/server/quota.server";
 import { getResolvedConfig } from "@/server/app-config.server";
 import { metric } from "@/server/metrics.server";
+import { assertAccountComplianceForReport } from "@/server/account-compliance.server";
 
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
@@ -40,6 +38,8 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     const { takeId } = data;
     const { userId } = context;
     metric("upload_url_requested", { take_id: takeId });
+
+    await assertAccountComplianceForReport(userId);
 
     // 1. Quota gate
     try {
@@ -74,9 +74,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     if (!muxConfig.MUX_TOKEN_ID || !muxConfig.MUX_TOKEN_SECRET) {
       console.error("[mux-upload] mux_config_missing", { take_id: takeId, ...muxConfig });
       metric("upload_url_failure", { take_id: takeId, reason: "mux_config_missing" });
-      throw new Error(
-        "MUX_CONFIG: Video service is not configured. Please contact support.",
-      );
+      throw new Error("MUX_CONFIG: Video service is not configured. Please contact support.");
     }
 
     // 3. Take lookup + ownership
@@ -203,9 +201,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         reason: `mux_api_${status}`,
         http_status: status,
       });
-      throw new Error(
-        `MUX_API_${status}: ${e?.message ?? "Mux rejected the upload request."}`,
-      );
+      throw new Error(`MUX_API_${status}: ${e?.message ?? "Mux rejected the upload request."}`);
     }
 
     if (!upload?.url) {
