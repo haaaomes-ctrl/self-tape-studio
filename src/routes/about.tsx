@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { brand, brandTitle } from "@/config/brand";
 
 const ABOUT_TITLE = `How ${brand.name} reviews your self-tape`;
-const ABOUT_DESC = `${brand.name} gives you a private second look at your self-tape — structured feedback on performance, voice, setup and brief fit, so you can submit with more confidence.`;
+const ABOUT_DESC = `${brand.name} gives you a private second look at your self-tape — structured feedback on performance, voice, setup and brief fit for performers, schools and coaches.`;
 
 export const Route = createFileRoute("/about")({
   head: () => ({
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/about")({
       {
         property: "og:description",
         content:
-          "Private, structured self-tape review for actors, agents and teachers. A second look before you submit.",
+          "Private, structured self-tape review for performers, schools and coaches. A second look before you submit.",
       },
     ],
   }),
@@ -36,7 +36,8 @@ function AboutPage() {
           <>
             {brand.name} gives you structured, performer-friendly feedback on your
             self-tape. It is built to feel like a trusted reader on call — quiet,
-            supportive, and focused on helping you send your strongest take.
+            supportive, and focused on helping you send your strongest take whether
+            the review is unlocked directly or through a school or coach.
           </>
         }
       />
@@ -56,6 +57,11 @@ function AboutPage() {
                   <strong className="text-foreground">Without a brief</strong> — we apply a balanced
                   professional baseline. The report tells you which mode was used and what a brief
                   would unlock.
+                </p>
+                <p className="mt-3">
+                  <strong className="text-foreground">With partner funding</strong> — schools and
+                  coaches can unlock reviews for performers without changing the report standard or
+                  turning the product into a public marketplace.
                 </p>
               </>
             }
@@ -90,6 +96,10 @@ function AboutPage() {
                 <li>Top strengths and the priority changes worth making before you submit.</li>
                 <li>Timestamped notes and short, practical drills you can act on.</li>
                 <li>Side-by-side comparison across up to three takes per audition.</li>
+                <li>
+                  Clear source-basis language so performers know whether a brief or baseline was
+                  used.
+                </li>
               </ul>
             }
           />
@@ -100,8 +110,8 @@ function AboutPage() {
             Ready for a second look?
           </h2>
           <p className="mt-2 text-muted-foreground">
-            Private by default. Your tape stays in your account — give yourself the best chance of
-            sending a stronger take.
+            Private by default. Your tape stays in your account, with support for performer-led or
+            partner-funded review pathways.
           </p>
           <Button asChild size="lg" className="mt-5">
             <Link to="/login">
