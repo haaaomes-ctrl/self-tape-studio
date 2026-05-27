@@ -8,6 +8,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
 import { ChecklistView } from "@/components/checklist-view";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
+import { UploadPolicyNotice } from "@/components/legal-policy-links";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -421,6 +422,7 @@ function NewAuditionPage() {
                 MP4 or MOV, up to 750MB. Large files are automatically optimised for fast, accurate
                 feedback — your performance is not altered.
               </p>
+              <UploadPolicyNotice className="mt-3" />
               <div className="mt-5 flex items-center gap-3">
                 <input
                   ref={fileRef}
