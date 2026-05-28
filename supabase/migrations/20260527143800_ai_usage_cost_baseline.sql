@@ -131,8 +131,10 @@ CREATE OR REPLACE VIEW public.take_ai_report_costs AS
 WITH usage_rollup AS (
   SELECT
     usage.take_id,
-    MAX(usage.audition_id) AS audition_id,
-    MAX(usage.user_id) AS user_id,
+    (array_agg(usage.audition_id ORDER BY usage.created_at DESC)
+      FILTER (WHERE usage.audition_id IS NOT NULL))[1] AS audition_id,
+    (array_agg(usage.user_id ORDER BY usage.created_at DESC)
+      FILTER (WHERE usage.user_id IS NOT NULL))[1] AS user_id,
     COUNT(*)::INTEGER AS ai_call_count,
     COUNT(*) FILTER (WHERE usage.status = 'success')::INTEGER AS successful_call_count,
     COUNT(*) FILTER (WHERE usage.status <> 'success')::INTEGER AS failed_call_count,
