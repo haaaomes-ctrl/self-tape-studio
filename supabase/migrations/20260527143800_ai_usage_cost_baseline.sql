@@ -170,16 +170,16 @@ partner_context AS (
     partner.name AS partner_name,
     partner.type AS partner_type
   FROM latest_reservation reservation
-  LEFT JOIN public.credit_grants grant
-    ON grant.id = reservation.credit_grant_id
+  LEFT JOIN public.credit_grants grant_row
+    ON grant_row.id = reservation.credit_grant_id
   LEFT JOIN public.partner_memberships membership
-    ON grant.source_reference_type = 'partner_membership'
-   AND grant.source_reference_id = membership.id::TEXT
+    ON grant_row.source_reference_type = 'partner_membership'
+   AND grant_row.source_reference_id = membership.id::TEXT
   LEFT JOIN public.partners partner
     ON partner.id = membership.partner_id
     OR (
-      grant.source_reference_type = 'partner'
-      AND grant.source_reference_id = partner.id::TEXT
+      grant_row.source_reference_type = 'partner'
+      AND grant_row.source_reference_id = partner.id::TEXT
     )
 ),
 take_duration AS (

@@ -536,6 +536,13 @@ export type Database = {
             foreignKeyName: "partner_codes_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_codes_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
           },
@@ -633,6 +640,13 @@ export type Database = {
             foreignKeyName: "partner_credit_allocations_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_credit_allocations_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
           },
@@ -705,6 +719,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partner_credit_pools"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pool_events_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
           },
           {
             foreignKeyName: "partner_credit_pool_events_partner_id_fkey"
@@ -791,6 +812,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
           {
             foreignKeyName: "partner_credit_pools_partner_id_fkey"
             columns: ["partner_id"]
@@ -894,6 +922,13 @@ export type Database = {
             foreignKeyName: "partner_memberships_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_memberships_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
           },
@@ -967,7 +1002,108 @@ export type Database = {
             foreignKeyName: "partner_usage_alerts_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_usage_alerts_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_visibility_acceptances: {
+        Row: {
+          accepted_at: string
+          brief_sharing_enabled: boolean
+          created_at: string
+          full_report_sharing_enabled: boolean
+          id: string
+          idempotency_key: string | null
+          leaderboard_enabled: boolean
+          metadata: Json
+          parent_guardian_confirmed: boolean
+          partner_id: string
+          partner_membership_id: string
+          partner_type: Database["public"]["Enums"]["partner_type"]
+          policy_version: string
+          revocation_reason: string | null
+          revoked_at: string | null
+          revoked_by_user_id: string | null
+          status: Database["public"]["Enums"]["partner_visibility_acceptance_status"]
+          updated_at: string
+          uploaded_media_sharing_enabled: boolean
+          user_id: string
+          visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"]
+        }
+        Insert: {
+          accepted_at?: string
+          brief_sharing_enabled?: boolean
+          created_at?: string
+          full_report_sharing_enabled?: boolean
+          id?: string
+          idempotency_key?: string | null
+          leaderboard_enabled?: boolean
+          metadata?: Json
+          parent_guardian_confirmed?: boolean
+          partner_id: string
+          partner_membership_id: string
+          partner_type: Database["public"]["Enums"]["partner_type"]
+          policy_version: string
+          revocation_reason?: string | null
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          status?: Database["public"]["Enums"]["partner_visibility_acceptance_status"]
+          updated_at?: string
+          uploaded_media_sharing_enabled?: boolean
+          user_id: string
+          visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"]
+        }
+        Update: {
+          accepted_at?: string
+          brief_sharing_enabled?: boolean
+          created_at?: string
+          full_report_sharing_enabled?: boolean
+          id?: string
+          idempotency_key?: string | null
+          leaderboard_enabled?: boolean
+          metadata?: Json
+          parent_guardian_confirmed?: boolean
+          partner_id?: string
+          partner_membership_id?: string
+          partner_type?: Database["public"]["Enums"]["partner_type"]
+          policy_version?: string
+          revocation_reason?: string | null
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          status?: Database["public"]["Enums"]["partner_visibility_acceptance_status"]
+          updated_at?: string
+          uploaded_media_sharing_enabled?: boolean
+          user_id?: string
+          visibility_scope?: Database["public"]["Enums"]["partner_visibility_scope"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_membership_id_fkey"
+            columns: ["partner_membership_id"]
+            isOneToOne: false
+            referencedRelation: "partner_memberships"
             referencedColumns: ["id"]
           },
         ]
@@ -1212,6 +1348,19 @@ export type Database = {
         }
         Relationships: []
       }
+      partner_aggregate_dashboard_summary: {
+        Row: {
+          active_member_count: number | null
+          average_latest_score: number | null
+          credits_used: number | null
+          latest_report_at: string | null
+          partner_id: string | null
+          partner_name: string | null
+          partner_type: Database["public"]["Enums"]["partner_type"] | null
+          report_count: number | null
+        }
+        Relationships: []
+      }
       partner_credit_pool_usage_summary: {
         Row: {
           allocated_credits: number | null
@@ -1278,13 +1427,83 @@ export type Database = {
             foreignKeyName: "partner_credit_pools_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_progress_dashboard_summary: {
+        Row: {
+          brief_visible: boolean | null
+          credits_used: number | null
+          fix_first_category: string | null
+          full_report_visible: boolean | null
+          latest_report_at: string | null
+          latest_score: number | null
+          leaderboard_visible: boolean | null
+          partner_id: string | null
+          partner_membership_id: string | null
+          partner_name: string | null
+          partner_type: Database["public"]["Enums"]["partner_type"] | null
+          performer_name: string | null
+          readiness_band: string | null
+          report_count: number | null
+          report_dates: string[] | null
+          score_trend: number | null
+          uploaded_media_visible: boolean | null
+          user_id: string | null
+          visibility_scope:
+            | Database["public"]["Enums"]["partner_visibility_scope"]
+            | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partner_aggregate_dashboard_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_membership_id_fkey"
+            columns: ["partner_membership_id"]
+            isOneToOne: false
+            referencedRelation: "partner_memberships"
             referencedColumns: ["id"]
           },
         ]
       }
     }
     Functions: {
+      accept_partner_visibility: {
+        Args: {
+          p_accepted_at?: string
+          p_brief_sharing_enabled?: boolean
+          p_full_report_sharing_enabled?: boolean
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_parent_guardian_confirmed?: boolean
+          p_partner_membership_id: string
+          p_uploaded_media_sharing_enabled?: boolean
+          p_user_id: string
+          p_visibility_scope?: Database["public"]["Enums"]["partner_visibility_scope"]
+        }
+        Returns: string
+      }
       activate_partner_code: {
         Args: {
           p_activated_at?: string
@@ -1392,6 +1611,10 @@ export type Database = {
         Args: { p_partner_type: Database["public"]["Enums"]["partner_type"] }
         Returns: Database["public"]["Enums"]["credit_source"]
       }
+      partner_default_visibility_scope: {
+        Args: { p_partner_type: Database["public"]["Enums"]["partner_type"] }
+        Returns: Database["public"]["Enums"]["partner_visibility_scope"]
+      }
       partner_email_domain: { Args: { p_email: string }; Returns: string }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
@@ -1430,6 +1653,15 @@ export type Database = {
       record_partner_pool_alerts: {
         Args: { p_now?: string; p_partner_credit_pool_id: string }
         Returns: number
+      }
+      revoke_partner_visibility_acceptance: {
+        Args: {
+          p_partner_visibility_acceptance_id: string
+          p_revocation_reason?: string
+          p_revoked_at?: string
+          p_revoked_by_user_id?: string
+        }
+        Returns: string
       }
       rotate_partner_code: {
         Args: {
@@ -1506,6 +1738,11 @@ export type Database = {
       partner_status: "active" | "paused" | "archived"
       partner_type: "school" | "coach" | "agent" | "sponsor" | "platform"
       partner_usage_alert_status: "triggered" | "acknowledged"
+      partner_visibility_acceptance_status: "active" | "revoked"
+      partner_visibility_scope:
+        | "aggregate_only"
+        | "limited_usage_readiness"
+        | "named_progress"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1688,6 +1925,12 @@ export const Constants = {
       partner_status: ["active", "paused", "archived"],
       partner_type: ["school", "coach", "agent", "sponsor", "platform"],
       partner_usage_alert_status: ["triggered", "acknowledged"],
+      partner_visibility_acceptance_status: ["active", "revoked"],
+      partner_visibility_scope: [
+        "aggregate_only",
+        "limited_usage_readiness",
+        "named_progress",
+      ],
     },
   },
 } as const
