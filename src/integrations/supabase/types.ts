@@ -152,6 +152,74 @@ export type Database = {
         }
         Relationships: []
       }
+      consumer_credit_payments: {
+        Row: {
+          amount_total_pence: number
+          created_at: string
+          credit_amount: number
+          credit_grant_id: string | null
+          currency: string
+          failure_code: string | null
+          id: string
+          latest_stripe_event_id: string | null
+          metadata: Json
+          product_sku: string
+          status: Database["public"]["Enums"]["consumer_credit_payment_status"]
+          stripe_checkout_session_id: string | null
+          stripe_customer_id: string | null
+          stripe_payment_intent_id: string | null
+          stripe_price_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_total_pence: number
+          created_at?: string
+          credit_amount: number
+          credit_grant_id?: string | null
+          currency?: string
+          failure_code?: string | null
+          id?: string
+          latest_stripe_event_id?: string | null
+          metadata?: Json
+          product_sku: string
+          status?: Database["public"]["Enums"]["consumer_credit_payment_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_price_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_total_pence?: number
+          created_at?: string
+          credit_amount?: number
+          credit_grant_id?: string | null
+          currency?: string
+          failure_code?: string | null
+          id?: string
+          latest_stripe_event_id?: string | null
+          metadata?: Json
+          product_sku?: string
+          status?: Database["public"]["Enums"]["consumer_credit_payment_status"]
+          stripe_checkout_session_id?: string | null
+          stripe_customer_id?: string | null
+          stripe_payment_intent_id?: string | null
+          stripe_price_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consumer_credit_payments_credit_grant_id_fkey"
+            columns: ["credit_grant_id"]
+            isOneToOne: false
+            referencedRelation: "credit_grants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consumer_credit_products: {
         Row: {
           active: boolean
@@ -202,6 +270,82 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      consumer_credit_revenue_ledger_entries: {
+        Row: {
+          amount_pence: number | null
+          created_at: string
+          credit_delta: number
+          credit_grant_id: string | null
+          currency: string
+          event_type: Database["public"]["Enums"]["consumer_credit_revenue_event_type"]
+          id: string
+          metadata: Json
+          payment_id: string | null
+          processing_status: string
+          stripe_event_id: string
+          stripe_object_id: string
+          stripe_payment_intent_id: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          amount_pence?: number | null
+          created_at?: string
+          credit_delta?: number
+          credit_grant_id?: string | null
+          currency?: string
+          event_type: Database["public"]["Enums"]["consumer_credit_revenue_event_type"]
+          id?: string
+          metadata?: Json
+          payment_id?: string | null
+          processing_status?: string
+          stripe_event_id: string
+          stripe_object_id: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          amount_pence?: number | null
+          created_at?: string
+          credit_delta?: number
+          credit_grant_id?: string | null
+          currency?: string
+          event_type?: Database["public"]["Enums"]["consumer_credit_revenue_event_type"]
+          id?: string
+          metadata?: Json
+          payment_id?: string | null
+          processing_status?: string
+          stripe_event_id?: string
+          stripe_object_id?: string
+          stripe_payment_intent_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consumer_credit_revenue_ledger_entries_credit_grant_id_fkey"
+            columns: ["credit_grant_id"]
+            isOneToOne: false
+            referencedRelation: "credit_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consumer_credit_revenue_ledger_entries_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "consumer_credit_payment_reconciliation"
+            referencedColumns: ["payment_id"]
+          },
+          {
+            foreignKeyName: "consumer_credit_revenue_ledger_entries_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "consumer_credit_payments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       credit_grants: {
         Row: {
@@ -1533,6 +1677,40 @@ export type Database = {
       }
     }
     Views: {
+      consumer_credit_payment_reconciliation: {
+        Row: {
+          amount_total_pence: number | null
+          created_at: string | null
+          credit_amount: number | null
+          credit_grant_id: string | null
+          credit_grant_status:
+            | Database["public"]["Enums"]["credit_grant_status"]
+            | null
+          currency: string | null
+          failure_code: string | null
+          latest_stripe_event_id: string | null
+          payment_id: string | null
+          product_sku: string | null
+          remaining_credits: number | null
+          status:
+            | Database["public"]["Enums"]["consumer_credit_payment_status"]
+            | null
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          stripe_price_id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consumer_credit_payments_credit_grant_id_fkey"
+            columns: ["credit_grant_id"]
+            isOneToOne: false
+            referencedRelation: "credit_grants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credit_source_finance_summary: {
         Row: {
           admin_adjustment_credits: number | null
@@ -1849,6 +2027,23 @@ export type Database = {
         }
         Returns: string
       }
+      complete_consumer_credit_payment: {
+        Args: {
+          p_amount_total_pence?: number
+          p_checkout_session_id?: string
+          p_credit_amount?: number
+          p_currency?: string
+          p_event_type?: Database["public"]["Enums"]["consumer_credit_revenue_event_type"]
+          p_metadata?: Json
+          p_payment_intent_id?: string
+          p_product_sku?: string
+          p_stripe_customer_id?: string
+          p_stripe_event_id: string
+          p_stripe_price_id?: string
+          p_user_id?: string
+        }
+        Returns: string
+      }
       consume_report_credit_reservation: {
         Args: {
           p_idempotency_key?: string
@@ -1902,6 +2097,22 @@ export type Database = {
         }
         Returns: string
       }
+      mark_consumer_credit_payment_failed: {
+        Args: {
+          p_amount_total_pence?: number
+          p_checkout_session_id?: string
+          p_credit_amount?: number
+          p_currency?: string
+          p_failure_code?: string
+          p_metadata?: Json
+          p_payment_intent_id?: string
+          p_product_sku?: string
+          p_stripe_event_id: string
+          p_stripe_price_id?: string
+          p_user_id?: string
+        }
+        Returns: string
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -1937,6 +2148,20 @@ export type Database = {
           p_idempotency_key?: string
           p_metadata?: Json
           p_source: Database["public"]["Enums"]["credit_source"]
+          p_user_id: string
+        }
+        Returns: string
+      }
+      record_consumer_checkout_session: {
+        Args: {
+          p_amount_total_pence: number
+          p_credit_amount: number
+          p_currency: string
+          p_metadata?: Json
+          p_product_sku: string
+          p_stripe_checkout_session_id: string
+          p_stripe_customer_id?: string
+          p_stripe_price_id: string
           p_user_id: string
         }
         Returns: string
@@ -1978,6 +2203,17 @@ export type Database = {
         }
         Returns: string
       }
+      reverse_or_flag_consumer_credit_payment: {
+        Args: {
+          p_amount_pence?: number
+          p_checkout_session_id?: string
+          p_event_type?: Database["public"]["Enums"]["consumer_credit_revenue_event_type"]
+          p_metadata?: Json
+          p_payment_intent_id?: string
+          p_stripe_event_id: string
+        }
+        Returns: string
+      }
       revoke_partner_visibility_acceptance: {
         Args: {
           p_partner_visibility_acceptance_id: string
@@ -2014,6 +2250,21 @@ export type Database = {
       }
     }
     Enums: {
+      consumer_credit_payment_status:
+        | "checkout_created"
+        | "checkout_completed"
+        | "payment_succeeded"
+        | "payment_failed"
+        | "refunded"
+        | "disputed"
+        | "requires_review"
+      consumer_credit_revenue_event_type:
+        | "checkout_session_created"
+        | "checkout_session_completed"
+        | "payment_succeeded"
+        | "payment_failed"
+        | "refund"
+        | "dispute"
       credit_grant_status: "active" | "exhausted" | "expired" | "revoked"
       credit_ledger_entry_type:
         | "grant"
@@ -2199,6 +2450,23 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      consumer_credit_payment_status: [
+        "checkout_created",
+        "checkout_completed",
+        "payment_succeeded",
+        "payment_failed",
+        "refunded",
+        "disputed",
+        "requires_review",
+      ],
+      consumer_credit_revenue_event_type: [
+        "checkout_session_created",
+        "checkout_session_completed",
+        "payment_succeeded",
+        "payment_failed",
+        "refund",
+        "dispute",
+      ],
       credit_grant_status: ["active", "exhausted", "expired", "revoked"],
       credit_ledger_entry_type: [
         "grant",
