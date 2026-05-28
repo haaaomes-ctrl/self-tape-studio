@@ -15,6 +15,7 @@ import {
   type CreditSourceFinanceSummary,
   type ReportCreditReservationStatus,
 } from "@/lib/credit-ledger";
+import { safeEnqueueCrmEmailForUser } from "@/server/crm-messaging.server";
 import { recordServerAnalyticsEvent } from "@/server/analytics-events.server";
 
 export type RecordCreditConsumptionInput = {
@@ -122,6 +123,30 @@ export async function grantFundedCredits(input: CreditGrantInput) {
       },
     });
   }
+  const crmMessageKey =
+    draft.source === "free_signup"
+      ? "free_report_available"
+      : draft.source === "free_monthly"
+        ? "monthly_free_report"
+        : "credits_added";
+  void safeEnqueueCrmEmailForUser({
+    userId: draft.user_id,
+    messageKey: crmMessageKey,
+    idempotencyKey: `crm:${crmMessageKey}:${draft.user_id}:credit_grant:${data}`,
+    templateData: {
+      object_type: "credit_grant",
+      object_id: data,
+      credit_source: draft.source,
+      credit_amount: draft.original_credits,
+      account_label: draft.source_label ?? null,
+      context_line:
+        draft.source === "free_monthly"
+          ? "Your monthly free TapeCoach report credit is available."
+          : `${draft.original_credits} TapeCoach report credit${
+              draft.original_credits === 1 ? "" : "s"
+            } ${draft.original_credits === 1 ? "has" : "have"} been added to your account.`,
+    },
+  });
   return { credit_grant_id: data };
 }
 

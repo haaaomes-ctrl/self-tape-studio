@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -25,6 +26,7 @@ import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-r
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as AdminFinanceRouteImport } from './routes/admin/finance'
+import { Route as AdminCrmRouteImport } from './routes/admin/crm'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
 import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
@@ -33,6 +35,11 @@ import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NewRoute = NewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -113,6 +120,11 @@ const AdminFinanceRoute = AdminFinanceRouteImport.update({
   path: '/admin/finance',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminCrmRoute = AdminCrmRouteImport.update({
+  id: '/admin/crm',
+  path: '/admin/crm',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
   id: '/admin/analytics',
   path: '/admin/analytics',
@@ -161,7 +173,9 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/crm': typeof AdminCrmRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
@@ -186,7 +200,9 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/crm': typeof AdminCrmRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
@@ -212,7 +228,9 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
+  '/admin/crm': typeof AdminCrmRoute
   '/admin/finance': typeof AdminFinanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
@@ -239,7 +257,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/unsubscribe'
     | '/admin/analytics'
+    | '/admin/crm'
     | '/admin/finance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
@@ -264,7 +284,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/unsubscribe'
     | '/admin/analytics'
+    | '/admin/crm'
     | '/admin/finance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
@@ -289,7 +311,9 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/new'
+    | '/unsubscribe'
     | '/admin/analytics'
+    | '/admin/crm'
     | '/admin/finance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
@@ -315,7 +339,9 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  AdminCrmRoute: typeof AdminCrmRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
   AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
@@ -334,6 +360,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -446,6 +479,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFinanceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/crm': {
+      id: '/admin/crm'
+      path: '/admin/crm'
+      fullPath: '/admin/crm'
+      preLoaderRoute: typeof AdminCrmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/analytics': {
       id: '/admin/analytics'
       path: '/admin/analytics'
@@ -507,7 +547,9 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
+  AdminCrmRoute: AdminCrmRoute,
   AdminFinanceRoute: AdminFinanceRoute,
   AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
@@ -526,3 +568,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
