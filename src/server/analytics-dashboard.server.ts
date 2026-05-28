@@ -1,17 +1,13 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const ANALYTICS_DASHBOARD_VERSION = "s10-1-ds-18-2026-05-27" as const;
 
-// NOTE: These dashboard views are not yet present in the generated Supabase
-// types.ts (Tables<"..."> resolves to `never`). Until the types catch up,
-// model them as permissive records so the dashboard route still typechecks.
-type AnyRow = Record<string, any>;
-export type AnalyticsFunnelRow = AnyRow;
-export type AnalyticsReportCompletionRow = AnyRow;
-export type AnalyticsHabitRow = AnyRow;
-export type AnalyticsAttributionRow = AnyRow;
-export type AnalyticsB2BLeadRow = AnyRow;
-const db = supabaseAdmin as any;
+export type AnalyticsFunnelRow = Tables<"analytics_funnel_dashboard">;
+export type AnalyticsReportCompletionRow = Tables<"analytics_report_completion_dashboard">;
+export type AnalyticsHabitRow = Tables<"analytics_habit_dashboard">;
+export type AnalyticsAttributionRow = Tables<"analytics_attribution_dashboard">;
+export type AnalyticsB2BLeadRow = Tables<"analytics_b2b_leads_dashboard">;
 
 export type AnalyticsDashboardSnapshot = {
   version: typeof ANALYTICS_DASHBOARD_VERSION;
