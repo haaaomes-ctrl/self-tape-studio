@@ -432,6 +432,236 @@ export type Database = {
         }
         Relationships: []
       }
+      partner_codes: {
+        Row: {
+          abuse_flag_reason: string | null
+          abuse_flagged_at: string | null
+          abuse_flagged_by_user_id: string | null
+          activation_count: number
+          allowance_credits: number
+          allowed_email_domains: string[]
+          code_display_hint: string
+          code_hash: string
+          created_at: string
+          created_by_user_id: string | null
+          expires_at: string | null
+          id: string
+          idempotency_key: string | null
+          max_activations: number | null
+          metadata: Json
+          partner_id: string
+          revoked_at: string | null
+          revoked_by_user_id: string | null
+          revoked_reason: string | null
+          rotated_from_code_id: string | null
+          rotated_to_code_id: string | null
+          status: Database["public"]["Enums"]["partner_code_status"]
+          updated_at: string
+          valid_from: string
+          version: number
+        }
+        Insert: {
+          abuse_flag_reason?: string | null
+          abuse_flagged_at?: string | null
+          abuse_flagged_by_user_id?: string | null
+          activation_count?: number
+          allowance_credits: number
+          allowed_email_domains?: string[]
+          code_display_hint: string
+          code_hash: string
+          created_at?: string
+          created_by_user_id?: string | null
+          expires_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          max_activations?: number | null
+          metadata?: Json
+          partner_id: string
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          revoked_reason?: string | null
+          rotated_from_code_id?: string | null
+          rotated_to_code_id?: string | null
+          status?: Database["public"]["Enums"]["partner_code_status"]
+          updated_at?: string
+          valid_from?: string
+          version: number
+        }
+        Update: {
+          abuse_flag_reason?: string | null
+          abuse_flagged_at?: string | null
+          abuse_flagged_by_user_id?: string | null
+          activation_count?: number
+          allowance_credits?: number
+          allowed_email_domains?: string[]
+          code_display_hint?: string
+          code_hash?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          expires_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          max_activations?: number | null
+          metadata?: Json
+          partner_id?: string
+          revoked_at?: string | null
+          revoked_by_user_id?: string | null
+          revoked_reason?: string | null
+          rotated_from_code_id?: string | null
+          rotated_to_code_id?: string | null
+          status?: Database["public"]["Enums"]["partner_code_status"]
+          updated_at?: string
+          valid_from?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_codes_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_codes_rotated_from_code_id_fkey"
+            columns: ["rotated_from_code_id"]
+            isOneToOne: false
+            referencedRelation: "partner_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_codes_rotated_to_code_id_fkey"
+            columns: ["rotated_to_code_id"]
+            isOneToOne: false
+            referencedRelation: "partner_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partner_memberships: {
+        Row: {
+          activated_at: string
+          activation_idempotency_key: string | null
+          allowance_credits: number
+          code_version: number
+          created_at: string
+          credit_grant_id: string | null
+          credit_source: Database["public"]["Enums"]["credit_source"]
+          email_domain: string | null
+          expires_at: string | null
+          id: string
+          metadata: Json
+          partner_code_id: string
+          partner_id: string
+          partner_type: Database["public"]["Enums"]["partner_type"]
+          status: Database["public"]["Enums"]["partner_membership_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          activated_at?: string
+          activation_idempotency_key?: string | null
+          allowance_credits: number
+          code_version: number
+          created_at?: string
+          credit_grant_id?: string | null
+          credit_source: Database["public"]["Enums"]["credit_source"]
+          email_domain?: string | null
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          partner_code_id: string
+          partner_id: string
+          partner_type: Database["public"]["Enums"]["partner_type"]
+          status?: Database["public"]["Enums"]["partner_membership_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          activated_at?: string
+          activation_idempotency_key?: string | null
+          allowance_credits?: number
+          code_version?: number
+          created_at?: string
+          credit_grant_id?: string | null
+          credit_source?: Database["public"]["Enums"]["credit_source"]
+          email_domain?: string | null
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          partner_code_id?: string
+          partner_id?: string
+          partner_type?: Database["public"]["Enums"]["partner_type"]
+          status?: Database["public"]["Enums"]["partner_membership_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "partner_memberships_credit_grant_id_fkey"
+            columns: ["credit_grant_id"]
+            isOneToOne: false
+            referencedRelation: "credit_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_memberships_partner_code_id_fkey"
+            columns: ["partner_code_id"]
+            isOneToOne: false
+            referencedRelation: "partner_codes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_memberships_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partners: {
+        Row: {
+          allowed_email_domains: string[]
+          created_at: string
+          created_by_user_id: string | null
+          id: string
+          metadata: Json
+          name: string
+          primary_contact_email: string | null
+          slug: string
+          status: Database["public"]["Enums"]["partner_status"]
+          type: Database["public"]["Enums"]["partner_type"]
+          updated_at: string
+        }
+        Insert: {
+          allowed_email_domains?: string[]
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          metadata?: Json
+          name: string
+          primary_contact_email?: string | null
+          slug: string
+          status?: Database["public"]["Enums"]["partner_status"]
+          type: Database["public"]["Enums"]["partner_type"]
+          updated_at?: string
+        }
+        Update: {
+          allowed_email_domains?: string[]
+          created_at?: string
+          created_by_user_id?: string | null
+          id?: string
+          metadata?: Json
+          name?: string
+          primary_contact_email?: string | null
+          slug?: string
+          status?: Database["public"]["Enums"]["partner_status"]
+          type?: Database["public"]["Enums"]["partner_type"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       suppressed_emails: {
         Row: {
           created_at: string
@@ -632,6 +862,17 @@ export type Database = {
       }
     }
     Functions: {
+      activate_partner_code: {
+        Args: {
+          p_activated_at?: string
+          p_code_hash: string
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_user_email?: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
@@ -639,6 +880,16 @@ export type Database = {
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
+      }
+      expire_partner_codes: { Args: { p_now?: string }; Returns: number }
+      flag_partner_code_abuse: {
+        Args: {
+          p_admin_actor_user_id?: string
+          p_now?: string
+          p_partner_code_id: string
+          p_reason?: string
+        }
+        Returns: string
       }
       get_effective_quota_config: {
         Args: never
@@ -674,6 +925,11 @@ export type Database = {
         }
         Returns: number
       }
+      partner_credit_source: {
+        Args: { p_partner_type: Database["public"]["Enums"]["partner_type"] }
+        Returns: Database["public"]["Enums"]["credit_source"]
+      }
+      partner_email_domain: { Args: { p_email: string }; Returns: string }
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number }
         Returns: {
@@ -708,6 +964,31 @@ export type Database = {
         }
         Returns: string
       }
+      rotate_partner_code: {
+        Args: {
+          p_admin_actor_user_id?: string
+          p_allowance_credits?: number
+          p_allowed_email_domains?: string[]
+          p_existing_code_id: string
+          p_expires_at?: string
+          p_idempotency_key?: string
+          p_max_activations?: number
+          p_metadata?: Json
+          p_new_code_display_hint: string
+          p_new_code_hash: string
+        }
+        Returns: string
+      }
+      set_partner_code_status: {
+        Args: {
+          p_admin_actor_user_id?: string
+          p_now?: string
+          p_partner_code_id: string
+          p_reason?: string
+          p_status: Database["public"]["Enums"]["partner_code_status"]
+        }
+        Returns: string
+      }
     }
     Enums: {
       credit_grant_status: "active" | "exhausted" | "expired" | "revoked"
@@ -727,6 +1008,15 @@ export type Database = {
         | "sponsor_campaign"
         | "user_paid"
         | "admin_grant"
+      partner_code_status:
+        | "active"
+        | "paused"
+        | "revoked"
+        | "rotated"
+        | "expired"
+      partner_membership_status: "active" | "revoked" | "expired"
+      partner_status: "active" | "paused" | "archived"
+      partner_type: "school" | "coach" | "agent" | "sponsor" | "platform"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -873,6 +1163,16 @@ export const Constants = {
         "user_paid",
         "admin_grant",
       ],
+      partner_code_status: [
+        "active",
+        "paused",
+        "revoked",
+        "rotated",
+        "expired",
+      ],
+      partner_membership_status: ["active", "revoked", "expired"],
+      partner_status: ["active", "paused", "archived"],
+      partner_type: ["school", "coach", "agent", "sponsor", "platform"],
     },
   },
 } as const
