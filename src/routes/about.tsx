@@ -123,8 +123,8 @@ function AboutPage() {
             Ready for a second look?
           </h2>
           <p className="mt-2 text-muted-foreground">
-            Private by default. Your tape stays in your account — give yourself the best chance of
-            sending a stronger take.
+            Private by default. Your tape stays in your account while you decide whether to submit,
+            retake or review carefully.
           </p>
           <Button asChild size="lg" className="mt-5">
             <Link to="/login">

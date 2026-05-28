@@ -10,12 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
+import { Route as TrustRouteImport } from './routes/trust'
 import { Route as NewRouteImport } from './routes/new'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as FaqRouteImport } from './routes/faq'
+import { Route as ExampleReportRouteImport } from './routes/example-report'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CreditsSuccessRouteImport } from './routes/credits-success'
 import { Route as CreditsCancelledRouteImport } from './routes/credits-cancelled'
 import { Route as CreditsRouteImport } from './routes/credits'
+import { Route as B2bInterestRouteImport } from './routes/b2b-interest'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
@@ -40,6 +45,11 @@ const UnsubscribeRoute = UnsubscribeRouteImport.update({
   path: '/unsubscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrustRoute = TrustRouteImport.update({
+  id: '/trust',
+  path: '/trust',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NewRoute = NewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -48,6 +58,21 @@ const NewRoute = NewRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaqRoute = FaqRouteImport.update({
+  id: '/faq',
+  path: '/faq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExampleReportRoute = ExampleReportRouteImport.update({
+  id: '/example-report',
+  path: '/example-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -68,6 +93,11 @@ const CreditsCancelledRoute = CreditsCancelledRouteImport.update({
 const CreditsRoute = CreditsRouteImport.update({
   id: '/credits',
   path: '/credits',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const B2bInterestRoute = B2bInterestRouteImport.update({
+  id: '/b2b-interest',
+  path: '/b2b-interest',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -167,12 +197,17 @@ const LovableEmailQueueProcessRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/b2b-interest': typeof B2bInterestRoute
   '/credits': typeof CreditsRoute
   '/credits-cancelled': typeof CreditsCancelledRoute
   '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
+  '/demo': typeof DemoRoute
+  '/example-report': typeof ExampleReportRoute
+  '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/trust': typeof TrustRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/crm': typeof AdminCrmRoute
@@ -194,12 +229,17 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/b2b-interest': typeof B2bInterestRoute
   '/credits': typeof CreditsRoute
   '/credits-cancelled': typeof CreditsCancelledRoute
   '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
+  '/demo': typeof DemoRoute
+  '/example-report': typeof ExampleReportRoute
+  '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/trust': typeof TrustRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/crm': typeof AdminCrmRoute
@@ -222,12 +262,17 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/b2b-interest': typeof B2bInterestRoute
   '/credits': typeof CreditsRoute
   '/credits-cancelled': typeof CreditsCancelledRoute
   '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
+  '/demo': typeof DemoRoute
+  '/example-report': typeof ExampleReportRoute
+  '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
   '/new': typeof NewRoute
+  '/trust': typeof TrustRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/crm': typeof AdminCrmRoute
@@ -251,12 +296,17 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/b2b-interest'
     | '/credits'
     | '/credits-cancelled'
     | '/credits-success'
     | '/dashboard'
+    | '/demo'
+    | '/example-report'
+    | '/faq'
     | '/login'
     | '/new'
+    | '/trust'
     | '/unsubscribe'
     | '/admin/analytics'
     | '/admin/crm'
@@ -278,12 +328,17 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/b2b-interest'
     | '/credits'
     | '/credits-cancelled'
     | '/credits-success'
     | '/dashboard'
+    | '/demo'
+    | '/example-report'
+    | '/faq'
     | '/login'
     | '/new'
+    | '/trust'
     | '/unsubscribe'
     | '/admin/analytics'
     | '/admin/crm'
@@ -305,12 +360,17 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/b2b-interest'
     | '/credits'
     | '/credits-cancelled'
     | '/credits-success'
     | '/dashboard'
+    | '/demo'
+    | '/example-report'
+    | '/faq'
     | '/login'
     | '/new'
+    | '/trust'
     | '/unsubscribe'
     | '/admin/analytics'
     | '/admin/crm'
@@ -333,12 +393,17 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  B2bInterestRoute: typeof B2bInterestRoute
   CreditsRoute: typeof CreditsRoute
   CreditsCancelledRoute: typeof CreditsCancelledRoute
   CreditsSuccessRoute: typeof CreditsSuccessRoute
   DashboardRoute: typeof DashboardRoute
+  DemoRoute: typeof DemoRoute
+  ExampleReportRoute: typeof ExampleReportRoute
+  FaqRoute: typeof FaqRoute
   LoginRoute: typeof LoginRoute
   NewRoute: typeof NewRoute
+  TrustRoute: typeof TrustRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminCrmRoute: typeof AdminCrmRoute
@@ -367,6 +432,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UnsubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/trust': {
+      id: '/trust'
+      path: '/trust'
+      fullPath: '/trust'
+      preLoaderRoute: typeof TrustRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/new': {
       id: '/new'
       path: '/new'
@@ -379,6 +451,27 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/faq': {
+      id: '/faq'
+      path: '/faq'
+      fullPath: '/faq'
+      preLoaderRoute: typeof FaqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/example-report': {
+      id: '/example-report'
+      path: '/example-report'
+      fullPath: '/example-report'
+      preLoaderRoute: typeof ExampleReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -407,6 +500,13 @@ declare module '@tanstack/react-router' {
       path: '/credits'
       fullPath: '/credits'
       preLoaderRoute: typeof CreditsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/b2b-interest': {
+      id: '/b2b-interest'
+      path: '/b2b-interest'
+      fullPath: '/b2b-interest'
+      preLoaderRoute: typeof B2bInterestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -541,12 +641,17 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  B2bInterestRoute: B2bInterestRoute,
   CreditsRoute: CreditsRoute,
   CreditsCancelledRoute: CreditsCancelledRoute,
   CreditsSuccessRoute: CreditsSuccessRoute,
   DashboardRoute: DashboardRoute,
+  DemoRoute: DemoRoute,
+  ExampleReportRoute: ExampleReportRoute,
+  FaqRoute: FaqRoute,
   LoginRoute: LoginRoute,
   NewRoute: NewRoute,
+  TrustRoute: TrustRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminCrmRoute: AdminCrmRoute,

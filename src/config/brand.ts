@@ -18,17 +18,17 @@ export const brand = {
   /** Wordmark split — second segment renders in the primary brand colour. */
   wordmark: { lead: "Tape", accent: "Coach" } as const,
   /** Primary tagline. */
-  tagline: "Review your tape before it reaches the room.",
+  tagline: "Free self-tape sanity checks before you submit.",
   /** Alternate, shorter tagline for tight spaces and CTAs. */
   taglineShort: "Send your strongest take.",
   /** Footer mission statement. */
-  mission: "Private self-tape feedback before you submit.",
+  mission: "Private self-tape feedback before upload.",
   /** Short value proposition used across landing/marketing surfaces. */
   description:
-    "Private self-tape review. Structured feedback on performance, voice, setup and brief fit — give yourself the best chance of sending a stronger take.",
+    "Private self-tape review with structured feedback on performance, voice, setup and brief fit before upload.",
   /** Compact OG/Twitter description. */
   shareDescription:
-    "A private second look at your self-tape — structured feedback so you can submit with more confidence.",
+    "A private second look at your self-tape with structured feedback before upload.",
   /** Twitter-card description (audience-focused). */
   twitterDescription:
     "Private self-tape review for performers, agents and teachers. Reduce avoidable mistakes before submission.",

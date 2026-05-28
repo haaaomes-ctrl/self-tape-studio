@@ -6,10 +6,16 @@ import { useAuth, signOut } from "@/lib/auth";
 import { brand } from "@/config/brand";
 import { BrandMark } from "@/components/brand-mark";
 
-// Nav links are intentionally empty until those pages have real content.
-// Re-add entries here (e.g. { label: "Features", to: "/features" }) once the
-// corresponding routes exist under src/routes/.
-const NAV_LINKS: Array<{ label: string; to: "/" | "/about" | "/login" | "/dashboard" | "/new" }> = [];
+const NAV_LINKS: Array<{
+  label: string;
+  to: "/" | "/example-report" | "/demo" | "/trust" | "/faq" | "/b2b-interest";
+}> = [
+  { label: "Example", to: "/example-report" },
+  { label: "Demo", to: "/demo" },
+  { label: "Trust", to: "/trust" },
+  { label: "FAQ", to: "/faq" },
+  { label: "Partners", to: "/b2b-interest" },
+];
 
 type SiteHeaderProps = {
   /** "transparent" lets the header sit on top of a dark hero (used on `/`). */
@@ -51,7 +57,9 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
   return (
     <header
       role="banner"
-      className={["sticky top-0 z-30 w-full border-b transition-all duration-200", shellClass].join(" ")}
+      className={["sticky top-0 z-30 w-full border-b transition-all duration-200", shellClass].join(
+        " ",
+      )}
     >
       <div className="mx-auto flex h-full max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         {/* Logo + wordmark */}
@@ -70,10 +78,7 @@ export function SiteHeader({ variant = "solid" }: SiteHeaderProps) {
         </Link>
 
         {/* Primary nav — visible from md up; condensed on md, full on lg */}
-        <nav
-          className="hidden items-center gap-0.5 md:flex"
-          aria-label="Primary"
-        >
+        <nav className="hidden items-center gap-0.5 md:flex" aria-label="Primary">
           {NAV_LINKS.map((item) => (
             <Link
               key={item.label}

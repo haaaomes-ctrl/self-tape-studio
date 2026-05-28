@@ -33,6 +33,36 @@ export function SiteFooter() {
 
         <nav aria-label="Footer links" className="mt-10 flex flex-wrap gap-x-5 gap-y-2 text-sm">
           <Link
+            to="/example-report"
+            className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+          >
+            Example report
+          </Link>
+          <Link
+            to="/demo"
+            className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+          >
+            Demo
+          </Link>
+          <Link
+            to="/trust"
+            className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+          >
+            Trust
+          </Link>
+          <Link
+            to="/faq"
+            className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+          >
+            FAQ
+          </Link>
+          <Link
+            to="/b2b-interest"
+            className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
+          >
+            Partner interest
+          </Link>
+          <Link
             to="/credits"
             className="text-sidebar-foreground/75 transition-colors hover:text-sidebar-foreground"
           >
