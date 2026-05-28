@@ -320,11 +320,11 @@ membership_credit_usage AS (
       WHERE ledger.entry_type = 'consume'
     ), 0)::INTEGER AS credits_used
   FROM public.partner_memberships membership
-  LEFT JOIN public.credit_grants grant
-    ON grant.source_reference_type = 'partner_membership'
-   AND grant.source_reference_id = membership.id::TEXT
+  LEFT JOIN public.credit_grants grant_row
+    ON grant_row.source_reference_type = 'partner_membership'
+   AND grant_row.source_reference_id = membership.id::TEXT
   LEFT JOIN public.credit_ledger_entries ledger
-    ON ledger.credit_grant_id = grant.id
+    ON ledger.credit_grant_id = grant_row.id
   GROUP BY membership.id
 )
 SELECT
@@ -434,11 +434,11 @@ membership_credit_usage AS (
       WHERE ledger.entry_type = 'consume'
     ), 0)::INTEGER AS credits_used
   FROM public.partner_memberships membership
-  LEFT JOIN public.credit_grants grant
-    ON grant.source_reference_type = 'partner_membership'
-   AND grant.source_reference_id = membership.id::TEXT
+  LEFT JOIN public.credit_grants grant_row
+    ON grant_row.source_reference_type = 'partner_membership'
+   AND grant_row.source_reference_id = membership.id::TEXT
   LEFT JOIN public.credit_ledger_entries ledger
-    ON ledger.credit_grant_id = grant.id
+    ON ledger.credit_grant_id = grant_row.id
   GROUP BY membership.id
 )
 SELECT

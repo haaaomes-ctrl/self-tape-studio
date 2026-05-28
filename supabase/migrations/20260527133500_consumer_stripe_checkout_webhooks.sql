@@ -133,15 +133,15 @@ SELECT
   payment.stripe_payment_intent_id,
   payment.status,
   payment.credit_grant_id,
-  grant.remaining_credits,
-  grant.status AS credit_grant_status,
+  grant_row.remaining_credits,
+  grant_row.status AS credit_grant_status,
   payment.latest_stripe_event_id,
   payment.failure_code,
   payment.created_at,
   payment.updated_at
 FROM public.consumer_credit_payments payment
-LEFT JOIN public.credit_grants grant
-  ON grant.id = payment.credit_grant_id;
+LEFT JOIN public.credit_grants grant_row
+  ON grant_row.id = payment.credit_grant_id;
 
 REVOKE ALL ON TABLE public.consumer_credit_payment_reconciliation FROM PUBLIC, anon, authenticated;
 
@@ -374,7 +374,7 @@ BEGIN
         'amount_total_pence', payment.amount_total_pence,
         'currency', payment.currency
       ),
-      'consumer-credit-grant:' || idempotency_reference
+      'consumer-credit-grant_row:' || idempotency_reference
     );
     grant_created := TRUE;
   ELSE
