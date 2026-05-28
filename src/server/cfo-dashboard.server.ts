@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Tables } from "@/integrations/supabase/types";
 
 export const CFO_DASHBOARD_VERSION = "s10-1-ds-17-2026-05-27" as const;
 export const CFO_CHATGPT_CODEX_MONTHLY_COST_GBP = 200;
@@ -8,20 +9,15 @@ export const CFO_PAID_PACK_MARGIN_GUARDRAIL = 0.7;
 export const CFO_PLANNING_USD_TO_GBP_RATE = 0.8;
 export const CFO_REVENUE_MILESTONES_GBP = [100, 300, 1000, 2500] as const;
 
-// NOTE: These CFO dashboard views are not yet in the generated Supabase
-// types.ts (Tables<"..."> resolves to `never`). Until the types catch up,
-// model them as permissive records.
-type AnyRow = Record<string, any>;
-export type CfoMonthlyBurnRow = AnyRow;
-export type CfoRevenueMilestoneRow = AnyRow;
-export type CfoReportFundingRow = AnyRow;
-export type CfoReportCostByReportRow = AnyRow;
-export type CfoPartnerMarginRow = AnyRow;
-export type CfoFreeReportSubsidyRow = AnyRow;
-export type CfoPaidCreditLiabilityRow = AnyRow;
-export type CfoRevenueLedgerRow = AnyRow;
-export type CfoPartnerRevenueSourceRow = AnyRow;
-const db = supabaseAdmin as any;
+export type CfoMonthlyBurnRow = Tables<"cfo_monthly_burn_dashboard">;
+export type CfoRevenueMilestoneRow = Tables<"cfo_revenue_milestone_dashboard">;
+export type CfoReportFundingRow = Tables<"cfo_report_funding_dashboard">;
+export type CfoReportCostByReportRow = Tables<"cfo_report_cost_by_report_dashboard">;
+export type CfoPartnerMarginRow = Tables<"cfo_partner_margin_dashboard">;
+export type CfoFreeReportSubsidyRow = Tables<"cfo_free_report_subsidy_dashboard">;
+export type CfoPaidCreditLiabilityRow = Tables<"cfo_paid_credit_liability_summary">;
+export type CfoRevenueLedgerRow = Tables<"cfo_revenue_ledger_dashboard">;
+export type CfoPartnerRevenueSourceRow = Tables<"cfo_partner_revenue_source_dashboard">;
 
 export type CfoDashboardSnapshot = {
   version: typeof CFO_DASHBOARD_VERSION;
