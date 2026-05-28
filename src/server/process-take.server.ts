@@ -80,6 +80,7 @@ import {
   recordSecondReportEventIfNeeded,
   recordServerAnalyticsEvent,
 } from "./analytics-events.server";
+import { safeEnqueueCrmEmailForUser } from "./crm-messaging.server";
 import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
@@ -2452,6 +2453,21 @@ export async function runProcessTake(
         release_status: "refunded",
         synthetic_usage: activeReportCreditSyntheticUsage,
       });
+      void safeEnqueueCrmEmailForUser({
+        userId: take.user_id,
+        messageKey: "failed_report_credit_restored",
+        idempotencyKey: `crm:failed_report_credit_restored:${take.user_id}:take:${takeId}:${
+          activeReportCreditReservationId ?? "unknown"
+        }`,
+        templateData: {
+          object_type: "take",
+          object_id: takeId,
+          audition_id: audition.id,
+          failure_code: failureCode,
+          context_line:
+            "Your TapeCoach credit was returned automatically because the report did not complete.",
+        },
+      });
       activeReportCreditReservationId = null;
     } catch (creditErr) {
       console.error("[take-pipeline] report_credit_refund_failed", {
@@ -2608,6 +2624,19 @@ export async function runProcessTake(
         properties: {
           processing_phase: take.processing_phase,
           synthetic_usage: reservation.synthetic_usage,
+        },
+      });
+      void safeEnqueueCrmEmailForUser({
+        userId: take.user_id,
+        messageKey: "report_started",
+        idempotencyKey: `crm:report_started:${take.user_id}:take:${takeId}:${reservation.credit_reservation_id}`,
+        templateData: {
+          object_type: "take",
+          object_id: takeId,
+          audition_id: take.audition_id,
+          processing_phase: take.processing_phase,
+          synthetic_usage: reservation.synthetic_usage,
+          context_line: "Your self-tape report has started processing.",
         },
       });
     } catch (creditErr) {
@@ -5661,6 +5690,19 @@ export async function runProcessTake(
         userId: take.user_id,
         auditionId: take.audition_id,
         takeId,
+      });
+      void safeEnqueueCrmEmailForUser({
+        userId: take.user_id,
+        messageKey: "report_ready",
+        idempotencyKey: `crm:report_ready:${take.user_id}:take:${takeId}`,
+        templateData: {
+          object_type: "take",
+          object_id: takeId,
+          audition_id: take.audition_id,
+          overall_score: overall,
+          synthetic_usage: activeReportCreditSyntheticUsage,
+          context_line: "Your self-tape report is ready to review in TapeCoach.",
+        },
       });
       activeReportCreditReservationId = null;
     } catch (creditErr) {
