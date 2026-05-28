@@ -484,6 +484,13 @@ export type Database = {
             foreignKeyName: "credit_ledger_entries_take_id_fkey"
             columns: ["take_id"]
             isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["take_id"]
+          },
+          {
+            foreignKeyName: "credit_ledger_entries_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: false
             referencedRelation: "takes"
             referencedColumns: ["id"]
           },
@@ -680,6 +687,13 @@ export type Database = {
             foreignKeyName: "partner_codes_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_codes_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -689,6 +703,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_codes_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
           {
             foreignKeyName: "partner_codes_rotated_from_code_id_fkey"
@@ -784,6 +805,13 @@ export type Database = {
             foreignKeyName: "partner_credit_allocations_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_credit_allocations_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -793,6 +821,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_credit_allocations_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
           {
             foreignKeyName: "partner_credit_allocations_partner_membership_id_fkey"
@@ -868,6 +903,13 @@ export type Database = {
             foreignKeyName: "partner_credit_pool_events_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pool_events_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -877,6 +919,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pool_events_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
           {
             foreignKeyName: "partner_credit_pool_events_related_alert_id_fkey"
@@ -960,6 +1009,13 @@ export type Database = {
             foreignKeyName: "partner_credit_pools_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -969,6 +1025,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
         ]
       }
@@ -1066,6 +1129,13 @@ export type Database = {
             foreignKeyName: "partner_memberships_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_memberships_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -1075,6 +1145,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_memberships_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
         ]
       }
@@ -1218,6 +1295,13 @@ export type Database = {
             foreignKeyName: "partner_usage_alerts_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_usage_alerts_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -1227,6 +1311,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_usage_alerts_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
         ]
       }
@@ -1305,6 +1396,13 @@ export type Database = {
             foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -1314,6 +1412,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
           {
             foreignKeyName: "partner_visibility_acceptances_partner_membership_id_fkey"
@@ -1462,6 +1567,13 @@ export type Database = {
             foreignKeyName: "report_credit_reservations_take_id_fkey"
             columns: ["take_id"]
             isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["take_id"]
+          },
+          {
+            foreignKeyName: "report_credit_reservations_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: false
             referencedRelation: "takes"
             referencedColumns: ["id"]
           },
@@ -1490,6 +1602,112 @@ export type Database = {
           reason?: string
         }
         Relationships: []
+      }
+      take_ai_usage: {
+        Row: {
+          audition_id: string | null
+          completion_tokens: number | null
+          cost_source: Database["public"]["Enums"]["ai_usage_cost_source"]
+          created_at: string
+          duration_status: string | null
+          estimated_cost_usd: number
+          failure_reason: string | null
+          fallback_used: boolean
+          http_status: number | null
+          id: string
+          latency_ms: number
+          metadata: Json
+          model: string
+          prompt_tokens: number | null
+          prompt_version: string | null
+          provider: string
+          provider_contract: string | null
+          repair_attempt: boolean
+          status: Database["public"]["Enums"]["ai_usage_status"]
+          step: Database["public"]["Enums"]["ai_usage_step"]
+          success: boolean
+          take_id: string | null
+          total_tokens: number | null
+          user_id: string | null
+          video_duration_seconds: number | null
+        }
+        Insert: {
+          audition_id?: string | null
+          completion_tokens?: number | null
+          cost_source?: Database["public"]["Enums"]["ai_usage_cost_source"]
+          created_at?: string
+          duration_status?: string | null
+          estimated_cost_usd?: number
+          failure_reason?: string | null
+          fallback_used?: boolean
+          http_status?: number | null
+          id?: string
+          latency_ms: number
+          metadata?: Json
+          model: string
+          prompt_tokens?: number | null
+          prompt_version?: string | null
+          provider?: string
+          provider_contract?: string | null
+          repair_attempt?: boolean
+          status: Database["public"]["Enums"]["ai_usage_status"]
+          step: Database["public"]["Enums"]["ai_usage_step"]
+          success: boolean
+          take_id?: string | null
+          total_tokens?: number | null
+          user_id?: string | null
+          video_duration_seconds?: number | null
+        }
+        Update: {
+          audition_id?: string | null
+          completion_tokens?: number | null
+          cost_source?: Database["public"]["Enums"]["ai_usage_cost_source"]
+          created_at?: string
+          duration_status?: string | null
+          estimated_cost_usd?: number
+          failure_reason?: string | null
+          fallback_used?: boolean
+          http_status?: number | null
+          id?: string
+          latency_ms?: number
+          metadata?: Json
+          model?: string
+          prompt_tokens?: number | null
+          prompt_version?: string | null
+          provider?: string
+          provider_contract?: string | null
+          repair_attempt?: boolean
+          status?: Database["public"]["Enums"]["ai_usage_status"]
+          step?: Database["public"]["Enums"]["ai_usage_step"]
+          success?: boolean
+          take_id?: string | null
+          total_tokens?: number | null
+          user_id?: string | null
+          video_duration_seconds?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "take_ai_usage_audition_id_fkey"
+            columns: ["audition_id"]
+            isOneToOne: false
+            referencedRelation: "auditions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "take_ai_usage_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["take_id"]
+          },
+          {
+            foreignKeyName: "take_ai_usage_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: false
+            referencedRelation: "takes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       take_qa_traces: {
         Row: {
@@ -1529,6 +1747,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "take_qa_traces_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: true
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["take_id"]
+          },
           {
             foreignKeyName: "take_qa_traces_take_id_fkey"
             columns: ["take_id"]
@@ -1677,6 +1902,65 @@ export type Database = {
       }
     }
     Views: {
+      ai_usage_cost_dashboard: {
+        Row: {
+          ai_call_count: number | null
+          average_report_cost_usd: number | null
+          estimated_total_cost_usd: number | null
+          failed_call_count: number | null
+          fallback_call_count: number | null
+          fallback_rate: number | null
+          p50_report_cost_usd: number | null
+          p50_watch_threshold_usd: number | null
+          p95_report_cost_usd: number | null
+          p95_watch_threshold_usd: number | null
+          planning_baseline_6_7_min_high_usd: number | null
+          planning_baseline_6_7_min_low_usd: number | null
+          planning_baseline_max_usd: number | null
+          planning_baseline_min_usd: number | null
+          repair_call_count: number | null
+          repair_rate: number | null
+          report_count: number | null
+        }
+        Relationships: []
+      }
+      ai_usage_cost_grouping_summary: {
+        Row: {
+          ai_call_count: number | null
+          average_report_cost_usd: number | null
+          credit_source_group: string | null
+          duration_status: string | null
+          estimated_total_cost_usd: number | null
+          fallback_rate: number | null
+          p50_report_cost_usd: number | null
+          p95_report_cost_usd: number | null
+          partner_id: string | null
+          partner_name: string | null
+          partner_type: Database["public"]["Enums"]["partner_type"] | null
+          repair_rate: number | null
+          report_count: number | null
+        }
+        Relationships: []
+      }
+      ai_usage_model_cost_summary: {
+        Row: {
+          average_latency_ms: number | null
+          call_count: number | null
+          completion_tokens: number | null
+          estimated_cost_usd: number | null
+          fallback_call_count: number | null
+          model: string | null
+          p50_latency_ms: number | null
+          p95_latency_ms: number | null
+          prompt_tokens: number | null
+          provider: string | null
+          repair_call_count: number | null
+          status: Database["public"]["Enums"]["ai_usage_status"] | null
+          step: Database["public"]["Enums"]["ai_usage_step"] | null
+          total_tokens: number | null
+        }
+        Relationships: []
+      }
       consumer_credit_payment_reconciliation: {
         Row: {
           amount_total_pence: number | null
@@ -1804,6 +2088,13 @@ export type Database = {
             foreignKeyName: "partner_credit_pools_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -1813,6 +2104,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_credit_pools_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
         ]
       }
@@ -1845,6 +2143,13 @@ export type Database = {
             foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
             columns: ["partner_id"]
             isOneToOne: false
+            referencedRelation: "ai_usage_cost_grouping_summary"
+            referencedColumns: ["partner_id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
             referencedRelation: "partner_aggregate_dashboard_summary"
             referencedColumns: ["partner_id"]
           },
@@ -1854,6 +2159,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "partners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "partner_visibility_acceptances_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["partner_id"]
           },
           {
             foreignKeyName: "partner_visibility_acceptances_partner_membership_id_fkey"
@@ -1954,7 +2266,54 @@ export type Database = {
             foreignKeyName: "report_credit_reservations_take_id_fkey"
             columns: ["take_id"]
             isOneToOne: false
+            referencedRelation: "take_ai_report_costs"
+            referencedColumns: ["take_id"]
+          },
+          {
+            foreignKeyName: "report_credit_reservations_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: false
             referencedRelation: "takes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      take_ai_report_costs: {
+        Row: {
+          ai_call_count: number | null
+          audition_id: string | null
+          commercial_metrics_excluded: boolean | null
+          completion_tokens: number | null
+          credit_source: Database["public"]["Enums"]["credit_source"] | null
+          duration_status: string | null
+          failed_call_count: number | null
+          fallback_call_count: number | null
+          last_ai_usage_at: string | null
+          overall_score: number | null
+          partner_id: string | null
+          partner_name: string | null
+          partner_type: Database["public"]["Enums"]["partner_type"] | null
+          prompt_tokens: number | null
+          repair_call_count: number | null
+          report_cost_source: string | null
+          report_estimated_cost_usd: number | null
+          successful_call_count: number | null
+          synthetic_usage: boolean | null
+          take_created_at: string | null
+          take_id: string | null
+          take_status: string | null
+          take_updated_at: string | null
+          total_latency_ms: number | null
+          total_tokens: number | null
+          user_id: string | null
+          video_duration_seconds: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "takes_audition_id_fkey"
+            columns: ["audition_id"]
+            isOneToOne: false
+            referencedRelation: "auditions"
             referencedColumns: ["id"]
           },
         ]
@@ -2060,6 +2419,10 @@ export type Database = {
       }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
+        Returns: number
+      }
+      estimate_ai_report_cost_usd: {
+        Args: { p_duration_seconds?: number }
         Returns: number
       }
       expire_partner_codes: { Args: { p_now?: string }; Returns: number }
@@ -2250,6 +2613,18 @@ export type Database = {
       }
     }
     Enums: {
+      ai_usage_cost_source:
+        | "planning_baseline"
+        | "duration_baseline"
+        | "token_usage_available"
+      ai_usage_status: "success" | "failure" | "timeout" | "cancelled"
+      ai_usage_step:
+        | "brief_extraction"
+        | "evidence_pass"
+        | "single_pass_report"
+        | "report_polish"
+        | "fallback"
+        | "repair"
       consumer_credit_payment_status:
         | "checkout_created"
         | "checkout_completed"
@@ -2450,6 +2825,20 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_usage_cost_source: [
+        "planning_baseline",
+        "duration_baseline",
+        "token_usage_available",
+      ],
+      ai_usage_status: ["success", "failure", "timeout", "cancelled"],
+      ai_usage_step: [
+        "brief_extraction",
+        "evidence_pass",
+        "single_pass_report",
+        "report_polish",
+        "fallback",
+        "repair",
+      ],
       consumer_credit_payment_status: [
         "checkout_created",
         "checkout_completed",
