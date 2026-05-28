@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_compliance: {
+        Row: {
+          account_route: string
+          account_type: string
+          age_band_declaration: string
+          ai_disclaimer_accepted_at: string
+          ai_disclaimer_version: string
+          created_at: string
+          marketing_consent: boolean
+          marketing_consent_at: string | null
+          parent_guardian_attested: boolean
+          parent_guardian_attested_at: string | null
+          parent_managed: boolean
+          privacy_accepted_at: string
+          privacy_version: string
+          terms_accepted_at: string
+          terms_version: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_route: string
+          account_type: string
+          age_band_declaration: string
+          ai_disclaimer_accepted_at: string
+          ai_disclaimer_version: string
+          created_at?: string
+          marketing_consent?: boolean
+          marketing_consent_at?: string | null
+          parent_guardian_attested?: boolean
+          parent_guardian_attested_at?: string | null
+          parent_managed?: boolean
+          privacy_accepted_at: string
+          privacy_version: string
+          terms_accepted_at: string
+          terms_version: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_route?: string
+          account_type?: string
+          age_band_declaration?: string
+          ai_disclaimer_accepted_at?: string
+          ai_disclaimer_version?: string
+          created_at?: string
+          marketing_consent?: boolean
+          marketing_consent_at?: string | null
+          parent_guardian_attested?: boolean
+          parent_guardian_attested_at?: string | null
+          parent_managed?: boolean
+          privacy_accepted_at?: string
+          privacy_version?: string
+          terms_accepted_at?: string
+          terms_version?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       app_config: {
         Row: {
           daily_submission_cap: number
