@@ -152,6 +152,57 @@ export type Database = {
         }
         Relationships: []
       }
+      consumer_credit_products: {
+        Row: {
+          active: boolean
+          created_at: string
+          credit_amount: number
+          currency: string
+          description: string
+          display_context: string
+          display_order: number
+          founding_price: boolean
+          id: string
+          name: string
+          sku: string
+          stripe_price_id: string | null
+          unit_amount_pence: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          credit_amount: number
+          currency?: string
+          description?: string
+          display_context?: string
+          display_order?: number
+          founding_price?: boolean
+          id?: string
+          name: string
+          sku: string
+          stripe_price_id?: string | null
+          unit_amount_pence: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          credit_amount?: number
+          currency?: string
+          description?: string
+          display_context?: string
+          display_order?: number
+          founding_price?: boolean
+          id?: string
+          name?: string
+          sku?: string
+          stripe_price_id?: string | null
+          unit_amount_pence?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
