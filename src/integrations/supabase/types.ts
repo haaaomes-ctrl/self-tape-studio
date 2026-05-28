@@ -14,6 +14,66 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_compliance: {
+        Row: {
+          account_route: string
+          account_type: string
+          age_band_declaration: string
+          ai_disclaimer_accepted_at: string
+          ai_disclaimer_version: string
+          created_at: string
+          marketing_consent: boolean
+          marketing_consent_at: string | null
+          parent_guardian_attested: boolean
+          parent_guardian_attested_at: string | null
+          parent_managed: boolean
+          privacy_accepted_at: string
+          privacy_version: string
+          terms_accepted_at: string
+          terms_version: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_route: string
+          account_type: string
+          age_band_declaration: string
+          ai_disclaimer_accepted_at: string
+          ai_disclaimer_version: string
+          created_at?: string
+          marketing_consent?: boolean
+          marketing_consent_at?: string | null
+          parent_guardian_attested?: boolean
+          parent_guardian_attested_at?: string | null
+          parent_managed?: boolean
+          privacy_accepted_at: string
+          privacy_version: string
+          terms_accepted_at: string
+          terms_version: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_route?: string
+          account_type?: string
+          age_band_declaration?: string
+          ai_disclaimer_accepted_at?: string
+          ai_disclaimer_version?: string
+          created_at?: string
+          marketing_consent?: boolean
+          marketing_consent_at?: string | null
+          parent_guardian_attested?: boolean
+          parent_guardian_attested_at?: string | null
+          parent_managed?: boolean
+          privacy_accepted_at?: string
+          privacy_version?: string
+          terms_accepted_at?: string
+          terms_version?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       app_config: {
         Row: {
           daily_submission_cap: number
@@ -91,6 +151,199 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      consumer_credit_products: {
+        Row: {
+          active: boolean
+          created_at: string
+          credit_amount: number
+          currency: string
+          description: string
+          display_context: string
+          display_order: number
+          founding_price: boolean
+          id: string
+          name: string
+          sku: string
+          stripe_price_id: string | null
+          unit_amount_pence: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          credit_amount: number
+          currency?: string
+          description?: string
+          display_context?: string
+          display_order?: number
+          founding_price?: boolean
+          id?: string
+          name: string
+          sku: string
+          stripe_price_id?: string | null
+          unit_amount_pence: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          credit_amount?: number
+          currency?: string
+          description?: string
+          display_context?: string
+          display_order?: number
+          founding_price?: boolean
+          id?: string
+          name?: string
+          sku?: string
+          stripe_price_id?: string | null
+          unit_amount_pence?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      credit_grants: {
+        Row: {
+          admin_reason: string | null
+          created_at: string
+          expires_at: string | null
+          granted_at: string
+          granted_by_user_id: string | null
+          id: string
+          metadata: Json
+          original_credits: number
+          remaining_credits: number
+          rollover_policy: Database["public"]["Enums"]["credit_rollover_policy"]
+          source: Database["public"]["Enums"]["credit_source"]
+          source_label: string | null
+          source_reference_id: string | null
+          source_reference_type: string | null
+          status: Database["public"]["Enums"]["credit_grant_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_reason?: string | null
+          created_at?: string
+          expires_at?: string | null
+          granted_at?: string
+          granted_by_user_id?: string | null
+          id?: string
+          metadata?: Json
+          original_credits: number
+          remaining_credits: number
+          rollover_policy: Database["public"]["Enums"]["credit_rollover_policy"]
+          source: Database["public"]["Enums"]["credit_source"]
+          source_label?: string | null
+          source_reference_id?: string | null
+          source_reference_type?: string | null
+          status?: Database["public"]["Enums"]["credit_grant_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_reason?: string | null
+          created_at?: string
+          expires_at?: string | null
+          granted_at?: string
+          granted_by_user_id?: string | null
+          id?: string
+          metadata?: Json
+          original_credits?: number
+          remaining_credits?: number
+          rollover_policy?: Database["public"]["Enums"]["credit_rollover_policy"]
+          source?: Database["public"]["Enums"]["credit_source"]
+          source_label?: string | null
+          source_reference_id?: string | null
+          source_reference_type?: string | null
+          status?: Database["public"]["Enums"]["credit_grant_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      credit_ledger_entries: {
+        Row: {
+          admin_actor_user_id: string | null
+          admin_reason: string | null
+          audition_id: string | null
+          created_at: string
+          credit_delta: number
+          credit_grant_id: string | null
+          entry_type: Database["public"]["Enums"]["credit_ledger_entry_type"]
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          report_generated_at: string | null
+          source: Database["public"]["Enums"]["credit_source"]
+          source_reference_id: string | null
+          source_reference_type: string | null
+          take_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_actor_user_id?: string | null
+          admin_reason?: string | null
+          audition_id?: string | null
+          created_at?: string
+          credit_delta: number
+          credit_grant_id?: string | null
+          entry_type: Database["public"]["Enums"]["credit_ledger_entry_type"]
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          report_generated_at?: string | null
+          source: Database["public"]["Enums"]["credit_source"]
+          source_reference_id?: string | null
+          source_reference_type?: string | null
+          take_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_actor_user_id?: string | null
+          admin_reason?: string | null
+          audition_id?: string | null
+          created_at?: string
+          credit_delta?: number
+          credit_grant_id?: string | null
+          entry_type?: Database["public"]["Enums"]["credit_ledger_entry_type"]
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          report_generated_at?: string | null
+          source?: Database["public"]["Enums"]["credit_source"]
+          source_reference_id?: string | null
+          source_reference_type?: string | null
+          take_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_ledger_entries_audition_id_fkey"
+            columns: ["audition_id"]
+            isOneToOne: false
+            referencedRelation: "auditions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_ledger_entries_credit_grant_id_fkey"
+            columns: ["credit_grant_id"]
+            isOneToOne: false
+            referencedRelation: "credit_grants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_ledger_entries_take_id_fkey"
+            columns: ["take_id"]
+            isOneToOne: false
+            referencedRelation: "takes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       email_send_log: {
         Row: {
@@ -260,6 +513,7 @@ export type Database = {
           compliance_flags: Json | null
           confidence: number | null
           created_at: string
+          credit_consumption_ledger_entry_id: string | null
           error_message: string | null
           id: string
           mux_asset_id: string | null
@@ -290,6 +544,7 @@ export type Database = {
           compliance_flags?: Json | null
           confidence?: number | null
           created_at?: string
+          credit_consumption_ledger_entry_id?: string | null
           error_message?: string | null
           id?: string
           mux_asset_id?: string | null
@@ -320,6 +575,7 @@ export type Database = {
           compliance_flags?: Json | null
           confidence?: number | null
           created_at?: string
+          credit_consumption_ledger_entry_id?: string | null
           error_message?: string | null
           id?: string
           mux_asset_id?: string | null
@@ -349,11 +605,31 @@ export type Database = {
             referencedRelation: "auditions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "takes_credit_consumption_ledger_entry_id_fkey"
+            columns: ["credit_consumption_ledger_entry_id"]
+            isOneToOne: false
+            referencedRelation: "credit_ledger_entries"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      credit_source_finance_summary: {
+        Row: {
+          admin_adjustment_credits: number | null
+          consumed_credits: number | null
+          entry_count: number | null
+          expired_credits: number | null
+          first_entry_at: string | null
+          granted_credits: number | null
+          latest_entry_at: string | null
+          net_credits: number | null
+          source: Database["public"]["Enums"]["credit_source"] | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       delete_email: {
@@ -372,6 +648,23 @@ export type Database = {
           quota_enabled: boolean
         }[]
       }
+      grant_funded_credits: {
+        Args: {
+          p_admin_actor_user_id?: string
+          p_admin_reason?: string
+          p_credit_amount: number
+          p_expires_at?: string
+          p_granted_at?: string
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_source: Database["public"]["Enums"]["credit_source"]
+          p_source_label?: string
+          p_source_reference_id?: string
+          p_source_reference_type?: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       move_to_dlq: {
         Args: {
           dlq_name: string
@@ -389,9 +682,51 @@ export type Database = {
           read_ct: number
         }[]
       }
+      record_admin_credit_adjustment: {
+        Args: {
+          p_admin_actor_user_id?: string
+          p_admin_reason?: string
+          p_credit_delta: number
+          p_credit_grant_id?: string
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_source: Database["public"]["Enums"]["credit_source"]
+          p_user_id: string
+        }
+        Returns: string
+      }
+      record_credit_consumption: {
+        Args: {
+          p_audition_id?: string
+          p_credit_amount: number
+          p_credit_grant_id: string
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_report_generated_at?: string
+          p_take_id?: string
+          p_user_id: string
+        }
+        Returns: string
+      }
     }
     Enums: {
-      [_ in never]: never
+      credit_grant_status: "active" | "exhausted" | "expired" | "revoked"
+      credit_ledger_entry_type:
+        | "grant"
+        | "consume"
+        | "admin_adjustment"
+        | "expiry_adjustment"
+      credit_rollover_policy: "rollover" | "no_rollover" | "funding_period"
+      credit_source:
+        | "free_signup"
+        | "free_monthly"
+        | "school_funded"
+        | "coach_funded"
+        | "agent_funded"
+        | "platform_funded"
+        | "sponsor_campaign"
+        | "user_paid"
+        | "admin_grant"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -518,6 +853,26 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      credit_grant_status: ["active", "exhausted", "expired", "revoked"],
+      credit_ledger_entry_type: [
+        "grant",
+        "consume",
+        "admin_adjustment",
+        "expiry_adjustment",
+      ],
+      credit_rollover_policy: ["rollover", "no_rollover", "funding_period"],
+      credit_source: [
+        "free_signup",
+        "free_monthly",
+        "school_funded",
+        "coach_funded",
+        "agent_funded",
+        "platform_funded",
+        "sponsor_campaign",
+        "user_paid",
+        "admin_grant",
+      ],
+    },
   },
 } as const
