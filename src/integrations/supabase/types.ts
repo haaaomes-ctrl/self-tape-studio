@@ -934,6 +934,78 @@ export type Database = {
           },
         ]
       }
+      partner_package_presets: {
+        Row: {
+          active: boolean
+          billing_period: string
+          created_at: string
+          credits_per_member: number
+          currency: string
+          description: string
+          display_context: string
+          display_order: number
+          id: string
+          included_seats: number
+          metadata: Json
+          name: string
+          package_tier: string
+          partner_type: Database["public"]["Enums"]["partner_type"]
+          per_user_cap: number
+          pool_period_type: Database["public"]["Enums"]["partner_credit_pool_period_type"]
+          progress_visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"]
+          sku: string
+          total_credits: number
+          unit_amount_pence: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          billing_period: string
+          created_at?: string
+          credits_per_member: number
+          currency?: string
+          description?: string
+          display_context: string
+          display_order?: number
+          id?: string
+          included_seats: number
+          metadata?: Json
+          name: string
+          package_tier: string
+          partner_type: Database["public"]["Enums"]["partner_type"]
+          per_user_cap: number
+          pool_period_type: Database["public"]["Enums"]["partner_credit_pool_period_type"]
+          progress_visibility_scope: Database["public"]["Enums"]["partner_visibility_scope"]
+          sku: string
+          total_credits: number
+          unit_amount_pence: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          billing_period?: string
+          created_at?: string
+          credits_per_member?: number
+          currency?: string
+          description?: string
+          display_context?: string
+          display_order?: number
+          id?: string
+          included_seats?: number
+          metadata?: Json
+          name?: string
+          package_tier?: string
+          partner_type?: Database["public"]["Enums"]["partner_type"]
+          per_user_cap?: number
+          pool_period_type?: Database["public"]["Enums"]["partner_credit_pool_period_type"]
+          progress_visibility_scope?: Database["public"]["Enums"]["partner_visibility_scope"]
+          sku?: string
+          total_credits?: number
+          unit_amount_pence?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       partner_usage_alerts: {
         Row: {
           acknowledged_at: string | null
