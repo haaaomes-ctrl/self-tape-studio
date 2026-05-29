@@ -9,6 +9,7 @@ import {
   canDeletePaths,
   canZipPaths,
   filterAndSortArtifacts,
+  type SortMode,
 } from "@/lib/admin-storage-view-model";
 import {
   listAllArtifacts,
@@ -19,15 +20,12 @@ import {
   type ArtifactEntry,
 } from "@/lib/admin-storage.functions";
 
-
 function RouteErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   const status = (error as unknown as { status?: number }).status;
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
-      <h1 className="font-display text-2xl font-bold text-foreground">
-        Storage downloads — error
-      </h1>
+      <h1 className="font-display text-2xl font-bold text-foreground">Storage downloads — error</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Something failed inside the admin storage page. Details below.
       </p>
@@ -58,10 +56,7 @@ function RouteErrorComponent({ error, reset }: { error: Error; reset: () => void
 
 export const Route = createFileRoute("/admin/storage-downloads")({
   head: () => ({
-    meta: [
-      { title: "Admin Storage Downloads" },
-      { name: "robots", content: "noindex,nofollow" },
-    ],
+    meta: [{ title: "Admin Storage Downloads" }, { name: "robots", content: "noindex,nofollow" }],
   }),
   component: StorageDownloadsPage,
   errorComponent: RouteErrorComponent,
@@ -113,7 +108,6 @@ function StorageDownloadsPage() {
   const whoAmI = useServerFn(whoAmIAdmin);
   const zipSelected = useServerFn(zipSelectedArtifacts);
   const deleteSelected = useServerFn(deleteSelectedArtifacts);
-
 
   const [whoState, setWhoState] = useState<{
     loading: boolean;
@@ -188,12 +182,24 @@ function StorageDownloadsPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
-      <h1 className="font-display text-3xl font-bold text-foreground">
-        Admin Storage Downloads
-      </h1>
+      <h1 className="font-display text-3xl font-bold text-foreground">Admin Storage Downloads</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Private bucket: <code>qa-artifacts</code>. Signed URLs expire in 1 hour.
       </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild variant="outline">
+          <Link to="/admin">Operations</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link to="/admin/finance">Finance</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link to="/admin/crm">CRM</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link to="/admin/analytics">Analytics</Link>
+        </Button>
+      </div>
 
       {/* Diagnostics */}
       <div className="mt-6 rounded-md border border-border bg-card p-4 text-sm">
@@ -211,9 +217,7 @@ function StorageDownloadsPage() {
           <dd>{String(serverIsAdmin)}</dd>
           <dt>server.error</dt>
           <dd>
-            {whoState.error
-              ? `${whoState.error.status ?? ""} ${whoState.error.message}`
-              : "—"}
+            {whoState.error ? `${whoState.error.status ?? ""} ${whoState.error.message}` : "—"}
           </dd>
           <dt>files.count</dt>
           <dd>{filesState.data?.length ?? 0}</dd>
@@ -231,7 +235,10 @@ function StorageDownloadsPage() {
         <Panel>Checking your app login session…</Panel>
       ) : !user ? (
         <Panel>
-          <p>You must sign in to the app with the authorized admin account to access storage downloads.</p>
+          <p>
+            You must sign in to the app with the authorized admin account to access storage
+            downloads.
+          </p>
           <div className="mt-4">
             <Button asChild>
               <Link to="/login">Sign in to continue</Link>
@@ -276,20 +283,12 @@ function StorageDownloadsPage() {
   );
 }
 
-function Panel({
-  children,
-  tone = "info",
-}: {
-  children: React.ReactNode;
-  tone?: "info" | "warn";
-}) {
+function Panel({ children, tone = "info" }: { children: React.ReactNode; tone?: "info" | "warn" }) {
   return (
     <div
       className={
         "mt-6 rounded-md border p-4 text-sm " +
-        (tone === "warn"
-          ? "border-destructive/40 bg-destructive/5"
-          : "border-border bg-card")
+        (tone === "warn" ? "border-destructive/40 bg-destructive/5" : "border-border bg-card")
       }
     >
       {children}
@@ -297,72 +296,273 @@ function Panel({
   );
 }
 
-function FilesUI({ state, reload, downloadOne, zipSelected, deleteSelected, busyPath, bulk }: any) {
-  const [sortMode, setSortMode] = useState("newest");
+type FilesUiProps = {
+  state: {
+    loading: boolean;
+    data: ArtifactEntry[] | null;
+    error: ServerError;
+  };
+  reload: () => Promise<void>;
+  downloadOne: (entry: ArtifactEntry) => Promise<void>;
+  zipSelected: (args: { data: { paths: string[] } }) => Promise<{
+    signedUrl: string;
+    filename: string;
+  }>;
+  deleteSelected: (args: { data: { paths: string[] } }) => Promise<{
+    results: Array<{ ok: boolean; error?: string | null }>;
+  }>;
+  busyPath: string | null;
+  bulk: { running: boolean };
+};
+
+function FilesUI({
+  state,
+  reload,
+  downloadOne,
+  zipSelected,
+  deleteSelected,
+  busyPath,
+  bulk,
+}: FilesUiProps) {
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [filter, setFilter] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
   const [zipError, setZipError] = useState<string | null>(null);
-  const data = state.data ?? [];
-  const sorted = useMemo(() => filterAndSortArtifacts(data, filter, sortMode as any), [data, filter, sortMode]);
-  const selectedPaths = sorted.filter((f: ArtifactEntry) => selected[f.path]).map((f: ArtifactEntry) => f.path);
-  const selectedSize = sorted.filter((f: ArtifactEntry) => selected[f.path]).reduce((n: number, f: ArtifactEntry) => n + f.size, 0);
+  const data = useMemo(() => state.data ?? [], [state.data]);
+  const sorted = useMemo(
+    () => filterAndSortArtifacts(data, filter, sortMode),
+    [data, filter, sortMode],
+  );
+  const selectedPaths = sorted
+    .filter((f: ArtifactEntry) => selected[f.path])
+    .map((f: ArtifactEntry) => f.path);
+  const selectedSize = sorted
+    .filter((f: ArtifactEntry) => selected[f.path])
+    .reduce((n: number, f: ArtifactEntry) => n + f.size, 0);
   const visibleZipGuard = canZipPaths(sorted.map((f: ArtifactEntry) => f.path));
   const selectedZipGuard = canZipPaths(selectedPaths);
   const deleteGuard = canDeletePaths(selectedPaths);
 
-  return <>
-    <div className="mt-6 flex flex-wrap gap-2">
-      <Button onClick={reload} variant="outline">Refresh</Button>
-      <Button onClick={async ()=>{if(!visibleZipGuard.ok) return; setZipError(null); try { const r=await zipSelected({data:{paths:sorted.map((f:ArtifactEntry)=>f.path)}}); triggerDownload(r.signedUrl, r.filename);} catch (e) { const message = e instanceof Error ? e.message : String(e); setZipError(`Zip download failed: ${message}`); }}} disabled={!visibleZipGuard.ok}>Download all visible</Button>
-      <Button onClick={async ()=>{if(!selectedZipGuard.ok) return; setZipError(null); try { const r=await zipSelected({data:{paths:selectedPaths}}); triggerDownload(r.signedUrl, r.filename);} catch (e) { const message = e instanceof Error ? e.message : String(e); setZipError(`Zip download failed: ${message}`); }}} disabled={!selectedZipGuard.ok}>Download selected zip</Button>
-      <Button
-        variant="destructive"
-        onClick={async () => {
-          if (!deleteGuard.ok) return;
-          setDeleteError(null);
-          setDeleteSummary(null);
-          if (
-            !confirm(
-              `You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete ${selectedPaths.length} files?\n${selectedPaths.slice(0, 3).join("\n")}`,
-            )
-          )
-            return;
-          try {
-            const result = await deleteSelected({ data: { paths: selectedPaths } });
-            const rows = (result?.results ?? []) as Array<{ ok: boolean }>;
-            const failed = rows.filter((r) => !r.ok).length;
-            setDeleteSummary(`Deleted ${rows.length - failed} of ${rows.length} selected files.`);
-            if (failed > 0) {
-              setDeleteError(`Delete failed for ${failed} file(s).`);
-            } else {
-              await reload();
-              setSelected({});
+  return (
+    <>
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Button onClick={reload} variant="outline">
+          Refresh
+        </Button>
+        <Button
+          onClick={async () => {
+            if (!visibleZipGuard.ok) return;
+            setZipError(null);
+            try {
+              const r = await zipSelected({
+                data: { paths: sorted.map((f: ArtifactEntry) => f.path) },
+              });
+              triggerDownload(r.signedUrl, r.filename);
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e);
+              setZipError(`Zip download failed: ${message}`);
             }
-          } catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
-            setDeleteError(`Delete failed: ${message}`);
-          }
-        }}
-        disabled={!deleteGuard.ok}
-      >
-        Delete selected
-      </Button>
-      <input className="border rounded px-2 py-1 text-sm" placeholder="Filter take_id / analysis / path / type / ext" value={filter} onChange={(e)=>setFilter(e.target.value)} />
-      <select className="border rounded px-2 py-1 text-sm" value={sortMode} onChange={(e)=>setSortMode(e.target.value)}>
-        <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name_asc">Path A–Z</option><option value="name_desc">Path Z–A</option><option value="size_asc">Size small→large</option><option value="size_desc">Size large→small</option><option value="type">Artefact type</option><option value="take">take_id</option><option value="analysis">analysis_run_id</option><option value="comparison">comparison_run_id</option>
-      </select>
-    </div>
-    <p className="mt-2 text-xs text-muted-foreground">Selected: {selectedPaths.length} · {formatBytes(selectedSize)}</p>
-    {!visibleZipGuard.ok ? <p className="text-xs text-amber-600">{visibleZipGuard.reason}</p> : null}
-    {selectedPaths.length > 0 && !selectedZipGuard.ok ? <p className="text-xs text-amber-600">Too many selected files to zip at once. Narrow the filter or select up to 500 files.</p> : null}
-    {zipError ? <p className="text-xs text-destructive">{zipError}</p> : null}
-    {selectedPaths.length > 0 && !deleteGuard.ok ? <p className="text-xs text-amber-600">Too many selected files to delete at once. Select up to 500 files.</p> : null}
-    {deleteSummary ? <p className="text-xs text-emerald-700">{deleteSummary}</p> : null}
-    {deleteError ? <p className="text-xs text-destructive">{deleteError}</p> : null}
-    <div className="mt-4 overflow-x-auto rounded-md border border-border">
-      {state.loading ? <div className="p-6 text-sm text-muted-foreground">Loading files…</div> : state.error ? <div className="p-6 text-sm text-destructive">Error loading files: {state.error.message}</div> : !sorted.length ? <div className="p-6 text-sm text-muted-foreground">No files found.</div> : <table className="w-full text-sm"><thead className="bg-muted"><tr><th className="px-2"><input type="checkbox" checked={sorted.length>0 && selectedPaths.length===sorted.length} onChange={(e)=>setSelected(e.target.checked?Object.fromEntries(sorted.map((f:ArtifactEntry)=>[f.path,true])):{})} /></th><th>Path</th><th>Display</th><th>Type</th><th>take_id</th><th>analysis_run_id</th><th>comparison_run_id</th><th>Size</th><th>Last modified</th><th>Content-Type</th><th/></tr></thead><tbody>{sorted.map((f:ArtifactEntry)=><tr key={f.path} className="border-t"><td className="px-2"><input type="checkbox" checked={!!selected[f.path]} onChange={(e)=>setSelected((s:any)=>({...s,[f.path]:e.target.checked}))}/></td><td className="font-mono text-xs">{f.path}</td><td>{f.displayName}</td><td>{f.artifactType}</td><td>{f.takeId??"—"}</td><td>{f.analysisRunId??"—"}</td><td>{f.comparisonRunId??"—"}</td><td>{formatBytes(f.size)}</td><td>{f.lastModified?new Date(f.lastModified).toLocaleString():"—"}</td><td>{f.contentType??"—"}</td><td className="space-x-2"><Button size="sm" variant="outline" onClick={()=>downloadOne(f)} disabled={busyPath===f.path||bulk.running}>Download</Button><Button size="sm" variant="destructive" onClick={async()=>{ setDeleteError(null); setDeleteSummary(null); if(!confirm(`You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete 1 file?\n${f.path}`)) return; try { const result = await deleteSelected({data:{paths:[f.path]}}); const failed = (result?.results ?? []).filter((r:any)=>!r.ok).length; if (failed > 0) { setDeleteError(`Delete failed for ${failed} file(s).`); return; } setDeleteSummary('Deleted 1 file.'); await reload(); } catch (e) { const message = e instanceof Error ? e.message : String(e); setDeleteError(`Delete failed: ${message}`); }}}>Delete</Button></td></tr>)}</tbody></table>}
-    </div>
-  </>
+          }}
+          disabled={!visibleZipGuard.ok}
+        >
+          Download all visible
+        </Button>
+        <Button
+          onClick={async () => {
+            if (!selectedZipGuard.ok) return;
+            setZipError(null);
+            try {
+              const r = await zipSelected({ data: { paths: selectedPaths } });
+              triggerDownload(r.signedUrl, r.filename);
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e);
+              setZipError(`Zip download failed: ${message}`);
+            }
+          }}
+          disabled={!selectedZipGuard.ok}
+        >
+          Download selected zip
+        </Button>
+        <Button
+          variant="destructive"
+          onClick={async () => {
+            if (!deleteGuard.ok) return;
+            setDeleteError(null);
+            setDeleteSummary(null);
+            if (
+              !confirm(
+                `You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete ${selectedPaths.length} files?\n${selectedPaths.slice(0, 3).join("\n")}`,
+              )
+            )
+              return;
+            try {
+              const result = await deleteSelected({ data: { paths: selectedPaths } });
+              const rows = (result?.results ?? []) as Array<{ ok: boolean }>;
+              const failed = rows.filter((r) => !r.ok).length;
+              setDeleteSummary(`Deleted ${rows.length - failed} of ${rows.length} selected files.`);
+              if (failed > 0) {
+                setDeleteError(`Delete failed for ${failed} file(s).`);
+              } else {
+                await reload();
+                setSelected({});
+              }
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e);
+              setDeleteError(`Delete failed: ${message}`);
+            }
+          }}
+          disabled={!deleteGuard.ok}
+        >
+          Delete selected
+        </Button>
+        <input
+          className="border rounded px-2 py-1 text-sm"
+          placeholder="Filter take_id / analysis / path / type / ext"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        <select
+          className="border rounded px-2 py-1 text-sm"
+          value={sortMode}
+          onChange={(e) => setSortMode(e.target.value as SortMode)}
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="name_asc">Path A–Z</option>
+          <option value="name_desc">Path Z–A</option>
+          <option value="size_asc">Size small→large</option>
+          <option value="size_desc">Size large→small</option>
+          <option value="type">Artefact type</option>
+          <option value="take">take_id</option>
+          <option value="analysis">analysis_run_id</option>
+          <option value="comparison">comparison_run_id</option>
+        </select>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Selected: {selectedPaths.length} · {formatBytes(selectedSize)}
+      </p>
+      {!visibleZipGuard.ok ? (
+        <p className="text-xs text-amber-600">{visibleZipGuard.reason}</p>
+      ) : null}
+      {selectedPaths.length > 0 && !selectedZipGuard.ok ? (
+        <p className="text-xs text-amber-600">
+          Too many selected files to zip at once. Narrow the filter or select up to 500 files.
+        </p>
+      ) : null}
+      {zipError ? <p className="text-xs text-destructive">{zipError}</p> : null}
+      {selectedPaths.length > 0 && !deleteGuard.ok ? (
+        <p className="text-xs text-amber-600">
+          Too many selected files to delete at once. Select up to 500 files.
+        </p>
+      ) : null}
+      {deleteSummary ? <p className="text-xs text-emerald-700">{deleteSummary}</p> : null}
+      {deleteError ? <p className="text-xs text-destructive">{deleteError}</p> : null}
+      <div className="mt-4 overflow-x-auto rounded-md border border-border">
+        {state.loading ? (
+          <div className="p-6 text-sm text-muted-foreground">Loading files…</div>
+        ) : state.error ? (
+          <div className="p-6 text-sm text-destructive">
+            Error loading files: {state.error.message}
+          </div>
+        ) : !sorted.length ? (
+          <div className="p-6 text-sm text-muted-foreground">No files found.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="px-2">
+                  <input
+                    type="checkbox"
+                    checked={sorted.length > 0 && selectedPaths.length === sorted.length}
+                    onChange={(e) =>
+                      setSelected(
+                        e.target.checked
+                          ? Object.fromEntries(sorted.map((f: ArtifactEntry) => [f.path, true]))
+                          : {},
+                      )
+                    }
+                  />
+                </th>
+                <th>Path</th>
+                <th>Display</th>
+                <th>Type</th>
+                <th>take_id</th>
+                <th>analysis_run_id</th>
+                <th>comparison_run_id</th>
+                <th>Size</th>
+                <th>Last modified</th>
+                <th>Content-Type</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((f: ArtifactEntry) => (
+                <tr key={f.path} className="border-t">
+                  <td className="px-2">
+                    <input
+                      type="checkbox"
+                      checked={!!selected[f.path]}
+                      onChange={(e) =>
+                        setSelected((current) => ({ ...current, [f.path]: e.target.checked }))
+                      }
+                    />
+                  </td>
+                  <td className="font-mono text-xs">{f.path}</td>
+                  <td>{f.displayName}</td>
+                  <td>{f.artifactType}</td>
+                  <td>{f.takeId ?? "—"}</td>
+                  <td>{f.analysisRunId ?? "—"}</td>
+                  <td>{f.comparisonRunId ?? "—"}</td>
+                  <td>{formatBytes(f.size)}</td>
+                  <td>{f.lastModified ? new Date(f.lastModified).toLocaleString() : "—"}</td>
+                  <td>{f.contentType ?? "—"}</td>
+                  <td className="space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadOne(f)}
+                      disabled={busyPath === f.path || bulk.running}
+                    >
+                      Download
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={async () => {
+                        setDeleteError(null);
+                        setDeleteSummary(null);
+                        if (
+                          !confirm(
+                            `You are deleting private QA artefact files only. This does not delete the take, report, submission or media.\n\nDelete 1 file?\n${f.path}`,
+                          )
+                        )
+                          return;
+                        try {
+                          const result = await deleteSelected({ data: { paths: [f.path] } });
+                          const failed = (result?.results ?? []).filter((r) => !r.ok).length;
+                          if (failed > 0) {
+                            setDeleteError(`Delete failed for ${failed} file(s).`);
+                            return;
+                          }
+                          setDeleteSummary("Deleted 1 file.");
+                          await reload();
+                        } catch (e) {
+                          const message = e instanceof Error ? e.message : String(e);
+                          setDeleteError(`Delete failed: ${message}`);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
 }

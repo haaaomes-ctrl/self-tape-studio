@@ -74,6 +74,45 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_audit_log: {
+        Row: {
+          action_type: string
+          actor_email: string | null
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          reason: string | null
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action_type: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action_type?: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: []
+      }
       analytics_events: {
         Row: {
           attribution_key: string | null
@@ -3113,6 +3152,22 @@ export type Database = {
       }
     }
     Functions: {
+      admin_grant_user_credits: {
+        Args: {
+          p_admin_actor_email?: string
+          p_admin_actor_user_id?: string
+          p_admin_reason?: string
+          p_credit_amount: number
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_source_label?: string
+          p_user_id: string
+        }
+        Returns: {
+          audit_log_id: string
+          credit_grant_id: string
+        }[]
+      }
       accept_partner_visibility: {
         Args: {
           p_accepted_at?: string
