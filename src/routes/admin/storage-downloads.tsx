@@ -199,6 +199,9 @@ function StorageDownloadsPage() {
         <Button asChild variant="outline">
           <Link to="/admin/analytics">Analytics</Link>
         </Button>
+        <Button asChild variant="outline">
+          <Link to="/admin/launch-governance">Launch gates</Link>
+        </Button>
       </div>
 
       {/* Diagnostics */}
