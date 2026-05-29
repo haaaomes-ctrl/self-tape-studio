@@ -74,45 +74,6 @@ export type Database = {
         }
         Relationships: []
       }
-      admin_audit_log: {
-        Row: {
-          action_type: string
-          actor_email: string | null
-          actor_user_id: string | null
-          created_at: string
-          id: string
-          idempotency_key: string | null
-          metadata: Json
-          reason: string | null
-          target_id: string | null
-          target_type: string
-        }
-        Insert: {
-          action_type: string
-          actor_email?: string | null
-          actor_user_id?: string | null
-          created_at?: string
-          id?: string
-          idempotency_key?: string | null
-          metadata?: Json
-          reason?: string | null
-          target_id?: string | null
-          target_type: string
-        }
-        Update: {
-          action_type?: string
-          actor_email?: string | null
-          actor_user_id?: string | null
-          created_at?: string
-          id?: string
-          idempotency_key?: string | null
-          metadata?: Json
-          reason?: string | null
-          target_id?: string | null
-          target_type?: string
-        }
-        Relationships: []
-      }
       analytics_events: {
         Row: {
           attribution_key: string | null
@@ -716,137 +677,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      crm_contacts: {
-        Row: {
-          account_route: string | null
-          account_type: string | null
-          age_band_declaration: string | null
-          brevo_sync_error: string | null
-          brevo_sync_status: string
-          brevo_synced_at: string | null
-          consent_source: string
-          crm_metadata: Json
-          email: string
-          first_seen_at: string
-          lifecycle_messages_allowed: boolean
-          marketing_consent: boolean
-          marketing_consent_at: string | null
-          normalized_email: string
-          parent_managed: boolean
-          recipient_role: string
-          service_messages_allowed: boolean
-          updated_at: string
-          user_id: string
-          user_segment: string
-        }
-        Insert: {
-          account_route?: string | null
-          account_type?: string | null
-          age_band_declaration?: string | null
-          brevo_sync_error?: string | null
-          brevo_sync_status?: string
-          brevo_synced_at?: string | null
-          consent_source?: string
-          crm_metadata?: Json
-          email: string
-          first_seen_at?: string
-          lifecycle_messages_allowed?: boolean
-          marketing_consent?: boolean
-          marketing_consent_at?: string | null
-          normalized_email: string
-          parent_managed?: boolean
-          recipient_role?: string
-          service_messages_allowed?: boolean
-          updated_at?: string
-          user_id: string
-          user_segment?: string
-        }
-        Update: {
-          account_route?: string | null
-          account_type?: string | null
-          age_band_declaration?: string | null
-          brevo_sync_error?: string | null
-          brevo_sync_status?: string
-          brevo_synced_at?: string | null
-          consent_source?: string
-          crm_metadata?: Json
-          email?: string
-          first_seen_at?: string
-          lifecycle_messages_allowed?: boolean
-          marketing_consent?: boolean
-          marketing_consent_at?: string | null
-          normalized_email?: string
-          parent_managed?: boolean
-          recipient_role?: string
-          service_messages_allowed?: boolean
-          updated_at?: string
-          user_id?: string
-          user_segment?: string
-        }
-        Relationships: []
-      }
-      crm_b2b_leads_dashboard: {
-        Row: {
-          creator_code: string | null
-          follow_up_pending_count: number | null
-          follow_up_sent_count: number | null
-          lead_count: number | null
-          lead_day: string | null
-          lead_type: string | null
-          partner_code_hint: string | null
-          partner_type: string | null
-          utm_campaign: string | null
-          utm_source: string | null
-        }
-        Relationships: []
-      }
-      crm_contact_dashboard: {
-        Row: {
-          account_route: string | null
-          brevo_sync_status: string | null
-          contact_count: number | null
-          first_seen_at: string | null
-          last_brevo_synced_at: string | null
-          last_updated_at: string | null
-          lifecycle_messages_allowed: boolean | null
-          marketing_consent: boolean | null
-          parent_managed: boolean | null
-          recipient_role: string | null
-          user_segment: string | null
-        }
-        Relationships: []
-      }
-      crm_email_delivery_dashboard: {
-        Row: {
-          activity_day: string | null
-          dlq_count: number | null
-          failed_count: number | null
-          first_activity_at: string | null
-          last_activity_at: string | null
-          message_category: string | null
-          message_count: number | null
-          message_key: string | null
-          pending_count: number | null
-          sent_count: number | null
-          status: string | null
-          suppressed_count: number | null
-        }
-        Relationships: []
-      }
-      crm_lifecycle_messaging_dashboard: {
-        Row: {
-          dlq_count: number | null
-          failed_count: number | null
-          last_activity_at: string | null
-          message_category: string | null
-          message_key: string | null
-          pending_count: number | null
-          sent_count: number | null
-          suppressed_count: number | null
-          total_count: number | null
-        }
-        Relationships: []
       }
       email_send_log: {
         Row: {
@@ -3152,22 +2982,6 @@ export type Database = {
       }
     }
     Functions: {
-      admin_grant_user_credits: {
-        Args: {
-          p_admin_actor_email?: string
-          p_admin_actor_user_id?: string
-          p_admin_reason?: string
-          p_credit_amount: number
-          p_idempotency_key?: string
-          p_metadata?: Json
-          p_source_label?: string
-          p_user_id: string
-        }
-        Returns: {
-          audit_log_id: string
-          credit_grant_id: string
-        }[]
-      }
       accept_partner_visibility: {
         Args: {
           p_accepted_at?: string
@@ -3265,49 +3079,9 @@ export type Database = {
         }
         Returns: string
       }
-      crm_build_unsubscribe_url: {
-        Args: { p_base_url?: string; p_token: string }
-        Returns: string
-      }
-      crm_get_unsubscribe_token: {
-        Args: { p_email: string }
-        Returns: string
-      }
-      crm_message_category_requires_consent: {
-        Args: { p_category: string }
-        Returns: boolean
-      }
-      crm_normalize_email: {
-        Args: { p_email: string }
-        Returns: string
-      }
-      crm_safe_template_data: {
-        Args: { p_template_data: Json }
-        Returns: Json
-      }
       delete_email: {
         Args: { message_id: number; queue_name: string }
         Returns: boolean
-      }
-      enqueue_crm_lifecycle_email: {
-        Args: {
-          p_from?: string
-          p_html?: string
-          p_idempotency_key?: string
-          p_label?: string
-          p_message_category: string
-          p_message_key: string
-          p_preview_text?: string
-          p_purpose?: string
-          p_send_after?: string
-          p_sender_domain?: string
-          p_subject: string
-          p_template_data?: Json
-          p_text?: string
-          p_unsubscribe_base_url?: string
-          p_user_id: string
-        }
-        Returns: string
       }
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
@@ -3524,10 +3298,6 @@ export type Database = {
           p_reason?: string
           p_status: Database["public"]["Enums"]["partner_code_status"]
         }
-        Returns: string
-      }
-      sync_crm_contact_from_account_compliance: {
-        Args: { p_user_id: string }
         Returns: string
       }
     }
