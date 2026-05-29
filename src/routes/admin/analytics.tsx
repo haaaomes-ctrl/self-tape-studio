@@ -137,6 +137,9 @@ function AdminAnalyticsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
+            <Link to="/admin">Operations</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link to="/admin/crm">CRM dashboard</Link>
           </Button>
           <Button asChild variant="outline">

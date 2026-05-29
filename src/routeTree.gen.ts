@@ -21,6 +21,7 @@ import { Route as CreditsSuccessRouteImport } from './routes/credits-success'
 import { Route as CreditsCancelledRouteImport } from './routes/credits-cancelled'
 import { Route as CreditsRouteImport } from './routes/credits'
 import { Route as B2bInterestRouteImport } from './routes/b2b-interest'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
@@ -100,6 +101,11 @@ const B2bInterestRoute = B2bInterestRouteImport.update({
   path: '/b2b-interest',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -141,24 +147,24 @@ const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminStorageDownloadsRoute = AdminStorageDownloadsRouteImport.update({
-  id: '/admin/storage-downloads',
-  path: '/admin/storage-downloads',
-  getParentRoute: () => rootRouteImport,
+  id: '/storage-downloads',
+  path: '/storage-downloads',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminFinanceRoute = AdminFinanceRouteImport.update({
-  id: '/admin/finance',
-  path: '/admin/finance',
-  getParentRoute: () => rootRouteImport,
+  id: '/finance',
+  path: '/finance',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminCrmRoute = AdminCrmRouteImport.update({
-  id: '/admin/crm',
-  path: '/admin/crm',
-  getParentRoute: () => rootRouteImport,
+  id: '/crm',
+  path: '/crm',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
-  id: '/admin/analytics',
-  path: '/admin/analytics',
-  getParentRoute: () => rootRouteImport,
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => AdminRoute,
 } as any)
 const ApiPublicStripeWebhookRoute = ApiPublicStripeWebhookRouteImport.update({
   id: '/api/public/stripe-webhook',
@@ -197,6 +203,7 @@ const LovableEmailQueueProcessRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/b2b-interest': typeof B2bInterestRoute
   '/credits': typeof CreditsRoute
   '/credits-cancelled': typeof CreditsCancelledRoute
@@ -229,6 +236,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/b2b-interest': typeof B2bInterestRoute
   '/credits': typeof CreditsRoute
   '/credits-cancelled': typeof CreditsCancelledRoute
@@ -262,6 +270,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/b2b-interest': typeof B2bInterestRoute
   '/credits': typeof CreditsRoute
   '/credits-cancelled': typeof CreditsCancelledRoute
@@ -296,6 +305,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/admin'
     | '/b2b-interest'
     | '/credits'
     | '/credits-cancelled'
@@ -328,6 +338,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/admin'
     | '/b2b-interest'
     | '/credits'
     | '/credits-cancelled'
@@ -360,6 +371,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/admin'
     | '/b2b-interest'
     | '/credits'
     | '/credits-cancelled'
@@ -393,6 +405,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  AdminRoute: typeof AdminRouteWithChildren
   B2bInterestRoute: typeof B2bInterestRoute
   CreditsRoute: typeof CreditsRoute
   CreditsCancelledRoute: typeof CreditsCancelledRoute
@@ -405,10 +418,6 @@ export interface RootRouteChildren {
   NewRoute: typeof NewRoute
   TrustRoute: typeof TrustRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
-  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
-  AdminCrmRoute: typeof AdminCrmRoute
-  AdminFinanceRoute: typeof AdminFinanceRoute
-  AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
   LegalAiReportDisclaimerRoute: typeof LegalAiReportDisclaimerRoute
   LegalCookiesRoute: typeof LegalCookiesRoute
@@ -509,6 +518,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof B2bInterestRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -567,31 +583,31 @@ declare module '@tanstack/react-router' {
     }
     '/admin/storage-downloads': {
       id: '/admin/storage-downloads'
-      path: '/admin/storage-downloads'
+      path: '/storage-downloads'
       fullPath: '/admin/storage-downloads'
       preLoaderRoute: typeof AdminStorageDownloadsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/finance': {
       id: '/admin/finance'
-      path: '/admin/finance'
+      path: '/finance'
       fullPath: '/admin/finance'
       preLoaderRoute: typeof AdminFinanceRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/crm': {
       id: '/admin/crm'
-      path: '/admin/crm'
+      path: '/crm'
       fullPath: '/admin/crm'
       preLoaderRoute: typeof AdminCrmRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/analytics': {
       id: '/admin/analytics'
-      path: '/admin/analytics'
+      path: '/analytics'
       fullPath: '/admin/analytics'
       preLoaderRoute: typeof AdminAnalyticsRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/api/public/stripe-webhook': {
       id: '/api/public/stripe-webhook'
@@ -638,9 +654,26 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AdminRouteChildren {
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
+  AdminCrmRoute: typeof AdminCrmRoute
+  AdminFinanceRoute: typeof AdminFinanceRoute
+  AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
+  AdminCrmRoute: AdminCrmRoute,
+  AdminFinanceRoute: AdminFinanceRoute,
+  AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  AdminRoute: AdminRouteWithChildren,
   B2bInterestRoute: B2bInterestRoute,
   CreditsRoute: CreditsRoute,
   CreditsCancelledRoute: CreditsCancelledRoute,
@@ -653,10 +686,6 @@ const rootRouteChildren: RootRouteChildren = {
   NewRoute: NewRoute,
   TrustRoute: TrustRoute,
   UnsubscribeRoute: UnsubscribeRoute,
-  AdminAnalyticsRoute: AdminAnalyticsRoute,
-  AdminCrmRoute: AdminCrmRoute,
-  AdminFinanceRoute: AdminFinanceRoute,
-  AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
   LegalAiReportDisclaimerRoute: LegalAiReportDisclaimerRoute,
   LegalCookiesRoute: LegalCookiesRoute,
