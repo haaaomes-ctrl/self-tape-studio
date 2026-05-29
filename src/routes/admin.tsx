@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Coins,
@@ -78,9 +78,15 @@ export const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [{ title: "Admin Operations Console" }, { name: "robots", content: "noindex,nofollow" }],
   }),
-  component: AdminOperationsPage,
+  component: AdminRouteShell,
   errorComponent: RouteErrorComponent,
 });
+
+function AdminRouteShell() {
+  const location = useLocation();
+  if (location.pathname !== "/admin") return <Outlet />;
+  return <AdminOperationsPage />;
+}
 
 function AdminOperationsPage() {
   const { user, loading } = useAuth();
@@ -157,6 +163,9 @@ function AdminOperationsPage() {
           </Button>
           <Button asChild variant="outline">
             <Link to="/admin/storage-downloads">QA storage</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/admin/launch-governance">Launch gates</Link>
           </Button>
           {serverIsAdmin ? (
             <Button onClick={loadDashboard} disabled={dashboardState.loading}>

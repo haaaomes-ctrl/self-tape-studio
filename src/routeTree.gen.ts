@@ -31,6 +31,7 @@ import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
 import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-report-disclaimer'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
+import { Route as AdminLaunchGovernanceRouteImport } from './routes/admin/launch-governance'
 import { Route as AdminFinanceRouteImport } from './routes/admin/finance'
 import { Route as AdminCrmRouteImport } from './routes/admin/crm'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
@@ -151,6 +152,11 @@ const AdminStorageDownloadsRoute = AdminStorageDownloadsRouteImport.update({
   path: '/storage-downloads',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminLaunchGovernanceRoute = AdminLaunchGovernanceRouteImport.update({
+  id: '/launch-governance',
+  path: '/launch-governance',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFinanceRoute = AdminFinanceRouteImport.update({
   id: '/finance',
   path: '/finance',
@@ -219,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/crm': typeof AdminCrmRoute
   '/admin/finance': typeof AdminFinanceRoute
+  '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
@@ -252,6 +259,7 @@ export interface FileRoutesByTo {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/crm': typeof AdminCrmRoute
   '/admin/finance': typeof AdminFinanceRoute
+  '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
@@ -286,6 +294,7 @@ export interface FileRoutesById {
   '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/crm': typeof AdminCrmRoute
   '/admin/finance': typeof AdminFinanceRoute
+  '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
@@ -321,6 +330,7 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/admin/crm'
     | '/admin/finance'
+    | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/legal/ai-report-disclaimer'
@@ -354,6 +364,7 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/admin/crm'
     | '/admin/finance'
+    | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/legal/ai-report-disclaimer'
@@ -387,6 +398,7 @@ export interface FileRouteTypes {
     | '/admin/analytics'
     | '/admin/crm'
     | '/admin/finance'
+    | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
     | '/legal/ai-report-disclaimer'
@@ -588,6 +600,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminStorageDownloadsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/launch-governance': {
+      id: '/admin/launch-governance'
+      path: '/launch-governance'
+      fullPath: '/admin/launch-governance'
+      preLoaderRoute: typeof AdminLaunchGovernanceRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/finance': {
       id: '/admin/finance'
       path: '/finance'
@@ -658,6 +677,7 @@ interface AdminRouteChildren {
   AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminCrmRoute: typeof AdminCrmRoute
   AdminFinanceRoute: typeof AdminFinanceRoute
+  AdminLaunchGovernanceRoute: typeof AdminLaunchGovernanceRoute
   AdminStorageDownloadsRoute: typeof AdminStorageDownloadsRoute
 }
 
@@ -665,6 +685,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminCrmRoute: AdminCrmRoute,
   AdminFinanceRoute: AdminFinanceRoute,
+  AdminLaunchGovernanceRoute: AdminLaunchGovernanceRoute,
   AdminStorageDownloadsRoute: AdminStorageDownloadsRoute,
 }
 

@@ -146,6 +146,9 @@ function AdminFinancePage() {
           <Button asChild variant="outline">
             <Link to="/admin/storage-downloads">Storage downloads</Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link to="/admin/launch-governance">Launch gates</Link>
+          </Button>
           {serverIsAdmin ? (
             <Button onClick={loadDashboard} disabled={dashboardState.loading}>
               <RefreshCw className="mr-2 h-4 w-4" />
