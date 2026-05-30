@@ -36,6 +36,21 @@ type InternalAnalysisRunBody = {
   reason?: string;
 };
 
+type InternalAnalysisRunRawBody = {
+  take_id?: unknown;
+  takeId?: unknown;
+  audition_id?: unknown;
+  auditionId?: unknown;
+  submission_id?: unknown;
+  submissionId?: unknown;
+  trigger?: unknown;
+  reason?: unknown;
+  enqueued_at?: unknown;
+  enqueuedAt?: unknown;
+  same_video_context?: unknown;
+  sameVideoContext?: unknown;
+};
+
 export type InternalAnalysisRunTakeContext = {
   id: string;
   audition_id: string | null;
@@ -92,6 +107,7 @@ type SafeErrorCode =
   | "server_misconfigured"
   | "invalid_json"
   | "invalid_request"
+  | "invalid_trigger"
   | "take_not_found"
   | "audition_context_missing"
   | "audition_context_mismatch"
@@ -107,12 +123,35 @@ const UuidSchema = z.string().uuid();
 const INTERNAL_ANALYSIS_TAKE_TABLE = "takes";
 const INTERNAL_ANALYSIS_TAKE_ID_COLUMN = "id";
 const INTERNAL_ANALYSIS_TAKE_SELECT = "id, audition_id, status, processing_phase, updated_at";
+const InternalAnalysisRunTriggerSchema = z.enum([
+  "mux_webhook",
+  "manual",
+  "retry",
+  "reconciler",
+  "operator_test",
+]);
+const InternalAnalysisRunRawBodySchema = z
+  .object({
+    take_id: z.unknown().optional(),
+    takeId: z.unknown().optional(),
+    audition_id: z.unknown().optional(),
+    auditionId: z.unknown().optional(),
+    submission_id: z.unknown().optional(),
+    submissionId: z.unknown().optional(),
+    trigger: z.unknown().optional(),
+    reason: z.unknown().optional(),
+    enqueued_at: z.unknown().optional(),
+    enqueuedAt: z.unknown().optional(),
+    same_video_context: z.unknown().optional(),
+    sameVideoContext: z.unknown().optional(),
+  })
+  .passthrough();
 const InternalAnalysisRunBodySchema = z
   .object({
     take_id: UuidSchema,
     audition_id: UuidSchema.nullish(),
     submission_id: UuidSchema.nullish(),
-    trigger: z.enum(["mux_webhook", "manual", "retry", "reconciler", "operator_test"]),
+    trigger: InternalAnalysisRunTriggerSchema,
     reason: z.string().trim().min(1).max(240).optional(),
   })
   .strict();
@@ -339,6 +378,133 @@ function normaliseRunnerException(error: unknown): SafeErrorCode {
   return value.includes("timeout") ? "analysis_run_timeout" : "analysis_run_exception";
 }
 
+function firstDefined<T>(...values: T[]): T | undefined {
+  return values.find((value) => value !== undefined);
+}
+
+function triggerForWorkerReason(reason: string | undefined): InternalAnalysisRunTrigger | null {
+  if (!reason) return null;
+  if (reason === "reconciler_stale_pending" || reason === "reconciler_stale_analysing") {
+    return "reconciler";
+  }
+  if (
+    reason === "mux_asset_ready" ||
+    reason === "static_rendition_ready" ||
+    reason === "static_rendition_stale_analysing"
+  ) {
+    return "mux_webhook";
+  }
+  return null;
+}
+
+function bodyKeySummary(body: unknown): string[] {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return [];
+  return Object.keys(body as Record<string, unknown>).sort();
+}
+
+function logInvalidRequestBody(params: {
+  body: unknown;
+  reason: string;
+  code: SafeErrorCode;
+  takeId?: string | null;
+  trigger?: unknown;
+}): void {
+  const rawBody =
+    params.body && typeof params.body === "object" && !Array.isArray(params.body)
+      ? (params.body as InternalAnalysisRunRawBody)
+      : null;
+  const auditionId = firstDefined(rawBody?.audition_id, rawBody?.auditionId);
+  const submissionId = firstDefined(rawBody?.submission_id, rawBody?.submissionId);
+  const sameVideoContext = firstDefined(rawBody?.same_video_context, rawBody?.sameVideoContext);
+  console.warn("[internal-analysis-runner] invalid request body", {
+    error_code: params.code,
+    reason: params.reason,
+    take_id: params.takeId ?? null,
+    trigger: typeof params.trigger === "string" ? params.trigger : null,
+    has_audition_id: typeof auditionId === "string" && auditionId.trim().length > 0,
+    has_submission_id: typeof submissionId === "string" && submissionId.trim().length > 0,
+    has_same_video_context: sameVideoContext !== undefined && sameVideoContext !== null,
+    body_keys: bodyKeySummary(params.body),
+    has_take_id: Boolean(rawBody?.take_id),
+    has_takeId: Boolean(rawBody?.takeId),
+    ignored_extra_keys: bodyKeySummary(params.body).filter(
+      (key) =>
+        ![
+          "take_id",
+          "takeId",
+          "audition_id",
+          "auditionId",
+          "submission_id",
+          "submissionId",
+          "trigger",
+          "reason",
+          "enqueued_at",
+          "enqueuedAt",
+          "same_video_context",
+          "sameVideoContext",
+        ].includes(key),
+    ),
+  });
+}
+
+function valuesConflict(a: unknown, b: unknown): boolean {
+  return a !== undefined && b !== undefined && a !== b;
+}
+
+function safeUuidForError(value: unknown): string | undefined {
+  return typeof value === "string" && UuidSchema.safeParse(value).success ? value : undefined;
+}
+
+function normaliseRequestBody(
+  body: unknown,
+):
+  | { ok: true; body: InternalAnalysisRunBody }
+  | { ok: false; code: "invalid_request" | "invalid_trigger"; reason: string; takeId?: string } {
+  const raw = InternalAnalysisRunRawBodySchema.safeParse(body);
+  if (!raw.success) return { ok: false, code: "invalid_request", reason: "invalid_body" };
+
+  const value = raw.data;
+  if (valuesConflict(value.take_id, value.takeId)) {
+    return { ok: false, code: "invalid_request", reason: "conflicting_take_id_fields" };
+  }
+  if (valuesConflict(value.audition_id, value.auditionId)) {
+    return { ok: false, code: "invalid_request", reason: "conflicting_audition_id_fields" };
+  }
+  if (valuesConflict(value.submission_id, value.submissionId)) {
+    return { ok: false, code: "invalid_request", reason: "conflicting_submission_id_fields" };
+  }
+
+  const reason =
+    typeof value.reason === "string" && value.reason.trim() ? value.reason.trim() : undefined;
+  const triggerWasSupplied = value.trigger !== undefined && value.trigger !== null;
+  const rawTrigger =
+    triggerWasSupplied && typeof value.trigger === "string" ? value.trigger.trim() : null;
+  if (
+    triggerWasSupplied &&
+    (!rawTrigger || !InternalAnalysisRunTriggerSchema.safeParse(rawTrigger).success)
+  ) {
+    const takeId = safeUuidForError(firstDefined(value.take_id, value.takeId));
+    return { ok: false, code: "invalid_trigger", reason: "invalid_trigger", takeId };
+  }
+  const trigger = rawTrigger ?? triggerForWorkerReason(reason);
+
+  const canonical = {
+    take_id: firstDefined(value.take_id, value.takeId),
+    audition_id: firstDefined(value.audition_id, value.auditionId),
+    submission_id: firstDefined(value.submission_id, value.submissionId),
+    trigger,
+    reason,
+  };
+
+  const parsed = InternalAnalysisRunBodySchema.safeParse(canonical);
+  if (!parsed.success) {
+    const takeId = safeUuidForError(canonical.take_id);
+    return { ok: false, code: "invalid_request", reason: "schema_validation_failed", takeId };
+  }
+
+  return { ok: true, body: parsed.data };
+}
+
 async function parseBody(
   request: Request,
 ): Promise<{ ok: true; body: InternalAnalysisRunBody } | { ok: false; response: Response }> {
@@ -356,19 +522,27 @@ async function parseBody(
     };
   }
 
-  const parsed = InternalAnalysisRunBodySchema.safeParse(body);
-  if (!parsed.success) {
+  const parsed = normaliseRequestBody(body);
+  if (!parsed.ok) {
+    logInvalidRequestBody({
+      body,
+      reason: parsed.reason,
+      code: parsed.code,
+      takeId: parsed.takeId,
+      trigger: (body as InternalAnalysisRunRawBody | null)?.trigger,
+    });
     return {
       ok: false,
       response: safeErrorResponse({
         status: 400,
-        code: "invalid_request",
+        code: parsed.code,
         retryable: false,
+        takeId: parsed.takeId,
       }),
     };
   }
 
-  return { ok: true, body: parsed.data };
+  return { ok: true, body: parsed.body };
 }
 
 export async function handleInternalAnalysisRunRequest(
