@@ -83,6 +83,7 @@ import {
   recordServerAnalyticsEvent,
 } from "./analytics-events.server";
 import { safeEnqueueCrmEmailForUser } from "./crm-messaging.server";
+import type { CreditMode } from "./credit-entitlement.server";
 import { ANALYSING_ORPHAN_MS, FINALISING_ORPHAN_MS } from "./finalising-recovery.server";
 import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
@@ -2626,6 +2627,8 @@ export async function runProcessTake(
     (take as { credit_reservation_id?: string | null }).credit_reservation_id ?? null;
   let activeReportCreditSyntheticUsage =
     (take as { credit_is_synthetic_usage?: boolean | null }).credit_is_synthetic_usage === true;
+  let activeReportCreditMode: CreditMode = "standard";
+  let activeReportCreditShouldDecrement = true;
 
   const refundActiveReportCredit = async (failureCode: string, message: string): Promise<void> => {
     if (!activeReportCreditReservationId) return;
@@ -2806,11 +2809,15 @@ export async function runProcessTake(
       });
       activeReportCreditReservationId = reservation.credit_reservation_id;
       activeReportCreditSyntheticUsage = reservation.synthetic_usage;
-      metric("report_credit_reserved", {
-        take_id: takeId,
-        reason: "run_process_take",
-        synthetic_usage: reservation.synthetic_usage,
-      });
+      activeReportCreditMode = reservation.credit_mode;
+      activeReportCreditShouldDecrement = reservation.should_decrement_credit;
+      if (reservation.requires_credit_reservation) {
+        metric("report_credit_reserved", {
+          take_id: takeId,
+          reason: "run_process_take",
+          synthetic_usage: reservation.synthetic_usage,
+        });
+      }
       void recordServerAnalyticsEvent({
         eventName: "report_started",
         userId: take.user_id,
@@ -2820,18 +2827,22 @@ export async function runProcessTake(
         takeId,
         properties: {
           processing_phase: take.processing_phase,
+          credit_mode: reservation.credit_mode,
           synthetic_usage: reservation.synthetic_usage,
         },
       });
       void safeEnqueueCrmEmailForUser({
         userId: take.user_id,
         messageKey: "report_started",
-        idempotencyKey: `crm:report_started:${take.user_id}:take:${takeId}:${reservation.credit_reservation_id}`,
+        idempotencyKey: `crm:report_started:${take.user_id}:take:${takeId}:${
+          reservation.credit_reservation_id ?? reservation.credit_mode
+        }`,
         templateData: {
           object_type: "take",
           object_id: takeId,
           audition_id: take.audition_id,
           processing_phase: take.processing_phase,
+          credit_mode: reservation.credit_mode,
           synthetic_usage: reservation.synthetic_usage,
           context_line: "Your self-tape report has started processing.",
         },
@@ -5833,85 +5844,97 @@ export async function runProcessTake(
       return { ok: true, alreadyDone: true };
     }
 
-    if (!activeReportCreditReservationId) {
-      throw new AnalysisFailure(
-        "analysis_persist_failed",
-        "TapeCoach could not confirm the reserved report credit. Please try again.",
-      );
+    if (activeReportCreditShouldDecrement) {
+      if (!activeReportCreditReservationId) {
+        throw new AnalysisFailure(
+          "analysis_persist_failed",
+          "TapeCoach could not confirm the reserved report credit. Please try again.",
+        );
+      }
+
+      try {
+        const creditConsumption = await consumeReportCreditReservation({
+          credit_reservation_id: activeReportCreditReservationId,
+          take_id: takeId,
+          report_generated_at: new Date().toISOString(),
+          idempotency_key: `report-credit-consume:${activeReportCreditReservationId}`,
+          metadata: {
+            trigger: "run_process_take_report_persisted",
+            report_credit_amount: 1,
+            report_persisted: true,
+            report_viewable: true,
+            overall_score: overall,
+            schema_version:
+              typeof (reportToPersist as Record<string, unknown>).schema_version === "string"
+                ? (reportToPersist as Record<string, unknown>).schema_version
+                : null,
+            same_video_status: liveSameVideoContext?.evidence.status ?? null,
+            same_video_confidence: liveSameVideoContext?.evidence.confidence ?? null,
+            synthetic_usage: activeReportCreditSyntheticUsage,
+          },
+        });
+        metric("report_credit_consumed", {
+          take_id: takeId,
+          reason: "report_persisted",
+          synthetic_usage: activeReportCreditSyntheticUsage,
+          credit_ledger_entry_id: creditConsumption.credit_ledger_entry_id,
+        });
+        activeReportCreditReservationId = null;
+      } catch (creditErr) {
+        console.error("[take-pipeline] report_credit_consume_failed", {
+          take_id: takeId,
+          error: creditErr instanceof Error ? creditErr.message : "unknown",
+        });
+        throw new AnalysisFailure(
+          "analysis_persist_failed",
+          "TapeCoach saved the report but could not finalise the credit lifecycle. Please try again.",
+        );
+      }
+    } else {
+      console.info("[take-pipeline] report_credit_consume_skipped", {
+        take_id: takeId,
+        user_id: take.user_id,
+        credit_mode: activeReportCreditMode,
+        reason: "admin_test_account",
+      });
     }
 
-    try {
-      const creditConsumption = await consumeReportCreditReservation({
-        credit_reservation_id: activeReportCreditReservationId,
-        take_id: takeId,
-        report_generated_at: new Date().toISOString(),
-        idempotency_key: `report-credit-consume:${activeReportCreditReservationId}`,
-        metadata: {
-          trigger: "run_process_take_report_persisted",
-          report_credit_amount: 1,
-          report_persisted: true,
-          report_viewable: true,
-          overall_score: overall,
-          schema_version:
-            typeof (reportToPersist as Record<string, unknown>).schema_version === "string"
-              ? (reportToPersist as Record<string, unknown>).schema_version
-              : null,
-          same_video_status: liveSameVideoContext?.evidence.status ?? null,
-          same_video_confidence: liveSameVideoContext?.evidence.confidence ?? null,
-          synthetic_usage: activeReportCreditSyntheticUsage,
-        },
-      });
-      metric("report_credit_consumed", {
-        take_id: takeId,
-        reason: "report_persisted",
+    void recordServerAnalyticsEvent({
+      eventName: "report_completed",
+      userId: take.user_id,
+      objectType: "report",
+      objectId: takeId,
+      auditionId: take.audition_id,
+      takeId,
+      properties: {
+        overall_score: overall,
+        credit_mode: activeReportCreditMode,
         synthetic_usage: activeReportCreditSyntheticUsage,
-        credit_ledger_entry_id: creditConsumption.credit_ledger_entry_id,
-      });
-      void recordServerAnalyticsEvent({
-        eventName: "report_completed",
-        userId: take.user_id,
-        objectType: "report",
-        objectId: takeId,
-        auditionId: take.audition_id,
-        takeId,
-        properties: {
-          overall_score: overall,
-          synthetic_usage: activeReportCreditSyntheticUsage,
-          schema_version:
-            typeof (reportToPersist as Record<string, unknown>).schema_version === "string"
-              ? ((reportToPersist as Record<string, unknown>).schema_version as string)
-              : null,
-        },
-      });
-      void recordSecondReportEventIfNeeded({
-        userId: take.user_id,
-        auditionId: take.audition_id,
-        takeId,
-      });
-      void safeEnqueueCrmEmailForUser({
-        userId: take.user_id,
-        messageKey: "report_ready",
-        idempotencyKey: `crm:report_ready:${take.user_id}:take:${takeId}`,
-        templateData: {
-          object_type: "take",
-          object_id: takeId,
-          audition_id: take.audition_id,
-          overall_score: overall,
-          synthetic_usage: activeReportCreditSyntheticUsage,
-          context_line: "Your self-tape report is ready to review in TapeCoach.",
-        },
-      });
-      activeReportCreditReservationId = null;
-    } catch (creditErr) {
-      console.error("[take-pipeline] report_credit_consume_failed", {
-        take_id: takeId,
-        error: creditErr instanceof Error ? creditErr.message : "unknown",
-      });
-      throw new AnalysisFailure(
-        "analysis_persist_failed",
-        "TapeCoach saved the report but could not finalise the credit lifecycle. Please try again.",
-      );
-    }
+        schema_version:
+          typeof (reportToPersist as Record<string, unknown>).schema_version === "string"
+            ? ((reportToPersist as Record<string, unknown>).schema_version as string)
+            : null,
+      },
+    });
+    void recordSecondReportEventIfNeeded({
+      userId: take.user_id,
+      auditionId: take.audition_id,
+      takeId,
+    });
+    void safeEnqueueCrmEmailForUser({
+      userId: take.user_id,
+      messageKey: "report_ready",
+      idempotencyKey: `crm:report_ready:${take.user_id}:take:${takeId}`,
+      templateData: {
+        object_type: "take",
+        object_id: takeId,
+        audition_id: take.audition_id,
+        overall_score: overall,
+        credit_mode: activeReportCreditMode,
+        synthetic_usage: activeReportCreditSyntheticUsage,
+        context_line: "Your self-tape report is ready to review in TapeCoach.",
+      },
+    });
 
     metric("analysis_persist_completed", {
       take_id: takeId,

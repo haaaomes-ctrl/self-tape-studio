@@ -18,6 +18,12 @@ import {
   reserveReportCreditForTake,
 } from "@/server/credit-ledger.server";
 
+function claimEmail(claims: unknown): string | null {
+  if (!claims || typeof claims !== "object") return null;
+  const email = (claims as { email?: unknown }).email;
+  return typeof email === "string" && email.trim() ? email.trim() : null;
+}
+
 async function assertTakeOwnership(takeId: string, userId: string, op: string) {
   const { data, error } = await supabaseAdmin
     .from("takes")
@@ -99,6 +105,7 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       await reserveReportCreditForTake({
         take_id: data.takeId,
         requested_by_user_id: context.userId,
+        requested_by_user_email: claimEmail(context.claims),
         metadata: {
           trigger: "retry_process_take",
           report_credit_amount: 1,

@@ -17,6 +17,12 @@ import {
 } from "@/lib/credit-ledger";
 import { safeEnqueueCrmEmailForUser } from "@/server/crm-messaging.server";
 import { recordServerAnalyticsEvent } from "@/server/analytics-events.server";
+import {
+  isUnlimitedAdminCreditEntitlement,
+  logCreditEntitlement,
+  resolveCreditEntitlementForUser,
+  type CreditMode,
+} from "@/server/credit-entitlement.server";
 
 export type RecordCreditConsumptionInput = {
   user_id: string;
@@ -43,9 +49,18 @@ export type RecordAdminCreditAdjustmentInput = {
 export type ReserveReportCreditInput = {
   take_id: string;
   requested_by_user_id?: string | null;
+  requested_by_user_email?: string | null;
   synthetic_usage?: boolean;
   metadata?: Record<string, unknown>;
   idempotency_key?: string | null;
+};
+
+export type ReserveReportCreditResult = {
+  credit_reservation_id: string | null;
+  synthetic_usage: boolean;
+  credit_mode: CreditMode;
+  requires_credit_reservation: boolean;
+  should_decrement_credit: boolean;
 };
 
 export type ConsumeReportCreditReservationInput = {
@@ -202,7 +217,48 @@ export async function recordAdminCreditAdjustment(input: RecordAdminCreditAdjust
   return { credit_ledger_entry_id: data };
 }
 
-export async function reserveReportCreditForTake(input: ReserveReportCreditInput) {
+async function resolveCreditReservationUserId(
+  input: ReserveReportCreditInput,
+): Promise<string | null> {
+  if (input.requested_by_user_id) return input.requested_by_user_id;
+
+  const { data, error } = await supabaseAdmin
+    .from("takes")
+    .select("user_id")
+    .eq("id", input.take_id)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[credit-ledger] entitlement_take_user_lookup_failed", {
+      take_id: input.take_id,
+      reason: "reserve_report_credit_for_take",
+    });
+    return null;
+  }
+
+  return typeof data?.user_id === "string" ? data.user_id : null;
+}
+
+export async function reserveReportCreditForTake(
+  input: ReserveReportCreditInput,
+): Promise<ReserveReportCreditResult> {
+  const entitlementUserId = await resolveCreditReservationUserId(input);
+  const entitlement = await resolveCreditEntitlementForUser({
+    userId: entitlementUserId,
+    email: input.requested_by_user_email,
+  });
+
+  if (isUnlimitedAdminCreditEntitlement(entitlement)) {
+    logCreditEntitlement(entitlement, "reserve_report_credit_for_take");
+    return {
+      credit_reservation_id: null,
+      synthetic_usage: false,
+      credit_mode: entitlement.credit_mode,
+      requires_credit_reservation: entitlement.requiresCreditReservation,
+      should_decrement_credit: entitlement.shouldDecrementCredit,
+    };
+  }
+
   const { data, error } = await supabaseAdmin.rpc("reserve_report_credit_for_take", {
     p_take_id: input.take_id,
     p_requested_by_user_id: input.requested_by_user_id ?? undefined,
@@ -225,6 +281,9 @@ export async function reserveReportCreditForTake(input: ReserveReportCreditInput
   return {
     credit_reservation_id: data,
     synthetic_usage: reservation?.synthetic_usage ?? input.synthetic_usage ?? false,
+    credit_mode: "standard",
+    requires_credit_reservation: true,
+    should_decrement_credit: true,
   };
 }
 

@@ -14,6 +14,12 @@ import {
   reserveReportCreditForTake,
 } from "@/server/credit-ledger.server";
 
+function claimEmail(claims: unknown): string | null {
+  if (!claims || typeof claims !== "object") return null;
+  const email = (claims as { email?: unknown }).email;
+  return typeof email === "string" && email.trim() ? email.trim() : null;
+}
+
 // Create a Mux Direct Upload URL. The browser PUTs the file straight to Mux.
 // Mux fires a `video.upload.asset_created` webhook with the resulting asset id,
 // then `video.asset.ready` once renditions exist.
@@ -202,6 +208,9 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
       await reserveReportCreditForTake({
         take_id: takeId,
         requested_by_user_id: userId,
+        requested_by_user_email: claimEmail(
+          (context as { claims?: { email?: string | null } }).claims,
+        ),
         metadata: {
           trigger: "create_mux_direct_upload",
           report_credit_amount: 1,
