@@ -336,8 +336,9 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     const sent: unknown[] = [];
     const scheduled: Promise<unknown>[] = [];
     let runCount = 0;
-    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
-      Response.json({ ok: true, dispatch_method: "queue", queued: true }),
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        Response.json({ ok: true, dispatch_method: "queue", queued: true }),
     );
 
     const result = await dispatchAnalysisJob(
@@ -391,8 +392,9 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
   it("external analysis dispatch unauthorised response fails safely without waitUntil fallback", async () => {
     const scheduled: Promise<unknown>[] = [];
     let runCount = 0;
-    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
-      Response.json({ ok: false, error: "unauthorised" }, { status: 401 }),
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        Response.json({ ok: false, error: "unauthorised" }, { status: 401 }),
     );
 
     const result = await dispatchAnalysisJob(
@@ -431,8 +433,9 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
   it("external analysis dispatch queue-unavailable response fails safely without waitUntil fallback", async () => {
     const scheduled: Promise<unknown>[] = [];
     let runCount = 0;
-    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
-      Response.json({ ok: false, dispatch_method: "queue_unavailable", queued: false }),
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        Response.json({ ok: false, dispatch_method: "queue_unavailable", queued: false }),
     );
 
     const result = await dispatchAnalysisJob(
@@ -471,9 +474,11 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
   it("external analysis dispatch network failure does not silently use waitUntil fallback", async () => {
     const scheduled: Promise<unknown>[] = [];
     let runCount = 0;
-    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () => {
-      throw new Error("network unavailable");
-    });
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+        throw new Error("network unavailable");
+      },
+    );
 
     const result = await dispatchAnalysisJob(
       {
@@ -509,8 +514,9 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
   });
 
   it("external analysis dispatch requires a secret and does not make an unauthenticated request", async () => {
-    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
-      Response.json({ ok: true, dispatch_method: "queue", queued: true }),
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
+        Response.json({ ok: true, dispatch_method: "queue", queued: true }),
     );
 
     const result = await dispatchAnalysisJob(

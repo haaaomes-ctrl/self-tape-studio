@@ -28,6 +28,7 @@ MUX_TOKEN_SECRET
 MUX_WEBHOOK_SECRET
 ANALYSIS_DISPATCH_URL
 ANALYSIS_DISPATCH_SECRET
+ANALYSIS_RUN_SECRET
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 ```
@@ -48,6 +49,15 @@ Do not configure `ANALYSIS_DISPATCH_URL` for production uploads until the extern
 `queue_binding_available=true` alone proves queue dispatch only. It does not prove live analysis completion. External dispatch success means the job was queued, not that the tape was analysed.
 
 If `ANALYSIS_RUN_ENDPOINT` points back to Lovable, treat that as a bridge only; Lovable request lifetime limits may still apply to long Gemini/finalising work. The durable target is either a Cloudflare Queue consumer that runs the real S10 analysis code directly, or a backend that supports long-running analysis jobs.
+
+`ANALYSIS_RUN_SECRET` protects TapeCoach's internal analysis runner endpoint. Configure the external Worker `ANALYSIS_RUN_ENDPOINT` to call:
+
+```text
+POST /api/internal/run-analysis
+Authorization: Bearer ANALYSIS_RUN_SECRET
+```
+
+The internal endpoint is a Stage 2 bridge into the existing TapeCoach `runProcessTake` path. It returns `mark_complete=false` because TapeCoach owns report/status persistence. After deployment, run one full-length Professional take through the queue; if Lovable request limits still terminate the run, Stage 3 is to move the real runner into Cloudflare or another durable long-running backend.
 
 ## Verification Rule
 
