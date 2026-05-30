@@ -23,6 +23,30 @@ If there is a conflict, `README.md` wins.
 
 ---
 
+## Build and generated source contracts
+
+`npm run build` is not enough to prove TypeScript correctness.
+
+For implementation work, especially S10 work, agents must treat semantic typechecking as a required contract:
+
+```bash
+npm exec tsc -- --noEmit
+```
+
+Supabase schema and generated TypeScript types must move together.
+
+If a migration adds or changes a table, view, RPC, column, enum, relationship or generated return shape that application code uses, `src/integrations/supabase/types.ts` must reflect that schema before the work is considered complete. Do not hide generated-type drift with broad casts, `never` workarounds or generic adapters unless the schema genuinely cannot be represented and the decision is documented.
+
+TanStack route definitions and generated route output must also stay aligned. If routes or framework-generated route registration change, `src/routeTree.gen.ts` must match the current route tree before merge.
+
+Lovable or preview refresh commits are high-risk for generated-file drift. After any refresh or external main update, re-check generated Supabase types, TanStack route output and semantic TypeScript before continuing S10 work.
+
+If generated-file drift is introduced externally while an S10 item is parked at an operator gate, fix build integrity on a dedicated build-fix branch before starting the next S10 item. Keep that branch limited to generated/source-of-truth repair and do not use it to implement later S10 scope.
+
+Full-repo lint may be blocked by pre-existing formatting debt, but that does not replace type safety. In that case, record the lint blocker and run focused lint, `npm exec tsc -- --noEmit`, build and relevant tests for the changed surface.
+
+---
+
 ## Core doctrine
 
 The AI is the report brain.
