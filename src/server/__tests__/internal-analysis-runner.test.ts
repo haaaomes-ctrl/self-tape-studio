@@ -377,6 +377,8 @@ describe("internal analysis runner endpoint", () => {
         submission_id: AUDITION_ID,
         trigger: "mux_webhook",
         reason: "external_worker_queue_delivery",
+        same_video_context: null,
+        dispatch_method: "queue",
       }),
       {
         env: { ANALYSIS_RUN_SECRET: SECRET },
@@ -397,6 +399,172 @@ describe("internal analysis runner endpoint", () => {
     expect(loadTakeContext).toHaveBeenCalledWith(TAKE_ID);
     expect(claimAnalysisRun).toHaveBeenCalledWith(TAKE_ID);
     expect(runner).toHaveBeenCalledWith(TAKE_ID, { preClaimed: true });
+  });
+
+  it("accepts reconciler Worker payloads with safe extra metadata", async () => {
+    const runner = vi.fn(async () => ({ ok: true as const }));
+    const loadTakeContext = vi.fn(async () => ({ kind: "ok" as const, take: baseTake() }));
+    const loadAuditionContext = vi.fn(async () => ({ kind: "ok" as const }));
+    const claimAnalysisRun = claimOk();
+
+    const response = await handleInternalAnalysisRunRequest(
+      requestFor({
+        take_id: TAKE_ID,
+        audition_id: AUDITION_ID,
+        submission_id: AUDITION_ID,
+        trigger: "reconciler",
+        reason: "reconciler_stale_pending",
+        same_video_context: null,
+        dispatch_method: "queue",
+      }),
+      {
+        env: { ANALYSIS_RUN_SECRET: SECRET },
+        loadTakeContext,
+        loadAuditionContext,
+        claimAnalysisRun,
+        now: () => NOW,
+        runProcessTake: runner,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: true,
+      take_id: TAKE_ID,
+    });
+    expect(loadTakeContext).toHaveBeenCalledWith(TAKE_ID);
+    expect(runner).toHaveBeenCalledWith(TAKE_ID, { preClaimed: true });
+  });
+
+  it("accepts the queue-consumer camelCase payload shape and derives trigger from reason", async () => {
+    const runner = vi.fn(async () => ({ ok: true as const }));
+    const loadTakeContext = vi.fn(async () => ({ kind: "ok" as const, take: baseTake() }));
+    const loadAuditionContext = vi.fn(async () => ({ kind: "ok" as const }));
+    const claimAnalysisRun = claimOk();
+
+    const response = await handleInternalAnalysisRunRequest(
+      requestFor({
+        takeId: TAKE_ID,
+        auditionId: AUDITION_ID,
+        submissionId: AUDITION_ID,
+        reason: "mux_asset_ready",
+        enqueuedAt: "2026-05-30T10:00:00.000Z",
+      }),
+      {
+        env: { ANALYSIS_RUN_SECRET: SECRET },
+        loadTakeContext,
+        loadAuditionContext,
+        claimAnalysisRun,
+        now: () => NOW,
+        runProcessTake: runner,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: true,
+      take_id: TAKE_ID,
+    });
+    expect(loadTakeContext).toHaveBeenCalledWith(TAKE_ID);
+    expect(claimAnalysisRun).toHaveBeenCalledWith(TAKE_ID);
+    expect(runner).toHaveBeenCalledWith(TAKE_ID, { preClaimed: true });
+  });
+
+  it("keeps ambiguous Worker payloads as safe invalid_request responses", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const runner = vi.fn(async () => ({ ok: true as const }));
+
+    const response = await handleInternalAnalysisRunRequest(
+      requestFor({
+        takeId: TAKE_ID,
+        take_id: "44444444-4444-4444-8444-444444444444",
+        audition_id: AUDITION_ID,
+        submission_id: AUDITION_ID,
+        reason: "mux_asset_ready",
+        same_video_context: { duplicate: false },
+        harmless_worker_metadata: "ignored",
+      }),
+      {
+        env: { ANALYSIS_RUN_SECRET: SECRET },
+        runProcessTake: runner,
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: false,
+      error: "invalid_request",
+      retryable: false,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      "[internal-analysis-runner] invalid request body",
+      expect.objectContaining({
+        error_code: "invalid_request",
+        reason: "conflicting_take_id_fields",
+        body_keys: expect.arrayContaining([
+          "audition_id",
+          "harmless_worker_metadata",
+          "reason",
+          "same_video_context",
+          "submission_id",
+          "takeId",
+          "take_id",
+        ]),
+        has_audition_id: true,
+        has_submission_id: true,
+        has_same_video_context: true,
+        has_take_id: true,
+        has_takeId: true,
+      }),
+    );
+    expect(runner).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("returns invalid_trigger without exposing the raw request body", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const runner = vi.fn(async () => ({ ok: true as const }));
+
+    const response = await handleInternalAnalysisRunRequest(
+      requestFor({
+        take_id: TAKE_ID,
+        audition_id: AUDITION_ID,
+        submission_id: AUDITION_ID,
+        trigger: "not_real",
+        reason: "mux_asset_ready",
+        same_video_context: null,
+      }),
+      {
+        env: { ANALYSIS_RUN_SECRET: SECRET },
+        runProcessTake: runner,
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: false,
+      error: "invalid_trigger",
+      retryable: false,
+      take_id: TAKE_ID,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      "[internal-analysis-runner] invalid request body",
+      expect.objectContaining({
+        error_code: "invalid_trigger",
+        reason: "invalid_trigger",
+        take_id: TAKE_ID,
+        trigger: "not_real",
+        has_audition_id: true,
+        has_submission_id: true,
+        has_same_video_context: false,
+      }),
+    );
+    expect(runner).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("controlled runner failures are non-retryable and do not expose raw details", async () => {
