@@ -26,9 +26,28 @@ ANON_SESSION_SECRET
 MUX_TOKEN_ID
 MUX_TOKEN_SECRET
 MUX_WEBHOOK_SECRET
+ANALYSIS_DISPATCH_URL
+ANALYSIS_DISPATCH_SECRET
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 ```
+
+## External Analysis Worker Dispatch
+
+`ANALYSIS_DISPATCH_URL` enables server-side dispatch to the external Cloudflare analysis Worker. When this URL is configured, TapeCoach treats the external Worker as the authoritative analysis dispatch path and must not silently fall back to request `waitUntil` if dispatch fails.
+
+Do not configure `ANALYSIS_DISPATCH_URL` for production uploads until the external Worker `/health` response confirms:
+
+```json
+{
+  "queue_binding_available": true,
+  "analysis_run_endpoint_configured": true
+}
+```
+
+`queue_binding_available=true` alone proves queue dispatch only. It does not prove live analysis completion. External dispatch success means the job was queued, not that the tape was analysed.
+
+If `ANALYSIS_RUN_ENDPOINT` points back to Lovable, treat that as a bridge only; Lovable request lifetime limits may still apply to long Gemini/finalising work. The durable target is either a Cloudflare Queue consumer that runs the real S10 analysis code directly, or a backend that supports long-running analysis jobs.
 
 ## Verification Rule
 

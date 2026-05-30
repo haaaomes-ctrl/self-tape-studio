@@ -332,6 +332,210 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(scheduled).toHaveLength(0);
   });
 
+  it("analysis dispatch uses the external worker when configured", async () => {
+    const sent: unknown[] = [];
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
+      Response.json({ ok: true, dispatch_method: "queue", queued: true }),
+    );
+
+    const result = await dispatchAnalysisJob(
+      {
+        takeId: "take-external",
+        reason: "mux_asset_ready",
+        auditionId: "audition-external",
+      },
+      {
+        env: {
+          ANALYSIS_DISPATCH_URL: "https://analysis-worker.example/dispatch-analysis",
+          ANALYSIS_DISPATCH_SECRET: "test-secret",
+          ANALYSIS_QUEUE: {
+            send: async (message) => {
+              sent.push(message);
+            },
+          },
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: true, method: "queue" });
+    expect(sent).toHaveLength(0);
+    expect(scheduled).toHaveLength(0);
+    expect(runCount).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://analysis-worker.example/dispatch-analysis");
+    expect(init?.headers).toEqual({
+      authorization: "Bearer test-secret",
+      "content-type": "application/json",
+    });
+    expect(JSON.parse(String(init?.body))).toEqual({
+      take_id: "take-external",
+      audition_id: "audition-external",
+      submission_id: "audition-external",
+      trigger: "mux_webhook",
+      reason: "mux_asset_ready",
+    });
+  });
+
+  it("external analysis dispatch unauthorised response fails safely without waitUntil fallback", async () => {
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
+      Response.json({ ok: false, error: "unauthorised" }, { status: 401 }),
+    );
+
+    const result = await dispatchAnalysisJob(
+      {
+        takeId: "take-unauthorised",
+        reason: "static_rendition_ready",
+        auditionId: "audition-unauthorised",
+      },
+      {
+        env: {
+          ANALYSIS_DISPATCH_URL: "https://analysis-worker.example/dispatch-analysis",
+          ANALYSIS_DISPATCH_SECRET: "wrong-secret",
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: "none",
+      failureCode: "analysis_external_dispatch_unauthorised",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(scheduled).toHaveLength(0);
+    expect(runCount).toBe(0);
+  });
+
+  it("external analysis dispatch queue-unavailable response fails safely without waitUntil fallback", async () => {
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
+      Response.json({ ok: false, dispatch_method: "queue_unavailable", queued: false }),
+    );
+
+    const result = await dispatchAnalysisJob(
+      {
+        takeId: "take-queue-unavailable",
+        reason: "reconciler_stale_pending",
+        auditionId: "audition-queue-unavailable",
+      },
+      {
+        env: {
+          ANALYSIS_DISPATCH_URL: "https://analysis-worker.example/dispatch-analysis",
+          ANALYSIS_DISPATCH_SECRET: "test-secret",
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: "none",
+      failureCode: "analysis_external_queue_unavailable",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(scheduled).toHaveLength(0);
+    expect(runCount).toBe(0);
+  });
+
+  it("external analysis dispatch network failure does not silently use waitUntil fallback", async () => {
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () => {
+      throw new Error("network unavailable");
+    });
+
+    const result = await dispatchAnalysisJob(
+      {
+        takeId: "take-network-failure",
+        reason: "reconciler_stale_analysing",
+        auditionId: "audition-network-failure",
+      },
+      {
+        env: {
+          ANALYSIS_DISPATCH_URL: "https://analysis-worker.example/dispatch-analysis",
+          ANALYSIS_DISPATCH_SECRET: "test-secret",
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: "none",
+      failureCode: "analysis_external_dispatch_failed",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(scheduled).toHaveLength(0);
+    expect(runCount).toBe(0);
+  });
+
+  it("external analysis dispatch requires a secret and does not make an unauthenticated request", async () => {
+    const fetchMock = vi.fn<[RequestInfo | URL, RequestInit?], Promise<Response>>(async () =>
+      Response.json({ ok: true, dispatch_method: "queue", queued: true }),
+    );
+
+    const result = await dispatchAnalysisJob(
+      {
+        takeId: "take-missing-secret",
+        reason: "mux_asset_ready",
+        auditionId: "audition-missing-secret",
+      },
+      {
+        env: {
+          ANALYSIS_DISPATCH_URL: "https://analysis-worker.example/dispatch-analysis",
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+        hasRequestContext: () => true,
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: "none",
+      failureCode: "analysis_external_dispatch_secret_missing",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("analysis dispatch falls back to waitUntil when queue binding is missing", async () => {
     const scheduled: Promise<unknown>[] = [];
     let runCount = 0;
