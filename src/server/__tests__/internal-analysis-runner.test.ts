@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ANALYSING_ORPHAN_MS } from "@/server/finalising-recovery.server";
 import {
+  canResolveTakeForInternalAnalysis,
   handleInternalAnalysisRunRequest,
   type InternalAnalysisRunTakeContext,
 } from "@/server/internal-analysis-runner.server";
@@ -51,11 +52,41 @@ function claimOk() {
   return vi.fn(async () => ({ kind: "claimed" as const }));
 }
 
+function takeLookupClient(row: Partial<InternalAnalysisRunTakeContext> | null) {
+  const maybeSingle = vi.fn(async () => ({ data: row, error: null }));
+  const eq = vi.fn(() => ({ maybeSingle }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+
+  return {
+    client: { from },
+    from,
+    select,
+    eq,
+    maybeSingle,
+  };
+}
+
 async function responseJson(response: Response): Promise<Record<string, unknown>> {
   return (await response.json()) as Record<string, unknown>;
 }
 
 describe("internal analysis runner endpoint", () => {
+  it("resolves valid take_id through the service-role lookup helper", async () => {
+    const lookup = takeLookupClient(baseTake());
+
+    await expect(
+      canResolveTakeForInternalAnalysis(TAKE_ID, { client: lookup.client }),
+    ).resolves.toBe(true);
+
+    expect(lookup.from).toHaveBeenCalledWith("takes");
+    expect(lookup.select).toHaveBeenCalledWith(
+      "id, audition_id, status, processing_phase, updated_at",
+    );
+    expect(lookup.eq).toHaveBeenCalledWith("id", TAKE_ID);
+    expect(lookup.maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 401 when auth is missing", async () => {
     const runner = vi.fn(async () => ({ ok: true as const }));
     const response = await handleInternalAnalysisRunRequest(requestFor(validBody(), null), {
@@ -102,6 +133,35 @@ describe("internal analysis runner endpoint", () => {
       error: "invalid_request",
       retryable: false,
     });
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("looks up the take before reporting an audition mismatch", async () => {
+    const runner = vi.fn(async () => ({ ok: true as const }));
+    const loadTakeContext = vi.fn(async () => ({ kind: "missing" as const }));
+    const loadAuditionContext = vi.fn(async () => ({ kind: "ok" as const }));
+
+    const response = await handleInternalAnalysisRunRequest(
+      requestFor(validBody({ audition_id: "44444444-4444-4444-8444-444444444444" })),
+      {
+        env: { ANALYSIS_RUN_SECRET: SECRET },
+        loadTakeContext,
+        loadAuditionContext,
+        now: () => NOW,
+        runProcessTake: runner,
+      },
+    );
+
+    expect(response.status).toBe(404);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: false,
+      error: "take_not_found",
+      retryable: false,
+      take_id: TAKE_ID,
+    });
+    expect(loadTakeContext).toHaveBeenCalledWith(TAKE_ID);
+    expect(loadAuditionContext).not.toHaveBeenCalled();
     expect(runner).not.toHaveBeenCalled();
   });
 
@@ -276,6 +336,41 @@ describe("internal analysis runner endpoint", () => {
     expect(runner).not.toHaveBeenCalled();
   });
 
+  it("direct Worker-shaped payload resolves the take and calls runProcessTake", async () => {
+    const runner = vi.fn(async () => ({ ok: true as const }));
+    const loadTakeContext = vi.fn(async () => ({ kind: "ok" as const, take: baseTake() }));
+    const loadAuditionContext = vi.fn(async () => ({ kind: "ok" as const }));
+    const claimAnalysisRun = claimOk();
+
+    const response = await handleInternalAnalysisRunRequest(
+      requestFor({
+        take_id: TAKE_ID,
+        audition_id: AUDITION_ID,
+        submission_id: AUDITION_ID,
+        trigger: "mux_webhook",
+        reason: "external_worker_queue_delivery",
+      }),
+      {
+        env: { ANALYSIS_RUN_SECRET: SECRET },
+        loadTakeContext,
+        loadAuditionContext,
+        claimAnalysisRun,
+        now: () => NOW,
+        runProcessTake: runner,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: true,
+      take_id: TAKE_ID,
+    });
+    expect(loadTakeContext).toHaveBeenCalledWith(TAKE_ID);
+    expect(claimAnalysisRun).toHaveBeenCalledWith(TAKE_ID);
+    expect(runner).toHaveBeenCalledWith(TAKE_ID, { preClaimed: true });
+  });
+
   it("controlled runner failures are non-retryable and do not expose raw details", async () => {
     const rawMessage =
       "raw prompt signed https://private.example/signed-url secret model response hash";
@@ -369,6 +464,12 @@ describe("internal analysis runner endpoint", () => {
 
     expect(route).toContain('createFileRoute("/api/internal/run-analysis")');
     expect(combined).toContain("runProcessTake");
+    expect(source).toContain('client_source: "supabaseAdmin_service_role"');
+    expect(source).toContain('INTERNAL_ANALYSIS_TAKE_TABLE = "takes"');
+    expect(source).toContain('INTERNAL_ANALYSIS_TAKE_ID_COLUMN = "id"');
+    expect(source).toContain("supabaseAdmin");
+    expect(source).not.toContain('@/integrations/supabase/client"');
+    expect(source).not.toContain('.eq("user_id"');
     expect(combined).not.toContain("dispatchAnalysisJob");
     expect(combined).not.toContain("enqueueAnalysisJob");
     expect(combined).not.toContain("enqueueAnalysisJobOrMarkFailed");
