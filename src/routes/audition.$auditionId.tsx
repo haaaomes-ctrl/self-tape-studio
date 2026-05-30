@@ -50,6 +50,11 @@ import {
   readStoredAnalyticsAttribution,
   trackAnalyticsEvent,
 } from "@/lib/analytics-attribution";
+import {
+  activeS10TakeVersions,
+  buildS10TakeAnalysisRunId,
+  nextS10TakeSlot,
+} from "@/lib/take-lifecycle";
 
 // Public-safe headline picker for v1 + v2 reports. Mirrors the server-side
 // helper in `report-output-enforcement.server.ts` (kept local to avoid
@@ -108,6 +113,17 @@ export const Route = createFileRoute("/audition/$auditionId")({
 interface Take {
   id: string;
   take_number: number;
+  take_slot: number | null;
+  take_version_number: number | null;
+  take_version_status: string | null;
+  replaces_take_id: string | null;
+  replaced_by_take_id: string | null;
+  replacement_reason: string | null;
+  analysis_run_id: string | null;
+  report_model_status: string | null;
+  qa_artifact_status: string | null;
+  manifest_status: string | null;
+  same_video_status: string | null;
   status: string;
   error_message: string | null;
   overall_score: number | null;
@@ -167,15 +183,19 @@ function AuditionPage() {
       .eq("audition_id", auditionId)
       .order("take_number");
     if (ts) {
-      const next = ts as Take[];
+      const allVersions = ts as Take[];
+      const next = activeS10TakeVersions(allVersions);
       setTakes(next);
-      if (!activeTakeId && next.length) setActiveTakeId(next[next.length - 1].id);
+      if ((!activeTakeId || !next.some((take) => take.id === activeTakeId)) && next.length) {
+        setActiveTakeId(next[next.length - 1].id);
+      }
       // Lightweight observability — confirms the UI received DB truth and
       // detects stuck-tab scenarios. No PII, no payload contents.
       const anyTerminal = next.some((t) => t.status === "error" || t.status === "complete");
       console.log("ui_poll_refresh", {
         reason,
         takes: next.length,
+        take_versions: allVersions.length,
         statuses: next.map((t) => t.status),
         any_terminal: anyTerminal,
       });
@@ -318,6 +338,8 @@ function AuditionPage() {
 
   const activeTake = takes.find((t) => t.id === activeTakeId) ?? takes[takes.length - 1];
   const completed = takes.filter((t) => t.status === "complete");
+  const nextOpenTakeSlot = nextS10TakeSlot(takes);
+  const canAddTake = nextOpenTakeSlot != null;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -337,7 +359,7 @@ function AuditionPage() {
                 <ArrowLeft className="mr-2 h-4 w-4" /> All auditions
               </Link>
             </Button>
-            {takes.length < 3 && (
+            {canAddTake && (
               <Button
                 variant="secondary"
                 className="bg-white text-foreground hover:bg-white/90"
@@ -375,10 +397,10 @@ function AuditionPage() {
         }
       />
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 pb-24 pt-10">
-        {showAdd && takes.length < 3 && (
+        {showAdd && nextOpenTakeSlot != null && (
           <AddTakeBlock
             audition={audition}
-            nextNumber={takes.length + 1}
+            nextNumber={nextOpenTakeSlot}
             onCancel={() => setShowAdd(false)}
             onUploaded={(newTakeId) => {
               setShowAdd(false);
@@ -456,7 +478,15 @@ function AuditionPage() {
                           }}
                         />
                       </div>
-                      <TakeView take={t} audition={audition} isSoleTake={completed.length <= 1} />
+                      <TakeView
+                        take={t}
+                        audition={audition}
+                        isSoleTake={completed.length <= 1}
+                        onReplacementUploaded={(newTakeId) => {
+                          if (newTakeId) setActiveTakeId(newTakeId);
+                          refresh("after_replacement_upload");
+                        }}
+                      />
                     </TabsContent>
                   ))}
                 </Tabs>
@@ -501,7 +531,13 @@ function useElapsedSeconds(startIso: string) {
 
 // FailedTakeView only renders for takes that have actually failed
 // (status = "error"). Try again is the user's recovery surface here.
-function FailedTakeView({ take }: { take: Take }) {
+function FailedTakeView({
+  take,
+  onReplacementUploaded,
+}: {
+  take: Take;
+  onReplacementUploaded?: (newTakeId?: string) => void;
+}) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -560,10 +596,13 @@ function FailedTakeView({ take }: { take: Take }) {
 
       const signals = await buildTakeUploadSignals(f, checklist);
 
-      await resetTakeForReupload({ data: { takeId: take.id, signals, checklist } });
+      const replacement = await resetTakeForReupload({
+        data: { takeId: take.id, signals, checklist },
+      });
+      const replacementTakeId = replacement.replacementTakeId;
       let uploadUrl: string | undefined;
       try {
-        const res = await createMuxDirectUpload({ data: { takeId: take.id } });
+        const res = await createMuxDirectUpload({ data: { takeId: replacementTakeId } });
         uploadUrl = res.uploadUrl;
       } catch (err) {
         const info = describeUploadError(err);
@@ -573,6 +612,7 @@ function FailedTakeView({ take }: { take: Take }) {
         throw new Error("Video service did not return an upload URL. Please try again.");
       await uploadFileToMux(uploadUrl, f);
       toast.success("Replacement uploaded — optimising and analysing now");
+      onReplacementUploaded?.(replacementTakeId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Replace failed");
     } finally {
@@ -998,17 +1038,19 @@ function TakeView({
   take,
   audition,
   isSoleTake,
+  onReplacementUploaded,
 }: {
   take: Take;
   audition: Audition;
   isSoleTake?: boolean;
+  onReplacementUploaded?: (newTakeId?: string) => void;
 }) {
   if (take.status === "pending" || take.status === "processing") {
     return <ProcessingTakeView take={take} />;
   }
 
   if (take.status === "error") {
-    return <FailedTakeView take={take} />;
+    return <FailedTakeView take={take} onReplacementUploaded={onReplacementUploaded} />;
   }
 
   const r = take.report;
@@ -1935,13 +1977,26 @@ function AddTakeBlock({
       const analyticsAttribution = buildAnalyticsAttributionMetadata(
         readStoredAnalyticsAttribution(),
       );
+      const newTakeId = crypto.randomUUID();
       const { data: take, error: takeErr } = await supabase
         .from("takes")
         .insert([
           {
+            id: newTakeId,
             audition_id: audition.id,
             user_id: user.id,
             take_number: nextNumber,
+            take_slot: nextNumber,
+            take_version_number: 1,
+            take_version_status: "active",
+            analysis_run_id: buildS10TakeAnalysisRunId(newTakeId),
+            report_model_status: "not_emitted",
+            qa_artifact_status: "not_enabled",
+            manifest_status: "not_enabled",
+            same_video_status: "not_evaluated",
+            take_lifecycle_metadata: {
+              source: "add_take_upload",
+            } as never,
             video_path: null,
             status: "pending",
             mux_status: "uploading",

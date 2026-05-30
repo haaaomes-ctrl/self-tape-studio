@@ -5,6 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { runProcessTake } from "@/server/process-take.server";
 import { replaceReuploadUploadIdentitySignals } from "@/lib/mux-upload";
+import type { Json } from "@/integrations/supabase/types";
 import {
   assertWithinAnalysisQuota,
   QuotaExceededError,
@@ -169,39 +170,24 @@ export const resetTakeForReupload = createServerFn({ method: "POST" })
       });
     });
     const replacementSignals = replaceReuploadUploadIdentitySignals(signals);
-    await supabaseAdmin
-      .from("takes")
-      .update({
-        status: "pending",
-        processing_phase: "uploading",
-        error_message: null,
-        report: null,
-        scores: null,
-        overall_score: null,
-        confidence: null,
-        signals: replacementSignals as never,
-        checklist: checklist ?? null,
-        attempt_count: 0,
-        analysis_tier: null,
-        mux_status: "none",
-        mux_upload_id: null,
-        mux_asset_id: null,
-        mux_playback_id: null,
-        mux_mp4_standard_url: null,
-        mux_mp4_high_url: null,
-        mux_duration_seconds: null,
-        video_path: null,
-        credit_reservation_id: null,
-        credit_consumption_ledger_entry_id: null,
-        credit_lifecycle_status: null,
-        credit_lifecycle_metadata: {
-          trigger: "reset_take_for_reupload",
-          replacement_credit_policy: "new_report_generation_requires_new_credit",
-        } as never,
-        credit_is_synthetic_usage: false,
-      })
-      .eq("id", takeId);
-    return { ok: true };
+    const { data: replacementTakeId, error } = await supabaseAdmin.rpc(
+      "create_replacement_take_version",
+      {
+        p_take_id: takeId,
+        p_user_id: context.userId,
+        p_signals: replacementSignals as Json,
+        p_checklist: (checklist ?? null) as Json,
+        p_replacement_reason: "user_replaced",
+      },
+    );
+    if (error || !replacementTakeId) {
+      console.error("[take-lifecycle] replacement_take_version_failed", {
+        take_id: takeId,
+        error: error?.message ?? "missing_replacement_take_id",
+      });
+      throw new Error("Could not prepare a replacement take. Please refresh and try again.");
+    }
+    return { ok: true, replacementTakeId };
   });
 
 // Cancel a stuck/errored take.

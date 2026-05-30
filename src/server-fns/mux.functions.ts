@@ -170,28 +170,31 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     // when the row count exceeds the configured cap.
     {
       const cfg = await getResolvedConfig();
-      const { count: takesInAudition, error: cntErr } = await supabaseAdmin
+      const { count: activeTakeVersionsInAudition, error: cntErr } = await supabaseAdmin
         .from("takes")
         .select("id", { count: "exact", head: true })
-        .eq("audition_id", take.audition_id);
+        .eq("audition_id", take.audition_id)
+        .eq("take_version_status", "active");
       if (cntErr) {
         console.error("[mux-upload] per_audition_count_failed", {
           take_id: takeId,
           error: cntErr.message,
         });
-      } else if ((takesInAudition ?? 0) > cfg.max_takes_per_audition) {
-        // Roll back the just-inserted take row so the count is consistent.
+      } else if ((activeTakeVersionsInAudition ?? 0) > cfg.max_takes_per_audition) {
+        // Roll back the just-inserted active version so the count is consistent.
+        // Replaced versions remain as audit/report proof and do not consume an
+        // active slot.
         await supabaseAdmin.from("takes").delete().eq("id", takeId);
         console.warn("[mux-upload] per_audition_cap_reached", {
           take_id: takeId,
-          count: takesInAudition,
+          count: activeTakeVersionsInAudition,
           cap: cfg.max_takes_per_audition,
         });
         metric("quota_rejection", {
           take_id: takeId,
           reason: "per_audition_cap",
           cap: cfg.max_takes_per_audition,
-          count: takesInAudition ?? 0,
+          count: activeTakeVersionsInAudition ?? 0,
         });
         metric("upload_url_failure", { take_id: takeId, reason: "per_audition_cap" });
         throw new Error(
