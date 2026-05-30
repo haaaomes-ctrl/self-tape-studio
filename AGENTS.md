@@ -53,6 +53,10 @@ For work that adds or changes Supabase tables, views, RPCs, columns, enums, trig
 
 If live logs say a table column, view or RPC could not be found in the schema cache, classify it as a Supabase schema/cache gate failure. Do not treat that as a Lovable source repair problem, and do not force Lovable to regenerate or overwrite source files. Apply or verify the SQL, reload the schema cache, then retry the live workflow.
 
+When live validation exposes several connected runtime failures, do not jump from patch to patch. First verify the whole dependency graph for that workflow: schema objects, RPCs, queue tables, pg_cron jobs, Vault-backed secrets, canonical URLs and PostgREST visibility. Apply one source-of-truth repair that makes the workflow coherent.
+
+Cron jobs must target stable production endpoints unless a task explicitly defines a preview-only test. Do not leave Lovable preview URLs, worker-bundle URLs or query-token URLs in durable Supabase cron commands. Cron authentication should use Vault-backed headers or bearer tokens, not pasted preview tokens.
+
 Full-repo lint may be blocked by pre-existing formatting debt, but that does not replace type safety. In that case, record the lint blocker and run focused lint, `npm exec tsc -- --noEmit`, build and relevant tests for the changed surface.
 
 ---

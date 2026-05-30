@@ -841,6 +841,28 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(scheduledCommand).not.toContain("selftape.lovable.app");
   });
 
+  it("email queue cleanup migration removes preview-token cron wiring before scheduling canonical production", async () => {
+    const source = await readFile(
+      path.join(
+        process.cwd(),
+        "supabase/migrations/20260530215700_email_queue_canonical_runtime_wiring.sql",
+      ),
+      "utf8",
+    );
+    const scheduledCommand = source.slice(source.indexOf("SELECT cron.schedule"));
+
+    expect(source).toContain("cron.unschedule(jobid)");
+    expect(source).toContain("process-email-queue");
+    expect(source).toContain("id-preview--%.lovable.app");
+    expect(source).toContain("__lovable_token");
+    expect(scheduledCommand).toContain("https://tapecoach.co.uk/lovable/email/queue/process");
+    expect(scheduledCommand).toContain("'Authorization'");
+    expect(scheduledCommand).toContain("email_queue_service_role_key");
+    expect(scheduledCommand).not.toContain("id-preview--");
+    expect(scheduledCommand).not.toContain("__lovable_token");
+    expect(scheduledCommand).not.toContain(".lovable.app/lovable/email/queue/process");
+  });
+
   it("one-off migration clears the observed stuck analysing live take only if it is still stuck", async () => {
     const source = await readFile(
       path.join(
