@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ANALYSING_ORPHAN_MS, FINALISING_ORPHAN_MS } from "@/server/finalising-recovery.server";
-import { runProcessTake, type RunProcessTakeResult } from "@/server/process-take.server";
+import {
+  claimAnalysisRunForTake,
+  runProcessTake,
+  type AnalysisRunClaimResult,
+  type RunProcessTakeOptions,
+  type RunProcessTakeResult,
+} from "@/server/process-take.server";
 import { getRequestEnv } from "@/worker-entry";
 
 type InternalAnalysisRunEnv = {
@@ -42,8 +48,12 @@ type InternalAnalysisRunDeps = {
   env?: InternalAnalysisRunEnv | null;
   loadTakeContext?: (takeId: string) => Promise<ContextLoadResult>;
   loadAuditionContext?: (auditionId: string) => Promise<AuditionLoadResult>;
+  claimAnalysisRun?: (takeId: string) => Promise<AnalysisRunClaimResult>;
   now?: () => number;
-  runProcessTake?: (takeId: string) => Promise<RunProcessTakeResult>;
+  runProcessTake?: (
+    takeId: string,
+    options?: RunProcessTakeOptions,
+  ) => Promise<RunProcessTakeResult>;
 };
 
 type SafeErrorCode =
@@ -192,7 +202,10 @@ function classifyActiveProcessing(
 ): "runnable" | "already_complete" | "already_processing" | "stale_processing" {
   if (take.status === "complete") return "already_complete";
   const phase = take.processing_phase;
-  if (phase !== "analysing" && phase !== "finalising") return "runnable";
+  if (take.status !== "processing") return "runnable";
+  if (phase !== "analysis_pending" && phase !== "analysing" && phase !== "finalising") {
+    return "runnable";
+  }
 
   const updatedAtMs = take.updated_at ? Date.parse(take.updated_at) : Number.NaN;
   const idleMs = Number.isFinite(updatedAtMs)
@@ -317,10 +330,10 @@ export async function handleInternalAnalysisRunRequest(
     });
   }
   if (activeState === "already_processing") {
-    return safeErrorResponse({
-      code: "analysis_already_processing",
-      retryable: false,
-      takeId,
+    return jsonResponse({
+      ok: true,
+      take_id: takeId,
+      already_processing: true,
     });
   }
   if (activeState === "stale_processing") {
@@ -350,13 +363,63 @@ export async function handleInternalAnalysisRunRequest(
     });
   }
 
-  const runner = deps.runProcessTake ?? runProcessTake;
+  const claimAnalysisRun = deps.claimAnalysisRun ?? claimAnalysisRunForTake;
+  const claim = await claimAnalysisRun(takeId);
+  if (claim.kind === "already_complete") {
+    return jsonResponse({
+      ok: true,
+      take_id: takeId,
+      already_complete: true,
+    });
+  }
+  if (claim.kind === "already_processing") {
+    return jsonResponse({
+      ok: true,
+      take_id: takeId,
+      already_processing: true,
+    });
+  }
+  if (claim.kind === "stale_processing") {
+    return safeErrorResponse({
+      code: "analysis_stale_processing_reconciler_required",
+      retryable: false,
+      takeId,
+    });
+  }
+  if (claim.kind === "missing") {
+    return safeErrorResponse({
+      status: 404,
+      code: "take_not_found",
+      retryable: false,
+      takeId,
+    });
+  }
+  if (claim.kind === "error") {
+    return safeErrorResponse({
+      status: 503,
+      code: "analysis_context_unavailable",
+      retryable: true,
+      takeId,
+    });
+  }
+  if (claim.kind === "not_runnable") {
+    return jsonResponse({
+      ok: true,
+      take_id: takeId,
+      already_processing: true,
+    });
+  }
+
+  const runner =
+    deps.runProcessTake ??
+    ((claimedTakeId: string, runnerOptions?: RunProcessTakeOptions) =>
+      runProcessTake(claimedTakeId, false, runnerOptions));
   try {
     console.log("[internal-analysis-runner] starting analysis", {
       take_id: takeId,
       trigger,
     });
-    const result = await runner(takeId);
+    const result = await runner(takeId, { preClaimed: true });
     if (result.ok) {
       return jsonResponse({
         ok: true,

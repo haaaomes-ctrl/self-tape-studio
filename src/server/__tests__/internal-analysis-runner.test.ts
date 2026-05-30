@@ -47,6 +47,10 @@ function validBody(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
+function claimOk() {
+  return vi.fn(async () => ({ kind: "claimed" as const }));
+}
+
 async function responseJson(response: Response): Promise<Record<string, unknown>> {
   return (await response.json()) as Record<string, unknown>;
 }
@@ -105,11 +109,13 @@ describe("internal analysis runner endpoint", () => {
     const runner = vi.fn(async () => ({ ok: true as const }));
     const loadTakeContext = vi.fn(async () => ({ kind: "ok" as const, take: baseTake() }));
     const loadAuditionContext = vi.fn(async () => ({ kind: "ok" as const }));
+    const claimAnalysisRun = claimOk();
 
     const response = await handleInternalAnalysisRunRequest(requestFor(validBody()), {
       env: { ANALYSIS_RUN_SECRET: SECRET },
       loadTakeContext,
       loadAuditionContext,
+      claimAnalysisRun,
       now: () => NOW,
       runProcessTake: runner,
     });
@@ -122,8 +128,9 @@ describe("internal analysis runner endpoint", () => {
     });
     expect(loadTakeContext).toHaveBeenCalledWith(TAKE_ID);
     expect(loadAuditionContext).toHaveBeenCalledWith(AUDITION_ID);
+    expect(claimAnalysisRun).toHaveBeenCalledWith(TAKE_ID);
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(runner).toHaveBeenCalledWith(TAKE_ID);
+    expect(runner).toHaveBeenCalledWith(TAKE_ID, { preClaimed: true });
   });
 
   it("complete takes no-op without calling the runner", async () => {
@@ -171,14 +178,57 @@ describe("internal analysis runner endpoint", () => {
       expect(response.status).toBe(200);
       expect(await responseJson(response)).toEqual({
         mark_complete: false,
-        ok: false,
-        error: "analysis_already_processing",
-        retryable: false,
+        ok: true,
         take_id: TAKE_ID,
+        already_processing: true,
       });
       expect(runner).not.toHaveBeenCalled();
     },
   );
+
+  it("duplicate queue deliveries atomically coalesce to one runner call", async () => {
+    const runner = vi.fn(async () => ({ ok: true as const }));
+    let claimed = false;
+    const claimAnalysisRun = vi.fn(async () => {
+      if (!claimed) {
+        claimed = true;
+        return { kind: "claimed" as const };
+      }
+      return { kind: "already_processing" as const, processingPhase: "analysis_pending" };
+    });
+
+    const deps = {
+      env: { ANALYSIS_RUN_SECRET: SECRET },
+      loadTakeContext: async () => ({ kind: "ok" as const, take: baseTake() }),
+      loadAuditionContext: async () => ({ kind: "ok" as const }),
+      claimAnalysisRun,
+      now: () => NOW,
+      runProcessTake: runner,
+    };
+
+    const [first, second] = await Promise.all([
+      handleInternalAnalysisRunRequest(requestFor(validBody()), deps),
+      handleInternalAnalysisRunRequest(requestFor(validBody()), deps),
+    ]);
+    const payloads = [await responseJson(first), await responseJson(second)];
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(claimAnalysisRun).toHaveBeenCalledTimes(2);
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(runner).toHaveBeenCalledWith(TAKE_ID, { preClaimed: true });
+    expect(payloads).toContainEqual({
+      mark_complete: false,
+      ok: true,
+      take_id: TAKE_ID,
+    });
+    expect(payloads).toContainEqual({
+      mark_complete: false,
+      ok: true,
+      take_id: TAKE_ID,
+      already_processing: true,
+    });
+  });
 
   it("stale active processing is left for the reconciler", async () => {
     const runner = vi.fn(async () => ({ ok: true as const }));
@@ -230,11 +280,13 @@ describe("internal analysis runner endpoint", () => {
     const rawMessage =
       "raw prompt signed https://private.example/signed-url secret model response hash";
     const runner = vi.fn(async () => ({ ok: false as const, error: rawMessage }));
+    const claimAnalysisRun = claimOk();
 
     const response = await handleInternalAnalysisRunRequest(requestFor(validBody()), {
       env: { ANALYSIS_RUN_SECRET: SECRET },
       loadTakeContext: async () => ({ kind: "ok", take: baseTake() }),
       loadAuditionContext: async () => ({ kind: "ok" }),
+      claimAnalysisRun,
       now: () => NOW,
       runProcessTake: runner,
     });
@@ -259,11 +311,13 @@ describe("internal analysis runner endpoint", () => {
     const runner = vi.fn(async () => {
       throw new Error("raw prompt signed https://private.example/signed-url secret");
     });
+    const claimAnalysisRun = claimOk();
 
     const response = await handleInternalAnalysisRunRequest(requestFor(validBody()), {
       env: { ANALYSIS_RUN_SECRET: SECRET },
       loadTakeContext: async () => ({ kind: "ok", take: baseTake() }),
       loadAuditionContext: async () => ({ kind: "ok" }),
+      claimAnalysisRun,
       now: () => NOW,
       runProcessTake: runner,
     });
@@ -287,11 +341,13 @@ describe("internal analysis runner endpoint", () => {
     const runner = vi.fn(async () => {
       throw new Error("Timeout exceeded");
     });
+    const claimAnalysisRun = claimOk();
 
     const response = await handleInternalAnalysisRunRequest(requestFor(validBody()), {
       env: { ANALYSIS_RUN_SECRET: SECRET },
       loadTakeContext: async () => ({ kind: "ok", take: baseTake() }),
       loadAuditionContext: async () => ({ kind: "ok" }),
+      claimAnalysisRun,
       now: () => NOW,
       runProcessTake: runner,
     });

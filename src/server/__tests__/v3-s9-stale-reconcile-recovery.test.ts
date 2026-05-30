@@ -513,6 +513,69 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(runCount).toBe(0);
   });
 
+  it("external analysis dispatch aborts hung worker requests without waitUntil fallback", async () => {
+    vi.useFakeTimers();
+    const scheduled: Promise<unknown>[] = [];
+    let runCount = 0;
+    let abortObserved = false;
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            abortObserved = true;
+            const error = new Error("aborted before start");
+            error.name = "AbortError";
+            reject(error);
+            return;
+          }
+          signal?.addEventListener("abort", () => {
+            abortObserved = true;
+            const error = new Error("aborted by timeout");
+            error.name = "AbortError";
+            reject(error);
+          });
+        }),
+    );
+
+    const resultPromise = dispatchAnalysisJob(
+      {
+        takeId: "take-hung-external-dispatch",
+        reason: "mux_asset_ready",
+        auditionId: "audition-hung-external-dispatch",
+      },
+      {
+        env: {
+          ANALYSIS_DISPATCH_URL: "https://analysis-worker.example/dispatch-analysis",
+          ANALYSIS_DISPATCH_SECRET: "test-secret",
+        },
+        fetch: fetchMock as unknown as typeof fetch,
+        hasRequestContext: () => true,
+        scheduleBackground: (promise) => {
+          scheduled.push(promise);
+        },
+        runProcessTake: async () => {
+          runCount += 1;
+          return { ok: true };
+        },
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    const result = await resultPromise;
+
+    expect(result).toEqual({
+      ok: false,
+      method: "none",
+      failureCode: "analysis_external_dispatch_timeout",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(abortObserved).toBe(true);
+    expect(scheduled).toHaveLength(0);
+    expect(runCount).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("external analysis dispatch requires a secret and does not make an unauthenticated request", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>

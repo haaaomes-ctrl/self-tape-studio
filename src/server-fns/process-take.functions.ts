@@ -126,7 +126,7 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       }
       throw err;
     }
-    return runProcessTake(data.takeId, data.allowOriginal);
+    return runProcessTake(data.takeId, data.allowOriginal, { includeErrorRetry: true });
   });
 
 // Reset a take so the user can re-upload a new video to Mux directly.

@@ -60,6 +60,7 @@ export type AnalysisDispatchResult = {
     | "analysis_external_dispatch_unauthorised"
     | "analysis_external_queue_unavailable"
     | "analysis_external_dispatch_failed"
+    | "analysis_external_dispatch_timeout"
     | "analysis_external_dispatch_invalid_response"
     | "analysis_external_dispatch_take_lookup_failed"
     | "analysis_queue_unavailable"
@@ -121,6 +122,10 @@ function isExternalQueueSuccess(payload: unknown): boolean {
   return record.ok === true && record.dispatch_method === "queue" && record.queued === true;
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 async function resolveExternalDispatchContext(
   params: AnalysisDispatchParams,
 ): Promise<{ auditionId: string | null; submissionId: string | null } | null> {
@@ -175,7 +180,11 @@ async function dispatchAnalysisJobExternally(
 
   const trigger = params.trigger ?? triggerForReason(params.reason);
   const fetchImpl = deps.fetch ?? fetch;
+  const controller = new AbortController();
+  const timeoutMs = 12_000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
+  let payload: unknown;
   try {
     response = await fetchImpl(dispatchUrl, {
       method: "POST",
@@ -190,24 +199,33 @@ async function dispatchAnalysisJobExternally(
         trigger,
         reason: params.reason,
       }),
+      signal: controller.signal,
+    });
+    payload = await response.json().catch((error: unknown) => {
+      if (isAbortError(error)) throw error;
+      return null;
     });
   } catch (error) {
+    const failureCode = isAbortError(error)
+      ? "analysis_external_dispatch_timeout"
+      : "analysis_external_dispatch_failed";
     console.error("[analysis-queue] external dispatch request failed", {
       take_id: params.takeId,
       reason: params.reason,
       dispatch_url: safeDispatchUrlLabel(dispatchUrl),
+      failure_code: failureCode,
       error: error instanceof Error ? error.message : String(error),
     });
     metric("analysis_enqueue_failed", {
       take_id: params.takeId,
       reason: params.reason,
-      failure_code: "analysis_external_dispatch_failed",
+      failure_code: failureCode,
       dispatch_source: "external_worker",
     });
-    return { ok: false, method: "none", failureCode: "analysis_external_dispatch_failed" };
+    return { ok: false, method: "none", failureCode };
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const payload = (await response.json().catch(() => null)) as unknown;
 
   if (response.status === 401 || response.status === 403) {
     console.error("[analysis-queue] external dispatch unauthorised", {

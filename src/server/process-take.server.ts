@@ -83,6 +83,7 @@ import {
   recordServerAnalyticsEvent,
 } from "./analytics-events.server";
 import { safeEnqueueCrmEmailForUser } from "./crm-messaging.server";
+import { ANALYSING_ORPHAN_MS, FINALISING_ORPHAN_MS } from "./finalising-recovery.server";
 import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
@@ -2127,6 +2128,137 @@ export type RunProcessTakeResult =
   | { ok: true; tier?: Tier; alreadyDone?: boolean; alreadyRunning?: boolean }
   | { ok: false; error: string };
 
+export type RunProcessTakeOptions = {
+  preClaimed?: boolean;
+  includeErrorRetry?: boolean;
+};
+
+type AnalysisRunClaimPhase = "analysis_pending" | "analysing" | "finalising";
+
+export type AnalysisRunClaimResult =
+  | { kind: "claimed" }
+  | { kind: "already_complete" }
+  | { kind: "already_processing"; processingPhase: string | null }
+  | { kind: "stale_processing"; processingPhase: string | null }
+  | { kind: "not_runnable"; status: string | null; processingPhase: string | null }
+  | { kind: "missing" }
+  | { kind: "error"; error: string };
+
+const ANALYSIS_RUNNABLE_PROCESSING_PHASES = ["analysis_pending", "queued", "pending"] as const;
+const ANALYSIS_ACTIVE_PROCESSING_PHASES: readonly AnalysisRunClaimPhase[] = [
+  "analysis_pending",
+  "analysing",
+  "finalising",
+];
+const ANALYSIS_PENDING_CLAIM_FILTER = `and(status.eq.pending,processing_phase.in.(${ANALYSIS_RUNNABLE_PROCESSING_PHASES.join(
+  ",",
+)}))`;
+const ANALYSIS_RETRY_ERROR_CLAIM_FILTER = "and(status.eq.error,processing_phase.eq.error)";
+
+function isAnalysisActiveProcessingPhase(phase: string | null): phase is AnalysisRunClaimPhase {
+  return ANALYSIS_ACTIVE_PROCESSING_PHASES.includes(phase as AnalysisRunClaimPhase);
+}
+
+function classifyAnalysisRunClaimRow(
+  row: {
+    status: string | null;
+    processing_phase: string | null;
+    updated_at: string | null;
+  },
+  now: number,
+): Exclude<AnalysisRunClaimResult, { kind: "claimed" | "missing" | "error" }> {
+  if (row.status === "complete") return { kind: "already_complete" };
+
+  if (row.status === "processing" && isAnalysisActiveProcessingPhase(row.processing_phase)) {
+    const updatedAtMs = row.updated_at ? Date.parse(row.updated_at) : Number.NaN;
+    const idleMs = Number.isFinite(updatedAtMs)
+      ? Math.max(0, now - updatedAtMs)
+      : Number.POSITIVE_INFINITY;
+    const staleMs =
+      row.processing_phase === "finalising" ? FINALISING_ORPHAN_MS : ANALYSING_ORPHAN_MS;
+
+    if (idleMs < staleMs) {
+      return { kind: "already_processing", processingPhase: row.processing_phase };
+    }
+    return { kind: "stale_processing", processingPhase: row.processing_phase };
+  }
+
+  return {
+    kind: "not_runnable",
+    status: row.status,
+    processingPhase: row.processing_phase,
+  };
+}
+
+/**
+ * Atomically claims one runnable analysis row before expensive AI/report work.
+ * The conditional update is the ownership boundary: duplicate queue deliveries
+ * may all reach this helper, but only the caller that updates the row continues.
+ * Manual retry callers may opt into non-cancelled error/error rows; cancelled
+ * rows return before this helper is called.
+ */
+export async function claimAnalysisRunForTake(
+  takeId: string,
+  now = Date.now(),
+  options: { includeErrorRetry?: boolean } = {},
+): Promise<AnalysisRunClaimResult> {
+  const claimedAt = new Date(now).toISOString();
+  const claimFilter = options.includeErrorRetry
+    ? `${ANALYSIS_PENDING_CLAIM_FILTER},${ANALYSIS_RETRY_ERROR_CLAIM_FILTER}`
+    : ANALYSIS_PENDING_CLAIM_FILTER;
+  const { data: claimedRows, error: claimErr } = await supabaseAdmin
+    .from("takes")
+    .update({
+      status: "processing",
+      processing_phase: "analysis_pending",
+      error_message: null,
+      updated_at: claimedAt,
+    })
+    .eq("id", takeId)
+    .or(claimFilter)
+    .select("id");
+
+  if (claimErr) {
+    console.error("[take-pipeline] analysis claim failed", {
+      take_id: takeId,
+      error: claimErr.message,
+    });
+    metric("phase_transition_failure", {
+      take_id: takeId,
+      reason: "analysis_claim_failed",
+    });
+    return { kind: "error", error: "analysis_claim_failed" };
+  }
+
+  if (Array.isArray(claimedRows) && claimedRows.length > 0) {
+    return { kind: "claimed" };
+  }
+
+  const { data: current, error: readErr } = await supabaseAdmin
+    .from("takes")
+    .select("status, processing_phase, updated_at")
+    .eq("id", takeId)
+    .maybeSingle();
+
+  if (readErr) {
+    console.error("[take-pipeline] analysis claim reread failed", {
+      take_id: takeId,
+      error: readErr.message,
+    });
+    return { kind: "error", error: "analysis_claim_reread_failed" };
+  }
+  if (!current) return { kind: "missing" };
+
+  return classifyAnalysisRunClaimRow(
+    {
+      status: current.status ?? null,
+      processing_phase: current.processing_phase ?? null,
+      updated_at: current.updated_at ?? null,
+    },
+    now,
+  );
+}
+
 export type SubmissionVerdict = {
   // Plain-language label shown directly to the user. Canonical set — keep in
   // sync with VerdictLabel in src/lib/audition-rules.ts.
@@ -2222,6 +2354,7 @@ export function computeSubmissionVerdict(input: {
 export async function runProcessTake(
   takeId: string,
   allowOriginal = false,
+  options: RunProcessTakeOptions = {},
 ): Promise<RunProcessTakeResult> {
   const runStartedAt = Date.now();
   const { data: take, error: takeErr } = await supabaseAdmin
@@ -2274,12 +2407,58 @@ export async function runProcessTake(
     }
   }
 
+  if (!options.preClaimed) {
+    const claim = await claimAnalysisRunForTake(takeId, Date.now(), {
+      includeErrorRetry: options.includeErrorRetry === true,
+    });
+    if (claim.kind !== "claimed") {
+      if (claim.kind === "already_complete") {
+        return { ok: true, alreadyDone: true };
+      }
+      if (claim.kind === "already_processing" || claim.kind === "stale_processing") {
+        console.log("already_running_skip", {
+          take_id: takeId,
+          processing_phase: claim.processingPhase,
+          attempt_count: take.attempt_count ?? 0,
+          claim_state: claim.kind,
+        });
+        metric("already_running_skip", {
+          take_id: takeId,
+          processing_phase: claim.processingPhase,
+          attempt: take.attempt_count ?? 0,
+          reason: claim.kind,
+        });
+        return { ok: true, alreadyRunning: true };
+      }
+      if (claim.kind === "missing") {
+        return { ok: false, error: "Take not found" };
+      }
+      if (claim.kind === "error") {
+        return { ok: false, error: "Could not claim analysis run" };
+      }
+
+      console.log("analysis_not_runnable_skip", {
+        take_id: takeId,
+        status: claim.status,
+        processing_phase: claim.processingPhase,
+      });
+      metric("already_running_skip", {
+        take_id: takeId,
+        processing_phase: claim.processingPhase,
+        attempt: take.attempt_count ?? 0,
+        reason: "analysis_not_runnable",
+      });
+      return { ok: true, alreadyRunning: true };
+    }
+  }
+
   // Idempotency: if a pipeline is already running for this take (either
   // actively polling for the static rendition in `analysis_pending`, or
   // currently in the Gemini call in `analysing`), bail out early. Prevents
   // duplicate Gemini requests and duplicate poll loops when retry is clicked
   // mid-flight or when the webhook + reconciler race each other.
   if (
+    !options.preClaimed &&
     take.status === "processing" &&
     (take.processing_phase === "analysing" ||
       take.processing_phase === "analysis_pending" ||
@@ -2397,9 +2576,10 @@ export async function runProcessTake(
   await supabaseAdmin
     .from("takes")
     .update({
-      status: "pending",
+      status: "processing",
       processing_phase: "analysis_pending",
       error_message: null,
+      updated_at: new Date().toISOString(),
     })
     .eq("id", takeId);
 
