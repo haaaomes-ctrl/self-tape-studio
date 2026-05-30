@@ -208,7 +208,7 @@ describe("S10.1 AI prompt map", () => {
       expect(entry?.uiDestination).toEqual(expect.any(String));
       expect(entry?.repairPrompt).toEqual(expect.any(String));
       expect(entry?.repairTriggerStatuses).toEqual(
-        expect.arrayContaining(S10_MODULE_REPAIR_TRIGGER_STATUSES),
+        expect.arrayContaining([...S10_MODULE_REPAIR_TRIGGER_STATUSES]),
       );
       expect(entry?.deterministicInputsAllowed.length).toBeGreaterThan(0);
       expect(entry?.codeGeneratedContentForbidden.length).toBeGreaterThan(0);
