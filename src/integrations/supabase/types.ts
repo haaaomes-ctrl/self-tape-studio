@@ -74,6 +74,45 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_audit_log: {
+        Row: {
+          action_type: string
+          actor_email: string | null
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          reason: string | null
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action_type: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action_type?: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: []
+      }
       analytics_events: {
         Row: {
           attribution_key: string | null
@@ -326,6 +365,71 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      audition_comparison_runs: {
+        Row: {
+          audition_id: string
+          compared_take_slots: number[]
+          compared_take_version_ids: string[]
+          comparison_metadata: Json
+          comparison_run_id: string
+          comparison_status: string
+          created_at: string
+          id: string
+          qa_artifact_status: string
+          qa_artifacts: Json
+          report: Json | null
+          same_video_status: string
+          stale_after_replacement: boolean
+          stale_reason: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audition_id: string
+          compared_take_slots?: number[]
+          compared_take_version_ids?: string[]
+          comparison_metadata?: Json
+          comparison_run_id?: string
+          comparison_status?: string
+          created_at?: string
+          id?: string
+          qa_artifact_status?: string
+          qa_artifacts?: Json
+          report?: Json | null
+          same_video_status?: string
+          stale_after_replacement?: boolean
+          stale_reason?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audition_id?: string
+          compared_take_slots?: number[]
+          compared_take_version_ids?: string[]
+          comparison_metadata?: Json
+          comparison_run_id?: string
+          comparison_status?: string
+          created_at?: string
+          id?: string
+          qa_artifact_status?: string
+          qa_artifacts?: Json
+          report?: Json | null
+          same_video_status?: string
+          stale_after_replacement?: boolean
+          stale_reason?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audition_comparison_runs_audition_id_fkey"
+            columns: ["audition_id"]
+            isOneToOne: false
+            referencedRelation: "auditions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       consumer_credit_payments: {
         Row: {
@@ -677,6 +781,75 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      crm_contacts: {
+        Row: {
+          account_route: string | null
+          account_type: string | null
+          age_band_declaration: string | null
+          brevo_sync_error: string | null
+          brevo_sync_status: string
+          brevo_synced_at: string | null
+          consent_source: string
+          crm_metadata: Json
+          email: string
+          first_seen_at: string
+          lifecycle_messages_allowed: boolean
+          marketing_consent: boolean
+          marketing_consent_at: string | null
+          normalized_email: string
+          parent_managed: boolean
+          recipient_role: string
+          service_messages_allowed: boolean
+          updated_at: string
+          user_id: string
+          user_segment: string
+        }
+        Insert: {
+          account_route?: string | null
+          account_type?: string | null
+          age_band_declaration?: string | null
+          brevo_sync_error?: string | null
+          brevo_sync_status?: string
+          brevo_synced_at?: string | null
+          consent_source?: string
+          crm_metadata?: Json
+          email: string
+          first_seen_at?: string
+          lifecycle_messages_allowed?: boolean
+          marketing_consent?: boolean
+          marketing_consent_at?: string | null
+          normalized_email: string
+          parent_managed?: boolean
+          recipient_role?: string
+          service_messages_allowed?: boolean
+          updated_at?: string
+          user_id: string
+          user_segment?: string
+        }
+        Update: {
+          account_route?: string | null
+          account_type?: string | null
+          age_band_declaration?: string | null
+          brevo_sync_error?: string | null
+          brevo_sync_status?: string
+          brevo_synced_at?: string | null
+          consent_source?: string
+          crm_metadata?: Json
+          email?: string
+          first_seen_at?: string
+          lifecycle_messages_allowed?: boolean
+          marketing_consent?: boolean
+          marketing_consent_at?: string | null
+          normalized_email?: string
+          parent_managed?: boolean
+          recipient_role?: string
+          service_messages_allowed?: boolean
+          updated_at?: string
+          user_id?: string
+          user_segment?: string
+        }
+        Relationships: []
       }
       email_send_log: {
         Row: {
@@ -2101,6 +2274,7 @@ export type Database = {
       }
       takes: {
         Row: {
+          analysis_run_id: string | null
           analysis_tier: string | null
           analytics_attribution: Json
           anon_id: string | null
@@ -2123,20 +2297,32 @@ export type Database = {
           mux_mp4_standard_url: string | null
           mux_playback_id: string | null
           mux_status: string
+          manifest_status: string
           mux_upload_id: string | null
           overall_score: number | null
           processing_phase: string
           report: Json | null
+          report_model_status: string
+          replaced_by_take_id: string | null
+          replacement_reason: string | null
+          replaces_take_id: string | null
           score_breakdown: Json | null
           scores: Json | null
+          qa_artifact_status: string
+          same_video_status: string
           signals: Json | null
           status: string
+          take_lifecycle_metadata: Json
           take_number: number
+          take_slot: number | null
+          take_version_number: number
+          take_version_status: string
           updated_at: string
           user_id: string | null
           video_path: string | null
         }
         Insert: {
+          analysis_run_id?: string | null
           analysis_tier?: string | null
           analytics_attribution?: Json
           anon_id?: string | null
@@ -2159,20 +2345,32 @@ export type Database = {
           mux_mp4_standard_url?: string | null
           mux_playback_id?: string | null
           mux_status?: string
+          manifest_status?: string
           mux_upload_id?: string | null
           overall_score?: number | null
           processing_phase?: string
           report?: Json | null
+          report_model_status?: string
+          replaced_by_take_id?: string | null
+          replacement_reason?: string | null
+          replaces_take_id?: string | null
           score_breakdown?: Json | null
           scores?: Json | null
+          qa_artifact_status?: string
+          same_video_status?: string
           signals?: Json | null
           status?: string
+          take_lifecycle_metadata?: Json
           take_number?: number
+          take_slot?: number | null
+          take_version_number?: number
+          take_version_status?: string
           updated_at?: string
           user_id?: string | null
           video_path?: string | null
         }
         Update: {
+          analysis_run_id?: string | null
           analysis_tier?: string | null
           analytics_attribution?: Json
           anon_id?: string | null
@@ -2195,15 +2393,26 @@ export type Database = {
           mux_mp4_standard_url?: string | null
           mux_playback_id?: string | null
           mux_status?: string
+          manifest_status?: string
           mux_upload_id?: string | null
           overall_score?: number | null
           processing_phase?: string
           report?: Json | null
+          report_model_status?: string
+          replaced_by_take_id?: string | null
+          replacement_reason?: string | null
+          replaces_take_id?: string | null
           score_breakdown?: Json | null
           scores?: Json | null
+          qa_artifact_status?: string
+          same_video_status?: string
           signals?: Json | null
           status?: string
+          take_lifecycle_metadata?: Json
           take_number?: number
+          take_slot?: number | null
+          take_version_number?: number
+          take_version_status?: string
           updated_at?: string
           user_id?: string | null
           video_path?: string | null
@@ -2235,6 +2444,20 @@ export type Database = {
             columns: ["credit_reservation_id"]
             isOneToOne: false
             referencedRelation: "report_credit_reservations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "takes_replaced_by_take_id_fkey"
+            columns: ["replaced_by_take_id"]
+            isOneToOne: false
+            referencedRelation: "takes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "takes_replaces_take_id_fkey"
+            columns: ["replaces_take_id"]
+            isOneToOne: false
+            referencedRelation: "takes"
             referencedColumns: ["id"]
           },
         ]
@@ -2636,6 +2859,68 @@ export type Database = {
         }
         Relationships: []
       }
+      crm_b2b_leads_dashboard: {
+        Row: {
+          creator_code: string | null
+          follow_up_pending_count: number | null
+          follow_up_sent_count: number | null
+          lead_count: number | null
+          lead_day: string | null
+          lead_type: string | null
+          partner_code_hint: string | null
+          partner_type: string | null
+          utm_campaign: string | null
+          utm_source: string | null
+        }
+        Relationships: []
+      }
+      crm_contact_dashboard: {
+        Row: {
+          account_route: string | null
+          brevo_sync_status: string | null
+          contact_count: number | null
+          first_seen_at: string | null
+          last_brevo_synced_at: string | null
+          last_updated_at: string | null
+          lifecycle_messages_allowed: boolean | null
+          marketing_consent: boolean | null
+          parent_managed: boolean | null
+          recipient_role: string | null
+          user_segment: string | null
+        }
+        Relationships: []
+      }
+      crm_email_delivery_dashboard: {
+        Row: {
+          activity_day: string | null
+          dlq_count: number | null
+          failed_count: number | null
+          first_activity_at: string | null
+          last_activity_at: string | null
+          message_category: string | null
+          message_count: number | null
+          message_key: string | null
+          pending_count: number | null
+          sent_count: number | null
+          status: string | null
+          suppressed_count: number | null
+        }
+        Relationships: []
+      }
+      crm_lifecycle_messaging_dashboard: {
+        Row: {
+          dlq_count: number | null
+          failed_count: number | null
+          last_activity_at: string | null
+          message_category: string | null
+          message_key: string | null
+          pending_count: number | null
+          sent_count: number | null
+          suppressed_count: number | null
+          total_count: number | null
+        }
+        Relationships: []
+      }
       partner_aggregate_dashboard_summary: {
         Row: {
           active_member_count: number | null
@@ -3032,6 +3317,22 @@ export type Database = {
         }
         Returns: string
       }
+      admin_grant_user_credits: {
+        Args: {
+          p_admin_actor_email?: string
+          p_admin_actor_user_id?: string
+          p_admin_reason?: string
+          p_credit_amount: number
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_source_label?: string
+          p_user_id: string
+        }
+        Returns: {
+          audit_log_id: string
+          credit_grant_id: string
+        }[]
+      }
       allocate_partner_pool_credits: {
         Args: {
           p_allocated_at?: string
@@ -3050,6 +3351,20 @@ export type Database = {
       }
       analytics_safe_text: {
         Args: { p_max_length?: number; p_value: string }
+        Returns: string
+      }
+      create_audition_comparison_run_foundation: {
+        Args: { p_audition_id: string; p_user_id: string }
+        Returns: string
+      }
+      create_replacement_take_version: {
+        Args: {
+          p_checklist?: Json
+          p_replacement_reason?: string
+          p_signals?: Json
+          p_take_id: string
+          p_user_id: string
+        }
         Returns: string
       }
       complete_consumer_credit_payment: {
@@ -3086,6 +3401,46 @@ export type Database = {
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
+      }
+      crm_build_unsubscribe_url: {
+        Args: { p_base_url?: string; p_token: string }
+        Returns: string
+      }
+      crm_get_unsubscribe_token: {
+        Args: { p_email: string }
+        Returns: string
+      }
+      crm_message_category_requires_consent: {
+        Args: { p_category: string }
+        Returns: boolean
+      }
+      crm_normalize_email: {
+        Args: { p_email: string }
+        Returns: string
+      }
+      crm_safe_template_data: {
+        Args: { p_template_data: Json }
+        Returns: Json
+      }
+      enqueue_crm_lifecycle_email: {
+        Args: {
+          p_from?: string
+          p_html?: string
+          p_idempotency_key?: string
+          p_label?: string
+          p_message_category: string
+          p_message_key: string
+          p_preview_text?: string
+          p_purpose?: string
+          p_send_after?: string
+          p_sender_domain?: string
+          p_subject: string
+          p_template_data?: Json
+          p_text?: string
+          p_unsubscribe_base_url?: string
+          p_user_id: string
+        }
+        Returns: string
       }
       estimate_ai_report_cost_usd: {
         Args: { p_duration_seconds?: number }
@@ -3298,6 +3653,10 @@ export type Database = {
           p_reason?: string
           p_status: Database["public"]["Enums"]["partner_code_status"]
         }
+        Returns: string
+      }
+      sync_crm_contact_from_account_compliance: {
+        Args: { p_user_id: string }
         Returns: string
       }
     }

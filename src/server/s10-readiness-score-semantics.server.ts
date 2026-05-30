@@ -302,11 +302,11 @@ function normaliseSelectedLevelCalibration(input: {
   legacySummary: string;
 }): S10PerformerLevelCalibration {
   const raw = isRecord(input.value) ? input.value : {};
-  const selectedLevel = input.selectedLevel ?? text(raw.selected_level) ?? text(raw.level);
+  const rawSelectedLevel = text(raw.selected_level);
+  const selectedLevel = input.selectedLevel ?? rawSelectedLevel ?? text(raw.level);
   const standard = getS10PerformerLevelStandard(selectedLevel);
   const rawLevelMatchesSelected =
-    !!text(raw.selected_level) &&
-    toS10PerformerLevel(raw.selected_level) === standard.selected_level;
+    !!rawSelectedLevel && toS10PerformerLevel(rawSelectedLevel) === standard.selected_level;
   return {
     selected_level: toS10PerformerLevel(selectedLevel),
     selected_level_label: standard.label,
