@@ -85,6 +85,7 @@ import {
 import { safeEnqueueCrmEmailForUser } from "./crm-messaging.server";
 import type { CreditMode } from "./credit-entitlement.server";
 import { ANALYSING_ORPHAN_MS, FINALISING_ORPHAN_MS } from "./finalising-recovery.server";
+import { buildS10TakeAnalysisRunId } from "@/lib/take-lifecycle";
 import {
   S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
@@ -2259,6 +2260,8 @@ export async function claimAnalysisRunForTake(
       status: "processing",
       processing_phase: "analysing",
       error_message: null,
+      analysis_run_id: buildS10TakeAnalysisRunId(takeId),
+      report_model_status: "pending",
       updated_at: claimedAt,
     })
     .eq("id", takeId)
@@ -2415,6 +2418,7 @@ export async function runProcessTake(
   if (takeErr || !take) {
     return { ok: false, error: "Take not found" };
   }
+  const analysisRunId = buildS10TakeAnalysisRunId(takeId);
   if (take.status === "complete") {
     return { ok: true, alreadyDone: true };
   }
@@ -2808,6 +2812,8 @@ export async function runProcessTake(
           status: "error",
           processing_phase: "error",
           error_message: errorMessage,
+          analysis_run_id: analysisRunId,
+          report_model_status: "failed",
         })
         .eq("id", takeId);
       if (writeErr) throw writeErr;
@@ -5830,6 +5836,8 @@ export async function runProcessTake(
         .update({
           status: "complete",
           processing_phase: "complete",
+          analysis_run_id: analysisRunId,
+          report_model_status: "rendered",
           report: reportToPersist,
           scores: report.scores,
           overall_score: overall,
@@ -6768,9 +6776,9 @@ export async function runProcessTake(
 
       console.info("[internal-qa] emitQAManifestForAnalysisRun_start", {
         event: "emitQAManifestForAnalysisRun_start",
-        run_id: `take-${takeId}`,
+        run_id: analysisRunId,
         take_id: takeId,
-        analysis_run_id: `take-${takeId}`,
+        analysis_run_id: analysisRunId,
         emitted_artefact_ids_before_manifest: qaArtefactIds,
         emitted_blocked_artefact_ids_before_manifest: qaBlockedArtefactIds,
         includes_step1_observable_evidence:
@@ -6790,7 +6798,8 @@ export async function runProcessTake(
         includes_model_run_trace: qaArtefactIds.includes("model_run_trace"),
       });
       const qaEmitResult = await emitQAManifestForAnalysisRun({
-        run_id: `take-${takeId}`,
+        run_id: analysisRunId,
+        analysis_run_id: analysisRunId,
         submission_id: audition.id,
         take_ids: [takeId],
         route_module: "runProcessTake",
@@ -6946,14 +6955,35 @@ export async function runProcessTake(
       });
       console.info("[internal-qa] emitQAManifestForAnalysisRun_result", {
         event: "emitQAManifestForAnalysisRun_result",
-        run_id: `take-${takeId}`,
+        run_id: analysisRunId,
         take_id: takeId,
-        analysis_run_id: `take-${takeId}`,
+        analysis_run_id: analysisRunId,
         written: Boolean(qaEmitResult.written),
         warning: qaEmitResult.warning ?? null,
         manifest_path: (qaEmitResult as { manifest_path?: string }).manifest_path ?? null,
         resolved_storage_path: (qaEmitResult as { path?: string }).path ?? null,
       });
+      const internalQaEnabled = process.env.V3_QA_ARTIFACTS_ENABLED === "true";
+      const qaStatus = !internalQaEnabled
+        ? "not_enabled"
+        : qaBlockedArtefactIds.length > 0 || qaEmitResult.warning
+          ? "partially_emitted"
+          : "emitted";
+      const manifestStatus = !internalQaEnabled
+        ? "not_enabled"
+        : qaEmitResult.written
+          ? qaEmitResult.warning
+            ? "partially_emitted"
+            : "emitted"
+          : "failed";
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          qa_artifact_status: qaStatus,
+          manifest_status: manifestStatus,
+        })
+        .eq("id", takeId)
+        .eq("status", "complete");
       if (qaEmitResult.warning) {
         console.warn("[take-pipeline] internal_qa_manifest_emit_warning", {
           take_id: takeId,
@@ -6961,6 +6991,16 @@ export async function runProcessTake(
         });
       }
     } catch (qaErr) {
+      await supabaseAdmin
+        .from("takes")
+        .update({
+          qa_artifact_status:
+            process.env.V3_QA_ARTIFACTS_ENABLED === "true" ? "failed" : "not_enabled",
+          manifest_status:
+            process.env.V3_QA_ARTIFACTS_ENABLED === "true" ? "failed" : "not_enabled",
+        })
+        .eq("id", takeId)
+        .eq("status", "complete");
       console.warn("[take-pipeline] internal_qa_emit_warning", {
         take_id: takeId,
         warning: qaErr instanceof Error ? qaErr.message : "unknown",
@@ -7006,7 +7046,13 @@ export async function runProcessTake(
       try {
         const { error: writeErr } = await supabaseAdmin
           .from("takes")
-          .update({ status: "error", processing_phase: "error", error_message: message })
+          .update({
+            status: "error",
+            processing_phase: "error",
+            error_message: message,
+            analysis_run_id: analysisRunId,
+            report_model_status: "failed",
+          })
           .eq("id", takeId);
         if (writeErr) throw writeErr;
         terminalWritten = true;
