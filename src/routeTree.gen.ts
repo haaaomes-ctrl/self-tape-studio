@@ -40,6 +40,7 @@ import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/p
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
 import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
+import { Route as ApiInternalRunAnalysisRouteImport } from './routes/api/internal/run-analysis'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
@@ -199,6 +200,11 @@ const ApiPublicAdminConfigRoute = ApiPublicAdminConfigRouteImport.update({
   path: '/api/public/admin-config',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalRunAnalysisRoute = ApiInternalRunAnalysisRouteImport.update({
+  id: '/api/internal/run-analysis',
+  path: '/api/internal/run-analysis',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LovableEmailQueueProcessRoute =
   LovableEmailQueueProcessRouteImport.update({
     id: '/lovable/email/queue/process',
@@ -233,6 +239,7 @@ export interface FileRoutesByFullPath {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
@@ -267,6 +274,7 @@ export interface FileRoutesByTo {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
@@ -302,6 +310,7 @@ export interface FileRoutesById {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
@@ -338,6 +347,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/refund-credit-policy'
     | '/legal/terms'
+    | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
@@ -372,6 +382,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/refund-credit-policy'
     | '/legal/terms'
+    | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
@@ -406,6 +417,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/refund-credit-policy'
     | '/legal/terms'
+    | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
     | '/api/public/mux-webhook'
@@ -436,6 +448,7 @@ export interface RootRouteChildren {
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalRefundCreditPolicyRoute: typeof LegalRefundCreditPolicyRoute
   LegalTermsRoute: typeof LegalTermsRoute
+  ApiInternalRunAnalysisRoute: typeof ApiInternalRunAnalysisRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
@@ -663,6 +676,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicAdminConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/run-analysis': {
+      id: '/api/internal/run-analysis'
+      path: '/api/internal/run-analysis'
+      fullPath: '/api/internal/run-analysis'
+      preLoaderRoute: typeof ApiInternalRunAnalysisRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/lovable/email/queue/process': {
       id: '/lovable/email/queue/process'
       path: '/lovable/email/queue/process'
@@ -713,6 +733,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalRefundCreditPolicyRoute: LegalRefundCreditPolicyRoute,
   LegalTermsRoute: LegalTermsRoute,
+  ApiInternalRunAnalysisRoute: ApiInternalRunAnalysisRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
