@@ -5,17 +5,79 @@
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClientDatabase } from "./client-database";
 
-function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export type SupabaseAdminRuntimeEnv = {
+  SUPABASE_URL?: unknown;
+  VITE_SUPABASE_URL?: unknown;
+  SUPABASE_SERVICE_ROLE_KEY?: unknown;
+};
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
+export class SupabaseAdminRuntimeConfigError extends Error {
+  diagnostics: SupabaseAdminRuntimeDiagnostics;
+
+  constructor(diagnostics: SupabaseAdminRuntimeDiagnostics) {
+    super(
       "Missing Supabase server environment variables. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.",
     );
+    this.name = "SupabaseAdminRuntimeConfigError";
+    this.diagnostics = diagnostics;
+  }
+}
+
+export type SupabaseAdminRuntimeDiagnostics = {
+  supabase_url_configured: boolean;
+  supabase_url_host: string | null;
+  supabase_service_role_key_configured: boolean;
+};
+
+function cleanUnknownEnvValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function safeUrlHost(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveSupabaseAdminRuntimeConfig(env?: SupabaseAdminRuntimeEnv | null): {
+  supabaseUrl: string | null;
+  serviceRoleKey: string | null;
+  diagnostics: SupabaseAdminRuntimeDiagnostics;
+} {
+  const hasRuntimeEnv = env !== undefined && env !== null;
+  const supabaseUrl =
+    cleanUnknownEnvValue(env?.SUPABASE_URL) ??
+    cleanUnknownEnvValue(env?.VITE_SUPABASE_URL) ??
+    (hasRuntimeEnv
+      ? null
+      : (cleanUnknownEnvValue(process.env.SUPABASE_URL) ??
+        cleanUnknownEnvValue(process.env.VITE_SUPABASE_URL)));
+  const serviceRoleKey =
+    cleanUnknownEnvValue(env?.SUPABASE_SERVICE_ROLE_KEY) ??
+    (hasRuntimeEnv ? null : cleanUnknownEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY));
+
+  return {
+    supabaseUrl,
+    serviceRoleKey,
+    diagnostics: {
+      supabase_url_configured: Boolean(supabaseUrl),
+      supabase_url_host: safeUrlHost(supabaseUrl),
+      supabase_service_role_key_configured: Boolean(serviceRoleKey),
+    },
+  };
+}
+
+export function createSupabaseAdminClientForRuntimeEnv(env?: SupabaseAdminRuntimeEnv | null) {
+  const { supabaseUrl, serviceRoleKey, diagnostics } = resolveSupabaseAdminRuntimeConfig(env);
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new SupabaseAdminRuntimeConfigError(diagnostics);
   }
 
-  return createClient<SupabaseClientDatabase>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient<SupabaseClientDatabase>(supabaseUrl, serviceRoleKey, {
     auth: {
       storage: undefined,
       persistSession: false,
@@ -24,14 +86,59 @@ function createSupabaseAdminClient() {
   });
 }
 
-let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
+let runtimeEnvResolver: (() => SupabaseAdminRuntimeEnv | null) | null = null;
+
+export function setSupabaseAdminRuntimeEnvResolver(
+  resolver: (() => SupabaseAdminRuntimeEnv | null) | null,
+): void {
+  runtimeEnvResolver = resolver;
+}
+
+function currentRuntimeEnv(): SupabaseAdminRuntimeEnv | null {
+  try {
+    return runtimeEnvResolver?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+let _supabaseAdmin:
+  | {
+      supabaseUrl: string;
+      serviceRoleKey: string;
+      client: ReturnType<typeof createSupabaseAdminClientForRuntimeEnv>;
+    }
+  | undefined;
+
+function getSupabaseAdminClient() {
+  const runtimeEnv = currentRuntimeEnv();
+  const { supabaseUrl, serviceRoleKey, diagnostics } =
+    resolveSupabaseAdminRuntimeConfig(runtimeEnv);
+  if (!supabaseUrl || !serviceRoleKey) throw new SupabaseAdminRuntimeConfigError(diagnostics);
+
+  if (
+    !_supabaseAdmin ||
+    _supabaseAdmin.supabaseUrl !== supabaseUrl ||
+    _supabaseAdmin.serviceRoleKey !== serviceRoleKey
+  ) {
+    _supabaseAdmin = {
+      supabaseUrl,
+      serviceRoleKey,
+      client: createSupabaseAdminClientForRuntimeEnv(runtimeEnv),
+    };
+  }
+
+  return _supabaseAdmin.client;
+}
 
 // Server-side Supabase client with service role - bypasses RLS
 // SECURITY: Only use this for trusted server-side operations, never expose to client code
 // Import like: import { supabaseAdmin } from "@/integrations/supabase/client.server";
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdminClient>, {
-  get(_, prop, receiver) {
-    if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
-    return Reflect.get(_supabaseAdmin, prop, receiver);
+export const supabaseAdmin = new Proxy(
+  {} as ReturnType<typeof createSupabaseAdminClientForRuntimeEnv>,
+  {
+    get(_, prop, receiver) {
+      return Reflect.get(getSupabaseAdminClient(), prop, receiver);
+    },
   },
-});
+);
