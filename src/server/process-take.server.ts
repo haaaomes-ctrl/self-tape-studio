@@ -2210,7 +2210,7 @@ export async function claimAnalysisRunForTake(
     .from("takes")
     .update({
       status: "processing",
-      processing_phase: "analysis_pending",
+      processing_phase: "analysing",
       error_message: null,
       updated_at: claimedAt,
     })
@@ -2452,11 +2452,11 @@ export async function runProcessTake(
     }
   }
 
-  // Idempotency: if a pipeline is already running for this take (either
-  // actively polling for the static rendition in `analysis_pending`, or
-  // currently in the Gemini call in `analysing`), bail out early. Prevents
-  // duplicate Gemini requests and duplicate poll loops when retry is clicked
-  // mid-flight or when the webhook + reconciler race each other.
+  // Idempotency: if a pipeline is already running for this take (claimed work
+  // in `analysing`, deterministic finalisation, or a legacy active
+  // `analysis_pending` row), bail out early. Prevents duplicate Gemini
+  // requests and duplicate poll loops when retry is clicked mid-flight or when
+  // the webhook + reconciler race each other.
   if (
     !options.preClaimed &&
     take.status === "processing" &&
@@ -2567,17 +2567,14 @@ export async function runProcessTake(
     });
   }
 
-  // Stay in analysis_pending while we poll for the static MP4 rendition.
-  // We DON'T flip to "analysing" yet — that would mislead the UI into
-  // showing "Watching your tape" while we're actually still waiting on Mux
-  // to finish generating the static rendition (highest.mp4). The phase
-  // flips to "analysing" only after the HEAD probe succeeds, immediately
-  // before the Gemini call.
+  // Keep claimed work in the active analysing phase while prerequisites are
+  // resolved. `analysis_pending` is reserved for queued-but-not-yet-claimed
+  // rows so the stale-pending reconciler cannot undo an active claim.
   await supabaseAdmin
     .from("takes")
     .update({
       status: "processing",
-      processing_phase: "analysis_pending",
+      processing_phase: "analysing",
       error_message: null,
       updated_at: new Date().toISOString(),
     })
@@ -2616,9 +2613,8 @@ export async function runProcessTake(
   // Terminal-state tracking: any path that writes status=error/complete must
   // flip this to true so the finally-block fallback doesn't double-write.
   let terminalWritten = false;
-  // Intentional non-terminal exit (e.g. MP4 not yet ready, leaving the row
-  // in analysis_pending for the cron reconciler to retry). When true, the
-  // finally-block safety net MUST NOT mark the take as failed.
+  // Intentional non-terminal exit (e.g. media prerequisite not yet ready). When
+  // true, the finally-block safety net MUST NOT mark the take as failed.
   let deferredPending = false;
   // Hoisted so the outer catch can attribute failures to the finalising
   // substage. 0 = AI hasn't returned yet; >0 = post-AI work in progress.
@@ -2936,10 +2932,10 @@ export async function runProcessTake(
     const probeStartedWallclock = Date.now();
 
     if (take.mux_status !== "ready" || !take.mux_playback_id) {
-      // Mux not ready yet. Leave the row in analysis_pending; the cron
-      // reconciler will retry within ~60s (and will recover via the Mux API
-      // if the webhook never arrived). Do NOT fail terminally here unless
-      // we've blown the wall-clock cap.
+      // Mux not ready yet. Keep the claimed row active; static-rendition
+      // webhooks and the active stale-analysis recovery path own any later
+      // recovery. Do NOT fail terminally here unless we've blown the
+      // wall-clock cap.
       const PREPARE_HARD_TIMEOUT_MS = 10 * 60_000;
       const ageMs = elapsedSinceCreatedMs() ?? 0;
       if (ageMs >= PREPARE_HARD_TIMEOUT_MS) {
@@ -2962,7 +2958,7 @@ export async function runProcessTake(
       });
       metric("preparation_deferred", {
         take_id: takeId,
-        processing_phase: "analysis_pending",
+        processing_phase: "analysing",
         age_ms: ageMs,
         reason: "mux_not_ready",
       });
@@ -6974,7 +6970,7 @@ export async function runProcessTake(
         console.error("[take-pipeline] finally finaliser failed", finallyErr);
       }
     } else if (deferredPending) {
-      console.log("[take-pipeline] runProcessTake deferred (cron will retry)", {
+      console.log("[take-pipeline] runProcessTake deferred before media readiness", {
         take_id: takeId,
       });
     }

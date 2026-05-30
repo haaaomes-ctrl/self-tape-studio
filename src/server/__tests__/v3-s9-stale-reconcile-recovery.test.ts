@@ -118,6 +118,54 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).not.toContain("urlForCall === resolvedProbeUrl");
   });
 
+  it("analysis claims move queued rows into the active analysing state", async () => {
+    const processTake = await readFile(
+      path.join(process.cwd(), "src/server/process-take.server.ts"),
+      "utf8",
+    );
+    const retryFn = await readFile(
+      path.join(process.cwd(), "src/server-fns/process-take.functions.ts"),
+      "utf8",
+    );
+    const claimStart = processTake.indexOf("export async function claimAnalysisRunForTake");
+    const claimEnd = processTake.indexOf("export type SubmissionVerdict", claimStart);
+    const claimHelper = processTake.slice(claimStart, claimEnd);
+
+    expect(claimStart).toBeGreaterThan(0);
+    expect(claimHelper).toContain('status: "processing"');
+    expect(claimHelper).toContain('processing_phase: "analysing"');
+    expect(claimHelper).not.toContain('processing_phase: "analysis_pending"');
+    expect(processTake).toContain("ANALYSIS_PENDING_CLAIM_FILTER");
+    expect(processTake).toContain("ANALYSIS_RETRY_ERROR_CLAIM_FILTER");
+    expect(retryFn).toContain("includeErrorRetry: true");
+  });
+
+  it("stale pending reconciliation only resets queued pending rows", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "src/routes/api/public/reconcile-stale-takes.ts"),
+      "utf8",
+    );
+    const pendingSelectStart = source.indexOf("const { data: stalePending");
+    const pendingSelectEnd = source.indexOf("const { data: staleAnalysing", pendingSelectStart);
+    const pendingSelect = source.slice(pendingSelectStart, pendingSelectEnd);
+    const resetStart = source.indexOf("const { data: resetRow");
+    const resetEnd = source.indexOf("if (updErr)", resetStart);
+    const resetWrite = source.slice(resetStart, resetEnd);
+    const giveUpStart = source.indexOf("const { data: failedRow");
+    const giveUpEnd = source.indexOf("if (failErr)", giveUpStart);
+    const giveUpWrite = source.slice(giveUpStart, giveUpEnd);
+
+    expect(pendingSelect).toContain('.eq("status", "pending")');
+    expect(pendingSelect).toContain('.eq("processing_phase", "analysis_pending")');
+    expect(resetWrite).toContain('.eq("status", "pending")');
+    expect(resetWrite).toContain(
+      '.eq("processing_phase", take.processing_phase ?? "analysis_pending")',
+    );
+    expect(giveUpWrite).toContain('.eq("status", "pending")');
+    expect(source).toContain("reschedule skipped because row was claimed");
+    expect(source).toContain("give-up skipped because row was claimed");
+  });
+
   it("reconciler enqueues stale analysing rows instead of running analysis in request waitUntil", async () => {
     const source = await readFile(
       path.join(process.cwd(), "src/routes/api/public/reconcile-stale-takes.ts"),

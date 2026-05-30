@@ -23,16 +23,17 @@ import {
 // even though it lives under /api/public/.
 //
 // Recovery rules:
-//   - processing_phase = "analysis_pending" AND updated_at < now - 15 sec:
-//     webhook enqueued work but the queue consumer never picked it up.
+//   - status = "pending" AND processing_phase = "analysis_pending" AND
+//     updated_at < now - 15 sec: webhook enqueued work but the queue consumer never picked it up.
 //     Re-enqueue.
 //   - processing_phase = "analysing" or "analysis_pending" AND updated_at
 //     < now - 3 min: analysis worker/polish likely died. Complete if report
 //     already exists, otherwise force a safe terminal error.
 //
 // Idempotency is preserved by runProcessTake itself in the queue consumer: it only flips a take
-// into "analysing"/"processing" once, and refuses to re-enter if the row
-// already shows active processing.
+// into "analysing"/"processing" once, and refuses to re-enter if the row already shows active
+// processing. `analysis_pending` means queued but not claimed; claimed work is status=processing
+// and processing_phase=analysing.
 // Tightened to match the ~1 min target for fast handoff. The in-handler
 // poll loop now owns the long wait (up to 10 min); the reconciler only
 // catches takes whose queue consumer died before runProcessTake started, or
@@ -310,14 +311,16 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         // enforce the overall wall-clock ceiling.
         const { data: stalePending, error: pErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, processing_phase, attempt_count")
+          .select("id, updated_at, created_at, status, processing_phase, attempt_count")
+          .eq("status", "pending")
           .eq("processing_phase", "analysis_pending")
           .lt("updated_at", pendingCutoff)
           .limit(MAX_BATCH);
 
         const { data: staleAnalysing, error: aErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, processing_phase, attempt_count")
+          .select("id, updated_at, created_at, status, processing_phase, attempt_count")
+          .eq("status", "pending")
           .eq("processing_phase", "analysing")
           .lt("updated_at", analysingCutoff)
           .limit(MAX_BATCH);
@@ -669,7 +672,7 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
 
           // Cost / wall-clock guard: park in `error` once either limit is hit.
           if (exceededAttempts || exceededClock) {
-            const { error: failErr } = await supabaseAdmin
+            const { data: failedRow, error: failErr } = await supabaseAdmin
               .from("takes")
               .update({
                 status: "error",
@@ -677,7 +680,11 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
                 error_message:
                   "[failure_code:stale_timeout] This analysis took too long and was stopped. Please try again.",
               })
-              .eq("id", take.id);
+              .eq("id", take.id)
+              .eq("status", "pending")
+              .eq("processing_phase", take.processing_phase ?? "analysis_pending")
+              .select("id")
+              .maybeSingle();
             if (failErr) {
               console.error("reconcile-stale-takes give-up update failed", {
                 takeId: take.id,
@@ -686,6 +693,11 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               metric("phase_transition_failure", {
                 take_id: take.id,
                 reason: "give_up_update_failed",
+              });
+            } else if (!failedRow) {
+              console.log("reconcile-stale-takes give-up skipped because row was claimed", {
+                takeId: take.id,
+                wasPhase: take.processing_phase,
               });
             } else {
               console.warn("reconcile-stale-takes giving up on take", {
@@ -740,20 +752,31 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           // Reset back to analysis_pending so the queue consumer will pick it up
           // (its idempotency check skips takes that are actively analysing,
           // so we MUST clear the analysing flag before rescheduling).
-          const { error: updErr } = await supabaseAdmin
+          const { data: resetRow, error: updErr } = await supabaseAdmin
             .from("takes")
             .update({
               status: "pending",
               processing_phase: "analysis_pending",
               error_message: null,
             })
-            .eq("id", take.id);
+            .eq("id", take.id)
+            .eq("status", "pending")
+            .eq("processing_phase", take.processing_phase ?? "analysis_pending")
+            .select("id")
+            .maybeSingle();
 
           if (updErr) {
             console.error("reconcile-stale-takes update failed", { takeId: take.id, updErr });
             metric("phase_transition_failure", {
               take_id: take.id,
               reason: "reschedule_update_failed",
+            });
+            continue;
+          }
+          if (!resetRow) {
+            console.log("reconcile-stale-takes reschedule skipped because row was claimed", {
+              takeId: take.id,
+              wasPhase: take.processing_phase,
             });
             continue;
           }

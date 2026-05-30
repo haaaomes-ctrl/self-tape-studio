@@ -194,7 +194,7 @@ describe("internal analysis runner endpoint", () => {
         claimed = true;
         return { kind: "claimed" as const };
       }
-      return { kind: "already_processing" as const, processingPhase: "analysis_pending" };
+      return { kind: "already_processing" as const, processingPhase: "analysing" };
     });
 
     const deps = {
