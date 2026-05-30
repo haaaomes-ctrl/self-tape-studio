@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  createSupabaseAdminClientForRuntimeEnv,
+  resolveSupabaseAdminRuntimeConfig,
+  supabaseAdmin,
+  SupabaseAdminRuntimeConfigError,
+  type SupabaseAdminRuntimeDiagnostics,
+  type SupabaseAdminRuntimeEnv,
+} from "@/integrations/supabase/client.server";
 import { ANALYSING_ORPHAN_MS, FINALISING_ORPHAN_MS } from "@/server/finalising-recovery.server";
 import {
   claimAnalysisRunForTake,
@@ -10,7 +17,7 @@ import {
 } from "@/server/process-take.server";
 import { getRequestEnv } from "@/worker-entry";
 
-type InternalAnalysisRunEnv = {
+type InternalAnalysisRunEnv = SupabaseAdminRuntimeEnv & {
   ANALYSIS_RUN_SECRET?: string;
 };
 
@@ -40,6 +47,7 @@ export type InternalAnalysisRunTakeContext = {
 type ContextLoadResult =
   | { kind: "ok"; take: InternalAnalysisRunTakeContext }
   | { kind: "missing" }
+  | { kind: "misconfigured" }
   | { kind: "error" };
 
 type AuditionLoadResult = { kind: "ok" } | { kind: "missing" } | { kind: "error" };
@@ -71,6 +79,7 @@ type InternalAnalysisRunDeps = {
   loadAuditionContext?: (auditionId: string) => Promise<AuditionLoadResult>;
   claimAnalysisRun?: (takeId: string) => Promise<AnalysisRunClaimResult>;
   now?: () => number;
+  supabaseEnv?: SupabaseAdminRuntimeEnv | null;
   runProcessTake?: (
     takeId: string,
     options?: RunProcessTakeOptions,
@@ -80,6 +89,7 @@ type InternalAnalysisRunDeps = {
 type SafeErrorCode =
   | "unauthorised"
   | "analysis_run_secret_not_configured"
+  | "server_misconfigured"
   | "invalid_json"
   | "invalid_request"
   | "take_not_found"
@@ -121,21 +131,17 @@ function cleanEnvValue(value: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-function cleanUnknownEnvValue(value: unknown): string | null {
-  return typeof value === "string" ? cleanEnvValue(value) : null;
+function getSupabaseRuntimeEnv(deps?: Pick<InternalAnalysisRunDeps, "env" | "supabaseEnv">) {
+  if (deps?.supabaseEnv !== undefined) return deps.supabaseEnv;
+  if (deps?.env !== undefined) return deps.env;
+  return getRequestEnv<SupabaseAdminRuntimeEnv>() ?? null;
 }
 
-function serverSupabaseEnvDiagnostics(): Record<string, boolean> {
-  const requestEnv = getRequestEnv<Record<string, unknown>>() ?? {};
-  return {
-    supabase_url_configured: Boolean(
-      cleanUnknownEnvValue(requestEnv.SUPABASE_URL) ?? cleanEnvValue(process.env.SUPABASE_URL),
-    ),
-    supabase_service_role_key_configured: Boolean(
-      cleanUnknownEnvValue(requestEnv.SUPABASE_SERVICE_ROLE_KEY) ??
-      cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    ),
-  };
+function serverSupabaseEnvDiagnostics(
+  env?: SupabaseAdminRuntimeEnv | null,
+): SupabaseAdminRuntimeDiagnostics {
+  return resolveSupabaseAdminRuntimeConfig(env ?? getRequestEnv<SupabaseAdminRuntimeEnv>())
+    .diagnostics;
 }
 
 function jsonResponse(payload: Record<string, unknown>, status = 200): Response {
@@ -179,16 +185,37 @@ function isAuthorised(request: Request, secret: string): boolean {
   return getBearerToken(request) === secret;
 }
 
-async function defaultLoadTakeContext(takeId: string): Promise<ContextLoadResult> {
-  return loadTakeContextForInternalAnalysis(
-    takeId,
-    supabaseAdmin as unknown as InternalAnalysisTakeLookupClient,
-  );
+async function defaultLoadTakeContext(
+  takeId: string,
+  env?: SupabaseAdminRuntimeEnv | null,
+): Promise<ContextLoadResult> {
+  const diagnostics = serverSupabaseEnvDiagnostics(env);
+  try {
+    return loadTakeContextForInternalAnalysis(
+      takeId,
+      createSupabaseAdminClientForRuntimeEnv(env) as unknown as InternalAnalysisTakeLookupClient,
+      diagnostics,
+    );
+  } catch (error) {
+    if (error instanceof SupabaseAdminRuntimeConfigError) {
+      console.error("[internal-analysis-runner] take context lookup server misconfigured", {
+        take_id: takeId,
+        client_source: "request_runtime_service_role",
+        table: INTERNAL_ANALYSIS_TAKE_TABLE,
+        column: INTERNAL_ANALYSIS_TAKE_ID_COLUMN,
+        lookup_returned_zero_rows: false,
+        ...error.diagnostics,
+      });
+      return { kind: "misconfigured" };
+    }
+    throw error;
+  }
 }
 
 async function loadTakeContextForInternalAnalysis(
   takeId: string,
   client: InternalAnalysisTakeLookupClient,
+  diagnostics: SupabaseAdminRuntimeDiagnostics = serverSupabaseEnvDiagnostics(),
 ): Promise<ContextLoadResult> {
   try {
     const { data, error } = await client
@@ -200,11 +227,11 @@ async function loadTakeContextForInternalAnalysis(
     if (error) {
       console.error("[internal-analysis-runner] take context lookup failed", {
         take_id: takeId,
-        client_source: "supabaseAdmin_service_role",
+        client_source: "request_runtime_service_role",
         table: INTERNAL_ANALYSIS_TAKE_TABLE,
         column: INTERNAL_ANALYSIS_TAKE_ID_COLUMN,
         lookup_returned_zero_rows: false,
-        ...serverSupabaseEnvDiagnostics(),
+        ...diagnostics,
         error_code: error.code ?? null,
         error_message: error.message?.slice(0, 160) ?? "unknown",
       });
@@ -213,11 +240,11 @@ async function loadTakeContextForInternalAnalysis(
     if (!data) {
       console.warn("[internal-analysis-runner] take context lookup returned no rows", {
         take_id: takeId,
-        client_source: "supabaseAdmin_service_role",
+        client_source: "request_runtime_service_role",
         table: INTERNAL_ANALYSIS_TAKE_TABLE,
         column: INTERNAL_ANALYSIS_TAKE_ID_COLUMN,
         lookup_returned_zero_rows: true,
-        ...serverSupabaseEnvDiagnostics(),
+        ...diagnostics,
       });
       return { kind: "missing" };
     }
@@ -236,11 +263,11 @@ async function loadTakeContextForInternalAnalysis(
   } catch {
     console.error("[internal-analysis-runner] take context lookup threw", {
       take_id: takeId,
-      client_source: "supabaseAdmin_service_role",
+      client_source: "request_runtime_service_role",
       table: INTERNAL_ANALYSIS_TAKE_TABLE,
       column: INTERNAL_ANALYSIS_TAKE_ID_COLUMN,
       lookup_returned_zero_rows: false,
-      ...serverSupabaseEnvDiagnostics(),
+      ...diagnostics,
     });
     return { kind: "error" };
   }
@@ -248,11 +275,16 @@ async function loadTakeContextForInternalAnalysis(
 
 export async function canResolveTakeForInternalAnalysis(
   takeId: string,
-  deps: { client?: InternalAnalysisTakeLookupClient } = {},
+  deps: { client?: InternalAnalysisTakeLookupClient; env?: SupabaseAdminRuntimeEnv | null } = {},
 ): Promise<boolean> {
+  const diagnostics = serverSupabaseEnvDiagnostics(deps.env);
   const result = await loadTakeContextForInternalAnalysis(
     takeId,
-    deps.client ?? (supabaseAdmin as unknown as InternalAnalysisTakeLookupClient),
+    deps.client ??
+      (createSupabaseAdminClientForRuntimeEnv(
+        deps.env,
+      ) as unknown as InternalAnalysisTakeLookupClient),
+    diagnostics,
   );
   return result.kind === "ok";
 }
@@ -366,9 +398,20 @@ export async function handleInternalAnalysisRunRequest(
   if (!parsed.ok) return parsed.response;
 
   const { take_id: takeId, audition_id: suppliedAuditionId, trigger } = parsed.body;
-  const loadTakeContext = deps.loadTakeContext ?? defaultLoadTakeContext;
+  const supabaseEnv = getSupabaseRuntimeEnv(deps);
+  const loadTakeContext =
+    deps.loadTakeContext ??
+    ((lookupTakeId: string) => defaultLoadTakeContext(lookupTakeId, supabaseEnv));
   const takeResult = await loadTakeContext(takeId);
 
+  if (takeResult.kind === "misconfigured") {
+    return safeErrorResponse({
+      status: 503,
+      code: "server_misconfigured",
+      retryable: false,
+      takeId,
+    });
+  }
   if (takeResult.kind === "error") {
     return safeErrorResponse({
       status: 503,

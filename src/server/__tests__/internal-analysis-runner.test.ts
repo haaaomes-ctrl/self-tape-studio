@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANALYSING_ORPHAN_MS } from "@/server/finalising-recovery.server";
 import {
   canResolveTakeForInternalAnalysis,
@@ -72,6 +72,10 @@ async function responseJson(response: Response): Promise<Record<string, unknown>
 }
 
 describe("internal analysis runner endpoint", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("resolves valid take_id through the service-role lookup helper", async () => {
     const lookup = takeLookupClient(baseTake());
 
@@ -113,6 +117,30 @@ describe("internal analysis runner endpoint", () => {
 
     expect(response.status).toBe(401);
     expect((await responseJson(response)).error).toBe("unauthorised");
+    expect(runner).not.toHaveBeenCalled();
+  });
+
+  it("returns server_misconfigured rather than take_not_found when service-role env is missing", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+
+    const runner = vi.fn(async () => ({ ok: true as const }));
+    const response = await handleInternalAnalysisRunRequest(requestFor(validBody()), {
+      env: { ANALYSIS_RUN_SECRET: SECRET },
+      supabaseEnv: {
+        SUPABASE_URL: "https://runtime-project.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "",
+      },
+      runProcessTake: runner,
+    });
+
+    expect(response.status).toBe(503);
+    expect(await responseJson(response)).toEqual({
+      mark_complete: false,
+      ok: false,
+      error: "server_misconfigured",
+      retryable: false,
+      take_id: TAKE_ID,
+    });
     expect(runner).not.toHaveBeenCalled();
   });
 
@@ -464,7 +492,8 @@ describe("internal analysis runner endpoint", () => {
 
     expect(route).toContain('createFileRoute("/api/internal/run-analysis")');
     expect(combined).toContain("runProcessTake");
-    expect(source).toContain('client_source: "supabaseAdmin_service_role"');
+    expect(source).toContain("createSupabaseAdminClientForRuntimeEnv");
+    expect(source).toContain('client_source: "request_runtime_service_role"');
     expect(source).toContain('INTERNAL_ANALYSIS_TAKE_TABLE = "takes"');
     expect(source).toContain('INTERNAL_ANALYSIS_TAKE_ID_COLUMN = "id"');
     expect(source).toContain("supabaseAdmin");

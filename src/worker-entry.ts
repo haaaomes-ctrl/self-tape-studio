@@ -6,6 +6,7 @@
 // This is the file referenced by wrangler.jsonc → "main".
 import { AsyncLocalStorage } from "node:async_hooks";
 import startEntry from "@tanstack/react-start/server-entry";
+import { setSupabaseAdminRuntimeEnvResolver } from "@/integrations/supabase/client.server";
 
 export interface RequestExecutionContext {
   waitUntil: (promise: Promise<unknown>) => void;
@@ -27,6 +28,8 @@ type QueueBatch<T = unknown> = {
 
 const runtimeStorage = new AsyncLocalStorage<RuntimeStore>();
 
+setSupabaseAdminRuntimeEnvResolver(() => runtimeStorage.getStore()?.env ?? null);
+
 /**
  * Returns the current request's Cloudflare ExecutionContext, or `null` if
  * called outside of a Worker request (e.g. dev SSR on Node, prerender).
@@ -38,7 +41,9 @@ export function getRequestCtx(): RequestExecutionContext | null {
   return runtimeStorage.getStore()?.ctx ?? null;
 }
 
-export function getRequestEnv<T extends Record<string, unknown> = Record<string, unknown>>(): T | null {
+export function getRequestEnv<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(): T | null {
   return (runtimeStorage.getStore()?.env as T | undefined) ?? null;
 }
 
@@ -66,13 +71,21 @@ export function scheduleBackground(promise: Promise<unknown>, label = "backgroun
 }
 
 export default {
-  async fetch(request: Request, env: Record<string, unknown>, ctx: RequestExecutionContext): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Record<string, unknown>,
+    ctx: RequestExecutionContext,
+  ): Promise<Response> {
     return runtimeStorage.run({ ctx, env }, () =>
       (startEntry as { fetch: (req: Request) => Promise<Response> }).fetch(request),
     );
   },
 
-  async queue(batch: QueueBatch, _env: Record<string, unknown>, _ctx: RequestExecutionContext): Promise<void> {
+  async queue(
+    batch: QueueBatch,
+    _env: Record<string, unknown>,
+    _ctx: RequestExecutionContext,
+  ): Promise<void> {
     const { runProcessTake } = await import("@/server/process-take.server");
     for (const message of batch.messages) {
       const body = message.body as { takeId?: unknown; reason?: unknown; enqueuedAt?: unknown };
