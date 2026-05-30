@@ -205,7 +205,7 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
     // for a report-generating take. The reservation is consumed only after the
     // report is persisted; cancellation/failure releases it.
     try {
-      await reserveReportCreditForTake({
+      const reservation = await reserveReportCreditForTake({
         take_id: takeId,
         requested_by_user_id: userId,
         requested_by_user_email: claimEmail(
@@ -218,10 +218,12 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
           commercial_metrics_excluded: false,
         },
       });
-      metric("report_credit_reserved", {
-        take_id: takeId,
-        reason: "create_mux_direct_upload",
-      });
+      if (reservation.requires_credit_reservation) {
+        metric("report_credit_reserved", {
+          take_id: takeId,
+          reason: "create_mux_direct_upload",
+        });
+      }
     } catch (err) {
       if (err instanceof ReportCreditRequiredError) {
         console.warn("[mux-upload] report_credit_rejected", {

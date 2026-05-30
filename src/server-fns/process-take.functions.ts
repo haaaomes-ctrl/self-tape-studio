@@ -102,7 +102,7 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       throw err;
     }
     try {
-      await reserveReportCreditForTake({
+      const reservation = await reserveReportCreditForTake({
         take_id: data.takeId,
         requested_by_user_id: context.userId,
         requested_by_user_email: claimEmail(context.claims),
@@ -113,10 +113,12 @@ export const retryProcessTake = createServerFn({ method: "POST" })
           commercial_metrics_excluded: false,
         },
       });
-      metric("report_credit_reserved", {
-        take_id: data.takeId,
-        reason: "retry_process_take",
-      });
+      if (reservation.requires_credit_reservation) {
+        metric("report_credit_reserved", {
+          take_id: data.takeId,
+          reason: "retry_process_take",
+        });
+      }
     } catch (err) {
       if (err instanceof ReportCreditRequiredError) {
         metric("report_credit_rejected", {

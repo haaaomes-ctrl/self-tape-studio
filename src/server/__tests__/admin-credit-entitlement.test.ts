@@ -202,9 +202,16 @@ describe("admin unlimited credit entitlement", () => {
       path.join(process.cwd(), "src/server/process-take.server.ts"),
       "utf8",
     );
+    const muxWebhookSource = await readFile(
+      path.join(process.cwd(), "src/routes/api/public/mux-webhook.ts"),
+      "utf8",
+    );
 
     expect(muxSource).toContain("requested_by_user_email");
+    expect(muxSource).toContain("reservation.requires_credit_reservation");
     expect(retrySource).toContain("requested_by_user_email");
+    expect(retrySource).toContain("reservation.requires_credit_reservation");
+    expect(muxWebhookSource).toContain("reservation.requires_credit_reservation");
     expect(processTakeSource).toContain("activeReportCreditShouldDecrement");
     expect(processTakeSource).toContain("report_credit_consume_skipped");
     expect(processTakeSource).toContain("consumeReportCreditReservation");
