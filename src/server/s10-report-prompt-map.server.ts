@@ -455,9 +455,14 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     aiQuestion:
       "What selected-level standard is being applied, what meets it, what falls short, and how does the level affect the recommendation?",
     structuredOutputField:
-      "readiness_score_judgement.selected_level_calibration_summary, scoring_context.level_calibration",
+      "readiness_score_judgement.selected_level_calibration, readiness_score_judgement.selected_level_calibration_summary, scoring_context.level_calibration",
     uiDestination: "Judged-against label, recommendation rationale and score meaning",
-    routeSectionKeys: ["readiness_header", "submission_guidance", "score_summary"],
+    routeSectionKeys: [
+      "readiness_header",
+      "submission_guidance",
+      "selected_level_calibration",
+      "score_summary",
+    ],
     completenessRule: "complete",
     repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
@@ -924,7 +929,7 @@ Old report surface to preserve as the starting UI: overall readiness, score/chip
 Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
 - State the scoring basis in readiness language and supporting fields; do not use brief-complete claims for no_brief_baseline runs.
-- Include selected-level calibration in readiness_score_judgement.selected_level_calibration_summary; selected level is the assessment standard, not tone.
+- Include selected-level calibration in readiness_score_judgement.selected_level_calibration and selected_level_calibration_summary; selected level is the assessment standard, not tone. The structured object must state selected_level, selected_level_label, standard_applied, evidence_threshold, readiness_standard, score_meaning, what_meets_level, what_falls_short, recommendation_impact, comparison_to_other_levels and confidence.
 - If role/material context is used, include source basis and uncertainty in role_fit fields or relevant module notes; supplied brief remains primary.
 - If Professional 90+ calibration applies, include distinct zone meaning, suppressors, preserve guidance and retake strategy in professional_nuance_summary and professional critique/action modules.
 - If comparison or same-video status is enabled, identify compared active take versions and do not invent a winner for duplicate or effectively equivalent media.

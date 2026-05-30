@@ -14,6 +14,7 @@ export const S10_REPORT_SOURCE_MODE = "s10_ai_report_model" as const;
 export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
   "readiness_header",
   "submission_guidance",
+  "selected_level_calibration",
   "score_summary",
   "category_scores",
   "category_rationale",
@@ -59,6 +60,10 @@ export const S10_ROUTE_SECTION_SOURCE_RULES: Record<S10RouteSectionKey, S10Route
     submission_guidance: {
       sources: ["s10_authoritative_module", "specific_limitation"],
       modules: [/^readiness_score_judgement$/],
+    },
+    selected_level_calibration: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^readiness_score_judgement\.selected_level_calibration$/],
     },
     score_summary: {
       sources: ["s10_authoritative_module", "specific_limitation"],
@@ -306,6 +311,205 @@ export const AUDITION_LEVEL_LABELS: Record<AuditionLevel, string> = {
   emerging: "Emerging / Training",
   professional: "Professional",
 };
+
+export type S10PerformerLevel =
+  | "learning_school"
+  | "amateur_community"
+  | "emerging_training"
+  | "professional";
+
+export const S10_PERFORMER_LEVELS = [
+  "learning_school",
+  "amateur_community",
+  "emerging_training",
+  "professional",
+] as const satisfies readonly S10PerformerLevel[];
+
+export type S10PerformerLevelStandard = {
+  selected_level: S10PerformerLevel;
+  audition_level: AuditionLevel;
+  label: string;
+  standard_applied: string;
+  evidence_threshold: string;
+  readiness_standard: string;
+  score_meaning: string;
+  ai_judgement_questions: readonly string[];
+  professional_90_note: string;
+};
+
+export const S10_PERFORMER_LEVEL_STANDARDS: Record<S10PerformerLevel, S10PerformerLevelStandard> = {
+  learning_school: {
+    selected_level: "learning_school",
+    audition_level: "learning",
+    label: "Learning / School",
+    standard_applied:
+      "Basic task understanding, preparation, intelligibility and early craft evidence.",
+    evidence_threshold:
+      "The tape should be clear enough to assess preparation, task response and early technique without implying professional readiness.",
+    readiness_standard:
+      "Ready at this level means prepared, understandable and complete enough for the assignment or audition context.",
+    score_meaning:
+      "A high score means excellent evidence for Learning / School level, not automatic Professional readiness.",
+    ai_judgement_questions: [
+      "Is the task basically understood?",
+      "Is the performer prepared enough for this context?",
+      "Is speech, song or movement intelligible and assessable?",
+      "What is the most useful next correction at this level?",
+    ],
+    professional_90_note:
+      "Do not describe Learning / School excellence as Professional-standard unless independent Professional evidence is visible.",
+  },
+  amateur_community: {
+    selected_level: "amateur_community",
+    audition_level: "amateur",
+    label: "Amateur / Community",
+    standard_applied:
+      "Clear, prepared, task-relevant work that communicates reliably in a lower-stakes audition context.",
+    evidence_threshold:
+      "The tape should be understandable, prepared and aligned with the task, with fixes focused on confidence, clarity and task fit.",
+    readiness_standard:
+      "Ready at this level means usable and reliable for Amateur / Community submission conditions.",
+    score_meaning:
+      "A high score means strong for Amateur / Community level without claiming Professional competitiveness.",
+    ai_judgement_questions: [
+      "Is the tape clear, prepared and task-relevant?",
+      "Does the performance communicate reliably in a lower-stakes audition context?",
+      "Are required brief components present where a brief exists?",
+      "What would most improve readability, confidence or task fit?",
+    ],
+    professional_90_note:
+      "If Professional gaps are relevant, name them as a gap to Professional rather than downgrading Amateur / Community success.",
+  },
+  emerging_training: {
+    selected_level: "emerging_training",
+    audition_level: "emerging",
+    label: "Emerging / Training",
+    standard_applied:
+      "Credible craft, specificity, consistency and clear development direction under training or early-career scrutiny.",
+    evidence_threshold:
+      "The tape should show choices beyond basic preparation and enough technical assessability to identify development priorities.",
+    readiness_standard:
+      "Ready at this level means credible, specific and useful for training, early-career or semi-professional review.",
+    score_meaning:
+      "A high score means strong Emerging / Training evidence, with any Professional gap named separately where useful.",
+    ai_judgement_questions: [
+      "Is there credible craft beyond basic preparation?",
+      "Are the choices specific rather than general?",
+      "Does the performer sustain the scene, song, copy or movement task?",
+      "What is the gap to Professional, if useful?",
+    ],
+    professional_90_note:
+      "Developmental feedback should stay specific and should not soften mandatory brief or assessability blockers.",
+  },
+  professional: {
+    selected_level: "professional",
+    audition_level: "professional",
+    label: "Professional",
+    standard_applied:
+      "Discipline-specific, evidence-rich, brief-precise and technically assessable work under casting-facing conditions.",
+    evidence_threshold:
+      "The tape must distinguish competent from competitive work and expose any mandatory blocker, assessability issue or specialist precision gap.",
+    readiness_standard:
+      "Ready at this level means submit-ready under professional casting conditions, not merely clean or competent.",
+    score_meaning:
+      "A high score means strong Professional evidence; scores above 90 require competitive-zone nuance where no blocker dominates.",
+    ai_judgement_questions: [
+      "Does this meet the brief at Professional submission standard?",
+      "Is the work competitive, not merely competent?",
+      "What meets Professional standard and what is exposed by that standard?",
+      "Is this submit-ready, standout, or still carrying a casting-facing risk?",
+    ],
+    professional_90_note:
+      "Professional 90+ must distinguish viable, solid, strong, standout and exceptional zones without guaranteeing outcomes.",
+  },
+};
+
+export type S10PerformerLevelCalibration = {
+  selected_level: S10PerformerLevel;
+  selected_level_label: string;
+  standard_applied: string;
+  evidence_threshold: string;
+  readiness_standard: string;
+  score_meaning: string;
+  what_meets_level: string[];
+  what_falls_short: string[];
+  recommendation_impact: string;
+  comparison_to_other_levels: string | null;
+  confidence: "low" | "medium" | "high";
+};
+
+export function toS10PerformerLevel(
+  level: AuditionLevel | S10PerformerLevel | string | null | undefined,
+): S10PerformerLevel {
+  switch (level) {
+    case "learning":
+    case "learning_school":
+      return "learning_school";
+    case "amateur":
+    case "amateur_community":
+      return "amateur_community";
+    case "professional":
+      return "professional";
+    case "emerging":
+    case "emerging_training":
+    default:
+      return "emerging_training";
+  }
+}
+
+export function auditionLevelFromS10PerformerLevel(level: S10PerformerLevel): AuditionLevel {
+  return S10_PERFORMER_LEVEL_STANDARDS[level].audition_level;
+}
+
+export function getS10PerformerLevelStandard(
+  level: AuditionLevel | S10PerformerLevel | string | null | undefined,
+): S10PerformerLevelStandard {
+  return S10_PERFORMER_LEVEL_STANDARDS[toS10PerformerLevel(level)];
+}
+
+export function buildS10PerformerLevelPromptBlock(
+  level: AuditionLevel | S10PerformerLevel | string | null | undefined,
+): string {
+  const standard = getS10PerformerLevelStandard(level);
+  return [
+    `SELECTED PERFORMER LEVEL: ${standard.label} (${standard.selected_level})`,
+    "Use this as the assessment standard, not as tone, encouragement level or score decoration.",
+    `Standard applied: ${standard.standard_applied}`,
+    `Evidence threshold: ${standard.evidence_threshold}`,
+    `Readiness standard: ${standard.readiness_standard}`,
+    `Score meaning: ${standard.score_meaning}`,
+    `Level-specific questions: ${standard.ai_judgement_questions.join(" ")}`,
+    standard.professional_90_note,
+    "In readiness_score_judgement.selected_level_calibration, state what meets this selected level, what falls short, how the score should be interpreted at this level, and whether the recommendation changes because of the level.",
+    "If a mandatory brief blocker or assessability blocker dominates, say that the blocker overrides level-based praise.",
+  ].join("\n");
+}
+
+export function createS10PerformerLevelCalibration(
+  level: AuditionLevel | S10PerformerLevel | string | null | undefined,
+  overrides: Partial<S10PerformerLevelCalibration> = {},
+): S10PerformerLevelCalibration {
+  const standard = getS10PerformerLevelStandard(level);
+  const base: S10PerformerLevelCalibration = {
+    selected_level: standard.selected_level,
+    selected_level_label: standard.label,
+    standard_applied: standard.standard_applied,
+    evidence_threshold: standard.evidence_threshold,
+    readiness_standard: standard.readiness_standard,
+    score_meaning: standard.score_meaning,
+    what_meets_level: [],
+    what_falls_short: [],
+    recommendation_impact: "",
+    comparison_to_other_levels: null,
+    confidence: "low",
+  };
+  return {
+    ...base,
+    ...overrides,
+    selected_level: standard.selected_level,
+    selected_level_label: standard.label,
+  };
+}
 
 // -------------------- Audition-type weighting --------------------
 // Weights are applied to the model's per-category scores.
@@ -835,6 +1039,7 @@ export type ReadinessAndScoreJudgement = {
   brief_completion_summary: string;
   technical_assessability_summary: string;
   selected_level_calibration_summary: string;
+  selected_level_calibration: S10PerformerLevelCalibration;
   professional_nuance_summary: string;
   category_scores: CategoryScore[];
   category_rationale: Record<string, unknown>;

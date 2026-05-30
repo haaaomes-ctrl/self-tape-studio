@@ -87,6 +87,10 @@ const DEFAULT_INTERNAL_LEAK_TERMS = [
 const CORE_SOURCE_EXPECTATIONS: S10SourceExpectation[] = [
   { section: "readiness_header", expected_module: /readiness_score_judgement/ },
   { section: "submission_guidance", expected_module: /readiness_score_judgement/ },
+  {
+    section: "selected_level_calibration",
+    expected_module: /readiness_score_judgement\.selected_level_calibration/,
+  },
   { section: "score_summary", expected_module: /readiness_score_judgement/ },
   {
     section: "category_scores",

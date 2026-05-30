@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createS10PerformerLevelCalibration } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
   BriefRequirement,
@@ -170,6 +171,9 @@ const canaryReadiness: ReadinessAndScoreJudgement = {
   brief_completion_summary: "Side 1 is missing and song completion is not confirmed.",
   technical_assessability_summary: "Audio and framing are assessable.",
   selected_level_calibration_summary: "Professional.",
+  selected_level_calibration: createS10PerformerLevelCalibration("professional", {
+    recommendation_impact: "Professional submission readiness is blocked by missing material.",
+  }),
   professional_nuance_summary:
     "Strong observed material cannot override missing required material.",
   category_scores: [],
@@ -382,7 +386,11 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
     const requirements = [
       requirement("req002", "Record Side 1 acting scene", "material"),
       requirement("req003", "Record the contemporary legit MT song", "material"),
-      requirement("req004", "Only record Side 1 and the song for the initial self-tape", "material"),
+      requirement(
+        "req004",
+        "Only record Side 1 and the song for the initial self-tape",
+        "material",
+      ),
       requirement("req005", "Upload as one continuous final video", "technical"),
     ];
     const matrix = normaliseBriefAchievementMatrix({
@@ -401,9 +409,27 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
       },
       briefRequirements: requirements,
       componentVerifications: [
-        verification("req002", "Record Side 1 acting scene", "present", "complete", "Side 1 is complete."),
-        verification("req003", "Record the contemporary legit MT song", "present", "complete", "Song is complete."),
-        verification("req005", "Upload as one continuous final video", "present", "complete", "One continuous video is complete."),
+        verification(
+          "req002",
+          "Record Side 1 acting scene",
+          "present",
+          "complete",
+          "Side 1 is complete.",
+        ),
+        verification(
+          "req003",
+          "Record the contemporary legit MT song",
+          "present",
+          "complete",
+          "Song is complete.",
+        ),
+        verification(
+          "req005",
+          "Upload as one continuous final video",
+          "present",
+          "complete",
+          "One continuous video is complete.",
+        ),
       ],
       observedTapeSequence: [],
       mediaObservationSummary: {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createS10PerformerLevelCalibration } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
   BriefRequirement,
@@ -168,6 +169,9 @@ const canaryReadiness: ReadinessAndScoreJudgement = {
   brief_completion_summary: "Side 1 is missing and song completion is not confirmed.",
   technical_assessability_summary: "Audio and framing are assessable.",
   selected_level_calibration_summary: "Professional.",
+  selected_level_calibration: createS10PerformerLevelCalibration("professional", {
+    recommendation_impact: "Professional submission readiness is blocked by missing material.",
+  }),
   professional_nuance_summary:
     "Strong observed material cannot override missing required material.",
   category_scores: [],

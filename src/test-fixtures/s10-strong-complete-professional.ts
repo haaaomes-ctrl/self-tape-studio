@@ -459,6 +459,30 @@ export const s10StrongCompleteProfessionalExpectedModules = {
     technical_assessability_summary: "Audio/framing are assessable and support submission.",
     selected_level_calibration_summary:
       "At professional level, the tape is submit-ready with useful polish notes rather than a retake requirement.",
+    selected_level_calibration: {
+      selected_level: "professional",
+      selected_level_label: "Professional",
+      standard_applied:
+        "Discipline-specific, evidence-rich, brief-precise and technically assessable work under casting-facing conditions.",
+      evidence_threshold:
+        "The tape must distinguish competent from competitive work and expose any professional precision gap.",
+      readiness_standard:
+        "Ready at this level means submit-ready under professional casting conditions, not merely clean or competent.",
+      score_meaning:
+        "The score means strong Professional evidence because the mandatory material is complete and assessable.",
+      what_meets_level: [
+        "Required Side 1 and song are present and complete.",
+        "The scene-to-song package reads as one professional audition unit.",
+      ],
+      what_falls_short: [
+        "Remaining work is final upload checking and small diction precision, not a retake blocker.",
+      ],
+      recommendation_impact:
+        "At Professional level, the complete package supports submit-readiness with optional polish rather than a retake requirement.",
+      comparison_to_other_levels:
+        "A lower selected level would still read strongly, but this Professional read focuses on competitive precision.",
+      confidence: "high",
+    },
     professional_nuance_summary:
       "The strongest value is the integrated scene-to-song package; optional polish is about precision, not completion.",
     category_scores: [
@@ -996,6 +1020,7 @@ export const s10StrongCompleteProfessionalExpectedViewModel = {
   required_authoritative_sections: [
     "readiness_header",
     "submission_guidance",
+    "selected_level_calibration",
     "score_summary",
     "brief_achievement",
     "observed_tape",
@@ -1008,6 +1033,8 @@ export const s10StrongCompleteProfessionalExpectedViewModel = {
   ],
   allowed_route_content: [
     "Submit: strong complete professional package",
+    "Judged against",
+    "The score means strong Professional evidence",
     "mostly achieved",
     "Required Side 1 acting scene",
     "Contemporary legit MT song",

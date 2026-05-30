@@ -11,8 +11,10 @@ import type {
   ReadinessAndScoreJudgement,
   ReadinessDecision,
   ReadinessScoreBandLabel,
+  S10PerformerLevelCalibration,
   ScoreContradictionWarning,
 } from "@/lib/audition-rules";
+import { getS10PerformerLevelStandard, toS10PerformerLevel } from "@/lib/audition-rules";
 
 type Confidence = "low" | "medium" | "high";
 
@@ -73,6 +75,10 @@ function optionalOneOf<T extends string>(value: unknown, allowed: readonly T[]):
   return typeof value === "string" && (allowed as readonly string[]).includes(value)
     ? (value as T)
     : null;
+}
+
+function confidence(value: unknown, fallback: "low" | "medium" | "high" = "low") {
+  return oneOf(value, ["low", "medium", "high"], fallback);
 }
 
 function clampScore(value: unknown, fallback = 0): number {
@@ -290,6 +296,38 @@ function normaliseComponentScores(
   });
 }
 
+function normaliseSelectedLevelCalibration(input: {
+  value: unknown;
+  selectedLevel?: string | null;
+  legacySummary: string;
+}): S10PerformerLevelCalibration {
+  const raw = isRecord(input.value) ? input.value : {};
+  const selectedLevel = input.selectedLevel ?? text(raw.selected_level) ?? text(raw.level);
+  const standard = getS10PerformerLevelStandard(selectedLevel);
+  const rawLevelMatchesSelected =
+    !!text(raw.selected_level) &&
+    toS10PerformerLevel(raw.selected_level) === standard.selected_level;
+  return {
+    selected_level: toS10PerformerLevel(selectedLevel),
+    selected_level_label: standard.label,
+    standard_applied: standard.standard_applied,
+    evidence_threshold: standard.evidence_threshold,
+    readiness_standard: standard.readiness_standard,
+    score_meaning:
+      (rawLevelMatchesSelected
+        ? text(raw.score_meaning) || text(raw.score_meaning_at_level)
+        : null) || standard.score_meaning,
+    what_meets_level: stringList(raw.what_meets_level),
+    what_falls_short: stringList(raw.what_falls_short),
+    recommendation_impact:
+      text(raw.recommendation_impact) ||
+      text(raw.how_level_affects_recommendation) ||
+      input.legacySummary,
+    comparison_to_other_levels: text(raw.comparison_to_other_levels) || null,
+    confidence: confidence(raw.confidence),
+  };
+}
+
 export function normaliseReadinessScoreJudgement(input: {
   judgement: unknown;
   matrix: BriefAchievementMatrix;
@@ -444,6 +482,13 @@ export function normaliseReadinessScoreJudgement(input: {
       }))
     : [];
 
+  const selectedLevelSummary = text(raw.selected_level_calibration_summary);
+  const selectedLevelCalibration = normaliseSelectedLevelCalibration({
+    value: raw.selected_level_calibration,
+    selectedLevel: input.selectedLevel,
+    legacySummary: selectedLevelSummary,
+  });
+
   return {
     decision,
     headline: text(raw.headline) || (constraint.reason ?? ""),
@@ -468,7 +513,11 @@ export function normaliseReadinessScoreJudgement(input: {
     performance_quality_summary: text(raw.performance_quality_summary),
     brief_completion_summary: text(raw.brief_completion_summary) || input.matrix.summary,
     technical_assessability_summary: text(raw.technical_assessability_summary),
-    selected_level_calibration_summary: text(raw.selected_level_calibration_summary),
+    selected_level_calibration_summary:
+      selectedLevelSummary ||
+      selectedLevelCalibration.recommendation_impact ||
+      selectedLevelCalibration.standard_applied,
+    selected_level_calibration: selectedLevelCalibration,
     professional_nuance_summary: text(raw.professional_nuance_summary),
     category_scores: categoryScores,
     category_rationale: isRecord(raw.category_rationale) ? raw.category_rationale : {},

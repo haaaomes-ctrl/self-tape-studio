@@ -1083,6 +1083,7 @@ const ANALYSIS_MODEL_FALLBACK = process.env.ANALYSIS_MODEL_FALLBACK ?? "google/g
 import {
   applyCapsAndLabel,
   bandsForLevel,
+  buildS10PerformerLevelPromptBlock,
   computeBlockers,
   deterministicCompliance,
   recomputeOverall,
@@ -1394,6 +1395,49 @@ export const REPORT_TOOL = {
             brief_completion_summary: { type: "string" },
             technical_assessability_summary: { type: "string" },
             selected_level_calibration_summary: { type: "string" },
+            selected_level_calibration: {
+              type: "object",
+              description:
+                "S10 selected performer-level calibration. The selected level is the assessment standard, not tone. State what meets the level, what falls short, score meaning at this level and whether the level changes the recommendation.",
+              properties: {
+                selected_level: {
+                  type: "string",
+                  enum: [
+                    "learning_school",
+                    "amateur_community",
+                    "emerging_training",
+                    "professional",
+                  ],
+                },
+                selected_level_label: { type: "string" },
+                standard_applied: { type: "string" },
+                evidence_threshold: { type: "string" },
+                readiness_standard: { type: "string" },
+                score_meaning: { type: "string" },
+                what_meets_level: { type: "array", items: { type: "string" }, maxItems: 8 },
+                what_falls_short: { type: "array", items: { type: "string" }, maxItems: 8 },
+                recommendation_impact: { type: "string" },
+                comparison_to_other_levels: {
+                  type: "string",
+                  description:
+                    "Optional level-relative comparison, or an empty string if no comparison is useful.",
+                },
+                confidence: { type: "string", enum: ["low", "medium", "high"] },
+              },
+              required: [
+                "selected_level",
+                "selected_level_label",
+                "standard_applied",
+                "evidence_threshold",
+                "readiness_standard",
+                "score_meaning",
+                "what_meets_level",
+                "what_falls_short",
+                "recommendation_impact",
+                "comparison_to_other_levels",
+                "confidence",
+              ],
+            },
             professional_nuance_summary: { type: "string" },
             category_scores: {
               type: "array",
@@ -1530,6 +1574,7 @@ export const REPORT_TOOL = {
             "brief_completion_summary",
             "technical_assessability_summary",
             "selected_level_calibration_summary",
+            "selected_level_calibration",
             "professional_nuance_summary",
             "category_scores",
             "category_rationale",
@@ -2045,6 +2090,7 @@ Single-pass S10 recovery rules:
 - Produce observed_tape_sequence, component_verifications and media_observation_summary before brief_achievement_matrix. These S10.3 fields are the component evidence source for single-pass reports. Do not infer component presence from brief text, detected_components, raw_report, scores, category prose, material_compliance or prior report text.
 - Produce brief_achievement_matrix before any score, verdict, chip or readiness language. Compare BriefRequirement[] against observed media evidence. Brief text, legacy detected_components, material_compliance, score traces and previous report prose cannot prove achievement.
 - Produce readiness_score_judgement after brief_achievement_matrix. Separate performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone.
+- In readiness_score_judgement, populate selected_level_calibration with the selected-level standard, what meets it, what falls short, score meaning at this level and recommendation impact. Treat selected level as the assessment standard, not tone.
 - Produce s10_fix_hierarchy and s10_next_action_plan after readiness_score_judgement. matrix-before-fixes and readiness-before-action-plan are mandatory. Missing mandatory material/package blockers outrank polish, file naming, diction, character detail and admin-only checks.
 - Produce s10_professional_critique after s10_fix_hierarchy and s10_next_action_plan. Component verification before strengths is mandatory: absent or unverified components get limitations, not praise; partial/cut-off song strengths must say observed portion only.
 - Produce s10_technique_commentary after s10_professional_critique. verified component evidence before technique commentary is mandatory. Attempt technique commentary where verified evidence exists. If the brief requires an acting scene and S10.3 does not verify it, acting is not_assessable or limited, not not_applicable. If a song is present but incomplete, cut off or uncertain, vocal/singing is partially_assessable and all notes apply only to the observed portion. public_technique_authority_status and public_technique_authority_blocked must not suppress ordinary authenticated technique commentary.
@@ -3101,7 +3147,7 @@ export async function runProcessTake(
       2,
     )}`;
 
-    const levelBlock = `PERFORMER LEVEL: ${auditionLevel}. Calibrate expectations and tone for this level — encouraging at lower levels, sharper at professional. Never harsh.`;
+    const levelBlock = buildS10PerformerLevelPromptBlock(auditionLevel);
 
     const userText = [
       `Audition title: ${audition.title}`,

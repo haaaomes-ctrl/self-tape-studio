@@ -107,6 +107,13 @@ function schemaAllowsNull(value: unknown): boolean {
   return Array.isArray(type) && type.includes("null");
 }
 
+function expectRecord(value: unknown, label: string): Record<string, unknown> {
+  expect(value, label).toBeTruthy();
+  expect(typeof value, label).toBe("object");
+  expect(Array.isArray(value), label).toBe(false);
+  return value as Record<string, unknown>;
+}
+
 function collectProviderRequiredNullableFields(
   sourceSchema: unknown,
   providerSchema: unknown,
@@ -193,27 +200,35 @@ describe("provider tool schema helpers", () => {
     expect(providerTool.function.name).toBe("submit_audition_report");
     expect(hasArrayValuedType(providerTool)).toBe(false);
     expect(providerTool.function.parameters.properties.score.type).toBe("integer");
-    expect(
-      providerTool.function.parameters.properties.nested.items.properties.value.type,
-    ).toBe("string");
+    expect(providerTool.function.parameters.properties.nested.items.properties.value.type).toBe(
+      "string",
+    );
     expect(providerTool.function.parameters.required).toEqual([
       "must_be_true",
       "open_payload",
       "nested",
     ]);
     expect(providerTool.function.parameters.properties.must_be_true.enum).toBeUndefined();
-    const providerParameters = providerTool.function.parameters as any;
-    expect(providerParameters.properties.open_payload.properties.summary.type).toBe(
-      "string",
+    const providerProperties = expectRecord(
+      providerTool.function.parameters.properties,
+      "provider properties",
     );
+    const openPayload = expectRecord(providerProperties.open_payload, "open payload schema");
+    const openPayloadProperties = expectRecord(openPayload.properties, "open payload properties");
+    const summary = expectRecord(openPayloadProperties.summary, "open payload summary");
+    expect(summary.type).toBe("string");
     expect(collectUnsupportedKeys(providerTool)).toEqual([]);
     expect(collectOpenObjectSchemas(providerTool)).toEqual([]);
     expect(collectNonStringEnums(providerTool)).toEqual([]);
   });
 
   it("builds the real submit_audition_report tool as Gemini-safe schema", () => {
-    const providerTool = buildReportToolForProvider("google/gemini-3-flash-preview") as any;
-    const providerParameters = providerTool.function.parameters;
+    const providerTool = buildReportToolForProvider("google/gemini-3-flash-preview");
+    const providerParameters = expectRecord(
+      providerTool.function.parameters,
+      "provider parameters",
+    );
+    const providerProperties = expectRecord(providerParameters.properties, "provider properties");
 
     expect(providerTool.function.name).toBe("submit_audition_report");
     expect(hasArrayValuedType(providerTool)).toBe(false);
@@ -223,22 +238,49 @@ describe("provider tool schema helpers", () => {
     expect(
       collectProviderRequiredNullableFields(REPORT_TOOL.function.parameters, providerParameters),
     ).toEqual([]);
-    expect(
-      providerParameters.properties.s10_fix_hierarchy.properties.fix_first.type,
-    ).toBe("object");
-    expect(
-      providerParameters.properties.s10_fix_hierarchy.required,
-    ).not.toContain("fix_first");
-    expect(
-      providerParameters.properties.readiness_score_judgement.properties.category_rationale
-        .properties.summary.type,
-    ).toBe("string");
+    const fixHierarchy = expectRecord(providerProperties.s10_fix_hierarchy, "fix hierarchy schema");
+    const fixHierarchyProperties = expectRecord(
+      fixHierarchy.properties,
+      "fix hierarchy properties",
+    );
+    const fixFirst = expectRecord(fixHierarchyProperties.fix_first, "fix first schema");
+    expect(fixFirst.type).toBe("object");
+    expect(fixHierarchy.required).not.toContain("fix_first");
+    const readiness = expectRecord(
+      providerProperties.readiness_score_judgement,
+      "readiness schema",
+    );
+    const readinessProperties = expectRecord(readiness.properties, "readiness properties");
+    const categoryRationale = expectRecord(
+      readinessProperties.category_rationale,
+      "category rationale schema",
+    );
+    const categoryRationaleProperties = expectRecord(
+      categoryRationale.properties,
+      "category rationale properties",
+    );
+    const categorySummary = expectRecord(
+      categoryRationaleProperties.summary,
+      "category summary schema",
+    );
+    expect(categorySummary.type).toBe("string");
+    const selectedLevelCalibration = expectRecord(
+      readinessProperties.selected_level_calibration,
+      "selected level calibration schema",
+    );
+    const selectedLevelCalibrationProperties = expectRecord(
+      selectedLevelCalibration.properties,
+      "selected level calibration properties",
+    );
+    const selectedLevel = expectRecord(
+      selectedLevelCalibrationProperties.selected_level,
+      "selected level schema",
+    );
+    expect(Array.isArray(selectedLevel.enum) ? selectedLevel.enum : []).toContain("professional");
   });
 
   it("uses plain JSON report contracts for Gemini report generation", () => {
-    expect(selectReportProviderContract("google/gemini-3-flash-preview")).toBe(
-      "plain_json_report",
-    );
+    expect(selectReportProviderContract("google/gemini-3-flash-preview")).toBe("plain_json_report");
 
     const polishBody = buildReportPolishRequestBodyForProvider({
       model: "google/gemini-3-flash-preview",
@@ -270,8 +312,12 @@ describe("provider tool schema helpers", () => {
       systemPrompt: "system",
       userText: "user",
       reportTool: REPORT_TOOL,
-    }) as Record<string, any>;
-    expect(polishBody.tools?.[0]?.function?.name).toBe("submit_audition_report");
+    });
+    expect(Array.isArray(polishBody.tools)).toBe(true);
+    const tools = polishBody.tools as unknown[];
+    const firstTool = expectRecord(tools[0], "first tool");
+    const firstToolFunction = expectRecord(firstTool.function, "first tool function");
+    expect(firstToolFunction.name).toBe("submit_audition_report");
     expect(polishBody.tool_choice).toMatchObject({
       type: "function",
       function: { name: "submit_audition_report" },
