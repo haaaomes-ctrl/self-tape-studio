@@ -4,6 +4,9 @@
 // judgement; code validates, repairs, routes and renders. Runtime provenance
 // and QA proof are not S10 acceptance requirements.
 
+import { S10_ROUTE_REQUIRED_SECTION_KEYS } from "@/lib/audition-rules";
+import type { S10RouteSectionKey } from "@/lib/audition-rules";
+
 export const S10_OBSERVATION_PROMPT_VERSION = "s10_observation_module_map_v1";
 export const S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION = "s10_professional_judgement_module_map_v1";
 export const S10_MODULE_REPAIR_PROMPT_VERSION = "s10_module_repair_v1";
@@ -34,6 +37,14 @@ export const S10_MODULE_COMPLETENESS_STATUSES = [
 ] as const;
 
 export type S10ModuleCompletenessStatus = (typeof S10_MODULE_COMPLETENESS_STATUSES)[number];
+
+export const S10_MODULE_REPAIR_TRIGGER_STATUSES = [
+  "missing",
+  "thin",
+  "generic",
+  "contradictory",
+  "unsupported",
+] as const satisfies readonly S10ModuleCompletenessStatus[];
 
 export type S10PromptInventoryEntry = {
   promptName: string;
@@ -325,7 +336,9 @@ export type S10ModuleCoverageEntry = {
   aiQuestion: string;
   structuredOutputField: string;
   uiDestination: string;
+  routeSectionKeys: readonly S10RouteSectionKey[];
   completenessRule: S10ModuleCompletenessStatus;
+  repairTriggerStatuses: readonly S10ModuleCompletenessStatus[];
   repairPrompt: string;
   deterministicInputsAllowed: string[];
   codeGeneratedContentForbidden: string[];
@@ -351,6 +364,8 @@ const COMMON_FORBIDDEN_CODE_CONTENT = [
   "comparison judgement",
 ];
 
+const DEFAULT_REPAIR_TRIGGERS = S10_MODULE_REPAIR_TRIGGER_STATUSES;
+
 export const S10_MODULE_REPAIR_PROMPTS: Record<string, string> = {
   complete:
     "No repair required. Revalidate routing only; preserve the complete AI-authored module content without rewriting it.",
@@ -369,13 +384,42 @@ export const S10_MODULE_REPAIR_PROMPTS: Record<string, string> = {
 
 export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   {
+    reportModule: "take slot/version context",
+    aiQuestion:
+      "Which take slot and active take version is being analysed or compared, and is any comparison stale or historical?",
+    structuredOutputField: "take_lifecycle, take_metadata, comparison_context",
+    uiDestination: "Take badge, comparison context and admin/report identity",
+    routeSectionKeys: [],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.missing,
+    deterministicInputsAllowed: ["take metadata", "known comparison take IDs", "upload identity"],
+    codeGeneratedContentForbidden: ["comparison judgement", "professional strengths"],
+  },
+  {
+    reportModule: "scoring basis",
+    aiQuestion:
+      "Is this brief_supplied, partial_brief_supplied, no_brief_baseline or brief_uncertain, and what score claims are allowed in that mode?",
+    structuredOutputField:
+      "mode (brief/baseline compatibility), scoring_context, readiness_score_judgement.score_explanation",
+    uiDestination: "Score summary, recommendation rationale and report labels",
+    routeSectionKeys: ["score_summary", "submission_guidance"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
+    deterministicInputsAllowed: ["supplied brief", "selected level", "take metadata"],
+    codeGeneratedContentForbidden: ["score explanation", "readiness rationale"],
+  },
+  {
     reportModule: "overall readiness",
     aiQuestion:
       "After brief achievement is known, what readiness decision and score should the performer see?",
     structuredOutputField:
       "readiness_score_judgement, overall_score, casting_headline, submission_verdict",
     uiDestination: "Overall readiness header",
+    routeSectionKeys: ["readiness_header"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: COMMON_FORBIDDEN_CODE_CONTENT,
@@ -386,7 +430,9 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
       "What score band and score-to-language explanation matches the verified brief achievement?",
     structuredOutputField: "readiness_score_judgement, overall_score, scores, category_rationale",
     uiDestination: "Score chip and category score bars",
+    routeSectionKeys: ["score_summary"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["score explanation", "readiness rationale"],
@@ -397,54 +443,79 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
       "Should the performer submit, review carefully, submit only if deadline is close, or retake if possible?",
     structuredOutputField: "readiness_score_judgement, verdict_final, casting_insight, at_risk",
     uiDestination: "Verdict header and risk panel",
+    routeSectionKeys: ["submission_guidance"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["readiness rationale", "comparison judgement"],
   },
   {
-    reportModule: "prioritised fixes",
+    reportModule: "performer level calibration",
     aiQuestion:
-      "What are the most submission-impactful fixes, ordered by urgency and source category?",
-    structuredOutputField: "s10_fix_hierarchy.priority_fixes, priority_fixes",
-    uiDestination: "Prioritised fixes section",
+      "What selected-level standard is being applied, what meets it, what falls short, and how does the level affect the recommendation?",
+    structuredOutputField:
+      "readiness_score_judgement.selected_level_calibration_summary, scoring_context.level_calibration",
+    uiDestination: "Judged-against label, recommendation rationale and score meaning",
+    routeSectionKeys: ["readiness_header", "submission_guidance", "score_summary"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
-    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
-    codeGeneratedContentForbidden: ["professional fixes", "optional polish"],
+    deterministicInputsAllowed: ["selected level", "supplied brief", "observed tape evidence"],
+    codeGeneratedContentForbidden: ["level reasoning", "readiness rationale", "score explanation"],
   },
   {
-    reportModule: "fix-first",
+    reportModule: "brief intelligence",
     aiQuestion:
-      "What is the single first action the performer should take before submitting or retaking?",
-    structuredOutputField: "s10_fix_hierarchy.fix_first, fix_first",
-    uiDestination: "Fix this first fallback section",
+      "What useful brief context and explicit requirements should be preserved for the performer before the tape is judged?",
+    structuredOutputField: "brief_context, brief_requirements",
+    uiDestination: "Brief achievement section and what-the-brief-asked-for rows",
+    routeSectionKeys: ["brief_context", "brief_requirements"],
     completenessRule: "complete",
-    repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
-    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
-    codeGeneratedContentForbidden: ["professional fixes"],
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.missing,
+    deterministicInputsAllowed: ["supplied brief", "uploaded material", "operator assumptions"],
+    codeGeneratedContentForbidden: ["brief requirements", "observed component presence"],
   },
   {
-    reportModule: "why this score",
+    reportModule: "brief context",
     aiQuestion:
-      "For each visible score, what works, why it is not full score, and what closes the gap?",
-    structuredOutputField: "category_rationale",
-    uiDestination: "Why this score section",
+      "Which supplied project, role, material, deadline, upload and package details are useful to show in the authenticated report?",
+    structuredOutputField: "brief_context",
+    uiDestination: "Brief achievement context rows",
+    routeSectionKeys: ["brief_context"],
     completenessRule: "complete",
-    repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
-    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
-    codeGeneratedContentForbidden: ["score explanation"],
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
+    deterministicInputsAllowed: ["supplied brief", "uploaded material", "operator assumptions"],
+    codeGeneratedContentForbidden: ["brief requirements", "role/material judgement"],
   },
   {
-    reportModule: "category scores",
+    reportModule: "brief requirements",
     aiQuestion:
-      "How should technical, audio, vocal, acting, brief adherence and presentation be scored after component verification?",
-    structuredOutputField: "scores, category_notes",
-    uiDestination: "Category scores section",
+      "For every supplied requirement, what is mandatory, preferred, optional or ambiguous, and what evidence would prove it?",
+    structuredOutputField: "brief_requirements",
+    uiDestination: "What the brief asked for rows",
+    routeSectionKeys: ["brief_requirements"],
     completenessRule: "complete",
-    repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
-    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
-    codeGeneratedContentForbidden: ["score explanation"],
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.missing,
+    deterministicInputsAllowed: ["supplied brief", "uploaded material", "operator assumptions"],
+    codeGeneratedContentForbidden: ["brief requirements", "observed component presence"],
+  },
+  {
+    reportModule: "observed tape",
+    aiQuestion:
+      "What actually appears in the tape, in sequence, with component status, assessability and timing where supported?",
+    structuredOutputField:
+      "observed_tape_sequence, component_verifications, media_observation_summary",
+    uiDestination: "Observed tape section",
+    routeSectionKeys: ["observed_tape"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
+    deterministicInputsAllowed: ["media duration", "locked Step 1 observations"],
+    codeGeneratedContentForbidden: ["observed component presence", "professional strengths"],
   },
   {
     reportModule: "component breakdown",
@@ -453,7 +524,9 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     structuredOutputField:
       "observed_tape_sequence, component_verifications, media_observation_summary, detected_components",
     uiDestination: "Component breakdown section",
+    routeSectionKeys: ["component_breakdown"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["observed component presence"],
@@ -465,21 +538,104 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     structuredOutputField:
       "brief_achievement_matrix, brief_adherence_breakdown, submission_risk_flags",
     uiDestination: "Why this is/isn't ready, submission risk, category rationale",
+    routeSectionKeys: ["brief_achievement"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["readiness rationale", "observed component presence"],
+  },
+  {
+    reportModule: "brief adherence/material compliance",
+    aiQuestion:
+      "How does verified brief completion affect the visible readiness score, category score and submission language?",
+    structuredOutputField:
+      "readiness_score_judgement.brief_completion_score, readiness_score_judgement.brief_completion_summary",
+    uiDestination: "Brief adherence/material compliance score row",
+    routeSectionKeys: ["brief_adherence_material_compliance"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
+    deterministicInputsAllowed: ["brief achievement matrix", "selected level"],
+    codeGeneratedContentForbidden: ["score explanation", "readiness rationale"],
+  },
+  {
+    reportModule: "prioritised fixes",
+    aiQuestion:
+      "What are the most submission-impactful fixes, ordered by urgency and source category?",
+    structuredOutputField: "s10_fix_hierarchy.priority_fixes, priority_fixes",
+    uiDestination: "Prioritised fixes section",
+    routeSectionKeys: ["fix_hierarchy"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
+    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
+    codeGeneratedContentForbidden: ["professional fixes", "optional polish"],
+  },
+  {
+    reportModule: "fix-first",
+    aiQuestion:
+      "What is the single first action the performer should take before submitting or retaking?",
+    structuredOutputField: "s10_fix_hierarchy.fix_first, fix_first",
+    uiDestination: "Fix first block inside prioritised fixes",
+    routeSectionKeys: ["fix_hierarchy"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
+    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
+    codeGeneratedContentForbidden: ["professional fixes"],
+  },
+  {
+    reportModule: "why this score",
+    aiQuestion:
+      "For each visible score, what works, why it is not full score, and what closes the gap?",
+    structuredOutputField: "readiness_score_judgement.category_rationale, category_rationale",
+    uiDestination: "Why this score and category rationale sections",
+    routeSectionKeys: ["category_rationale"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
+    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
+    codeGeneratedContentForbidden: ["score explanation"],
+  },
+  {
+    reportModule: "category scores",
+    aiQuestion:
+      "How should technical, audio, vocal, acting, brief adherence and presentation be scored after component verification?",
+    structuredOutputField: "readiness_score_judgement.category_scores, scores, category_notes",
+    uiDestination: "Category scores section",
+    routeSectionKeys: ["category_scores"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
+    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
+    codeGeneratedContentForbidden: ["score explanation"],
   },
   {
     reportModule: "strengths",
     aiQuestion:
       "What specific performance, package or technical strengths are supported by verified S10 component evidence?",
     structuredOutputField: "s10_professional_critique, strengths",
-    uiDestination: "Strengths section",
+    uiDestination: "Strengths and preserve section",
+    routeSectionKeys: ["strengths_and_preserve"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["professional strengths"],
+  },
+  {
+    reportModule: "professional critique",
+    aiQuestion:
+      "What professional judgement, strengths, preserve guidance, do-not-overfix notes and limitations are grounded in the verified tape evidence?",
+    structuredOutputField: "s10_professional_critique",
+    uiDestination: "Strengths and preserve plus professional critique routing",
+    routeSectionKeys: ["professional_critique", "strengths_and_preserve"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
+    deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
+    codeGeneratedContentForbidden: ["professional strengths", "optional polish"],
   },
   {
     reportModule: "preserve/do-not-overfix",
@@ -487,8 +643,10 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
       "What choices should the performer preserve, and what should they avoid over-fixing?",
     structuredOutputField:
       "s10_professional_critique.preserve, s10_professional_critique.do_not_overfix, s10_fix_hierarchy.preserve, s10_fix_hierarchy.do_not_overfix, s10_next_action_plan",
-    uiDestination: "Next steps and why this score sections",
+    uiDestination: "Strengths and preserve, prioritised fixes, and next action sections",
+    routeSectionKeys: ["strengths_and_preserve", "fix_hierarchy", "next_action_plan"],
     completenessRule: "thin",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["optional polish", "professional strengths"],
@@ -497,8 +655,10 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "improvements",
     aiQuestion: "What concrete improvements are grounded in the observed tape and selected level?",
     structuredOutputField: "s10_fix_hierarchy.should_improve_if_retaking, improvements",
-    uiDestination: "Improvements section",
+    uiDestination: "Should improve if retaking inside prioritised fixes",
+    routeSectionKeys: ["fix_hierarchy"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["professional fixes"],
@@ -509,8 +669,10 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
       "What acting, vocal, movement, MT package or presentation technique commentary is visible, and what is not assessable?",
     structuredOutputField:
       "s10_technique_commentary, category_rationale, category_notes, improvements",
-    uiDestination: "Why this score, category scores, improvements",
+    uiDestination: "Technique commentary section",
+    routeSectionKeys: ["technique_commentary"],
     completenessRule: "thin",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.not_assessable,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["technique notes"],
@@ -520,8 +682,10 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     aiQuestion:
       "What timestamped or time-banded moments evidence strengths, fixes, missing components, cut-off points or technical observations?",
     structuredOutputField: "s10_timestamped_commentary, timestamped_notes",
-    uiDestination: "Timestamped notes section",
+    uiDestination: "Timestamped and time-banded notes section",
+    routeSectionKeys: ["timestamped_commentary"],
     completenessRule: "thin",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.missing,
     deterministicInputsAllowed: ["media duration", "Step 1 timestamped evidence"],
     codeGeneratedContentForbidden: [
@@ -532,10 +696,13 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   },
   {
     reportModule: "next action",
-    aiQuestion: "What finite next-take plan or submit checklist should the performer follow now?",
+    aiQuestion:
+      "What finite next-take plan, submit checklist or review checklist should the performer follow now?",
     structuredOutputField: "s10_next_action_plan, next_take_plan, coaching_drills",
-    uiDestination: "Next steps section",
+    uiDestination: "Next action plan section",
+    routeSectionKeys: ["next_action_plan"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.generic,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["optional polish", "readiness rationale"],
@@ -543,32 +710,97 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   {
     reportModule: "submission risk",
     aiQuestion:
-      "Which brief, package, technical or admin issues could block or reduce submission readiness?",
+      "Which brief, package, technical, admin or uncertainty issues could block or reduce submission readiness?",
     structuredOutputField: "submission_risk_flags, casting_risk_explanations, at_risk",
-    uiDestination: "Submission risk section",
+    uiDestination: "Submission risk section and recommendation rationale",
+    routeSectionKeys: ["submission_risk"],
     completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["readiness rationale"],
   },
   {
+    reportModule: "role/material context",
+    aiQuestion:
+      "Where role, character, production or material context is supplied or confidently resolved, what source basis and task-specific demands may inform the report?",
+    structuredOutputField:
+      "role_material_context, role_fit_notes, role_fit_modifier, role_fit_confidence",
+    uiDestination: "Brief context, role/material context, technique and submission-risk notes",
+    routeSectionKeys: ["brief_context", "submission_risk", "technique_commentary"],
+    completenessRule: "not_assessable",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.not_assessable,
+    deterministicInputsAllowed: ["supplied brief", "uploaded material", "selected level"],
+    codeGeneratedContentForbidden: [
+      "role/material judgement",
+      "brief requirements",
+      "comparison judgement",
+    ],
+  },
+  {
     reportModule: "role fit",
     aiQuestion:
-      "Where the brief gives enough role context, how does the observed performance serve the role function and tone?",
+      "Where the brief gives enough role context, how does the observed performance serve the role function and tone without castability or type language?",
     structuredOutputField: "role_fit_notes, role_fit_modifier, role_fit_confidence",
-    uiDestination: "Role fit section",
+    uiDestination: "Role fit section or role/material context block where present",
+    routeSectionKeys: ["brief_context", "submission_risk"],
     completenessRule: "not_assessable",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.not_assessable,
     deterministicInputsAllowed: ["supplied brief", "selected level"],
-    codeGeneratedContentForbidden: ["comparison judgement", "readiness rationale"],
+    codeGeneratedContentForbidden: ["role/material judgement", "comparison judgement"],
+  },
+  {
+    reportModule: "professional competitive calibration",
+    aiQuestion:
+      "For Professional assessable tapes scoring 90+, which 90-100 competitive zone applies, why, what suppresses the next zone, what should be preserved and whether retaking is strategically useful?",
+    structuredOutputField:
+      "professional_competitive_calibration, readiness_score_judgement.professional_nuance_summary, s10_professional_critique",
+    uiDestination: "Professional competitive calibration and score explanation",
+    routeSectionKeys: ["score_summary", "professional_critique", "strengths_and_preserve"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.thin,
+    deterministicInputsAllowed: ["selected level", "score summary", "observed tape evidence"],
+    codeGeneratedContentForbidden: ["score explanation", "optional polish"],
+  },
+  {
+    reportModule: "comparison",
+    aiQuestion:
+      "When comparison is enabled, which active take versions were compared, is the comparison valid, and what does or does not separate them?",
+    structuredOutputField: "s10_comparison_truth, comparison_truth, comparison_context",
+    uiDestination: "Comparison truth / same-video comparison section",
+    routeSectionKeys: ["comparison_truth"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
+    deterministicInputsAllowed: ["known comparison take IDs", "take metadata", "same-video status"],
+    codeGeneratedContentForbidden: ["comparison judgement"],
+  },
+  {
+    reportModule: "same-video status",
+    aiQuestion:
+      "Do compared or replaced takes appear to use the same underlying media, and what performer-facing caution or operator confirmation is needed?",
+    structuredOutputField: "s10_same_video_evidence, same_video_status",
+    uiDestination: "Same-video comparison section",
+    routeSectionKeys: ["same_video_status"],
+    completenessRule: "complete",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
+    deterministicInputsAllowed: ["upload identity", "take metadata", "operator assumptions"],
+    codeGeneratedContentForbidden: ["comparison judgement", "professional strengths"],
   },
   {
     reportModule: "presentation notes",
     aiQuestion:
       "What practical self-tape presentation notes are supported by camera/audio evidence and useful for the next take?",
-    structuredOutputField: "presentation_notes",
+    structuredOutputField:
+      "s10_professional_critique.professional_presentation_notes, s10_technique_commentary.self_tape_presentation, presentation_notes",
     uiDestination: "Presentation notes section",
+    routeSectionKeys: ["presentation_notes"],
     completenessRule: "thin",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
     deterministicInputsAllowed: ["technical signals", "media duration"],
     codeGeneratedContentForbidden: ["optional polish", "professional strengths"],
@@ -577,12 +809,28 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     reportModule: "not-assessable limitations",
     aiQuestion:
       "What cannot be assessed, which report modules are affected, and what recording/check would resolve it?",
-    structuredOutputField: "confidence_reason, category_notes, improvements",
-    uiDestination: "Reliability, category notes, improvements",
+    structuredOutputField:
+      "confidence_reason, s10_view_model.limitations, category_notes, improvements",
+    uiDestination: "Limitations, reliability, category notes and improvements",
+    routeSectionKeys: ["limitations"],
     completenessRule: "not_assessable",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.not_assessable,
     deterministicInputsAllowed: COMMON_DETERMINISTIC_INPUTS,
     codeGeneratedContentForbidden: ["technique notes", "score explanation"],
+  },
+  {
+    reportModule: "diagnostic chips",
+    aiQuestion:
+      "No performer-facing AI judgement should populate diagnostic chips; if operator/test chips are shown, what structured non-prose diagnostic source authorises them?",
+    structuredOutputField: "diagnostic_chips, qa/admin diagnostics",
+    uiDestination: "Diagnostic chips are not rendered in the performer report",
+    routeSectionKeys: ["diagnostic_chips"],
+    completenessRule: "not_assessable",
+    repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
+    repairPrompt: S10_MODULE_REPAIR_PROMPTS.unsupported,
+    deterministicInputsAllowed: ["operator assumptions", "QA/admin diagnostics"],
+    codeGeneratedContentForbidden: ["readiness rationale", "professional strengths"],
   },
 ];
 
@@ -653,22 +901,33 @@ S10.8 verified component evidence before technique commentary rule: produce s10_
 S10.9 verified component evidence before timestamped commentary rule: produce s10_timestamped_commentary after s10_technique_commentary. s10_timestamped_commentary is authoritative; legacy timestamped_notes is only a compatibility projection after validation. Timestamped commentary cannot prove component presence. It may annotate verified components, partial components, uncertain components, missing components and not-assessable limitations, but S10.3 ComponentVerification remains the source of truth for whether material appears. Exact timestamps require trusted timing support from ObservedTapeSequence start/end times, media-observed Step 1 timestamped_evidence, EvidenceAnchors with genuine timestamp/timestamp_range, or provider output tied to verified observed evidence. If exact timestamps are unavailable, use approximate, time-banded, order-only or "Not observed" notes without fake timecodes. raw_report.timestamped_notes and prior report prose are diagnostic only and must not be copied back by text match.
 
 Module question order:
-1. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
-2. Observed tape sequence: what actually appears, in order, with timestamps or time-bands where possible?
-3. Component detection: which requested and observed components are present, absent, partially_present, cut_off, uncertain or not_assessable?
-4. Brief achievement: for each requirement, what is achieved, missed, incomplete or not assessable?
-5. Recommendation: submit, submit if deadline is close, review carefully, or retake required if possible.
-6. Score reasoning: explain separately how performance quality, brief completion and submission readiness align with the score/chip.
-7. Fix hierarchy: s10_fix_hierarchy with fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish, preserve and do-not-overfix.
-8. Strengths/preserve/professional critique: s10_professional_critique with evidence-specific strengths, preserve guidance, do-not-overfix and limitations.
-9. Technique-library commentary: s10_technique_commentary for acting, vocal/singing, movement/dance, musical-theatre package integration, commercial/screen task and self-tape presentation where verified evidence exists, with not_assessable or not_applicable limitations where evidence does not support commentary.
-10. Timestamped commentary: s10_timestamped_commentary with exact timestamps only when supported; otherwise time-bands, section-order notes or "Not observed" missing-component notes without fake timestamps.
-11. Next action and limitations: finite next-take plan or submit checklist, do-not-overfix, and not-assessable explanations.
+1. Take/slot context where supplied: which active take version or comparison context is being judged?
+2. Scoring basis: determine brief_supplied, partial_brief_supplied, no_brief_baseline or brief_uncertain; state what claims are allowed in readiness language and keep any legacy mode field schema-compatible.
+3. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
+4. Role/material context where supplied: what source basis and task demands may inform the judgement without inventing hidden requirements?
+5. Observed tape sequence: what actually appears, in order, with timestamps or time-bands where possible?
+6. Component detection: which requested and observed components are present, absent, partially_present, cut_off, uncertain or not_assessable?
+7. Brief achievement: for each requirement, what is achieved, missed, incomplete or not assessable?
+8. Performer-level calibration: what selected-level standard is applied, what meets it and what falls short?
+9. Recommendation: submit, submit if deadline is close, review carefully, or retake required if possible.
+10. Score reasoning: explain separately how performance quality, brief completion and submission readiness align with the score/chip.
+11. Professional competitive calibration where applicable: for Professional 90+, assign a distinct zone and retake strategy.
+12. Fix hierarchy: s10_fix_hierarchy with fix_first, priority_fixes, must-fix before submitting, should-improve if retaking, optional polish, preserve and do-not-overfix.
+13. Strengths/preserve/professional critique: s10_professional_critique with evidence-specific strengths, preserve guidance, do-not-overfix and limitations.
+14. Technique-library commentary: s10_technique_commentary for acting, vocal/singing, movement/dance, musical-theatre package integration, commercial/screen task and self-tape presentation where verified evidence exists, with not_assessable or not_applicable limitations where evidence does not support commentary.
+15. Timestamped commentary: s10_timestamped_commentary with exact timestamps only when supported; otherwise time-bands, section-order notes or "Not observed" missing-component notes without fake timestamps.
+16. Comparison and same-video status where enabled: identify compared active take versions and suppress false winners for duplicate media.
+17. Next action and limitations: finite next-take plan or submit checklist, do-not-overfix, and not-assessable explanations.
 
 Old report surface to preserve as the starting UI: overall readiness, score/chip, verdict, prioritised fixes, why this score, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk and presentation notes.
 
 Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
+- State the scoring basis in readiness language and supporting fields; do not use brief-complete claims for no_brief_baseline runs.
+- Include selected-level calibration in readiness_score_judgement.selected_level_calibration_summary; selected level is the assessment standard, not tone.
+- If role/material context is used, include source basis and uncertainty in role_fit fields or relevant module notes; supplied brief remains primary.
+- If Professional 90+ calibration applies, include distinct zone meaning, suppressors, preserve guidance and retake strategy in professional_nuance_summary and professional critique/action modules.
+- If comparison or same-video status is enabled, identify compared active take versions and do not invent a winner for duplicate or effectively equivalent media.
 - Always include brief_achievement_matrix with one requirement_results row per BriefRequirement. Each row must set cannot_infer_from_brief_only=true and link to observed component evidence where available.
 - Always include readiness_score_judgement with performance_quality_score, brief_completion_score and overall_submission_readiness_score. Add score_contradiction_warnings when any legacy or AI score conflicts with the brief achievement matrix.
 - Always include s10_fix_hierarchy and s10_next_action_plan. Treat them as the authoritative action model; legacy-compatible fix_first, priority_fixes, improvements, next_take_plan and coaching_drills are projections only.
@@ -700,4 +959,14 @@ Repair one incomplete S10 report module. Use only the supplied brief, observed t
 
 export function findS10ModuleCoverage(reportModule: string) {
   return S10_REPORT_MODULE_COVERAGE.find((entry) => entry.reportModule === reportModule);
+}
+
+export function findS10ModuleCoverageForRouteSection(section: S10RouteSectionKey) {
+  return S10_REPORT_MODULE_COVERAGE.filter((entry) => entry.routeSectionKeys.includes(section));
+}
+
+export function listS10RouteSectionsMissingPromptCoverage() {
+  return S10_ROUTE_REQUIRED_SECTION_KEYS.filter(
+    (section) => findS10ModuleCoverageForRouteSection(section).length === 0,
+  );
 }
