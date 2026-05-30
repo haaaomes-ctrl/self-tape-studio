@@ -13,6 +13,7 @@ import {
   S10_CANARY_A_PROMPT_REQUIREMENT,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
   S10_MODULE_COMPLETENESS_STATUSES,
+  S10_MODULE_REPAIR_TRIGGER_STATUSES,
   S10_MODULE_REPAIR_PROMPT_VERSION,
   S10_MODULE_REPAIR_PROMPTS,
   S10_OBSERVATION_PROMPT_VERSION,
@@ -23,7 +24,9 @@ import {
   S10_STRENGTHS_PRESERVE_PROFESSIONAL_CRITIQUE_PROMPT_VERSION,
   S10_TECHNIQUE_LIBRARY_COMMENTARY_PROMPT_VERSION,
   S10_TIMESTAMPED_COMMENTARY_PROMPT_VERSION,
+  listS10RouteSectionsMissingPromptCoverage,
 } from "@/server/s10-report-prompt-map.server";
+import { S10_ROUTE_REQUIRED_SECTION_KEYS } from "@/lib/audition-rules";
 
 function read(p: string): string {
   return fs.readFileSync(path.join(process.cwd(), p), "utf8");
@@ -148,29 +151,50 @@ describe("S10.1 AI prompt map", () => {
       expect(S10_MODULE_REPAIR_PROMPTS[status]).toEqual(expect.any(String));
       expect(S10_MODULE_REPAIR_PROMPTS[status].length).toBeGreaterThan(40);
     }
+    expect(S10_MODULE_REPAIR_TRIGGER_STATUSES).toEqual([
+      "missing",
+      "thin",
+      "generic",
+      "contradictory",
+      "unsupported",
+    ]);
   });
 
   it("covers every visible report module with an AI question and repair prompt", () => {
     const requiredModules = [
+      "take slot/version context",
+      "scoring basis",
       "overall readiness",
       "score/chip",
       "verdict",
+      "performer level calibration",
+      "brief intelligence",
+      "brief context",
+      "brief requirements",
+      "observed tape",
       "prioritised fixes",
       "fix-first",
       "why this score",
       "category scores",
       "component breakdown",
       "brief achievement",
+      "brief adherence/material compliance",
       "strengths",
+      "professional critique",
       "preserve/do-not-overfix",
       "improvements",
       "technique commentary",
       "timestamped notes",
       "next action",
       "submission risk",
+      "role/material context",
       "role fit",
+      "professional competitive calibration",
+      "comparison",
+      "same-video status",
       "presentation notes",
       "not-assessable limitations",
+      "diagnostic chips",
     ];
 
     expect(S10_REPORT_MODULE_COVERAGE.map((entry) => entry.reportModule)).toEqual(
@@ -183,8 +207,27 @@ describe("S10.1 AI prompt map", () => {
       expect(entry?.structuredOutputField).toEqual(expect.any(String));
       expect(entry?.uiDestination).toEqual(expect.any(String));
       expect(entry?.repairPrompt).toEqual(expect.any(String));
+      expect(entry?.repairTriggerStatuses).toEqual(
+        expect.arrayContaining(S10_MODULE_REPAIR_TRIGGER_STATUSES),
+      );
       expect(entry?.deterministicInputsAllowed.length).toBeGreaterThan(0);
       expect(entry?.codeGeneratedContentForbidden.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("maps every required S10 route/PDF section back to at least one AI module question", () => {
+    expect(listS10RouteSectionsMissingPromptCoverage()).toEqual([]);
+
+    for (const section of S10_ROUTE_REQUIRED_SECTION_KEYS) {
+      const entries = S10_REPORT_MODULE_COVERAGE.filter((entry) =>
+        entry.routeSectionKeys.includes(section),
+      );
+      expect(entries.length, section).toBeGreaterThan(0);
+      for (const entry of entries) {
+        expect(entry.aiQuestion.length, entry.reportModule).toBeGreaterThan(40);
+        expect(entry.structuredOutputField.length, entry.reportModule).toBeGreaterThan(3);
+        expect(entry.uiDestination.length, entry.reportModule).toBeGreaterThan(3);
+      }
     }
   });
 
