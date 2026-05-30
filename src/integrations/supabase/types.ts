@@ -327,71 +327,6 @@ export type Database = {
         }
         Relationships: []
       }
-      audition_comparison_runs: {
-        Row: {
-          audition_id: string
-          compared_take_slots: number[]
-          compared_take_version_ids: string[]
-          comparison_metadata: Json
-          comparison_run_id: string
-          comparison_status: string
-          created_at: string
-          id: string
-          qa_artifact_status: string
-          qa_artifacts: Json
-          report: Json | null
-          same_video_status: string
-          stale_after_replacement: boolean
-          stale_reason: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          audition_id: string
-          compared_take_slots?: number[]
-          compared_take_version_ids?: string[]
-          comparison_metadata?: Json
-          comparison_run_id?: string
-          comparison_status?: string
-          created_at?: string
-          id?: string
-          qa_artifact_status?: string
-          qa_artifacts?: Json
-          report?: Json | null
-          same_video_status?: string
-          stale_after_replacement?: boolean
-          stale_reason?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          audition_id?: string
-          compared_take_slots?: number[]
-          compared_take_version_ids?: string[]
-          comparison_metadata?: Json
-          comparison_run_id?: string
-          comparison_status?: string
-          created_at?: string
-          id?: string
-          qa_artifact_status?: string
-          qa_artifacts?: Json
-          report?: Json | null
-          same_video_status?: string
-          stale_after_replacement?: boolean
-          stale_reason?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "audition_comparison_runs_audition_id_fkey"
-            columns: ["audition_id"]
-            isOneToOne: false
-            referencedRelation: "auditions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       consumer_credit_payments: {
         Row: {
           amount_total_pence: number
@@ -2166,7 +2101,6 @@ export type Database = {
       }
       takes: {
         Row: {
-          analysis_run_id: string | null
           analysis_tier: string | null
           analytics_attribution: Json
           anon_id: string | null
@@ -2189,32 +2123,20 @@ export type Database = {
           mux_mp4_standard_url: string | null
           mux_playback_id: string | null
           mux_status: string
-          manifest_status: string
           mux_upload_id: string | null
           overall_score: number | null
           processing_phase: string
           report: Json | null
-          report_model_status: string
-          replaced_by_take_id: string | null
-          replacement_reason: string | null
-          replaces_take_id: string | null
           score_breakdown: Json | null
           scores: Json | null
-          qa_artifact_status: string
-          same_video_status: string
           signals: Json | null
           status: string
-          take_lifecycle_metadata: Json
           take_number: number
-          take_slot: number | null
-          take_version_number: number
-          take_version_status: string
           updated_at: string
           user_id: string | null
           video_path: string | null
         }
         Insert: {
-          analysis_run_id?: string | null
           analysis_tier?: string | null
           analytics_attribution?: Json
           anon_id?: string | null
@@ -2237,32 +2159,20 @@ export type Database = {
           mux_mp4_standard_url?: string | null
           mux_playback_id?: string | null
           mux_status?: string
-          manifest_status?: string
           mux_upload_id?: string | null
           overall_score?: number | null
           processing_phase?: string
           report?: Json | null
-          report_model_status?: string
-          replaced_by_take_id?: string | null
-          replacement_reason?: string | null
-          replaces_take_id?: string | null
           score_breakdown?: Json | null
           scores?: Json | null
-          qa_artifact_status?: string
-          same_video_status?: string
           signals?: Json | null
           status?: string
-          take_lifecycle_metadata?: Json
           take_number?: number
-          take_slot?: number | null
-          take_version_number?: number
-          take_version_status?: string
           updated_at?: string
           user_id?: string | null
           video_path?: string | null
         }
         Update: {
-          analysis_run_id?: string | null
           analysis_tier?: string | null
           analytics_attribution?: Json
           anon_id?: string | null
@@ -2285,26 +2195,15 @@ export type Database = {
           mux_mp4_standard_url?: string | null
           mux_playback_id?: string | null
           mux_status?: string
-          manifest_status?: string
           mux_upload_id?: string | null
           overall_score?: number | null
           processing_phase?: string
           report?: Json | null
-          report_model_status?: string
-          replaced_by_take_id?: string | null
-          replacement_reason?: string | null
-          replaces_take_id?: string | null
           score_breakdown?: Json | null
           scores?: Json | null
-          qa_artifact_status?: string
-          same_video_status?: string
           signals?: Json | null
           status?: string
-          take_lifecycle_metadata?: Json
           take_number?: number
-          take_slot?: number | null
-          take_version_number?: number
-          take_version_status?: string
           updated_at?: string
           user_id?: string | null
           video_path?: string | null
@@ -2336,20 +2235,6 @@ export type Database = {
             columns: ["credit_reservation_id"]
             isOneToOne: false
             referencedRelation: "report_credit_reservations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "takes_replaced_by_take_id_fkey"
-            columns: ["replaced_by_take_id"]
-            isOneToOne: false
-            referencedRelation: "takes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "takes_replaces_take_id_fkey"
-            columns: ["replaces_take_id"]
-            isOneToOne: false
-            referencedRelation: "takes"
             referencedColumns: ["id"]
           },
         ]
@@ -3165,20 +3050,6 @@ export type Database = {
       }
       analytics_safe_text: {
         Args: { p_max_length?: number; p_value: string }
-        Returns: string
-      }
-      create_audition_comparison_run_foundation: {
-        Args: { p_audition_id: string; p_user_id: string }
-        Returns: string
-      }
-      create_replacement_take_version: {
-        Args: {
-          p_checklist?: Json
-          p_replacement_reason?: string
-          p_signals?: Json
-          p_take_id: string
-          p_user_id: string
-        }
         Returns: string
       }
       complete_consumer_credit_payment: {
