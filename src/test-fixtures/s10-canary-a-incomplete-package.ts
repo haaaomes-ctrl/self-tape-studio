@@ -444,6 +444,28 @@ export const s10CanaryAExpectedModules = {
     technical_assessability_summary: "Audio/framing are assessable and may be preserved.",
     selected_level_calibration_summary:
       "At professional level, a package missing required Side 1 is not submit-ready.",
+    selected_level_calibration: {
+      selected_level: "professional",
+      selected_level_label: "Professional",
+      standard_applied:
+        "Discipline-specific, evidence-rich, brief-precise and technically assessable work under casting-facing conditions.",
+      evidence_threshold:
+        "The tape must distinguish competent from competitive work and expose any mandatory blocker.",
+      readiness_standard:
+        "Ready at this level means submit-ready under professional casting conditions, not merely clean or competent.",
+      score_meaning:
+        "The score is capped by missing mandatory material; it does not score the observed song as a complete Professional package.",
+      what_meets_level: ["Audio and framing are assessable for the observed portion."],
+      what_falls_short: [
+        "The required Side 1 acting scene is not observed.",
+        "The song/package is incomplete because the song cuts off before completion.",
+      ],
+      recommendation_impact:
+        "At Professional level, the mandatory missing Side 1 drives retake-required guidance before optional polish or admin checks.",
+      comparison_to_other_levels:
+        "The same observed media would still be incomplete at any selected level because a mandatory brief component is missing.",
+      confidence: "high",
+    },
     professional_nuance_summary:
       "Fix the mandatory package before optional polish or admin details.",
     category_scores: [
@@ -850,6 +872,7 @@ export const s10CanaryAExpectedViewModel = {
   required_authoritative_sections: [
     "readiness_header",
     "submission_guidance",
+    "selected_level_calibration",
     "score_summary",
     "brief_achievement",
     "observed_tape",
@@ -862,6 +885,7 @@ export const s10CanaryAExpectedViewModel = {
   ],
   allowed_route_content: [
     "Retake required if possible",
+    "Judged against",
     "required Side 1",
     "not observed",
     "not achieved",

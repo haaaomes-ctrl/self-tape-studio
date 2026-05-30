@@ -56,6 +56,7 @@ export type S10PerformerReportViewModel = {
     score_explanation: string;
     confidence: ReadinessAndScoreJudgement["confidence"];
   } | null;
+  selected_level_calibration: ReadinessAndScoreJudgement["selected_level_calibration"] | null;
   score_summary: {
     overall_submission_readiness_score: number | null;
     performance_quality_score: number | null;
@@ -352,6 +353,9 @@ export function buildS10PerformerReportViewModel(input: {
     asNumber((readiness as Record<string, unknown> | null)?.overall_submission_readiness_score) ??
     null;
   const hasVisibleReadiness = hasVisibleRecommendationPayload(readiness);
+  const hasVisibleSelectedLevelCalibration = hasVisibleSelectedLevelCalibrationPayload(
+    readiness?.selected_level_calibration,
+  );
   const hasVisibleBriefAchievement = hasVisibleBriefAchievementPayload(matrix);
   const hasVisibleComponentVerification =
     hasVisibleComponentVerificationRows(componentVerifications);
@@ -367,6 +371,9 @@ export function buildS10PerformerReportViewModel(input: {
       ? []
       : ["Brief achievement details are not available for this report."]),
     ...(hasVisibleReadiness ? [] : ["Readiness judgement is not available for this report."]),
+    ...(hasVisibleSelectedLevelCalibration
+      ? []
+      : ["Selected-level calibration is not available for this report."]),
     ...(visibleS10Score != null ? [] : ["S10 score summary was unavailable for this report."]),
     ...(hasVisibleComponentVerification
       ? []
@@ -394,6 +401,11 @@ export function buildS10PerformerReportViewModel(input: {
       hasVisibleReadiness,
       "readiness_score_judgement",
       "Submission guidance is not available for this report.",
+    ),
+    selected_level_calibration: source(
+      hasVisibleSelectedLevelCalibration,
+      "readiness_score_judgement.selected_level_calibration",
+      "Selected-level calibration is not available for this report.",
     ),
     score_summary: source(
       visibleS10Score != null,
@@ -539,6 +551,7 @@ export function buildS10PerformerReportViewModel(input: {
             confidence: readiness.confidence,
           }
         : null,
+    selected_level_calibration: readiness?.selected_level_calibration ?? null,
     score_summary: {
       overall_submission_readiness_score: visibleS10Score,
       performance_quality_score:
@@ -600,6 +613,10 @@ export function buildS10LimitedPerformerReportViewModel(
   const section_source_map: S10PerformerReportViewModel["section_source_map"] = {
     readiness_header: limitation("readiness_score_judgement", message),
     submission_guidance: limitation("readiness_score_judgement", message),
+    selected_level_calibration: limitation(
+      "readiness_score_judgement.selected_level_calibration",
+      message,
+    ),
     score_summary: limitation("readiness_score_judgement", message),
     category_scores: limitation("readiness_score_judgement.category_scores", message),
     category_rationale: limitation("readiness_score_judgement.category_rationale", message),
@@ -642,6 +659,7 @@ export function buildS10LimitedPerformerReportViewModel(
       score_explanation: message,
       confidence: "low",
     },
+    selected_level_calibration: null,
     score_summary: {
       overall_submission_readiness_score: null,
       performance_quality_score: null,
@@ -732,6 +750,20 @@ function hasVisibleRecommendationPayload(value: unknown): boolean {
     !!asText(recommendation.headline) ||
     !!asText(recommendation.score_explanation) ||
     arrayHasRenderableItems(recommendation.rationale)
+  );
+}
+
+function hasVisibleSelectedLevelCalibrationPayload(value: unknown): boolean {
+  const calibration = asRecord(value);
+  if (!calibration) return false;
+  return (
+    !!asText(calibration.selected_level_label) ||
+    !!asText(calibration.standard_applied) ||
+    !!asText(calibration.readiness_standard) ||
+    !!asText(calibration.score_meaning) ||
+    !!asText(calibration.recommendation_impact) ||
+    arrayHasRenderableStrings(calibration.what_meets_level) ||
+    arrayHasRenderableStrings(calibration.what_falls_short)
   );
 }
 

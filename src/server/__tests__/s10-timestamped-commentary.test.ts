@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createS10PerformerLevelCalibration } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
   ReadinessAndScoreJudgement,
@@ -103,6 +104,9 @@ const readiness: ReadinessAndScoreJudgement = {
   brief_completion_summary: "The package is incomplete.",
   technical_assessability_summary: "Audio/video are assessable.",
   selected_level_calibration_summary: "Professional submission readiness is blocked.",
+  selected_level_calibration: createS10PerformerLevelCalibration("professional", {
+    recommendation_impact: "Professional submission readiness is blocked.",
+  }),
   professional_nuance_summary: "Strengths can only apply to observed material.",
   category_scores: [],
   category_rationale: {},

@@ -22,6 +22,21 @@ function render(report: Record<string, unknown>) {
   );
 }
 
+function routeText(html: string) {
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+type MutableS10View = Record<string, unknown> & {
+  section_source_map: Record<string, Record<string, unknown>>;
+};
+
+function mutableS10View(report: Record<string, unknown>): MutableS10View {
+  return report.s10_view_model as MutableS10View;
+}
+
 function canaryV2Report() {
   return buildV2Report({
     legacyReport: buildS10CanaryAReportInput(),
@@ -85,6 +100,10 @@ describe("S10 report view rendering", () => {
     for (const allowed of s10StrongCompleteProfessionalExpectedViewModel.allowed_route_content) {
       expect(html).toContain(allowed);
     }
+    expect(html).toContain("Selected-level calibration");
+    expect(routeText(html)).toContain("Judged against: Professional");
+    expect(html).toContain("Meets this level");
+    expect(html).toContain("Falls short at this level");
     expect(html).toContain("Submit checklist");
     expect(html).toContain("Optional polish");
     expect(html).toContain("Technique commentary");
@@ -94,6 +113,58 @@ describe("S10 report view rendering", () => {
       expect(html).not.toContain(forbidden);
     }
     expect(html).not.toMatch(/retake required/i);
+  });
+
+  it("renders the same observed tape differently when the selected level changes", () => {
+    const professionalHtml = render(strongCompleteV2Report());
+    const learningInput = buildS10StrongCompleteProfessionalReportInput() as Record<
+      string,
+      unknown
+    >;
+    const learningReadiness = learningInput.readiness_score_judgement as Record<string, unknown>;
+    learningInput.readiness_score_judgement = {
+      ...learningReadiness,
+      selected_level_calibration_summary:
+        "At Learning / School level, the same observed complete package is excellent for the selected level without implying Professional readiness.",
+      selected_level_calibration: {
+        selected_level: "learning_school",
+        selected_level_label: "Learning / School",
+        standard_applied:
+          "Basic task understanding, preparation, intelligibility and early craft evidence.",
+        evidence_threshold:
+          "The tape should be clear enough to assess preparation, task response and early technique.",
+        readiness_standard:
+          "Ready at this level means prepared, understandable and complete enough for the assignment or audition context.",
+        score_meaning:
+          "The score means excellent evidence for Learning / School level, not automatic Professional readiness.",
+        what_meets_level: ["The same observed Side 1 and song package is complete and assessable."],
+        what_falls_short: [
+          "Professional competitiveness is not claimed because the selected standard is Learning / School.",
+        ],
+        recommendation_impact:
+          "The recommendation is strong at Learning / School level while keeping the Professional claim separate.",
+        comparison_to_other_levels:
+          "Observed evidence is unchanged; only the selected assessment standard changes.",
+        confidence: "high",
+      },
+    };
+    const learningReport = buildV2Report({
+      legacyReport: learningInput,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+    }) as unknown as Record<string, unknown>;
+    const learningHtml = render(learningReport);
+
+    const professionalText = routeText(professionalHtml);
+    const learningText = routeText(learningHtml);
+
+    expect(professionalText).toContain("Judged against: Professional");
+    expect(learningText).toContain("Judged against: Learning / School");
+    expect(learningHtml).toContain("The same observed Side 1 and song package is complete");
+    expect(learningHtml).toContain("Observed evidence is unchanged");
+    expect(learningText).not.toContain("Judged against: Professional");
   });
 
   it("keeps Canary A and strong complete on opposite report outcomes", () => {
@@ -134,7 +205,7 @@ describe("S10 report view rendering", () => {
 
   it("renders nested same-video comparison limitations when no summary or warning is present", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.comparison_display_mode = "comparison_caution";
     view.comparison_summary = null;
     view.comparison_limitations = [];
@@ -171,7 +242,7 @@ describe("S10 report view rendering", () => {
 
   it("renders S10 section limitations instead of empty strengths, fix, or next-action shells", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.strengths_and_preserve = {
       summary: "",
       strengths: [],
@@ -228,7 +299,7 @@ describe("S10 report view rendering", () => {
 
   it("does not use S10 requirement IDs as visible component labels", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.component_breakdown = [
       {
         requirement_id: "req_internal_side_1",
@@ -250,7 +321,7 @@ describe("S10 report view rendering", () => {
 
   it("does not render summary-only S10 brief achievement rows as status unavailable", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.brief_achievement_matrix = {
       requirement_results: [{ requirement_summary: "Label-only requirement" }],
     };
@@ -264,7 +335,7 @@ describe("S10 report view rendering", () => {
 
   it("renders evidence-only and action-only S10 brief achievement rows without fallback status copy", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.brief_achievement_matrix = {
       requirement_results: [
         {
@@ -289,7 +360,7 @@ describe("S10 report view rendering", () => {
 
   it("renders object-shaped S10 retake plan items without object-string output", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.next_action_plan = {
       submit_checklist: [],
       retake_plan: [
@@ -318,7 +389,7 @@ describe("S10 report view rendering", () => {
 
   it("renders recommended-action-only S10 list items accepted by validation", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.next_action_plan = {
       submit_checklist: [],
       retake_plan: [
@@ -344,7 +415,7 @@ describe("S10 report view rendering", () => {
 
   it("renders a technique limitation instead of a blank metadata-only technique shell", () => {
     const report = strongCompleteV2Report();
-    const view = report.s10_view_model as Record<string, any>;
+    const view = mutableS10View(report);
     view.technique_commentary = { confidence: "high" };
     view.section_source_map.technique_commentary = {
       source: "specific_limitation",

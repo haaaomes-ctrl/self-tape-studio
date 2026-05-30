@@ -327,6 +327,13 @@ export function V2ReportView({
   const s10 = usableS10View ? safeObj(rawS10View) : null;
   const s10SectionSourceMap = safeObj(s10?.section_source_map);
   const s10Recommendation = safeObj(s10?.recommendation);
+  const s10LevelCalibrationAuthorized = hasS10SectionRenderAuthority(
+    s10SectionSourceMap,
+    "selected_level_calibration",
+  );
+  const s10LevelCalibration = s10LevelCalibrationAuthorized
+    ? safeObj(s10?.selected_level_calibration)
+    : null;
   const s10ScoreSummary = safeObj(s10?.score_summary);
   const s10BriefContext = safeObj(s10?.brief_context);
   const s10Matrix = safeObj(s10?.brief_achievement_matrix);
@@ -424,6 +431,23 @@ export function V2ReportView({
   const s10Rationale = s10SubmissionGuidanceAuthorized
     ? renderableListItems(safeArr(s10Recommendation?.rationale))
     : [];
+  const s10JudgedAgainst = safeStr(s10LevelCalibration?.selected_level_label);
+  const s10LevelStandard = safeStr(s10LevelCalibration?.standard_applied);
+  const s10LevelReadinessStandard = safeStr(s10LevelCalibration?.readiness_standard);
+  const s10LevelScoreMeaning = safeStr(s10LevelCalibration?.score_meaning);
+  const s10LevelRecommendationImpact = safeStr(s10LevelCalibration?.recommendation_impact);
+  const s10LevelComparison = safeStr(s10LevelCalibration?.comparison_to_other_levels);
+  const s10MeetsLevel = displayStrings(s10LevelCalibration?.what_meets_level);
+  const s10FallsShortLevel = displayStrings(s10LevelCalibration?.what_falls_short);
+  const hasS10LevelCalibration =
+    !!s10JudgedAgainst ||
+    !!s10LevelStandard ||
+    !!s10LevelReadinessStandard ||
+    !!s10LevelScoreMeaning ||
+    !!s10LevelRecommendationImpact ||
+    !!s10LevelComparison ||
+    s10MeetsLevel.length > 0 ||
+    s10FallsShortLevel.length > 0;
   const blockers = (
     isS10 && (s10HasBlockingDecision || s10HasRiskSource)
       ? s10Rationale
@@ -591,6 +615,12 @@ export function V2ReportView({
                   <span className="font-medium text-foreground">Verdict:</span> {verdict}
                 </span>
               )}
+              {isS10 && s10JudgedAgainst && (
+                <span>
+                  <span className="font-medium text-foreground">Judged against:</span>{" "}
+                  {s10JudgedAgainst}
+                </span>
+              )}
               {reliability && (
                 <span>
                   <span className="font-medium text-foreground">Reliability:</span> {reliability}
@@ -657,6 +687,71 @@ export function V2ReportView({
           </div>
         )}
       </div>
+
+      {isS10 && hasS10LevelCalibration && (
+        <Section
+          title="Selected-level calibration"
+          hint="How this tape reads against the performer's selected level."
+        >
+          <div className="space-y-3 text-sm">
+            {s10JudgedAgainst && (
+              <p>
+                <span className="font-medium">Judged against:</span> {s10JudgedAgainst}
+              </p>
+            )}
+            {s10LevelStandard && (
+              <p>
+                <span className="font-medium">Standard applied:</span>{" "}
+                <span className="text-muted-foreground">{s10LevelStandard}</span>
+              </p>
+            )}
+            {s10LevelReadinessStandard && (
+              <p>
+                <span className="font-medium">Readiness at this level:</span>{" "}
+                <span className="text-muted-foreground">{s10LevelReadinessStandard}</span>
+              </p>
+            )}
+            {s10LevelScoreMeaning && (
+              <p>
+                <span className="font-medium">Score meaning:</span>{" "}
+                <span className="text-muted-foreground">{s10LevelScoreMeaning}</span>
+              </p>
+            )}
+            {s10LevelRecommendationImpact && (
+              <p>
+                <span className="font-medium">Recommendation impact:</span>{" "}
+                <span className="text-muted-foreground">{s10LevelRecommendationImpact}</span>
+              </p>
+            )}
+            {s10LevelComparison && (
+              <p>
+                <span className="font-medium">Level-relative note:</span>{" "}
+                <span className="text-muted-foreground">{s10LevelComparison}</span>
+              </p>
+            )}
+            {s10MeetsLevel.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Meets this level
+                </p>
+                <div className="mt-2">
+                  <SimpleList items={s10MeetsLevel} marker="✓" />
+                </div>
+              </div>
+            )}
+            {s10FallsShortLevel.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Falls short at this level
+                </p>
+                <div className="mt-2">
+                  <SimpleList items={s10FallsShortLevel} marker="→" />
+                </div>
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
 
       {isS10 &&
         s10ComparisonDisplayMode &&
