@@ -137,7 +137,7 @@ async function reserveReportCreditBeforeAnalysis(params: {
   trigger: string;
 }): Promise<boolean> {
   try {
-    await reserveReportCreditForTake({
+    const reservation = await reserveReportCreditForTake({
       take_id: params.takeId,
       metadata: {
         trigger: params.trigger,
@@ -146,10 +146,12 @@ async function reserveReportCreditBeforeAnalysis(params: {
         commercial_metrics_excluded: false,
       },
     });
-    metric("report_credit_reserved", {
-      take_id: params.takeId,
-      reason: params.trigger,
-    });
+    if (reservation.requires_credit_reservation) {
+      metric("report_credit_reserved", {
+        take_id: params.takeId,
+        reason: params.trigger,
+      });
+    }
     return true;
   } catch (err) {
     if (err instanceof ReportCreditRequiredError) {
