@@ -99,5 +99,8 @@ describe("DS-22 launch governance", () => {
       paid_traffic_allowed: false,
       prohibited_goal_ids: ["no_subscriptions"],
     });
+    expect(findProhibitedLaunchGoalClaims("Let users share reports publicly.")).toContain(
+      "no_public_report_sharing",
+    );
   });
 });

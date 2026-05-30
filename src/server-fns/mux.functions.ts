@@ -10,6 +10,7 @@ import { metric } from "@/server/metrics.server";
 import { assertAccountComplianceForReport } from "@/server/account-compliance.server";
 import {
   ReportCreditRequiredError,
+  releaseReportCreditForTake,
   reserveReportCreditForTake,
 } from "@/server/credit-ledger.server";
 
@@ -26,9 +27,65 @@ import {
 //   QUOTA_EXCEEDED:   <human message>
 //   MUX_CONFIG:       <human message>
 //   MUX_API_<status>: <human message>
-//   TAKE_NOT_FOUND / FORBIDDEN / TAKE_LOOKUP_FAILED
+//   TAKE_NOT_FOUND / FORBIDDEN / TAKE_LOOKUP_FAILED / TAKE_UPDATE_FAILED
 // Throwing a Response across the createServerFn boundary loses the body, so
 // we deliberately use plain Errors here.
+
+async function releaseUploadReservationAfterFailure(params: {
+  takeId: string;
+  failureCode: string;
+  message: string;
+}) {
+  try {
+    const result = await releaseReportCreditForTake({
+      take_id: params.takeId,
+      release_status: "released",
+      release_reason: params.failureCode,
+      failure_code: params.failureCode,
+      metadata: {
+        trigger: "create_mux_direct_upload_failure",
+        report_credit_restored_message:
+          "A reserved TapeCoach credit was returned because the upload could not be started.",
+        safe_error_message: params.message.slice(0, 240),
+      },
+    });
+    metric("report_credit_released", {
+      take_id: params.takeId,
+      reason: params.failureCode,
+      released: result.released,
+    });
+  } catch (err) {
+    console.warn("[mux-upload] report_credit_release_after_failure_failed", {
+      take_id: params.takeId,
+      failure_code: params.failureCode,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function markUploadSetupFailed(params: {
+  takeId: string;
+  failureCode: string;
+  message: string;
+}) {
+  const { error } = await supabaseAdmin
+    .from("takes")
+    .update({
+      status: "error",
+      processing_phase: "error",
+      error_message: `[failure_code:${params.failureCode}] ${params.message}`,
+    })
+    .eq("id", params.takeId);
+
+  if (error) {
+    console.error("[mux-upload] mark_upload_setup_failed_update_failed", {
+      take_id: params.takeId,
+      failure_code: params.failureCode,
+      error: error.message,
+    });
+  }
+}
+
 export const createMuxDirectUpload = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((data: unknown) =>
@@ -248,6 +305,16 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         reason: `mux_api_${status}`,
         http_status: status,
       });
+      await releaseUploadReservationAfterFailure({
+        takeId,
+        failureCode: `mux_api_${status}`,
+        message: e?.message ?? "Mux rejected the upload request.",
+      });
+      await markUploadSetupFailed({
+        takeId,
+        failureCode: `mux_api_${status}`,
+        message: e?.message ?? "Mux rejected the upload request.",
+      });
       throw new Error(`MUX_API_${status}: ${e?.message ?? "Mux rejected the upload request."}`);
     }
 
@@ -257,10 +324,20 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         mux_upload_id: upload?.id,
       });
       metric("upload_url_failure", { take_id: takeId, reason: "no_url_returned" });
+      await releaseUploadReservationAfterFailure({
+        takeId,
+        failureCode: "mux_no_upload_url",
+        message: "Mux did not return an upload URL.",
+      });
+      await markUploadSetupFailed({
+        takeId,
+        failureCode: "mux_no_upload_url",
+        message: "Mux did not return an upload URL.",
+      });
       throw new Error("MUX_API_500: Mux did not return an upload URL.");
     }
 
-    await supabaseAdmin
+    const { error: updateErr } = await supabaseAdmin
       .from("takes")
       .update({
         mux_upload_id: upload.id,
@@ -269,6 +346,26 @@ export const createMuxDirectUpload = createServerFn({ method: "POST" })
         status: "pending",
       })
       .eq("id", takeId);
+
+    if (updateErr) {
+      console.error("[mux-upload] take_update_failed_after_upload_created", {
+        take_id: takeId,
+        mux_upload_id: upload.id,
+        error: updateErr.message,
+      });
+      metric("upload_url_failure", { take_id: takeId, reason: "take_update_failed" });
+      await releaseUploadReservationAfterFailure({
+        takeId,
+        failureCode: "take_update_failed",
+        message: "TapeCoach could not attach the Mux upload to this take.",
+      });
+      await markUploadSetupFailed({
+        takeId,
+        failureCode: "take_update_failed",
+        message: "TapeCoach could not attach the Mux upload to this take. Please try again.",
+      });
+      throw new Error("TAKE_UPDATE_FAILED: We could not prepare this upload. Please try again.");
+    }
 
     console.log("[mux-upload] upload_created", {
       take_id: takeId,

@@ -1,10 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metric } from "@/server/metrics.server";
-import {
-  getRequestCtx,
-  getRequestEnv,
-  scheduleBackground,
-} from "@/worker-entry";
+import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
+import { getRequestCtx, getRequestEnv, scheduleBackground } from "@/worker-entry";
 
 export type AnalysisJobReason =
   | "mux_asset_ready"
@@ -37,7 +34,10 @@ type AnalysisDispatchDeps = {
 export type AnalysisDispatchResult = {
   ok: boolean;
   method: "queue" | "wait_until_fallback" | "none";
-  failureCode?: "analysis_queue_unavailable" | "analysis_queue_send_failed" | "analysis_dispatch_unavailable";
+  failureCode?:
+    | "analysis_queue_unavailable"
+    | "analysis_queue_send_failed"
+    | "analysis_dispatch_unavailable";
 };
 
 function getAnalysisQueue(deps: AnalysisDispatchDeps = {}): AnalysisQueueBinding | null {
@@ -45,10 +45,13 @@ function getAnalysisQueue(deps: AnalysisDispatchDeps = {}): AnalysisQueueBinding
   return env?.ANALYSIS_QUEUE ?? null;
 }
 
-async function runAnalysisFallback(params: {
-  takeId: string;
-  reason: AnalysisJobReason;
-}, deps: AnalysisDispatchDeps = {}): Promise<AnalysisDispatchResult> {
+async function runAnalysisFallback(
+  params: {
+    takeId: string;
+    reason: AnalysisJobReason;
+  },
+  deps: AnalysisDispatchDeps = {},
+): Promise<AnalysisDispatchResult> {
   const hasRequestContext = deps.hasRequestContext ?? (() => Boolean(getRequestCtx()));
   if (!hasRequestContext()) {
     console.error("[analysis-queue] waitUntil fallback unavailable", {
@@ -127,10 +130,13 @@ async function runAnalysisFallback(params: {
   return { ok: true, method: "wait_until_fallback" };
 }
 
-export async function dispatchAnalysisJob(params: {
-  takeId: string;
-  reason: AnalysisJobReason;
-}, deps: AnalysisDispatchDeps = {}): Promise<AnalysisDispatchResult> {
+export async function dispatchAnalysisJob(
+  params: {
+    takeId: string;
+    reason: AnalysisJobReason;
+  },
+  deps: AnalysisDispatchDeps = {},
+): Promise<AnalysisDispatchResult> {
   const queue = getAnalysisQueue(deps);
   if (!queue) {
     console.error(
@@ -210,8 +216,7 @@ export async function markAnalysisQueueDispatchFailure(params: {
     .update({
       status: "error",
       processing_phase: "error",
-      error_message:
-        `[failure_code:${failureCode}] We couldn't start report analysis. Please try again.`,
+      error_message: `[failure_code:${failureCode}] We couldn't start report analysis. Please try again.`,
     })
     .eq("id", params.takeId)
     .in("status", ["pending", "processing"]);
@@ -225,13 +230,40 @@ export async function markAnalysisQueueDispatchFailure(params: {
       take_id: params.takeId,
       reason: "analysis_queue_dispatch_failure_write_failed",
     });
-    return;
+  } else {
+    metric("analysis_failed", {
+      take_id: params.takeId,
+      reason: params.reason,
+      failure_code: failureCode,
+    });
   }
-  metric("analysis_failed", {
-    take_id: params.takeId,
-    reason: params.reason,
-    failure_code: failureCode,
-  });
+  try {
+    const result = await releaseReportCreditForTake({
+      take_id: params.takeId,
+      release_status: "released",
+      release_reason: failureCode,
+      failure_code: failureCode,
+      metadata: {
+        trigger: "analysis_queue_dispatch_failure",
+        analysis_job_reason: params.reason,
+        report_credit_restored_message:
+          "A reserved TapeCoach credit was returned because report analysis could not be started.",
+      },
+    });
+    metric("report_credit_released", {
+      take_id: params.takeId,
+      reason: failureCode,
+      release_status: "released",
+      released: result.released,
+    });
+  } catch (err) {
+    console.warn("[analysis-queue] dispatch_failure_credit_release_failed", {
+      take_id: params.takeId,
+      reason: params.reason,
+      failure_code: failureCode,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export async function enqueueAnalysisJobOrMarkFailed(params: {

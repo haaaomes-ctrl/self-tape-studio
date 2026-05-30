@@ -1,13 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  buildMuxHighestMp4Url,
-  getMux,
-  normaliseMuxMp4Url,
-} from "@/server/mux.server";
+import { buildMuxHighestMp4Url, getMux, normaliseMuxMp4Url } from "@/server/mux.server";
 import { cleanupMuxAssetForCompletedTake } from "@/server/mux-cleanup.server";
 import { metric } from "@/server/metrics.server";
 import { enqueueAnalysisJobOrMarkFailed } from "@/server/analysis-job-queue.server";
+import { blockTakeForVideoDurationHardCap } from "@/server/video-duration-hard-cap.server";
+import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
 import {
   ANALYSING_ORPHAN_SECONDS,
   analysingOrphanCutoffIso,
@@ -74,6 +72,45 @@ type MuxAssetLike = {
   errors?: unknown;
 };
 
+async function releaseReservedCreditForReconcilerFailure(params: {
+  takeId: string;
+  processingPhase: string;
+  failureCode: string;
+  releaseStatus: "released" | "refunded";
+  trigger: string;
+}) {
+  try {
+    const result = await releaseReportCreditForTake({
+      take_id: params.takeId,
+      release_status: params.releaseStatus,
+      release_reason: params.failureCode,
+      failure_code: params.failureCode,
+      metadata: {
+        trigger: params.trigger,
+        processing_phase: params.processingPhase,
+        report_credit_restored_message:
+          params.releaseStatus === "refunded"
+            ? "A reserved TapeCoach credit was returned because report generation did not complete."
+            : "A reserved TapeCoach credit was returned because the upload could not be prepared for analysis.",
+      },
+    });
+    metric("report_credit_released", {
+      take_id: params.takeId,
+      reason: params.failureCode,
+      release_status: params.releaseStatus,
+      released: result.released,
+    });
+  } catch (err) {
+    console.warn("reconciler_credit_release_failed", {
+      take_id: params.takeId,
+      processing_phase: params.processingPhase,
+      failure_code: params.failureCode,
+      trigger: params.trigger,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export function isAuthorisedReconcilerRequest(
   request: Request,
   env: { RECONCILER_SECRET?: string } = process.env,
@@ -113,7 +150,10 @@ async function attemptTranscodingRecovery(take: {
     try {
       return getMux();
     } catch (err) {
-      console.error("transcoding_orphan_checked mux client unavailable", { ...baseLog, err: String(err) });
+      console.error("transcoding_orphan_checked mux client unavailable", {
+        ...baseLog,
+        err: String(err),
+      });
       return null;
     }
   })();
@@ -126,7 +166,10 @@ async function attemptTranscodingRecovery(take: {
 
   if (!assetId) {
     if (!take.mux_upload_id) {
-      console.warn("unrecoverable_transcoding_orphan", { ...baseLog, reason: "no_asset_no_upload" });
+      console.warn("unrecoverable_transcoding_orphan", {
+        ...baseLog,
+        reason: "no_asset_no_upload",
+      });
       return { kind: "unrecoverable", reason: "no_asset_no_upload" };
     }
     try {
@@ -162,7 +205,11 @@ async function attemptTranscodingRecovery(take: {
   const muxAssetStatus = asset.status;
 
   if (muxAssetStatus === "errored") {
-    console.warn("mux_asset_not_ready", { ...baseLog, mux_asset_status: muxAssetStatus, terminal: true });
+    console.warn("mux_asset_not_ready", {
+      ...baseLog,
+      mux_asset_status: muxAssetStatus,
+      terminal: true,
+    });
     return { kind: "terminal", reason: "asset_errored", muxAssetStatus, muxUploadStatus };
   }
 
@@ -179,7 +226,12 @@ async function attemptTranscodingRecovery(take: {
       mux_asset_status: muxAssetStatus,
       reason: "missing_playback_or_duration",
     });
-    return { kind: "not_ready", reason: "missing_playback_or_duration", muxAssetStatus, muxUploadStatus };
+    return {
+      kind: "not_ready",
+      reason: "missing_playback_or_duration",
+      muxAssetStatus,
+      muxUploadStatus,
+    };
   }
 
   const renditionStatus = asset.static_renditions?.status;
@@ -193,6 +245,23 @@ async function attemptTranscodingRecovery(take: {
   }
 
   const mp4Standard = normaliseMuxMp4Url(buildMuxHighestMp4Url(playbackId));
+
+  const hardCapBlock = await blockTakeForVideoDurationHardCap({
+    takeId: take.id,
+    durationSeconds: duration,
+    source: "reconciler_transcoding_recovery",
+    muxAssetId: assetId,
+    muxPlaybackId: playbackId,
+  });
+  if (hardCapBlock.blocked) {
+    console.warn("transcoding_orphan_blocked_over_hard_cap", {
+      ...baseLog,
+      mux_asset_status: muxAssetStatus,
+      duration_seconds: hardCapBlock.durationSeconds,
+      update_persisted: hardCapBlock.updated,
+    });
+    return { kind: "terminal", reason: "video_duration_hard_cap", muxAssetStatus, muxUploadStatus };
+  }
 
   const { error: backfillErr } = await supabaseAdmin
     .from("takes")
@@ -284,7 +353,9 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const finalisingCutoff = finalisingOrphanCutoffIso(now);
         const { data: staleFinalising, error: fErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence")
+          .select(
+            "id, updated_at, created_at, processing_phase, attempt_count, report, scores, overall_score, confidence",
+          )
           .eq("processing_phase", "finalising")
           .eq("status", "processing")
           .lt("updated_at", finalisingCutoff)
@@ -299,14 +370,23 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         const analysingOrphanCutoff = analysingOrphanCutoffIso(now);
         const { data: staleAnalysingOrphans, error: aoErr } = await supabaseAdmin
           .from("takes")
-          .select("id, updated_at, created_at, status, processing_phase, attempt_count, report, scores, overall_score, confidence")
+          .select(
+            "id, updated_at, created_at, status, processing_phase, attempt_count, report, scores, overall_score, confidence",
+          )
           .in("processing_phase", ["analysis_pending", "analysing"])
           .in("status", ["pending", "processing"])
           .lt("updated_at", analysingOrphanCutoff)
           .limit(MAX_BATCH);
 
         if (pErr || aErr || tErr || uErr || fErr || aoErr) {
-          console.error("reconcile-stale-takes select failed", { pErr, aErr, tErr, uErr, fErr, aoErr });
+          console.error("reconcile-stale-takes select failed", {
+            pErr,
+            aErr,
+            tErr,
+            uErr,
+            fErr,
+            aoErr,
+          });
           return new Response("db error", { status: 500 });
         }
 
@@ -438,6 +518,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             ...baseLog,
             failure_code: "upload_abandoned",
           });
+          await releaseReservedCreditForReconcilerFailure({
+            takeId: take.id,
+            processingPhase: "uploading",
+            failureCode: "upload_abandoned",
+            releaseStatus: "released",
+            trigger: "reconciler_uploading_orphan",
+          });
           metric("analysis_stale_timeout", {
             take_id: take.id,
             processing_phase: "uploading",
@@ -451,7 +538,6 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
           });
           uploadingForcedError.push(take.id);
         }
-
 
         // Transcoding orphan recovery: separate loop because the recovery
         // path talks to Mux and may backfill rather than re-run analysis.
@@ -531,6 +617,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
             mux_asset_status: "muxAssetStatus" in recovery ? recovery.muxAssetStatus : undefined,
             mux_upload_status: "muxUploadStatus" in recovery ? recovery.muxUploadStatus : undefined,
           });
+          await releaseReservedCreditForReconcilerFailure({
+            takeId: take.id,
+            processingPhase: "transcoding",
+            failureCode: "stale_timeout",
+            releaseStatus: "released",
+            trigger: "reconciler_transcoding_orphan",
+          });
           metric("analysis_stale_timeout", {
             take_id: take.id,
             processing_phase: "transcoding",
@@ -586,7 +679,10 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
               })
               .eq("id", take.id);
             if (failErr) {
-              console.error("reconcile-stale-takes give-up update failed", { takeId: take.id, failErr });
+              console.error("reconcile-stale-takes give-up update failed", {
+                takeId: take.id,
+                failErr,
+              });
               metric("phase_transition_failure", {
                 take_id: take.id,
                 reason: "give_up_update_failed",
@@ -623,6 +719,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
                 processing_phase: take.processing_phase,
                 reason: "reconciler_give_up",
                 failure_code: "stale_timeout",
+              });
+              await releaseReservedCreditForReconcilerFailure({
+                takeId: take.id,
+                processingPhase: take.processing_phase ?? "analysis_pending",
+                failureCode: "stale_timeout",
+                releaseStatus: "refunded",
+                trigger: "reconciler_analysis_give_up",
               });
               giveUp.push(take.id);
             }
@@ -684,14 +787,13 @@ export const Route = createFileRoute("/api/public/reconcile-stale-takes")({
         // error). Bounded batch so a single tick never thrashes Mux.
         const muxCleanupCleaned: string[] = [];
         const muxCleanupFailed: string[] = [];
-        const { data: completedWithAsset, error: cleanupErr } =
-          await supabaseAdmin
-            .from("takes")
-            .select("id, mux_asset_id")
-            .eq("status", "complete")
-            .eq("processing_phase", "complete")
-            .not("mux_asset_id", "is", null)
-            .limit(MAX_BATCH);
+        const { data: completedWithAsset, error: cleanupErr } = await supabaseAdmin
+          .from("takes")
+          .select("id, mux_asset_id")
+          .eq("status", "complete")
+          .eq("processing_phase", "complete")
+          .not("mux_asset_id", "is", null)
+          .limit(MAX_BATCH);
         if (cleanupErr) {
           console.error("mux_cleanup_backfill select failed", { cleanupErr });
         } else {

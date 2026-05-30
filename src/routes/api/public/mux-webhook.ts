@@ -6,8 +6,10 @@ import { enqueueAnalysisJobOrMarkFailed } from "@/server/analysis-job-queue.serv
 import { FINALISING_ORPHAN_MS, recoverFinalisingTake } from "@/server/finalising-recovery.server";
 import {
   ReportCreditRequiredError,
+  releaseReportCreditForTake,
   reserveReportCreditForTake,
 } from "@/server/credit-ledger.server";
+import { blockTakeForVideoDurationHardCap } from "@/server/video-duration-hard-cap.server";
 
 const STATIC_RENDITION_HEARTBEAT_STALE_MS = 120_000;
 
@@ -169,6 +171,41 @@ async function reserveReportCreditBeforeAnalysis(params: {
   }
 }
 
+async function releaseReservedCreditAfterMuxTerminalFailure(params: {
+  takeId: string;
+  trigger: string;
+  failureCode: string;
+  message: string;
+}) {
+  try {
+    const result = await releaseReportCreditForTake({
+      take_id: params.takeId,
+      release_status: "released",
+      release_reason: params.failureCode,
+      failure_code: params.failureCode,
+      metadata: {
+        trigger: params.trigger,
+        report_credit_restored_message:
+          "A reserved TapeCoach credit was returned because the video could not be prepared for analysis.",
+        safe_error_message: params.message.slice(0, 240),
+      },
+    });
+    metric("report_credit_released", {
+      take_id: params.takeId,
+      reason: params.failureCode,
+      release_status: "released",
+      released: result.released,
+    });
+  } catch (err) {
+    console.warn("MUX WEBHOOK report credit release after terminal failure failed", {
+      takeId: params.takeId,
+      trigger: params.trigger,
+      failure_code: params.failureCode,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function scheduleTakeFromStaticRenditionReady(params: {
   assetId: string;
   receivedAt: string;
@@ -251,7 +288,33 @@ async function scheduleTakeFromStaticRenditionReady(params: {
     processing_phase: existing.processing_phase,
     stale_heartbeat_ms: staleHeartbeatMs,
   });
-  if (recoveryAction === "skip_terminal" || recoveryAction === "skip_fresh_inflight") {
+  if (recoveryAction === "skip_terminal") {
+    console.log("MUX WEBHOOK static_rendition.ready skipping terminal/inflight take", {
+      takeId,
+      status: existing.status,
+      processing_phase: existing.processing_phase,
+      recovery_action: recoveryAction,
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  const hardCapBlock = await blockTakeForVideoDurationHardCap({
+    takeId,
+    durationSeconds: duration,
+    source: "mux_webhook_static_rendition_ready",
+    muxAssetId: assetId,
+    muxPlaybackId: playbackId,
+  });
+  if (hardCapBlock.blocked) {
+    console.warn("MUX WEBHOOK static_rendition.ready blocked over-hard-cap video", {
+      takeId,
+      duration_seconds: hardCapBlock.durationSeconds,
+      update_persisted: hardCapBlock.updated,
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (recoveryAction === "skip_fresh_inflight") {
     console.log("MUX WEBHOOK static_rendition.ready skipping terminal/inflight take", {
       takeId,
       status: existing.status,
@@ -515,6 +578,24 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
             })
             .eq("id", takeId);
 
+          if (existing?.status !== "complete") {
+            const hardCapBlock = await blockTakeForVideoDurationHardCap({
+              takeId,
+              durationSeconds: duration,
+              source: "mux_webhook_asset_ready",
+              muxAssetId: data.id ?? null,
+              muxPlaybackId: playbackId,
+            });
+            if (hardCapBlock.blocked) {
+              console.warn("MUX WEBHOOK asset.ready blocked over-hard-cap video", {
+                takeId,
+                duration_seconds: hardCapBlock.durationSeconds,
+                update_persisted: hardCapBlock.updated,
+              });
+              return new Response("ok", { status: 200 });
+            }
+          }
+
           // Idempotency: skip if this take is already complete or has an
           // analysis in flight (analysis_pending = scheduled but not started,
           // analysing = currently running). The stale-analysis cron job is
@@ -585,7 +666,7 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
 
         if (type === "video.asset.errored" || type === "video.upload.errored") {
           const msg = data.errors?.messages?.join("; ") ?? "Mux failed to transcode the upload.";
-          await supabaseAdmin
+          const { error: updateError } = await supabaseAdmin
             .from("takes")
             .update({
               mux_status: "errored",
@@ -594,6 +675,19 @@ export const Route = createFileRoute("/api/public/mux-webhook")({
               error_message: `Transcoding failed: ${msg}`,
             })
             .eq("id", takeId);
+          if (updateError) {
+            console.error("MUX WEBHOOK terminal failure update failed", {
+              takeId,
+              type,
+              error: updateError.message,
+            });
+          }
+          await releaseReservedCreditAfterMuxTerminalFailure({
+            takeId,
+            trigger: type,
+            failureCode: "mux_transcoding_error",
+            message: msg,
+          });
           if (type === "video.asset.errored") {
             metric("mux_asset_error", { take_id: takeId, reason: "video.asset.errored" });
           } else {

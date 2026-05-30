@@ -174,7 +174,7 @@ export async function createConsumerTopUpCheckoutSession(input: {
     p_amount_total_pence: product.unit_amount_pence,
     p_stripe_price_id: product.stripe_price_id,
     p_stripe_checkout_session_id: sessionId,
-    p_stripe_customer_id: stringValue(session.customer),
+    p_stripe_customer_id: stringValue(session.customer) ?? undefined,
     p_metadata: metadataAsJson({
       source: "consumer_top_up_checkout",
       stripe_checkout_session_id: sessionId,
@@ -229,18 +229,20 @@ async function completePaymentFromStripeObject(input: {
   const { error } = await supabaseAdmin.rpc("complete_consumer_credit_payment", {
     p_stripe_event_id: input.event.id,
     p_checkout_session_id:
-      input.eventType === "checkout_session_completed" ? payload.checkout_session_id : null,
+      input.eventType === "checkout_session_completed"
+        ? (payload.checkout_session_id ?? undefined)
+        : undefined,
     p_payment_intent_id:
       input.eventType === "payment_succeeded"
-        ? stringValue(input.object.id)
-        : payload.payment_intent_id,
-    p_user_id: payload.user_id ?? null,
-    p_product_sku: payload.product_sku ?? null,
-    p_credit_amount: payload.credit_amount,
+        ? (stringValue(input.object.id) ?? undefined)
+        : (payload.payment_intent_id ?? undefined),
+    p_user_id: payload.user_id ?? undefined,
+    p_product_sku: payload.product_sku ?? undefined,
+    p_credit_amount: payload.credit_amount ?? undefined,
     p_currency: payload.currency,
-    p_amount_total_pence: payload.amount_total_pence,
-    p_stripe_price_id: payload.stripe_price_id ?? null,
-    p_stripe_customer_id: payload.customer_id,
+    p_amount_total_pence: payload.amount_total_pence ?? undefined,
+    p_stripe_price_id: payload.stripe_price_id ?? undefined,
+    p_stripe_customer_id: payload.customer_id ?? undefined,
     p_event_type: input.eventType,
     p_metadata: metadataAsJson({
       stripe_event_type: input.event.type,
@@ -274,15 +276,16 @@ async function markPaymentFailed(input: { event: ConsumerStripeEvent; object: St
       : null;
   const { error } = await supabaseAdmin.rpc("mark_consumer_credit_payment_failed", {
     p_stripe_event_id: input.event.id,
-    p_checkout_session_id: payload.checkout_session_id,
-    p_payment_intent_id: stringValue(input.object.id) ?? payload.payment_intent_id,
-    p_user_id: payload.user_id ?? null,
-    p_product_sku: payload.product_sku ?? null,
-    p_credit_amount: payload.credit_amount,
+    p_checkout_session_id: payload.checkout_session_id ?? undefined,
+    p_payment_intent_id: stringValue(input.object.id) ?? payload.payment_intent_id ?? undefined,
+    p_user_id: payload.user_id ?? undefined,
+    p_product_sku: payload.product_sku ?? undefined,
+    p_credit_amount: payload.credit_amount ?? undefined,
     p_currency: payload.currency,
-    p_amount_total_pence: payload.amount_total_pence,
-    p_stripe_price_id: payload.stripe_price_id ?? null,
-    p_failure_code: stringValue(lastPaymentError?.code) ?? stringValue(lastPaymentError?.type),
+    p_amount_total_pence: payload.amount_total_pence ?? undefined,
+    p_stripe_price_id: payload.stripe_price_id ?? undefined,
+    p_failure_code:
+      stringValue(lastPaymentError?.code) ?? stringValue(lastPaymentError?.type) ?? undefined,
     p_metadata: metadataAsJson({
       stripe_event_type: input.event.type,
       stripe_event_id: input.event.id,
@@ -309,10 +312,10 @@ async function reversePaymentFromStripeObject(input: {
     integerValue(input.object.amount_disputed);
   const { error } = await supabaseAdmin.rpc("reverse_or_flag_consumer_credit_payment", {
     p_stripe_event_id: input.event.id,
-    p_payment_intent_id: paymentIntentId,
-    p_checkout_session_id: checkoutSessionId,
+    p_payment_intent_id: paymentIntentId ?? undefined,
+    p_checkout_session_id: checkoutSessionId ?? undefined,
     p_event_type: input.eventType,
-    p_amount_pence: amountPence,
+    p_amount_pence: amountPence ?? undefined,
     p_metadata: metadataAsJson({
       stripe_event_type: input.event.type,
       stripe_event_id: input.event.id,

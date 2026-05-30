@@ -168,16 +168,16 @@ export async function rotatePartnerCode(input: RotatePartnerCodeInput) {
     p_existing_code_id: input.existing_code_id,
     p_new_code_hash: secretFields.code_hash,
     p_new_code_display_hint: secretFields.code_display_hint,
-    p_allowance_credits: input.allowance_credits ?? null,
-    p_expires_at: optionalIso(input.expires_at),
-    p_max_activations: input.max_activations ?? null,
+    p_allowance_credits: input.allowance_credits ?? undefined,
+    p_expires_at: optionalIso(input.expires_at) ?? undefined,
+    p_max_activations: input.max_activations ?? undefined,
     p_allowed_email_domains:
       input.allowed_email_domains === undefined
-        ? null
+        ? undefined
         : normaliseAllowedEmailDomains(input.allowed_email_domains),
-    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? undefined,
     p_metadata: metadataAsJson(input.metadata),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwPartnerProgramError("rotate_partner_code", error ?? {});
@@ -188,8 +188,8 @@ export async function setPartnerCodeStatus(input: PartnerCodeAdminStatusInput) {
   const { data, error } = await supabaseAdmin.rpc("set_partner_code_status", {
     p_partner_code_id: input.partner_code_id,
     p_status: input.status,
-    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
-    p_reason: input.reason ?? null,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? undefined,
+    p_reason: input.reason ?? undefined,
     p_now: isoOrNow(input.changed_at),
   });
 
@@ -209,8 +209,8 @@ export async function expirePartnerCodes(expiredAt: string | Date = new Date()) 
 export async function flagPartnerCodeAbuse(input: FlagPartnerCodeAbuseInput) {
   const { data, error } = await supabaseAdmin.rpc("flag_partner_code_abuse", {
     p_partner_code_id: input.partner_code_id,
-    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
-    p_reason: input.reason ?? null,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? undefined,
+    p_reason: input.reason ?? undefined,
     p_now: isoOrNow(input.flagged_at),
   });
 
@@ -222,10 +222,10 @@ export async function activatePartnerCode(input: ActivatePartnerCodeInput) {
   const { data, error } = await supabaseAdmin.rpc("activate_partner_code", {
     p_user_id: input.user_id,
     p_code_hash: hashPartnerCode(input.raw_code),
-    p_user_email: input.user_email ?? null,
+    p_user_email: input.user_email ?? undefined,
     p_activated_at: isoOrNow(input.activated_at),
     p_metadata: metadataAsJson(input.metadata),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwPartnerProgramError("activate_partner_code", error ?? {});
@@ -236,10 +236,10 @@ export async function adminTopUpPartnerCreditPool(input: AdminTopUpPartnerCredit
   const { data, error } = await supabaseAdmin.rpc("admin_top_up_partner_credit_pool", {
     p_partner_credit_pool_id: input.partner_credit_pool_id,
     p_credit_amount: input.credit_amount,
-    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
-    p_reason: input.reason ?? null,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? undefined,
+    p_reason: input.reason ?? undefined,
     p_metadata: metadataAsJson(input.metadata),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwPartnerProgramError("admin_top_up_partner_credit_pool", error ?? {});
@@ -250,12 +250,12 @@ export async function adminTopUpPartnerMembership(input: AdminTopUpPartnerMember
   const { data, error } = await supabaseAdmin.rpc("admin_top_up_partner_membership", {
     p_partner_membership_id: input.partner_membership_id,
     p_credit_amount: input.credit_amount,
-    p_admin_actor_user_id: input.admin_actor_user_id ?? null,
-    p_reason: input.reason ?? null,
+    p_admin_actor_user_id: input.admin_actor_user_id ?? undefined,
+    p_reason: input.reason ?? undefined,
     p_cap_override: input.cap_override ?? false,
-    p_cap_override_reason: input.cap_override_reason ?? null,
+    p_cap_override_reason: input.cap_override_reason ?? undefined,
     p_metadata: metadataAsJson(input.metadata),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwPartnerProgramError("admin_top_up_partner_membership", error ?? {});
@@ -274,7 +274,7 @@ export async function acceptPartnerVisibility(input: AcceptPartnerVisibilityInpu
     p_brief_sharing_enabled: draft.brief_sharing_enabled,
     p_accepted_at: draft.accepted_at,
     p_metadata: metadataAsJson(draft.metadata),
-    p_idempotency_key: draft.idempotency_key,
+    p_idempotency_key: draft.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwPartnerProgramError("accept_partner_visibility", error ?? {});
@@ -286,8 +286,8 @@ export async function revokePartnerVisibilityAcceptance(
 ) {
   const { data, error } = await supabaseAdmin.rpc("revoke_partner_visibility_acceptance", {
     p_partner_visibility_acceptance_id: input.partner_visibility_acceptance_id,
-    p_revoked_by_user_id: input.revoked_by_user_id ?? null,
-    p_revocation_reason: input.revocation_reason ?? null,
+    p_revoked_by_user_id: input.revoked_by_user_id ?? undefined,
+    p_revocation_reason: input.revocation_reason ?? undefined,
     p_revoked_at: isoOrNow(input.revoked_at),
   });
 
