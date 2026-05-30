@@ -819,6 +819,28 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).not.toContain("project--af0c387f-c90b-4efa-b943-dc325d1a44f5");
   });
 
+  it("smoke cleanup migration removes stale reconciler cron URLs before rescheduling canonical production", async () => {
+    const source = await readFile(
+      path.join(
+        process.cwd(),
+        "supabase/migrations/20260530152500_cleanup_smoke_test_tech_debt.sql",
+      ),
+      "utf8",
+    );
+    const scheduledCommand = source.slice(source.indexOf("SELECT cron.schedule"));
+
+    expect(source).toContain("cron.unschedule(job.jobid)");
+    expect(source).toContain(
+      "project--af0c387f-c90b-4efa-b943-dc325d1a44f5.lovable.app/api/public/reconcile-stale-takes",
+    );
+    expect(source).toContain("selftape.lovable.app/api/public/reconcile-stale-takes");
+    expect(scheduledCommand).toContain("https://tapecoach.co.uk/api/public/reconcile-stale-takes");
+    expect(scheduledCommand).toContain("'x-reconciler-secret'");
+    expect(scheduledCommand).toContain("vault.decrypted_secrets");
+    expect(scheduledCommand).not.toContain("project--af0c387f-c90b-4efa-b943-dc325d1a44f5");
+    expect(scheduledCommand).not.toContain("selftape.lovable.app");
+  });
+
   it("one-off migration clears the observed stuck analysing live take only if it is still stuck", async () => {
     const source = await readFile(
       path.join(

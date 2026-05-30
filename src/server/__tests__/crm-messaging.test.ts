@@ -7,6 +7,10 @@ describe("CRM service and lifecycle messaging foundations", () => {
     "supabase/migrations/20260528125200_crm_service_lifecycle_messaging.sql",
     "utf8",
   );
+  const smokeCleanupSql = readFileSync(
+    "supabase/migrations/20260530152500_cleanup_smoke_test_tech_debt.sql",
+    "utf8",
+  );
 
   it("creates the CRM contact store and private dashboards", () => {
     expect(CRM_DASHBOARD_VERSION).toBe("s10-1-ds-19-2026-05-28");
@@ -42,5 +46,23 @@ describe("CRM service and lifecycle messaging foundations", () => {
     expect(sql).toContain("- 'signed_url'");
     expect(sql).toContain("- 'token'");
     expect(sql).toContain("- 'secret'");
+  });
+
+  it("reasserts CRM account-compliance sync RPC and refreshes PostgREST after smoke-test drift", () => {
+    expect(smokeCleanupSql).toContain(
+      "CREATE OR REPLACE FUNCTION public.sync_crm_contact_from_account_compliance(p_user_id UUID)",
+    );
+    expect(smokeCleanupSql).toContain(
+      "CREATE OR REPLACE FUNCTION public.sync_crm_contact_from_account_compliance_trigger()",
+    );
+    expect(smokeCleanupSql).toContain(
+      "DROP TRIGGER IF EXISTS account_compliance_sync_crm_contact ON public.account_compliance",
+    );
+    expect(smokeCleanupSql).toContain(
+      "GRANT EXECUTE ON FUNCTION public.sync_crm_contact_from_account_compliance(UUID) TO service_role",
+    );
+    expect(smokeCleanupSql).toContain("NOTIFY pgrst, 'reload schema'");
+    expect(smokeCleanupSql).not.toContain("raw_report =");
+    expect(smokeCleanupSql).not.toContain("runProcessTake");
   });
 });
