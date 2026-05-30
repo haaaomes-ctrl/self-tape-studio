@@ -43,6 +43,16 @@ Lovable or preview refresh commits are high-risk for generated-file drift. After
 
 If generated-file drift is introduced externally while an S10 item is parked at an operator gate, fix build integrity on a dedicated build-fix branch before starting the next S10 item. Keep that branch limited to generated/source-of-truth repair and do not use it to implement later S10 scope.
 
+Git and Lovable publishing do not apply Supabase SQL migrations or prove the live PostgREST schema cache has reloaded.
+
+For work that adds or changes Supabase tables, views, RPCs, columns, enums, triggers or relationships used at runtime, live validation must include:
+
+- confirmation that the matching migration or repair SQL was applied to the target Supabase project;
+- direct SQL verification of the live columns, views or RPCs the runtime depends on;
+- a PostgREST schema cache reload after DDL/RPC changes, for example `NOTIFY pgrst, 'reload schema';` where supported.
+
+If live logs say a table column, view or RPC could not be found in the schema cache, classify it as a Supabase schema/cache gate failure. Do not treat that as a Lovable source repair problem, and do not force Lovable to regenerate or overwrite source files. Apply or verify the SQL, reload the schema cache, then retry the live workflow.
+
 Full-repo lint may be blocked by pre-existing formatting debt, but that does not replace type safety. In that case, record the lint blocker and run focused lint, `npm exec tsc -- --noEmit`, build and relevant tests for the changed surface.
 
 ---
