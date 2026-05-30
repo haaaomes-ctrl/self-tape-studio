@@ -567,6 +567,39 @@ describe("internal analysis runner endpoint", () => {
     warn.mockRestore();
   });
 
+  it.each([123, "", { source: "worker" }])(
+    "rejects malformed supplied trigger values before deriving from reason: %s",
+    async (trigger) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const runner = vi.fn(async () => ({ ok: true as const }));
+
+      const response = await handleInternalAnalysisRunRequest(
+        requestFor({
+          take_id: TAKE_ID,
+          audition_id: AUDITION_ID,
+          submission_id: AUDITION_ID,
+          trigger,
+          reason: "mux_asset_ready",
+        }),
+        {
+          env: { ANALYSIS_RUN_SECRET: SECRET },
+          runProcessTake: runner,
+        },
+      );
+
+      expect(response.status).toBe(400);
+      expect(await responseJson(response)).toEqual({
+        mark_complete: false,
+        ok: false,
+        error: "invalid_trigger",
+        retryable: false,
+        take_id: TAKE_ID,
+      });
+      expect(runner).not.toHaveBeenCalled();
+      warn.mockRestore();
+    },
+  );
+
   it("controlled runner failures are non-retryable and do not expose raw details", async () => {
     const rawMessage =
       "raw prompt signed https://private.example/signed-url secret model response hash";

@@ -476,9 +476,13 @@ function normaliseRequestBody(
 
   const reason =
     typeof value.reason === "string" && value.reason.trim() ? value.reason.trim() : undefined;
+  const triggerWasSupplied = value.trigger !== undefined && value.trigger !== null;
   const rawTrigger =
-    typeof value.trigger === "string" && value.trigger.trim() ? value.trigger.trim() : null;
-  if (rawTrigger && !InternalAnalysisRunTriggerSchema.safeParse(rawTrigger).success) {
+    triggerWasSupplied && typeof value.trigger === "string" ? value.trigger.trim() : null;
+  if (
+    triggerWasSupplied &&
+    (!rawTrigger || !InternalAnalysisRunTriggerSchema.safeParse(rawTrigger).success)
+  ) {
     const takeId = safeUuidForError(firstDefined(value.take_id, value.takeId));
     return { ok: false, code: "invalid_trigger", reason: "invalid_trigger", takeId };
   }
