@@ -300,7 +300,11 @@ const PROHIBITED_LAUNCH_GOAL_PATTERNS: Array<{ id: LaunchNonGoalId; pattern: Reg
   { id: "no_ads_inside_reports", pattern: /\bads?\s+(?:inside|in|on)\s+(?:the\s+)?reports?\b/i },
   { id: "no_subscriptions", pattern: /\bsubscriptions?\b/i },
   { id: "no_unlimited_reports", pattern: /\bunlimited\s+reports?\b/i },
-  { id: "no_public_report_sharing", pattern: /\bpublic\s+report\s+sharing\b/i },
+  {
+    id: "no_public_report_sharing",
+    pattern:
+      /\b(?:public\s+report\s+sharing|share\s+(?:full\s+)?reports?\s+publicly|publicly\s+share\s+(?:full\s+)?reports?)\b/i,
+  },
   { id: "no_b2b_leaderboard", pattern: /\b(?:b2b\s+)?leaderboard\b/i },
   {
     id: "no_personalised_ads_under_18",

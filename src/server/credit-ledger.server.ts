@@ -100,14 +100,14 @@ export async function grantFundedCredits(input: CreditGrantInput) {
     p_source: draft.source,
     p_credit_amount: draft.original_credits,
     p_granted_at: draft.granted_at,
-    p_expires_at: draft.expires_at,
-    p_source_reference_type: draft.source_reference_type,
-    p_source_reference_id: draft.source_reference_id,
-    p_source_label: draft.source_label,
-    p_admin_actor_user_id: draft.granted_by_user_id,
-    p_admin_reason: draft.admin_reason,
+    p_expires_at: draft.expires_at ?? undefined,
+    p_source_reference_type: draft.source_reference_type ?? undefined,
+    p_source_reference_id: draft.source_reference_id ?? undefined,
+    p_source_label: draft.source_label ?? undefined,
+    p_admin_actor_user_id: draft.granted_by_user_id ?? undefined,
+    p_admin_reason: draft.admin_reason ?? undefined,
     p_metadata: metadataAsJson(draft.metadata),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwCreditLedgerError("grant_funded_credits", error ?? {});
@@ -167,11 +167,11 @@ export async function recordCreditConsumption(input: RecordCreditConsumptionInpu
     p_user_id: input.user_id,
     p_credit_grant_id: input.credit_grant_id,
     p_credit_amount: input.credit_amount,
-    p_take_id: input.take_id ?? null,
-    p_audition_id: input.audition_id ?? null,
+    p_take_id: input.take_id ?? undefined,
+    p_audition_id: input.audition_id ?? undefined,
     p_report_generated_at: input.report_generated_at ?? new Date().toISOString(),
     p_metadata: metadataAsJson(input.metadata ?? {}),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwCreditLedgerError("record_credit_consumption", error ?? {});
@@ -191,11 +191,11 @@ export async function recordAdminCreditAdjustment(input: RecordAdminCreditAdjust
     p_user_id: adjustment.user_id,
     p_source: adjustment.source,
     p_credit_delta: adjustment.credit_delta,
-    p_admin_actor_user_id: adjustment.admin_actor_user_id,
+    p_admin_actor_user_id: adjustment.admin_actor_user_id ?? undefined,
     p_admin_reason: adjustment.admin_reason,
-    p_credit_grant_id: adjustment.credit_grant_id,
+    p_credit_grant_id: adjustment.credit_grant_id ?? undefined,
     p_metadata: metadataAsJson(adjustment.metadata),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data) throwCreditLedgerError("record_admin_credit_adjustment", error ?? {});
@@ -205,10 +205,10 @@ export async function recordAdminCreditAdjustment(input: RecordAdminCreditAdjust
 export async function reserveReportCreditForTake(input: ReserveReportCreditInput) {
   const { data, error } = await supabaseAdmin.rpc("reserve_report_credit_for_take", {
     p_take_id: input.take_id,
-    p_requested_by_user_id: input.requested_by_user_id ?? null,
+    p_requested_by_user_id: input.requested_by_user_id ?? undefined,
     p_synthetic_usage: input.synthetic_usage ?? false,
     p_metadata: metadataAsJson(input.metadata ?? {}),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error || !data)
@@ -231,10 +231,10 @@ export async function reserveReportCreditForTake(input: ReserveReportCreditInput
 export async function consumeReportCreditReservation(input: ConsumeReportCreditReservationInput) {
   const { data, error } = await supabaseAdmin.rpc("consume_report_credit_reservation", {
     p_reservation_id: input.credit_reservation_id,
-    p_take_id: input.take_id ?? null,
+    p_take_id: input.take_id ?? undefined,
     p_report_generated_at: input.report_generated_at ?? new Date().toISOString(),
     p_metadata: metadataAsJson(input.metadata ?? {}),
-    p_idempotency_key: input.idempotency_key ?? null,
+    p_idempotency_key: input.idempotency_key ?? undefined,
   });
 
   if (error) throwReportCreditLifecycleError("consume_report_credit_reservation", error);
@@ -250,8 +250,8 @@ export async function releaseReportCreditReservation(input: ReleaseReportCreditR
   const { data, error } = await supabaseAdmin.rpc("release_report_credit_reservation", {
     p_reservation_id: input.credit_reservation_id,
     p_release_status: releaseStatus,
-    p_release_reason: input.release_reason ?? null,
-    p_failure_code: input.failure_code ?? null,
+    p_release_reason: input.release_reason ?? undefined,
+    p_failure_code: input.failure_code ?? undefined,
     p_metadata: metadataAsJson(input.metadata ?? {}),
   });
 
@@ -299,12 +299,12 @@ export async function getCreditSourceFinanceSummary(): Promise<CreditSourceFinan
   if (error || !data) throwCreditLedgerError("credit_source_finance_summary", error ?? {});
   return data.map((row) => ({
     source: assertCreditSource(row.source),
-    granted_credits: row.granted_credits,
-    consumed_credits: row.consumed_credits,
-    admin_adjustment_credits: row.admin_adjustment_credits,
-    expired_credits: row.expired_credits,
-    net_credits: row.net_credits,
-    entry_count: row.entry_count,
+    granted_credits: row.granted_credits ?? 0,
+    consumed_credits: row.consumed_credits ?? 0,
+    admin_adjustment_credits: row.admin_adjustment_credits ?? 0,
+    expired_credits: row.expired_credits ?? 0,
+    net_credits: row.net_credits ?? 0,
+    entry_count: row.entry_count ?? 0,
   }));
 }
 

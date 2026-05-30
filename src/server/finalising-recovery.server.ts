@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metric } from "@/server/metrics.server";
+import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
 
 export const FINALISING_ORPHAN_SECONDS = 90;
 export const FINALISING_ORPHAN_MS = FINALISING_ORPHAN_SECONDS * 1000;
@@ -16,10 +17,7 @@ export type FinalisingRecoveryResult =
 export type AnalysingRecoveryResult = FinalisingRecoveryResult;
 
 export function isFinalisingHeartbeatStale(staleHeartbeatMs: number): boolean {
-  return (
-    Number.isFinite(staleHeartbeatMs) &&
-    staleHeartbeatMs >= FINALISING_ORPHAN_MS
-  );
+  return Number.isFinite(staleHeartbeatMs) && staleHeartbeatMs >= FINALISING_ORPHAN_MS;
 }
 
 export function finalisingOrphanCutoffIso(now = Date.now()): string {
@@ -27,14 +25,47 @@ export function finalisingOrphanCutoffIso(now = Date.now()): string {
 }
 
 export function isAnalysingHeartbeatStale(staleHeartbeatMs: number): boolean {
-  return (
-    Number.isFinite(staleHeartbeatMs) &&
-    staleHeartbeatMs >= ANALYSING_ORPHAN_MS
-  );
+  return Number.isFinite(staleHeartbeatMs) && staleHeartbeatMs >= ANALYSING_ORPHAN_MS;
 }
 
 export function analysingOrphanCutoffIso(now = Date.now()): string {
   return new Date(now - ANALYSING_ORPHAN_MS).toISOString();
+}
+
+async function refundReportCreditAfterRecoveryForcedError(params: {
+  takeId: string;
+  source: string;
+  processingPhase: string;
+  failureCode: string;
+}) {
+  try {
+    const result = await releaseReportCreditForTake({
+      take_id: params.takeId,
+      release_status: "refunded",
+      release_reason: "reconciler_forced_error",
+      failure_code: params.failureCode,
+      metadata: {
+        trigger: params.source,
+        processing_phase: params.processingPhase,
+        report_credit_restored_message:
+          "A reserved TapeCoach credit was returned because report generation did not complete.",
+      },
+    });
+    metric("report_credit_released", {
+      take_id: params.takeId,
+      reason: params.failureCode,
+      release_status: "refunded",
+      released: result.released,
+    });
+  } catch (err) {
+    console.warn("[take-pipeline] recovery_forced_error_credit_refund_failed", {
+      take_id: params.takeId,
+      source: params.source,
+      processing_phase: params.processingPhase,
+      failure_code: params.failureCode,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export async function recoverFinalisingTake(params: {
@@ -166,6 +197,12 @@ export async function recoverFinalisingTake(params: {
     age_seconds: ageSeconds,
     idle_seconds: idleSeconds,
     processing_phase: "finalising",
+  });
+  await refundReportCreditAfterRecoveryForcedError({
+    takeId: params.takeId,
+    source: params.source,
+    processingPhase: "finalising",
+    failureCode: "finalising_orphan",
   });
   metric("reconciler_forced_error", {
     take_id: params.takeId,
@@ -331,6 +368,12 @@ export async function recoverAnalysingTake(params: {
     age_seconds: ageSeconds,
     idle_seconds: idleSeconds,
     processing_phase: row.processing_phase,
+  });
+  await refundReportCreditAfterRecoveryForcedError({
+    takeId: params.takeId,
+    source: params.source,
+    processingPhase: row.processing_phase ?? "analysing",
+    failureCode: "analysing_orphan",
   });
   metric("reconciler_forced_error", {
     take_id: params.takeId,

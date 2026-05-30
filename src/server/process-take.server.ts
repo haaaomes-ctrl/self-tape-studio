@@ -76,6 +76,8 @@ import {
   ReportCreditRequiredError,
   reserveReportCreditForTake,
 } from "./credit-ledger.server";
+import { VIDEO_DURATION_HARD_CAP_COPY } from "@/lib/video-duration-policy";
+import { blockTakeForVideoDurationHardCap } from "./video-duration-hard-cap.server";
 import {
   recordSecondReportEventIfNeeded,
   recordServerAnalyticsEvent,
@@ -2253,6 +2255,25 @@ export async function runProcessTake(
     });
     return { ok: true, alreadyDone: true };
   }
+
+  if (take.mux_duration_seconds != null && Number.isFinite(Number(take.mux_duration_seconds))) {
+    const hardCapBlock = await blockTakeForVideoDurationHardCap({
+      takeId,
+      durationSeconds: Number(take.mux_duration_seconds),
+      source: "run_process_take_entry",
+      muxAssetId: take.mux_asset_id ?? null,
+      muxPlaybackId: take.mux_playback_id ?? null,
+    });
+    if (hardCapBlock.blocked) {
+      console.warn("runProcessTake: over-hard-cap video blocked before analysis", {
+        takeId,
+        duration_seconds: hardCapBlock.durationSeconds,
+        update_persisted: hardCapBlock.updated,
+      });
+      return { ok: false, error: VIDEO_DURATION_HARD_CAP_COPY };
+    }
+  }
+
   // Idempotency: if a pipeline is already running for this take (either
   // actively polling for the static rendition in `analysis_pending`, or
   // currently in the Gemini call in `analysing`), bail out early. Prevents

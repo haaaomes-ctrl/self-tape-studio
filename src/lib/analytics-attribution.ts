@@ -483,25 +483,26 @@ export async function trackAnalyticsEvent(input: TrackAnalyticsEventInput): Prom
   const { data, error } = await supabase.rpc("record_analytics_event", {
     p_event_name: input.eventName,
     p_consent_state: consentState,
-    p_attribution_key: attribution?.attribution_key ?? null,
-    p_session_key: attribution?.session_key ?? getSessionKey(),
-    p_utm_source: attribution?.utm_source ?? null,
-    p_utm_medium: attribution?.utm_medium ?? null,
-    p_utm_campaign: attribution?.utm_campaign ?? null,
-    p_utm_term: attribution?.utm_term ?? null,
-    p_utm_content: attribution?.utm_content ?? null,
-    p_creator_code: attribution?.creator_code ?? null,
-    p_partner_code_hint: attribution?.partner_code_hint ?? null,
+    p_attribution_key: attribution?.attribution_key ?? undefined,
+    p_session_key: attribution?.session_key ?? getSessionKey() ?? undefined,
+    p_utm_source: attribution?.utm_source ?? undefined,
+    p_utm_medium: attribution?.utm_medium ?? undefined,
+    p_utm_campaign: attribution?.utm_campaign ?? undefined,
+    p_utm_term: attribution?.utm_term ?? undefined,
+    p_utm_content: attribution?.utm_content ?? undefined,
+    p_creator_code: attribution?.creator_code ?? undefined,
+    p_partner_code_hint: attribution?.partner_code_hint ?? undefined,
     p_landing_path:
       attribution?.landing_path ??
       (typeof window !== "undefined"
         ? normaliseAttributionToken(window.location.pathname, 160)
-        : null),
-    p_referrer_host: attribution?.referrer_host ?? null,
-    p_object_type: input.objectType ?? null,
-    p_object_id: input.objectId ?? null,
-    p_audition_id: input.auditionId ?? null,
-    p_take_id: input.takeId ?? null,
+        : undefined) ??
+      undefined,
+    p_referrer_host: attribution?.referrer_host ?? undefined,
+    p_object_type: input.objectType ?? undefined,
+    p_object_id: input.objectId ?? undefined,
+    p_audition_id: input.auditionId ?? undefined,
+    p_take_id: input.takeId ?? undefined,
     p_event_properties: safeEventProperties(input.properties),
   });
 

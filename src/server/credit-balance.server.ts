@@ -162,7 +162,7 @@ export async function activatePartnerCodeForUser(input: {
   const { error } = await supabaseAdmin.rpc("activate_partner_code", {
     p_user_id: input.userId,
     p_code_hash: codeHash,
-    p_user_email: input.userEmail ?? null,
+    p_user_email: input.userEmail ?? undefined,
     p_activated_at: new Date().toISOString(),
     p_metadata: {
       source: "performer_credit_balance_ui",
