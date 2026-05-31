@@ -37,6 +37,11 @@ import {
   inferS10ScoringMode,
   type S10ScoringContext,
 } from "./s10-scoring-context.server";
+import {
+  buildS10RoleMaterialContext,
+  validateS10RoleMaterialContext,
+  type S10RoleMaterialContext,
+} from "./s10-role-material-context.server";
 import type { S10ObservationContextSourceKind } from "./s10-observation-context.server";
 
 export type S10SectionSource = S10RouteSectionSource;
@@ -71,6 +76,7 @@ export type S10PerformerReportViewModel = {
     component_scores: ReadinessAndScoreJudgement["component_scores"];
   };
   scoring_context: S10ScoringContext;
+  role_material_context: S10RoleMaterialContext;
   brief_context: BriefContext | null;
   brief_requirements: BriefRequirement[];
   brief_achievement_matrix: BriefAchievementMatrix | null;
@@ -111,6 +117,7 @@ export type S10ViewModelContext = {
   comparisonTruth?: S10ComparisonTruth | null;
   comparisonDisplayMode?: S10ComparisonDisplayMode | null;
   observationSourceKind?: S10ObservationContextSourceKind | null;
+  roleMaterialContext?: S10RoleMaterialContext | Record<string, unknown> | null;
 };
 
 export const S10_LIMITED_REPORT_MESSAGE =
@@ -359,6 +366,15 @@ export function buildS10PerformerReportViewModel(input: {
       asNumber((readiness as Record<string, unknown> | null)?.overall_submission_readiness_score) !=
       null,
   });
+  const roleMaterialContext = buildS10RoleMaterialContext({
+    report,
+    briefContext,
+    briefRequirements,
+    override: context.roleMaterialContext,
+  });
+  const roleMaterialContextValidation = validateS10RoleMaterialContext(roleMaterialContext);
+  const hasVisibleRoleMaterialContext =
+    roleMaterialContextValidation.ok && hasVisibleRoleMaterialContextPayload(roleMaterialContext);
   const hasS10PresentationNotes =
     arrayHasRenderableItems(
       (techniqueCommentary?.self_tape_presentation as { what_is_working?: unknown } | null)
@@ -467,6 +483,14 @@ export function buildS10PerformerReportViewModel(input: {
       "brief_requirements",
       "Brief requirements are not available for this report.",
     ),
+    role_material_context: hasVisibleRoleMaterialContext
+      ? sourceModule("role_material_context")
+      : roleMaterialContextValidation.ok
+        ? notApplicable("No supplied or confidently resolved role/material context is rendered.")
+        : limitation(
+            "role_material_context",
+            `Role/material context is unavailable: ${roleMaterialContextValidation.reason}.`,
+          ),
     brief_achievement: source(
       hasVisibleBriefAchievement,
       "brief_achievement_matrix",
@@ -593,6 +617,7 @@ export function buildS10PerformerReportViewModel(input: {
       component_scores: readiness?.component_scores ?? [],
     },
     scoring_context: scoringContext,
+    role_material_context: roleMaterialContext,
     brief_context: briefContext,
     brief_requirements: briefRequirements,
     brief_achievement_matrix: matrix,
@@ -658,6 +683,9 @@ export function buildS10LimitedPerformerReportViewModel(
     ),
     brief_context: limitation("brief_context", message),
     brief_requirements: limitation("brief_requirements", message),
+    role_material_context: notApplicable(
+      "No supplied or confidently resolved role/material context is rendered.",
+    ),
     brief_achievement: limitation("brief_achievement_matrix", message),
     observed_tape: limitation("observed_tape_sequence/component_verifications", message),
     component_breakdown: {
@@ -710,6 +738,11 @@ export function buildS10LimitedPerformerReportViewModel(
       mediaObservationSummary: null,
       selectedLevel: null,
       numericScoresVisible: false,
+    }),
+    role_material_context: buildS10RoleMaterialContext({
+      report: {},
+      briefContext: null,
+      briefRequirements: [],
     }),
     brief_context: null,
     brief_requirements: [],
@@ -824,6 +857,25 @@ function hasVisibleBriefContextPayload(value: unknown): boolean {
     context.upload_summary,
     context.file_naming_summary,
   ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleRoleMaterialContextPayload(value: unknown): boolean {
+  const context = asRecord(value);
+  if (!context || context.applies !== true) return false;
+  return (
+    [
+      context.project_name,
+      context.role_name,
+      context.discipline,
+      context.audition_type,
+      context.material_package_summary,
+      context.role_description_summary,
+      context.secondary_context,
+    ].some((candidate) => !!asText(candidate)) ||
+    arrayHasRenderableItems(context.source_summary) ||
+    arrayHasRenderableItems(context.demands) ||
+    arrayHasRenderableStrings(context.uncertainty_notes)
+  );
 }
 
 function hasVisibleScoringContextPayload(value: unknown): boolean {
@@ -1126,6 +1178,9 @@ function validateSectionVisiblePayload(
       break;
     case "brief_requirements":
       hasVisiblePayload = hasVisibleBriefRequirementRows(view.brief_requirements);
+      break;
+    case "role_material_context":
+      hasVisiblePayload = hasVisibleRoleMaterialContextPayload(view.role_material_context);
       break;
     case "brief_achievement":
       hasVisiblePayload = hasVisibleBriefAchievementPayload(view.brief_achievement_matrix);

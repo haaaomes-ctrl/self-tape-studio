@@ -209,6 +209,7 @@ export const S10_PROMPT_INVENTORY: S10PromptInventoryEntry[] = [
       "timestamped commentary",
       "next action",
       "submission risk",
+      "role/material context",
       "presentation notes",
     ],
     status: "active",
@@ -403,7 +404,7 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
     structuredOutputField:
       "mode (brief/baseline compatibility), scoring_context, readiness_score_judgement.score_explanation",
     uiDestination: "Score summary, recommendation rationale and report labels",
-    routeSectionKeys: ["score_summary", "submission_guidance"],
+    routeSectionKeys: ["scoring_context", "score_summary", "submission_guidance"],
     completenessRule: "complete",
     repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.contradictory,
@@ -728,19 +729,31 @@ export const S10_REPORT_MODULE_COVERAGE: S10ModuleCoverageEntry[] = [
   {
     reportModule: "role/material context",
     aiQuestion:
-      "Where role, character, production or material context is supplied or confidently resolved, what source basis and task-specific demands may inform the report?",
+      "Where role, character, production or material context is supplied or confidently resolved, what source basis, truth state, uncertainty and task-specific demands may inform the report without inventing hidden requirements?",
     structuredOutputField:
       "role_material_context, role_fit_notes, role_fit_modifier, role_fit_confidence",
     uiDestination: "Brief context, role/material context, technique and submission-risk notes",
-    routeSectionKeys: ["brief_context", "submission_risk", "technique_commentary"],
+    routeSectionKeys: [
+      "role_material_context",
+      "brief_context",
+      "submission_risk",
+      "technique_commentary",
+    ],
     completenessRule: "not_assessable",
     repairTriggerStatuses: DEFAULT_REPAIR_TRIGGERS,
     repairPrompt: S10_MODULE_REPAIR_PROMPTS.not_assessable,
-    deterministicInputsAllowed: ["supplied brief", "uploaded material", "selected level"],
+    deterministicInputsAllowed: [
+      "supplied brief",
+      "uploaded material",
+      "selected level",
+      "AI/research output with source basis",
+    ],
     codeGeneratedContentForbidden: [
       "role/material judgement",
       "brief requirements",
       "comparison judgement",
+      "hidden mandatory requirements",
+      "appearance/type/castability language",
     ],
   },
   {
@@ -893,6 +906,8 @@ You are the S10 professional judgement/module report brain for TapeCoach. You wr
 
 Primary rule: before scoring or recommending, use the S10 BriefRequirement list to verify required brief components against observed tape evidence. Do not infer required material is present because the brief requested it. If a supplied brief is present but no BriefRequirement list is available, first extract explicit requirements from the supplied brief and mark any unsupported modules not assessable until that list exists. If mandatory material is missing, partial, cut off, uncertain or not assessable, the recommendation and score language must say that clearly.
 
+S10 role/material bridge rule: when a brief, uploaded material or user context identifies a production, role, character, scene, song, copy, routine or known material, produce role_material_context with source_basis, source_summary, primary_standard, secondary_context, demands, confidence and uncertainty_notes. Supplied brief remains primary. Known-material or official-source context is secondary nuance only unless the brief/uploaded material explicitly makes it a requirement. Do not use role/material research to invent mandatory blockers, appearance/type/castability/marketability language, callback/recall likelihood or booking/employment predictions. If identity or source confidence is low, mark the context uncertain or not assessable.
+
 S10.4 matrix-before-scoring rule: produce brief_achievement_matrix before any overall_score, score chip, verdict, readiness wording, category score, submission risk or fix hierarchy. Compare every BriefRequirement against observed_tape_sequence, component_verifications and media_observation_summary. raw_report, detected_components, legacy brief_adherence_breakdown/material_compliance, score traces and previous report prose are diagnostic only and cannot mark a requirement achieved. Keep continuous-video technical evidence separate from complete required-material package evidence.
 
 S10.5 readiness/score rule: produce readiness_score_judgement after brief_achievement_matrix. Distinguish performance_quality_score, brief_completion_score and overall_submission_readiness_score. The visible overall readiness score must represent submission readiness, not talent alone. High audio, framing or observed-song quality may remain high where supported, but mandatory material/package blockers override submit-ready wording. raw_report.overall_score, score_trace, detected_components and previous report prose are diagnostic only.
@@ -909,7 +924,7 @@ Module question order:
 1. Take/slot context where supplied: which active take version or comparison context is being judged?
 2. Scoring basis: determine brief_supplied, partial_brief_supplied, no_brief_baseline or brief_uncertain; state what claims are allowed in readiness language and keep any legacy mode field schema-compatible.
 3. Brief intelligence: what task did the brief ask for, and which requirements are mandatory, preferred, optional or ambiguous?
-4. Role/material context where supplied: what source basis and task demands may inform the judgement without inventing hidden requirements?
+4. Role/material context where supplied: what source basis, truth state, uncertainty and task demands may inform the judgement without inventing hidden requirements?
 5. Observed tape sequence: what actually appears, in order, with timestamps or time-bands where possible?
 6. Component detection: which requested and observed components are present, absent, partially_present, cut_off, uncertain or not_assessable?
 7. Brief achievement: for each requirement, what is achieved, missed, incomplete or not assessable?
@@ -930,7 +945,7 @@ Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
 - State the scoring basis in readiness language and supporting fields; do not use brief-complete claims for no_brief_baseline runs.
 - Include selected-level calibration in readiness_score_judgement.selected_level_calibration and selected_level_calibration_summary; selected level is the assessment standard, not tone. The structured object must state selected_level, selected_level_label, standard_applied, evidence_threshold, readiness_standard, score_meaning, what_meets_level, what_falls_short, recommendation_impact, comparison_to_other_levels and confidence.
-- If role/material context is used, include source basis and uncertainty in role_fit fields or relevant module notes; supplied brief remains primary.
+- If role/material context is used, include role_material_context with source basis, source summary, truth states, demands, uncertainty and S14-deferred maturity notes; supplied brief remains primary.
 - If Professional 90+ calibration applies, include distinct zone meaning, suppressors, preserve guidance and retake strategy in professional_nuance_summary and professional critique/action modules.
 - If comparison or same-video status is enabled, identify compared active take versions and do not invent a winner for duplicate or effectively equivalent media.
 - Always include brief_achievement_matrix with one requirement_results row per BriefRequirement. Each row must set cannot_infer_from_brief_only=true and link to observed component evidence where available.

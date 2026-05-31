@@ -112,6 +112,97 @@ function partialBriefV2Report() {
   }) as unknown as Record<string, unknown>;
 }
 
+function knownRoleV2Report() {
+  const input = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+  input.role_material_context = {
+    applies: true,
+    project_name: "Wicked",
+    role_name: "Elphaba",
+    material_package_summary: "Side and song package for a known musical-theatre role.",
+    source_basis: ["brief_supplied", "official_source_researched"],
+    primary_standard: "supplied_brief",
+    source_summary: [
+      {
+        source_type: "brief",
+        source_label: "Supplied casting brief",
+        truth_state: "brief_supplied",
+        confidence: "high",
+        public_usable: true,
+      },
+      {
+        source_type: "official_source",
+        source_label: "Official production synopsis",
+        truth_state: "official_source_researched",
+        confidence: "medium",
+        public_usable: true,
+      },
+    ],
+    secondary_context:
+      "Known-material context suggests moral conviction and outsider pressure, but the supplied brief remains the primary standard.",
+    demands: [
+      {
+        id: "known-elphaba-conviction",
+        label: "Moral conviction under pressure",
+        description:
+          "Use only as secondary role/material nuance where the observed tape supports it.",
+        source_truth_state: "official_source_researched",
+        importance: "known_material_context_only",
+        observable_evidence_needed: ["Story-led vocal or acting choices are visible/audible."],
+        scoring_use: "can_nuance_score",
+        unsafe_if_used_for: ["mandatory blocker", "appearance/type judgement"],
+      },
+    ],
+    blocked_inferences: ["Personal attributes and casting outcomes are not assessed."],
+    confidence: "medium",
+    uncertainty_notes: ["Known-material context is secondary to the supplied brief."],
+  };
+
+  return buildV2Report({
+    legacyReport: input,
+    futureDimensions: null,
+    auditionType: "musical_theatre",
+    mode: "brief",
+    s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+  }) as unknown as Record<string, unknown>;
+}
+
+function ambiguousRoleV2Report() {
+  const input = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+  input.role_material_context = {
+    applies: true,
+    project_name: "Untitled workshop scene",
+    role_name: "Alex",
+    source_basis: ["model_inferred_low_confidence"],
+    primary_standard: "selected_level_observed_tape",
+    source_summary: [
+      {
+        source_type: "model_inferred_low_confidence",
+        source_label: "Ambiguous role name from partial context",
+        truth_state: "model_inferred_low_confidence",
+        confidence: "low",
+        public_usable: true,
+      },
+    ],
+    secondary_context: null,
+    demands: [],
+    blocked_inferences: [
+      "Role-specific fit is not assessed because the role/material identity is ambiguous.",
+    ],
+    confidence: "low",
+    uncertainty_notes: [
+      "The role/material identity is ambiguous, so known-material demands are not applied.",
+    ],
+  };
+
+  return buildV2Report({
+    legacyReport: input,
+    futureDimensions: null,
+    auditionType: "musical_theatre",
+    mode: "brief",
+    s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+  }) as unknown as Record<string, unknown>;
+}
+
 function sameVideoDuplicateV2Report() {
   const result = classifyS10SameVideoComparison(
     s10SameVideoComparisonFixtures.accidentalDuplicate.input,
@@ -226,6 +317,33 @@ describe("S10 report view rendering", () => {
     expect(text).toContain("Formal brief requirements are incomplete");
     expect(text).toContain("Supplied brief details");
     expect(text).not.toContain("Requirement classification");
+  });
+
+  it("renders role/material source basis as secondary context without castability claims", () => {
+    const text = routeText(render(knownRoleV2Report()));
+
+    expect(text).toContain("Role / material context");
+    expect(text).toContain("Role / character: Elphaba");
+    expect(text).toContain("Source basis");
+    expect(text).toContain("Official production synopsis");
+    expect(text).toContain("Official source researched");
+    expect(text).toContain("Known material context only");
+    expect(text.toLowerCase()).toContain("supplied brief remains the primary standard");
+    expect(text).toContain("Not assessed");
+    expect(text).not.toMatch(/\bright for the role\b/i);
+    expect(text).not.toMatch(/\bcastability\b/i);
+    expect(text).not.toMatch(/\bcallback likelihood\b/i);
+  });
+
+  it("renders ambiguous role/material context as uncertain without applying demands", () => {
+    const text = routeText(render(ambiguousRoleV2Report()));
+
+    expect(text).toContain("Role / material context");
+    expect(text).toContain("Confidence: Low");
+    expect(text).toContain("Model inferred low confidence");
+    expect(text).toContain("The role/material identity is ambiguous");
+    expect(text).not.toContain("Task demands");
+    expect(text).not.toContain("Mandatory from brief");
   });
 
   it("renders the same observed tape differently when the selected level changes", () => {
