@@ -29,6 +29,7 @@ import {
   type VerdictLabel,
 } from "./report-polish.server";
 import {
+  applyS10ResidualModuleRecovery,
   buildS10ModuleQualityRecoveryReport,
   buildS10ReportPolishFallback,
 } from "./s10-report-polish-fallback.server";
@@ -3396,6 +3397,8 @@ export async function runProcessTake(
     let s10ModuleQualityRecoveryUsed = false;
     let moduleQualityRecoveryReason: string | null = null;
     let s10ModuleQualityRecoveryPersisted = false;
+    let residualModuleRecoveryUsed = false;
+    let residualModulesRecovered: string[] = [];
     const hasSufficientStep1EvidenceForModuleRecovery = (evidence: EvidencePass | null) => {
       if (!evidence) return false;
       const hasObservation =
@@ -5891,6 +5894,15 @@ export async function runProcessTake(
     }
     const moduleQualityBlockers = () =>
       s10ModuleReadiness.results.filter((result) => result.blocks_report_value);
+    const residualRecoverableModules = new Set([
+      "performer level calibration",
+      "technique commentary",
+    ]);
+    const canApplyResidualModuleRecovery = (
+      blockers: Array<{ report_module: string; blocks_report_value: boolean }>,
+    ) =>
+      blockers.length > 0 &&
+      blockers.every((result) => residualRecoverableModules.has(result.report_module));
     const canRecoverModuleQuality =
       isTwoStepEnabled() &&
       hasSufficientStep1EvidenceForModuleRecovery(twoStepEvidence) &&
@@ -6042,19 +6054,62 @@ export async function runProcessTake(
         if (recovery.ok) {
           const recoveredReport = ukifyDeep(recovery.report) as Record<string, unknown>;
           const recoveryReadiness = runModuleReadiness(recoveredReport);
-          const recoveryBlockers = recoveryReadiness.results.filter(
+          let recoveryReadinessCurrent = recoveryReadiness;
+          let recoveryBlockers = recoveryReadinessCurrent.results.filter(
             (result) => result.blocks_report_value,
           );
+          if (canApplyResidualModuleRecovery(recoveryBlockers)) {
+            const residual = applyS10ResidualModuleRecovery({
+              report: recoveredReport,
+              evidence: twoStepEvidence,
+              briefRequirements: extractedBrief?.brief_requirements ?? [],
+              selectedLevel: auditionLevel,
+              mode: audition.brief ? "brief" : "baseline",
+              residualModules: recoveryBlockers.map((result) => result.report_module),
+            });
+            residualModuleRecoveryUsed = residual.recoveredModules.length > 0;
+            residualModulesRecovered = residual.recoveredModules;
+            if (residualModuleRecoveryUsed) {
+              console.warn("[take-pipeline] s10_module_quality_residual_limitations_applied", {
+                ...baseLog,
+                reason: moduleQualityRecoveryReason,
+                modules: residualModulesRecovered,
+              });
+              metric("s10_module_quality_residual_limitations_applied", {
+                take_id: takeId,
+                reason: moduleQualityRecoveryReason,
+                modules: residualModulesRecovered.join(","),
+              });
+              if (residualModulesRecovered.includes("performer level calibration")) {
+                metric("s10_residual_level_calibration_applied", {
+                  take_id: takeId,
+                  reason: moduleQualityRecoveryReason,
+                });
+              }
+              if (residualModulesRecovered.includes("technique commentary")) {
+                metric("s10_residual_technique_commentary_applied", {
+                  take_id: takeId,
+                  reason: moduleQualityRecoveryReason,
+                });
+              }
+              recoveryReadinessCurrent = runModuleReadiness(recoveredReport);
+              recoveryBlockers = recoveryReadinessCurrent.results.filter(
+                (result) => result.blocks_report_value,
+              );
+            }
+          }
           if (recoveryBlockers.length === 0) {
             report = recoveredReport;
             s10ModuleQualityRecoveryUsed = true;
-            s10ModuleReadiness = recoveryReadiness;
+            s10ModuleReadiness = recoveryReadinessCurrent;
             persistedS10ModuleReadiness =
               summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
             console.warn("[take-pipeline] s10_module_quality_recovery_built", {
               ...baseLog,
               reason: moduleQualityRecoveryReason,
               limitation_count: recovery.limitationCount,
+              residual_module_recovery_used: residualModuleRecoveryUsed,
+              residual_modules_recovered: residualModulesRecovered,
             });
           } else {
             console.warn("[take-pipeline] s10_module_quality_recovery_failed", {
@@ -6094,6 +6149,11 @@ export async function runProcessTake(
       report.module_repair_retry_attempted = moduleRepairRetryAttempted;
       report.module_repair_retry_succeeded = moduleRepairRetrySucceeded;
       report.module_quality_recovery_reason = moduleQualityRecoveryReason;
+      report.residual_module_recovery_used = residualModuleRecoveryUsed;
+      report.residual_module_recovery_reason = residualModuleRecoveryUsed
+        ? "performer_level_calibration_and_or_technique_commentary"
+        : null;
+      report.residual_modules_recovered = residualModulesRecovered;
     }
 
     const scoreBreakdown = {
@@ -6159,6 +6219,8 @@ export async function runProcessTake(
             module_repair_retry_succeeded: moduleRepairRetrySucceeded,
             s10_module_quality_recovery_used: s10ModuleQualityRecoveryUsed,
             module_quality_recovery_reason: moduleQualityRecoveryReason,
+            residual_module_recovery_used: residualModuleRecoveryUsed,
+            residual_modules_recovered: residualModulesRecovered,
             locked_field_overwrite_count: twoStepEnforcement.locked_field_overwrites,
             unsupported_claims_removed_count: twoStepEnforcement.unsupported_claims_removed,
             unsupported_claims_rewritten_count: twoStepEnforcement.unsupported_claims_rewritten,
@@ -6567,6 +6629,8 @@ export async function runProcessTake(
       console.warn("[take-pipeline] s10_module_quality_recovery_persisted", {
         ...baseLog,
         reason: moduleQualityRecoveryReason ?? "unknown",
+        residual_module_recovery_used: residualModuleRecoveryUsed,
+        residual_modules_recovered: residualModulesRecovered,
       });
     }
     console.log("[take-pipeline] finalising_persist_completed", {
@@ -6575,6 +6639,7 @@ export async function runProcessTake(
       finalising_duration_ms: finaliseElapsedMs(),
       report_polish_fallback_persisted: reportPolishFallbackPersisted,
       s10_module_quality_recovery_persisted: s10ModuleQualityRecoveryPersisted,
+      residual_module_recovery_used: residualModuleRecoveryUsed,
     });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;

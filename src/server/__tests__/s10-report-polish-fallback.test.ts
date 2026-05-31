@@ -6,6 +6,7 @@ import { V2ReportView } from "@/components/report/V2ReportView";
 import type { EvidencePass } from "@/server/evidence-pass.server";
 import { evaluateS10ModuleReadiness } from "@/server/s10-module-readiness.server";
 import {
+  applyS10ResidualModuleRecovery,
   buildS10ModuleQualityRecoveryReport,
   buildS10ReportPolishFallback,
 } from "@/server/s10-report-polish-fallback.server";
@@ -290,6 +291,7 @@ describe("S10 report polish parser fallback", () => {
         professional_presentation:
           "Presentation is suitable for a baseline Emerging / Training review.",
       },
+      candidate_technique_evidence: [],
       evidence_sufficiency: {
         audio_assessable: true,
         video_assessable: true,
@@ -373,7 +375,146 @@ describe("S10 report polish parser fallback", () => {
     expect(html).not.toMatch(/Next action plan was unavailable/i);
     expect(html).not.toMatch(/Readiness judgement is not available/i);
     expect(html).not.toMatch(/Professional critique is not available/i);
+    expect(html).not.toMatch(/Technique commentary is not available/i);
     expect(html).not.toMatch(/Timestamped or time-banded commentary is not available/i);
+    expect(html).not.toMatch(/TapeCoach could not assemble the full S10 report model/i);
+    expect(html).not.toMatch(/Professional competitive calibration/i);
+    expect(html).not.toMatch(/brief achieved|brief-complete/i);
+  });
+
+  it("recovers residual performer-level and technique blockers without weakening readiness", () => {
+    const evidence = buildEvidence({
+      candidate_technique_evidence: [],
+      core_improvements_evidence: [],
+      evidence_sufficiency: {
+        audio_assessable: true,
+        video_assessable: true,
+        acting_assessable: true,
+        vocal_assessable: false,
+        movement_assessable: false,
+        brief_assessable: false,
+        role_fit_assessable: false,
+        notes:
+          "No brief supplied; component and media evidence are sufficient for baseline guidance.",
+      },
+    });
+    const recovery = buildS10ModuleQualityRecoveryReport({
+      evidence,
+      briefContext: null,
+      briefRequirements: [],
+      auditionTitle: "Residual module recovery take",
+      selectedLevel: "emerging_training",
+      mode: "baseline",
+      reason: "thin_shell_blocked",
+      retryAttempted: true,
+      retrySucceeded: false,
+    });
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+
+    const report = recovery.report;
+    const readinessRecord = report.readiness_score_judgement as Record<string, unknown>;
+    readinessRecord.selected_level_calibration = {
+      selected_level: "emerging_training",
+      what_meets_level: [],
+      what_falls_short: [],
+      recommendation_impact: "",
+    };
+    delete report.s10_technique_commentary;
+
+    const before = evaluateS10ModuleReadiness({
+      report,
+      observationContext: {
+        observed_tape_sequence: evidence.observed_tape_sequence ?? [],
+        component_verifications: evidence.component_verifications ?? [],
+        media_observation_summary: evidence.media_observation_summary!,
+        source_kind: "two_step_s10_observation",
+        limitations: [],
+        contradiction_warnings: [],
+      },
+      briefContext: null,
+      briefRequirements: [],
+      selectedLevel: "emerging_training",
+      sourceStage: "two_step",
+    });
+    const residualBlockers = before.results
+      .filter((result) => result.blocks_report_value)
+      .map((result) => result.report_module);
+    expect(residualBlockers.sort()).toEqual([
+      "performer level calibration",
+      "technique commentary",
+    ]);
+
+    const residual = applyS10ResidualModuleRecovery({
+      report,
+      evidence,
+      briefRequirements: [],
+      selectedLevel: "emerging_training",
+      mode: "baseline",
+      residualModules: residualBlockers,
+    });
+    expect(residual.recoveredModules.sort()).toEqual([
+      "performer level calibration",
+      "technique commentary",
+    ]);
+    expect(report).toMatchObject({
+      residual_module_recovery_used: true,
+      residual_module_recovery_reason: "performer_level_calibration_and_or_technique_commentary",
+      residual_modules_recovered: ["performer level calibration", "technique commentary"],
+    });
+
+    const after = evaluateS10ModuleReadiness({
+      report,
+      observationContext: {
+        observed_tape_sequence: evidence.observed_tape_sequence ?? [],
+        component_verifications: evidence.component_verifications ?? [],
+        media_observation_summary: evidence.media_observation_summary!,
+        source_kind: "two_step_s10_observation",
+        limitations: [],
+        contradiction_warnings: [],
+      },
+      briefContext: null,
+      briefRequirements: [],
+      selectedLevel: "emerging_training",
+      sourceStage: "two_step",
+    });
+    expect(after.thin_shell_blocked).toBe(false);
+    expect(after.results.filter((result) => result.blocks_report_value)).toEqual([]);
+
+    const persistence = buildRouteReportForPersistence({
+      legacyReport: report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "baseline",
+      futureReportEnabled: true,
+      s10Context: {
+        briefContext: null,
+        briefRequirements: [],
+        observedTapeSequence: evidence.observed_tape_sequence,
+        componentVerifications: evidence.component_verifications,
+        mediaObservationSummary: evidence.media_observation_summary,
+        observationSourceKind: "report_embedded_s10_observation",
+      },
+    });
+    expect(persistence.outcome).toBe("v2_persisted");
+    if (persistence.outcome !== "v2_persisted") return;
+    expect(persistence.reportToPersist.components.length).toBeGreaterThan(0);
+    const html = renderToStaticMarkup(
+      React.createElement(V2ReportView, {
+        report: persistence.reportToPersist,
+        takeNumber: 1,
+        auditionType: "musical_theatre",
+      }),
+    );
+    expect(html).not.toMatch(/Fix hierarchy was unavailable/i);
+    expect(html).not.toMatch(/S10 category score semantics are not available/i);
+    expect(html).not.toMatch(/Strengths and preserve guidance are not available/i);
+    expect(html).not.toMatch(/Next action plan was unavailable/i);
+    expect(html).not.toMatch(/Readiness judgement is not available/i);
+    expect(html).not.toMatch(/Professional critique is not available/i);
+    expect(html).not.toMatch(/Technique commentary is not available/i);
+    expect(html).not.toMatch(/Timestamped or time-banded commentary is not available/i);
+    expect(html).not.toMatch(/TapeCoach could not assemble the full S10 report model/i);
     expect(html).not.toMatch(/Professional competitive calibration/i);
     expect(html).not.toMatch(/brief achieved|brief-complete/i);
   });

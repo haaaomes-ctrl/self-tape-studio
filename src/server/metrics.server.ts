@@ -137,6 +137,9 @@ export type MetricName =
   | "s10_module_quality_recovery_started"
   | "s10_module_quality_recovery_persisted"
   | "s10_module_quality_recovery_failed"
+  | "s10_module_quality_residual_limitations_applied"
+  | "s10_residual_level_calibration_applied"
+  | "s10_residual_technique_commentary_applied"
   | "two_step_fallback_used"
   | "two_step_total_ai_duration_ms";
 
