@@ -882,6 +882,7 @@ Required Step 1 structured outputs:
 - observed_tape_sequence: the ordered visible/audible tape sections with present_status, completion_status, media evidence basis and timestamps/time-bands where possible.
 - component_verifications: every S10 BriefRequirement checked against the submitted media with observed_status, completion_status, evidence summary, timestamp refs, confidence and cannot_infer_from_brief_only=true.
 - media_observation_summary: audio/video/framing/continuity assessability, abrupt cut-off, one-continuous-video observation, duration summary and uncertainties.
+- module-readiness support: include explicit absent/uncertain/not_assessable rows for requested material you cannot verify, so downstream judgement and repair checks can distinguish missing evidence from missing AI output.
 
 Strict verification rules:
 - Requested material and observed material must remain separate.
@@ -943,6 +944,7 @@ Old report surface to preserve as the starting UI: overall readiness, score/chip
 
 Output rules:
 - Populate every visible module with specific AI-authored content, or mark it not assessable with a useful reason.
+- Before final output, self-check each module against the completeness statuses complete, missing, thin, generic, contradictory, unsupported and not_assessable. Rewrite missing/thin/generic/contradictory/unsupported modules before returning; do not leave them for code to fill with fallback prose.
 - State the scoring basis in readiness language and supporting fields; do not use brief-complete claims for no_brief_baseline runs.
 - Include selected-level calibration in readiness_score_judgement.selected_level_calibration and selected_level_calibration_summary; selected level is the assessment standard, not tone. The structured object must state selected_level, selected_level_label, standard_applied, evidence_threshold, readiness_standard, score_meaning, what_meets_level, what_falls_short, recommendation_impact, comparison_to_other_levels and confidence.
 - If role/material context is used, include role_material_context with source basis, source summary, truth states, demands, uncertainty and S14-deferred maturity notes; supplied brief remains primary.
@@ -975,7 +977,7 @@ Return ONLY via the submit_audition_report tool when a tool is provided.`;
 
 export const S10_MODULE_REPAIR_PROMPT = `Prompt version: ${S10_MODULE_REPAIR_PROMPT_VERSION}
 
-Repair one incomplete S10 report module. Use only the supplied brief, observed tape sequence, brief achievement matrix and locked AI outputs. Classify the module as complete, missing, thin, generic, contradictory, unsupported or not_assessable. Return specific replacement content or a not-assessable limitation with the exact next recording/check action.`;
+Repair one incomplete S10 report module. Use only the supplied brief, observed tape sequence, component verifications, media observation summary, brief achievement matrix, readiness judgement and locked AI outputs. Classify the module as complete, missing, thin, generic, contradictory, unsupported or not_assessable. Return specific replacement content or a not-assessable limitation with the exact next recording/check action. Do not use raw_report, previous prose, score traces or brief text alone to prove observed material.`;
 
 export function findS10ModuleCoverage(reportModule: string) {
   return S10_REPORT_MODULE_COVERAGE.find((entry) => entry.reportModule === reportModule);

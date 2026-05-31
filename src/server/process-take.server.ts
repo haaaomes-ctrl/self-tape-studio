@@ -119,6 +119,10 @@ import {
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
 import {
+  evaluateS10ModuleReadiness,
+  summariseS10ModuleReadinessForPersistence,
+} from "./s10-module-readiness.server";
+import {
   classifyS10SameVideoComparison,
   type S10SameVideoClassificationResult,
 } from "./s10-same-video-comparison.server";
@@ -5717,6 +5721,35 @@ export async function runProcessTake(
       });
     }
 
+    // ---- S10.9 AI module readiness / repair hooks ----
+    // Two-step and single-pass outputs share this module-readiness gate. It
+    // records repair triggers for missing/thin/generic/contradictory/
+    // unsupported AI modules without replacing missing professional judgement
+    // with static fallback prose.
+    const s10ModuleReadiness = evaluateS10ModuleReadiness({
+      report: report as Record<string, unknown>,
+      observationContext: s10ObservationContext,
+      briefContext: extractedBrief?.brief_context ?? null,
+      briefRequirements: extractedBrief?.brief_requirements ?? [],
+      selectedLevel: auditionLevel,
+      sourceStage: isTwoStepEnabled() && !twoStepFallbackUsed ? "two_step" : "single_pass",
+    });
+    const persistedS10ModuleReadiness =
+      summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
+    report.s10_module_readiness = persistedS10ModuleReadiness;
+    report.s10_module_repair_actions = persistedS10ModuleReadiness.repair_actions;
+    if (s10ModuleReadiness.repair_action_count > 0 || s10ModuleReadiness.thin_shell_blocked) {
+      console.warn("[take-pipeline] s10_module_repair_triggered", {
+        take_id: takeId,
+        source_stage: s10ModuleReadiness.source_stage,
+        repair_action_count: s10ModuleReadiness.repair_action_count,
+        thin_shell_blocked: s10ModuleReadiness.thin_shell_blocked,
+        modules: s10ModuleReadiness.repair_actions
+          .map((action) => action.report_module)
+          .slice(0, 12),
+      });
+    }
+
     const scoreBreakdown = {
       audition_type: auditionType,
       level: auditionLevel,
@@ -5741,6 +5774,20 @@ export async function runProcessTake(
       s10_professional_critique: report.s10_professional_critique ?? null,
       s10_technique_commentary: report.s10_technique_commentary ?? null,
       s10_timestamped_commentary: report.s10_timestamped_commentary ?? null,
+      s10_module_readiness: {
+        version: s10ModuleReadiness.version,
+        source_stage: s10ModuleReadiness.source_stage,
+        module_ready: s10ModuleReadiness.module_ready,
+        thin_shell_blocked: s10ModuleReadiness.thin_shell_blocked,
+        repair_action_count: s10ModuleReadiness.repair_action_count,
+        results: s10ModuleReadiness.results.map((result) => ({
+          report_module: result.report_module,
+          status: result.status,
+          reason: result.reason,
+          repair_triggered: result.repair_triggered,
+          blocks_report_value: result.blocks_report_value,
+        })),
+      },
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,
