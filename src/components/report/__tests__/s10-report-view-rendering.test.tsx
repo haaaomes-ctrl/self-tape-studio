@@ -57,6 +57,61 @@ function strongCompleteV2Report() {
   }) as unknown as Record<string, unknown>;
 }
 
+function noBriefBaselineV2Report() {
+  const input = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+  delete input.brief_context;
+  delete input.brief_requirements;
+  delete input.brief_achievement_matrix;
+  input.mode = "baseline";
+  input.scoring_mode = "no_brief_baseline";
+  input.readiness_score_judgement = {
+    ...(input.readiness_score_judgement as Record<string, unknown>),
+    headline: "Strong baseline tape for the selected level",
+    score_explanation:
+      "This is a baseline assessment of observable performance and setup because no casting brief was supplied.",
+    brief_completion_score: null,
+    brief_completion_summary: "Brief achievement is not assessed without a supplied brief.",
+  };
+
+  const context = buildS10StrongCompleteProfessionalViewContext() as Record<string, unknown>;
+  delete context.briefContext;
+  delete context.briefRequirements;
+
+  return buildV2Report({
+    legacyReport: input,
+    futureDimensions: null,
+    auditionType: "musical_theatre",
+    mode: "baseline",
+    s10Context: context as never,
+  }) as unknown as Record<string, unknown>;
+}
+
+function partialBriefV2Report() {
+  const input = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+  delete input.brief_requirements;
+  delete input.brief_achievement_matrix;
+  input.scoring_mode = "partial_brief_supplied";
+  input.readiness_score_judgement = {
+    ...(input.readiness_score_judgement as Record<string, unknown>),
+    headline: "Review with partial brief context",
+    score_explanation:
+      "The supplied role and project context are useful, but formal requirements are incomplete.",
+    brief_completion_score: null,
+    brief_completion_summary: "Formal brief completion is not scored from partial context.",
+  };
+
+  const context = buildS10StrongCompleteProfessionalViewContext() as Record<string, unknown>;
+  delete context.briefRequirements;
+
+  return buildV2Report({
+    legacyReport: input,
+    futureDimensions: null,
+    auditionType: "musical_theatre",
+    mode: "brief",
+    s10Context: context as never,
+  }) as unknown as Record<string, unknown>;
+}
+
 function sameVideoDuplicateV2Report() {
   const result = classifyS10SameVideoComparison(
     s10SameVideoComparisonFixtures.accidentalDuplicate.input,
@@ -142,6 +197,35 @@ describe("S10 report view rendering", () => {
       expect(html).not.toContain(forbidden);
     }
     expect(html).not.toMatch(/retake required/i);
+  });
+
+  it("renders scoring basis and diagnostic score visibility for brief-supplied reports", () => {
+    const text = routeText(render(strongCompleteV2Report()));
+
+    expect(text).toContain("Scoring basis: Brief supplied");
+    expect(text).toContain("Score language may include supplied brief achievement");
+    expect(text).toContain("Score visibility:");
+    expect(text).toContain("not public customer score-release approval");
+  });
+
+  it("renders no-brief baseline scoring limits without claiming brief achievement", () => {
+    const text = routeText(render(noBriefBaselineV2Report()));
+
+    expect(text).toContain("Scoring basis: No brief baseline");
+    expect(text).toContain("No casting brief was supplied");
+    expect(text).toContain("baseline assessment of the observable tape");
+    expect(text).not.toContain("What the brief asked for");
+    expect(text).not.toContain("Upload one file only");
+    expect(text).not.toContain("File naming:");
+  });
+
+  it("renders partial-brief scoring limits without full-compliance language", () => {
+    const text = routeText(render(partialBriefV2Report()));
+
+    expect(text).toContain("Scoring basis: Partial brief supplied");
+    expect(text).toContain("Formal brief requirements are incomplete");
+    expect(text).toContain("Supplied brief details");
+    expect(text).not.toContain("Requirement classification");
   });
 
   it("renders the same observed tape differently when the selected level changes", () => {

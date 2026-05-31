@@ -127,6 +127,7 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       operator_comparison: operatorComparison,
       forbiddenExact: s10CanaryAExpectedViewModel.forbidden_route_content,
       requiredAllOf: [
+        "Scoring basis",
         "Brief achievement",
         "Supplied brief details",
         "Requirement classification",
@@ -164,6 +165,7 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       operator_comparison: operatorComparison,
       forbiddenExact: s10StrongCompleteProfessionalExpectedViewModel.forbidden_route_content,
       requiredAllOf: [
+        "Scoring basis",
         "Brief achievement",
         "Supplied brief details",
         "Requirement classification",
