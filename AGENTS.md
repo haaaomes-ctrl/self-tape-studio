@@ -39,9 +39,21 @@ If a migration adds or changes a table, view, RPC, column, enum, relationship or
 
 TanStack route definitions and generated route output must also stay aligned. If routes or framework-generated route registration change, `src/routeTree.gen.ts` must match the current route tree before merge.
 
+Do not discard `src/routeTree.gen.ts` changes merely because the file is generated. In this TanStack Start / Lovable stack, the build can generate framework registration needed by Lovable preview/publish, including `@tanstack/react-start` module augmentation. If `npm run build`, a route change, a dependency/config change or Lovable compatibility check changes `src/routeTree.gen.ts`, agents must:
+
+- inspect the exact diff;
+- classify whether it is deterministic route/framework registration output or unrelated churn;
+- run `npm exec tsc -- --noEmit`, `npm run build` and relevant route/report tests;
+- commit deterministic required output through the current controlled branch/PR;
+- record the reason in the PR and monday.com/checkpoint.
+
+Only remove generated route-tree changes when inspection proves they are unrelated transient artefacts and the clean source still passes the same type/build checks. Older guidance that treated `src/routeTree.gen.ts` as never-changing is superseded by this rule for current TanStack Start / Lovable compatibility.
+
 Lovable or preview refresh commits are high-risk for generated-file drift. After any refresh or external main update, re-check generated Supabase types, TanStack route output and semantic TypeScript before continuing S10 work.
 
 If generated-file drift is introduced externally while an S10 item is parked at an operator gate, fix build integrity on a dedicated build-fix branch before starting the next S10 item. Keep that branch limited to generated/source-of-truth repair and do not use it to implement later S10 scope.
+
+Before asking Lovable to sync, publish or validate a preview, agents must confirm the GitHub commit includes required generated compatibility output and that local build/typecheck do not leave uncommitted generated changes. If Lovable preview appears broken, first ask for read-only diagnostics and compare Git/source state; do not ask Lovable to "fix", "repair", "refresh", "regenerate" or make source edits. If Lovable must generate or alter source for preview to work, stop and move that deterministic generated change into a controlled GitHub branch/PR instead of allowing a direct Lovable repair commit.
 
 Git and Lovable publishing do not apply Supabase SQL migrations or prove the live PostgREST schema cache has reloaded.
 
