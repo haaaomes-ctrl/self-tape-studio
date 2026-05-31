@@ -117,6 +117,16 @@ export type RunReportPolishResult =
 export const REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION =
   "The previous report polish response was rejected because the provider returned HTTP 200 but the content was not a JSON object. Retry with the exact same locked evidence, supplied brief/context, selected performer level and report schema. Return exactly one JSON object. Do not include prose, markdown, a code fence, wrapper text, an array, or any explanation.";
 
+export function buildS10ModuleRepairRetryInstruction(input: {
+  repairActions: Array<{ report_module: string; status: string; reason: string }>;
+}): string {
+  const repairSummary = input.repairActions
+    .slice(0, 12)
+    .map((action) => `- ${action.report_module}: ${action.status} — ${action.reason}`)
+    .join("\n");
+  return `The previous report polish response parsed successfully, but S10 module-readiness checks rejected critical performer-facing modules as missing, thin, generic or unavailable. Retry with the exact same locked Step 1 evidence, supplied brief/context, selected performer level and full report schema. Return exactly one complete JSON report object. Do not return prose, markdown, a code fence, wrapper text, or a partial patch. Do not write unavailable-module copy. Populate evidence-bound overall readiness, verdict/recommendation, selected-level calibration, category score semantics, fix-first, prioritised fixes, next action, strengths/preserve, technique commentary, and timestamped or component-level commentary where the locked evidence supports them. For no-brief baseline reports, do not invent brief achievement; provide no-brief scoring semantics and observable performance/setup guidance.\n\nModule-readiness repair actions:\n${repairSummary}`;
+}
+
 export function isRecoverableReportPolishResponseShapeError(
   result: RunReportPolishResult,
 ): result is Extract<RunReportPolishResult, { ok: false }> {

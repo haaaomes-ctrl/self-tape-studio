@@ -131,6 +131,12 @@ export type MetricName =
   | "report_polish_fallback_persisted"
   | "report_polish_fallback_failed"
   | "report_polish_failed"
+  | "s10_module_repair_retry_started"
+  | "s10_module_repair_retry_completed"
+  | "s10_module_repair_retry_failed"
+  | "s10_module_quality_recovery_started"
+  | "s10_module_quality_recovery_persisted"
+  | "s10_module_quality_recovery_failed"
   | "two_step_fallback_used"
   | "two_step_total_ai_duration_ms";
 

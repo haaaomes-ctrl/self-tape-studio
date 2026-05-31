@@ -16,6 +16,7 @@ import { normaliseS10TechniqueCommentary } from "./s10-technique-library-comment
 import { normaliseS10TimestampedCommentary } from "./s10-timestamped-commentary.server";
 
 type FallbackMode = "brief" | "baseline";
+type S10EvidenceRecoveryKind = "polish_parser" | "module_quality";
 
 export type BuildS10ReportPolishFallbackInput = {
   evidence: EvidencePass | null;
@@ -27,6 +28,7 @@ export type BuildS10ReportPolishFallbackInput = {
   reason: string;
   retryAttempted: boolean;
   retrySucceeded: boolean;
+  recoveryKind?: S10EvidenceRecoveryKind;
 };
 
 export type BuildS10ReportPolishFallbackResult =
@@ -158,7 +160,7 @@ function buildStrengths(
   return [...fromComponents, ...fromStep1].filter((item) => text(item.detail)).slice(0, 8);
 }
 
-function buildTechniqueCommentary(evidence: EvidencePass) {
+function buildTechniqueCommentary(evidence: EvidencePass, kind: S10EvidenceRecoveryKind) {
   const observations = evidence.candidate_technique_evidence ?? [];
   const techniqueItems = observations
     .map((item, index) => {
@@ -193,7 +195,9 @@ function buildTechniqueCommentary(evidence: EvidencePass) {
   return {
     summary:
       techniqueItems.length > 0
-        ? "Technique commentary is limited to locked Step 1 evidence because the polish response was unusable."
+        ? kind === "module_quality"
+          ? "Technique commentary is limited to locked Step 1 evidence because module-readiness checks rejected the thin polished modules."
+          : "Technique commentary is limited to locked Step 1 evidence because the polish response was unusable."
         : "Technique commentary is limited because Step 1 did not provide enough technique-specific evidence.",
     acting: {
       observations: byArea("acting"),
@@ -230,7 +234,7 @@ function buildTechniqueCommentary(evidence: EvidencePass) {
 }
 
 function buildTimestampedCommentary(evidence: EvidencePass) {
-  const notes = evidence.timestamped_evidence.slice(0, 12).map((item, index) => ({
+  const exactNotes = evidence.timestamped_evidence.slice(0, 12).map((item, index) => ({
     id: `polish_fallback_timestamp_${index + 1}`,
     timecode: item.timestamp,
     start_time: item.timestamp,
@@ -254,16 +258,56 @@ function buildTimestampedCommentary(evidence: EvidencePass) {
     note_source_authority: "step1_timestamped_evidence",
     confidence: "medium",
   }));
+  const notes =
+    exactNotes.length > 0
+      ? exactNotes
+      : (evidence.observed_tape_sequence ?? []).slice(0, 8).map((item, index) => ({
+          id: `polish_fallback_component_note_${index + 1}`,
+          timecode: item.start_time || "Component order only",
+          start_time: item.start_time || null,
+          display_label: item.start_time || item.label || `Component ${index + 1}`,
+          timestamp_precision: item.start_time ? "approximate" : "component_order",
+          section: "observed_component",
+          title: text(item.label, `Observed component ${index + 1}`),
+          detail: text(
+            item.evidence_summary || item.assessability_notes,
+            "Step 1 identified this component in the observed tape sequence.",
+          ),
+          action:
+            item.completion_status === "complete"
+              ? "Preserve this component in the final export."
+              : "Review this component before submitting.",
+          evidence_summary: text(
+            item.evidence_summary || item.assessability_notes,
+            "Observed from Step 1 component evidence.",
+          ),
+          linked_requirement_ids: item.linked_requirement_ids,
+          linked_observed_sequence_ids: [item.id],
+          linked_component_verification_ids: [],
+          linked_matrix_result_ids: item.linked_requirement_ids,
+          linked_fix_ids: [],
+          linked_strength_ids: [],
+          linked_technique_observation_ids: [],
+          component_type: item.component_type,
+          component_status: item.present_status,
+          is_exact_timestamp_supported: false,
+          note_source_authority: "step1_observed_tape_sequence",
+          confidence: item.confidence,
+        }));
   return {
     summary:
-      notes.length > 0
+      exactNotes.length > 0
         ? "Time-based notes are projected only from locked Step 1 timestamp evidence."
-        : "No exact timestamp evidence was available from Step 1; use the observed component section instead.",
+        : notes.length > 0
+          ? "Exact timestamps were unavailable, so this section uses Step 1 component-order evidence."
+          : "No exact timestamp or component-order evidence was available from Step 1.",
     notes,
     timestamp_limitations:
-      notes.length > 0
+      exactNotes.length > 0
         ? ["No additional timestamps were invented by the fallback."]
-        : ["Step 1 did not provide safe exact timestamp evidence for this fallback."],
+        : [
+            "Step 1 did not provide safe exact timestamp evidence; component-order notes are used instead.",
+          ],
   };
 }
 
@@ -310,10 +354,14 @@ function buildRawFixHierarchy(evidence: EvidencePass) {
   };
 }
 
-function buildFallbackLimitations(evidence: EvidencePass): string[] {
+function buildFallbackLimitations(evidence: EvidencePass, kind: S10EvidenceRecoveryKind): string[] {
+  const recoveryReason =
+    kind === "module_quality"
+      ? "The polished report left critical S10 modules unavailable, so this report is recovered from locked Step 1 evidence."
+      : "The polish provider returned unusable structured content, so this report is recovered from locked Step 1 evidence.";
   return evidenceList(
     [
-      "The polish provider returned unusable structured content, so this report is recovered from locked Step 1 evidence.",
+      recoveryReason,
       "No professional judgement has been added beyond observed Step 1 evidence and deterministic brief/component checks.",
       evidence.evidence_sufficiency.notes,
     ],
@@ -329,6 +377,82 @@ function fallbackDecision(matrixImpact: unknown, overallScore: number) {
   return "retake_required_if_possible";
 }
 
+function buildCategoryScores(input: {
+  evidence: EvidencePass;
+  scores: {
+    technical: number;
+    audio: number;
+    vocal: number | null;
+    acting: number;
+    brief_adherence: number;
+    professional_presentation: number;
+  };
+  mode: FallbackMode;
+}) {
+  const notes = input.evidence.category_notes_evidence;
+  const buildRow = (
+    categoryId:
+      | "acting"
+      | "vocal"
+      | "audio"
+      | "technical"
+      | "brief_adherence"
+      | "professional_presentation",
+    score: number | null,
+    note: string,
+    fallbackBasis: string,
+  ) => ({
+    category_id: categoryId,
+    score,
+    score_basis: text(note, fallbackBasis),
+    what_works: text(note, fallbackBasis),
+    why_not_full_score:
+      score != null && score >= 95
+        ? "Step 1 evidence left only narrow refinements visible for this category."
+        : "The score is limited to locked Step 1 evidence; no extra polish judgement was invented.",
+    close_gap:
+      categoryId === "brief_adherence" && input.mode === "baseline"
+        ? "No brief was supplied, so use this as baseline setup/performance guidance only."
+        : "Use the named Step 1 evidence and component checks as the next recording focus.",
+    confidence: "medium",
+    blocked_or_not_assessable_reason:
+      categoryId === "brief_adherence" && input.mode === "baseline"
+        ? "No supplied brief was available; brief achievement is not assessed."
+        : null,
+  });
+
+  return [
+    buildRow("acting", input.scores.acting, notes.acting, "Acting evidence was assessable."),
+    buildRow(
+      "vocal",
+      input.scores.vocal,
+      notes.vocal,
+      "Vocal evidence was assessable where present.",
+    ),
+    buildRow("audio", input.scores.audio, notes.audio, "Audio was assessable."),
+    buildRow(
+      "technical",
+      input.scores.technical,
+      notes.technical,
+      "Technical setup was assessable.",
+    ),
+    buildRow(
+      "brief_adherence",
+      input.scores.brief_adherence,
+      input.mode === "baseline"
+        ? "No brief was supplied; this score is baseline task-readability, not brief achievement."
+        : notes.brief_adherence,
+      "Brief/component evidence was assessed from locked Step 1 evidence.",
+    ),
+    buildRow(
+      "professional_presentation",
+      input.scores.professional_presentation,
+      notes.professional_presentation,
+      "Presentation was assessable from locked Step 1 evidence.",
+    ),
+  ];
+}
+
 export function buildS10ReportPolishFallback(
   input: BuildS10ReportPolishFallbackInput,
 ): BuildS10ReportPolishFallbackResult {
@@ -337,6 +461,7 @@ export function buildS10ReportPolishFallback(
   }
 
   const evidence = input.evidence;
+  const recoveryKind = input.recoveryKind ?? "polish_parser";
   const briefRequirements = input.briefRequirements ?? [];
   const observedTapeSequence = evidence.observed_tape_sequence ?? [];
   const componentVerifications = evidence.component_verifications ?? [];
@@ -374,11 +499,15 @@ export function buildS10ReportPolishFallback(
     observed_tape_sequence: observedTapeSequence,
     component_verifications: componentVerifications,
     media_observation_summary: mediaObservationSummary,
-    report_polish_fallback_used: true,
-    polish_fallback_reason: input.reason,
-    polish_retry_attempted: input.retryAttempted,
-    polish_retry_succeeded: input.retrySucceeded,
-    fallback_limitations: buildFallbackLimitations(evidence),
+    report_polish_fallback_used: recoveryKind === "polish_parser",
+    polish_fallback_reason: recoveryKind === "polish_parser" ? input.reason : null,
+    polish_retry_attempted: recoveryKind === "polish_parser" ? input.retryAttempted : false,
+    polish_retry_succeeded: recoveryKind === "polish_parser" ? input.retrySucceeded : false,
+    s10_module_quality_recovery_used: recoveryKind === "module_quality",
+    module_quality_recovery_reason: recoveryKind === "module_quality" ? input.reason : null,
+    module_repair_retry_attempted: recoveryKind === "module_quality" ? input.retryAttempted : false,
+    module_repair_retry_succeeded: recoveryKind === "module_quality" ? input.retrySucceeded : false,
+    fallback_limitations: buildFallbackLimitations(evidence, recoveryKind),
     strengths: evidence.core_strengths_evidence.map((item) => item.evidence).filter(Boolean),
     improvements: evidence.core_improvements_evidence.map((item) => item.evidence).filter(Boolean),
     timestamped_notes: evidence.timestamped_evidence.map((item) => ({
@@ -387,13 +516,27 @@ export function buildS10ReportPolishFallback(
     })),
   };
 
-  const matrix = normaliseBriefAchievementMatrix({
+  let matrix = normaliseBriefAchievementMatrix({
     matrix: null,
     briefRequirements,
     componentVerifications,
     observedTapeSequence,
     mediaObservationSummary,
   });
+  if (input.mode === "baseline" && briefRequirements.length === 0) {
+    matrix = {
+      ...matrix,
+      overall_status: "not_assessable",
+      mandatory_status: "not_assessable",
+      readiness_impact: "not_assessable",
+      summary: "No brief was supplied, so brief achievement is not assessed.",
+      achieved_requirements: [],
+      missing_or_incomplete_requirements: [],
+      not_assessable_requirements: ["No supplied brief was available for requirement checks."],
+      final_check_requirements: [],
+      requirement_results: [],
+    };
+  }
   report.brief_achievement_matrix = matrix;
   const decision = fallbackDecision(matrix.readiness_impact, overallScore);
 
@@ -406,14 +549,18 @@ export function buildS10ReportPolishFallback(
           : "Review this evidence-backed fallback report before deciding whether to submit.",
       rationale: [
         matrix.summary,
-        "This report was recovered from locked Step 1 evidence after the polish provider returned unusable structured content.",
+        recoveryKind === "module_quality"
+          ? "This report was recovered from locked Step 1 evidence after module-readiness checks found critical unavailable S10 modules."
+          : "This report was recovered from locked Step 1 evidence after the polish provider returned unusable structured content.",
       ],
       confidence: "medium",
       performance_quality_score: overallScore,
       brief_completion_score: scores.brief_adherence,
       overall_submission_readiness_score: overallScore,
       score_explanation:
-        "The visible score is derived from locked Step 1 category evidence and deterministic S10 checks, not from a completed polish pass.",
+        recoveryKind === "module_quality"
+          ? "The visible score is derived from locked Step 1 category evidence and deterministic S10 checks after the polished report left critical modules unavailable."
+          : "The visible score is derived from locked Step 1 category evidence and deterministic S10 checks, not from a completed polish pass.",
       performance_quality_summary:
         "Performance quality is limited to what Step 1 observed and recorded as evidence.",
       technical_assessability_summary:
@@ -431,9 +578,16 @@ export function buildS10ReportPolishFallback(
           ...matrix.not_assessable_requirements,
         ]),
         recommendation_impact:
-          "Selected-level guidance is limited to locked evidence because the polish response was unusable.",
+          recoveryKind === "module_quality"
+            ? "Selected-level guidance is limited to locked evidence because module-readiness checks rejected the thin polished modules."
+            : "Selected-level guidance is limited to locked evidence because the polish response was unusable.",
         confidence: "medium",
       },
+      category_scores: buildCategoryScores({
+        evidence,
+        scores,
+        mode: input.mode,
+      }),
     },
     matrix,
     currentOverallScore: overallScore,
@@ -480,7 +634,7 @@ export function buildS10ReportPolishFallback(
     summary:
       "This section preserves only strengths and limitations grounded in locked Step 1 evidence.",
     performance_strengths: buildStrengths(evidence, componentVerifications, observedTapeSequence),
-    critique_limitations: buildFallbackLimitations(evidence),
+    critique_limitations: buildFallbackLimitations(evidence, recoveryKind),
     preserve: buildStrengths(evidence, componentVerifications, observedTapeSequence)
       .slice(0, 3)
       .map((item, index) => ({
@@ -521,7 +675,7 @@ export function buildS10ReportPolishFallback(
   report.s10_professional_critique = critique;
 
   const technique = normaliseS10TechniqueCommentary({
-    commentary: buildTechniqueCommentary(evidence),
+    commentary: buildTechniqueCommentary(evidence, recoveryKind),
     matrix,
     readiness,
     fixHierarchy: actionModules.hierarchy,
@@ -550,6 +704,15 @@ export function buildS10ReportPolishFallback(
   return {
     ok: true,
     report,
-    limitationCount: buildFallbackLimitations(evidence).length,
+    limitationCount: buildFallbackLimitations(evidence, recoveryKind).length,
   };
+}
+
+export function buildS10ModuleQualityRecoveryReport(
+  input: Omit<BuildS10ReportPolishFallbackInput, "recoveryKind">,
+): BuildS10ReportPolishFallbackResult {
+  return buildS10ReportPolishFallback({
+    ...input,
+    recoveryKind: "module_quality",
+  });
 }

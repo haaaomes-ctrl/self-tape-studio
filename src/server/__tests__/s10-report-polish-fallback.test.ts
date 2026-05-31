@@ -1,8 +1,14 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BriefRequirement } from "@/lib/audition-rules";
+import { V2ReportView } from "@/components/report/V2ReportView";
 import type { EvidencePass } from "@/server/evidence-pass.server";
 import { evaluateS10ModuleReadiness } from "@/server/s10-module-readiness.server";
-import { buildS10ReportPolishFallback } from "@/server/s10-report-polish-fallback.server";
+import {
+  buildS10ModuleQualityRecoveryReport,
+  buildS10ReportPolishFallback,
+} from "@/server/s10-report-polish-fallback.server";
 import {
   buildRouteReportForPersistence,
   hasS10AuthoritativeModules,
@@ -263,6 +269,113 @@ describe("S10 report polish parser fallback", () => {
     expect(JSON.stringify(persistence.reportToPersist)).not.toMatch(
       /S10 report assembly limitation/i,
     );
+  });
+
+  it("builds no-brief module-quality recovery with visible critical modules", () => {
+    const evidence = buildEvidence({
+      raw_scores: {
+        technical: 78,
+        audio: 80,
+        vocal: null,
+        acting: 79,
+        brief_adherence: 74,
+        professional_presentation: 77,
+      },
+      category_notes_evidence: {
+        technical: "The setup is reviewable with manageable presentation risk.",
+        audio: "The voice is audible enough for baseline review.",
+        vocal: "",
+        acting: "The acting evidence shows a clear playable objective.",
+        brief_adherence: "No brief was supplied, so brief achievement is not assessed.",
+        professional_presentation:
+          "Presentation is suitable for a baseline Emerging / Training review.",
+      },
+      evidence_sufficiency: {
+        audio_assessable: true,
+        video_assessable: true,
+        acting_assessable: true,
+        vocal_assessable: false,
+        movement_assessable: false,
+        brief_assessable: false,
+        role_fit_assessable: false,
+        notes: "No brief supplied; acting and setup evidence are assessable.",
+      },
+    });
+    const recovery = buildS10ModuleQualityRecoveryReport({
+      evidence,
+      briefContext: null,
+      briefRequirements: [],
+      auditionTitle: "No brief baseline take",
+      selectedLevel: "emerging_training",
+      mode: "baseline",
+      reason: "thin_shell_blocked",
+      retryAttempted: true,
+      retrySucceeded: false,
+    });
+
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+    expect(recovery.report).toMatchObject({
+      report_polish_fallback_used: false,
+      s10_module_quality_recovery_used: true,
+      module_quality_recovery_reason: "thin_shell_blocked",
+      module_repair_retry_attempted: true,
+      module_repair_retry_succeeded: false,
+    });
+
+    const readiness = evaluateS10ModuleReadiness({
+      report: recovery.report,
+      observationContext: {
+        observed_tape_sequence: evidence.observed_tape_sequence ?? [],
+        component_verifications: evidence.component_verifications ?? [],
+        media_observation_summary: evidence.media_observation_summary!,
+        source_kind: "two_step_s10_observation",
+        limitations: [],
+        contradiction_warnings: [],
+      },
+      briefContext: null,
+      briefRequirements: [],
+      selectedLevel: "emerging_training",
+      sourceStage: "two_step",
+    });
+    expect(readiness.thin_shell_blocked).toBe(false);
+    expect(readiness.results.filter((result) => result.blocks_report_value)).toEqual([]);
+
+    const persistence = buildRouteReportForPersistence({
+      legacyReport: recovery.report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "baseline",
+      futureReportEnabled: true,
+      s10Context: {
+        briefContext: null,
+        briefRequirements: [],
+        observedTapeSequence: evidence.observed_tape_sequence,
+        componentVerifications: evidence.component_verifications,
+        mediaObservationSummary: evidence.media_observation_summary,
+        observationSourceKind: "report_embedded_s10_observation",
+      },
+    });
+
+    expect(persistence.outcome).toBe("v2_persisted");
+    if (persistence.outcome !== "v2_persisted") return;
+    expect(persistence.reportToPersist.components.length).toBeGreaterThan(0);
+    const html = renderToStaticMarkup(
+      React.createElement(V2ReportView, {
+        report: persistence.reportToPersist,
+        takeNumber: 1,
+        auditionType: "musical_theatre",
+      }),
+    );
+    expect(html).not.toMatch(/Fix hierarchy was unavailable/i);
+    expect(html).not.toMatch(/S10 category score semantics are not available/i);
+    expect(html).not.toMatch(/Strengths and preserve guidance are not available/i);
+    expect(html).not.toMatch(/Next action plan was unavailable/i);
+    expect(html).not.toMatch(/Readiness judgement is not available/i);
+    expect(html).not.toMatch(/Professional critique is not available/i);
+    expect(html).not.toMatch(/Timestamped or time-banded commentary is not available/i);
+    expect(html).not.toMatch(/Professional competitive calibration/i);
+    expect(html).not.toMatch(/brief achieved|brief-complete/i);
   });
 
   it("does not fake a full report when Step 1 evidence is insufficient", () => {
