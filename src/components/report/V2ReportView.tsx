@@ -213,6 +213,42 @@ function hasRenderableBriefRequirement(value: unknown): boolean {
   ].some((candidate) => !!safeStr(candidate));
 }
 
+const BRIEF_REQUIREMENT_IMPORTANCE_ORDER = [
+  ["mandatory", "Mandatory"],
+  ["preferred", "Preferred"],
+  ["optional", "Optional"],
+  ["ambiguous", "Ambiguous"],
+] as const;
+
+const BRIEF_REQUIREMENT_CATEGORY_ORDER = [
+  ["material", "Material"],
+  ["performance", "Performance"],
+  ["technical", "Technical"],
+  ["admin_process", "Admin process"],
+  ["deadline", "Deadline"],
+  ["logistics", "Logistics"],
+  ["role_context", "Role context"],
+] as const;
+
+function briefRequirementClassificationRows(
+  requirements: Array<Record<string, unknown>>,
+): Array<[string, number]> {
+  const counts = new Map<string, number>();
+  for (const requirement of requirements) {
+    for (const key of [safeStr(requirement.importance), safeStr(requirement.category)]) {
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+
+  return [...BRIEF_REQUIREMENT_IMPORTANCE_ORDER, ...BRIEF_REQUIREMENT_CATEGORY_ORDER].flatMap(
+    ([key, label]) => {
+      const count = counts.get(key) ?? 0;
+      return count > 0 ? ([[label, count]] as Array<[string, number]>) : [];
+    },
+  );
+}
+
 function hasRenderableBriefAchievementRow(value: unknown): boolean {
   const row = safeObj(value);
   if (!row) return false;
@@ -794,6 +830,7 @@ export function V2ReportView({
             const reqs = safeArr<Record<string, unknown>>(s10?.brief_requirements).filter(
               hasRenderableBriefRequirement,
             );
+            const classificationRows = briefRequirementClassificationRows(reqs);
             const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results).filter(
               hasRenderableBriefAchievementRow,
             );
@@ -820,13 +857,18 @@ export function V2ReportView({
                 hint="What the brief asked for, checked against the submitted tape."
               >
                 {contextRows.length > 0 && (
-                  <div className="grid gap-2 text-sm sm:grid-cols-2">
-                    {contextRows.map(([label, value]) => (
-                      <p key={label}>
-                        <span className="font-medium">{label}:</span>{" "}
-                        <span className="text-muted-foreground">{value}</span>
-                      </p>
-                    ))}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Supplied brief details
+                    </p>
+                    <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                      {contextRows.map(([label, value]) => (
+                        <p key={label}>
+                          <span className="font-medium">{label}:</span>{" "}
+                          <span className="text-muted-foreground">{value}</span>
+                        </p>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {safeStr(s10Matrix?.summary) && (
@@ -841,6 +883,20 @@ export function V2ReportView({
                         {label}: {labelize(value)}
                       </Badge>
                     ))}
+                  </div>
+                )}
+                {classificationRows.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Requirement classification
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      {classificationRows.map(([label, count]) => (
+                        <Badge key={label} variant="secondary">
+                          {label}: {count}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                 )}
                 {reqs.length > 0 && (

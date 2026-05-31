@@ -94,6 +94,35 @@ describe("S10 report view rendering", () => {
     expect(html).not.toContain("93");
   });
 
+  it("renders supplied brief details and requirement classifications for Canary A", () => {
+    const text = routeText(render(canaryV2Report()));
+
+    expect(text).toContain("Supplied brief details");
+    expect(text).toContain("Project: Canary A MT package");
+    expect(text).toContain(
+      "Material: Professional MT self-tape package requiring Side 1 plus a contemporary legit song.",
+    );
+    expect(text).toContain("Upload: Upload one file only.");
+    expect(text).toContain("File naming: Use LASTNAME_FIRSTNAME_CANARYA.mp4.");
+
+    expect(text).toContain("Requirement classification");
+    expect(text).toContain("Mandatory: 6");
+    expect(text).toContain("Ambiguous: 1");
+    expect(text).toContain("Material: 2");
+    expect(text).toContain("Admin process: 3");
+    expect(text).toContain("Technical: 1");
+    expect(text).toContain("Role context: 1");
+
+    expect(text).toContain("Required Side 1 acting scene");
+    expect(text).toContain("Contemporary legit MT song");
+    expect(text).toContain("One continuous video containing the full package");
+    expect(text).toContain("One final checked file");
+    expect(text).toContain(
+      "Achievement check: Side 1 is present and complete in the submitted tape.",
+    );
+    expect(text).toContain("If missing: Mandatory acting material is missing.");
+  });
+
   it("renders a strong complete report with useful S10 density", () => {
     const html = render(strongCompleteV2Report());
 

@@ -294,6 +294,95 @@ describe("S10.2 brief intelligence", () => {
     });
   });
 
+  it("preserves partial supplied brief context without inventing requirement rows", () => {
+    const intelligence = normaliseS10BriefIntelligence({
+      audition_type: "unknown",
+      extraction_confidence: "low",
+      show_or_project: "Workshop recall",
+      role_name: "Mina",
+      brief_context: {
+        deadline_summary: "Submit by Thursday 10am.",
+        upload_summary: "Upload via the casting portal.",
+      },
+      brief_requirements: [],
+    });
+
+    expect(intelligence.brief_context).toMatchObject({
+      project_name: "Workshop recall",
+      role_name: "Mina",
+      audition_type: "unknown",
+      deadline_summary: "Submit by Thursday 10am.",
+      upload_summary: "Upload via the casting portal.",
+    });
+    expect(intelligence.brief_requirements).toEqual([]);
+    expect(
+      deriveS10BriefRuntimeFacts({ brief_requirements: intelligence.brief_requirements }),
+    ).toMatchObject({
+      material_presence: "unknown",
+      component_or_task_declaration_status: "unknown",
+    });
+  });
+
+  it("preserves explicit requirement importance and defaults conflicting metadata to ambiguous", () => {
+    const requirementBase = {
+      brief_text: "Supplied brief wording.",
+      summary: "Supplied brief item.",
+      expected_evidence_in_tape: "Observable evidence from the tape or upload package.",
+      achievement_test: "Check the item against observed or uploaded evidence.",
+      submission_impact_if_missing: "Missing item affects submission readiness.",
+      report_destination: "brief_achievement",
+    };
+
+    const intelligence = normaliseS10BriefIntelligence({
+      audition_type: "musical_theatre",
+      extraction_confidence: "medium",
+      brief_context: {},
+      brief_requirements: [
+        { ...requirementBase, id: "mandatory", category: "material", importance: "mandatory" },
+        { ...requirementBase, id: "preferred", category: "technical", importance: "preferred" },
+        { ...requirementBase, id: "optional", category: "logistics", importance: "optional" },
+        { ...requirementBase, id: "ambiguous", category: "role_context", importance: "ambiguous" },
+        { ...requirementBase, id: "conflicting", category: "hidden_fit", importance: "must" },
+      ],
+    });
+
+    const requirements = intelligence.brief_requirements ?? [];
+
+    expect(requirements.map((item) => item.importance)).toEqual([
+      "mandatory",
+      "preferred",
+      "optional",
+      "ambiguous",
+      "ambiguous",
+    ]);
+    expect(requirements.at(-1)).toMatchObject({
+      id: "conflicting",
+      category: "role_context",
+      importance: "ambiguous",
+      confidence: "medium",
+    });
+  });
+
+  it("drops incomplete requirement rows instead of inventing missing achievement criteria", () => {
+    const intelligence = normaliseS10BriefIntelligence({
+      audition_type: "unknown",
+      extraction_confidence: "low",
+      brief_context: {},
+      brief_requirements: [
+        {
+          id: "deadline",
+          brief_text: "Submit by Friday.",
+          summary: "Deadline instruction.",
+          category: "deadline",
+          importance: "mandatory",
+          expected_evidence_in_tape: "Upload timestamp or operator package evidence.",
+        },
+      ],
+    });
+
+    expect(intelligence.brief_requirements).toEqual([]);
+  });
+
   it("keeps S10 brief intelligence active and legacy prompt paths unable to override it", () => {
     const active = S10_PROMPT_INVENTORY.find(
       (entry) => entry.promptVersion === S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
