@@ -300,6 +300,36 @@ describe("S10.P1e hard V2 route boundary", () => {
     expect(validateV2PublicBoundary(limited).ok).toBe(true);
   });
 
+  it("persists the full S10 route model after sanitising sub-90 Professional 90+ language", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+    const readiness = report.readiness_score_judgement as Record<string, unknown>;
+    const calibration = readiness.selected_level_calibration as Record<string, unknown>;
+    readiness.overall_submission_readiness_score = 82;
+    readiness.score_explanation =
+      "The visible readiness score is 82, so the report should not claim a higher competitive zone.";
+    calibration.score_meaning =
+      "The performance itself is in the competitive zone (90+), but the overall readiness is lower.";
+
+    const result = buildRouteReportForPersistence({
+      legacyReport: report,
+      futureDimensions: { components: [] } as never,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      futureReportEnabled: true,
+      s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+    });
+
+    expect(result.outcome).toBe("v2_persisted");
+    if (result.outcome !== "v2_persisted") throw new Error("expected full v2");
+    expect(validateV2PublicBoundary(result.reportToPersist, report).ok).toBe(true);
+    expect(JSON.stringify(result.reportToPersist)).not.toContain("competitive zone (90+)");
+    expect(result.reportToPersist.s10_view_model?.report_version).toBe(
+      "s10_performer_report_view_model_v1",
+    );
+    expect(result.reportToPersist.report_status).not.toBe("limited");
+    expect(result.reportToPersist.components.length).toBeGreaterThan(0);
+  });
+
   it("persists a limited S10 V2 report instead of falling back to v1 when S10 build throws", () => {
     const legacyReport = buildS10CanaryAReportInput();
     const result = buildRouteReportForPersistence({

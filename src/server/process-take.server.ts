@@ -5918,6 +5918,8 @@ export async function runProcessTake(
           outcome: persistence.outcome,
           components: persistence.reportToPersist.components.length,
           from_future_dimensions: !!capturedFutureDimensions,
+          reason:
+            persistence.outcome === "s10_limited_v2_persisted" ? persistence.reason : undefined,
         });
       }
     } catch (err) {

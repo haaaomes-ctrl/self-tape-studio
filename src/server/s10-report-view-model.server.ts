@@ -918,6 +918,32 @@ function containsProfessional90PlusClaim(value: unknown): boolean {
   return /\b90\s*\+|\b90\b|competitive zone/i.test(text);
 }
 
+function removeSub90Professional90PlusLanguage(
+  readiness: ReadinessAndScoreJudgement | null,
+): ReadinessAndScoreJudgement | null {
+  if (!readiness?.selected_level_calibration) return readiness;
+  const score = asNumber((readiness as Record<string, unknown>).overall_submission_readiness_score);
+  if (score != null && score >= 90) return readiness;
+  if (!containsProfessional90PlusClaim(readiness.selected_level_calibration.score_meaning)) {
+    return readiness;
+  }
+
+  return {
+    ...readiness,
+    selected_level_calibration: {
+      ...readiness.selected_level_calibration,
+      score_meaning:
+        "Higher-score competitive calibration is not shown for this report; use the visible readiness score and rationale.",
+      what_falls_short: [
+        "The visible readiness score sits below the Professional competitive calibration range.",
+        ...(readiness.selected_level_calibration.what_falls_short ?? []),
+      ].filter((item, index, array) => item && array.indexOf(item) === index),
+      recommendation_impact:
+        "The recommendation should be read from the visible readiness score and evidence rationale, not from higher-score calibration language.",
+    },
+  };
+}
+
 function source(available: boolean, module: string, limitation: string): S10SectionSourceEntry {
   return available
     ? { source: "s10_authoritative_module", module, limitation: null }
@@ -1074,6 +1100,7 @@ export function buildS10PerformerReportViewModel(input: {
   );
   matrix = reconcileBriefAchievementMatrixWithObservedTape(matrix, observedConstraints);
   readiness = reconcileReadinessWithObservedTape(readiness, matrix, observedConstraints);
+  readiness = removeSub90Professional90PlusLanguage(readiness);
   const mediaObservationSummary = cloneForRouteSurface(
     context.mediaObservationSummary ?? report.media_observation_summary ?? null,
   ) as MediaObservationSummary | null;
