@@ -3408,6 +3408,20 @@ export type Database = {
         }
         Returns: string
       }
+      create_audition_comparison_run_foundation: {
+        Args: { p_audition_id: string; p_user_id: string }
+        Returns: string
+      }
+      create_replacement_take_version: {
+        Args: {
+          p_checklist?: Json
+          p_replacement_reason?: string
+          p_signals?: Json
+          p_take_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       crm_build_unsubscribe_url: {
         Args: { p_base_url?: string; p_token: string }
         Returns: string
