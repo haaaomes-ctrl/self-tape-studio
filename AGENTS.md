@@ -57,6 +57,17 @@ When live validation exposes several connected runtime failures, do not jump fro
 
 Cron jobs must target stable production endpoints unless a task explicitly defines a preview-only test. Do not leave Lovable preview URLs, worker-bundle URLs or query-token URLs in durable Supabase cron commands. Cron authentication should use Vault-backed headers or bearer tokens, not pasted preview tokens.
 
+For the S10 email dispatcher, keep ownership boundaries explicit:
+
+- Brevo owns transactional email delivery.
+- Lovable owns deployment/sync/publish of the merged Git commit.
+- Supabase owns schema, queue state, idempotency and dispatch audit.
+- cron owns scheduling only and must be enabled last.
+
+The legacy route path `/lovable/email/queue/process` may remain for compatibility, but that path name must not be treated as delivery ownership. Do not use Lovable Email or Lovable build/run identifiers as the final CRM transactional delivery mechanism. Runtime CRM lifecycle emails must use `message_id` and `idempotency_key`; do not set `run_id = message_id`.
+
+Real queue draining must remain disabled until schema migration, Brevo credentials, sender/domain/template setup, Lovable sync/publish and dry-run or sandbox validation have passed. Dispatcher modes such as `disabled`, `dry_run`, `sandbox` and `enabled` should be DB/admin-controlled, with any environment kill-switch only able to force dispatch off.
+
 Full-repo lint may be blocked by pre-existing formatting debt, but that does not replace type safety. In that case, record the lint blocker and run focused lint, `npm exec tsc -- --noEmit`, build and relevant tests for the changed surface.
 
 ---
