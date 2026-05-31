@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -16,9 +17,11 @@ import {
 } from "@/test-fixtures/s10-strong-complete-professional";
 import { s10SameVideoComparisonFixtures } from "@/test-fixtures/s10-same-video-comparison";
 
-function render(report: Record<string, unknown>) {
+type RenderProps = Partial<React.ComponentProps<typeof V2ReportView>>;
+
+function render(report: Record<string, unknown>, props: RenderProps = {}) {
   return renderToStaticMarkup(
-    <V2ReportView report={report} takeNumber={1} auditionType="musical_theatre" />,
+    <V2ReportView report={report} takeNumber={1} auditionType="musical_theatre" {...props} />,
   );
 }
 
@@ -283,6 +286,10 @@ describe("S10 report view rendering", () => {
     expect(html).toContain("Optional polish");
     expect(html).toContain("Technique commentary");
     expect(html).toContain("Timestamped and time-banded notes");
+    expect(html).toContain("Professional competitive calibration");
+    expect(html).toContain("Score zone:");
+    expect(html).toContain("90-91");
+    expect(html).toContain("Retake strategy:");
 
     for (const forbidden of s10StrongCompleteProfessionalExpectedViewModel.forbidden_route_content) {
       expect(html).not.toContain(forbidden);
@@ -297,6 +304,39 @@ describe("S10 report view rendering", () => {
     expect(text).toContain("Score language may include supplied brief achievement");
     expect(text).toContain("Score visibility:");
     expect(text).toContain("not public customer score-release approval");
+  });
+
+  it("renders browser-print PDF affordance without public share or stored export language", () => {
+    const html = render(strongCompleteV2Report());
+    const styles = fs.readFileSync(new URL("../../../styles.css", import.meta.url), "utf8");
+
+    expect(html).toContain("Print / Save as PDF");
+    expect(html).toContain("tc-print-action");
+    expect(styles).toContain("@media print");
+    expect(styles).toContain(".tc-report-print-surface");
+    expect(styles).toContain(".tc-report-print-section");
+    expect(html).not.toMatch(/public share|share link|stored export|download PDF/i);
+  });
+
+  it("renders active take-version context without exposing raw take IDs", () => {
+    const text = routeText(
+      render(strongCompleteV2Report(), {
+        takeNumber: 2,
+        takeSlot: 2,
+        takeVersionNumber: 3,
+        takeVersionStatus: "active",
+        replacesTakeId: "raw-replaced-take-id",
+        sameVideoStatus: "same_video_confirmed",
+      }),
+    );
+
+    expect(text).toContain("Take context");
+    expect(text).toContain("Take: Take 2");
+    expect(text).toContain("Active version: Version 3");
+    expect(text).toContain("Version status: Active");
+    expect(text).toContain("Replacement version; prior take proof is retained separately.");
+    expect(text).toContain("Same-video status: Same video confirmed");
+    expect(text).not.toContain("raw-replaced-take-id");
   });
 
   it("renders no-brief baseline scoring limits without claiming brief achievement", () => {

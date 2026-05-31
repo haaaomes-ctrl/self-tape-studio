@@ -1064,6 +1064,11 @@ function TakeView({
       <V2ReportView
         report={r}
         takeNumber={take.take_number}
+        takeSlot={take.take_slot}
+        takeVersionNumber={take.take_version_number}
+        takeVersionStatus={take.take_version_status}
+        replacesTakeId={take.replaces_take_id}
+        sameVideoStatus={take.same_video_status}
         auditionType={r.audition_type ?? null}
       />
     );
