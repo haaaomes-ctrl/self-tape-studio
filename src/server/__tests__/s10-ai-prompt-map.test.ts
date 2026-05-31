@@ -250,6 +250,7 @@ describe("S10.1 AI prompt map", () => {
       expect(step1).toContain(S10_OBSERVATION_PROMPT_VERSION);
       expect(step1).toContain("Side 1");
       expect(step1).toContain("abrupt");
+      expect(step1).toContain("module-readiness support");
     }
     expect(JSON.stringify(plainJsonRequest)).toContain("material_specific_performance");
     expect(JSON.stringify(toolCallRequest)).toContain("collect_audition_evidence");
@@ -283,6 +284,10 @@ describe("S10.1 AI prompt map", () => {
     expect(POLISH_SYSTEM_PROMPT).toContain("observed_tape_sequence");
     expect(POLISH_SYSTEM_PROMPT).toContain("component_verifications");
     expect(POLISH_SYSTEM_PROMPT).toContain("category_rationale");
+    expect(POLISH_SYSTEM_PROMPT).toContain("self-check each module");
+    expect(POLISH_SYSTEM_PROMPT).toContain(
+      "missing, thin, generic, contradictory, unsupported and not_assessable",
+    );
   });
 
   it("uses S10 prompt version constants in process-take metadata instead of active S9 labels", () => {
@@ -303,6 +308,8 @@ describe("S10.1 AI prompt map", () => {
     expect(processSrc).toContain("s10_technique_commentary");
     expect(processSrc).toContain("verified component evidence before timestamped commentary");
     expect(processSrc).toContain("s10_timestamped_commentary");
+    expect(processSrc).toContain("evaluateS10ModuleReadiness");
+    expect(processSrc).toContain("s10_module_repair_actions");
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]evidence_pass_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]single_pass_analysis_current['"]/);
     expect(processSrc).not.toMatch(/prompt_version:\s*['"]two_step_report_polish_current['"]/);
