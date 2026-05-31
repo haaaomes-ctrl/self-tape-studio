@@ -128,6 +128,10 @@ describe("S10-05 authenticated report model composition", () => {
       brief_status: "no_brief_available",
       can_assess_brief_achievement: false,
       score_meaning_label: "no_brief_baseline_quality",
+      score_visibility: {
+        public_customer_score_release_approved: false,
+        performer_report_must_remain_useful_without_numeric_scores: true,
+      },
     });
     expect(composition.full_report_model.scoring_context.forbidden_claims).toContain(
       "brief achievement",

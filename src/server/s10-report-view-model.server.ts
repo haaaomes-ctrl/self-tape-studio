@@ -32,6 +32,11 @@ import type {
   MediaObservationSummary,
   ObservedTapeSequence,
 } from "./evidence-pass.server";
+import {
+  buildS10ScoringContext,
+  inferS10ScoringMode,
+  type S10ScoringContext,
+} from "./s10-scoring-context.server";
 import type { S10ObservationContextSourceKind } from "./s10-observation-context.server";
 
 export type S10SectionSource = S10RouteSectionSource;
@@ -65,6 +70,7 @@ export type S10PerformerReportViewModel = {
     category_scores: ReadinessAndScoreJudgement["category_scores"];
     component_scores: ReadinessAndScoreJudgement["component_scores"];
   };
+  scoring_context: S10ScoringContext;
   brief_context: BriefContext | null;
   brief_requirements: BriefRequirement[];
   brief_achievement_matrix: BriefAchievementMatrix | null;
@@ -334,6 +340,25 @@ export function buildS10PerformerReportViewModel(input: {
   const mediaObservationSummary = cloneForRouteSurface(
     context.mediaObservationSummary ?? report.media_observation_summary ?? null,
   ) as MediaObservationSummary | null;
+  const scoringMode = inferS10ScoringMode({
+    report,
+    briefContext,
+    briefRequirements,
+    matrix,
+  });
+  const scoringContext = buildS10ScoringContext({
+    scoringMode,
+    briefContext,
+    briefRequirements,
+    matrix,
+    observedTapeSequence,
+    componentVerifications,
+    mediaObservationSummary,
+    selectedLevel: readiness?.selected_level_calibration?.selected_level ?? null,
+    numericScoresVisible:
+      asNumber((readiness as Record<string, unknown> | null)?.overall_submission_readiness_score) !=
+      null,
+  });
   const hasS10PresentationNotes =
     arrayHasRenderableItems(
       (techniqueCommentary?.self_tape_presentation as { what_is_working?: unknown } | null)
@@ -411,6 +436,11 @@ export function buildS10PerformerReportViewModel(input: {
       visibleS10Score != null,
       "readiness_score_judgement",
       "S10 score summary was unavailable for this report.",
+    ),
+    scoring_context: source(
+      hasVisibleScoringContextPayload(scoringContext),
+      "scoring_context",
+      "S10 scoring context is not available for this report.",
     ),
     category_scores: source(
       hasVisibleCategoryScoreRows(readiness?.category_scores),
@@ -562,6 +592,7 @@ export function buildS10PerformerReportViewModel(input: {
       category_scores: readiness?.category_scores ?? [],
       component_scores: readiness?.component_scores ?? [],
     },
+    scoring_context: scoringContext,
     brief_context: briefContext,
     brief_requirements: briefRequirements,
     brief_achievement_matrix: matrix,
@@ -618,6 +649,7 @@ export function buildS10LimitedPerformerReportViewModel(
       message,
     ),
     score_summary: limitation("readiness_score_judgement", message),
+    scoring_context: limitation("scoring_context", message),
     category_scores: limitation("readiness_score_judgement.category_scores", message),
     category_rationale: limitation("readiness_score_judgement.category_rationale", message),
     brief_adherence_material_compliance: limitation(
@@ -668,6 +700,17 @@ export function buildS10LimitedPerformerReportViewModel(
       category_scores: [],
       component_scores: [],
     },
+    scoring_context: buildS10ScoringContext({
+      scoringMode: "brief_uncertain",
+      briefContext: null,
+      briefRequirements: [],
+      matrix: null,
+      observedTapeSequence: [],
+      componentVerifications: [],
+      mediaObservationSummary: null,
+      selectedLevel: null,
+      numericScoresVisible: false,
+    }),
     brief_context: null,
     brief_requirements: [],
     brief_achievement_matrix: null,
@@ -781,6 +824,17 @@ function hasVisibleBriefContextPayload(value: unknown): boolean {
     context.upload_summary,
     context.file_naming_summary,
   ].some((candidate) => !!asText(candidate));
+}
+
+function hasVisibleScoringContextPayload(value: unknown): boolean {
+  const context = asRecord(value);
+  if (!context) return false;
+  return (
+    !!asText(context.scoring_mode) ||
+    !!asText(context.scoring_basis_label) ||
+    !!asText(context.scoring_basis_summary) ||
+    arrayHasRenderableStrings(context.required_limitations)
+  );
 }
 
 function hasVisibleBriefRequirementRow(value: unknown): boolean {
@@ -1054,6 +1108,9 @@ function validateSectionVisiblePayload(
     }
     case "score_summary":
       hasVisiblePayload = asNumber(scoreSummary?.overall_submission_readiness_score) != null;
+      break;
+    case "scoring_context":
+      hasVisiblePayload = hasVisibleScoringContextPayload(view.scoring_context);
       break;
     case "category_scores":
       hasVisiblePayload = hasVisibleCategoryScoreRows(scoreSummary?.category_scores);

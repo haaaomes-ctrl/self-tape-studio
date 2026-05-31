@@ -371,6 +371,7 @@ export function V2ReportView({
     ? safeObj(s10?.selected_level_calibration)
     : null;
   const s10ScoreSummary = safeObj(s10?.score_summary);
+  const s10ScoringContext = safeObj(s10?.scoring_context);
   const s10BriefContext = safeObj(s10?.brief_context);
   const s10Matrix = safeObj(s10?.brief_achievement_matrix);
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
@@ -475,6 +476,15 @@ export function V2ReportView({
   const s10LevelComparison = safeStr(s10LevelCalibration?.comparison_to_other_levels);
   const s10MeetsLevel = displayStrings(s10LevelCalibration?.what_meets_level);
   const s10FallsShortLevel = displayStrings(s10LevelCalibration?.what_falls_short);
+  const s10ScoringBasis =
+    safeStr(s10ScoringContext?.scoring_basis_label) ??
+    (safeStr(s10ScoringContext?.scoring_mode)
+      ? labelize(safeStr(s10ScoringContext?.scoring_mode))
+      : null);
+  const s10ScoringBasisSummary = safeStr(s10ScoringContext?.scoring_basis_summary);
+  const s10ScoringLimitations = displayStrings(s10ScoringContext?.required_limitations);
+  const s10ScoreVisibility = safeObj(s10ScoringContext?.score_visibility);
+  const s10ScoreVisibilityExplanation = safeStr(s10ScoreVisibility?.explanation);
   const hasS10LevelCalibration =
     !!s10JudgedAgainst ||
     !!s10LevelStandard ||
@@ -657,6 +667,12 @@ export function V2ReportView({
                   {s10JudgedAgainst}
                 </span>
               )}
+              {isS10 && s10ScoringBasis && (
+                <span>
+                  <span className="font-medium text-foreground">Scoring basis:</span>{" "}
+                  {s10ScoringBasis}
+                </span>
+              )}
               {reliability && (
                 <span>
                   <span className="font-medium text-foreground">Reliability:</span> {reliability}
@@ -713,6 +729,32 @@ export function V2ReportView({
             </ul>
           </div>
         )}
+        {isS10 &&
+          (s10ScoringBasisSummary ||
+            s10ScoringLimitations.length > 0 ||
+            s10ScoreVisibilityExplanation) && (
+            <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Scoring basis
+              </p>
+              {s10ScoringBasisSummary && <p className="mt-2 text-sm">{s10ScoringBasisSummary}</p>}
+              {s10ScoringLimitations.length > 0 && (
+                <ul className="mt-2 space-y-1.5 text-sm">
+                  {s10ScoringLimitations.map((limitation, index) => (
+                    <li key={index} className="flex gap-2">
+                      <span className="text-muted-foreground">•</span>
+                      <span>{limitation}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {s10ScoreVisibilityExplanation && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Score visibility: {s10ScoreVisibilityExplanation}
+                </p>
+              )}
+            </div>
+          )}
         {!isS10 && report.at_risk && blockers.length === 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />

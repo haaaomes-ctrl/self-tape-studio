@@ -35,6 +35,12 @@ import {
   type S10PerformerReportViewModel,
   type S10ViewModelContext,
 } from "./s10-report-view-model.server";
+import {
+  buildS10ScoringContext,
+  inferS10ScoringMode,
+  type S10ScoringContext,
+  type S10ScoringMode,
+} from "./s10-scoring-context.server";
 
 export const S10_FULL_REPORT_MODEL_VERSION = "s10-full-report-model-v1" as const;
 export const S10_AUTHENTICATED_REPORT_MODEL_VERSION = "s10-authenticated-report-model-v1" as const;
@@ -62,37 +68,7 @@ export const S10_FULL_REPORT_MODEL_REQUIRED_SECTIONS = [
 
 export type S10FullReportModelSection = (typeof S10_FULL_REPORT_MODEL_REQUIRED_SECTIONS)[number];
 
-export type S10ScoringMode =
-  | "brief_supplied"
-  | "partial_brief_supplied"
-  | "no_brief_baseline"
-  | "brief_uncertain";
-
-export type BriefScoringContext = {
-  scoring_mode: S10ScoringMode;
-  brief_status:
-    | "full_brief_available"
-    | "partial_context_available"
-    | "no_brief_available"
-    | "conflicting_signals";
-  can_assess_brief_achievement: boolean;
-  can_assess_mandatory_requirements: boolean;
-  can_assess_role_specific_fit: boolean;
-  can_assess_admin_compliance: boolean;
-  can_assess_observed_performance: boolean;
-  can_assess_technical_setup: boolean;
-  can_assess_selected_level_readiness: boolean;
-  score_meaning_label:
-    | "brief_based_submission_readiness"
-    | "partial_context_readiness"
-    | "no_brief_baseline_quality"
-    | "provisional_due_to_brief_uncertainty";
-  required_limitations: string[];
-  forbidden_claims: string[];
-  brief_context: BriefContext | null;
-  brief_requirements: BriefRequirement[];
-  brief_achievement_matrix: BriefAchievementMatrix | null;
-};
+export type BriefScoringContext = S10ScoringContext;
 
 export type RoleMaterialSourceBasis =
   | "brief_supplied"
@@ -275,45 +251,6 @@ function textArray(value: unknown): string[] {
     : [];
 }
 
-function explicitScoringMode(report: Record<string, unknown>): S10ScoringMode | null {
-  const candidates = [
-    report.scoring_mode,
-    report.scoringMode,
-    asRecord(report.scoring_context)?.scoring_mode,
-    asRecord(report.brief_scoring_context)?.scoring_mode,
-  ];
-  for (const candidate of candidates) {
-    if (
-      candidate === "brief_supplied" ||
-      candidate === "partial_brief_supplied" ||
-      candidate === "no_brief_baseline" ||
-      candidate === "brief_uncertain"
-    ) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function inferScoringMode(args: {
-  report: Record<string, unknown>;
-  briefContext: BriefContext | null;
-  briefRequirements: BriefRequirement[];
-  matrix: BriefAchievementMatrix | null;
-}): S10ScoringMode {
-  const explicit = explicitScoringMode(args.report);
-  if (explicit) return explicit;
-  const hasBriefContext = Boolean(args.briefContext);
-  const hasRequirements = args.briefRequirements.length > 0;
-  if (hasRequirements && args.matrix) return "brief_supplied";
-  if (hasBriefContext || hasRequirements) return "partial_brief_supplied";
-  const mode = asText(args.report.mode) ?? asText(args.report.analysis_mode);
-  if (mode === "baseline" || mode === "no_brief" || mode === "no_brief_baseline") {
-    return "no_brief_baseline";
-  }
-  return "brief_uncertain";
-}
-
 function maybePerformerLevel(value: unknown): S10PerformerLevel | null {
   if (typeof value !== "string") return null;
   if ((S10_PERFORMER_LEVELS as readonly string[]).includes(value))
@@ -410,84 +347,6 @@ function buildTakeLifecycle(
     comparison_run_id: override?.comparison_run_id ?? asText(report.comparison_run_id),
     compared_take_version_ids: comparedTakeVersionIds,
     same_video_status: override?.same_video_status ?? view.same_video_status?.status ?? null,
-  };
-}
-
-function buildBriefScoringContext(args: {
-  scoringMode: S10ScoringMode;
-  briefContext: BriefContext | null;
-  briefRequirements: BriefRequirement[];
-  matrix: BriefAchievementMatrix | null;
-  observedTape: S10PerformerReportViewModel["observed_tape"];
-  level: S10PerformerLevel | null;
-}): BriefScoringContext {
-  const hasRequirements = args.briefRequirements.length > 0;
-  const hasMandatory = args.briefRequirements.some(
-    (requirement) => requirement.importance === "mandatory",
-  );
-  const hasAdmin = args.briefRequirements.some((requirement) =>
-    ["admin_process", "deadline", "logistics"].includes(requirement.category),
-  );
-  const hasRoleRequirement = args.briefRequirements.some(
-    (requirement) => requirement.category === "role_context",
-  );
-  const observedPerformance =
-    args.observedTape.observed_tape_sequence.length > 0 ||
-    args.observedTape.component_verifications.length > 0;
-  const scoreMeaningLabel: BriefScoringContext["score_meaning_label"] =
-    args.scoringMode === "brief_supplied"
-      ? "brief_based_submission_readiness"
-      : args.scoringMode === "partial_brief_supplied"
-        ? "partial_context_readiness"
-        : args.scoringMode === "no_brief_baseline"
-          ? "no_brief_baseline_quality"
-          : "provisional_due_to_brief_uncertainty";
-  const forbiddenClaims =
-    args.scoringMode === "no_brief_baseline"
-      ? [
-          "brief achievement",
-          "mandatory requirement completion",
-          "role-specific fit",
-          "deadline compliance",
-          "upload compliance",
-          "file-naming compliance",
-        ]
-      : args.scoringMode === "brief_uncertain"
-        ? ["unsupported brief achievement", "unsupported mandatory completion"]
-        : [];
-  const requiredLimitations =
-    args.scoringMode === "no_brief_baseline"
-      ? [
-          "Brief achievement and audition-specific compliance are not assessable without a supplied brief.",
-        ]
-      : args.scoringMode === "brief_uncertain"
-        ? [
-            "Brief status is uncertain; unsupported brief-specific claims require repair or suppression.",
-          ]
-        : [];
-  return {
-    scoring_mode: args.scoringMode,
-    brief_status:
-      args.scoringMode === "brief_supplied"
-        ? "full_brief_available"
-        : args.scoringMode === "partial_brief_supplied"
-          ? "partial_context_available"
-          : args.scoringMode === "no_brief_baseline"
-            ? "no_brief_available"
-            : "conflicting_signals",
-    can_assess_brief_achievement: Boolean(hasRequirements && args.matrix),
-    can_assess_mandatory_requirements: hasMandatory && Boolean(args.matrix),
-    can_assess_role_specific_fit: hasRoleRequirement,
-    can_assess_admin_compliance: hasAdmin && Boolean(args.matrix),
-    can_assess_observed_performance: observedPerformance,
-    can_assess_technical_setup: Boolean(args.observedTape.media_observation_summary),
-    can_assess_selected_level_readiness: Boolean(args.level),
-    score_meaning_label: scoreMeaningLabel,
-    required_limitations: requiredLimitations,
-    forbidden_claims: forbiddenClaims,
-    brief_context: clone(args.briefContext),
-    brief_requirements: clone(args.briefRequirements),
-    brief_achievement_matrix: clone(args.matrix),
   };
 }
 
@@ -605,7 +464,7 @@ export function composeS10AuthenticatedReportModel(
   const level = inferSelectedLevel(report, performerView);
   const scoringMode =
     input.analysisInputContext?.scoring_mode ??
-    inferScoringMode({
+    inferS10ScoringMode({
       report,
       briefContext: performerView.brief_context,
       briefRequirements: performerView.brief_requirements,
@@ -621,13 +480,16 @@ export function composeS10AuthenticatedReportModel(
     performerView,
     input.analysisInputContext?.take_lifecycle,
   );
-  const briefScoringContext = buildBriefScoringContext({
+  const briefScoringContext = buildS10ScoringContext({
     scoringMode,
     briefContext: performerView.brief_context,
     briefRequirements: performerView.brief_requirements,
     matrix,
-    observedTape: performerView.observed_tape,
-    level,
+    observedTapeSequence: performerView.observed_tape.observed_tape_sequence,
+    componentVerifications: performerView.observed_tape.component_verifications,
+    mediaObservationSummary: performerView.observed_tape.media_observation_summary,
+    selectedLevel: level,
+    numericScoresVisible: performerView.score_summary.overall_submission_readiness_score != null,
   });
   const analysisInputContext: AnalysisInputContext = {
     selected_performer_level: input.analysisInputContext?.selected_performer_level ?? level,

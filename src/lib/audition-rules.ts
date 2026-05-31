@@ -16,6 +16,7 @@ export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
   "submission_guidance",
   "selected_level_calibration",
   "score_summary",
+  "scoring_context",
   "category_scores",
   "category_rationale",
   "brief_adherence_material_compliance",
@@ -68,6 +69,10 @@ export const S10_ROUTE_SECTION_SOURCE_RULES: Record<S10RouteSectionKey, S10Route
     score_summary: {
       sources: ["s10_authoritative_module", "specific_limitation"],
       modules: [/^readiness_score_judgement$/],
+    },
+    scoring_context: {
+      sources: ["s10_authoritative_module", "specific_limitation"],
+      modules: [/^scoring_context$/],
     },
     category_scores: {
       sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
