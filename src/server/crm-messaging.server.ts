@@ -16,7 +16,7 @@ export type CrmDashboardSnapshot = {
   generated_at: string;
   platform: {
     contact_sync: "brevo";
-    transactional_dispatch: "lovable_email_queue";
+    transactional_dispatch: "brevo_email_queue";
     service_email_consent: "not_required";
     lifecycle_email_consent: "required";
     under_13_routing: "parent_guardian_account_email";
@@ -267,7 +267,7 @@ export async function getCrmDashboardSnapshot(): Promise<CrmDashboardSnapshot> {
     generated_at: new Date().toISOString(),
     platform: {
       contact_sync: "brevo",
-      transactional_dispatch: "lovable_email_queue",
+      transactional_dispatch: "brevo_email_queue",
       service_email_consent: "not_required",
       lifecycle_email_consent: "required",
       under_13_routing: "parent_guardian_account_email",
