@@ -22,6 +22,7 @@ export const S10_ROUTE_REQUIRED_SECTION_KEYS = [
   "brief_adherence_material_compliance",
   "brief_context",
   "brief_requirements",
+  "role_material_context",
   "brief_achievement",
   "observed_tape",
   "component_breakdown",
@@ -93,6 +94,10 @@ export const S10_ROUTE_SECTION_SOURCE_RULES: Record<S10RouteSectionKey, S10Route
     brief_requirements: {
       sources: ["s10_authoritative_module", "specific_limitation"],
       modules: [/^brief_requirements$/],
+    },
+    role_material_context: {
+      sources: ["s10_authoritative_module", "specific_limitation", "not_applicable"],
+      modules: [/^role_material_context$/],
     },
     brief_achievement: {
       sources: ["s10_authoritative_module", "specific_limitation"],

@@ -84,6 +84,60 @@ function buildStrongV2() {
   return { report, v2, html, operatorComparison };
 }
 
+function buildKnownRoleV2() {
+  const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+  report.role_material_context = {
+    applies: true,
+    project_name: "Wicked",
+    role_name: "Elphaba",
+    source_basis: ["brief_supplied", "official_source_researched"],
+    primary_standard: "supplied_brief",
+    source_summary: [
+      {
+        source_type: "brief",
+        source_label: "Supplied casting brief",
+        truth_state: "brief_supplied",
+        confidence: "high",
+        public_usable: true,
+      },
+      {
+        source_type: "official_source",
+        source_label: "Official production synopsis",
+        truth_state: "official_source_researched",
+        confidence: "medium",
+        public_usable: true,
+      },
+    ],
+    secondary_context:
+      "Known-material context suggests moral conviction and outsider pressure, but the supplied brief remains the primary standard.",
+    demands: [
+      {
+        id: "known-elphaba-conviction",
+        label: "Moral conviction under pressure",
+        description:
+          "Use only as secondary role/material nuance where the observed tape supports it.",
+        source_truth_state: "official_source_researched",
+        importance: "known_material_context_only",
+        observable_evidence_needed: ["Story-led vocal or acting choices are visible/audible."],
+        scoring_use: "can_nuance_score",
+        unsafe_if_used_for: ["mandatory blocker", "appearance/type judgement"],
+      },
+    ],
+    blocked_inferences: ["Personal attributes and casting outcomes are not assessed."],
+    confidence: "medium",
+    uncertainty_notes: ["Known-material context is secondary to the supplied brief."],
+  };
+  const v2 = buildV2Report({
+    legacyReport: report,
+    futureDimensions: null,
+    auditionType: "musical_theatre",
+    mode: "brief",
+    s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+  });
+  const html = render(v2 as unknown as Record<string, unknown>);
+  return { report, v2, html };
+}
+
 function buildSameVideoV2(key: keyof typeof s10SameVideoComparisonFixtures) {
   const classification = classifyS10SameVideoComparison(s10SameVideoComparisonFixtures[key].input);
   const report = buildS10SameVideoBaseReportInput();
@@ -186,6 +240,42 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       ],
       expectedDecision: ["submit", "submit_if_deadline_is_close"],
       expectedFixFirstIncludes: null,
+    });
+
+    expectAccepted(result);
+  });
+
+  it("accepts known role/material context only when source basis and boundaries render", () => {
+    const { v2, html } = buildKnownRoleV2();
+    const result = assertS10RouteContentAcceptance({
+      fixture_id: "s10-known-role-context",
+      profile: "strong_complete_professional",
+      view_model: v2.s10_view_model,
+      v2_report: v2 as unknown as Record<string, unknown>,
+      rendered_route_html: html,
+      forbiddenExact: [
+        "This performer is right for the role.",
+        "This performer is not right for the role.",
+        "callback likelihood",
+        "castability",
+      ],
+      requiredAllOf: [
+        "Role / material context",
+        "Source basis",
+        "Official production synopsis",
+        "Known material context only",
+        "Supplied brief remains the primary standard",
+        "Not assessed",
+      ],
+      requiredAnyOf: [["Elphaba"], ["Wicked"], ["Moral conviction under pressure"]],
+      expectedDecision: ["submit", "submit_if_deadline_is_close"],
+      expectedFixFirstIncludes: null,
+      sourceExpectations: [
+        {
+          section: "role_material_context",
+          expected_source: "s10_authoritative_module",
+        },
+      ],
     });
 
     expectAccepted(result);

@@ -41,6 +41,11 @@ import {
   type S10ScoringContext,
   type S10ScoringMode,
 } from "./s10-scoring-context.server";
+import {
+  buildS10RoleMaterialContext,
+  cloneS10RoleMaterialContext,
+  type S10RoleMaterialContext,
+} from "./s10-role-material-context.server";
 
 export const S10_FULL_REPORT_MODEL_VERSION = "s10-full-report-model-v1" as const;
 export const S10_AUTHENTICATED_REPORT_MODEL_VERSION = "s10-authenticated-report-model-v1" as const;
@@ -70,29 +75,7 @@ export type S10FullReportModelSection = (typeof S10_FULL_REPORT_MODEL_REQUIRED_S
 
 export type BriefScoringContext = S10ScoringContext;
 
-export type RoleMaterialSourceBasis =
-  | "brief_supplied"
-  | "uploaded_material_extracted"
-  | "user_supplied"
-  | "official_source_researched"
-  | "known_material_profile"
-  | "model_inferred_low_confidence"
-  | "observed_in_tape"
-  | "not_available"
-  | "contradicted_or_unreliable";
-
-export type RoleMaterialContext = {
-  project_name: string | null;
-  role_name: string | null;
-  discipline: string | null;
-  audition_type: string | null;
-  material_package_summary: string | null;
-  role_description_summary: string | null;
-  source_basis: RoleMaterialSourceBasis[];
-  primary_standard: "supplied_brief" | "selected_level_observed_tape" | "observed_tape_only";
-  secondary_context: string | null;
-  uncertainty_notes: string[];
-};
+export type RoleMaterialContext = S10RoleMaterialContext;
 
 export type S10TakeLifecycleContext = {
   audition_id: string | null;
@@ -279,43 +262,6 @@ function inferSelectedLevel(
   );
 }
 
-function buildRoleMaterialContext(
-  report: Record<string, unknown>,
-  briefContext: BriefContext | null,
-  override?: RoleMaterialContext | null,
-): RoleMaterialContext {
-  if (override) return clone(override);
-  const raw = asRecord(report.role_material_context);
-  const projectName = asText(raw?.project_name) ?? briefContext?.project_name ?? null;
-  const roleName = asText(raw?.role_name) ?? briefContext?.role_name ?? null;
-  const discipline = asText(raw?.discipline) ?? briefContext?.discipline ?? null;
-  const auditionType = asText(raw?.audition_type) ?? briefContext?.audition_type ?? null;
-  const materialPackageSummary =
-    asText(raw?.material_package_summary) ?? briefContext?.material_package_summary ?? null;
-  const roleDescriptionSummary =
-    asText(raw?.role_description_summary) ?? briefContext?.role_description_summary ?? null;
-  const suppliedBasis = [
-    projectName,
-    roleName,
-    discipline,
-    auditionType,
-    materialPackageSummary,
-    roleDescriptionSummary,
-  ].some(Boolean);
-  return {
-    project_name: projectName,
-    role_name: roleName,
-    discipline,
-    audition_type: auditionType,
-    material_package_summary: materialPackageSummary,
-    role_description_summary: roleDescriptionSummary,
-    source_basis: suppliedBasis ? ["brief_supplied"] : ["not_available"],
-    primary_standard: suppliedBasis ? "supplied_brief" : "selected_level_observed_tape",
-    secondary_context: asText(raw?.secondary_context),
-    uncertainty_notes: textArray(raw?.uncertainty_notes),
-  };
-}
-
 function buildTakeLifecycle(
   report: Record<string, unknown>,
   view: S10PerformerReportViewModel,
@@ -470,11 +416,12 @@ export function composeS10AuthenticatedReportModel(
       briefRequirements: performerView.brief_requirements,
       matrix,
     });
-  const roleMaterialContext = buildRoleMaterialContext(
+  const roleMaterialContext = buildS10RoleMaterialContext({
     report,
-    performerView.brief_context,
-    input.analysisInputContext?.role_material_context,
-  );
+    briefContext: performerView.brief_context,
+    briefRequirements: performerView.brief_requirements,
+    override: input.analysisInputContext?.role_material_context,
+  });
   const takeLifecycle = buildTakeLifecycle(
     report,
     performerView,
@@ -499,7 +446,7 @@ export function composeS10AuthenticatedReportModel(
     observed_tape_sequence: clone(performerView.observed_tape.observed_tape_sequence),
     component_verifications: clone(performerView.observed_tape.component_verifications),
     media_observation_summary: clone(performerView.observed_tape.media_observation_summary),
-    role_material_context: roleMaterialContext,
+    role_material_context: cloneS10RoleMaterialContext(roleMaterialContext),
     take_lifecycle: takeLifecycle,
     comparison_context: {
       same_video_status: clone(performerView.same_video_status),
@@ -517,7 +464,7 @@ export function composeS10AuthenticatedReportModel(
     take_lifecycle: takeLifecycle,
     scoring_context: briefScoringContext,
     level_calibration: clone(performerView.selected_level_calibration),
-    role_material_context: roleMaterialContext,
+    role_material_context: cloneS10RoleMaterialContext(roleMaterialContext),
     recommendation: clone(performerView.recommendation),
     brief: {
       context: clone(performerView.brief_context),
@@ -554,7 +501,7 @@ export function composeS10AuthenticatedReportModel(
     take_lifecycle: takeLifecycle,
     scoring_context: briefScoringContext,
     level_calibration: clone(performerView.selected_level_calibration),
-    role_material_context: roleMaterialContext,
+    role_material_context: cloneS10RoleMaterialContext(roleMaterialContext),
     performer_view_model: performerView,
     red_line_filter: clone(RED_LINE_FILTER),
     operator_assumption_summary: {

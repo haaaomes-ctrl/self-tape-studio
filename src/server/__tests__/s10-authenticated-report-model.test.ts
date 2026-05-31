@@ -78,6 +78,70 @@ describe("S10-05 authenticated report model composition", () => {
     });
   });
 
+  it("carries role/material source basis through full and authenticated models", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput() as Record<string, unknown>;
+    report.role_material_context = {
+      applies: true,
+      project_name: "Wicked",
+      role_name: "Elphaba",
+      source_basis: ["brief_supplied", "official_source_researched"],
+      primary_standard: "supplied_brief",
+      source_summary: [
+        {
+          source_type: "brief",
+          source_label: "Supplied casting brief",
+          truth_state: "brief_supplied",
+          confidence: "high",
+          public_usable: true,
+        },
+        {
+          source_type: "official_source",
+          source_label: "Official production synopsis",
+          truth_state: "official_source_researched",
+          confidence: "medium",
+          public_usable: true,
+        },
+      ],
+      demands: [
+        {
+          id: "known-elphaba-conviction",
+          label: "Moral conviction under pressure",
+          description: "Secondary role/material nuance only.",
+          source_truth_state: "official_source_researched",
+          importance: "known_material_context_only",
+          observable_evidence_needed: ["Story-led vocal or acting choices are visible/audible."],
+          scoring_use: "can_nuance_score",
+          unsafe_if_used_for: ["mandatory blocker"],
+        },
+      ],
+      confidence: "medium",
+      uncertainty_notes: ["Known-material context is secondary to the supplied brief."],
+    };
+
+    const composition = composeS10AuthenticatedReportModel({
+      report,
+      context: buildS10StrongCompleteProfessionalViewContext() as never,
+    });
+    if (!composition) throw new Error("expected S10 report model composition");
+
+    expect(composition.full_report_model.role_material_context).toMatchObject({
+      applies: true,
+      project_name: "Wicked",
+      role_name: "Elphaba",
+      primary_standard: "supplied_brief",
+    });
+    expect(
+      composition.authenticated_report_model.performer_view_model.section_source_map,
+    ).toHaveProperty(
+      "role_material_context",
+      expect.objectContaining({ source: "s10_authoritative_module" }),
+    );
+    expect(composition.full_report_model.role_material_context.demands[0]).toMatchObject({
+      importance: "known_material_context_only",
+      scoring_use: "can_nuance_score",
+    });
+  });
+
   it("keeps operator QA proof in the full model without making it performer prose", () => {
     const secretCheckpoint = {
       ...s10StrongCompleteProfessionalOperatorAssumptionCheckpoint,

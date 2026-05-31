@@ -47,6 +47,12 @@ function labelize(value: unknown): string {
   return raw.replace(/_/g, " ");
 }
 
+function sentenceLabelize(value: unknown): string {
+  const label = labelize(value).trim();
+  if (!label) return "";
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
 function itemTitle(item: unknown): string | null {
   if (typeof item === "string") return item;
   const o = safeObj(item);
@@ -372,6 +378,7 @@ export function V2ReportView({
     : null;
   const s10ScoreSummary = safeObj(s10?.score_summary);
   const s10ScoringContext = safeObj(s10?.scoring_context);
+  const s10RoleMaterialContext = safeObj(s10?.role_material_context);
   const s10BriefContext = safeObj(s10?.brief_context);
   const s10Matrix = safeObj(s10?.brief_achievement_matrix);
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
@@ -429,6 +436,10 @@ export function V2ReportView({
   );
   const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
   const s10ScoreAuthorized = hasS10SectionRenderAuthority(s10SectionSourceMap, "score_summary");
+  const s10RoleMaterialAuthorized = hasS10SectionRenderAuthority(
+    s10SectionSourceMap,
+    "role_material_context",
+  );
   const s10ReadinessAuthorized = hasS10SectionRenderAuthority(
     s10SectionSourceMap,
     "readiness_header",
@@ -864,6 +875,164 @@ export function V2ReportView({
             </div>
           </Section>
         )}
+
+      {isS10 &&
+        s10RoleMaterialAuthorized &&
+        s10RoleMaterialContext?.applies === true &&
+        (() => {
+          const contextRows: Array<[string, string]> = [
+            ["Project", safeStr(s10RoleMaterialContext.project_name)],
+            ["Role / character", safeStr(s10RoleMaterialContext.role_name)],
+            ["Material", safeStr(s10RoleMaterialContext.material_package_summary)],
+            ["Role context", safeStr(s10RoleMaterialContext.role_description_summary)],
+            ["Discipline", safeStr(s10RoleMaterialContext.discipline)],
+            ["Audition type", safeStr(s10RoleMaterialContext.audition_type)],
+          ].flatMap(([label, value]) =>
+            value ? ([[label, value]] as Array<[string, string]>) : [],
+          );
+          const sourceSummary = safeArr<Record<string, unknown>>(
+            s10RoleMaterialContext.source_summary,
+          ).filter(
+            (source) =>
+              safeStr(source.source_label) ||
+              safeStr(source.truth_state) ||
+              safeStr(source.source_type),
+          );
+          const demands = safeArr<Record<string, unknown>>(s10RoleMaterialContext.demands).filter(
+            (demand) => {
+              if (safeStr(demand.scoring_use) === "report_context_only") return false;
+              return safeStr(demand.label) || safeStr(demand.description);
+            },
+          );
+          const uncertaintyNotes = safeArr(s10RoleMaterialContext.uncertainty_notes).filter(
+            (item): item is string => typeof item === "string" && item.trim().length > 0,
+          );
+          const blockedInferences = safeArr(s10RoleMaterialContext.blocked_inferences).filter(
+            (item): item is string => typeof item === "string" && item.trim().length > 0,
+          );
+          const secondaryContext = safeStr(s10RoleMaterialContext.secondary_context);
+          if (
+            contextRows.length === 0 &&
+            sourceSummary.length === 0 &&
+            demands.length === 0 &&
+            !secondaryContext &&
+            uncertaintyNotes.length === 0
+          )
+            return null;
+          return (
+            <Section
+              title="Role / material context"
+              hint="Supplied brief remains primary; known material is secondary context only."
+            >
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {safeStr(s10RoleMaterialContext.primary_standard) && (
+                    <Badge variant="outline">
+                      Primary: {sentenceLabelize(s10RoleMaterialContext.primary_standard)}
+                    </Badge>
+                  )}
+                  {safeStr(s10RoleMaterialContext.confidence) && (
+                    <Badge variant="secondary">
+                      Confidence: {sentenceLabelize(s10RoleMaterialContext.confidence)}
+                    </Badge>
+                  )}
+                  {safeArr(s10RoleMaterialContext.source_basis).map((basis, index) => (
+                    <Badge key={`${basis}-${index}`} variant="outline">
+                      {sentenceLabelize(basis)}
+                    </Badge>
+                  ))}
+                </div>
+                {contextRows.length > 0 && (
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    {contextRows.map(([label, value]) => (
+                      <p key={label}>
+                        <span className="font-medium">{label}:</span>{" "}
+                        <span className="text-muted-foreground">{value}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {sourceSummary.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Source basis
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-sm">
+                      {sourceSummary.map((source, index) => (
+                        <li key={index}>
+                          <span className="font-medium">
+                            {safeStr(source.source_label) ?? "Source"}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {" "}
+                            — {sentenceLabelize(source.truth_state)} ·{" "}
+                            {sentenceLabelize(source.source_type)}
+                            {safeStr(source.confidence)
+                              ? ` · confidence ${sentenceLabelize(source.confidence)}`
+                              : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {secondaryContext && <p className="text-sm">{secondaryContext}</p>}
+                {demands.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Task demands
+                    </p>
+                    <ul className="mt-2 space-y-2 text-sm">
+                      {demands.map((demand, index) => (
+                        <li
+                          key={safeStr(demand.id) ?? index}
+                          className="rounded-md border border-border p-3"
+                        >
+                          <p className="font-medium">
+                            {safeStr(demand.label) ?? safeStr(demand.description)}
+                          </p>
+                          {safeStr(demand.description) &&
+                            safeStr(demand.description) !== safeStr(demand.label) && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {safeStr(demand.description)}
+                              </p>
+                            )}
+                          {safeArr(demand.observable_evidence_needed).length > 0 && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Evidence needed:{" "}
+                              {safeArr(demand.observable_evidence_needed).join("; ")}
+                            </p>
+                          )}
+                          <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground">
+                            {sentenceLabelize(demand.importance)} ·{" "}
+                            {sentenceLabelize(demand.source_truth_state)} ·{" "}
+                            {sentenceLabelize(demand.scoring_use)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {uncertaintyNotes.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Uncertainty
+                    </p>
+                    <SimpleList items={uncertaintyNotes} />
+                  </div>
+                )}
+                {blockedInferences.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Not assessed
+                    </p>
+                    <SimpleList items={blockedInferences} />
+                  </div>
+                )}
+              </div>
+            </Section>
+          );
+        })()}
 
       {isS10 && (
         <>
