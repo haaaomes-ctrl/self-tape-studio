@@ -55,6 +55,37 @@ If generated-file drift is introduced externally while an S10 item is parked at 
 
 Before asking Lovable to sync, publish or validate a preview, agents must confirm the GitHub commit includes required generated compatibility output and that local build/typecheck do not leave uncommitted generated changes. If Lovable preview appears broken, first ask for read-only diagnostics and compare Git/source state; do not ask Lovable to "fix", "repair", "refresh", "regenerate" or make source edits. If Lovable must generate or alter source for preview to work, stop and move that deterministic generated change into a controlled GitHub branch/PR instead of allowing a direct Lovable repair commit.
 
+For S10 operator Lovable/browser validation, give Lovable a read-only validation prompt like this, adapted only for the current item/surface:
+
+```text
+Do not edit source, regenerate files, run migrations, repair preview or change configuration.
+
+If the preview looks stale, first use only a browser hard refresh or Lovable/GitHub sync/publish of the currently merged GitHub commit. Do not implement anything to make the preview work.
+
+Using the currently synced/published GitHub commit, perform only read-only validation:
+
+1. Confirm which surface you are testing:
+   - Lovable editor preview
+   - tapecoach.co.uk
+   - tapecoach.lovable.app
+   - other URL
+
+2. Open the required authenticated route or workflow for the current gate. For S10-10, open an authenticated completed-take report route, not just the landing page.
+
+3. For S10-10, confirm:
+   - report route loads
+   - Print / Save as PDF is visible
+   - safe take context/version labels are visible
+   - no raw take IDs are visible
+   - Professional competitive calibration is visible on a Professional 90+ report
+   - Score zone is visible
+   - browser print preview / Save as PDF opens and contains the report
+   - no public share link or stored export flow appears
+   - no console, route, hydration, blank-page or failed network errors
+
+Return only pass/fail results and sanitized errors. Do not implement anything.
+```
+
 Git and Lovable publishing do not apply Supabase SQL migrations or prove the live PostgREST schema cache has reloaded.
 
 For work that adds or changes Supabase tables, views, RPCs, columns, enums, triggers or relationships used at runtime, live validation must include:
