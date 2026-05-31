@@ -25,6 +25,11 @@ SELECT cron.schedule(
   $cron$
   SELECT CASE
     WHEN COALESCE(
+      (SELECT dispatcher_mode FROM public.email_send_state WHERE id = 1),
+      'disabled'
+    ) <> 'enabled'
+      THEN NULL
+    WHEN COALESCE(
       (SELECT retry_after_until FROM public.email_send_state WHERE id = 1),
       '-infinity'::timestamptz
     ) > now()

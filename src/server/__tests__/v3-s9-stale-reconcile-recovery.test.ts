@@ -858,6 +858,8 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(scheduledCommand).toContain("https://tapecoach.co.uk/lovable/email/queue/process");
     expect(scheduledCommand).toContain("'Authorization'");
     expect(scheduledCommand).toContain("email_queue_service_role_key");
+    expect(scheduledCommand).toContain("dispatcher_mode");
+    expect(scheduledCommand).toContain("'enabled'");
     expect(scheduledCommand).not.toContain("id-preview--");
     expect(scheduledCommand).not.toContain("__lovable_token");
     expect(scheduledCommand).not.toContain(".lovable.app/lovable/email/queue/process");

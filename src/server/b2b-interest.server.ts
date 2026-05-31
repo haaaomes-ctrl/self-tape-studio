@@ -100,7 +100,6 @@ export async function submitB2BInterestLead(
   const { data: queuedEmailId, error: queueError } = await admin.rpc("enqueue_email", {
     queue_name: "transactional_emails",
     payload: {
-      run_id: messageId,
       to: emailDraft.to,
       from: fromAddress(),
       sender_domain: senderDomain(),

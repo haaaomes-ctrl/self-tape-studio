@@ -1,16 +1,16 @@
 // Backend-only Brevo utilities. All calls go through the Lovable connector gateway.
 // Never import from client code.
-const GATEWAY_URL = 'https://connector-gateway.lovable.dev/brevo';
+const GATEWAY_URL = "https://connector-gateway.lovable.dev/brevo";
 
 function getAuthHeaders(): Record<string, string> {
   const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
-  if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
+  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
   const BREVO_API_KEY = process.env.BREVO_API_KEY;
-  if (!BREVO_API_KEY) throw new Error('BREVO_API_KEY is not configured');
+  if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY is not configured");
   return {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     Authorization: `Bearer ${LOVABLE_API_KEY}`,
-    'X-Connection-Api-Key': BREVO_API_KEY,
+    "X-Connection-Api-Key": BREVO_API_KEY,
   };
 }
 
@@ -28,7 +28,11 @@ async function brevoFetch(path: string, init: RequestInit): Promise<unknown> {
 }
 
 function safeJson(text: string): unknown {
-  try { return JSON.parse(text); } catch { return text; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 /**
@@ -45,11 +49,11 @@ export type BrevoContactInput = {
 };
 
 export async function brevoSyncContact(input: BrevoContactInput): Promise<unknown> {
-  if (!input.email || typeof input.email !== 'string') {
-    throw new Error('brevoSyncContact: email is required');
+  if (!input.email || typeof input.email !== "string") {
+    throw new Error("brevoSyncContact: email is required");
   }
-  return brevoFetch('/contacts', {
-    method: 'POST',
+  return brevoFetch("/contacts", {
+    method: "POST",
     body: JSON.stringify({ ...input, updateEnabled: true }),
   });
 }
@@ -67,12 +71,17 @@ export type BrevoTrackEventInput = {
 };
 
 export async function brevoTrackEvent(input: BrevoTrackEventInput): Promise<unknown> {
-  if (!input.event_name) throw new Error('brevoTrackEvent: event_name is required');
-  if (!input.identifiers || (!input.identifiers.email_id && !input.identifiers.phone_id && !input.identifiers.ext_id)) {
-    throw new Error('brevoTrackEvent: at least one identifier (email_id, phone_id, ext_id) is required');
+  if (!input.event_name) throw new Error("brevoTrackEvent: event_name is required");
+  if (
+    !input.identifiers ||
+    (!input.identifiers.email_id && !input.identifiers.phone_id && !input.identifiers.ext_id)
+  ) {
+    throw new Error(
+      "brevoTrackEvent: at least one identifier (email_id, phone_id, ext_id) is required",
+    );
   }
-  return brevoFetch('/events', {
-    method: 'POST',
+  return brevoFetch("/events", {
+    method: "POST",
     body: JSON.stringify(input),
   });
 }
@@ -97,16 +106,24 @@ export type BrevoSendEmailInput = {
   headers?: Record<string, string>;
 };
 
-export async function brevoSendEmail(input: BrevoSendEmailInput): Promise<unknown> {
-  if (!input.sender?.email) throw new Error('brevoSendEmail: sender.email is required');
+export type BrevoSendEmailOptions = {
+  sandbox?: boolean;
+};
+
+export async function brevoSendEmail(
+  input: BrevoSendEmailInput,
+  options: BrevoSendEmailOptions = {},
+): Promise<unknown> {
+  if (!input.sender?.email) throw new Error("brevoSendEmail: sender.email is required");
   if (!Array.isArray(input.to) || input.to.length === 0) {
-    throw new Error('brevoSendEmail: at least one recipient is required');
+    throw new Error("brevoSendEmail: at least one recipient is required");
   }
   if (!input.templateId && !input.htmlContent && !input.textContent) {
-    throw new Error('brevoSendEmail: templateId, htmlContent, or textContent is required');
+    throw new Error("brevoSendEmail: templateId, htmlContent, or textContent is required");
   }
-  return brevoFetch('/smtp/email', {
-    method: 'POST',
+  return brevoFetch("/smtp/email", {
+    method: "POST",
+    headers: options.sandbox ? { "X-Sib-Sandbox": "drop" } : undefined,
     body: JSON.stringify(input),
   });
 }
