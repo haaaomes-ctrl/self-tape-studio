@@ -43,6 +43,10 @@ import {
   type S10RoleMaterialContext,
 } from "./s10-role-material-context.server";
 import type { S10ObservationContextSourceKind } from "./s10-observation-context.server";
+import { applyS10FixHierarchyNextAction } from "./s10-fix-hierarchy-next-action.server";
+import { normaliseS10ProfessionalCritique } from "./s10-strengths-preserve-professional-critique.server";
+import { normaliseS10TechniqueCommentary } from "./s10-technique-library-commentary.server";
+import { normaliseS10TimestampedCommentary } from "./s10-timestamped-commentary.server";
 
 export type S10SectionSource = S10RouteSectionSource;
 
@@ -199,6 +203,721 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+type RouteObservationConstraint = {
+  requirement_id: string;
+  label: string;
+  component_type: ObservedTapeSequence["component_type"];
+  observed_status: ComponentVerification["observed_status"];
+  completion_status: ComponentVerification["completion_status"];
+  evidence_summary: string;
+  assessability_notes: string;
+  confidence: ComponentVerification["confidence"];
+};
+
+type MatrixRequirementResult = BriefAchievementMatrix["requirement_results"][number];
+
+function appendRouteNote(existing: string | undefined, note: string): string {
+  const base = typeof existing === "string" ? existing.trim() : "";
+  if (!base) return note;
+  if (base.includes(note)) return base;
+  return `${base}; ${note}`;
+}
+
+function hasRestrictiveObservedTapeStatus(item: ObservedTapeSequence): boolean {
+  return item.present_status !== "present" || item.completion_status !== "complete";
+}
+
+function claimsCompletePresence(input: {
+  observed_status?: string | null;
+  completion_status?: string | null;
+}): boolean {
+  return input.observed_status === "present" || input.completion_status === "complete";
+}
+
+function claimsCompleteRouteText(value: string): boolean {
+  return /\b(present and complete|complete(?:\s+\w+){0,3}\s+package|complete side|complete song|verified|achieved package|all required material|final export contains|side\s*1 and song)\b/i.test(
+    value,
+  );
+}
+
+function buildRouteObservationConstraints(
+  observedTapeSequence: ObservedTapeSequence[],
+): Map<string, RouteObservationConstraint> {
+  const constraints = new Map<string, RouteObservationConstraint>();
+  for (const item of observedTapeSequence) {
+    if (!hasRestrictiveObservedTapeStatus(item)) continue;
+    for (const requirementId of item.linked_requirement_ids ?? []) {
+      if (!requirementId) continue;
+      constraints.set(requirementId, {
+        requirement_id: requirementId,
+        label: item.label,
+        component_type: item.component_type,
+        observed_status: item.present_status,
+        completion_status: item.completion_status,
+        evidence_summary: item.evidence_summary,
+        assessability_notes: item.assessability_notes,
+        confidence: item.confidence,
+      });
+    }
+  }
+  return constraints;
+}
+
+function routeConstraintSummary(constraint: RouteObservationConstraint): string {
+  return `${constraint.label || "Requirement"} is observed as ${constraint.observed_status} / ${constraint.completion_status}.`;
+}
+
+function textIncludesRouteDependency(
+  value: string,
+  constraint: RouteObservationConstraint,
+): boolean {
+  const mentionsPackageDependency =
+    /\b(package|continuous|one final|final file|all required material|full package|side\s*1 and song|acting scene and (the )?song)\b/i.test(
+      value,
+    );
+  if (!mentionsPackageDependency) return false;
+  if (constraint.component_type === "acting_scene") {
+    return /\b(side\s*1|acting scene|scene|all required material|package|continuous|final file)\b/i.test(
+      value,
+    );
+  }
+  if (constraint.component_type === "song") {
+    return /\b(song|all required material|package|continuous|final file)\b/i.test(value);
+  }
+  return false;
+}
+
+function dependentConstraintForText(
+  value: string,
+  constraints: Map<string, RouteObservationConstraint>,
+): RouteObservationConstraint | null {
+  for (const constraint of constraints.values()) {
+    if (textIncludesRouteDependency(value, constraint)) return constraint;
+  }
+  return null;
+}
+
+function expandRouteObservationConstraints(
+  constraints: Map<string, RouteObservationConstraint>,
+  matrix: BriefAchievementMatrix | null,
+  componentVerifications: ComponentVerification[],
+): Map<string, RouteObservationConstraint> {
+  if (constraints.size === 0) return constraints;
+  const expanded = new Map(constraints);
+  const addDependentConstraint = (requirementId: string, label: string, textValue: string) => {
+    if (!requirementId || expanded.has(requirementId)) return;
+    if (/\b(file naming|filename)\b/i.test(`${label} ${textValue}`)) return;
+    const dependency = dependentConstraintForText(textValue, constraints);
+    if (!dependency) return;
+    expanded.set(requirementId, {
+      ...dependency,
+      requirement_id: requirementId,
+      label,
+      evidence_summary: `This package/final-file result depends on ${routeConstraintSummary(dependency)}`,
+      assessability_notes:
+        "S10 route reconciled this package/final-file row with a stricter required-component observation before rendering.",
+    });
+  };
+
+  for (const row of matrix?.requirement_results ?? []) {
+    addDependentConstraint(
+      row.requirement_id,
+      row.requirement_summary,
+      `${row.requirement_summary} ${row.evidence_summary} ${row.recommended_action}`,
+    );
+  }
+  for (const verification of componentVerifications) {
+    addDependentConstraint(
+      verification.requirement_id,
+      verification.requirement_summary,
+      `${verification.requirement_summary} ${verification.evidence_summary} ${verification.assessability_notes ?? ""}`,
+    );
+  }
+  return expanded;
+}
+
+function reconcileComponentVerificationsWithObservedTape(
+  verifications: ComponentVerification[],
+  constraints: Map<string, RouteObservationConstraint>,
+): ComponentVerification[] {
+  return verifications.map((verification) => {
+    const constraint = constraints.get(verification.requirement_id);
+    if (
+      !constraint ||
+      (!claimsCompletePresence({
+        observed_status: verification.observed_status,
+        completion_status: verification.completion_status,
+      }) &&
+        !claimsCompleteRouteText(
+          `${verification.requirement_summary} ${verification.evidence_summary} ${verification.assessability_notes ?? ""}`,
+        ))
+    ) {
+      return verification;
+    }
+    return {
+      ...verification,
+      observed_status: constraint.observed_status,
+      completion_status: constraint.completion_status,
+      evidence_summary: constraint.evidence_summary || verification.evidence_summary,
+      confidence: constraint.confidence,
+      assessability_notes: appendRouteNote(
+        verification.assessability_notes,
+        "S10 route reconciled this row with stricter observed-tape evidence before rendering.",
+      ),
+    };
+  });
+}
+
+function achievementForConstraint(
+  constraint: RouteObservationConstraint,
+): BriefAchievementMatrix["requirement_results"][number]["achievement_status"] {
+  if (constraint.observed_status === "absent") return "not_achieved";
+  if (constraint.observed_status === "not_assessable" || constraint.observed_status === "uncertain")
+    return "not_assessable";
+  if (constraint.observed_status === "partially_present") return "partly_achieved";
+  if (constraint.completion_status === "incomplete" || constraint.completion_status === "cut_off")
+    return "partly_achieved";
+  if (constraint.completion_status === "uncertain") return "not_assessable";
+  return "partly_achieved";
+}
+
+function isMaterialOrPackageRequirement(row: MatrixRequirementResult): boolean {
+  const text = `${row.requirement_summary} ${row.evidence_summary} ${row.recommended_action}`;
+  return (
+    row.category === "material" ||
+    row.category === "performance" ||
+    /\b(package|continuous|required material|complete package|song|side|acting scene)\b/i.test(text)
+  );
+}
+
+function submissionImpactForConstraint(
+  row: MatrixRequirementResult,
+  constraint: RouteObservationConstraint,
+): MatrixRequirementResult["submission_impact"] {
+  if (row.importance !== "mandatory" || !isMaterialOrPackageRequirement(row)) {
+    return row.submission_impact === "supports_submission"
+      ? "not_assessable"
+      : row.submission_impact;
+  }
+  if (constraint.observed_status === "absent") return "submission_blocker";
+  return "material_gap";
+}
+
+function fixCategoryForConstraint(
+  row: MatrixRequirementResult,
+  constraint: RouteObservationConstraint,
+): MatrixRequirementResult["fix_category"] {
+  if (
+    row.importance === "mandatory" &&
+    isMaterialOrPackageRequirement(row) &&
+    constraint.observed_status !== "present"
+  ) {
+    return "must_fix";
+  }
+  return row.fix_category;
+}
+
+function reconcileBriefAchievementMatrixWithObservedTape(
+  matrix: BriefAchievementMatrix | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): BriefAchievementMatrix | null {
+  if (!matrix || !Array.isArray(matrix.requirement_results) || constraints.size === 0) {
+    return matrix;
+  }
+  const downgradedIds = new Set<string>();
+  const requirement_results = matrix.requirement_results.map((row) => {
+    const constraint = constraints.get(row.requirement_id);
+    if (
+      !constraint ||
+      (!claimsCompletePresence({
+        observed_status: row.observed_status,
+        completion_status: row.completion_status,
+      }) &&
+        !claimsCompleteRouteText(
+          `${row.requirement_summary} ${row.evidence_summary} ${row.recommended_action}`,
+        ))
+    ) {
+      return row;
+    }
+    downgradedIds.add(row.requirement_id);
+    const achievement_status = achievementForConstraint(constraint);
+    return {
+      ...row,
+      observed_status: constraint.observed_status,
+      completion_status: constraint.completion_status,
+      achievement_status,
+      evidence_summary: constraint.evidence_summary || row.evidence_summary,
+      submission_impact: submissionImpactForConstraint(row, constraint),
+      fix_category: fixCategoryForConstraint(row, constraint),
+      recommended_action:
+        row.recommended_action &&
+        !/\b(preserve|complete|present|submit-ready|supports submission)\b/i.test(
+          row.recommended_action,
+        )
+          ? row.recommended_action
+          : `Resolve this requirement before relying on submit guidance: ${routeConstraintSummary(constraint)}`,
+      confidence: constraint.confidence,
+    };
+  });
+  if (downgradedIds.size === 0) return matrix;
+
+  const notAssessable = new Set(matrix.not_assessable_requirements ?? []);
+  const missing = new Set(matrix.missing_or_incomplete_requirements ?? []);
+  for (const row of requirement_results) {
+    if (!downgradedIds.has(row.requirement_id)) continue;
+    if (row.achievement_status === "not_assessable") notAssessable.add(row.requirement_id);
+    else missing.add(row.requirement_id);
+  }
+  return {
+    ...matrix,
+    overall_status:
+      matrix.overall_status === "achieved" || matrix.overall_status === "mostly_achieved"
+        ? "partly_achieved"
+        : matrix.overall_status,
+    mandatory_status: matrix.mandatory_status === "clear" ? "some_gaps" : matrix.mandatory_status,
+    readiness_impact:
+      matrix.readiness_impact === "supports_submission" ? "material_gap" : matrix.readiness_impact,
+    summary: `S10 route reconciled the brief achievement result with stricter observed-tape evidence before rendering: ${[
+      ...downgradedIds,
+    ]
+      .map((id) => constraints.get(id))
+      .filter((item): item is RouteObservationConstraint => Boolean(item))
+      .map(routeConstraintSummary)
+      .join(" ")}`,
+    achieved_requirements: (matrix.achieved_requirements ?? []).filter(
+      (id) => !downgradedIds.has(id),
+    ),
+    missing_or_incomplete_requirements: [...missing],
+    not_assessable_requirements: [...notAssessable],
+    requirement_results,
+  };
+}
+
+function constrainedMaterialRows(
+  matrix: BriefAchievementMatrix | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): MatrixRequirementResult[] {
+  if (!matrix) return [];
+  return matrix.requirement_results.filter(
+    (row) =>
+      constraints.has(row.requirement_id) &&
+      row.importance === "mandatory" &&
+      isMaterialOrPackageRequirement(row),
+  );
+}
+
+function categoryContradictsConstraint(
+  categoryId: unknown,
+  constraints: Map<string, RouteObservationConstraint>,
+): boolean {
+  const id = asText(categoryId);
+  if (!id) return false;
+  const componentTypes = new Set([...constraints.values()].map((item) => item.component_type));
+  if (id === "brief_adherence") return constraints.size > 0;
+  if (id === "acting") return componentTypes.has("acting_scene");
+  if (id === "vocal") return componentTypes.has("song");
+  if (id === "technical") return componentTypes.has("technical");
+  return false;
+}
+
+function reconcileReadinessWithObservedTape(
+  readiness: ReadinessAndScoreJudgement | null,
+  matrix: BriefAchievementMatrix | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): ReadinessAndScoreJudgement | null {
+  if (!readiness || constraints.size === 0) return readiness;
+  const materialRows = constrainedMaterialRows(matrix, constraints);
+  if (materialRows.length === 0) return readiness;
+  const alreadyBlocking =
+    readiness.decision === "review_carefully" ||
+    readiness.decision === "retake_required_if_possible";
+  const visibleScore = readiness.overall_submission_readiness_score;
+  const scoreAlreadyBlocking = typeof visibleScore === "number" && visibleScore < 70;
+  if (
+    alreadyBlocking &&
+    scoreAlreadyBlocking &&
+    !containsProfessional90PlusClaim(readiness.selected_level_calibration?.score_meaning)
+  ) {
+    return readiness;
+  }
+  const primary = materialRows[0];
+  const primaryConstraint = constraints.get(primary.requirement_id);
+  const routeReason = primaryConstraint
+    ? `${primary.requirement_summary}: ${routeConstraintSummary(primaryConstraint)}`
+    : `${primary.requirement_summary} has stricter observed-tape evidence than the score result.`;
+  const requiresRetake = materialRows.some((row) => {
+    const constraint = constraints.get(row.requirement_id);
+    return (
+      constraint?.observed_status === "absent" ||
+      constraint?.completion_status === "incomplete" ||
+      constraint?.completion_status === "cut_off"
+    );
+  });
+  const decision: ReadinessAndScoreJudgement["decision"] = requiresRetake
+    ? "retake_required_if_possible"
+    : "review_carefully";
+  const explanation =
+    "Numeric readiness and submit guidance were not rendered because the observed-tape evidence is stricter than the report's achievement/score language.";
+  return {
+    ...readiness,
+    decision,
+    headline: requiresRetake
+      ? "Retake or repair required before relying on this report."
+      : "Review before submitting: observed evidence needs reconciliation.",
+    rationale: [
+      routeReason,
+      "S10 withheld conflicting submit-ready score language until the report is regenerated or the component evidence is confirmed.",
+    ],
+    confidence: "low",
+    performance_quality_score: null,
+    brief_completion_score: null,
+    overall_submission_readiness_score: null,
+    score_band_label: null,
+    score_explanation: explanation,
+    brief_blocker_override: true,
+    brief_completion_summary: routeReason,
+    selected_level_calibration: {
+      ...readiness.selected_level_calibration,
+      score_meaning: explanation,
+      what_meets_level: (readiness.selected_level_calibration?.what_meets_level ?? []).filter(
+        (item) =>
+          !/\b(present|complete|verified|submit-ready|submission-ready|scene-to-song|package reads|professional audition unit)\b/i.test(
+            item,
+          ),
+      ),
+      what_falls_short: [
+        routeReason,
+        ...(readiness.selected_level_calibration?.what_falls_short ?? []),
+      ].filter((item) => !/\bnot a retake blocker|not required for readiness\b/i.test(item)),
+      recommendation_impact:
+        "The selected-level judgement is provisional until the observed material contradiction is resolved.",
+      confidence: "low",
+    },
+    category_scores: (readiness.category_scores ?? []).map((row) =>
+      categoryContradictsConstraint(row.category_id, constraints)
+        ? {
+            ...row,
+            score: null,
+            score_basis: explanation,
+            what_works: "",
+            why_not_full_score: routeReason,
+            close_gap:
+              "Regenerate the report or confirm the final export evidence before scoring this category.",
+            confidence: "low",
+            blocked_or_not_assessable_reason: routeReason,
+          }
+        : row,
+    ),
+    component_scores: (readiness.component_scores ?? []).map((row) => {
+      const linked = row.linked_requirement_ids.find((id) => constraints.has(id));
+      const constraint = linked ? constraints.get(linked) : null;
+      return constraint
+        ? {
+            ...row,
+            observed_status: constraint.observed_status,
+            completion_status: constraint.completion_status,
+            score: null,
+            score_basis: explanation,
+            confidence: "low",
+            cannot_score_reason: routeConstraintSummary(constraint),
+          }
+        : row;
+    }),
+    component_score_notes: [
+      "S10 route withheld component scores that contradicted stricter observed-tape evidence.",
+    ],
+    score_contradiction_warnings: [
+      ...(readiness.score_contradiction_warnings ?? []),
+      {
+        affected_field: "readiness_score_judgement",
+        original_value: readiness.overall_submission_readiness_score,
+        capped_value: null,
+        matrix_reason: routeReason,
+        source: "s10_ai_judgement",
+      },
+    ],
+    repair_prompt_status: "classified_contradictory",
+  };
+}
+
+function routeConstraintReferenceIds(
+  constraints: Map<string, RouteObservationConstraint>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const id of constraints.keys()) {
+    ids.add(id);
+    ids.add(`cv-${id.replace(/^req-/, "")}`);
+  }
+  return ids;
+}
+
+function itemReferencesRouteConstraint(
+  item: unknown,
+  constraints: Map<string, RouteObservationConstraint>,
+): boolean {
+  const record = asRecord(item);
+  if (!record) return false;
+  const ids = routeConstraintReferenceIds(constraints);
+  const linked = [
+    ...asArray<string>(record.linked_requirement_ids),
+    ...asArray<string>(record.linked_matrix_result_ids),
+    ...asArray<string>(record.linked_component_verification_ids),
+  ];
+  return linked.some((id) => ids.has(id));
+}
+
+function routePositiveClaimText(value: string): boolean {
+  if (
+    /\b(incomplete|missing|not confirmed|not observed|not assessable|partial|cut[-\s]?off)\b/i.test(
+      value,
+    )
+  ) {
+    return false;
+  }
+  return /\b(present and complete|complete(?:\s+\w+){0,3}\s+package|complete side|complete song|verified side|verified complete|submit-ready|submission-ready|supports submission|submission is strong|no mandatory blocker|no mandatory fix|achieved package|preserve the complete|scene-to-song|professional audition unit|package reads)\b/i.test(
+    value,
+  );
+}
+
+function itemVisibleText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const record = asRecord(value);
+  if (!record) return "";
+  return [
+    record.title,
+    record.headline,
+    record.point,
+    record.summary,
+    record.detail,
+    record.exact_action,
+    record.evidence_summary,
+    record.why_it_matters,
+    record.why_to_preserve,
+    record.recommended_action,
+  ]
+    .map((item) => asText(item))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function correctiveActionText(value: unknown): boolean {
+  return /\b(record|include|resolve|re-check|regenerate|confirm|before relying|before submitting|not confirmed|not observed|missing|required)\b/i.test(
+    itemVisibleText(value),
+  );
+}
+
+function actionItemAllowedAfterConstraint(
+  item: unknown,
+  constraints: Map<string, RouteObservationConstraint>,
+  keepCorrective: boolean,
+): boolean {
+  if (!itemReferencesRouteConstraint(item, constraints)) {
+    return constraints.size === 0 || !routePositiveClaimText(itemVisibleText(item));
+  }
+  return keepCorrective && correctiveActionText(item);
+}
+
+function routeConstraintLimitation(constraints: Map<string, RouteObservationConstraint>): string {
+  const summaries = [...constraints.values()].map(routeConstraintSummary).join(" ");
+  return `S10 route withheld report sections that claimed completion where stricter observed evidence exists. ${summaries}`;
+}
+
+function restrictFixHierarchyWithObservedTape(
+  hierarchy: S10FixHierarchy | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): S10FixHierarchy | null {
+  if (!hierarchy || constraints.size === 0) return hierarchy;
+  const keepCorrective = (item: unknown) =>
+    actionItemAllowedAfterConstraint(item, constraints, true);
+  const keepNonCorrective = (item: unknown) =>
+    actionItemAllowedAfterConstraint(item, constraints, false);
+  return {
+    ...hierarchy,
+    fix_first: keepCorrective(hierarchy.fix_first) ? hierarchy.fix_first : null,
+    priority_fixes: (hierarchy.priority_fixes ?? []).filter(keepCorrective),
+    must_fix_before_submitting: (hierarchy.must_fix_before_submitting ?? []).filter(keepCorrective),
+    should_improve_if_retaking: (hierarchy.should_improve_if_retaking ?? []).filter(
+      keepNonCorrective,
+    ),
+    optional_polish: (hierarchy.optional_polish ?? []).filter(keepNonCorrective),
+    preserve: (hierarchy.preserve ?? []).filter(keepNonCorrective),
+    do_not_overfix: (hierarchy.do_not_overfix ?? []).filter(keepNonCorrective),
+  };
+}
+
+function restrictNextActionPlanWithObservedTape(
+  plan: S10NextActionPlan | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): S10NextActionPlan | null {
+  if (!plan || constraints.size === 0) return plan;
+  const keepText = (item: string) => !routePositiveClaimText(item) || correctiveActionText(item);
+  return {
+    ...plan,
+    submit_checklist: (plan.submit_checklist ?? []).filter(keepText),
+    final_checks: (plan.final_checks ?? []).filter(keepText),
+    playback_checks: plan.playback_checks ?? [],
+    retake_plan: plan.retake_plan ?? [],
+    do_not_overfix: (plan.do_not_overfix ?? []).filter(keepText),
+    if_time_is_short_guidance: (plan.if_time_is_short_guidance ?? []).filter(keepText),
+    no_retake_needed_reason: null,
+  };
+}
+
+function restrictProfessionalCritiqueWithObservedTape(
+  critique: S10ProfessionalCritique | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): S10ProfessionalCritique | null {
+  if (!critique || constraints.size === 0) return critique;
+  const keepStrength = (item: unknown) =>
+    !itemReferencesRouteConstraint(item, constraints) &&
+    !routePositiveClaimText(itemVisibleText(item));
+  const keepPreserve = (item: unknown) =>
+    !itemReferencesRouteConstraint(item, constraints) &&
+    !routePositiveClaimText(itemVisibleText(item));
+  const limitations = [
+    ...(critique.critique_limitations ?? []),
+    routeConstraintLimitation(constraints),
+  ];
+  return {
+    ...critique,
+    summary: routePositiveClaimText(critique.summary)
+      ? "S10 route rendered only strengths supported after observed-evidence reconciliation."
+      : critique.summary,
+    performance_strengths: (critique.performance_strengths ?? []).filter(keepStrength),
+    brief_package_strengths: (critique.brief_package_strengths ?? []).filter(keepStrength),
+    technical_presentation_strengths: (critique.technical_presentation_strengths ?? []).filter(
+      keepStrength,
+    ),
+    vocal_or_singing_strengths: (critique.vocal_or_singing_strengths ?? []).filter(keepStrength),
+    acting_strengths: (critique.acting_strengths ?? []).filter(keepStrength),
+    movement_or_physical_strengths: (critique.movement_or_physical_strengths ?? []).filter(
+      keepStrength,
+    ),
+    professional_presentation_notes: (critique.professional_presentation_notes ?? []).filter(
+      keepStrength,
+    ),
+    preserve: (critique.preserve ?? []).filter(keepPreserve),
+    do_not_overfix: (critique.do_not_overfix ?? []).filter(keepPreserve),
+    critique_limitations: limitations.filter(
+      (item, index, array) => item && array.indexOf(item) === index,
+    ),
+  };
+}
+
+function constrainedComponentTypes(
+  constraints: Map<string, RouteObservationConstraint>,
+): Set<ObservedTapeSequence["component_type"]> {
+  return new Set([...constraints.values()].map((item) => item.component_type));
+}
+
+function routeLimitedTechniqueSection(
+  status: "partially_assessable" | "not_assessable",
+  headline: string,
+  reason: string,
+): S10TechniqueCommentary["acting"] {
+  return {
+    status,
+    headline,
+    observations: [],
+    what_is_working: [],
+    what_could_improve: [],
+    practical_actions: [],
+    preserve: [],
+    not_assessable_reason: reason,
+    confidence: "low",
+  };
+}
+
+function restrictTechniqueCommentaryWithObservedTape(
+  commentary: S10TechniqueCommentary | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): S10TechniqueCommentary | null {
+  if (!commentary || constraints.size === 0) return commentary;
+  const componentTypes = constrainedComponentTypes(constraints);
+  const limitations = [...(commentary.limitations ?? []), routeConstraintLimitation(constraints)];
+  const next = {
+    ...commentary,
+    summary: routePositiveClaimText(commentary.summary)
+      ? "Technique commentary was limited to evidence that survived observed-evidence reconciliation."
+      : commentary.summary,
+    limitations: limitations.filter((item, index, array) => item && array.indexOf(item) === index),
+  };
+  if (componentTypes.has("acting_scene")) {
+    next.acting = routeLimitedTechniqueSection(
+      "not_assessable",
+      "Acting scene not assessable from the reconciled evidence.",
+      "The required Side 1 acting scene is not confirmed by the stricter observed-tape evidence.",
+    );
+  }
+  if (componentTypes.has("song")) {
+    next.vocal_singing = {
+      ...next.vocal_singing,
+      status: "partially_assessable",
+      headline: "Vocal/singing technique is limited to the confirmed observed portion.",
+      not_assessable_reason:
+        next.vocal_singing.not_assessable_reason ??
+        "The required song is partial, cut off or not confirmed complete.",
+      what_is_working: (next.vocal_singing.what_is_working ?? []).filter(
+        (item) => !routePositiveClaimText(item),
+      ),
+      preserve: (next.vocal_singing.preserve ?? []).filter((item) => !routePositiveClaimText(item)),
+    };
+  }
+  if (componentTypes.has("acting_scene") || componentTypes.has("song")) {
+    next.musical_theatre_package = routeLimitedTechniqueSection(
+      "partially_assessable",
+      "MT package commentary is limited because the required package is not fully confirmed.",
+      "A required package component is absent, partial or not confirmed complete in the stricter observed-tape evidence.",
+    );
+  }
+  if (componentTypes.has("technical")) {
+    next.self_tape_presentation = routeLimitedTechniqueSection(
+      "not_assessable",
+      "Self-tape presentation is not assessable from the reconciled technical evidence.",
+      "The technical presentation row is not confirmed by stricter observed-tape evidence.",
+    );
+  }
+  return next;
+}
+
+function timestampNoteIsCorrective(value: unknown): boolean {
+  const record = asRecord(value);
+  return (
+    record?.is_missing_component_note === true ||
+    /\b(not observed|missing|required|record|include|cut[-\s]?off|playback|incomplete)\b/i.test(
+      itemVisibleText(value),
+    )
+  );
+}
+
+function restrictTimestampedCommentaryWithObservedTape(
+  commentary: S10TimestampedCommentary | null,
+  constraints: Map<string, RouteObservationConstraint>,
+): S10TimestampedCommentary | null {
+  if (!commentary || constraints.size === 0) return commentary;
+  const notes = (commentary.notes ?? []).filter(
+    (note) => !itemReferencesRouteConstraint(note, constraints) || timestampNoteIsCorrective(note),
+  );
+  const timestampLimitations = [
+    ...(commentary.timestamp_limitations ?? []),
+    routeConstraintLimitation(constraints),
+  ].filter((item, index, array) => item && array.indexOf(item) === index);
+  return {
+    ...commentary,
+    summary: routePositiveClaimText(commentary.summary)
+      ? "Timestamped notes were filtered against stricter observed evidence before rendering."
+      : commentary.summary,
+    notes,
+    timestamp_limitations: timestampLimitations,
+  };
+}
+
+function containsProfessional90PlusClaim(value: unknown): boolean {
+  const text = asText(value);
+  if (!text) return false;
+  return /\b90\s*\+|\b90\b|competitive zone/i.test(text);
+}
+
 function source(available: boolean, module: string, limitation: string): S10SectionSourceEntry {
   return available
     ? { source: "s10_authoritative_module", module, limitation: null }
@@ -290,23 +1009,23 @@ export function buildS10PerformerReportViewModel(input: {
   const report = asRecord(input.report);
   if (!report || !hasActualS10AuthoritativeModuleObjects(report)) return null;
 
-  const readiness = cloneForRouteSurface(
+  let readiness = cloneForRouteSurface(
     report.readiness_score_judgement,
   ) as ReadinessAndScoreJudgement | null;
-  const matrix = cloneForRouteSurface(
+  let matrix = cloneForRouteSurface(
     report.brief_achievement_matrix,
   ) as BriefAchievementMatrix | null;
-  const fixHierarchy = cloneForRouteSurface(report.s10_fix_hierarchy) as S10FixHierarchy | null;
-  const nextActionPlan = cloneForRouteSurface(
+  let fixHierarchy = cloneForRouteSurface(report.s10_fix_hierarchy) as S10FixHierarchy | null;
+  let nextActionPlan = cloneForRouteSurface(
     report.s10_next_action_plan,
   ) as S10NextActionPlan | null;
-  const professionalCritique = cloneForRouteSurface(
+  let professionalCritique = cloneForRouteSurface(
     report.s10_professional_critique,
   ) as S10ProfessionalCritique | null;
-  const techniqueCommentary = cloneForRouteSurface(
+  let techniqueCommentary = cloneForRouteSurface(
     report.s10_technique_commentary,
   ) as S10TechniqueCommentary | null;
-  const timestampedCommentary = cloneForRouteSurface(
+  let timestampedCommentary = cloneForRouteSurface(
     report.s10_timestamped_commentary,
   ) as S10TimestampedCommentary | null;
   const sameVideoEvidence = cloneForRouteSurface(
@@ -341,12 +1060,154 @@ export function buildS10PerformerReportViewModel(input: {
   const observedTapeSequence = asArray<ObservedTapeSequence>(
     context.observedTapeSequence ?? report.observed_tape_sequence,
   );
-  const componentVerifications = asArray<ComponentVerification>(
+  let componentVerifications = asArray<ComponentVerification>(
     context.componentVerifications ?? report.component_verifications,
   );
+  const observedConstraints = expandRouteObservationConstraints(
+    buildRouteObservationConstraints(observedTapeSequence),
+    matrix,
+    componentVerifications,
+  );
+  componentVerifications = reconcileComponentVerificationsWithObservedTape(
+    componentVerifications,
+    observedConstraints,
+  );
+  matrix = reconcileBriefAchievementMatrixWithObservedTape(matrix, observedConstraints);
+  readiness = reconcileReadinessWithObservedTape(readiness, matrix, observedConstraints);
   const mediaObservationSummary = cloneForRouteSurface(
     context.mediaObservationSummary ?? report.media_observation_summary ?? null,
   ) as MediaObservationSummary | null;
+
+  if (observedConstraints.size > 0 && readiness && matrix) {
+    const hadFixHierarchy = fixHierarchy != null;
+    const hadNextActionPlan = nextActionPlan != null;
+    const hadProfessionalCritique = professionalCritique != null;
+    const hadTechniqueCommentary = techniqueCommentary != null;
+    const hadTimestampedCommentary = timestampedCommentary != null;
+    const actionReport = {
+      ...report,
+      s10_fix_hierarchy: fixHierarchy,
+      s10_next_action_plan: nextActionPlan,
+    };
+    const actionModules = applyS10FixHierarchyNextAction({
+      report: actionReport,
+      matrix,
+      readiness,
+    });
+    const normalisedFixHierarchy = actionModules.hierarchy;
+    const normalisedNextActionPlan = actionModules.nextActionPlan;
+    fixHierarchy = hadFixHierarchy ? normalisedFixHierarchy : null;
+    nextActionPlan = hadNextActionPlan ? normalisedNextActionPlan : null;
+    professionalCritique = hadProfessionalCritique
+      ? normaliseS10ProfessionalCritique({
+          critique: professionalCritique,
+          matrix,
+          readiness,
+          fixHierarchy: normalisedFixHierarchy,
+          nextActionPlan: normalisedNextActionPlan,
+          componentVerifications,
+          mediaObservationSummary,
+          report,
+        })
+      : null;
+    techniqueCommentary = hadTechniqueCommentary
+      ? normaliseS10TechniqueCommentary({
+          commentary: techniqueCommentary,
+          matrix,
+          readiness,
+          fixHierarchy: normalisedFixHierarchy,
+          nextActionPlan: normalisedNextActionPlan,
+          professionalCritique:
+            professionalCritique ??
+            normaliseS10ProfessionalCritique({
+              critique: null,
+              matrix,
+              readiness,
+              fixHierarchy: normalisedFixHierarchy,
+              nextActionPlan: normalisedNextActionPlan,
+              componentVerifications,
+              mediaObservationSummary,
+              report,
+            }),
+          componentVerifications,
+          mediaObservationSummary,
+          report,
+        })
+      : null;
+    timestampedCommentary = hadTimestampedCommentary
+      ? normaliseS10TimestampedCommentary({
+          commentary: timestampedCommentary,
+          matrix,
+          readiness,
+          fixHierarchy: normalisedFixHierarchy,
+          nextActionPlan: normalisedNextActionPlan,
+          professionalCritique:
+            professionalCritique ??
+            normaliseS10ProfessionalCritique({
+              critique: null,
+              matrix,
+              readiness,
+              fixHierarchy: normalisedFixHierarchy,
+              nextActionPlan: normalisedNextActionPlan,
+              componentVerifications,
+              mediaObservationSummary,
+              report,
+            }),
+          techniqueCommentary:
+            techniqueCommentary ??
+            normaliseS10TechniqueCommentary({
+              commentary: null,
+              matrix,
+              readiness,
+              fixHierarchy: normalisedFixHierarchy,
+              nextActionPlan: normalisedNextActionPlan,
+              professionalCritique:
+                professionalCritique ??
+                normaliseS10ProfessionalCritique({
+                  critique: null,
+                  matrix,
+                  readiness,
+                  fixHierarchy: normalisedFixHierarchy,
+                  nextActionPlan: normalisedNextActionPlan,
+                  componentVerifications,
+                  mediaObservationSummary,
+                  report,
+                }),
+              componentVerifications,
+              mediaObservationSummary,
+              report,
+            }),
+          observedTapeSequence,
+          componentVerifications,
+          report,
+        })
+      : null;
+    fixHierarchy = restrictFixHierarchyWithObservedTape(fixHierarchy, observedConstraints);
+    nextActionPlan = restrictNextActionPlanWithObservedTape(nextActionPlan, observedConstraints);
+    professionalCritique = restrictProfessionalCritiqueWithObservedTape(
+      professionalCritique,
+      observedConstraints,
+    );
+    techniqueCommentary = restrictTechniqueCommentaryWithObservedTape(
+      techniqueCommentary,
+      observedConstraints,
+    );
+    timestampedCommentary = restrictTimestampedCommentaryWithObservedTape(
+      timestampedCommentary,
+      observedConstraints,
+    );
+  }
+
+  fixHierarchy = cloneForRouteSurface(fixHierarchy) as S10FixHierarchy | null;
+  nextActionPlan = cloneForRouteSurface(nextActionPlan) as S10NextActionPlan | null;
+  professionalCritique = cloneForRouteSurface(
+    professionalCritique,
+  ) as S10ProfessionalCritique | null;
+  techniqueCommentary = cloneForRouteSurface(techniqueCommentary) as S10TechniqueCommentary | null;
+  timestampedCommentary = cloneForRouteSurface(
+    timestampedCommentary,
+  ) as S10TimestampedCommentary | null;
+
   const scoringMode = inferS10ScoringMode({
     report,
     briefContext,
@@ -1037,7 +1898,8 @@ function hasVisibleProfessionalCritiquePayload(value: unknown): boolean {
     arrayHasRenderableItems(critique.movement_or_physical_strengths) ||
     arrayHasRenderableItems(critique.professional_presentation_notes) ||
     arrayHasRenderableItems(critique.preserve) ||
-    arrayHasRenderableItems(critique.do_not_overfix)
+    arrayHasRenderableItems(critique.do_not_overfix) ||
+    arrayHasRenderableItems(critique.critique_limitations)
   );
 }
 
@@ -1045,11 +1907,14 @@ function hasVisibleTechniqueSectionPayload(value: unknown): boolean {
   const section = asRecord(value);
   if (!section) return false;
   return (
+    !!asText(section.headline) ||
+    !!asText(section.not_assessable_reason) ||
     arrayHasRenderableItems(section.observations) ||
     arrayHasRenderableItems(section.what_is_working) ||
     arrayHasRenderableItems(section.what_could_improve) ||
     arrayHasRenderableItems(section.practical_actions) ||
-    arrayHasRenderableItems(section.preserve)
+    arrayHasRenderableItems(section.preserve) ||
+    arrayHasRenderableItems(section.limitations)
   );
 }
 
@@ -1274,6 +2139,15 @@ export function validateAuthenticatedS10RouteSurface(viewModel: unknown):
   }
   if (!isUsableS10PerformerReportViewModel(viewModel)) {
     return { ok: false, reason: "s10_view_model_incomplete_shape" };
+  }
+  const score = asNumber(asRecord(view.score_summary)?.overall_submission_readiness_score);
+  const levelCalibration = asRecord(view.selected_level_calibration);
+  if (
+    score != null &&
+    score < 90 &&
+    containsProfessional90PlusClaim(levelCalibration?.score_meaning)
+  ) {
+    return { ok: false, reason: "s10_score_language_90_plus_contradiction" };
   }
   const json = JSON.stringify(view);
   for (const key of INTERNAL_KEYS) {

@@ -333,6 +333,9 @@ describe("provider tool schema helpers", () => {
         { type: "text", text: 'Here is the JSON:\n{"mode":"FULL"}' },
       ]),
     ).toEqual({ mode: "FULL" });
+    expect(parseProviderJsonObjectContent('[{"overall_score":82}]')).toEqual({
+      overall_score: 82,
+    });
   });
 
   it("leaves non-Gemini tools unchanged and normalises Gemini tools", () => {

@@ -315,7 +315,69 @@ describe("S10 report view rendering", () => {
     expect(styles).toContain("@media print");
     expect(styles).toContain(".tc-report-print-surface");
     expect(styles).toContain(".tc-report-print-section");
+    expect(styles).toContain(".tc-print-exclude");
+    expect(styles).toContain('section[aria-labelledby="page-header-title"]');
     expect(html).not.toMatch(/public share|share link|stored export|download PDF/i);
+  });
+
+  it("does not render Professional 90+ score-zone language for sub-90 reports", () => {
+    const report = strongCompleteV2Report();
+    const view = mutableS10View(report);
+    view.score_summary = {
+      ...(view.score_summary as Record<string, unknown>),
+      overall_submission_readiness_score: 82,
+    };
+    report.overall_readiness = 82;
+    view.selected_level_calibration = {
+      ...(view.selected_level_calibration as Record<string, unknown>),
+      score_meaning:
+        "The performance itself is in the competitive zone (90+), but the overall readiness is lower.",
+    };
+
+    const text = routeText(render(report));
+
+    expect(text).toContain("overall readiness score is 82");
+    expect(text).toContain(
+      "Score-zone calibration appears only for Professional reports scoring 90",
+    );
+    expect(text).not.toContain("The performance itself is in the competitive zone (90+)");
+    expect(text).not.toContain("Professional competitive calibration");
+  });
+
+  it("reconciles route-visible requirement rows with stricter observed-tape evidence", () => {
+    const report = buildS10StrongCompleteProfessionalReportInput();
+    const context = buildS10StrongCompleteProfessionalViewContext() as Record<string, unknown>;
+    context.observedTapeSequence = (
+      context.observedTapeSequence as Array<Record<string, unknown>>
+    ).map((item) =>
+      item.id === "seq-side-1"
+        ? {
+            ...item,
+            present_status: "uncertain",
+            completion_status: "uncertain",
+            evidence_summary: "The required Side 1 acting scene is not confirmed from the tape.",
+            assessability_notes: "Observed tape evidence is stricter than the requirement result.",
+          }
+        : item,
+    );
+    const v2 = buildV2Report({
+      legacyReport: report,
+      futureDimensions: null,
+      auditionType: "musical_theatre",
+      mode: "brief",
+      s10Context: context as never,
+    }) as unknown as Record<string, unknown>;
+    const text = routeText(render(v2));
+
+    expect(text).toContain(
+      "Required Side 1 acting scene — not assessable / observed uncertain / completion uncertain",
+    );
+    expect(text).toContain("S10 route reconciled this row with stricter observed-tape evidence");
+    expect(text).toContain("Overall readiness —");
+    expect(text).toContain("Record/include the full required Side 1 acting scene");
+    expect(text).not.toContain("Required Side 1 acting scene — present / complete");
+    expect(text).not.toContain("Preserve the complete Side 1 plus song package");
+    expect(text).not.toContain("Acting objective and scene partner focus are clear");
   });
 
   it("renders active take-version context without exposing raw take IDs", () => {

@@ -340,6 +340,11 @@ function professionalCompetitiveScoreZone(score: number | null): string | null {
   return "98-100 · Exceptional / benchmark take";
 }
 
+function containsProfessional90PlusClaim(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /\b90\s*\+|\b90\b|competitive zone/i.test(value);
+}
+
 export function V2ReportView({
   report,
   takeNumber,
@@ -514,7 +519,7 @@ export function V2ReportView({
     : safeStr(report.insight);
   const verdict = isS10
     ? s10SubmissionGuidanceAuthorized
-      ? safeStr(s10Recommendation?.decision)?.replace(/_/g, " ")
+      ? sentenceLabelize(s10Recommendation?.decision)
       : null
     : safeStr(report.verdict);
   const reliability = isS10 ? null : safeStr(report.reliability);
@@ -531,7 +536,13 @@ export function V2ReportView({
   const s10JudgedAgainst = safeStr(s10LevelCalibration?.selected_level_label);
   const s10LevelStandard = safeStr(s10LevelCalibration?.standard_applied);
   const s10LevelReadinessStandard = safeStr(s10LevelCalibration?.readiness_standard);
-  const s10LevelScoreMeaning = safeStr(s10LevelCalibration?.score_meaning);
+  const rawS10LevelScoreMeaning = safeStr(s10LevelCalibration?.score_meaning);
+  const s10SuppressesUnsupported90Claim =
+    isS10 &&
+    typeof overall === "number" &&
+    overall < 90 &&
+    containsProfessional90PlusClaim(rawS10LevelScoreMeaning);
+  const s10LevelScoreMeaning = s10SuppressesUnsupported90Claim ? null : rawS10LevelScoreMeaning;
   const s10LevelRecommendationImpact = safeStr(s10LevelCalibration?.recommendation_impact);
   const s10LevelComparison = safeStr(s10LevelCalibration?.comparison_to_other_levels);
   const s10MeetsLevel = displayStrings(s10LevelCalibration?.what_meets_level);
@@ -550,6 +561,7 @@ export function V2ReportView({
     !!s10LevelStandard ||
     !!s10LevelReadinessStandard ||
     !!s10LevelScoreMeaning ||
+    s10SuppressesUnsupported90Claim ||
     !!s10LevelRecommendationImpact ||
     !!s10LevelComparison ||
     s10MeetsLevel.length > 0 ||
@@ -900,6 +912,16 @@ export function V2ReportView({
               <p>
                 <span className="font-medium">Score meaning:</span>{" "}
                 <span className="text-muted-foreground">{s10LevelScoreMeaning}</span>
+              </p>
+            )}
+            {s10SuppressesUnsupported90Claim && (
+              <p>
+                <span className="font-medium">Score meaning:</span>{" "}
+                <span className="text-muted-foreground">
+                  Professional 90+ competitive-zone language was not rendered because the visible
+                  overall readiness score is {overall}. Score-zone calibration appears only for
+                  Professional reports scoring 90 or above.
+                </span>
               </p>
             )}
             {s10LevelRecommendationImpact && (

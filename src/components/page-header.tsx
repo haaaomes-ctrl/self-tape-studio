@@ -11,6 +11,7 @@ type PageHeaderProps = {
   title: string;
   subtitle?: ReactNode;
   actions?: ReactNode;
+  className?: string;
   /** Slim variant for app routes (dashboard / audition). Default is "marketing". */
   variant?: "marketing" | "app";
 };
@@ -20,18 +21,15 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  className,
   variant = "marketing",
 }: PageHeaderProps) {
-  const padY =
-    variant === "app" ? "py-10 sm:py-12" : "py-14 sm:py-20";
-  const titleSize =
-    variant === "app"
-      ? "text-3xl sm:text-4xl"
-      : "text-4xl sm:text-5xl lg:text-6xl";
+  const padY = variant === "app" ? "py-10 sm:py-12" : "py-14 sm:py-20";
+  const titleSize = variant === "app" ? "text-3xl sm:text-4xl" : "text-4xl sm:text-5xl lg:text-6xl";
   return (
     <section
       aria-labelledby="page-header-title"
-      className="relative isolate overflow-hidden border-b border-white/10 bg-[oklch(0.14_0.04_260)] text-white"
+      className={`${className ? `${className} ` : ""}relative isolate overflow-hidden border-b border-white/10 bg-[oklch(0.14_0.04_260)] text-white`}
     >
       {/* Subtle violet wash to echo the landing hero gradient */}
       <div
@@ -53,14 +51,10 @@ export function PageHeader({
               {title}
             </h1>
             {subtitle && (
-              <p className="mt-4 text-base leading-relaxed text-white/80 sm:text-lg">
-                {subtitle}
-              </p>
+              <p className="mt-4 text-base leading-relaxed text-white/80 sm:text-lg">{subtitle}</p>
             )}
           </div>
-          {actions && (
-            <div className="flex flex-wrap items-center gap-2">{actions}</div>
-          )}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       </div>
     </section>
