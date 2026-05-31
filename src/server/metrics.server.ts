@@ -124,6 +124,12 @@ export type MetricName =
   | "evidence_pass_failed"
   | "report_polish_started"
   | "report_polish_completed"
+  | "report_polish_retry_started"
+  | "report_polish_retry_completed"
+  | "report_polish_retry_failed"
+  | "report_polish_fallback_started"
+  | "report_polish_fallback_persisted"
+  | "report_polish_fallback_failed"
   | "report_polish_failed"
   | "two_step_fallback_used"
   | "two_step_total_ai_duration_ms";
