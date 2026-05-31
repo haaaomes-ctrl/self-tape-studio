@@ -11,6 +11,10 @@ describe("CRM service and lifecycle messaging foundations", () => {
     "supabase/migrations/20260530152500_cleanup_smoke_test_tech_debt.sql",
     "utf8",
   );
+  const dispatcherGuardrailSql = readFileSync(
+    "supabase/migrations/20260531090000_email_dispatcher_brevo_runtime_guardrails.sql",
+    "utf8",
+  );
 
   it("creates the CRM contact store and private dashboards", () => {
     expect(CRM_DASHBOARD_VERSION).toBe("s10-1-ds-19-2026-05-28");
@@ -24,11 +28,15 @@ describe("CRM service and lifecycle messaging foundations", () => {
     );
   });
 
-  it("routes CRM emails through the existing Lovable transactional queue", () => {
+  it("routes CRM emails through the Brevo-owned transactional queue", () => {
     expect(sql).toContain("public.enqueue_email('transactional_emails', payload)");
     expect(sql).toContain("'report_ready'");
     expect(sql).toContain("'failed_report_credit_restored'");
     expect(sql).toContain("'b2b_follow_up'");
+    expect(dispatcherGuardrailSql).toContain("'provider', 'brevo'");
+    expect(dispatcherGuardrailSql).toContain("'message_id', message_id");
+    expect(dispatcherGuardrailSql).toContain("'idempotency_key', message_id");
+    expect(dispatcherGuardrailSql).not.toContain("'run_id', message_id");
   });
 
   it("keeps consent and suppression rules explicit", () => {
