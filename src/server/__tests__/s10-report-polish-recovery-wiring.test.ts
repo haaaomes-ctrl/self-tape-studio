@@ -45,10 +45,16 @@ describe("S10 report polish recovery wiring", () => {
     expect(processTakeSource).toContain("s10_module_quality_recovery_started");
     expect(processTakeSource).toContain("s10_module_quality_recovery_persisted");
     expect(processTakeSource).toContain("s10_module_quality_recovery_failed");
+    expect(processTakeSource).toContain("s10_module_quality_residual_limitations_applied");
+    expect(processTakeSource).toContain("s10_residual_level_calibration_applied");
+    expect(processTakeSource).toContain("s10_residual_technique_commentary_applied");
     expect(processTakeSource).toContain("s10_module_quality_recovery_used");
     expect(processTakeSource).toContain("module_repair_retry_attempted");
     expect(processTakeSource).toContain("module_repair_retry_succeeded");
     expect(processTakeSource).toContain("module_quality_recovery_reason");
+    expect(processTakeSource).toContain("residual_module_recovery_used");
+    expect(processTakeSource).toContain("residual_modules_recovered");
+    expect(processTakeSource).toContain("applyS10ResidualModuleRecovery");
     expect(fallbackSource).toContain(
       'type S10EvidenceRecoveryKind = "polish_parser" | "module_quality"',
     );

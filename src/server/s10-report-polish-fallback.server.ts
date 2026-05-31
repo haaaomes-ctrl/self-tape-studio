@@ -39,6 +39,10 @@ function text(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim().replace(/\s+/g, " ") : fallback;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function evidenceList(values: unknown[], limit = 8): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -110,6 +114,30 @@ function firstSequenceForRequirement(
   );
 }
 
+function componentLabel(value: ComponentVerification | ObservedTapeSequence): string {
+  return text(
+    "requirement_summary" in value ? value.requirement_summary : value.label,
+    "observed component",
+  );
+}
+
+function componentSummary(value: ComponentVerification | ObservedTapeSequence): string {
+  return text(value.evidence_summary, "Step 1 observed this component in the tape.");
+}
+
+function techniqueAreaForEvidence(value: ComponentVerification | ObservedTapeSequence) {
+  const combined = `${componentLabel(value)} ${componentSummary(value)} ${
+    "component_type" in value ? value.component_type : ""
+  }`;
+  if (/\bsong|sing|vocal|voice\b/i.test(combined)) return "vocal_singing";
+  if (/\bdance|movement|physical|choreo\b/i.test(combined)) return "movement_dance";
+  if (/\bcommercial|screen|copy\b/i.test(combined)) return "commercial_screen_task";
+  if (/\bself[-\s]?tape|presentation|framing|audio|video|technical\b/i.test(combined)) {
+    return "self_tape_presentation";
+  }
+  return "acting";
+}
+
 function buildStrengths(
   evidence: EvidencePass,
   componentVerifications: ComponentVerification[],
@@ -160,6 +188,59 @@ function buildStrengths(
   return [...fromComponents, ...fromStep1].filter((item) => text(item.detail)).slice(0, 8);
 }
 
+function buildLevelMeetsEvidence(
+  evidence: EvidencePass,
+  componentVerifications: ComponentVerification[],
+  observedTapeSequence: ObservedTapeSequence[],
+  mediaObservationSummary: MediaObservationSummary | null,
+) {
+  return evidenceList(
+    [
+      ...evidence.core_strengths_evidence.map((item) => item.evidence),
+      ...componentVerifications.map(
+        (item) =>
+          `${item.requirement_summary}: ${item.evidence_summary}. This is observed Step 1 evidence for the selected-level standard.`,
+      ),
+      ...observedTapeSequence.map(
+        (item) =>
+          `${item.label}: ${item.evidence_summary}. This supports observable performance/setup calibration.`,
+      ),
+      evidence.category_notes_evidence.acting,
+      evidence.category_notes_evidence.audio,
+      evidence.category_notes_evidence.technical,
+      mediaObservationSummary?.duration_summary,
+      evidence.evidence_sufficiency.audio_assessable ||
+      evidence.evidence_sufficiency.video_assessable
+        ? "Step 1 confirmed assessable media evidence, so the level judgement can use observable performance and setup rather than failing the report."
+        : "",
+    ],
+    6,
+  );
+}
+
+function buildLevelShortfallEvidence(input: {
+  evidence: EvidencePass;
+  matrix: ReturnType<typeof normaliseBriefAchievementMatrix>;
+  mode: FallbackMode;
+}) {
+  return evidenceList(
+    [
+      ...input.evidence.core_improvements_evidence.map((item) => item.evidence),
+      input.evidence.fix_first_evidence,
+      ...input.matrix.missing_or_incomplete_requirements,
+      ...input.matrix.not_assessable_requirements,
+      input.mode === "baseline"
+        ? "No supplied brief was available, so TapeCoach cannot judge brief fit, required-material completion, deadline, upload or file-compliance claims from this run."
+        : "",
+      input.evidence.candidate_technique_evidence?.length
+        ? ""
+        : "Detailed technique nuance is limited because Step 1 did not provide safe candidate technique observations beyond component and media evidence.",
+      input.evidence.evidence_sufficiency.notes,
+    ],
+    6,
+  );
+}
+
 function buildTechniqueCommentary(evidence: EvidencePass, kind: S10EvidenceRecoveryKind) {
   const observations = evidence.candidate_technique_evidence ?? [];
   const techniqueItems = observations
@@ -190,11 +271,85 @@ function buildTechniqueCommentary(evidence: EvidencePass, kind: S10EvidenceRecov
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
     .slice(0, 6);
+  const componentItems = [
+    ...(evidence.component_verifications ?? []),
+    ...(evidence.observed_tape_sequence ?? []),
+  ]
+    .map((item, index) => {
+      const label = componentLabel(item);
+      const summary = componentSummary(item);
+      if (!summary) return null;
+      const area = techniqueAreaForEvidence(item);
+      return {
+        id: `polish_fallback_component_technique_${index + 1}`,
+        technique_area: area,
+        title:
+          area === "self_tape_presentation"
+            ? "Self-tape presentation evidence"
+            : `Component-level ${label} evidence`,
+        detail: `${summary} Use this as component-level guidance; do not infer detailed technique beyond what Step 1 observed.`,
+        evidence_summary: summary,
+        linked_requirement_ids:
+          "requirement_id" in item ? [item.requirement_id] : item.linked_requirement_ids,
+        linked_component_verification_ids: "requirement_id" in item ? [item.requirement_id] : [],
+        linked_matrix_result_ids:
+          "requirement_id" in item ? [item.requirement_id] : item.linked_requirement_ids,
+        linked_readiness_reason_ids: [],
+        linked_strength_ids: [],
+        linked_fix_ids: [],
+        linked_timestamp_refs:
+          "timestamp_refs" in item
+            ? item.timestamp_refs
+            : [item.start_time, item.end_time].filter((value): value is string => Boolean(value)),
+        component_status: componentStatus(
+          "observed_status" in item ? item.observed_status : item.present_status,
+        ),
+        confidence: "medium",
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+  const mediaPresentationItem =
+    evidence.media_observation_summary &&
+    (evidence.media_observation_summary.audio_assessable ||
+      evidence.media_observation_summary.video_assessable ||
+      evidence.media_observation_summary.framing_assessable)
+      ? {
+          id: "polish_fallback_media_presentation_1",
+          technique_area: "self_tape_presentation",
+          title: "Assessable self-tape setup",
+          detail: text(
+            evidence.media_observation_summary.duration_summary,
+            "Step 1 confirmed enough audio/video/framing evidence for practical self-tape presentation guidance.",
+          ),
+          evidence_summary: text(
+            evidence.media_observation_summary.duration_summary,
+            "Audio/video/framing were assessable in Step 1.",
+          ),
+          linked_requirement_ids: [],
+          linked_component_verification_ids: [],
+          linked_matrix_result_ids: [],
+          linked_readiness_reason_ids: [],
+          linked_strength_ids: [],
+          linked_fix_ids: [],
+          linked_timestamp_refs: [],
+          component_status: "present",
+          confidence: "medium",
+        }
+      : null;
+  const allTechniqueItems = [...techniqueItems, ...componentItems, mediaPresentationItem]
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .slice(0, 10);
 
-  const byArea = (area: string) => techniqueItems.filter((item) => item.technique_area === area);
+  const byArea = (area: string) => allTechniqueItems.filter((item) => item.technique_area === area);
+  const sectionActions = (area: string) =>
+    byArea(area).length > 0
+      ? [
+          "Use the verified component/media evidence as the next recording check; avoid adding unsupported technique claims.",
+        ]
+      : [];
   return {
     summary:
-      techniqueItems.length > 0
+      allTechniqueItems.length > 0
         ? kind === "module_quality"
           ? "Technique commentary is limited to locked Step 1 evidence because module-readiness checks rejected the thin polished modules."
           : "Technique commentary is limited to locked Step 1 evidence because the polish response was unusable."
@@ -204,30 +359,35 @@ function buildTechniqueCommentary(evidence: EvidencePass, kind: S10EvidenceRecov
       what_is_working: byArea("acting")
         .map((item) => item.detail)
         .slice(0, 3),
-      practical_actions:
-        byArea("acting").length > 0
-          ? ["Use the verified acting observation as the focus for any retake adjustment."]
-          : [],
+      practical_actions: sectionActions("acting"),
     },
     vocal_singing: {
       observations: byArea("vocal_singing"),
       what_is_working: byArea("vocal_singing")
         .map((item) => item.detail)
         .slice(0, 3),
-      practical_actions:
-        byArea("vocal_singing").length > 0
-          ? ["Use the verified vocal/singing observation as the focus for any retake adjustment."]
-          : [],
+      practical_actions: sectionActions("vocal_singing"),
     },
     movement_dance: {
       observations: byArea("movement_dance"),
       what_is_working: byArea("movement_dance")
         .map((item) => item.detail)
         .slice(0, 3),
-      practical_actions:
-        byArea("movement_dance").length > 0
-          ? ["Use the verified movement observation as the focus for any retake adjustment."]
-          : [],
+      practical_actions: sectionActions("movement_dance"),
+    },
+    musical_theatre_package: {
+      observations: byArea("musical_theatre_package"),
+      what_is_working: byArea("musical_theatre_package")
+        .map((item) => item.detail)
+        .slice(0, 3),
+      practical_actions: sectionActions("musical_theatre_package"),
+    },
+    self_tape_presentation: {
+      observations: byArea("self_tape_presentation"),
+      what_is_working: byArea("self_tape_presentation")
+        .map((item) => item.detail)
+        .slice(0, 3),
+      practical_actions: sectionActions("self_tape_presentation"),
     },
     limitations: ["This fallback does not add technique claims beyond locked Step 1 evidence."],
   };
@@ -453,19 +613,38 @@ function buildCategoryScores(input: {
   ];
 }
 
-export function buildS10ReportPolishFallback(
-  input: BuildS10ReportPolishFallbackInput,
-): BuildS10ReportPolishFallbackResult {
-  if (!hasMinimumStep1Evidence(input.evidence)) {
-    return { ok: false, reason: "missing_or_insufficient_step1_evidence" };
+function normaliseFallbackMatrix(input: {
+  mode: FallbackMode;
+  briefRequirements: BriefRequirement[];
+  componentVerifications: ComponentVerification[];
+  observedTapeSequence: ObservedTapeSequence[];
+  mediaObservationSummary: MediaObservationSummary | null;
+}) {
+  let matrix = normaliseBriefAchievementMatrix({
+    matrix: null,
+    briefRequirements: input.briefRequirements,
+    componentVerifications: input.componentVerifications,
+    observedTapeSequence: input.observedTapeSequence,
+    mediaObservationSummary: input.mediaObservationSummary,
+  });
+  if (input.mode === "baseline" && input.briefRequirements.length === 0) {
+    matrix = {
+      ...matrix,
+      overall_status: "not_assessable",
+      mandatory_status: "not_assessable",
+      readiness_impact: "not_assessable",
+      summary: "No brief was supplied, so brief achievement is not assessed.",
+      achieved_requirements: [],
+      missing_or_incomplete_requirements: [],
+      not_assessable_requirements: ["No supplied brief was available for requirement checks."],
+      final_check_requirements: [],
+      requirement_results: [],
+    };
   }
+  return matrix;
+}
 
-  const evidence = input.evidence;
-  const recoveryKind = input.recoveryKind ?? "polish_parser";
-  const briefRequirements = input.briefRequirements ?? [];
-  const observedTapeSequence = evidence.observed_tape_sequence ?? [];
-  const componentVerifications = evidence.component_verifications ?? [];
-  const mediaObservationSummary = evidence.media_observation_summary ?? null;
+function buildFallbackScores(evidence: EvidencePass) {
   const scores = {
     technical: clampScore(evidence.raw_scores.technical),
     audio: clampScore(evidence.raw_scores.audio),
@@ -483,6 +662,23 @@ export function buildS10ReportPolishFallback(
     scores.brief_adherence,
     scores.professional_presentation,
   ]);
+  return { scores, overallScore };
+}
+
+export function buildS10ReportPolishFallback(
+  input: BuildS10ReportPolishFallbackInput,
+): BuildS10ReportPolishFallbackResult {
+  if (!hasMinimumStep1Evidence(input.evidence)) {
+    return { ok: false, reason: "missing_or_insufficient_step1_evidence" };
+  }
+
+  const evidence = input.evidence;
+  const recoveryKind = input.recoveryKind ?? "polish_parser";
+  const briefRequirements = input.briefRequirements ?? [];
+  const observedTapeSequence = evidence.observed_tape_sequence ?? [];
+  const componentVerifications = evidence.component_verifications ?? [];
+  const mediaObservationSummary = evidence.media_observation_summary ?? null;
+  const { scores, overallScore } = buildFallbackScores(evidence);
 
   const report: Record<string, unknown> = {
     source_mode: "s10_ai_report_model",
@@ -516,27 +712,13 @@ export function buildS10ReportPolishFallback(
     })),
   };
 
-  let matrix = normaliseBriefAchievementMatrix({
-    matrix: null,
+  const matrix = normaliseFallbackMatrix({
+    mode: input.mode,
     briefRequirements,
     componentVerifications,
     observedTapeSequence,
     mediaObservationSummary,
   });
-  if (input.mode === "baseline" && briefRequirements.length === 0) {
-    matrix = {
-      ...matrix,
-      overall_status: "not_assessable",
-      mandatory_status: "not_assessable",
-      readiness_impact: "not_assessable",
-      summary: "No brief was supplied, so brief achievement is not assessed.",
-      achieved_requirements: [],
-      missing_or_incomplete_requirements: [],
-      not_assessable_requirements: ["No supplied brief was available for requirement checks."],
-      final_check_requirements: [],
-      requirement_results: [],
-    };
-  }
   report.brief_achievement_matrix = matrix;
   const decision = fallbackDecision(matrix.readiness_impact, overallScore);
 
@@ -568,19 +750,23 @@ export function buildS10ReportPolishFallback(
         "Technical assessability is limited to locked Step 1 media evidence.",
       selected_level_calibration: {
         selected_level: input.selectedLevel,
-        what_meets_level: evidenceList([
-          ...evidence.core_strengths_evidence.map((item) => item.evidence),
-          ...componentVerifications.map((item) => item.evidence_summary),
-        ]),
-        what_falls_short: evidenceList([
-          ...evidence.core_improvements_evidence.map((item) => item.evidence),
-          ...matrix.missing_or_incomplete_requirements,
-          ...matrix.not_assessable_requirements,
-        ]),
+        what_meets_level: buildLevelMeetsEvidence(
+          evidence,
+          componentVerifications,
+          observedTapeSequence,
+          mediaObservationSummary,
+        ),
+        what_falls_short: buildLevelShortfallEvidence({
+          evidence,
+          matrix,
+          mode: input.mode,
+        }),
         recommendation_impact:
-          recoveryKind === "module_quality"
-            ? "Selected-level guidance is limited to locked evidence because module-readiness checks rejected the thin polished modules."
-            : "Selected-level guidance is limited to locked evidence because the polish response was unusable.",
+          input.mode === "baseline"
+            ? "Read the recommendation as selected-level baseline performance/setup guidance only because no supplied brief was available for brief-fit or required-material judgement."
+            : recoveryKind === "module_quality"
+              ? "Selected-level guidance is limited to locked evidence because module-readiness checks rejected the thin polished modules."
+              : "Selected-level guidance is limited to locked evidence because the polish response was unusable.",
         confidence: "medium",
       },
       category_scores: buildCategoryScores({
@@ -715,4 +901,129 @@ export function buildS10ModuleQualityRecoveryReport(
     ...input,
     recoveryKind: "module_quality",
   });
+}
+
+export function applyS10ResidualModuleRecovery(input: {
+  report: Record<string, unknown>;
+  evidence: EvidencePass;
+  briefRequirements?: BriefRequirement[] | null;
+  selectedLevel?: string | null;
+  mode: FallbackMode;
+  residualModules: string[];
+}): { recoveredModules: string[] } {
+  const residualModules = input.residualModules.filter((module) =>
+    ["performer level calibration", "technique commentary"].includes(module),
+  );
+  if (residualModules.length === 0) return { recoveredModules: [] };
+
+  const briefRequirements = input.briefRequirements ?? [];
+  const componentVerifications = input.evidence.component_verifications ?? [];
+  const observedTapeSequence = input.evidence.observed_tape_sequence ?? [];
+  const mediaObservationSummary = input.evidence.media_observation_summary ?? null;
+  const { scores, overallScore } = buildFallbackScores(input.evidence);
+  const matrix = normaliseFallbackMatrix({
+    mode: input.mode,
+    briefRequirements,
+    componentVerifications,
+    observedTapeSequence,
+    mediaObservationSummary,
+  });
+  input.report.brief_achievement_matrix = matrix;
+
+  const existingReadiness = isRecord(input.report.readiness_score_judgement)
+    ? input.report.readiness_score_judgement
+    : {};
+  const readiness = normaliseReadinessScoreJudgement({
+    judgement: {
+      ...existingReadiness,
+      performance_quality_score:
+        typeof existingReadiness.performance_quality_score === "number"
+          ? existingReadiness.performance_quality_score
+          : overallScore,
+      brief_completion_score:
+        typeof existingReadiness.brief_completion_score === "number"
+          ? existingReadiness.brief_completion_score
+          : scores.brief_adherence,
+      overall_submission_readiness_score:
+        typeof existingReadiness.overall_submission_readiness_score === "number"
+          ? existingReadiness.overall_submission_readiness_score
+          : overallScore,
+      selected_level_calibration: {
+        ...(isRecord(existingReadiness.selected_level_calibration)
+          ? existingReadiness.selected_level_calibration
+          : {}),
+        selected_level: input.selectedLevel,
+        what_meets_level: buildLevelMeetsEvidence(
+          input.evidence,
+          componentVerifications,
+          observedTapeSequence,
+          mediaObservationSummary,
+        ),
+        what_falls_short: buildLevelShortfallEvidence({
+          evidence: input.evidence,
+          matrix,
+          mode: input.mode,
+        }),
+        recommendation_impact:
+          input.mode === "baseline"
+            ? "Read the recommendation as selected-level baseline performance/setup guidance only because no supplied brief was available for brief-fit or required-material judgement."
+            : "The recommendation is calibrated only to locked Step 1 evidence and the supplied brief/context that could be verified.",
+        confidence: "medium",
+      },
+    },
+    matrix,
+    currentOverallScore: overallScore,
+    currentScores: scores,
+    selectedLevel: input.selectedLevel,
+  });
+  input.report.readiness_score_judgement = readiness;
+
+  const actionModules = applyS10FixHierarchyNextAction({
+    report: input.report,
+    matrix,
+    readiness,
+  });
+  const nextActionSteps = evidenceList(
+    [
+      ...actionModules.nextActionPlan.retake_plan,
+      ...actionModules.nextActionPlan.submit_checklist,
+      ...actionModules.nextActionPlan.final_checks,
+      ...actionModules.nextActionPlan.playback_checks,
+    ],
+    10,
+  );
+  (actionModules.nextActionPlan as Record<string, unknown>).steps = nextActionSteps;
+  input.report.s10_fix_hierarchy = actionModules.hierarchy;
+  input.report.s10_next_action_plan = actionModules.nextActionPlan;
+
+  const critique = normaliseS10ProfessionalCritique({
+    critique: input.report.s10_professional_critique,
+    matrix,
+    readiness,
+    fixHierarchy: actionModules.hierarchy,
+    nextActionPlan: actionModules.nextActionPlan,
+    componentVerifications,
+    mediaObservationSummary,
+    report: input.report,
+  });
+  input.report.s10_professional_critique = critique;
+
+  const technique = normaliseS10TechniqueCommentary({
+    commentary: buildTechniqueCommentary(input.evidence, "module_quality"),
+    matrix,
+    readiness,
+    fixHierarchy: actionModules.hierarchy,
+    nextActionPlan: actionModules.nextActionPlan,
+    professionalCritique: critique,
+    componentVerifications,
+    mediaObservationSummary,
+    report: input.report,
+  });
+  input.report.s10_technique_commentary = technique;
+  input.report.residual_module_recovery_used = true;
+  input.report.residual_module_recovery_reason =
+    "performer_level_calibration_and_or_technique_commentary";
+  input.report.residual_modules_recovered = residualModules;
+
+  return { recoveredModules: residualModules };
 }
