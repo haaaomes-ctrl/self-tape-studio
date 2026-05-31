@@ -227,6 +227,8 @@ describe("S10.15 route/PDF content acceptance harness", () => {
         "Strengths and preserve",
         "Technique commentary",
         "Timestamped and time-banded notes",
+        "Professional competitive calibration",
+        "Score zone",
         "Submit checklist",
         "Do not overfix",
       ],

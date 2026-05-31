@@ -296,3 +296,39 @@
   outline: 2px solid var(--brand-off-white);
   outline-offset: 2px;
 }
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  body {
+    background: white !important;
+    color: #111827 !important;
+  }
+
+  header,
+  footer,
+  nav,
+  .tc-print-action {
+    display: none !important;
+  }
+
+  .tc-report-print-surface {
+    max-width: none !important;
+    color: #111827 !important;
+  }
+
+  .tc-report-print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border-color: #d1d5db !important;
+    box-shadow: none !important;
+  }
+
+  .tc-report-print-section * {
+    color-adjust: exact;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

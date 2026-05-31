@@ -8,7 +8,8 @@
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { ShieldAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Printer, ShieldAlert } from "lucide-react";
 import {
   getCategoryLabel,
   shouldShowVocal,
@@ -75,6 +76,13 @@ function itemDetail(item: unknown): string | null {
   );
 }
 
+function itemText(item: unknown): string | null {
+  const title = itemTitle(item);
+  const detail = itemDetail(item);
+  if (title && detail && title !== detail) return `${title} — ${detail}`;
+  return title ?? detail;
+}
+
 function hasRenderableItem(item: unknown): boolean {
   return itemTitle(item) != null || itemDetail(item) != null;
 }
@@ -98,7 +106,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+    <div className="tc-report-print-section rounded-2xl border border-border bg-card p-6 shadow-soft">
       <h3 className="font-display text-base font-semibold">{title}</h3>
       {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       <div className="mt-3">{children}</div>
@@ -323,13 +331,32 @@ function hasS10ModuleObject(report: V2): boolean {
   return S10_MODULE_KEYS.some((key) => safeObj(report[key]) !== null);
 }
 
+function professionalCompetitiveScoreZone(score: number | null): string | null {
+  if (score == null || score < 90) return null;
+  if (score <= 91) return "90-91 · Professionally viable";
+  if (score <= 93) return "92-93 · Solid professional contender";
+  if (score <= 95) return "94-95 · Strong professional contender";
+  if (score <= 97) return "96-97 · Standout professional take";
+  return "98-100 · Exceptional / benchmark take";
+}
+
 export function V2ReportView({
   report,
   takeNumber,
+  takeSlot,
+  takeVersionNumber,
+  takeVersionStatus,
+  replacesTakeId,
+  sameVideoStatus,
   auditionType,
 }: {
   report: V2;
   takeNumber?: number;
+  takeSlot?: number | null;
+  takeVersionNumber?: number | null;
+  takeVersionStatus?: string | null;
+  replacesTakeId?: string | null;
+  sameVideoStatus?: string | null;
   auditionType?: AuditionTypeForLabels;
 }) {
   if (!report || typeof report !== "object") return null;
@@ -346,8 +373,8 @@ export function V2ReportView({
       safeStr(report.limitation_reason) === "s10_v2_build_or_validation_failed");
   if (isLimitedS10Report || (isS10 && !usableS10View)) {
     return (
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <div className="tc-report-print-surface space-y-6">
+        <div className="tc-report-print-section rounded-2xl border border-border bg-card p-6 shadow-soft">
           <div className="flex flex-wrap items-center gap-2">
             {typeof takeNumber === "number" && (
               <Badge variant="outline" className="font-medium">
@@ -435,6 +462,28 @@ export function V2ReportView({
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );
   const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
+  const takeLabel =
+    typeof takeSlot === "number"
+      ? `Take ${takeSlot}`
+      : typeof takeNumber === "number"
+        ? `Take ${takeNumber}`
+        : null;
+  const takeVersionLabel =
+    typeof takeVersionNumber === "number" ? `Version ${takeVersionNumber}` : null;
+  const takeVersionStatusLabel = safeStr(takeVersionStatus)
+    ? sentenceLabelize(takeVersionStatus)
+    : null;
+  const takeReplacementLabel = safeStr(replacesTakeId)
+    ? "Replacement version; prior take proof is retained separately."
+    : null;
+  const takeSameVideoLabel = safeStr(sameVideoStatus) ? sentenceLabelize(sameVideoStatus) : null;
+  const takeContextRows = [
+    ["Take", takeLabel],
+    ["Active version", takeVersionLabel],
+    ["Version status", takeVersionStatusLabel],
+    ["Replacement", takeReplacementLabel],
+    ["Same-video status", takeSameVideoLabel],
+  ].filter((row): row is [string, string] => Boolean(row[1]));
   const s10ScoreAuthorized = hasS10SectionRenderAuthority(s10SectionSourceMap, "score_summary");
   const s10RoleMaterialAuthorized = hasS10SectionRenderAuthority(
     s10SectionSourceMap,
@@ -632,11 +681,42 @@ export function V2ReportView({
           confidence?: string | null;
         })
       : null;
+  const s10ProfessionalScoreZone =
+    isS10 && s10JudgedAgainst?.toLowerCase().includes("professional")
+      ? professionalCompetitiveScoreZone(overall)
+      : null;
+  const s10ProfessionalScoreSuppressor =
+    s10CategoryRows
+      .map((row) => safeStr(row.why_not_full_score) ?? safeStr(row.close_gap))
+      .find((value): value is string => Boolean(value)) ??
+    itemText(safeArr(s10FixHierarchy?.optional_polish)[0]) ??
+    itemText(safeArr(s10FixHierarchy?.should_improve_if_retaking)[0]);
+  const s10ProfessionalRetakeStrategy =
+    safeStr(s10NextActionPlan?.no_retake_needed_reason) ??
+    displayStrings(s10NextActionPlan?.if_time_is_short_guidance)[0] ??
+    itemText(safeArr(s10FixHierarchy?.should_improve_if_retaking)[0]);
+  const s10ProfessionalPreserve =
+    itemText(safeArr(s10StrengthsAndPreserve?.preserve)[0]) ??
+    itemText(safeArr(s10FixHierarchy?.preserve)[0]);
 
   return (
-    <div className="space-y-6">
+    <div className="tc-report-print-surface space-y-6">
+      <div className="tc-print-action flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            if (typeof window !== "undefined") window.print();
+          }}
+        >
+          <Printer aria-hidden="true" />
+          Print / Save as PDF
+        </Button>
+      </div>
+
       {/* Header */}
-      <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <div className="tc-report-print-section rounded-2xl border border-border bg-card p-6 shadow-soft">
         <div className="flex flex-wrap items-center gap-6 sm:flex-nowrap">
           <div className="flex shrink-0 flex-col items-center rounded-xl border border-border bg-card/70 px-6 py-4 text-center">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -693,6 +773,22 @@ export function V2ReportView({
             </div>
           </div>
         </div>
+
+        {takeContextRows.length > 0 && (
+          <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Take context
+            </p>
+            <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+              {takeContextRows.map(([label, value]) => (
+                <p key={label}>
+                  <span className="font-medium">{label}:</span>{" "}
+                  <span className="text-muted-foreground">{value}</span>
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
 
         {blockers.length > 0 && (
           <div className="mt-5 rounded-md border border-warning/40 bg-warning/10 p-4">
@@ -837,6 +933,49 @@ export function V2ReportView({
                   <SimpleList items={s10FallsShortLevel} marker="→" />
                 </div>
               </div>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {isS10 && s10ProfessionalScoreZone && (
+        <Section
+          title="Professional competitive calibration"
+          hint="How a 90+ Professional score should be read against a competitive field."
+        >
+          <div className="space-y-3 text-sm">
+            <p>
+              <span className="font-medium">Score zone:</span> {s10ProfessionalScoreZone}
+            </p>
+            {s10LevelScoreMeaning && (
+              <p>
+                <span className="font-medium">Competitive meaning:</span>{" "}
+                <span className="text-muted-foreground">{s10LevelScoreMeaning}</span>
+              </p>
+            )}
+            {insight && (
+              <p>
+                <span className="font-medium">Why this zone:</span>{" "}
+                <span className="text-muted-foreground">{insight}</span>
+              </p>
+            )}
+            {s10ProfessionalScoreSuppressor && (
+              <p>
+                <span className="font-medium">What holds it below the next zone:</span>{" "}
+                <span className="text-muted-foreground">{s10ProfessionalScoreSuppressor}</span>
+              </p>
+            )}
+            {s10ProfessionalRetakeStrategy && (
+              <p>
+                <span className="font-medium">Retake strategy:</span>{" "}
+                <span className="text-muted-foreground">{s10ProfessionalRetakeStrategy}</span>
+              </p>
+            )}
+            {s10ProfessionalPreserve && (
+              <p>
+                <span className="font-medium">Preserve:</span>{" "}
+                <span className="text-muted-foreground">{s10ProfessionalPreserve}</span>
+              </p>
             )}
           </div>
         </Section>
