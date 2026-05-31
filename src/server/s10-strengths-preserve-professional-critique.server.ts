@@ -149,7 +149,10 @@ function isPackageRequirement(item: BriefAchievementMatrix["requirement_results"
 function isBlockedOrAbsent(item: BriefAchievementMatrix["requirement_results"][number]) {
   return (
     item.observed_status === "absent" ||
+    item.observed_status === "not_assessable" ||
+    item.observed_status === "uncertain" ||
     item.achievement_status === "not_achieved" ||
+    item.achievement_status === "not_assessable" ||
     item.submission_impact === "submission_blocker"
   );
 }
@@ -157,7 +160,10 @@ function isBlockedOrAbsent(item: BriefAchievementMatrix["requirement_results"][n
 function isPartialOrIncomplete(item: BriefAchievementMatrix["requirement_results"][number]) {
   return (
     item.observed_status === "partially_present" ||
+    item.observed_status === "not_assessable" ||
+    item.observed_status === "uncertain" ||
     item.achievement_status === "partly_achieved" ||
+    item.achievement_status === "not_assessable" ||
     item.completion_status === "incomplete" ||
     item.completion_status === "cut_off" ||
     item.completion_status === "uncertain" ||
@@ -380,9 +386,15 @@ function normalisePreserveItem(
     });
     return null;
   }
+  const correctiveDoNotOverfix =
+    /\b(do not|don't|prioriti[sz]e|first|before|not outrank|missing|blocker|incomplete)\b/i.test(
+      combined,
+    );
   if (
-    (context.sideAbsent && /\b(acting scene|side|naturalistic acting)\b/i.test(combined)) ||
-    (context.packageIncomplete && isPackageClaim(combined))
+    (context.sideAbsent &&
+      /\b(acting scene|side|naturalistic acting)\b/i.test(combined) &&
+      !correctiveDoNotOverfix) ||
+    (context.packageIncomplete && isPackageClaim(combined) && !correctiveDoNotOverfix)
   ) {
     addWarning(warnings, {
       affected_field: fieldPath,

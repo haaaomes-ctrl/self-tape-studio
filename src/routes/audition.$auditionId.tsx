@@ -345,6 +345,7 @@ function AuditionPage() {
     <div className="flex min-h-screen flex-col bg-background">
       <SiteHeader />
       <PageHeader
+        className="tc-print-exclude"
         eyebrow={`${audition.mode === "brief" ? "Brief-driven" : "Baseline"} mode · ${takes.length} take${takes.length === 1 ? "" : "s"} · max 3`}
         title={audition.title}
         variant="app"
@@ -424,7 +425,7 @@ function AuditionPage() {
                   : defaultTab;
               return (
                 <Tabs value={tabValue} onValueChange={setActiveTakeId}>
-                  <TabsList>
+                  <TabsList className="tc-print-exclude">
                     {hasRecommendation && <TabsTrigger value="recommend">Comparison</TabsTrigger>}
                     {takes.map((t) => (
                       <TabsTrigger key={t.id} value={t.id}>
@@ -449,7 +450,7 @@ function AuditionPage() {
 
                   {takes.map((t) => (
                     <TabsContent key={t.id} value={t.id} className="mt-6">
-                      <div className="mb-3 flex justify-end">
+                      <div className="tc-print-exclude mb-3 flex justify-end">
                         <ConfirmDestructive
                           title="Delete take?"
                           description={`This will remove Take ${t.take_number} and its report. This cannot be undone.`}
@@ -2057,7 +2058,7 @@ function AddTakeBlock({
   }
 
   return (
-    <div className="mt-6 rounded-2xl border border-border bg-secondary/40 p-6">
+    <div className="tc-print-exclude mt-6 rounded-2xl border border-border bg-secondary/40 p-6">
       <div className="flex items-center gap-2">
         <Video className="h-4 w-4 text-primary" />
         <h3 className="font-display text-base font-semibold">Add take {nextNumber}</h3>

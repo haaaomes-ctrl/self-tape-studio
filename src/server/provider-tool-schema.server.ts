@@ -41,10 +41,7 @@ function schemaAllowsNull(value: unknown): boolean {
   const record = asObjectRecord(value);
   if (!record) return false;
   const type = record.type;
-  return (
-    record.nullable === true ||
-    (Array.isArray(type) && type.some((item) => item === "null"))
-  );
+  return record.nullable === true || (Array.isArray(type) && type.some((item) => item === "null"));
 }
 
 function appendDescription(current: unknown, addition: string): string {
@@ -54,7 +51,9 @@ function appendDescription(current: unknown, addition: string): string {
 
 function normaliseType(value: unknown): { type: unknown; descriptionHint: string | null } {
   if (!Array.isArray(value)) return { type: value, descriptionHint: null };
-  const nonNullTypes = value.filter((item): item is string => typeof item === "string" && item !== "null");
+  const nonNullTypes = value.filter(
+    (item): item is string => typeof item === "string" && item !== "null",
+  );
   const selectedType = nonNullTypes[0] ?? "string";
   const descriptionHint =
     nonNullTypes.length > 1
@@ -192,11 +191,26 @@ function stripJsonFence(text: string): string {
   return fenced ? fenced[1].trim() : trimmed;
 }
 
+function providerParsedJsonObject(value: unknown): unknown {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (
+    Array.isArray(value) &&
+    value.length === 1 &&
+    value[0] &&
+    typeof value[0] === "object" &&
+    !Array.isArray(value[0])
+  ) {
+    return value[0];
+  }
+  return null;
+}
+
 export function parseProviderJsonObjectContent(content: unknown): unknown {
   const text = stripJsonFence(providerMessageContentToText(content));
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    const object = providerParsedJsonObject(parsed);
+    if (object) return object;
   } catch {
     // Fall through to best-effort extraction below.
   }
@@ -205,7 +219,8 @@ export function parseProviderJsonObjectContent(content: unknown): unknown {
   const lastObjectChar = text.lastIndexOf("}");
   if (firstObjectChar >= 0 && lastObjectChar > firstObjectChar) {
     const parsed = JSON.parse(text.slice(firstObjectChar, lastObjectChar + 1));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    const object = providerParsedJsonObject(parsed);
+    if (object) return object;
   }
   throw new SyntaxError("provider_content_not_json_object");
 }
@@ -267,5 +282,7 @@ export function shouldRetryWithFreshMuxUrl(input: {
   hasPlaybackId: boolean;
 }): boolean {
   if (input.didMuxUrlRecoveryRetry || !input.hasPlaybackId) return false;
-  return classifyAiGatewayProviderError(input.httpStatus, input.body) === "provider_media_url_error";
+  return (
+    classifyAiGatewayProviderError(input.httpStatus, input.body) === "provider_media_url_error"
+  );
 }

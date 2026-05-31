@@ -158,10 +158,16 @@ function isMandatoryMaterialOrPackageGap(
   return (
     item.submission_impact === "submission_blocker" ||
     item.submission_impact === "material_gap" ||
+    item.submission_impact === "not_assessable" ||
+    item.observed_status === "absent" ||
+    item.observed_status === "not_assessable" ||
+    item.observed_status === "uncertain" ||
     item.achievement_status === "not_achieved" ||
     item.achievement_status === "partly_achieved" ||
+    item.achievement_status === "not_assessable" ||
     item.completion_status === "incomplete" ||
-    item.completion_status === "cut_off"
+    item.completion_status === "cut_off" ||
+    item.completion_status === "uncertain"
   );
 }
 

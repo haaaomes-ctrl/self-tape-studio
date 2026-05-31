@@ -616,7 +616,7 @@ export function normaliseS10TechniqueCommentary(input: {
   if (actingMissing) {
     commentary.acting = blankTechniqueSection(
       "not_assessable",
-      "Acting-scene technique cannot be assessed from the missing required Side 1.",
+      "Acting scene not assessable from the missing required Side 1.",
       "The brief requires an acting scene, but S10 component verification did not identify that required Side 1 in the tape.",
     );
     ensureLimitation(
