@@ -23,8 +23,11 @@ import {
   enforceLockedFields,
   enforceUnsupportedClaims,
   enforceScoreAlignment,
+  isRecoverableReportPolishResponseShapeError,
+  REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
   type VerdictLabel,
 } from "./report-polish.server";
+import { buildS10ReportPolishFallback } from "./s10-report-polish-fallback.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
 import {
   emitAnalysisEvidenceStatePrerequisite,
@@ -3379,8 +3382,11 @@ export async function runProcessTake(
     let reportPolishHttpStatus: number | null = null;
     let reportPolishRequestStatus: "completed" | "failed" | "timed_out" | null = null;
     let reportPolishParseStatus: "completed" | "unknown" = "unknown";
-    const twoStepFallbackUsed = false;
-    const twoStepFallbackReason: string | null = null;
+    let twoStepFallbackUsed = false;
+    let twoStepFallbackReason: string | null = null;
+    let polishRetryAttempted = false;
+    let polishRetrySucceeded = false;
+    let reportPolishFallbackPersisted = false;
     let evidencePassStartedAtIso: string | null = null;
     let evidencePassCompletedAtIso: string | null = null;
     let evidencePassModel: string | null = null;
@@ -3906,7 +3912,7 @@ export async function runProcessTake(
         const polishTimer = setTimeout(() => polishAc.abort(), ANALYSIS_GEMINI_TIMEOUT_MS);
         const polishAttemptStartedAt = Date.now();
         reportPolishStartedAtIso = new Date(polishAttemptStartedAt).toISOString();
-        const polishResult = await runReportPolish({
+        const polishArgs = {
           apiKey,
           signal: polishAc.signal,
           evidence: step2Evidence,
@@ -3919,10 +3925,49 @@ export async function runProcessTake(
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
           usageContext: aiUsageContext,
-        }).finally(() => {
-          clearTimeout(polishTimer);
-          clearInterval(polishHeartbeatInterval);
-        });
+        };
+        let polishResult = await runReportPolish(polishArgs);
+        let reportPolishTotalDurationMs = polishResult.durationMs;
+        const initialPolishResult = polishResult;
+        if (isRecoverableReportPolishResponseShapeError(polishResult) && !polishAc.signal.aborted) {
+          polishRetryAttempted = true;
+          console.warn("[take-pipeline] report_polish_retry_started", {
+            ...baseLog,
+            http_status: polishResult.httpStatus,
+            safe_error_category: polishResult.safe_error_category,
+            error: polishResult.error.slice(0, 120),
+          });
+          metric("report_polish_retry_started", {
+            take_id: takeId,
+            http_status: polishResult.httpStatus,
+            safe_error_category: polishResult.safe_error_category,
+          });
+          const retryResult = await runReportPolish({
+            ...polishArgs,
+            recoveryInstruction: REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
+          });
+          reportPolishTotalDurationMs += retryResult.durationMs;
+          if (retryResult.ok) {
+            polishRetrySucceeded = true;
+          } else {
+            console.warn("[take-pipeline] report_polish_retry_failed", {
+              ...baseLog,
+              http_status: retryResult.httpStatus,
+              safe_error_category: retryResult.safe_error_category,
+              error: retryResult.error.slice(0, 120),
+              duration_ms: retryResult.durationMs,
+            });
+            metric("report_polish_retry_failed", {
+              take_id: takeId,
+              http_status: retryResult.httpStatus,
+              duration_ms: retryResult.durationMs,
+              safe_error_category: retryResult.safe_error_category,
+            });
+          }
+          polishResult = retryResult;
+        }
+        clearTimeout(polishTimer);
+        clearInterval(polishHeartbeatInterval);
         reportPolishCompletedAtIso = new Date().toISOString();
         reportPolishModel = polishResult.model;
         reportPolishHttpStatus = polishResult.httpStatus;
@@ -3934,6 +3979,9 @@ export async function runProcessTake(
         reportPolishParseStatus = polishResult.ok ? "completed" : "unknown";
 
         if (!polishResult.ok) {
+          const canFallbackFromPolishParserFailure =
+            isRecoverableReportPolishResponseShapeError(polishResult) &&
+            isRecoverableReportPolishResponseShapeError(initialPolishResult);
           if (polishResult.safe_error_category === "provider_request_contract_error") {
             console.error("[take-pipeline] report_polish_provider_contract_failed", {
               ...baseLog,
@@ -3952,33 +4000,88 @@ export async function runProcessTake(
               "The AI provider rejected the structured report contract. Please try again.",
             );
           }
-          const polishFailureCode: FailureCode =
-            polishResult.error === "report_polish_timeout" ||
-            polishResult.safe_error_category === "provider_timeout" ||
-            reportPolishRequestStatus === "timed_out"
-              ? "report_polish_timeout"
-              : "report_polish_failed";
-          console.warn("[take-pipeline] report_polish_failed", {
-            ...baseLog,
-            http_status: polishResult.httpStatus,
-            error: polishResult.error.slice(0, 200),
-            duration_ms: polishResult.durationMs,
-            failure_code: polishFailureCode,
-          });
-          metric("report_polish_failed", {
-            take_id: takeId,
-            http_status: polishResult.httpStatus,
-            duration_ms: polishResult.durationMs,
-            failure_code: polishFailureCode,
-          });
-          throw new AnalysisFailure(
-            polishFailureCode,
-            polishFailureCode === "report_polish_timeout"
-              ? "The AI report polish step timed out. Please try again."
-              : "The AI report polish step failed. Please try again.",
-          );
+          if (canFallbackFromPolishParserFailure) {
+            twoStepFallbackReason = polishResult.error.includes("provider_content_not_json_object")
+              ? "provider_content_not_json_object"
+              : "report_polish_response_shape_error";
+            console.warn("[take-pipeline] report_polish_fallback_started", {
+              ...baseLog,
+              reason: twoStepFallbackReason,
+              retry_attempted: polishRetryAttempted,
+              retry_succeeded: polishRetrySucceeded,
+            });
+            metric("report_polish_fallback_started", {
+              take_id: takeId,
+              reason: twoStepFallbackReason,
+              retry_attempted: polishRetryAttempted,
+            });
+            const fallback = buildS10ReportPolishFallback({
+              evidence: step2Evidence,
+              briefContext: extractedBrief?.brief_context ?? null,
+              briefRequirements: extractedBrief?.brief_requirements ?? [],
+              auditionTitle: audition.title,
+              selectedLevel: auditionLevel,
+              mode: audition.brief ? "brief" : "baseline",
+              reason: twoStepFallbackReason,
+              retryAttempted: polishRetryAttempted,
+              retrySucceeded: polishRetrySucceeded,
+            });
+            if (fallback.ok) {
+              twoStepFallbackUsed = true;
+              reportPolishDurationMs = reportPolishTotalDurationMs;
+              twoStepReport = fallback.report;
+              reportPolishRequestStatus = "completed";
+              reportPolishParseStatus = "completed";
+              reportPolishHttpStatus = polishResult.httpStatus;
+              console.warn("[take-pipeline] report_polish_fallback_built", {
+                ...baseLog,
+                reason: twoStepFallbackReason,
+                limitation_count: fallback.limitationCount,
+              });
+            } else {
+              console.warn("[take-pipeline] report_polish_fallback_failed", {
+                ...baseLog,
+                reason: fallback.reason,
+              });
+              metric("report_polish_fallback_failed", {
+                take_id: takeId,
+                reason: fallback.reason,
+              });
+            }
+          }
+          if (twoStepFallbackUsed && twoStepReport) {
+            // Continue to deterministic finalising with the evidence-backed
+            // fallback. Do not emit report_polish_completed: the polish model
+            // did not complete successfully.
+          } else {
+            const polishFailureCode: FailureCode =
+              polishResult.error === "report_polish_timeout" ||
+              polishResult.safe_error_category === "provider_timeout" ||
+              reportPolishRequestStatus === "timed_out"
+                ? "report_polish_timeout"
+                : "report_polish_failed";
+            console.warn("[take-pipeline] report_polish_failed", {
+              ...baseLog,
+              http_status: polishResult.httpStatus,
+              error: polishResult.error.slice(0, 200),
+              duration_ms: polishResult.durationMs,
+              failure_code: polishFailureCode,
+            });
+            metric("report_polish_failed", {
+              take_id: takeId,
+              http_status: polishResult.httpStatus,
+              duration_ms: polishResult.durationMs,
+              failure_code: polishFailureCode,
+            });
+            throw new AnalysisFailure(
+              polishFailureCode,
+              polishFailureCode === "report_polish_timeout"
+                ? "The AI report polish step timed out. Please try again."
+                : "The AI report polish step failed. Please try again.",
+            );
+          }
         } else {
-          reportPolishDurationMs = polishResult.durationMs;
+          reportPolishDurationMs = reportPolishTotalDurationMs;
           twoStepReport = polishResult.report;
           // Force mode from server-known truth (not from the polish model).
           twoStepReport.mode = audition.brief ? "brief" : "baseline";
@@ -4004,16 +4107,19 @@ export async function runProcessTake(
               });
             }
           }
-          console.log("[take-pipeline] report_polish_completed", {
+          const polishCompletedEvent = polishRetryAttempted
+            ? "report_polish_retry_completed"
+            : "report_polish_completed";
+          console.log(`[take-pipeline] ${polishCompletedEvent}`, {
             ...baseLog,
-            duration_ms: polishResult.durationMs,
+            duration_ms: reportPolishTotalDurationMs,
             locked_overwrites: locked.overwrites,
             claims_removed: claims.removed,
             claims_rewritten: claims.rewritten,
           });
-          metric("report_polish_completed", {
+          metric(polishCompletedEvent, {
             take_id: takeId,
-            duration_ms: polishResult.durationMs,
+            duration_ms: reportPolishTotalDurationMs,
             locked_overwrites: locked.overwrites,
             claims_removed: claims.removed,
             claims_rewritten: claims.rewritten,
@@ -4120,6 +4226,13 @@ export async function runProcessTake(
       // Two-step pipeline produced a report. Skip the single-pass Gemini call
       // and parse stages entirely.
       report = twoStepReport;
+      const twoStepReportRecord = report as Record<string, unknown>;
+      twoStepReportRecord.polish_retry_attempted = polishRetryAttempted;
+      twoStepReportRecord.polish_retry_succeeded = polishRetrySucceeded;
+      twoStepReportRecord.report_polish_fallback_used = twoStepFallbackUsed;
+      if (twoStepFallbackUsed) {
+        twoStepReportRecord.polish_fallback_reason = twoStepFallbackReason;
+      }
     } else {
       const geminiStartedAt = Date.now();
       console.info("[take-pipeline] ai_model_selected", {
@@ -5732,7 +5845,7 @@ export async function runProcessTake(
       briefContext: extractedBrief?.brief_context ?? null,
       briefRequirements: extractedBrief?.brief_requirements ?? [],
       selectedLevel: auditionLevel,
-      sourceStage: isTwoStepEnabled() && !twoStepFallbackUsed ? "two_step" : "single_pass",
+      sourceStage: isTwoStepEnabled() ? "two_step" : "single_pass",
     });
     const persistedS10ModuleReadiness =
       summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
@@ -5806,6 +5919,9 @@ export async function runProcessTake(
             timestamped_evidence_dropped_count: twoStepTimestampsDropped,
             fallback_used: twoStepFallbackUsed,
             polish_fallback_reason: twoStepFallbackReason,
+            polish_retry_attempted: polishRetryAttempted,
+            polish_retry_succeeded: polishRetrySucceeded,
+            report_polish_fallback_used: twoStepFallbackUsed,
             locked_field_overwrite_count: twoStepEnforcement.locked_field_overwrites,
             unsupported_claims_removed_count: twoStepEnforcement.unsupported_claims_removed,
             unsupported_claims_rewritten_count: twoStepEnforcement.unsupported_claims_rewritten,
@@ -6194,10 +6310,22 @@ export async function runProcessTake(
       ...baseLog,
       duration_ms: Date.now() - persistStartedAt,
     });
+    if (twoStepFallbackUsed) {
+      reportPolishFallbackPersisted = true;
+      metric("report_polish_fallback_persisted", {
+        take_id: takeId,
+        reason: twoStepFallbackReason ?? "unknown",
+      });
+      console.warn("[take-pipeline] report_polish_fallback_persisted", {
+        ...baseLog,
+        reason: twoStepFallbackReason ?? "unknown",
+      });
+    }
     console.log("[take-pipeline] finalising_persist_completed", {
       take_id: takeId,
       duration_ms: Date.now() - persistStartedAt,
       finalising_duration_ms: finaliseElapsedMs(),
+      report_polish_fallback_persisted: reportPolishFallbackPersisted,
     });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;

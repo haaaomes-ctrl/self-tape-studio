@@ -14,6 +14,8 @@ import {
 } from "@/server/process-take.server";
 import {
   buildReportPolishRequestBodyForProvider,
+  isRecoverableReportPolishResponseShapeError,
+  REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
   runReportPolish,
 } from "@/server/report-polish.server";
 
@@ -432,6 +434,109 @@ describe("provider tool schema helpers", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.report).toMatchObject({ mode: "FULL", overall_score: 88 });
+    }
+  });
+
+  it("classifies HTTP 200 non-object polish content as recoverable response-shape failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: "I can help, but here is prose instead of the JSON object.",
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    const result = await runReportPolish({
+      apiKey: "test-key",
+      signal: new AbortController().signal,
+      evidence: {} as never,
+      briefBlock: "Brief: test",
+      extractedBlock: "Extracted: test",
+      signalsBlock: "Signals: test",
+      levelBlock: "Level: professional",
+      auditionTitle: "Test",
+      model: "google/gemini-3-flash-preview",
+      reportTool: REPORT_TOOL,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.httpStatus).toBe(200);
+    expect(result.safe_error_category).toBe("parser_error");
+    expect(result.error).toMatch(/provider_content_not_json_object/i);
+    expect(isRecoverableReportPolishResponseShapeError(result)).toBe(true);
+  });
+
+  it("does not classify hard polish provider failures as parser recovery candidates", () => {
+    expect(
+      isRecoverableReportPolishResponseShapeError({
+        ok: false,
+        httpStatus: 500,
+        error: "report_polish_http_500",
+        safe_error_category: "provider_unavailable",
+        durationMs: 5,
+        model: "google/gemini-3-flash-preview",
+      }),
+    ).toBe(false);
+    expect(
+      isRecoverableReportPolishResponseShapeError({
+        ok: false,
+        httpStatus: 400,
+        error: "provider rejected request body",
+        safe_error_category: "provider_request_contract_error",
+        durationMs: 5,
+        model: "google/gemini-3-flash-preview",
+      }),
+    ).toBe(false);
+  });
+
+  it("adds the strict recovery instruction to the report polish retry request", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      expect(JSON.stringify(body.messages)).toContain(REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION);
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: '{"mode":"brief","overall_score":81}',
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runReportPolish({
+      apiKey: "test-key",
+      signal: new AbortController().signal,
+      evidence: {} as never,
+      briefBlock: "Brief: test",
+      extractedBlock: "Extracted: test",
+      signalsBlock: "Signals: test",
+      levelBlock: "Level: professional",
+      auditionTitle: "Test",
+      model: "google/gemini-3-flash-preview",
+      reportTool: REPORT_TOOL,
+      recoveryInstruction: REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.report).toMatchObject({ mode: "brief", overall_score: 81 });
     }
   });
 });

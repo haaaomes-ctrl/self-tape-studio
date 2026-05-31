@@ -93,6 +93,7 @@ export type RunReportPolishArgs = {
   reportTool: unknown;
   model?: string;
   usageContext?: TakeAiUsageContext;
+  recoveryInstruction?: string;
 };
 
 export type RunReportPolishResult =
@@ -112,6 +113,19 @@ export type RunReportPolishResult =
       durationMs: number;
       model: string;
     };
+
+export const REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION =
+  "The previous report polish response was rejected because the provider returned HTTP 200 but the content was not a JSON object. Retry with the exact same locked evidence, supplied brief/context, selected performer level and report schema. Return exactly one JSON object. Do not include prose, markdown, a code fence, wrapper text, an array, or any explanation.";
+
+export function isRecoverableReportPolishResponseShapeError(
+  result: RunReportPolishResult,
+): result is Extract<RunReportPolishResult, { ok: false }> {
+  if (result.ok || result.httpStatus !== 200) return false;
+  if (result.safe_error_category === "parser_error") return true;
+  return /provider_content_not_json_object|report_polish_no_tool_call|json|parse|tool_call/i.test(
+    result.error,
+  );
+}
 
 /** Build the locked-evidence block sent to the polish model (text-only). */
 export function buildEvidenceBlock(
@@ -225,8 +239,11 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     args.extractedBlock,
     args.signalsBlock,
     evidenceBlock,
+    args.recoveryInstruction ?? "",
     "Write the final structured report via submit_audition_report. Use the locked evidence as ground truth. Populate role_material_context when role, character, production, song, scene, copy, routine or known material context is supplied or confidently resolved; source basis/truth state and uncertainty are mandatory, supplied brief remains primary, and known-material context cannot invent hidden blockers. Produce brief_achievement_matrix before scoring or recommending by comparing the S10 BriefRequirement list with observed_tape_sequence, component_verifications and media_observation_summary; then produce readiness_score_judgement with separate performance_quality_score, brief_completion_score and overall_submission_readiness_score; then produce s10_fix_hierarchy and s10_next_action_plan with matrix-before-fixes and readiness-before-action-plan; then produce s10_professional_critique with component verification before strengths; then produce s10_technique_commentary with verified component evidence before technique commentary; then produce s10_timestamped_commentary with verified component evidence before timestamped commentary. If the requirement list is missing while a supplied brief exists, extract explicit requirements first and do not score from generic material presence. Do not invent fake timestamps, risk flags, presentation notes, role-fit claims, generic fix copy, strengths for absent/unverified components, technique commentary for absent/unverified components, or timestamped notes for absent/unverified components. Respect evidence_sufficiency and mark unsupported modules as not assessable rather than filling with generic copy.",
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   let resp: Response | null = null;
   const fetchController = new AbortController();
