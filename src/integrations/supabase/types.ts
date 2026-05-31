@@ -74,6 +74,45 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_audit_log: {
+        Row: {
+          action_type: string
+          actor_email: string | null
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          reason: string | null
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action_type: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action_type?: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: []
+      }
       analytics_events: {
         Row: {
           attribution_key: string | null
@@ -2848,6 +2887,68 @@ export type Database = {
         }
         Relationships: []
       }
+      crm_b2b_leads_dashboard: {
+        Row: {
+          creator_code: string | null
+          follow_up_pending_count: number | null
+          follow_up_sent_count: number | null
+          lead_count: number | null
+          lead_day: string | null
+          lead_type: string | null
+          partner_code_hint: string | null
+          partner_type: string | null
+          utm_campaign: string | null
+          utm_source: string | null
+        }
+        Relationships: []
+      }
+      crm_contact_dashboard: {
+        Row: {
+          account_route: string | null
+          brevo_sync_status: string | null
+          contact_count: number | null
+          first_seen_at: string | null
+          last_brevo_synced_at: string | null
+          last_updated_at: string | null
+          lifecycle_messages_allowed: boolean | null
+          marketing_consent: boolean | null
+          parent_managed: boolean | null
+          recipient_role: string | null
+          user_segment: string | null
+        }
+        Relationships: []
+      }
+      crm_email_delivery_dashboard: {
+        Row: {
+          activity_day: string | null
+          dlq_count: number | null
+          failed_count: number | null
+          first_activity_at: string | null
+          last_activity_at: string | null
+          message_category: string | null
+          message_count: number | null
+          message_key: string | null
+          pending_count: number | null
+          sent_count: number | null
+          status: string | null
+          suppressed_count: number | null
+        }
+        Relationships: []
+      }
+      crm_lifecycle_messaging_dashboard: {
+        Row: {
+          dlq_count: number | null
+          failed_count: number | null
+          last_activity_at: string | null
+          message_category: string | null
+          message_key: string | null
+          pending_count: number | null
+          sent_count: number | null
+          suppressed_count: number | null
+          total_count: number | null
+        }
+        Relationships: []
+      }
       partner_aggregate_dashboard_summary: {
         Row: {
           active_member_count: number | null
@@ -3220,6 +3321,22 @@ export type Database = {
         }
         Returns: string
       }
+      admin_grant_user_credits: {
+        Args: {
+          p_admin_actor_email?: string
+          p_admin_actor_user_id?: string
+          p_admin_reason?: string
+          p_credit_amount: number
+          p_idempotency_key?: string
+          p_metadata?: Json
+          p_source_label?: string
+          p_user_id: string
+        }
+        Returns: {
+          audit_log_id: string
+          credit_grant_id: string
+        }[]
+      }
       admin_top_up_partner_credit_pool: {
         Args: {
           p_admin_actor_user_id?: string
@@ -3291,6 +3408,25 @@ export type Database = {
         }
         Returns: string
       }
+      create_audition_comparison_run_foundation: {
+        Args: { p_audition_id: string; p_user_id: string }
+        Returns: string
+      }
+      create_replacement_take_version: {
+        Args: {
+          p_checklist?: Json
+          p_replacement_reason?: string
+          p_signals?: Json
+          p_take_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      crm_build_unsubscribe_url: {
+        Args: { p_base_url?: string; p_token: string }
+        Returns: string
+      }
+      crm_get_unsubscribe_token: { Args: { p_email: string }; Returns: string }
       crm_message_category_requires_consent: {
         Args: { p_category: string }
         Returns: boolean
