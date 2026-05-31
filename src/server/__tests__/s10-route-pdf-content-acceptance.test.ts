@@ -128,6 +128,8 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       forbiddenExact: s10CanaryAExpectedViewModel.forbidden_route_content,
       requiredAllOf: [
         "Brief achievement",
+        "Supplied brief details",
+        "Requirement classification",
         "What the brief asked for",
         "Observed tape",
         "Prioritised fixes",
@@ -163,6 +165,8 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       forbiddenExact: s10StrongCompleteProfessionalExpectedViewModel.forbidden_route_content,
       requiredAllOf: [
         "Brief achievement",
+        "Supplied brief details",
+        "Requirement classification",
         "Observed tape",
         "Strengths and preserve",
         "Technique commentary",
