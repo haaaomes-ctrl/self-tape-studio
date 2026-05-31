@@ -31,4 +31,32 @@ describe("S10 report polish recovery wiring", () => {
     expect(source).toContain("polish_retry_attempted");
     expect(source).toContain("polish_retry_succeeded");
   });
+
+  it("keeps module-quality recovery separate from parser fallback recovery", () => {
+    const processTakeSource = read("src/server/process-take.server.ts");
+    const fallbackSource = read("src/server/s10-report-polish-fallback.server.ts");
+    const polishSource = read("src/server/report-polish.server.ts");
+
+    expect(polishSource).toContain("buildS10ModuleRepairRetryInstruction");
+    expect(processTakeSource).toContain("buildS10ModuleQualityRecoveryReport");
+    expect(processTakeSource).toContain("s10_module_repair_retry_started");
+    expect(processTakeSource).toContain("s10_module_repair_retry_completed");
+    expect(processTakeSource).toContain("s10_module_repair_retry_failed");
+    expect(processTakeSource).toContain("s10_module_quality_recovery_started");
+    expect(processTakeSource).toContain("s10_module_quality_recovery_persisted");
+    expect(processTakeSource).toContain("s10_module_quality_recovery_failed");
+    expect(processTakeSource).toContain("s10_module_quality_recovery_used");
+    expect(processTakeSource).toContain("module_repair_retry_attempted");
+    expect(processTakeSource).toContain("module_repair_retry_succeeded");
+    expect(processTakeSource).toContain("module_quality_recovery_reason");
+    expect(fallbackSource).toContain(
+      'type S10EvidenceRecoveryKind = "polish_parser" | "module_quality"',
+    );
+    expect(fallbackSource).toContain(
+      'report_polish_fallback_used: recoveryKind === "polish_parser"',
+    );
+    expect(fallbackSource).toContain(
+      's10_module_quality_recovery_used: recoveryKind === "module_quality"',
+    );
+  });
 });

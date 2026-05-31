@@ -24,10 +24,14 @@ import {
   enforceUnsupportedClaims,
   enforceScoreAlignment,
   isRecoverableReportPolishResponseShapeError,
+  buildS10ModuleRepairRetryInstruction,
   REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
   type VerdictLabel,
 } from "./report-polish.server";
-import { buildS10ReportPolishFallback } from "./s10-report-polish-fallback.server";
+import {
+  buildS10ModuleQualityRecoveryReport,
+  buildS10ReportPolishFallback,
+} from "./s10-report-polish-fallback.server";
 import { cleanupMuxAssetForCompletedTake } from "./mux-cleanup.server";
 import {
   emitAnalysisEvidenceStatePrerequisite,
@@ -3387,6 +3391,30 @@ export async function runProcessTake(
     let polishRetryAttempted = false;
     let polishRetrySucceeded = false;
     let reportPolishFallbackPersisted = false;
+    let moduleRepairRetryAttempted = false;
+    let moduleRepairRetrySucceeded = false;
+    let s10ModuleQualityRecoveryUsed = false;
+    let moduleQualityRecoveryReason: string | null = null;
+    let s10ModuleQualityRecoveryPersisted = false;
+    const hasSufficientStep1EvidenceForModuleRecovery = (evidence: EvidencePass | null) => {
+      if (!evidence) return false;
+      const hasObservation =
+        (evidence.observed_tape_sequence?.length ?? 0) > 0 ||
+        (evidence.component_verifications?.length ?? 0) > 0 ||
+        (evidence.timestamped_evidence?.length ?? 0) > 0 ||
+        evidence.core_strengths_evidence.length > 0 ||
+        evidence.core_improvements_evidence.length > 0 ||
+        (evidence.candidate_technique_evidence?.length ?? 0) > 0;
+      const sufficiency = evidence.evidence_sufficiency;
+      const hasAssessableSignal =
+        sufficiency.audio_assessable ||
+        sufficiency.video_assessable ||
+        sufficiency.acting_assessable ||
+        sufficiency.vocal_assessable ||
+        sufficiency.movement_assessable ||
+        sufficiency.brief_assessable;
+      return hasObservation && hasAssessableSignal;
+    };
     let evidencePassStartedAtIso: string | null = null;
     let evidencePassCompletedAtIso: string | null = null;
     let evidencePassModel: string | null = null;
@@ -5839,7 +5867,7 @@ export async function runProcessTake(
     // records repair triggers for missing/thin/generic/contradictory/
     // unsupported AI modules without replacing missing professional judgement
     // with static fallback prose.
-    const s10ModuleReadiness = evaluateS10ModuleReadiness({
+    let s10ModuleReadiness = evaluateS10ModuleReadiness({
       report: report as Record<string, unknown>,
       observationContext: s10ObservationContext,
       briefContext: extractedBrief?.brief_context ?? null,
@@ -5847,8 +5875,7 @@ export async function runProcessTake(
       selectedLevel: auditionLevel,
       sourceStage: isTwoStepEnabled() ? "two_step" : "single_pass",
     });
-    const persistedS10ModuleReadiness =
-      summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
+    let persistedS10ModuleReadiness = summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
     report.s10_module_readiness = persistedS10ModuleReadiness;
     report.s10_module_repair_actions = persistedS10ModuleReadiness.repair_actions;
     if (s10ModuleReadiness.repair_action_count > 0 || s10ModuleReadiness.thin_shell_blocked) {
@@ -5861,6 +5888,212 @@ export async function runProcessTake(
           .map((action) => action.report_module)
           .slice(0, 12),
       });
+    }
+    const moduleQualityBlockers = () =>
+      s10ModuleReadiness.results.filter((result) => result.blocks_report_value);
+    const canRecoverModuleQuality =
+      isTwoStepEnabled() &&
+      hasSufficientStep1EvidenceForModuleRecovery(twoStepEvidence) &&
+      moduleQualityBlockers().length > 0;
+    if (canRecoverModuleQuality && twoStepEvidence) {
+      moduleQualityRecoveryReason = s10ModuleReadiness.thin_shell_blocked
+        ? "thin_shell_blocked"
+        : "critical_s10_modules_unavailable";
+
+      const runModuleReadiness = (candidate: Record<string, unknown>) =>
+        evaluateS10ModuleReadiness({
+          report: candidate,
+          observationContext: s10ObservationContext,
+          briefContext: extractedBrief?.brief_context ?? null,
+          briefRequirements: extractedBrief?.brief_requirements ?? [],
+          selectedLevel: auditionLevel,
+          sourceStage: "two_step",
+        });
+
+      const moduleRepairAc = new AbortController();
+      const moduleRepairTimer = setTimeout(
+        () => moduleRepairAc.abort("s10_module_repair_timeout"),
+        Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, 45_000),
+      );
+      moduleRepairRetryAttempted = true;
+      console.warn("[take-pipeline] s10_module_repair_retry_started", {
+        ...baseLog,
+        reason: moduleQualityRecoveryReason,
+        blocker_count: moduleQualityBlockers().length,
+        modules: moduleQualityBlockers()
+          .map((result) => result.report_module)
+          .slice(0, 12),
+      });
+      metric("s10_module_repair_retry_started", {
+        take_id: takeId,
+        reason: moduleQualityRecoveryReason,
+        blocker_count: moduleQualityBlockers().length,
+      });
+      try {
+        const retryResult = await runReportPolish({
+          apiKey,
+          signal: moduleRepairAc.signal,
+          evidence: twoStepEvidence,
+          briefBlock,
+          extractedBlock,
+          briefContext: extractedBrief?.brief_context ?? null,
+          briefRequirements: extractedBrief?.brief_requirements ?? [],
+          signalsBlock,
+          levelBlock,
+          auditionTitle: audition.title,
+          reportTool: REPORT_TOOL,
+          usageContext: aiUsageContext,
+          recoveryInstruction: buildS10ModuleRepairRetryInstruction({
+            repairActions: s10ModuleReadiness.repair_actions,
+          }),
+        });
+        if (retryResult.ok) {
+          const candidate = retryResult.report as Record<string, unknown>;
+          candidate.mode = audition.brief ? "brief" : "baseline";
+          const locked = enforceLockedFields(candidate, twoStepEvidence);
+          twoStepEnforcement.locked_field_overwrites += locked.overwrites;
+          const claims = enforceUnsupportedClaims(candidate, twoStepEvidence);
+          twoStepEnforcement.unsupported_claims_removed += claims.removed;
+          twoStepEnforcement.unsupported_claims_rewritten += claims.rewritten;
+          const retryReadiness = runModuleReadiness(candidate);
+          const retryBlockers = retryReadiness.results.filter(
+            (result) => result.blocks_report_value,
+          );
+          if (retryBlockers.length === 0) {
+            moduleRepairRetrySucceeded = true;
+            report = candidate;
+            s10ModuleReadiness = retryReadiness;
+            persistedS10ModuleReadiness =
+              summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
+            console.log("[take-pipeline] s10_module_repair_retry_completed", {
+              ...baseLog,
+              duration_ms: retryResult.durationMs,
+              locked_overwrites: locked.overwrites,
+              claims_removed: claims.removed,
+              claims_rewritten: claims.rewritten,
+            });
+            metric("s10_module_repair_retry_completed", {
+              take_id: takeId,
+              duration_ms: retryResult.durationMs,
+              locked_overwrites: locked.overwrites,
+              claims_removed: claims.removed,
+              claims_rewritten: claims.rewritten,
+            });
+          } else {
+            console.warn("[take-pipeline] s10_module_repair_retry_failed", {
+              ...baseLog,
+              reason: "critical_modules_still_blocked",
+              duration_ms: retryResult.durationMs,
+              blocker_count: retryBlockers.length,
+              modules: retryBlockers.map((result) => result.report_module).slice(0, 12),
+            });
+            metric("s10_module_repair_retry_failed", {
+              take_id: takeId,
+              reason: "critical_modules_still_blocked",
+              duration_ms: retryResult.durationMs,
+              blocker_count: retryBlockers.length,
+            });
+          }
+        } else {
+          console.warn("[take-pipeline] s10_module_repair_retry_failed", {
+            ...baseLog,
+            reason: retryResult.error.slice(0, 120),
+            http_status: retryResult.httpStatus,
+            safe_error_category: retryResult.safe_error_category,
+            duration_ms: retryResult.durationMs,
+          });
+          metric("s10_module_repair_retry_failed", {
+            take_id: takeId,
+            reason: retryResult.error.slice(0, 120),
+            http_status: retryResult.httpStatus,
+            safe_error_category: retryResult.safe_error_category,
+            duration_ms: retryResult.durationMs,
+          });
+        }
+      } finally {
+        clearTimeout(moduleRepairTimer);
+      }
+
+      if (!moduleRepairRetrySucceeded && moduleQualityBlockers().length > 0) {
+        console.warn("[take-pipeline] s10_module_quality_recovery_started", {
+          ...baseLog,
+          reason: moduleQualityRecoveryReason,
+          blocker_count: moduleQualityBlockers().length,
+          modules: moduleQualityBlockers()
+            .map((result) => result.report_module)
+            .slice(0, 12),
+        });
+        metric("s10_module_quality_recovery_started", {
+          take_id: takeId,
+          reason: moduleQualityRecoveryReason,
+          blocker_count: moduleQualityBlockers().length,
+        });
+        const recovery = buildS10ModuleQualityRecoveryReport({
+          evidence: twoStepEvidence,
+          briefContext: extractedBrief?.brief_context ?? null,
+          briefRequirements: extractedBrief?.brief_requirements ?? [],
+          auditionTitle: audition.title,
+          selectedLevel: auditionLevel,
+          mode: audition.brief ? "brief" : "baseline",
+          reason: moduleQualityRecoveryReason,
+          retryAttempted: moduleRepairRetryAttempted,
+          retrySucceeded: moduleRepairRetrySucceeded,
+        });
+        if (recovery.ok) {
+          const recoveredReport = ukifyDeep(recovery.report) as Record<string, unknown>;
+          const recoveryReadiness = runModuleReadiness(recoveredReport);
+          const recoveryBlockers = recoveryReadiness.results.filter(
+            (result) => result.blocks_report_value,
+          );
+          if (recoveryBlockers.length === 0) {
+            report = recoveredReport;
+            s10ModuleQualityRecoveryUsed = true;
+            s10ModuleReadiness = recoveryReadiness;
+            persistedS10ModuleReadiness =
+              summariseS10ModuleReadinessForPersistence(s10ModuleReadiness);
+            console.warn("[take-pipeline] s10_module_quality_recovery_built", {
+              ...baseLog,
+              reason: moduleQualityRecoveryReason,
+              limitation_count: recovery.limitationCount,
+            });
+          } else {
+            console.warn("[take-pipeline] s10_module_quality_recovery_failed", {
+              ...baseLog,
+              reason: "critical_modules_still_blocked",
+              blocker_count: recoveryBlockers.length,
+              modules: recoveryBlockers.map((result) => result.report_module).slice(0, 12),
+            });
+            metric("s10_module_quality_recovery_failed", {
+              take_id: takeId,
+              reason: "critical_modules_still_blocked",
+              blocker_count: recoveryBlockers.length,
+            });
+          }
+        } else {
+          console.warn("[take-pipeline] s10_module_quality_recovery_failed", {
+            ...baseLog,
+            reason: recovery.reason,
+          });
+          metric("s10_module_quality_recovery_failed", {
+            take_id: takeId,
+            reason: recovery.reason,
+          });
+        }
+      }
+
+      if (moduleQualityBlockers().length > 0) {
+        throw new AnalysisFailure(
+          "analysis_parse_failed",
+          "TapeCoach could not assemble the full S10 report model for this take. Please try again.",
+        );
+      }
+
+      report.s10_module_readiness = persistedS10ModuleReadiness;
+      report.s10_module_repair_actions = persistedS10ModuleReadiness.repair_actions;
+      report.s10_module_quality_recovery_used = s10ModuleQualityRecoveryUsed;
+      report.module_repair_retry_attempted = moduleRepairRetryAttempted;
+      report.module_repair_retry_succeeded = moduleRepairRetrySucceeded;
+      report.module_quality_recovery_reason = moduleQualityRecoveryReason;
     }
 
     const scoreBreakdown = {
@@ -5922,6 +6155,10 @@ export async function runProcessTake(
             polish_retry_attempted: polishRetryAttempted,
             polish_retry_succeeded: polishRetrySucceeded,
             report_polish_fallback_used: twoStepFallbackUsed,
+            module_repair_retry_attempted: moduleRepairRetryAttempted,
+            module_repair_retry_succeeded: moduleRepairRetrySucceeded,
+            s10_module_quality_recovery_used: s10ModuleQualityRecoveryUsed,
+            module_quality_recovery_reason: moduleQualityRecoveryReason,
             locked_field_overwrite_count: twoStepEnforcement.locked_field_overwrites,
             unsupported_claims_removed_count: twoStepEnforcement.unsupported_claims_removed,
             unsupported_claims_rewritten_count: twoStepEnforcement.unsupported_claims_rewritten,
@@ -6321,11 +6558,23 @@ export async function runProcessTake(
         reason: twoStepFallbackReason ?? "unknown",
       });
     }
+    if (s10ModuleQualityRecoveryUsed) {
+      s10ModuleQualityRecoveryPersisted = true;
+      metric("s10_module_quality_recovery_persisted", {
+        take_id: takeId,
+        reason: moduleQualityRecoveryReason ?? "unknown",
+      });
+      console.warn("[take-pipeline] s10_module_quality_recovery_persisted", {
+        ...baseLog,
+        reason: moduleQualityRecoveryReason ?? "unknown",
+      });
+    }
     console.log("[take-pipeline] finalising_persist_completed", {
       take_id: takeId,
       duration_ms: Date.now() - persistStartedAt,
       finalising_duration_ms: finaliseElapsedMs(),
       report_polish_fallback_persisted: reportPolishFallbackPersisted,
+      s10_module_quality_recovery_persisted: s10ModuleQualityRecoveryPersisted,
     });
     // Successful complete write — terminal state owned here.
     terminalWritten = true;
