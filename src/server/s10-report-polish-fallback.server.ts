@@ -223,12 +223,35 @@ function buildLevelShortfallEvidence(input: {
   matrix: ReturnType<typeof normaliseBriefAchievementMatrix>;
   mode: FallbackMode;
 }) {
+  // The matrix requirement arrays hold raw requirement IDs (e.g. "br006") for
+  // internal linking. Render the human-readable requirement summary instead, and
+  // drop any ID that cannot be resolved, so a raw truth/requirement ID never
+  // leaks into performer-facing prose (high-risk red line).
+  const summaryById = new Map(
+    input.matrix.requirement_results.map((result) => [
+      result.requirement_id,
+      result.requirement_summary,
+    ]),
+  );
+  const requirementText = (ids: string[], suffix: string): string[] =>
+    ids
+      .map((id) => summaryById.get(id))
+      .filter(
+        (summary): summary is string => typeof summary === "string" && summary.trim().length > 0,
+      )
+      .map((summary) => `${summary}${suffix}`);
   return evidenceList(
     [
       ...input.evidence.core_improvements_evidence.map((item) => item.evidence),
       input.evidence.fix_first_evidence,
-      ...input.matrix.missing_or_incomplete_requirements,
-      ...input.matrix.not_assessable_requirements,
+      ...requirementText(
+        input.matrix.missing_or_incomplete_requirements,
+        " is missing or incomplete.",
+      ),
+      ...requirementText(
+        input.matrix.not_assessable_requirements,
+        " could not be assessed from the observed tape.",
+      ),
       input.mode === "baseline"
         ? "No supplied brief was available, so TapeCoach cannot judge brief fit, required-material completion, deadline, upload or file-compliance claims from this run."
         : "",
@@ -529,8 +552,13 @@ function buildFallbackLimitations(evidence: EvidencePass, kind: S10EvidenceRecov
   );
 }
 
-function fallbackDecision(matrixImpact: unknown, overallScore: number) {
+function fallbackDecision(matrixImpact: unknown, overallScore: number, scoresAvailable: boolean) {
   if (matrixImpact === "submission_blocker") return "retake_required_if_possible";
+  // No genuine category scores were produced (Step 1 under-produced). Do NOT
+  // infer "retake required" from a defaulted 0 — that contradicts a supported
+  // brief achievement. Decide from brief achievement only and route to a
+  // review, since this is a degraded evidence-only report.
+  if (!scoresAvailable) return "review_carefully";
   if (overallScore >= 85) return "submit";
   if (overallScore >= 70) return "submit_if_deadline_is_close";
   if (overallScore >= 55) return "review_carefully";
@@ -662,7 +690,18 @@ function buildFallbackScores(evidence: EvidencePass) {
     scores.brief_adherence,
     scores.professional_presentation,
   ]);
-  return { scores, overallScore };
+  // Distinguish "Step 1 returned real category scores" from "Step 1 under-
+  // produced and the scores were defaulted to 0". When Step 1 truncates/omits
+  // raw_scores they all default to 0, which must NOT be read as a genuine
+  // zero-readiness score that forces a retake verdict.
+  const scoresAvailable = [
+    evidence.raw_scores.technical,
+    evidence.raw_scores.audio,
+    evidence.raw_scores.acting,
+    evidence.raw_scores.brief_adherence,
+    evidence.raw_scores.professional_presentation,
+  ].some((value) => typeof value === "number" && Number.isFinite(value) && value > 0);
+  return { scores, overallScore, scoresAvailable };
 }
 
 export function buildS10ReportPolishFallback(
@@ -678,7 +717,10 @@ export function buildS10ReportPolishFallback(
   const observedTapeSequence = evidence.observed_tape_sequence ?? [];
   const componentVerifications = evidence.component_verifications ?? [];
   const mediaObservationSummary = evidence.media_observation_summary ?? null;
-  const { scores, overallScore } = buildFallbackScores(evidence);
+  const { scores, overallScore, scoresAvailable } = buildFallbackScores(evidence);
+  // When Step 1 produced no real category scores, withhold the numeric score
+  // (render as "—") rather than showing a misleading 0.
+  const displayOverallScore = scoresAvailable ? overallScore : null;
 
   const report: Record<string, unknown> = {
     source_mode: "s10_ai_report_model",
@@ -687,7 +729,7 @@ export function buildS10ReportPolishFallback(
     audition_type: evidence.audition_type,
     audition_title: input.auditionTitle,
     scores,
-    overall_score: overallScore,
+    overall_score: displayOverallScore,
     confidence: "medium",
     detected_components: evidence.detected_components,
     brief_context: input.briefContext ?? null,
@@ -720,7 +762,7 @@ export function buildS10ReportPolishFallback(
     mediaObservationSummary,
   });
   report.brief_achievement_matrix = matrix;
-  const decision = fallbackDecision(matrix.readiness_impact, overallScore);
+  const decision = fallbackDecision(matrix.readiness_impact, overallScore, scoresAvailable);
 
   const readiness = normaliseReadinessScoreJudgement({
     judgement: {
@@ -736,11 +778,12 @@ export function buildS10ReportPolishFallback(
           : "This report was recovered from locked Step 1 evidence after the polish provider returned unusable structured content.",
       ],
       confidence: "medium",
-      performance_quality_score: overallScore,
-      brief_completion_score: scores.brief_adherence,
-      overall_submission_readiness_score: overallScore,
-      score_explanation:
-        recoveryKind === "module_quality"
+      performance_quality_score: displayOverallScore,
+      brief_completion_score: scoresAvailable ? scores.brief_adherence : null,
+      overall_submission_readiness_score: displayOverallScore,
+      score_explanation: !scoresAvailable
+        ? "A numeric readiness score was withheld because Step 1 did not return category scores for this run; the recommendation is based on observed brief achievement and the locked evidence."
+        : recoveryKind === "module_quality"
           ? "The visible score is derived from locked Step 1 category evidence and deterministic S10 checks after the polished report left critical modules unavailable."
           : "The visible score is derived from locked Step 1 category evidence and deterministic S10 checks, not from a completed polish pass.",
       performance_quality_summary:
@@ -769,11 +812,22 @@ export function buildS10ReportPolishFallback(
               : "Selected-level guidance is limited to locked evidence because the polish response was unusable.",
         confidence: "medium",
       },
-      category_scores: buildCategoryScores({
-        evidence,
-        scores,
-        mode: input.mode,
-      }),
+      category_scores: scoresAvailable
+        ? buildCategoryScores({
+            evidence,
+            scores,
+            mode: input.mode,
+          })
+        : buildCategoryScores({
+            evidence,
+            scores,
+            mode: input.mode,
+          }).map((row) => ({
+            ...row,
+            score: null,
+            score_basis:
+              "Not scored in this evidence-only fallback because Step 1 did not return category scores.",
+          })),
     },
     matrix,
     currentOverallScore: overallScore,

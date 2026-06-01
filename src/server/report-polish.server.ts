@@ -32,13 +32,17 @@ import {
 const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
 const POLISH_AI_TIMEOUT_MS = 90_000;
 // A full-brief S10 report (brief_achievement_matrix + every requirement_result
-// + all S10 modules) is much larger than a no-brief baseline and overruns the
-// previous 8192-token cap, truncating the tool-call JSON so it fails to parse
-// and the decision-critical brief/fix modules never populate. gemini-3-flash
-// supports a far larger output window, so lift the cap (env-overridable) to
-// give full-brief reports headroom. The POLISH_AI_TIMEOUT_MS still bounds
-// latency.
-export const REPORT_POLISH_MAX_TOKENS = Number(process.env.REPORT_POLISH_MAX_TOKENS ?? 32768);
+// + all S10 modules + per-discipline technique + duration-scaled timestamped
+// commentary) overruns small caps, truncating the JSON so it fails to parse and
+// the decision-critical brief/fix modules never populate. The cap is sized for
+// the PRODUCT MAXIMUM tape length (10 minutes) across all disciplines, not the
+// ~4-minute test fixture: a 4-minute report already emits ~20k tokens, and a
+// 10-minute tape carries 18-36 timestamped notes plus more components, so 32768
+// is sized to the test, not the maximum. gemini-3-flash supports a far larger
+// output window. Env-overridable (e.g. to 65536) so it can be tuned without a
+// deploy; finish_reason === "length" detection records any residual truncation
+// in take_ai_usage. POLISH_AI_TIMEOUT_MS still bounds latency.
+export const REPORT_POLISH_MAX_TOKENS = Number(process.env.REPORT_POLISH_MAX_TOKENS ?? 49152);
 
 export const POLISH_SYSTEM_PROMPT = `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
 

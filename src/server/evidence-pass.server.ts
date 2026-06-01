@@ -21,6 +21,20 @@ import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from 
 
 const DEFAULT_MODEL = process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
 
+// Step 1 must emit a full observed-tape sequence (up to 30 entries), component
+// verifications (up to 40), duration-scaled timestamped evidence and category
+// scores in one response. The cap is sized for the PRODUCT MAXIMUM tape length
+// (10 minutes), not the ~4-minute test fixture: at 10+ minutes the timestamp
+// target alone is 18-36 entries across all disciplines (acting, MT, dance,
+// commercial), so the previous 3072/6144 caps truncated badly — dropping
+// timestamps and scores ("step1_underproduced") — which starved Step 2, tripped
+// the thin-shell gate and collapsed the report to the evidence-bound fallback.
+// gemini-3-flash supports a far larger output window. Env-overridable so the cap
+// can be tuned (e.g. to 65536) without a deploy if a worst-case tape still
+// truncates; finish_reason === "length" detection below makes any residual
+// truncation visible in take_ai_usage rather than silent.
+const EVIDENCE_PASS_MAX_TOKENS = Number(process.env.EVIDENCE_PASS_MAX_TOKENS ?? 49152);
+
 const COMPACT_STEP1_SCHEMA_VERSION = "tapecoach_step1_observable_evidence_v3";
 const SUPPORTED_COMPACT_STEP1_SCHEMA_VERSIONS = new Set([
   "tapecoach_step1_observable_evidence_v1",
@@ -919,7 +933,7 @@ export function buildEvidencePassRequestBodyForProvider(input: {
       model,
       temperature: 0,
       top_p: 1,
-      max_tokens: 3072,
+      max_tokens: EVIDENCE_PASS_MAX_TOKENS,
       messages: [
         { role: "system", content: COMPACT_STEP1_SYSTEM_PROMPT },
         { role: "user", content: userContent },
@@ -930,7 +944,7 @@ export function buildEvidencePassRequestBodyForProvider(input: {
     model,
     temperature: 0,
     top_p: 1,
-    max_tokens: 6144,
+    max_tokens: EVIDENCE_PASS_MAX_TOKENS,
     messages: [
       { role: "system", content: input.systemPrompt ?? EVIDENCE_SYSTEM_PROMPT },
       { role: "user", content: userContent },
@@ -1269,10 +1283,16 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
 
   let parsed: EvidencePass | null = null;
   let tokenPayload: unknown = null;
+  // Captured so a parse failure can be attributed to output that was cut off at
+  // the token cap (finish_reason === "length") rather than malformed content,
+  // and so a truncated-but-parsed Step 1 is still flagged. Recorded into
+  // take_ai_usage so truncation is diagnosable by SQL without Worker logs.
+  let evidenceFinishReason: string | null = null;
   try {
     const json = await resp.json();
     tokenPayload = json;
     const choice = json.choices?.[0];
+    evidenceFinishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
     if (providerContract === "plain_json_observations") {
       const compact = parseCompactStep1EvidenceContent(choice?.message?.content);
       parsed = normaliseCompactStep1EvidenceForEvidencePass(compact);
@@ -1300,20 +1320,40 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       parsed = JSON.parse(tc.function.arguments) as EvidencePass;
     }
   } catch (err) {
+    const truncated = evidenceFinishReason === "length";
+    const failureReason = truncated
+      ? "evidence_pass_truncated_max_tokens (finish_reason=length)"
+      : "evidence_pass_parse_error";
     await recordUsage({
       status: "failure",
       httpStatus: resp.status,
-      failureReason: "evidence_pass_parse_error",
+      failureReason,
       tokenPayload,
     });
     return {
       ok: false,
       httpStatus: resp.status,
-      error: "evidence_pass_parse_error",
+      error: failureReason,
       safe_error_category: classifyEvidencePassSafeErrorCategory(resp.status, err),
       durationMs: Date.now() - startedAt,
       model,
     };
+  }
+
+  // A Step 1 response that parsed but was cut off at the token cap will be
+  // missing later fields (timestamps, scores) and under-produce. Surface it
+  // (SQL-queryable via take_ai_usage) so it is not mistaken for a clean pass.
+  if (evidenceFinishReason === "length") {
+    console.warn("[take-pipeline] evidence_pass_truncated_max_tokens", {
+      take_id: args.usageContext?.takeId ?? null,
+      finish_reason: evidenceFinishReason,
+    });
+    await recordUsage({
+      status: "failure",
+      httpStatus: resp.status,
+      failureReason: "evidence_pass_truncated_max_tokens (finish_reason=length, parsed_partial)",
+      tokenPayload,
+    });
   }
 
   // Defensive normalisation. Validate, drop bad timestamps, enforce ordering.

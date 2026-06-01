@@ -332,5 +332,10 @@ describe("S10.3 tape observation and component verification", () => {
     expect(serialised).toContain("observed_tape_sequence");
     expect(serialised).toContain("raw_report.detected_components");
     expect(serialised).not.toMatch(/prompt version['"]?:\s*['"]?evidence_pass_current/i);
+    // The Step 1 output cap is sized for the 10-minute product maximum (18-36
+    // timestamped notes + up to 30 sequence / 40 verification entries), not the
+    // ~4-minute test fixture, so Step 1 does not under-produce on long tapes.
+    expect(typeof request.max_tokens).toBe("number");
+    expect(request.max_tokens as number).toBeGreaterThanOrEqual(49152);
   });
 });
