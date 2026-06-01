@@ -5,6 +5,7 @@ import {
   normaliseCompactStep1EvidenceForEvidencePass,
   normaliseS10ComponentVerifications,
   parseCompactStep1EvidenceContent,
+  projectFilteredStep1EvidenceForPolish,
 } from "@/server/evidence-pass.server";
 import { S10_OBSERVATION_PROMPT_VERSION } from "@/server/s10-report-prompt-map.server";
 
@@ -337,5 +338,73 @@ describe("S10.3 tape observation and component verification", () => {
     // ~4-minute test fixture, so Step 1 does not under-produce on long tapes.
     expect(typeof request.max_tokens).toBe("number");
     expect(request.max_tokens as number).toBeGreaterThanOrEqual(49152);
+  });
+
+  it("routes S9-filtered Step 1 evidence into the polish timestamped + technique fields", () => {
+    // The polish reads the raw EvidencePass, where the compact path leaves
+    // timestamped_evidence + candidate_technique_evidence empty. This projection
+    // carries the already-suppressed filtered evidence into those fields so Step 2
+    // can build the timestamped/technique modules instead of dropping to the shell.
+    const item = (over: Record<string, unknown>) => ({
+      evidence_item_id: "id",
+      evidence_family: "performance",
+      evidence_modality: "video",
+      evidence_kind: "acting scene",
+      safe_evidence_summary: "summary",
+      source_artefact_id: "run_evidence_pass",
+      source_path: "p",
+      timestamp: null,
+      timestamp_range: null,
+      timestamp_source: "x",
+      component_id: null,
+      linked_truth_state_ids: [],
+      ...over,
+    });
+    const filtered = {
+      observable_evidence_items: [
+        item({
+          evidence_modality: "video",
+          evidence_kind: "acting",
+          safe_evidence_summary: "Clear objective through the scene.",
+          timestamp: "0:18",
+        }),
+        item({
+          evidence_family: "audio",
+          evidence_modality: "audio",
+          evidence_kind: "vocal",
+          safe_evidence_summary: "Song stays audible and supported.",
+          timestamp: "2:05",
+        }),
+      ],
+      candidate_technique_evidence: [
+        item({
+          evidence_family: "candidate_technique",
+          evidence_modality: "video",
+          evidence_kind: "breath",
+          safe_evidence_summary: "Visible breath resets the thought before the final line.",
+          timestamp: "1:40",
+        }),
+      ],
+      video_observable_evidence_items: [],
+      audio_observable_evidence_items: [],
+      material_observable_evidence_items: [],
+      performance_observable_evidence_items: [],
+    } as unknown as Parameters<typeof projectFilteredStep1EvidenceForPolish>[0];
+
+    const projected = projectFilteredStep1EvidenceForPolish(filtered);
+
+    expect(projected.timestamped_evidence.length).toBe(2);
+    expect(projected.timestamped_evidence[0]).toMatchObject({
+      timestamp: "0:18",
+      observation: "Clear objective through the scene.",
+      linked_category: "acting",
+    });
+    expect(projected.timestamped_evidence[1].linked_category).toBe("vocal");
+    expect(projected.candidate_technique_evidence.length).toBe(1);
+    expect(projected.candidate_technique_evidence[0]).toMatchObject({
+      label: "breath",
+      safe_evidence_summary: "Visible breath resets the thought before the final line.",
+      timestamp: "1:40",
+    });
   });
 });
