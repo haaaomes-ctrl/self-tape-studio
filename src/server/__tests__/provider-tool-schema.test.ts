@@ -293,6 +293,10 @@ describe("provider tool schema helpers", () => {
     expect(polishBody).not.toHaveProperty("tools");
     expect(polishBody).not.toHaveProperty("tool_choice");
     expect(JSON.stringify(polishBody)).toContain("Return ONLY the JSON object");
+    // Full-brief reports overrun the old 8192 cap and truncate; the polish call
+    // must request a larger output window so brief reports assemble.
+    expect(typeof polishBody.max_tokens).toBe("number");
+    expect(polishBody.max_tokens as number).toBeGreaterThanOrEqual(32768);
 
     const singlePassBody = buildSinglePassReportRequestBodyForProvider({
       model: "google/gemini-3-flash-preview",

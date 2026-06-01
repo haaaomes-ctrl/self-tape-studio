@@ -31,6 +31,14 @@ import {
 
 const DEFAULT_MODEL = process.env.REPORT_POLISH_MODEL ?? "google/gemini-3-flash-preview";
 const POLISH_AI_TIMEOUT_MS = 90_000;
+// A full-brief S10 report (brief_achievement_matrix + every requirement_result
+// + all S10 modules) is much larger than a no-brief baseline and overruns the
+// previous 8192-token cap, truncating the tool-call JSON so it fails to parse
+// and the decision-critical brief/fix modules never populate. gemini-3-flash
+// supports a far larger output window, so lift the cap (env-overridable) to
+// give full-brief reports headroom. The POLISH_AI_TIMEOUT_MS still bounds
+// latency.
+export const REPORT_POLISH_MAX_TOKENS = Number(process.env.REPORT_POLISH_MAX_TOKENS ?? 32768);
 
 export const POLISH_SYSTEM_PROMPT = `${S10_PROFESSIONAL_JUDGEMENT_SYSTEM_PROMPT}
 
@@ -112,6 +120,9 @@ export type RunReportPolishResult =
       safe_error_category: ProviderSafeErrorCategory;
       durationMs: number;
       model: string;
+      // Provider finish_reason when available; "length" indicates the output
+      // was cut off at the token cap (truncation) rather than malformed JSON.
+      finish_reason?: string | null;
     };
 
 export const REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION =
@@ -183,7 +194,7 @@ export function buildReportPolishRequestBodyForProvider(input: {
     model: input.model,
     temperature: 0.2,
     top_p: 1,
-    max_tokens: 8192,
+    max_tokens: REPORT_POLISH_MAX_TOKENS,
     messages: [
       {
         role: "system",
@@ -333,10 +344,17 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
   }
 
   let tokenPayload: unknown = null;
+  // Captured so the parse-failure catch below can distinguish a genuine
+  // malformed-JSON response from output that was cut off at the token cap
+  // (finish_reason === "length"). Recorded into take_ai_usage so truncation is
+  // diagnosable by SQL even when the Worker log path is unavailable.
+  let finishReasonForDiagnostics: string | null = null;
   try {
     const json = await resp.json();
     tokenPayload = json;
     const choice = json.choices?.[0];
+    finishReasonForDiagnostics =
+      typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
     if (providerContract === "plain_json_report") {
       const report = parseProviderJsonObjectContent(choice?.message?.content);
       await recordUsage({
@@ -387,16 +405,22 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       httpStatus: resp.status,
     };
   } catch (err) {
+    const truncated = finishReasonForDiagnostics === "length";
+    const baseReason = err instanceof Error ? err.message : "report_polish_parse_error";
+    const failureReason = truncated
+      ? `report_polish_truncated_max_tokens (finish_reason=length): ${baseReason}`
+      : baseReason;
     await recordUsage({
       status: "failure",
       httpStatus: resp.status,
-      failureReason: err instanceof Error ? err.message : "report_polish_parse_error",
+      failureReason,
       tokenPayload,
     });
     return {
       ok: false,
       httpStatus: resp.status,
-      error: err instanceof Error ? err.message : "report_polish_parse_error",
+      error: failureReason,
+      finish_reason: finishReasonForDiagnostics,
       safe_error_category: classifyAiGatewayProviderError(resp.status, err),
       durationMs: Date.now() - startedAt,
       model,
