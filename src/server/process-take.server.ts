@@ -6537,6 +6537,22 @@ export async function runProcessTake(
       return { ok: true, alreadyDone: true };
     }
 
+    // The takes.overall_score and takes.confidence columns are INTEGER. The
+    // report-level confidence can be a string enum ("low"/"medium"/"high") on
+    // some AI paths — the duration-override block above already guards for
+    // report.confidence not being a number — and a raw string (or non-finite
+    // value) written to an integer column makes the persist UPDATE throw,
+    // dead-ending an otherwise-complete take as analysis_persist_failed. Coerce
+    // to integer-or-null at the write boundary so an unknown/odd value degrades
+    // to null (evidence-bound graceful degradation) rather than failing the
+    // whole report.
+    const overallScoreForPersist =
+      typeof overall === "number" && Number.isFinite(overall) ? Math.round(overall) : null;
+    const confidenceForPersist =
+      typeof report.confidence === "number" && Number.isFinite(report.confidence)
+        ? Math.round(report.confidence)
+        : null;
+
     // Conditional update: only persist if the row is still in the exact
     // pre-write state (status=processing AND processing_phase=analysing).
     // If state changed (cancel, retry, reset, error) between the read above
@@ -6552,8 +6568,8 @@ export async function runProcessTake(
           report_model_status: "rendered",
           report: reportToPersist,
           scores: report.scores,
-          overall_score: overall,
-          confidence: report.confidence,
+          overall_score: overallScoreForPersist,
+          confidence: confidenceForPersist,
           error_message: null,
           compliance_flags: complianceFlags as never,
           score_breakdown: scoreBreakdown as never,

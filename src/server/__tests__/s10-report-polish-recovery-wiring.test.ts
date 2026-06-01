@@ -65,6 +65,12 @@ describe("S10 report polish recovery wiring", () => {
     // so a re-run is diagnosable from the queryable metric stream.
     expect(processTakeSource).toContain("s10_decision_critical_blocked");
     expect(processTakeSource).toContain("blocked_modules");
+    // The persist UPDATE coerces the integer columns so a string/odd confidence
+    // degrades to null instead of throwing analysis_persist_failed at the DB.
+    expect(processTakeSource).toContain("confidenceForPersist");
+    expect(processTakeSource).toContain("overallScoreForPersist");
+    expect(processTakeSource).toContain("overall_score: overallScoreForPersist");
+    expect(processTakeSource).toContain("confidence: confidenceForPersist");
     expect(fallbackSource).toContain(
       'type S10EvidenceRecoveryKind = "polish_parser" | "module_quality"',
     );
