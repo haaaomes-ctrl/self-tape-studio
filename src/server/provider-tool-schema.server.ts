@@ -182,6 +182,13 @@ function renderReportSchemaSkeleton(
 ): unknown {
   if (!node || typeof node !== "object") return "value";
   if (Array.isArray(node.enum) && node.enum.length > 0) {
+    // Single-value enums are literal constraints: emit the value with its native
+    // JSON type (e.g. boolean `true`, number `5`, string `"slate"`) so a model
+    // copying the skeleton produces the right type. Stringifying a boolean-only
+    // enum to "true" makes downstream `=== true` filters reject the field.
+    if (node.enum.length === 1) return node.enum[0];
+    if (node.enum.every((entry) => typeof entry === "boolean")) return "boolean";
+    // Multi-value (string) enums become an "a | b | c" choice hint.
     return node.enum.map((entry) => String(entry)).join(" | ");
   }
   // Normalise nullable unions (e.g. type: ["integer", "null"]) to a single

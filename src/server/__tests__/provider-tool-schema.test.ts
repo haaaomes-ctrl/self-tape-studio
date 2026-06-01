@@ -72,6 +72,40 @@ describe("report JSON skeleton for the plain_json_report (Gemini) contract", () 
     });
   });
 
+  it("renders enum constraints with native types, not stringified values", () => {
+    // Regression: enum:[true] must render as boolean `true`, not "true" — a
+    // copied "true" string makes downstream `=== true` filters reject the field
+    // (e.g. filterComponentVerificationRawItems drops the component evidence).
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    expect(skeleton).not.toMatch(/"(true|false)"/);
+    const verification = (
+      JSON.parse(skeleton).component_verifications as Record<string, unknown>[]
+    )[0];
+    expect(verification.cannot_infer_from_brief_only).toBe(true);
+
+    const synthetic = {
+      function: {
+        parameters: {
+          type: "object",
+          properties: {
+            must_be_true: { type: "boolean", enum: [true] },
+            single_string: { type: "string", enum: ["slate"] },
+            single_number: { type: "integer", enum: [5] },
+            either_bool: { type: "boolean", enum: [true, false] },
+            choice: { type: "string", enum: ["a", "b", "c"] },
+          },
+        },
+      },
+    };
+    expect(JSON.parse(buildReportJsonSkeletonFromTool(synthetic))).toEqual({
+      must_be_true: true,
+      single_string: "slate",
+      single_number: 5,
+      either_bool: "boolean",
+      choice: "a | b | c",
+    });
+  });
+
   it("embeds the skeleton in the plain-JSON instruction only when supplied", () => {
     const withoutSkeleton = buildPlainJsonReportInstruction();
     expect(withoutSkeleton).not.toContain("Required JSON structure:");
