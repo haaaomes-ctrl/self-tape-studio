@@ -11,7 +11,7 @@ export const LAUNCH_ASSET_ROUTES = [
   "/b2b-interest",
 ] as const;
 
-export const LAUNCH_PRIMARY_MESSAGE = "Free self-tape sanity checks before you submit." as const;
+export const LAUNCH_PRIMARY_MESSAGE = "Free self-tape checks before you submit." as const;
 
 export const LAUNCH_PRIMARY_CTA = "Create account and claim free report" as const;
 export const LAUNCH_B2B_CTA = "Fund TapeCoach reports for your students/clients" as const;
