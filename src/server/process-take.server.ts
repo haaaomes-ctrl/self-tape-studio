@@ -59,6 +59,28 @@ async function safeEmitRawReportForQA(input: Parameters<typeof emitRawReportArte
     return { written: false as const };
   }
 }
+
+// Refreshes the take's updated_at so the analysing/finalising orphan reconciler
+// does not force-error a still-running take. Long AI steps (evidence pass, Step-2
+// polish, and the finalising-phase module-repair retry) can each run ~90s with no
+// other DB write, so an interval calls this during those steps. Covers the
+// finalising phase too — the module-repair retry runs there and previously had no
+// heartbeat, which orphaned otherwise-healthy 10-minute-scale reports.
+async function writeProcessingHeartbeat(takeId: string, label: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("takes")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", takeId)
+    .in("status", ["pending", "processing"])
+    .in("processing_phase", ["analysis_pending", "analysing", "finalising"]);
+  if (error) {
+    console.warn("[take-pipeline] processing_heartbeat_failed", {
+      take_id: takeId,
+      label,
+      error: error.message,
+    });
+  }
+}
 import {
   scrubReportQuality,
   normaliseTimestampedNotes,
@@ -3977,7 +3999,7 @@ export async function runProcessTake(
             .update({ updated_at: new Date().toISOString() })
             .eq("id", takeId)
             .in("status", ["pending", "processing"])
-            .in("processing_phase", ["analysis_pending", "analysing"]);
+            .in("processing_phase", ["analysis_pending", "analysing", "finalising"]);
           if (heartbeatErr) {
             console.warn("[take-pipeline] report_polish_heartbeat_failed", {
               take_id: takeId,
@@ -5986,6 +6008,14 @@ export async function runProcessTake(
         () => moduleRepairAc.abort("s10_module_repair_timeout"),
         Math.min(ANALYSIS_GEMINI_TIMEOUT_MS, 45_000),
       );
+      // The repair retry runs another bounded polish in the finalising phase.
+      // Keep the heartbeat fresh so the finalising-orphan reconciler does not
+      // force-error this still-running take (the cause of finalising_orphan once
+      // Step-2 polish grew to ~90s).
+      await writeProcessingHeartbeat(takeId, "module_repair_start");
+      const moduleRepairHeartbeat = setInterval(() => {
+        void writeProcessingHeartbeat(takeId, "module_repair_tick");
+      }, 30_000);
       moduleRepairRetryAttempted = true;
       console.warn("[take-pipeline] s10_module_repair_retry_started", {
         ...baseLog,
@@ -6121,6 +6151,7 @@ export async function runProcessTake(
         }
       } finally {
         clearTimeout(moduleRepairTimer);
+        clearInterval(moduleRepairHeartbeat);
       }
 
       if (!moduleRepairRetrySucceeded && moduleQualityBlockers().length > 0) {

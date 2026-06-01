@@ -2,9 +2,16 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metric } from "@/server/metrics.server";
 import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
 
-export const FINALISING_ORPHAN_SECONDS = 90;
+// Orphan windows are sized for the 10-minute maximum self-tape, not the ~4-minute
+// test fixtures. A full run can legitimately spend ~90s in the evidence pass, ~90s
+// in the Step-2 polish, and another bounded polish (module-repair retry, up to
+// ~90s incl. JSON salvage) plus scrubs/persist in the finalising phase. The
+// periodic processing heartbeat (every 30s, covering analysing AND finalising) is
+// the primary protection; these thresholds are the safety net for a genuinely dead
+// worker only, and sit well within the Cloudflare queue-consumer wall-clock budget.
+export const FINALISING_ORPHAN_SECONDS = 300;
 export const FINALISING_ORPHAN_MS = FINALISING_ORPHAN_SECONDS * 1000;
-export const ANALYSING_ORPHAN_SECONDS = 180;
+export const ANALYSING_ORPHAN_SECONDS = 300;
 export const ANALYSING_ORPHAN_MS = ANALYSING_ORPHAN_SECONDS * 1000;
 
 export type FinalisingRecoveryResult =
