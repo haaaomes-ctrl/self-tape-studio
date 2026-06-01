@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildPlainJsonReportInstruction,
   buildProviderToolForModel,
+  buildReportJsonSkeletonFromTool,
   classifyAiGatewayProviderError,
   cloneForProviderToolSchema,
   parseProviderJsonObjectContent,
@@ -18,6 +20,63 @@ import {
   REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
   runReportPolish,
 } from "@/server/report-polish.server";
+
+describe("report JSON skeleton for the plain_json_report (Gemini) contract", () => {
+  it("derives the full report shape with module keys + enum hints from REPORT_TOOL", () => {
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    const parsed = JSON.parse(skeleton) as Record<string, unknown>;
+    // Every core S10 module the readiness gate checks must be present in the shape.
+    for (const moduleKey of [
+      "brief_achievement_matrix",
+      "readiness_score_judgement",
+      "s10_fix_hierarchy",
+      "s10_next_action_plan",
+      "s10_professional_critique",
+      "s10_technique_commentary",
+      "s10_timestamped_commentary",
+      "strengths",
+    ]) {
+      expect(parsed).toHaveProperty(moduleKey);
+    }
+    // Enum hints survive so the model fills allowed values, not free text.
+    const readiness = parsed.readiness_score_judgement as Record<string, unknown>;
+    expect(String(readiness.decision)).toContain("retake_required_if_possible");
+  });
+
+  it("embeds the skeleton in the plain-JSON instruction only when supplied", () => {
+    const withoutSkeleton = buildPlainJsonReportInstruction();
+    expect(withoutSkeleton).not.toContain("Required JSON structure:");
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    const withSkeleton = buildPlainJsonReportInstruction("submit_audition_report", skeleton);
+    expect(withSkeleton).toContain("Required JSON structure:");
+    expect(withSkeleton).toContain("readiness_score_judgement");
+    expect(withSkeleton).toContain("never omit a module");
+  });
+
+  it("puts the report shape into the Gemini polish request system message", () => {
+    const body = buildReportPolishRequestBodyForProvider({
+      model: "google/gemini-3-flash-preview",
+      systemPrompt: "POLISH",
+      userText: "USER",
+      reportTool: REPORT_TOOL,
+      providerContract: "plain_json_report",
+    });
+    const messages = (body as { messages: { role: string; content: string }[] }).messages;
+    const system = messages.find((m) => m.role === "system")?.content ?? "";
+    expect(system).toContain("Required JSON structure:");
+    expect(system).toContain("s10_professional_critique");
+    // tool_call models must NOT get the skeleton text (they get the real schema).
+    const toolBody = buildReportPolishRequestBodyForProvider({
+      model: "openai/gpt-5",
+      systemPrompt: "POLISH",
+      userText: "USER",
+      reportTool: REPORT_TOOL,
+      providerContract: "tool_call",
+    });
+    const toolMessages = (toolBody as { messages: { role: string; content: string }[] }).messages;
+    expect(toolMessages.find((m) => m.role === "system")?.content).toBe("POLISH");
+  });
+});
 
 const UNSUPPORTED_PROVIDER_SCHEMA_KEYS = new Set([
   "$defs",

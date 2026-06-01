@@ -137,6 +137,7 @@ import {
 } from "./s10-same-video-comparison.server";
 import {
   buildPlainJsonReportInstruction,
+  buildReportJsonSkeletonFromTool,
   buildProviderToolForModel,
   classifyAiGatewayProviderError,
   parseProviderJsonObjectContent,
@@ -2213,7 +2214,10 @@ export function buildSinglePassReportRequestBodyForProvider(input: {
         role: "system",
         content:
           providerContract === "plain_json_report"
-            ? `${input.systemPrompt}\n\n${buildPlainJsonReportInstruction()}`
+            ? `${input.systemPrompt}\n\n${buildPlainJsonReportInstruction(
+                "submit_audition_report",
+                buildReportJsonSkeletonFromTool(input.reportTool ?? REPORT_TOOL),
+              )}`
             : input.systemPrompt,
       },
       {
