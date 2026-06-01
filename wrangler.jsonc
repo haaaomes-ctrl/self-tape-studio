@@ -1,6 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tanstack-start-app",
+  // Worker service name. MUST stay in sync with the deployed analysis worker
+  // and the producer's ANALYSIS_DISPATCH_URL host
+  // (https://tapecoach-analysis-worker.o-halawi90.workers.dev/api/internal/run-analysis).
+  // Cloudflare Workers Builds deploys to the service named here, so a mismatch
+  // would publish to a different worker and leave the dispatch target stale
+  // (404 / analysis_external_dispatch_failed). Do not rename without updating
+  // ANALYSIS_DISPATCH_URL to match.
+  "name": "tapecoach-analysis-worker",
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker-entry.ts",

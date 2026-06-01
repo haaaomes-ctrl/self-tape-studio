@@ -365,6 +365,17 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toContain('"cpu_ms": 300000');
   });
 
+  it("wrangler deploys to the analysis worker named in ANALYSIS_DISPATCH_URL", async () => {
+    const source = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
+    // Cloudflare Workers Builds deploys to the service named in `name`. It must
+    // match the deployed analysis worker + the producer's ANALYSIS_DISPATCH_URL
+    // host (tapecoach-analysis-worker.*.workers.dev/api/internal/run-analysis),
+    // or the build publishes a different worker and the dispatch target stays
+    // stale (404 / analysis_external_dispatch_failed).
+    expect(source).toContain('"name": "tapecoach-analysis-worker"');
+    expect(source).not.toContain('"name": "tanstack-start-app"');
+  });
+
   it("analysis dispatch uses queue when the binding is available", async () => {
     const sent: unknown[] = [];
     const scheduled: Promise<unknown>[] = [];
