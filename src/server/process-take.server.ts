@@ -6193,6 +6193,31 @@ export async function runProcessTake(
         // A useful, honest report cannot be produced: a decision-critical module
         // (submit/retake/review judgement, brief achievement, or a truthful fix
         // hierarchy) is still blocked after repair and evidence-bound recovery.
+        //
+        // Emit the blocked module names + statuses BEFORE throwing. The generic
+        // performer-facing message must not leak module internals, but the
+        // metric/log stream (which stays queryable when raw server logs are
+        // not) needs to name exactly which decision-critical module blocked so
+        // a re-run is self-diagnosing rather than an opaque parse failure.
+        const blockedModules = decisionCriticalBlockers.map((result) => result.report_module);
+        console.warn("[take-pipeline] s10_decision_critical_blocked", {
+          ...baseLog,
+          reason: moduleQualityRecoveryReason,
+          module_repair_retry_attempted: moduleRepairRetryAttempted,
+          module_repair_retry_succeeded: moduleRepairRetrySucceeded,
+          module_quality_recovery_used: s10ModuleQualityRecoveryUsed,
+          residual_module_recovery_used: residualModuleRecoveryUsed,
+          blocked_modules: decisionCriticalBlockers
+            .map((result) => `${result.report_module}:${result.status}`)
+            .slice(0, 12),
+        });
+        metric("s10_decision_critical_blocked", {
+          take_id: takeId,
+          reason: moduleQualityRecoveryReason ?? "decision_critical_modules_blocked",
+          modules: blockedModules.join(","),
+          module_repair_retry_attempted: moduleRepairRetryAttempted,
+          module_quality_recovery_used: s10ModuleQualityRecoveryUsed,
+        });
         throw new AnalysisFailure(
           "analysis_parse_failed",
           "TapeCoach could not assemble the full S10 report model for this take. Please try again.",
@@ -6512,6 +6537,22 @@ export async function runProcessTake(
       return { ok: true, alreadyDone: true };
     }
 
+    // The takes.overall_score and takes.confidence columns are INTEGER. The
+    // report-level confidence can be a string enum ("low"/"medium"/"high") on
+    // some AI paths — the duration-override block above already guards for
+    // report.confidence not being a number — and a raw string (or non-finite
+    // value) written to an integer column makes the persist UPDATE throw,
+    // dead-ending an otherwise-complete take as analysis_persist_failed. Coerce
+    // to integer-or-null at the write boundary so an unknown/odd value degrades
+    // to null (evidence-bound graceful degradation) rather than failing the
+    // whole report.
+    const overallScoreForPersist =
+      typeof overall === "number" && Number.isFinite(overall) ? Math.round(overall) : null;
+    const confidenceForPersist =
+      typeof report.confidence === "number" && Number.isFinite(report.confidence)
+        ? Math.round(report.confidence)
+        : null;
+
     // Conditional update: only persist if the row is still in the exact
     // pre-write state (status=processing AND processing_phase=analysing).
     // If state changed (cancel, retry, reset, error) between the read above
@@ -6527,8 +6568,8 @@ export async function runProcessTake(
           report_model_status: "rendered",
           report: reportToPersist,
           scores: report.scores,
-          overall_score: overall,
-          confidence: report.confidence,
+          overall_score: overallScoreForPersist,
+          confidence: confidenceForPersist,
           error_message: null,
           compliance_flags: complianceFlags as never,
           score_breakdown: scoreBreakdown as never,
