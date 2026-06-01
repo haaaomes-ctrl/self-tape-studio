@@ -140,3 +140,58 @@ Decision record `docs/tapecoach/v3/s9-19h-live-step1-provider-contract-suppressi
 | #163 | observability | SQL-readable route-β liveness/execution marker. |
 
 **Remaining root:** G2 (Step-1 compact prompt under-produces timestamps/technique) and G4 (readiness gate accepts the thin shell). Token caps / truncation were never the binding constraint for the observed takes (`completion_tokens ≈ 2,400 ≪ cap`).
+
+---
+
+## Confirmed live-run findings — take `8cb7619f` (2026-06-01, build ≥ `b051f60`)
+
+First decisive run on a confirmed-live build carrying fix A (#165) and route β (#162).
+Artifacts read directly: `Step1ObservableEvidence.json`, `raw_report.json`.
+
+### Outcome
+The performer report is the **evidence-only `module_quality_recovery` shell**, not a real
+report. Self-described in the artifact: `readiness…score_basis` = *"Not scored in this
+evidence-only fallback because Step 1 did not return category scores"*; critique
+`critique_limitations` = *"The polished report left critical S10 modules unavailable, so
+this report is recovered from locked Step 1 evidence."* `strengths: []`, every
+`category_scores[].score: null`. The `s10_module_readiness` shows all critical modules
+`complete` / `module_ready: true` **only because the recovery back-filled them** with
+limitation copy that passes the lenient gate — a shell wearing a "complete" badge.
+
+### Score semantics correction (operator-confirmed)
+`overall_score: null` is **correct, not a failure**. Per README/roadmap the numeric score is
+**internal/dev/debug only**; the performer-facing product is the **text equivalent**
+(verdict / strengths / technique / next-action / readiness in words). "Done" = real
+performer-facing prose renders, *not* a number. Do not chase the null score.
+
+### Fix A (#165) — half landed
+- `candidate_technique`: **0 → 5 accepted** (`step1_candidate_technique_accepted_count: 5`). ✅
+- Timestamps: **still 0** (`timestamped_media_observation_count: 0`; every evidence item
+  `timestamp: null`, `timestamp_source: not_timestamped_runtime_metadata`). ❌
+- ⚠️ Correction to earlier note: the log's `s10_step1_evidence_projected_for_polish
+  timestamped_count: 14` was **component-range projection** (e.g. `00:13–01:55` from
+  component `br1`), **not** true per-moment timestamps. The exact-timestamp count is 0.
+
+### Two-layer root cause
+- **Layer 1 (primary — produces the shell): Step-2 polish reliability.** Polish parsed
+  (`report_polish_completed`, `fallback_used:false`) but **under-produced the core modules**
+  (overall readiness, verdict, performer level calibration, next action, technique). The
+  **module-repair retry then returned non-JSON** (`provider_content_not_json_object`,
+  HTTP 200) and its salvage failed → `module_quality_recovery` discarded the polish and
+  built the evidence-only shell. This is what stands between "shell" and "real report".
+  Note: the repair path already uses the correct `plain_json_report` contract + a salvage
+  pass, so this is **not** a contract-selection bug — Gemini is failing to emit a complete,
+  valid report object for the large `REPORT_TOOL` shape.
+- **Layer 2 (secondary — limits richness): Step-1 filtering.** Of 34 candidate observations,
+  **31 were rejected/filtered** (`rejected_or_filtered_observations: 31`), leaving mostly
+  deterministic context facts (e.g. `selected_level: professional`) + 5 technique + 4
+  performance, none timestamped. The compact v3 schema *has* `timestamp_start_sec` and the
+  prompt mandates it, so timestamps die either at the model (not emitted in compact mode)
+  or in the strict filter (rejected). Investigate the 31-rejection reasons next.
+
+### Next root-cause target
+Layer 1 — **why Gemini Step-2 polish + repair under-produce / return non-JSON for the full
+report object**, and whether the `REPORT_TOOL` plain-JSON output is too large/complex for a
+single reliable Gemini call (candidate fixes: segment the report generation, tighten the
+plain-JSON instruction, or reduce required output surface per call). Layer 2 (timestamps /
+31-rejected filter) is secondary and only affects richness of an already-working report.
