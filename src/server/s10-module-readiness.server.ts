@@ -494,7 +494,18 @@ const MODULE_CHECKS: readonly ModuleCheck[] = [
   },
   { reportModule: "fix-first", critical: true, classify: classifyFixHierarchy },
   { reportModule: "prioritised fixes", critical: true, classify: classifyFixHierarchy },
-  { reportModule: "next action", critical: true, classify: classifyNextAction },
+  // "next action" is degradable (decisionCritical: false): it has a
+  // deterministic builder (s10-fix-hierarchy-next-action) and sits downstream of
+  // the submit/retake recommendation, so a thin next-action renders as an honest
+  // evidence-limited section rather than forcing an expensive AI repair (which can
+  // exceed the request-worker budget and orphan the take). The submit/retake
+  // decision itself stays decision-critical via "overall readiness" / "verdict".
+  {
+    reportModule: "next action",
+    critical: true,
+    decisionCritical: false,
+    classify: classifyNextAction,
+  },
   { reportModule: "strengths", critical: true, classify: classifyProfessionalCritique },
   {
     reportModule: "professional critique",

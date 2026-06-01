@@ -5988,21 +5988,25 @@ export async function runProcessTake(
       isTwoStepEnabled() &&
       hasSufficientStep1EvidenceForModuleRecovery(twoStepEvidence) &&
       moduleQualityBlockers().length > 0 &&
-      // Only run the expensive Step-2 module-repair retry (a second ~90s polish)
-      // + evidence-only recovery when the report would otherwise be a thin shell.
-      // For a non-thin-shell report (the common case: 1-2 soft modules such as
-      // "next action", which has a deterministic builder), the report is already
-      // usable — persist it as-is rather than risking a second polish that can
-      // exceed the request-worker budget and orphan the take BEFORE it persists
-      // (the finalising_orphan failures). Persist-before-repair: a usable report
-      // reaches the DB instead of being lost to a repair-stage worker death.
-      // Thin-shell repair robustness for long tapes is handled by the durable
-      // queue dispatch (separate work item).
-      s10ModuleReadiness.thin_shell_blocked;
+      // Run the expensive Step-2 module-repair retry (a second ~90s polish) +
+      // evidence-only recovery + the terminal decision-critical fail-check when the
+      // report would be a thin shell OR any DECISION-CRITICAL module is blocked
+      // (verdict, overall readiness, level calibration, fix hierarchy, etc.). Those
+      // determine submit/retake and must be repaired or fail the report.
+      //
+      // When the only blockers are DEGRADABLE (non-decision-critical) modules — the
+      // common case being "next action", which has a deterministic builder — the
+      // report is already usable: persist it as-is rather than risking a second
+      // polish that can exceed the request-worker budget and orphan the take BEFORE
+      // it persists (the finalising_orphan failures). Persist-before-repair: a
+      // usable report reaches the DB instead of being lost to a repair-stage worker
+      // death, while decision-critical quality is never skipped.
+      (s10ModuleReadiness.thin_shell_blocked || s10ModuleReadiness.decision_critical_blocked);
     if (
       !canRecoverModuleQuality &&
       moduleQualityBlockers().length > 0 &&
-      !s10ModuleReadiness.thin_shell_blocked
+      !s10ModuleReadiness.thin_shell_blocked &&
+      !s10ModuleReadiness.decision_critical_blocked
     ) {
       console.warn("[take-pipeline] s10_module_repair_skipped_report_usable", {
         ...baseLog,
