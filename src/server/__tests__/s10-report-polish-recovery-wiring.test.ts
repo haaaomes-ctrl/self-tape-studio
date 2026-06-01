@@ -61,6 +61,10 @@ describe("S10 report polish recovery wiring", () => {
     // Non-decision-critical-only remaining blockers degrade-render instead of failing.
     expect(processTakeSource).toContain("s10_module_degraded_render");
     expect(processTakeSource).toContain("decision_critical");
+    // The decision-critical hard-fail names the blocking modules before throwing
+    // so a re-run is diagnosable from the queryable metric stream.
+    expect(processTakeSource).toContain("s10_decision_critical_blocked");
+    expect(processTakeSource).toContain("blocked_modules");
     expect(fallbackSource).toContain(
       'type S10EvidenceRecoveryKind = "polish_parser" | "module_quality"',
     );
