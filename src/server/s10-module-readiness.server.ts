@@ -316,11 +316,33 @@ function classifyNextAction(input: EvaluateS10ModuleReadinessInput) {
   if (hasGenericFallback(plan)) {
     return { status: "generic" as const, reason: "Next action plan contains fallback wording." };
   }
+  // Canonical S10NextActionPlan arrays (audition-rules.ts) — the shape the live
+  // pipeline + deterministic builder (s10-fix-hierarchy-next-action) actually
+  // writes. Previously this only checked the legacy steps/groups fields, so a
+  // fully-populated canonical plan read as thin and forced an AI repair. Keep this
+  // list aligned with what the V2 Next-action section actually renders
+  // (retake_plan / playback_checks / final_checks / submit_checklist /
+  // no_retake_needed_reason) so completeness never passes on a field the performer
+  // cannot see — e.g. if_time_is_short_guidance is NOT a rendered plan section.
+  const hasCanonicalActions = [
+    "submit_checklist",
+    "retake_plan",
+    "final_checks",
+    "playback_checks",
+  ].some((field) => hasRenderableItems(plan[field]));
+  // A legitimate "no retake needed" plan can have an empty retake_plan but a
+  // populated reason alongside submit/final checks.
+  const hasNoRetakeReason = hasSpecificText(plan.no_retake_needed_reason);
   const groupsHaveItems = asArray(plan.groups).some((group) => {
     const record = asRecord(group);
     return Boolean(record && hasRenderableItems(record.items));
   });
-  if (!hasRenderableItems(plan.steps) && !groupsHaveItems) {
+  if (
+    !hasCanonicalActions &&
+    !hasNoRetakeReason &&
+    !hasRenderableItems(plan.steps) &&
+    !groupsHaveItems
+  ) {
     return {
       status: "thin" as const,
       reason: "Next action plan has no specific performer action steps.",
@@ -494,7 +516,18 @@ const MODULE_CHECKS: readonly ModuleCheck[] = [
   },
   { reportModule: "fix-first", critical: true, classify: classifyFixHierarchy },
   { reportModule: "prioritised fixes", critical: true, classify: classifyFixHierarchy },
-  { reportModule: "next action", critical: true, classify: classifyNextAction },
+  // "next action" is degradable (decisionCritical: false): it has a
+  // deterministic builder (s10-fix-hierarchy-next-action) and sits downstream of
+  // the submit/retake recommendation, so a thin next-action renders as an honest
+  // evidence-limited section rather than forcing an expensive AI repair (which can
+  // exceed the request-worker budget and orphan the take). The submit/retake
+  // decision itself stays decision-critical via "overall readiness" / "verdict".
+  {
+    reportModule: "next action",
+    critical: true,
+    decisionCritical: false,
+    classify: classifyNextAction,
+  },
   { reportModule: "strengths", critical: true, classify: classifyProfessionalCritique },
   {
     reportModule: "professional critique",

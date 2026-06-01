@@ -297,6 +297,39 @@ describe("S10 module readiness and repair triggers", () => {
     ).toBe(false);
   });
 
+  it("accepts a canonical S10NextActionPlan (submit_checklist/final/playback) as complete", () => {
+    // Regression: classifyNextAction previously only checked legacy steps/groups,
+    // so a fully-populated canonical plan read as thin and forced an AI repair.
+    const report = completeReport();
+    (report as Record<string, unknown>).s10_next_action_plan = {
+      submit_checklist: [
+        "Confirm the file is named to the brief and uploaded as one continuous video.",
+      ],
+      retake_plan: [],
+      final_checks: ["Check the framing stays head-and-shoulders and landscape throughout."],
+      playback_checks: ["Play the tape back once to confirm the audio is clear and unclipped."],
+      do_not_overfix: [],
+      if_time_is_short_guidance: [],
+      no_retake_needed_reason: null,
+      confidence: "medium",
+    };
+    const summary = evaluateS10ModuleReadiness({
+      report,
+      observationContext: completeObservationContext,
+      briefRequirements: [requirement],
+      selectedLevel: "professional",
+      sourceStage: "two_step",
+    });
+    const nextAction = summary.results.find((result) => result.report_module === "next action");
+    expect(nextAction?.status).toBe("complete");
+    expect(nextAction?.blocks_report_value).toBe(false);
+    // next action is degradable, not decision-critical.
+    expect(nextAction?.decision_critical).toBe(false);
+    expect(summary.repair_actions.map((action) => action.report_module)).not.toContain(
+      "next action",
+    );
+  });
+
   it("uses the same critical readiness modules for two-step and single-pass paths", () => {
     const twoStep = evaluateS10ModuleReadiness({
       report: completeReport(),
