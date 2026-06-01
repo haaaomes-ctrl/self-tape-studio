@@ -162,7 +162,7 @@ export function selectReportProviderContract(model?: string | null): ReportProvi
 }
 
 type ReportSchemaNode = {
-  type?: string;
+  type?: string | string[];
   enum?: unknown[];
   properties?: Record<string, ReportSchemaNode>;
   items?: ReportSchemaNode;
@@ -184,7 +184,15 @@ function renderReportSchemaSkeleton(
   if (Array.isArray(node.enum) && node.enum.length > 0) {
     return node.enum.map((entry) => String(entry)).join(" | ");
   }
-  if (node.properties && (node.type === "object" || node.type === undefined)) {
+  // Normalise nullable unions (e.g. type: ["integer", "null"]) to a single
+  // primary type plus a "| null" hint, so the skeleton never emits a literal
+  // ["integer","null"] array that the model could copy as the field value.
+  const types = Array.isArray(node.type) ? node.type : node.type != null ? [node.type] : [];
+  const nullable = types.includes("null");
+  const primaryType = types.find((entry) => entry && entry !== "null");
+  const nullSuffix = nullable ? " | null" : "";
+
+  if (node.properties && (primaryType === "object" || primaryType === undefined)) {
     if (depth >= maxDepth) return "{ ... }";
     const out: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(node.properties)) {
@@ -192,17 +200,19 @@ function renderReportSchemaSkeleton(
     }
     return out;
   }
-  if (node.items && node.type === "array") {
+  if (node.items && primaryType === "array") {
     if (depth >= maxDepth) return ["..."];
     return [renderReportSchemaSkeleton(node.items, depth + 1, maxDepth)];
   }
-  if (node.type === "integer" || node.type === "number") {
-    return typeof node.minimum === "number" && typeof node.maximum === "number"
-      ? `${node.type} ${node.minimum}-${node.maximum}`
-      : node.type;
+  if (primaryType === "integer" || primaryType === "number") {
+    const base =
+      typeof node.minimum === "number" && typeof node.maximum === "number"
+        ? `${primaryType} ${node.minimum}-${node.maximum}`
+        : primaryType;
+    return `${base}${nullSuffix}`;
   }
-  if (node.type === "string" || node.type === "boolean") return node.type;
-  return node.type ?? "value";
+  if (primaryType === "string" || primaryType === "boolean") return `${primaryType}${nullSuffix}`;
+  return primaryType ?? "value";
 }
 
 // Build the report JSON skeleton from the REPORT_TOOL function schema. Providers

@@ -43,6 +43,35 @@ describe("report JSON skeleton for the plain_json_report (Gemini) contract", () 
     expect(String(readiness.decision)).toContain("retake_required_if_possible");
   });
 
+  it("normalises nullable unions to a primary type + '| null' hint, never a literal array", () => {
+    // Regression: type: ["integer","null"] must not render as ["integer","null"]
+    // (the model could copy the array as the value -> normalizers drop the field).
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    expect(skeleton).not.toContain('[\n      "integer",\n      "null"\n    ]');
+    expect(skeleton).not.toMatch(/\[\s*"integer",\s*"null"\s*\]/);
+    const readiness = JSON.parse(skeleton).readiness_score_judgement as Record<string, unknown>;
+    expect(readiness.performance_quality_score).toBe("integer 0-100 | null");
+
+    // Direct unit check on a synthetic nullable-union tool.
+    const synthetic = {
+      function: {
+        parameters: {
+          type: "object",
+          properties: {
+            n: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+            s: { type: ["string", "null"] },
+            b: { type: ["boolean", "null"] },
+          },
+        },
+      },
+    };
+    expect(JSON.parse(buildReportJsonSkeletonFromTool(synthetic))).toEqual({
+      n: "integer 0-100 | null",
+      s: "string | null",
+      b: "boolean | null",
+    });
+  });
+
   it("embeds the skeleton in the plain-JSON instruction only when supplied", () => {
     const withoutSkeleton = buildPlainJsonReportInstruction();
     expect(withoutSkeleton).not.toContain("Required JSON structure:");
