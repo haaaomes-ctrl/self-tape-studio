@@ -3404,6 +3404,15 @@ export async function runProcessTake(
     let s10ModuleQualityRecoveryPersisted = false;
     let residualModuleRecoveryUsed = false;
     let residualModulesRecovered: string[] = [];
+    // Route-β liveness/execution marker: how many timestamped + technique
+    // evidence items were projected from the S9-filtered Step 1 evidence into
+    // the polish input. Persisted into score_breakdown.two_step so a single SQL
+    // read of the take row confirms whether the projection code is live and
+    // what it produced (absent = pre-route-β build; 0 = live but Step 1 emitted
+    // no timestamps/technique; >0 = live and feeding Step 2), without depending
+    // on the flaky worker-log reader.
+    let step1ProjectedTimestampCount = 0;
+    let step1ProjectedTechniqueCount = 0;
     const hasSufficientStep1EvidenceForModuleRecovery = (evidence: EvidencePass | null) => {
       if (!evidence) return false;
       const hasObservation =
@@ -3912,6 +3921,28 @@ export async function runProcessTake(
         // input, only filling fields the raw evidence left empty.
         const polishEvidenceProjection =
           projectFilteredStep1EvidenceForPolish(filteredStep1Evidence);
+        const projectedTimestampedUsed =
+          !(
+            twoStepEvidence.timestamped_evidence && twoStepEvidence.timestamped_evidence.length > 0
+          ) && polishEvidenceProjection.timestamped_evidence.length > 0;
+        const projectedTechniqueUsed =
+          !(
+            twoStepEvidence.candidate_technique_evidence &&
+            twoStepEvidence.candidate_technique_evidence.length > 0
+          ) && polishEvidenceProjection.candidate_technique_evidence.length > 0;
+        step1ProjectedTimestampCount = projectedTimestampedUsed
+          ? polishEvidenceProjection.timestamped_evidence.length
+          : 0;
+        step1ProjectedTechniqueCount = projectedTechniqueUsed
+          ? polishEvidenceProjection.candidate_technique_evidence.length
+          : 0;
+        // Durable, SQL-readable route-β liveness/execution signal (also a
+        // grep-able metric symbol when the worker-log reader is up).
+        metric("s10_step1_evidence_projected_for_polish", {
+          take_id: takeId,
+          timestamped_count: step1ProjectedTimestampCount,
+          technique_count: step1ProjectedTechniqueCount,
+        });
         const step2Evidence = {
           ...twoStepEvidence,
           timestamped_evidence:
@@ -6335,6 +6366,10 @@ export async function runProcessTake(
             two_step_total_ai_duration_ms: evidencePassDurationMs + reportPolishDurationMs,
             timestamped_evidence_count: twoStepEvidence?.timestamped_evidence.length ?? 0,
             timestamped_evidence_dropped_count: twoStepTimestampsDropped,
+            // Route-β liveness/execution marker (see declaration). Presence of
+            // this key = route-β build is live; value = items projected into Step 2.
+            step1_evidence_projected_for_polish_count: step1ProjectedTimestampCount,
+            step1_projected_technique_count: step1ProjectedTechniqueCount,
             fallback_used: twoStepFallbackUsed,
             polish_fallback_reason: twoStepFallbackReason,
             polish_retry_attempted: polishRetryAttempted,
