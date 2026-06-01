@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { S10ObservationContext } from "@/server/s10-observation-context.server";
 import {
   evaluateS10ModuleReadiness,
+  getS10DegradableBlockers,
   getS10ModuleReadinessStatus,
   summariseS10ModuleReadinessForPersistence,
 } from "@/server/s10-module-readiness.server";
@@ -316,6 +317,51 @@ describe("S10 module readiness and repair triggers", () => {
       singlePass.results.map((result) => result.report_module),
     );
     expect(singlePass.source_stage).toBe("single_pass");
+  });
+
+  it("treats technique commentary as a non-decision-critical degradable blocker", () => {
+    const report = completeReport();
+    // Remove only technique commentary: with a verified present component this
+    // becomes a blocking module, but it must not be decision-critical.
+    delete (report as Record<string, unknown>).s10_technique_commentary;
+
+    const summary = evaluateS10ModuleReadiness({
+      report,
+      observationContext: completeObservationContext,
+      briefRequirements: [requirement],
+      selectedLevel: "professional",
+      sourceStage: "two_step",
+    });
+
+    expect(summary.module_ready).toBe(false);
+    expect(summary.decision_critical_blocked).toBe(false);
+    const degradable = getS10DegradableBlockers(summary);
+    expect(degradable.map((result) => result.report_module)).toEqual(["technique commentary"]);
+    expect(
+      summary.results.find((result) => result.report_module === "technique commentary")
+        ?.decision_critical,
+    ).toBe(false);
+    expect(
+      summary.results.find((result) => result.report_module === "fix-first")?.decision_critical,
+    ).toBe(true);
+  });
+
+  it("flags decision-critical blocking when core judgement modules fail", () => {
+    const summary = evaluateS10ModuleReadiness({
+      report: {
+        readiness_score_judgement: {
+          decision: "review_carefully",
+          headline: "Performance captured for review.",
+          rationale: ["Continue refining."],
+        },
+      },
+      observationContext: unavailableObservationContext,
+      briefRequirements: [requirement],
+      selectedLevel: "professional",
+      sourceStage: "single_pass",
+    });
+
+    expect(summary.decision_critical_blocked).toBe(true);
   });
 
   it("omits repair prompt text from persisted module-readiness diagnostics", () => {
