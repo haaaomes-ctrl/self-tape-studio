@@ -662,4 +662,75 @@ describe("S10 report polish parser fallback", () => {
       expect(line).not.toMatch(/^\s*br\d+\s*$/i);
     }
   });
+
+  it("scrubs id tokens embedded in AI evidence prose and never contradicts meets-level", () => {
+    // Reproduces the live report: a requirement id ("br009") embedded inside an
+    // AI-generated improvement sentence, plus landscape verified present in the
+    // observed evidence (so it must not appear under "Falls short").
+    const evidence = buildEvidence({
+      core_improvements_evidence: [
+        {
+          area: "technical",
+          evidence: "File naming convention (br009) is not met based on provided metadata.",
+        },
+      ],
+      component_verifications: [
+        {
+          requirement_id: "req-side-1",
+          requirement_summary: "Side 1 acting scene",
+          observed_status: "present",
+          completion_status: "complete",
+          evidence_summary: "Side 1 is observed end to end.",
+          observed_from_media: true,
+          evidence_basis: "observed_audio_video",
+          timestamp_refs: ["00:03"],
+          confidence: "high",
+          cannot_infer_from_brief_only: true,
+          assessability_notes: "",
+        },
+        {
+          requirement_id: "req-landscape",
+          requirement_summary: "Film in landscape orientation",
+          observed_status: "present",
+          completion_status: "complete",
+          evidence_summary: "Video metadata and visual check confirm 16:9 landscape.",
+          observed_from_media: true,
+          evidence_basis: "observed_audio_video",
+          timestamp_refs: [],
+          confidence: "high",
+          cannot_infer_from_brief_only: true,
+          assessability_notes: "",
+        },
+      ],
+    });
+    const recovery = buildS10ModuleQualityRecoveryReport({
+      evidence,
+      briefContext: null,
+      briefRequirements,
+      auditionTitle: "Embedded id + landscape guard",
+      selectedLevel: "professional",
+      mode: "brief",
+      reason: "thin_shell_blocked",
+      retryAttempted: true,
+      retrySucceeded: false,
+    });
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+    const readiness = recovery.report.readiness_score_judgement as Record<string, unknown>;
+    const calibration = readiness.selected_level_calibration as Record<string, unknown>;
+    const fallsShort = (calibration.what_falls_short as string[] | undefined) ?? [];
+    const meetsLevel = (calibration.what_meets_level as string[] | undefined) ?? [];
+
+    // No raw id token survives anywhere in the rendered shortfall.
+    for (const line of fallsShort) {
+      expect(line).not.toMatch(/\bbr\d+\b/i);
+      expect(line).not.toMatch(/\breq[-_]\w+\b/);
+    }
+    // The embedded-id sentence is still rendered, just scrubbed.
+    expect(fallsShort.some((line) => /file naming convention is not met/i.test(line))).toBe(true);
+    // A requirement verified present in meets-level must not also appear in
+    // falls-short.
+    expect(meetsLevel.some((line) => /landscape/i.test(line))).toBe(true);
+    expect(fallsShort.some((line) => /landscape/i.test(line))).toBe(false);
+  });
 });

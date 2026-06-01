@@ -2333,6 +2333,66 @@ export function filterRunEvidencePassForStep1(
   });
 }
 
+function filteredItemCategory(item: FilteredStep1EvidenceItem): string {
+  const hint = `${item.evidence_kind} ${item.evidence_family}`.toLowerCase();
+  if (/vocal|sing|song|voice/.test(hint)) return "vocal";
+  if (/act|scene|dialogue|monologue|character|perform/.test(hint)) return "acting";
+  if (item.evidence_modality === "audio") return "audio";
+  if (item.evidence_modality === "video") return "professional_presentation";
+  if (/material|brief/.test(hint)) return "brief_adherence";
+  return "technical";
+}
+
+// Project the S9-suppression-safe filtered Step 1 evidence into the structured
+// EvidencePass fields the Step 2 polish reads (timestamped_evidence,
+// candidate_technique_evidence). The compact observation pass emits timestamps
+// and a candidate_technique family, and filterRunEvidencePassForStep1 already
+// derives + suppresses them — but that output was only wired to QA, so the
+// polish saw empty fields and could not build the timestamped/technique modules
+// (collapsing the report to the evidence-only fallback). This routes the
+// already-safe projection to the polish without touching normalise or the
+// filter's own counting. Judgement-free: no scores or strengths are invented.
+export function projectFilteredStep1EvidenceForPolish(filtered: FilteredRunEvidencePassStep1): {
+  timestamped_evidence: EvidencePass["timestamped_evidence"];
+  candidate_technique_evidence: NonNullable<EvidencePass["candidate_technique_evidence"]>;
+} {
+  const sourceItems = filtered.observable_evidence_items?.length
+    ? filtered.observable_evidence_items
+    : [
+        ...filtered.video_observable_evidence_items,
+        ...filtered.audio_observable_evidence_items,
+        ...filtered.material_observable_evidence_items,
+        ...filtered.performance_observable_evidence_items,
+        ...filtered.candidate_technique_evidence,
+      ];
+  const timestamped: EvidencePass["timestamped_evidence"] = [];
+  const seen = new Set<string>();
+  for (const item of sourceItems) {
+    if (!item.timestamp || !item.safe_evidence_summary) continue;
+    const key = `${item.timestamp}|${item.safe_evidence_summary}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const category = filteredItemCategory(item);
+    timestamped.push({
+      timestamp: item.timestamp,
+      observation: item.safe_evidence_summary,
+      why_it_matters: `Observed at ${item.timestamp}; available as a timestamped anchor for the ${category.replace(/_/g, " ")} assessment.`,
+      linked_category: category,
+    });
+  }
+  const technique = filtered.candidate_technique_evidence
+    .filter((item) => item.safe_evidence_summary)
+    .map((item) => ({
+      label: item.evidence_kind || "observed technique",
+      safe_evidence_summary: item.safe_evidence_summary,
+      timestamp: item.timestamp ?? undefined,
+    }));
+  return {
+    timestamped_evidence: timestamped.slice(0, 36),
+    candidate_technique_evidence: technique.slice(0, 12),
+  };
+}
+
 function buildFilteredStep1Result(args: {
   model: string | null;
   rejected: Set<string>;

@@ -15,6 +15,7 @@ import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from 
 import {
   runEvidencePass,
   filterRunEvidencePassForStep1,
+  projectFilteredStep1EvidenceForPolish,
   summariseEvidence,
   type EvidencePass,
 } from "./evidence-pass.server";
@@ -3901,8 +3902,27 @@ export async function runProcessTake(
             reason: "qa_dependency_not_blocking_s10_content_path",
           });
         }
+        // The compact Step-1 path maps only observed_tape_sequence +
+        // component_verifications into the EvidencePass; timestamped_evidence and
+        // candidate_technique_evidence arrive empty even though the model emitted
+        // them. The polish reads this evidence directly and is told to use only
+        // supplied evidence, so without these it cannot build the timestamped or
+        // technique modules and the report collapses to the fallback shell. Route
+        // the already-computed, S9-suppression-safe projection into the polish
+        // input, only filling fields the raw evidence left empty.
+        const polishEvidenceProjection =
+          projectFilteredStep1EvidenceForPolish(filteredStep1Evidence);
         const step2Evidence = {
           ...twoStepEvidence,
+          timestamped_evidence:
+            twoStepEvidence.timestamped_evidence && twoStepEvidence.timestamped_evidence.length > 0
+              ? twoStepEvidence.timestamped_evidence
+              : polishEvidenceProjection.timestamped_evidence,
+          candidate_technique_evidence:
+            twoStepEvidence.candidate_technique_evidence &&
+            twoStepEvidence.candidate_technique_evidence.length > 0
+              ? twoStepEvidence.candidate_technique_evidence
+              : polishEvidenceProjection.candidate_technique_evidence,
           analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
           analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
           analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
