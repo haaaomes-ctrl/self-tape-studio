@@ -589,6 +589,49 @@ export function normaliseS10FixHierarchy(input: {
     });
     fixFirst = null;
   }
+  // Evidence-bound positive completion. A take with no mandatory blocker and no
+  // renderable fix rows must still produce a useful fix-first (the next useful
+  // action), never a null/thin module. This is not generic filler: it states the
+  // genuine no-retake-needed outcome and points at final submission compliance.
+  const hasRenderableFixRows =
+    priorityFixes.length > 0 || shouldImprove.length > 0 || optionalPolish.length > 0;
+  if (!fixFirst && dedupedMustFixes.length === 0 && !hasRenderableFixRows) {
+    const hasBrief = input.matrix.requirement_results.length > 0;
+    const positiveAction = hasBrief
+      ? "No retake-level performance fix was identified from the available evidence. The remaining action is final submission compliance: confirm file naming, deadline and upload method match the brief before submitting."
+      : "No retake-level performance fix was identified from the available evidence. The remaining action is to complete your standard upload checks — confirm file naming and upload method — before submitting.";
+    fixFirst = {
+      id: "s10_fix_first_positive_completion",
+      title: hasBrief ? "Complete final submission checks" : "Complete final upload checks",
+      issue: "No retake-level fix was identified from the available evidence.",
+      why_it_matters:
+        "No mandatory blocker or retake-level fix was identified from the available evidence, so the useful next step is final submission compliance rather than re-recording.",
+      exact_action: positiveAction,
+      source_category: "admin_process",
+      urgency: "low",
+      submission_impact: "supports_submission",
+      linked_requirement_ids: [],
+      linked_matrix_result_ids: [],
+      linked_component_verification_ids: [],
+      linked_readiness_reason_ids: [],
+      evidence_summary:
+        "Step 1 evidence was assessable and no mandatory blocker or retake-level fix was identified.",
+      confidence: "medium",
+      is_fix_first_candidate: true,
+      is_generic_fallback: false,
+      source_authority: "s10_normalised",
+      legacy_source_used: false,
+      legacy_source_path: null,
+    };
+    addWarning(warnings, {
+      affected_field: "s10_fix_hierarchy.fix_first",
+      original_value: null,
+      corrected_value: positiveAction,
+      reason:
+        "No mandatory blocker and no usable AI fix-first or fix rows; backfilled the next useful action as evidence-bound positive completion.",
+      source: "s10_normaliser",
+    });
+  }
   const rawWarnings = Array.isArray(raw.action_contradiction_warnings)
     ? raw.action_contradiction_warnings.filter(isRecord)
     : [];

@@ -26,6 +26,11 @@ export type S10ModuleReadinessResult = {
   affected_route_sections: string[];
   repair_triggered: boolean;
   blocks_report_value: boolean;
+  // Decision-critical modules determine submit/retake/review or a truthful fix
+  // hierarchy; if still blocked after repair/recovery they force terminal failure.
+  // Non-decision-critical modules (e.g. technique nuance, timestamped notes) may
+  // render as evidence_limited/module_error instead of failing the whole report.
+  decision_critical: boolean;
 };
 
 export type S10ModuleRepairAction = {
@@ -42,6 +47,10 @@ export type S10ModuleReadinessSummary = {
   source_stage: S10ModuleReadinessSourceStage;
   module_ready: boolean;
   thin_shell_blocked: boolean;
+  // True when at least one still-blocked module is decision-critical. The pipeline
+  // only treats this as a terminal report-assembly failure; remaining blockers that
+  // are not decision-critical are rendered as honest evidence-limited sections.
+  decision_critical_blocked: boolean;
   repair_action_count: number;
   results: S10ModuleReadinessResult[];
   repair_actions: S10ModuleRepairAction[];
@@ -61,6 +70,10 @@ export type S10PersistedModuleReadinessSummary = Omit<
 type ModuleCheck = {
   reportModule: string;
   critical: boolean;
+  // Decision-critical modules force terminal failure if still blocked after
+  // repair/recovery. Non-decision-critical modules may degrade to an honest
+  // evidence-limited section instead. Defaults to `critical` when unset.
+  decisionCritical?: boolean;
   classify: (
     input: EvaluateS10ModuleReadinessInput,
   ) => Pick<S10ModuleReadinessResult, "status" | "reason">;
@@ -488,9 +501,24 @@ const MODULE_CHECKS: readonly ModuleCheck[] = [
     critical: true,
     classify: classifyProfessionalCritique,
   },
-  { reportModule: "technique commentary", critical: true, classify: classifyTechniqueCommentary },
-  { reportModule: "timestamped notes", critical: false, classify: classifyTimestampedCommentary },
-  { reportModule: "role/material context", critical: false, classify: classifyRoleMaterialContext },
+  {
+    reportModule: "technique commentary",
+    critical: true,
+    decisionCritical: false,
+    classify: classifyTechniqueCommentary,
+  },
+  {
+    reportModule: "timestamped notes",
+    critical: false,
+    decisionCritical: false,
+    classify: classifyTimestampedCommentary,
+  },
+  {
+    reportModule: "role/material context",
+    critical: false,
+    decisionCritical: false,
+    classify: classifyRoleMaterialContext,
+  },
 ];
 
 function buildRepairAction(result: S10ModuleReadinessResult): S10ModuleRepairAction | null {
@@ -527,6 +555,7 @@ export function evaluateS10ModuleReadiness(
       affected_route_sections: coverage?.routeSectionKeys ? [...coverage.routeSectionKeys] : [],
       repair_triggered: repairTriggered,
       blocks_report_value: check.critical && repairTriggered,
+      decision_critical: check.decisionCritical ?? check.critical,
     } satisfies S10ModuleReadinessResult;
   });
 
@@ -544,10 +573,21 @@ export function evaluateS10ModuleReadiness(
     source_stage: input.sourceStage,
     module_ready: blockingCoreResults.length === 0,
     thin_shell_blocked: thinShellBlocked,
+    decision_critical_blocked: blockingCoreResults.some((result) => result.decision_critical),
     repair_action_count: repairActions.length,
     results,
     repair_actions: repairActions,
   };
+}
+
+// Blockers that are not decision-critical may be rendered as honest
+// evidence-limited/module-error sections rather than failing the whole report.
+export function getS10DegradableBlockers(
+  summary: S10ModuleReadinessSummary,
+): S10ModuleReadinessResult[] {
+  return summary.results.filter(
+    (result) => result.blocks_report_value && !result.decision_critical,
+  );
 }
 
 export function getS10ModuleReadinessStatus(

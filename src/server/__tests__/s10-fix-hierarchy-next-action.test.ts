@@ -485,7 +485,12 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
     const result = applyS10FixHierarchyNextAction({ report, matrix, readiness });
 
     expect(matrix.missing_or_incomplete_requirements).not.toContain("req004");
-    expect(result.hierarchy.fix_first).toBeNull();
+    // The stale missing-Side-1 fix-first is removed; with verified components and no
+    // blocker the module is backfilled with evidence-bound positive completion
+    // (the next useful action), never a thin null fix hierarchy.
+    expect(result.hierarchy.fix_first).not.toBeNull();
+    expect(result.hierarchy.fix_first?.submission_impact).toBe("supports_submission");
+    expect(result.hierarchy.fix_first?.exact_action).toMatch(/No retake-level performance fix/i);
     expect(result.hierarchy.must_fix_before_submitting).toEqual([]);
     expect(String(report.fix_first)).not.toMatch(/Record\/include.*Side 1/i);
   });
@@ -513,11 +518,91 @@ describe("S10.6 fix hierarchy and next-action plan", () => {
 
     const result = applyS10FixHierarchyNextAction({ report, matrix, readiness });
 
-    expect(result.hierarchy.fix_first).toBeNull();
+    // Missing AI fix output with a verified present component and no blocker must
+    // not collapse to a thin null module or generic filler. It is backfilled with
+    // an evidence-bound positive completion (specific final-compliance next action).
+    expect(result.hierarchy.fix_first).not.toBeNull();
+    expect(result.hierarchy.fix_first?.submission_impact).toBe("supports_submission");
+    expect(result.hierarchy.fix_first?.exact_action).toMatch(/final submission compliance/i);
     expect(result.nextActionPlan.submit_checklist).toEqual([]);
     expect(result.nextActionPlan.final_checks).toEqual([]);
     expect(JSON.stringify(report)).not.toContain("Keep refining the take");
     expect(JSON.stringify(report)).not.toContain("Retry the analysis");
     expect(result.warnings.every((warning) => warning.internal_only)).toBe(true);
+  });
+
+  it("backfills no-brief baseline positive completion as upload-check guidance", () => {
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: { overall_status: "not_assessable", readiness_impact: "not_assessable" },
+      briefRequirements: [],
+      componentVerifications: [],
+      observedTapeSequence: [],
+    });
+    const readiness: ReadinessAndScoreJudgement = {
+      ...canaryReadiness,
+      decision: "submit_if_deadline_is_close",
+      brief_blocker_override: false,
+      rationale: ["Baseline take with no supplied brief."],
+    };
+    const report: Record<string, unknown> = {};
+
+    const result = applyS10FixHierarchyNextAction({ report, matrix, readiness });
+
+    expect(result.hierarchy.fix_first).not.toBeNull();
+    expect(result.hierarchy.fix_first?.submission_impact).toBe("supports_submission");
+    expect(result.hierarchy.fix_first?.exact_action).toMatch(/standard upload checks/i);
+    // Positive completion must be specific, not generic filler.
+    expect(JSON.stringify(report)).not.toContain(
+      "No single public-safe priority fix was available",
+    );
+    expect(JSON.stringify(report)).not.toContain("Keep refining the take");
+  });
+
+  it("does not backfill fix-first when a renderable optional-polish row exists", () => {
+    const matrix = normaliseBriefAchievementMatrix({
+      matrix: {
+        overall_status: "achieved",
+        mandatory_status: "clear",
+        readiness_impact: "supports_submission",
+      },
+      briefRequirements: [requirement("req_scene", "Full acting scene", "material")],
+      componentVerifications: [
+        verification("req_scene", "Full acting scene", "present", "complete", "Scene is present."),
+      ],
+      observedTapeSequence: [],
+    });
+    const readiness: ReadinessAndScoreJudgement = {
+      ...canaryReadiness,
+      decision: "submit",
+      brief_blocker_override: false,
+      rationale: ["Mandatory material achieved."],
+    };
+    const report: Record<string, unknown> = {
+      s10_fix_hierarchy: {
+        fix_first: null,
+        priority_fixes: [],
+        must_fix_before_submitting: [],
+        should_improve_if_retaking: [],
+        optional_polish: [
+          fixItem({
+            id: "optional_polish",
+            title: "Optional style polish",
+            exact_action: "Only retake if you want to refine one concrete optional style point.",
+            urgency: "optional",
+            submission_impact: "optional_polish",
+          }),
+        ],
+        preserve: [],
+        do_not_overfix: [],
+        action_contradiction_warnings: [],
+      },
+    };
+
+    const result = applyS10FixHierarchyNextAction({ report, matrix, readiness });
+
+    // A renderable optional-polish row already satisfies the module, so the
+    // positive-completion backfill must not fire and fix_first stays null.
+    expect(result.hierarchy.fix_first).toBeNull();
+    expect(result.hierarchy.optional_polish).toHaveLength(1);
   });
 });

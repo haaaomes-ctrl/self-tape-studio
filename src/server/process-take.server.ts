@@ -5942,7 +5942,10 @@ export async function runProcessTake(
         blocker_count: moduleQualityBlockers().length,
       });
       try {
-        const retryResult = await runReportPolish({
+        const moduleRepairInstruction = buildS10ModuleRepairRetryInstruction({
+          repairActions: s10ModuleReadiness.repair_actions,
+        });
+        let retryResult = await runReportPolish({
           apiKey,
           signal: moduleRepairAc.signal,
           evidence: twoStepEvidence,
@@ -5955,10 +5958,45 @@ export async function runProcessTake(
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
           usageContext: aiUsageContext,
-          recoveryInstruction: buildS10ModuleRepairRetryInstruction({
-            repairActions: s10ModuleReadiness.repair_actions,
-          }),
+          recoveryInstruction: moduleRepairInstruction,
         });
+        // JSON-object salvage parity with the main polish call: a single recoverable
+        // HTTP-200 response-shape/parse failure must not burn the only repair attempt.
+        if (
+          isRecoverableReportPolishResponseShapeError(retryResult) &&
+          !moduleRepairAc.signal.aborted
+        ) {
+          console.warn("[take-pipeline] s10_module_repair_retry_json_salvage_started", {
+            ...baseLog,
+            http_status: retryResult.httpStatus,
+            safe_error_category: retryResult.safe_error_category,
+            error: retryResult.error.slice(0, 120),
+          });
+          metric("s10_module_repair_retry_json_salvage_started", {
+            take_id: takeId,
+            http_status: retryResult.httpStatus,
+            safe_error_category: retryResult.safe_error_category,
+          });
+          const salvage = await runReportPolish({
+            apiKey,
+            signal: moduleRepairAc.signal,
+            evidence: twoStepEvidence,
+            briefBlock,
+            extractedBlock,
+            briefContext: extractedBrief?.brief_context ?? null,
+            briefRequirements: extractedBrief?.brief_requirements ?? [],
+            signalsBlock,
+            levelBlock,
+            auditionTitle: audition.title,
+            reportTool: REPORT_TOOL,
+            usageContext: aiUsageContext,
+            recoveryInstruction: `${moduleRepairInstruction}\n\n${REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION}`,
+          });
+          retryResult = {
+            ...salvage,
+            durationMs: retryResult.durationMs + salvage.durationMs,
+          };
+        }
         if (retryResult.ok) {
           const candidate = retryResult.report as Record<string, unknown>;
           candidate.mode = audition.brief ? "brief" : "baseline";
@@ -6098,7 +6136,13 @@ export async function runProcessTake(
               );
             }
           }
-          if (recoveryBlockers.length === 0) {
+          const recoveryDecisionCriticalBlockers = recoveryBlockers.filter(
+            (result) => result.decision_critical,
+          );
+          if (recoveryDecisionCriticalBlockers.length === 0) {
+            // Adopt the evidence-bound recovered report once no decision-critical
+            // module is blocked. Any remaining blockers are non-decision-critical
+            // and render as honest evidence-limited sections (handled at the gate).
             report = recoveredReport;
             s10ModuleQualityRecoveryUsed = true;
             s10ModuleReadiness = recoveryReadinessCurrent;
@@ -6110,18 +6154,23 @@ export async function runProcessTake(
               limitation_count: recovery.limitationCount,
               residual_module_recovery_used: residualModuleRecoveryUsed,
               residual_modules_recovered: residualModulesRecovered,
+              degradable_modules_remaining: recoveryBlockers
+                .map((result) => result.report_module)
+                .slice(0, 12),
             });
           } else {
             console.warn("[take-pipeline] s10_module_quality_recovery_failed", {
               ...baseLog,
               reason: "critical_modules_still_blocked",
-              blocker_count: recoveryBlockers.length,
-              modules: recoveryBlockers.map((result) => result.report_module).slice(0, 12),
+              blocker_count: recoveryDecisionCriticalBlockers.length,
+              modules: recoveryDecisionCriticalBlockers
+                .map((result) => result.report_module)
+                .slice(0, 12),
             });
             metric("s10_module_quality_recovery_failed", {
               take_id: takeId,
               reason: "critical_modules_still_blocked",
-              blocker_count: recoveryBlockers.length,
+              blocker_count: recoveryDecisionCriticalBlockers.length,
             });
           }
         } else {
@@ -6136,11 +6185,36 @@ export async function runProcessTake(
         }
       }
 
-      if (moduleQualityBlockers().length > 0) {
+      const remainingBlockers = moduleQualityBlockers();
+      const decisionCriticalBlockers = remainingBlockers.filter(
+        (result) => result.decision_critical,
+      );
+      if (decisionCriticalBlockers.length > 0) {
+        // A useful, honest report cannot be produced: a decision-critical module
+        // (submit/retake/review judgement, brief achievement, or a truthful fix
+        // hierarchy) is still blocked after repair and evidence-bound recovery.
         throw new AnalysisFailure(
           "analysis_parse_failed",
           "TapeCoach could not assemble the full S10 report model for this take. Please try again.",
         );
+      }
+      if (remainingBlockers.length > 0) {
+        // Evidence-bound graceful degradation: only non-decision-critical modules
+        // remain blocked, so render the report with those sections marked as
+        // evidence-limited rather than failing the whole take.
+        const degradedModules = remainingBlockers.map((result) => result.report_module);
+        console.warn("[take-pipeline] s10_module_degraded_render", {
+          ...baseLog,
+          reason: moduleQualityRecoveryReason,
+          modules: degradedModules.slice(0, 12),
+        });
+        metric("s10_module_degraded_render", {
+          take_id: takeId,
+          reason: moduleQualityRecoveryReason ?? "non_decision_critical_modules_blocked",
+          modules: degradedModules.join(","),
+        });
+        report.s10_degraded_render_used = true;
+        report.s10_degraded_modules = degradedModules;
       }
 
       report.s10_module_readiness = persistedS10ModuleReadiness;
@@ -6185,6 +6259,7 @@ export async function runProcessTake(
         source_stage: s10ModuleReadiness.source_stage,
         module_ready: s10ModuleReadiness.module_ready,
         thin_shell_blocked: s10ModuleReadiness.thin_shell_blocked,
+        decision_critical_blocked: s10ModuleReadiness.decision_critical_blocked,
         repair_action_count: s10ModuleReadiness.repair_action_count,
         results: s10ModuleReadiness.results.map((result) => ({
           report_module: result.report_module,
@@ -6192,6 +6267,7 @@ export async function runProcessTake(
           reason: result.reason,
           repair_triggered: result.repair_triggered,
           blocks_report_value: result.blocks_report_value,
+          decision_critical: result.decision_critical,
         })),
       },
       compliance_flags: complianceFlags,

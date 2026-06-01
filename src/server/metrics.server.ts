@@ -134,6 +134,8 @@ export type MetricName =
   | "s10_module_repair_retry_started"
   | "s10_module_repair_retry_completed"
   | "s10_module_repair_retry_failed"
+  | "s10_module_repair_retry_json_salvage_started"
+  | "s10_module_degraded_render"
   | "s10_module_quality_recovery_started"
   | "s10_module_quality_recovery_persisted"
   | "s10_module_quality_recovery_failed"

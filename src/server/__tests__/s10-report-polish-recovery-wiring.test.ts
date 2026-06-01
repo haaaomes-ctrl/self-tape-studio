@@ -55,6 +55,12 @@ describe("S10 report polish recovery wiring", () => {
     expect(processTakeSource).toContain("residual_module_recovery_used");
     expect(processTakeSource).toContain("residual_modules_recovered");
     expect(processTakeSource).toContain("applyS10ResidualModuleRecovery");
+    // Module-repair retry has JSON-object salvage parity with the main polish call.
+    expect(processTakeSource).toContain("s10_module_repair_retry_json_salvage_started");
+    expect(processTakeSource).toContain("REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION");
+    // Non-decision-critical-only remaining blockers degrade-render instead of failing.
+    expect(processTakeSource).toContain("s10_module_degraded_render");
+    expect(processTakeSource).toContain("decision_critical");
     expect(fallbackSource).toContain(
       'type S10EvidenceRecoveryKind = "polish_parser" | "module_quality"',
     );
