@@ -161,12 +161,98 @@ export function selectReportProviderContract(model?: string | null): ReportProvi
   return "tool_call";
 }
 
-export function buildPlainJsonReportInstruction(toolName = "submit_audition_report"): string {
-  return [
+type ReportSchemaNode = {
+  type?: string | string[];
+  enum?: unknown[];
+  properties?: Record<string, ReportSchemaNode>;
+  items?: ReportSchemaNode;
+  minimum?: number;
+  maximum?: number;
+};
+
+// Render a compact, depth-limited skeleton of a JSON-schema node as a plain JS
+// value (objects/arrays/hint-strings) so it can be JSON.stringify'd into the
+// prompt. Enums become "a | b | c"; primitives become their type (with range
+// where bounded). This mirrors the explicit JSON skeleton that already makes the
+// Step-1 compact (plain_json_observations) call reliable.
+function renderReportSchemaSkeleton(
+  node: ReportSchemaNode | undefined,
+  depth: number,
+  maxDepth: number,
+): unknown {
+  if (!node || typeof node !== "object") return "value";
+  if (Array.isArray(node.enum) && node.enum.length > 0) {
+    // Single-value enums are literal constraints: emit the value with its native
+    // JSON type (e.g. boolean `true`, number `5`, string `"slate"`) so a model
+    // copying the skeleton produces the right type. Stringifying a boolean-only
+    // enum to "true" makes downstream `=== true` filters reject the field.
+    if (node.enum.length === 1) return node.enum[0];
+    if (node.enum.every((entry) => typeof entry === "boolean")) return "boolean";
+    // Multi-value (string) enums become an "a | b | c" choice hint.
+    return node.enum.map((entry) => String(entry)).join(" | ");
+  }
+  // Normalise nullable unions (e.g. type: ["integer", "null"]) to a single
+  // primary type plus a "| null" hint, so the skeleton never emits a literal
+  // ["integer","null"] array that the model could copy as the field value.
+  const types = Array.isArray(node.type) ? node.type : node.type != null ? [node.type] : [];
+  const nullable = types.includes("null");
+  const primaryType = types.find((entry) => entry && entry !== "null");
+  const nullSuffix = nullable ? " | null" : "";
+
+  if (node.properties && (primaryType === "object" || primaryType === undefined)) {
+    if (depth >= maxDepth) return "{ ... }";
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(node.properties)) {
+      out[key] = renderReportSchemaSkeleton(child, depth + 1, maxDepth);
+    }
+    return out;
+  }
+  if (node.items && primaryType === "array") {
+    if (depth >= maxDepth) return ["..."];
+    return [renderReportSchemaSkeleton(node.items, depth + 1, maxDepth)];
+  }
+  // Open object/array schemas (no `properties`/`items`) must render as a literal
+  // {} / [] placeholder, not the string "object"/"array" — a copied string makes
+  // record/array normalizers (e.g. category_rationale) drop the field.
+  if (primaryType === "object") return {};
+  if (primaryType === "array") return [];
+  if (primaryType === "integer" || primaryType === "number") {
+    const base =
+      typeof node.minimum === "number" && typeof node.maximum === "number"
+        ? `${primaryType} ${node.minimum}-${node.maximum}`
+        : primaryType;
+    return `${base}${nullSuffix}`;
+  }
+  if (primaryType === "string" || primaryType === "boolean") return `${primaryType}${nullSuffix}`;
+  return primaryType ?? "value";
+}
+
+// Build the report JSON skeleton from the REPORT_TOOL function schema. Providers
+// on the plain_json_report contract (Gemini) get no `tools`, so without this
+// they must invent the entire ~27KB nested report blind — the proven cause of
+// under-produced/invalid Step-2 output. Giving them the shape scaffolds it.
+export function buildReportJsonSkeletonFromTool(tool: unknown, maxDepth = 6): string {
+  const params = (tool as { function?: { parameters?: ReportSchemaNode } })?.function?.parameters;
+  if (!params || !params.properties) return "";
+  return JSON.stringify(renderReportSchemaSkeleton(params, 0, maxDepth), null, 2);
+}
+
+export function buildPlainJsonReportInstruction(
+  toolName = "submit_audition_report",
+  skeleton?: string,
+): string {
+  const head = [
     `Return ONLY the JSON object that would be passed as arguments to ${toolName}.`,
     "Do not call a tool. Do not wrap the response in Markdown. Do not include commentary before or after the JSON.",
     "The top-level value must be a JSON object, not an array or a string.",
   ].join(" ");
+  if (!skeleton || !skeleton.trim()) return head;
+  return [
+    head,
+    'The object MUST follow this exact structure. Populate every top-level key; never omit a module. Use null or [] only where a field is genuinely not assessable, and record why in the matching limitation field rather than dropping the key. Values shown as "a | b | c" are the allowed enums; values shown as type names indicate the expected JSON type.',
+    "Required JSON structure:",
+    skeleton,
+  ].join("\n\n");
 }
 
 export function providerMessageContentToText(content: unknown): string {

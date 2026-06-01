@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildPlainJsonReportInstruction,
   buildProviderToolForModel,
+  buildReportJsonSkeletonFromTool,
   classifyAiGatewayProviderError,
   cloneForProviderToolSchema,
   parseProviderJsonObjectContent,
@@ -18,6 +20,153 @@ import {
   REPORT_POLISH_JSON_OBJECT_RETRY_INSTRUCTION,
   runReportPolish,
 } from "@/server/report-polish.server";
+
+describe("report JSON skeleton for the plain_json_report (Gemini) contract", () => {
+  it("derives the full report shape with module keys + enum hints from REPORT_TOOL", () => {
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    const parsed = JSON.parse(skeleton) as Record<string, unknown>;
+    // Every core S10 module the readiness gate checks must be present in the shape.
+    for (const moduleKey of [
+      "brief_achievement_matrix",
+      "readiness_score_judgement",
+      "s10_fix_hierarchy",
+      "s10_next_action_plan",
+      "s10_professional_critique",
+      "s10_technique_commentary",
+      "s10_timestamped_commentary",
+      "strengths",
+    ]) {
+      expect(parsed).toHaveProperty(moduleKey);
+    }
+    // Enum hints survive so the model fills allowed values, not free text.
+    const readiness = parsed.readiness_score_judgement as Record<string, unknown>;
+    expect(String(readiness.decision)).toContain("retake_required_if_possible");
+  });
+
+  it("normalises nullable unions to a primary type + '| null' hint, never a literal array", () => {
+    // Regression: type: ["integer","null"] must not render as ["integer","null"]
+    // (the model could copy the array as the value -> normalizers drop the field).
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    expect(skeleton).not.toContain('[\n      "integer",\n      "null"\n    ]');
+    expect(skeleton).not.toMatch(/\[\s*"integer",\s*"null"\s*\]/);
+    const readiness = JSON.parse(skeleton).readiness_score_judgement as Record<string, unknown>;
+    expect(readiness.performance_quality_score).toBe("integer 0-100 | null");
+
+    // Direct unit check on a synthetic nullable-union tool.
+    const synthetic = {
+      function: {
+        parameters: {
+          type: "object",
+          properties: {
+            n: { type: ["integer", "null"], minimum: 0, maximum: 100 },
+            s: { type: ["string", "null"] },
+            b: { type: ["boolean", "null"] },
+          },
+        },
+      },
+    };
+    expect(JSON.parse(buildReportJsonSkeletonFromTool(synthetic))).toEqual({
+      n: "integer 0-100 | null",
+      s: "string | null",
+      b: "boolean | null",
+    });
+  });
+
+  it("renders enum constraints with native types, not stringified values", () => {
+    // Regression: enum:[true] must render as boolean `true`, not "true" — a
+    // copied "true" string makes downstream `=== true` filters reject the field
+    // (e.g. filterComponentVerificationRawItems drops the component evidence).
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    expect(skeleton).not.toMatch(/"(true|false)"/);
+    const verification = (
+      JSON.parse(skeleton).component_verifications as Record<string, unknown>[]
+    )[0];
+    expect(verification.cannot_infer_from_brief_only).toBe(true);
+
+    const synthetic = {
+      function: {
+        parameters: {
+          type: "object",
+          properties: {
+            must_be_true: { type: "boolean", enum: [true] },
+            single_string: { type: "string", enum: ["slate"] },
+            single_number: { type: "integer", enum: [5] },
+            either_bool: { type: "boolean", enum: [true, false] },
+            choice: { type: "string", enum: ["a", "b", "c"] },
+          },
+        },
+      },
+    };
+    expect(JSON.parse(buildReportJsonSkeletonFromTool(synthetic))).toEqual({
+      must_be_true: true,
+      single_string: "slate",
+      single_number: 5,
+      either_bool: "boolean",
+      choice: "a | b | c",
+    });
+  });
+
+  it("renders open object/array schemas as {} / [] placeholders, not type strings", () => {
+    // Regression: { type: "object" } (e.g. readiness_score_judgement.category_rationale)
+    // must render as {} not "object" — a copied "object" string makes record
+    // normalizers drop the field.
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    expect(skeleton).not.toMatch(/:\s*"object"/);
+    expect(skeleton).not.toMatch(/:\s*"array"/);
+    const readiness = JSON.parse(skeleton).readiness_score_judgement as Record<string, unknown>;
+    expect(readiness.category_rationale).toEqual({});
+
+    const synthetic = {
+      function: {
+        parameters: {
+          type: "object",
+          properties: {
+            open_object: { type: "object" },
+            open_array: { type: "array" },
+          },
+        },
+      },
+    };
+    expect(JSON.parse(buildReportJsonSkeletonFromTool(synthetic))).toEqual({
+      open_object: {},
+      open_array: [],
+    });
+  });
+
+  it("embeds the skeleton in the plain-JSON instruction only when supplied", () => {
+    const withoutSkeleton = buildPlainJsonReportInstruction();
+    expect(withoutSkeleton).not.toContain("Required JSON structure:");
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    const withSkeleton = buildPlainJsonReportInstruction("submit_audition_report", skeleton);
+    expect(withSkeleton).toContain("Required JSON structure:");
+    expect(withSkeleton).toContain("readiness_score_judgement");
+    expect(withSkeleton).toContain("never omit a module");
+  });
+
+  it("puts the report shape into the Gemini polish request system message", () => {
+    const body = buildReportPolishRequestBodyForProvider({
+      model: "google/gemini-3-flash-preview",
+      systemPrompt: "POLISH",
+      userText: "USER",
+      reportTool: REPORT_TOOL,
+      providerContract: "plain_json_report",
+    });
+    const messages = (body as { messages: { role: string; content: string }[] }).messages;
+    const system = messages.find((m) => m.role === "system")?.content ?? "";
+    expect(system).toContain("Required JSON structure:");
+    expect(system).toContain("s10_professional_critique");
+    // tool_call models must NOT get the skeleton text (they get the real schema).
+    const toolBody = buildReportPolishRequestBodyForProvider({
+      model: "openai/gpt-5",
+      systemPrompt: "POLISH",
+      userText: "USER",
+      reportTool: REPORT_TOOL,
+      providerContract: "tool_call",
+    });
+    const toolMessages = (toolBody as { messages: { role: string; content: string }[] }).messages;
+    expect(toolMessages.find((m) => m.role === "system")?.content).toBe("POLISH");
+  });
+});
 
 const UNSUPPORTED_PROVIDER_SCHEMA_KEYS = new Set([
   "$defs",

@@ -10,6 +10,7 @@ import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
 import {
   buildPlainJsonReportInstruction,
+  buildReportJsonSkeletonFromTool,
   buildProviderToolForModel,
   classifyAiGatewayProviderError,
   parseProviderJsonObjectContent,
@@ -204,7 +205,10 @@ export function buildReportPolishRequestBodyForProvider(input: {
         role: "system",
         content:
           providerContract === "plain_json_report"
-            ? `${input.systemPrompt}\n\n${buildPlainJsonReportInstruction()}`
+            ? `${input.systemPrompt}\n\n${buildPlainJsonReportInstruction(
+                "submit_audition_report",
+                buildReportJsonSkeletonFromTool(input.reportTool),
+              )}`
             : input.systemPrompt,
       },
       { role: "user", content: input.userText },
