@@ -106,6 +106,33 @@ describe("report JSON skeleton for the plain_json_report (Gemini) contract", () 
     });
   });
 
+  it("renders open object/array schemas as {} / [] placeholders, not type strings", () => {
+    // Regression: { type: "object" } (e.g. readiness_score_judgement.category_rationale)
+    // must render as {} not "object" — a copied "object" string makes record
+    // normalizers drop the field.
+    const skeleton = buildReportJsonSkeletonFromTool(REPORT_TOOL);
+    expect(skeleton).not.toMatch(/:\s*"object"/);
+    expect(skeleton).not.toMatch(/:\s*"array"/);
+    const readiness = JSON.parse(skeleton).readiness_score_judgement as Record<string, unknown>;
+    expect(readiness.category_rationale).toEqual({});
+
+    const synthetic = {
+      function: {
+        parameters: {
+          type: "object",
+          properties: {
+            open_object: { type: "object" },
+            open_array: { type: "array" },
+          },
+        },
+      },
+    };
+    expect(JSON.parse(buildReportJsonSkeletonFromTool(synthetic))).toEqual({
+      open_object: {},
+      open_array: [],
+    });
+  });
+
   it("embeds the skeleton in the plain-JSON instruction only when supplied", () => {
     const withoutSkeleton = buildPlainJsonReportInstruction();
     expect(withoutSkeleton).not.toContain("Required JSON structure:");

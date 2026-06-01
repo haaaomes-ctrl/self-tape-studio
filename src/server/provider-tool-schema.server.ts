@@ -211,6 +211,11 @@ function renderReportSchemaSkeleton(
     if (depth >= maxDepth) return ["..."];
     return [renderReportSchemaSkeleton(node.items, depth + 1, maxDepth)];
   }
+  // Open object/array schemas (no `properties`/`items`) must render as a literal
+  // {} / [] placeholder, not the string "object"/"array" — a copied string makes
+  // record/array normalizers (e.g. category_rationale) drop the field.
+  if (primaryType === "object") return {};
+  if (primaryType === "array") return [];
   if (primaryType === "integer" || primaryType === "number") {
     const base =
       typeof node.minimum === "number" && typeof node.maximum === "number"
