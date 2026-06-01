@@ -1,16 +1,27 @@
-Pull the latest commits from the connected GitHub repository into the Lovable workspace so the preview/editor matches `main`.
+## Rotate SUPABASE_SERVICE_ROLE_KEY
 
-## What this does
-- Triggers a Git → Lovable sync of the currently connected branch (`main`).
-- Updates the workspace file tree to match the remote HEAD.
-- Does NOT publish to the worker — publishing remains a separate step.
+Use the `supabase--rotate_api_keys` tool to generate fresh Supabase API keys for this Lovable Cloud project. This will:
 
-## What this does NOT do
-- No source edits, no migrations, no config changes.
-- No regeneration of `src/routeTree.gen.ts` or `src/integrations/supabase/types.ts` — whatever is on the remote commit is what lands.
-- No deploy to `tapecoach.lovable.app` / `tapecoach.co.uk`.
+1. Generate a new `SUPABASE_SERVICE_ROLE_KEY` (and refresh the publishable/anon key pair).
+2. Update the project's `.env` and internal integration data so server functions and the admin client (`src/integrations/supabase/client.server.ts`) pick up the new key automatically.
+3. Disable the previous keys so any leaked copy stops working.
 
-## After sync
-- Confirm the new HEAD commit hash.
-- Spot-check that generated files (`routeTree.gen.ts`, Supabase `types.ts`) match the remote — per AGENTS.md, Lovable refresh is a known drift risk.
-- If you then want it live, publish as a separate step.
+### After rotation — manual steps you'll need to do
+
+The rotated value is **not** automatically propagated to anything outside this Lovable project. You must update it everywhere it's been pasted, specifically:
+
+- **External Cloudflare Worker** — paste the new `SUPABASE_SERVICE_ROLE_KEY` into the Worker's secrets (`wrangler secret put SUPABASE_SERVICE_ROLE_KEY` or via the Cloudflare dashboard) and redeploy.
+- Any other external service, CI secret store, or local `.env` file where the old key was stored.
+
+### What I will NOT touch
+
+- No source code changes.
+- No migrations.
+- No edits to `src/integrations/supabase/client.server.ts`, `.env` (manually), or any auto-generated files.
+- No publish/deploy.
+
+### Confirmation needed
+
+Rotating immediately invalidates the current service role key. Any system still using the old key (including the Cloudflare Worker you mentioned earlier) will start failing with auth errors until you update it.
+
+Confirm and I'll run the rotation, then report back the new key so you can paste it into the Worker.
