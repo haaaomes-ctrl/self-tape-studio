@@ -2220,7 +2220,10 @@ export function buildSinglePassReportRequestBodyForProvider(input: {
         content: userContent,
       },
     ],
-    max_tokens: 8192,
+    // Match the two-step polish cap: a full-brief report overruns 8192 output
+    // tokens and truncates the tool-call JSON. gemini-3-flash supports a far
+    // larger window; the analysis timeout still bounds latency.
+    max_tokens: Number(process.env.REPORT_OUTPUT_MAX_TOKENS ?? 32768),
   };
 
   if (providerContract === "plain_json_report") return base;
