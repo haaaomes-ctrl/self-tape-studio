@@ -118,6 +118,13 @@ Live path = `plain_json_observations` (`COMPACT_STEP1_SYSTEM_PROMPT`). Compared 
 
 **Fix direction (not yet implemented — collate first):** bring the compact prompt to parity with the tool_call expectations — (a) mandate `timestamp_start_sec` (MM:SS-equivalent) on observed video/audio/performance observations with the duration-scaled density target; (b) explicitly solicit `candidate_technique` safe-descriptor observations where observed, within the existing red-line constraints (no named authority, no quality verdicts). Consider whether switching Gemini to the `tool_call` contract is a more reliable structural route than coaxing the compact prompt. Validate only by live run on a confirmed-live build.
 
+### 5a. Contract-choice rationale — `tool_call` is a known dead-end for Gemini (B ruled out)
+Decision record `docs/tapecoach/v3/s9-19h-live-step1-provider-contract-suppression-validation-repair.md`:
+- `google/gemini-3-flash-preview` via the **Lovable gateway → OpenRouter** route **returned HTTP 400 on tool/function calling** with the large JSON schema + multimodal `file_url` + forced `tool_choice`. The compact `plain_json_observations` contract was introduced **specifically to fix that 400**.
+- ⇒ **Switching Gemini to `tool_call` (option B) would reintroduce the HTTP 400 failure. B is ruled out. The correct lever is A: strengthen the compact prompt.**
+- The record also confirms the projection infra already covers `candidate_technique` (filter projects it) — so the gap is purely that the **model isn't emitting timestamps/technique**, a prompt problem, not a plumbing one. It even names the exact downstream blocker we hit: `technique_trace_requires_step1_candidate_technique_extractor` (Step 1 must supply candidate-technique evidence; the compact prompt never makes it).
+- Historical note: S9-19H marked compact Step-1 evidence "observation-only" and intended the runtime to fall back to single-pass report generation. The current S10 pipeline instead runs the **two-step polish on the compact evidence**, which needs richer Step-1 output than the observation-only compact contract was designed to provide — hence the timestamp/technique starvation now surfaces. Fix A (enrich the compact prompt) closes that gap without reintroducing the tool-call 400.
+
 ---
 
 ## 6. Fix history (this work-stream)
