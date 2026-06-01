@@ -5987,7 +5987,31 @@ export async function runProcessTake(
     const canRecoverModuleQuality =
       isTwoStepEnabled() &&
       hasSufficientStep1EvidenceForModuleRecovery(twoStepEvidence) &&
-      moduleQualityBlockers().length > 0;
+      moduleQualityBlockers().length > 0 &&
+      // Only run the expensive Step-2 module-repair retry (a second ~90s polish)
+      // + evidence-only recovery when the report would otherwise be a thin shell.
+      // For a non-thin-shell report (the common case: 1-2 soft modules such as
+      // "next action", which has a deterministic builder), the report is already
+      // usable — persist it as-is rather than risking a second polish that can
+      // exceed the request-worker budget and orphan the take BEFORE it persists
+      // (the finalising_orphan failures). Persist-before-repair: a usable report
+      // reaches the DB instead of being lost to a repair-stage worker death.
+      // Thin-shell repair robustness for long tapes is handled by the durable
+      // queue dispatch (separate work item).
+      s10ModuleReadiness.thin_shell_blocked;
+    if (
+      !canRecoverModuleQuality &&
+      moduleQualityBlockers().length > 0 &&
+      !s10ModuleReadiness.thin_shell_blocked
+    ) {
+      console.warn("[take-pipeline] s10_module_repair_skipped_report_usable", {
+        ...baseLog,
+        blocker_count: moduleQualityBlockers().length,
+        modules: moduleQualityBlockers()
+          .map((result) => result.report_module)
+          .slice(0, 12),
+      });
+    }
     if (canRecoverModuleQuality && twoStepEvidence) {
       moduleQualityRecoveryReason = s10ModuleReadiness.thin_shell_blocked
         ? "thin_shell_blocked"
