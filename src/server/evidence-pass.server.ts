@@ -251,6 +251,20 @@ Allowed observations:
 
 Use the listed family names exactly. Do not use praise or quality judgement. If a family is not observable, place it in unavailable_families with a short safe reason.
 
+Timestamp requirements (MANDATORY where the tape is assessable):
+- For every video_observable, audio_observable, material_specific_performance and performance_observable observation, you MUST set timestamp_start_sec to the integer second within the tape where the moment occurs (and timestamp_end_sec when it spans a range). Use null ONLY when a moment genuinely cannot be located in time.
+- Spread timestamped observations in CHRONOLOGICAL order across the WHOLE tape, not just the opening minute. For multi-component tapes (e.g. acting scene + song) cover EACH main component and the transition between them, plus at least one improvement/limitation moment.
+- Duration-scaled minimum count of timestamped observations when assessable: under 60s = 3-5; 1-3 min = 6-10; 3-5 min = 8-14; 5-10 min = 12-24; 10+ min = 18-36. Absolute maximum 36. Returning only 2-3 timestamps for a multi-minute, multi-component tape is under-production and is not acceptable.
+
+Candidate-technique requirements (EXPECTED where observable; internal-only, never public authority):
+- Wherever you can observe a safe, factual technique signal, you MUST emit a candidate_technique observation with its timestamp. Cover the disciplines present:
+  - acting / musical theatre: breath placement, eyeline/focus shift, pause/beat timing, articulation/diction, stillness, visible thought-change or objective shift.
+  - singing: breath support, phrasing/line, sustain, register transition audibility, dynamic change.
+  - dance / movement: rhythm/timing, control/coordination, spatial pathway, dynamics, performance presence.
+  - commercial / screen: pace, directness to camera, tonal shift, energy control.
+- These are SAFE DESCRIPTOR CANDIDATES only: state the observable fact (and timestamp). Never name a public technique/method/authority, never assert a technique was "demonstrated" or "mastered", and never give a quality verdict.
+- If an assessable performance component is present and you return zero candidate_technique observations, that is under-production. Record what is observable; if a signal genuinely cannot be observed, use an assessability_limit observation instead.
+
 Reject and place in rejected_or_uncertain instead of observations: scores, readiness verdicts, role fit, casting fit, bookability, marketability, castability, public named technique authority, "technique demonstrated", "strong performance", "beautiful voice", "ready to submit", public comparison recommendations, report prose, hidden reasoning, URLs, tokens, secrets or signed URLs.`;
 
 const EVIDENCE_TOOL = {

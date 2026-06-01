@@ -340,6 +340,29 @@ describe("S10.3 tape observation and component verification", () => {
     expect(request.max_tokens as number).toBeGreaterThanOrEqual(49152);
   });
 
+  it("mandates timestamps and solicits candidate_technique in the compact Step 1 prompt", () => {
+    // Fix A: the compact (live Gemini) Step-1 prompt must mandate per-observation
+    // timestamps and explicitly solicit candidate_technique, so Step 1 stops
+    // emitting 0 timestamps / 0 technique and starving the Step-2 modules.
+    const request = buildEvidencePassRequestBodyForProvider({
+      model: "google/gemini-3-flash-preview",
+      contextText: "S10.3 timestamp + technique mandate assertion",
+      videoUrl: "https://example.invalid/video.mp4",
+      providerContract: "plain_json_observations",
+    });
+    const serialised = JSON.stringify(request);
+
+    // Timestamp mandate + duration-scaled density target (previously only in the
+    // unused tool_call schema).
+    expect(serialised).toMatch(/Timestamp requirements \(MANDATORY/i);
+    expect(serialised).toMatch(/you MUST set timestamp_start_sec/i);
+    expect(serialised).toContain("10+ min = 18-36");
+    // candidate_technique is now expected, not just permitted, with red-lines kept.
+    expect(serialised).toMatch(/Candidate-technique requirements \(EXPECTED/i);
+    expect(serialised).toMatch(/you MUST emit a candidate_technique observation/i);
+    expect(serialised).toMatch(/never name a public technique\/method\/authority/i);
+  });
+
   it("routes S9-filtered Step 1 evidence into the polish timestamped + technique fields", () => {
     // The polish reads the raw EvidencePass, where the compact path leaves
     // timestamped_evidence + candidate_technique_evidence empty. This projection
