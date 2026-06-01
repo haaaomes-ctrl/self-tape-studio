@@ -78,6 +78,7 @@ function Landing() {
                 className="max-w-full break-words font-display text-3xl font-black leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-[5.25rem]"
               >
                 {LAUNCH_PRIMARY_MESSAGE}
+                <br />
                 <span className="block bg-gradient-to-r from-[oklch(0.72_0.16_255)] to-[oklch(0.82_0.13_235)] bg-clip-text text-transparent">
                   Then send the version you mean to send.
                 </span>
