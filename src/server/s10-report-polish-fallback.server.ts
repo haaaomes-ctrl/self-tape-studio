@@ -35,8 +35,24 @@ export type BuildS10ReportPolishFallbackResult =
   | { ok: true; report: Record<string, unknown>; limitationCount: number }
   | { ok: false; reason: string };
 
+// Strip embedded requirement / truth / run id tokens (e.g. "(br009)",
+// "req-side-1") that the model or a deterministic check may bake into evidence
+// prose. Raw ids must never reach performer-facing text (high-risk red line),
+// and the source here is AI-generated text, not an id array, so a scrub is the
+// robust catch.
+function stripIdTokens(value: string): string {
+  return value
+    .replace(/\s*\((?:br\d+|req[-_][\w-]+|truth[-_][\w-]+|run[-_][\w-]+)\)/gi, "")
+    .replace(/\b(?:br\d{2,}|req[-_][\w-]+|truth[-_][\w-]+|run[-_][\w-]+)\b/gi, "")
+    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function text(value: unknown, fallback = ""): string {
-  return typeof value === "string" && value.trim() ? value.trim().replace(/\s+/g, " ") : fallback;
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const cleaned = stripIdTokens(value.trim().replace(/\s+/g, " "));
+  return cleaned || fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -233,8 +249,29 @@ function buildLevelShortfallEvidence(input: {
       result.requirement_summary,
     ]),
   );
+  // A requirement that is verified present in the observed evidence (and so is
+  // shown under "Meets this level") must never also appear under "Falls short".
+  // The fallback matrix can mis-classify a metadata-verified requirement (e.g.
+  // landscape orientation) into the missing/not-assessable arrays; exclude any
+  // requirement the observed evidence confirms so the report cannot contradict
+  // itself on the same requirement.
+  const verifiedRequirementIds = new Set<string>();
+  for (const verification of input.evidence.component_verifications ?? []) {
+    if (
+      verification.observed_status === "present" ||
+      verification.observed_status === "partially_present"
+    ) {
+      verifiedRequirementIds.add(verification.requirement_id);
+    }
+  }
+  for (const sequence of input.evidence.observed_tape_sequence ?? []) {
+    if (sequence.present_status === "present" || sequence.present_status === "partially_present") {
+      for (const id of sequence.linked_requirement_ids ?? []) verifiedRequirementIds.add(id);
+    }
+  }
   const requirementText = (ids: string[], suffix: string): string[] =>
     ids
+      .filter((id) => !verifiedRequirementIds.has(id))
       .map((id) => summaryById.get(id))
       .filter(
         (summary): summary is string => typeof summary === "string" && summary.trim().length > 0,
