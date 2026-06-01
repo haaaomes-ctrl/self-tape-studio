@@ -1675,26 +1675,26 @@ function s10CompletionClaim(status: ObservedTapeCompletionStatus): boolean {
   return status === "complete";
 }
 
-function summaryLooksBriefOnly(value: string): boolean {
-  const mentionsBriefRequest =
-    /\b(brief|requirement|requested|required|supplied context|operator[- ]declared|declared material|asked for)\b/i.test(
-      value,
-    );
-  if (!mentionsBriefRequest) return false;
-  return !/\b(observed|identified|present|included|complete|heard|visible|audible|seen|appears|tape|video|audio|media|section|sings|singing|cuts? off|ends?|starts?)\b/i.test(
-    value,
-  );
-}
-
 function validS10MediaObservationClaim(input: {
   observed_from_media: boolean;
   evidence_basis: ObservedTapeEvidenceBasis;
-  evidence_summary: string;
 }): boolean {
+  // Trust the model's two explicit, structured observation signals across ALL
+  // disciplines: it observed this component from the media (observed_from_media)
+  // AND the evidence basis is direct audio+video observation. Do NOT second-
+  // guess that with a prose keyword heuristic — that silently downgraded
+  // genuinely-observed dance, movement, screen and generic "performs the
+  // required material" rows whose natural phrasing simply lacked a whitelisted
+  // observation word, which then suppressed the score and invented missing-
+  // material fixes.
+  //
+  // Genuine non-observation rows stay downgraded structurally, because the
+  // model declares them through evidence_basis itself: "brief_text_only",
+  // "deterministic_metadata" and "uncertainty" all fail this check and are
+  // marked uncertain. That is the schema's explicit brief-only channel, so a
+  // fuzzy text re-derivation is unnecessary and discipline-biased.
   if (!input.observed_from_media) return false;
-  if (input.evidence_basis !== "observed_audio_video") return false;
-  if (summaryLooksBriefOnly(input.evidence_summary)) return false;
-  return true;
+  return input.evidence_basis === "observed_audio_video";
 }
 
 function appendAssessabilityNote(existing: string | undefined, note: string): string {
@@ -1722,7 +1722,6 @@ export function normaliseS10ObservedTapeSequence(value: unknown): ObservedTapeSe
       !validS10MediaObservationClaim({
         observed_from_media: observedFromMedia,
         evidence_basis: evidenceBasis,
-        evidence_summary: evidenceSummary,
       })
     ) {
       if (s10PresenceClaim(presentStatus)) presentStatus = "uncertain";
@@ -1771,7 +1770,6 @@ export function normaliseS10ComponentVerifications(value: unknown): ComponentVer
       !validS10MediaObservationClaim({
         observed_from_media: observedFromMedia,
         evidence_basis: evidenceBasis,
-        evidence_summary: evidenceSummary,
       })
     ) {
       if (s10PresenceClaim(observedStatus)) observedStatus = "uncertain";
