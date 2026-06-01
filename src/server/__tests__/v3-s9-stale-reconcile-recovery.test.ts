@@ -354,15 +354,15 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toContain('"max_batch_size": 1');
   });
 
-  it("wrangler raises the queue-consumer CPU budget for the two-step report build", async () => {
+  it("wrangler deploys to the analysis worker named in ANALYSIS_DISPATCH_URL", async () => {
     const source = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
-    // The two-step pipeline builds/re-validates large report objects multiple
-    // times per take (polish + module-repair retry + readiness/enforcement) on
-    // 10-min-max self-tapes. CPU time is active processing only (not the Gemini
-    // I/O wait), but the 30s default ceiling is a real exhaustion risk → must be
-    // raised to the 5-minute queue-consumer maximum (300000ms) so a healthy take
-    // is not killed (`exceededCpu`) before it persists.
-    expect(source).toContain('"cpu_ms": 300000');
+    // Cloudflare Workers Builds deploys to the service named in `name`. It must
+    // match the deployed analysis worker + the producer's ANALYSIS_DISPATCH_URL
+    // host (tapecoach-analysis-worker.*.workers.dev/api/internal/run-analysis),
+    // or the build publishes a different worker and the dispatch target stays
+    // stale (404 / analysis_external_dispatch_failed).
+    expect(source).toContain('"name": "tapecoach-analysis-worker"');
+    expect(source).not.toContain('"name": "tanstack-start-app"');
   });
 
   it("analysis dispatch uses queue when the binding is available", async () => {
