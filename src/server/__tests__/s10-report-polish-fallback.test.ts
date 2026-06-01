@@ -554,4 +554,112 @@ describe("S10 report polish parser fallback", () => {
       reason: "missing_or_insufficient_step1_evidence",
     });
   });
+
+  it("withholds the score and avoids a retake verdict when Step 1 returned no category scores", () => {
+    // Step 1 under-produced: raw_scores absent/defaulted to 0 (the real failing
+    // run). The brief is still supported by observed components, so the fallback
+    // must not show 0 / "Retake required".
+    const evidence = buildEvidence({
+      raw_scores: {
+        technical: 0,
+        audio: 0,
+        vocal: null,
+        acting: 0,
+        brief_adherence: 0,
+        professional_presentation: 0,
+      },
+    });
+    const recovery = buildS10ModuleQualityRecoveryReport({
+      evidence,
+      briefContext: null,
+      briefRequirements,
+      auditionTitle: "Step 1 under-produced scores",
+      selectedLevel: "professional",
+      mode: "brief",
+      reason: "thin_shell_blocked",
+      retryAttempted: true,
+      retrySucceeded: false,
+    });
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+    // Score withheld (renders as "—"), not a misleading 0.
+    expect(recovery.report.overall_score).toBeNull();
+    const readiness = recovery.report.readiness_score_judgement as Record<string, unknown>;
+    expect(readiness.decision).not.toBe("retake_required_if_possible");
+    expect(readiness.decision).toBe("review_carefully");
+  });
+
+  it("renders genuine category scores normally when Step 1 produced them", () => {
+    const recovery = buildS10ModuleQualityRecoveryReport({
+      evidence: buildEvidence(),
+      briefContext: null,
+      briefRequirements,
+      auditionTitle: "Scored take",
+      selectedLevel: "professional",
+      mode: "brief",
+      reason: "thin_shell_blocked",
+      retryAttempted: true,
+      retrySucceeded: false,
+    });
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+    expect(typeof recovery.report.overall_score).toBe("number");
+    expect(recovery.report.overall_score as number).toBeGreaterThan(0);
+  });
+
+  it("never leaks raw requirement ids into selected-level shortfall prose", () => {
+    // Make the song requirement not assessable so the matrix's id-keyed arrays
+    // are non-empty; the rendered shortfall must use the human summary, not the
+    // raw requirement id.
+    const evidence = buildEvidence({
+      component_verifications: [
+        {
+          requirement_id: "req-side-1",
+          requirement_summary: "Side 1 acting scene",
+          observed_status: "present",
+          completion_status: "complete",
+          evidence_summary: "Side 1 is observed and runs to a clear end.",
+          observed_from_media: true,
+          evidence_basis: "observed_audio_video",
+          timestamp_refs: ["00:03", "00:58"],
+          confidence: "high",
+          cannot_infer_from_brief_only: true,
+          assessability_notes: "",
+        },
+        {
+          requirement_id: "req-song",
+          requirement_summary: "Contemporary MT song",
+          observed_status: "uncertain",
+          completion_status: "uncertain",
+          evidence_summary: "The song section could not be confirmed from the observed media.",
+          observed_from_media: false,
+          evidence_basis: "uncertainty",
+          timestamp_refs: [],
+          confidence: "low",
+          cannot_infer_from_brief_only: true,
+          assessability_notes: "",
+        },
+      ],
+    });
+    const recovery = buildS10ModuleQualityRecoveryReport({
+      evidence,
+      briefContext: null,
+      briefRequirements,
+      auditionTitle: "Id leak guard",
+      selectedLevel: "professional",
+      mode: "brief",
+      reason: "thin_shell_blocked",
+      retryAttempted: true,
+      retrySucceeded: false,
+    });
+    expect(recovery.ok).toBe(true);
+    if (!recovery.ok) return;
+    const readiness = recovery.report.readiness_score_judgement as Record<string, unknown>;
+    const calibration = readiness.selected_level_calibration as Record<string, unknown>;
+    const fallsShort = (calibration.what_falls_short as string[] | undefined) ?? [];
+    for (const line of fallsShort) {
+      expect(line).not.toMatch(/\breq[-_]\w+\b/);
+      expect(line).not.toMatch(/^\s*br\d+\s*$/i);
+    }
+  });
 });

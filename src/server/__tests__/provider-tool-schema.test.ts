@@ -293,10 +293,11 @@ describe("provider tool schema helpers", () => {
     expect(polishBody).not.toHaveProperty("tools");
     expect(polishBody).not.toHaveProperty("tool_choice");
     expect(JSON.stringify(polishBody)).toContain("Return ONLY the JSON object");
-    // Full-brief reports overrun the old 8192 cap and truncate; the polish call
-    // must request a larger output window so brief reports assemble.
+    // The output cap is sized for the 10-minute product maximum across all
+    // disciplines (not the ~4-minute test fixture), so a full-brief report with
+    // 18-36 timestamped notes does not truncate.
     expect(typeof polishBody.max_tokens).toBe("number");
-    expect(polishBody.max_tokens as number).toBeGreaterThanOrEqual(32768);
+    expect(polishBody.max_tokens as number).toBeGreaterThanOrEqual(49152);
 
     const singlePassBody = buildSinglePassReportRequestBodyForProvider({
       model: "google/gemini-3-flash-preview",
@@ -308,6 +309,8 @@ describe("provider tool schema helpers", () => {
     expect(singlePassBody).not.toHaveProperty("tool_choice");
     expect(JSON.stringify(singlePassBody)).toContain("file_url");
     expect(JSON.stringify(singlePassBody)).toContain("Return ONLY the JSON object");
+    expect(typeof singlePassBody.max_tokens).toBe("number");
+    expect(singlePassBody.max_tokens as number).toBeGreaterThanOrEqual(49152);
   });
 
   it("keeps tool-call report contracts for non-Gemini providers", () => {
