@@ -354,17 +354,6 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toContain('"max_batch_size": 1');
   });
 
-  it("wrangler raises the queue-consumer CPU budget for the two-step report build", async () => {
-    const source = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
-    // The two-step pipeline builds/re-validates large report objects multiple
-    // times per take (polish + module-repair retry + readiness/enforcement) on
-    // 10-min-max self-tapes. CPU time is active processing only (not the Gemini
-    // I/O wait), but the 30s default ceiling is a real exhaustion risk → must be
-    // raised to the 5-minute queue-consumer maximum (300000ms) so a healthy take
-    // is not killed (`exceededCpu`) before it persists.
-    expect(source).toContain('"cpu_ms": 300000');
-  });
-
   it("wrangler deploys to the analysis worker named in ANALYSIS_DISPATCH_URL", async () => {
     const source = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
     // Cloudflare Workers Builds deploys to the service named in `name`. It must

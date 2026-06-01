@@ -11,18 +11,15 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker-entry.ts",
-  // Queue-consumer CPU budget. CPU time is *active processing* only — it does
-  // NOT include the (long) I/O waits on the Gemini Step-1/Step-2 fetches. But
-  // the two-step pipeline builds and re-validates large (~27KB) report objects
-  // multiple times per take (main polish + module-repair retry + readiness and
-  // output-enforcement passes) for self-tapes up to the 10-minute product
-  // maximum. The default 30s CPU ceiling is a real exhaustion risk under that
-  // load (surfaces as `exceededCpu` / Error 1102 → orphaned take before
-  // persist). Raise to the 5-minute queue-consumer maximum. Wall-clock is
-  // already 15min for queue consumers, so wall-clock is not the binding limit.
-  "limits": {
-    "cpu_ms": 300000
-  },
+  // NOTE: a custom `limits.cpu_ms` is intentionally NOT set here. This account
+  // is on the Workers **Free** plan, which rejects custom CPU limits at deploy
+  // (Cloudflare API error 100328: "CPU limits are not supported for the Free
+  // plan"). The two-step report build is CPU-heavy on 10-minute-max self-tapes,
+  // so when the account moves to **Workers Paid**, add:
+  //   "limits": { "cpu_ms": 300000 }   // 5-min queue-consumer maximum
+  // to lift the CPU ceiling (otherwise the Free default CPU limit can kill the
+  // report assembly — `exceededCpu`). Wall-clock is already 15min for queue
+  // consumers, so wall-clock is not the binding limit.
   "queues": {
     "producers": [
       {

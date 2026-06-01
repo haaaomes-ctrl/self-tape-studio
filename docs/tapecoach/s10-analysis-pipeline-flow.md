@@ -233,9 +233,15 @@ confirmation (now obtained via the Cloudflare account `6f01f99a…`).
   module-repair retry + readiness/enforcement passes); on 10-min-max self-tapes the 30 s
   ceiling is a real `exceededCpu`/Error 1102 risk that could orphan a healthy take before
   persist.
-- **Fix landed (this work item):** `limits.cpu_ms: 300000` (5-min max) added to
-  `wrangler.jsonc` + a guarding test in `v3-s9-stale-reconcile-recovery.test.ts`. Effective on
-  the next redeploy.
+- **⚠️ Correction (live deploy, 2026-06-01):** `limits.cpu_ms: 300000` was added in #170 but
+  the Git-connected **Workers Build rejected it** — this account is on the **Workers Free
+  plan**, which does not allow custom CPU limits (Cloudflare API error **100328**: "CPU limits
+  are not supported for the Free plan"). The `limits` block was therefore **removed** from
+  `wrangler.jsonc` (and its guarding test) so the deploy succeeds on Free, matching the
+  2026-05-30 worker that deployed without it. **Implication:** on Free the CPU ceiling cannot
+  be raised, so CPU-heavy report assembly on long self-tapes may still hit the default Free
+  limit. To restore the intended budget, move to **Workers Paid** and re-add
+  `"limits": { "cpu_ms": 300000 }`. Tracked as a plan/budget decision, not a code fix.
 - **Not wired (needs operator provisioning):** a **dead-letter queue** + explicit consumer
   `max_retries`, so a permanently-failing job is observable rather than silently dropped after
   the default 3 retries. (`ANALYSIS_MAX_RETRIES`, app-side, default 1, is the in-pipeline
