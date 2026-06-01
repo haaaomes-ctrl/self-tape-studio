@@ -195,3 +195,57 @@ report object**, and whether the `REPORT_TOOL` plain-JSON output is too large/co
 single reliable Gemini call (candidate fixes: segment the report generation, tighten the
 plain-JSON instruction, or reduce required output surface per call). Layer 2 (timestamps /
 31-rejected filter) is secondary and only affects richness of an already-working report.
+
+---
+
+## Confirmed Cloudflare findings — post-#169 live run (2026-06-01)
+
+**Trigger:** a live run performed *after* #169 still failed; diagnosis required Cloudflare
+confirmation (now obtained via the Cloudflare account `6f01f99a…`).
+
+### Decisive root cause: the analysis consumer worker is STALE (not a code regression)
+- The heavy analysis runs in the **Cloudflare queue consumer** (`worker-entry.ts` `queue()`
+  → `runProcessTake`), deployed as the account's single worker
+  **`tapecoach-analysis-worker`**, consuming `tapecoach-analysis-jobs` (batch size 1).
+- That worker's last `modified_on` is **2026-05-30 11:28Z**. Every recent fix — #165 fix-A,
+  #167 skeleton, #168 heartbeat, #169 persist-before-repair — was committed **2026-06-01**.
+  It is therefore **impossible** for the deployed worker to contain any of them.
+- **CI (`.github/workflows/build.yml`) runs only `npm run build` — there is no deploy step.**
+  Pushing/merging never redeploys the consumer worker; it must be redeployed explicitly. This
+  is the documented "**in sync ≠ published & served**" trap.
+- ⇒ The post-#169 live run executed **2026-05-30 code**. Its failure does **not** invalidate
+  #165–169 — those fixes have **never actually run live**. The decisive next step is to
+  **redeploy the consumer worker from current HEAD and re-run the smoke test** before any
+  further code-level diagnosis.
+
+> ⚠️ **Deploy-name footgun:** `wrangler.jsonc` `name` is `tanstack-start-app`, but the live
+> worker is `tapecoach-analysis-worker`. A bare `wrangler deploy` would target the wrong
+> name and leave the consumer stale. The redeploy must target `tapecoach-analysis-worker`
+> (the existing deploy path / `--name`), or `wrangler.jsonc` `name` must be reconciled first.
+
+### Secondary (durable) — queue-consumer execution budget [#169 deferred "durable-queue execution budget"]
+- Cloudflare queue-consumer limits (confirmed via docs): **wall-clock 15 min/invocation**
+  (ample; matches #168's note), **CPU time default 30 s, raisable to 5 min via
+  `limits.cpu_ms`**. CPU time is *active processing only* — it does **not** include the long
+  Gemini I/O waits.
+- `wrangler.jsonc` previously set **no `limits.cpu_ms`** (30 s default). The two-step pipeline
+  builds/re-validates large (~27 KB) report objects several times per take (main polish +
+  module-repair retry + readiness/enforcement passes); on 10-min-max self-tapes the 30 s
+  ceiling is a real `exceededCpu`/Error 1102 risk that could orphan a healthy take before
+  persist.
+- **Fix landed (this work item):** `limits.cpu_ms: 300000` (5-min max) added to
+  `wrangler.jsonc` + a guarding test in `v3-s9-stale-reconcile-recovery.test.ts`. Effective on
+  the next redeploy.
+- **Not wired (needs operator provisioning):** a **dead-letter queue** + explicit consumer
+  `max_retries`, so a permanently-failing job is observable rather than silently dropped after
+  the default 3 retries. (`ANALYSIS_MAX_RETRIES`, app-side, default 1, is the in-pipeline
+  Gemini-call retry — a *different layer* from the Cloudflare queue `max_retries`.)
+
+### Operator action required (cannot be done from the sandbox)
+1. **Redeploy** the consumer worker from current HEAD onto `tapecoach-analysis-worker`; confirm
+   the new `modified_on` is after the #169 commit.
+2. (Optional, recommended) `wrangler queues create tapecoach-analysis-jobs-dlq`, then add
+   `dead_letter_queue` + `max_retries` to the consumer before referencing the DLQ.
+3. **Re-run the live smoke test** on the confirmed-current worker. Read
+   `score_breakdown.two_step` + take status/`failure_code` as the durable truth (the published
+   log reader is intermittently ClickHouse-EOF).
