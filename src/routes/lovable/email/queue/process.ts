@@ -1,5 +1,10 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createFileRoute } from "@tanstack/react-router";
+import {
+  createSupabaseAdminClientForRuntimeEnv,
+  requireSupabaseAdminRuntimeConfig,
+  SupabaseAdminRuntimeConfigError,
+} from "@/integrations/supabase/client.server";
 import { brevoSendEmail } from "@/server/brevo.server";
 import {
   buildBrevoEmailFromQueuePayload,
@@ -133,11 +138,17 @@ export const Route = createFileRoute("/lovable/email/queue/process")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-        if (!supabaseUrl || !supabaseServiceKey) {
-          console.error("Missing required environment variables");
+        let supabaseServiceKey: string;
+        let supabase: SupabaseClient;
+        try {
+          ({ serviceRoleKey: supabaseServiceKey } = requireSupabaseAdminRuntimeConfig());
+          supabase = createSupabaseAdminClientForRuntimeEnv() as unknown as SupabaseClient;
+        } catch (error) {
+          if (!(error instanceof SupabaseAdminRuntimeConfigError)) throw error;
+          console.error(
+            "Missing required Supabase server environment variables",
+            error.diagnostics,
+          );
           return Response.json({ error: "Server configuration error" }, { status: 500 });
         }
 
@@ -152,8 +163,6 @@ export const Route = createFileRoute("/lovable/email/queue/process")({
         if (token !== supabaseServiceKey) {
           return Response.json({ error: "Forbidden" }, { status: 403 });
         }
-
-        const supabase: SupabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
         // 1. Check dispatcher mode, rate-limit cooldown and queue config.
         // The route path is legacy/compatibility naming; Brevo owns final delivery.

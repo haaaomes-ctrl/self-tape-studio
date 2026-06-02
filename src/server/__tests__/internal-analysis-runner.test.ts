@@ -121,14 +121,15 @@ describe("internal analysis runner endpoint", () => {
   });
 
   it("returns server_misconfigured rather than take_not_found when service-role env is missing", async () => {
+    vi.stubEnv("TAPECOACH_SUPABASE_SERVICE_ROLE_KEY", "");
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
 
     const runner = vi.fn(async () => ({ ok: true as const }));
     const response = await handleInternalAnalysisRunRequest(requestFor(validBody()), {
       env: { ANALYSIS_RUN_SECRET: SECRET },
       supabaseEnv: {
-        SUPABASE_URL: "https://runtime-project.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY: "",
+        TAPECOACH_SUPABASE_URL: "https://runtime-project.supabase.co",
+        TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: "",
       },
       runProcessTake: runner,
     });

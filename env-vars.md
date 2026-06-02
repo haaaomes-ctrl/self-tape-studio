@@ -16,11 +16,34 @@ TWO_STEP_ANALYSIS_ENABLED=true
 
 `QA_ARTIFACT_STORAGE_BUCKET` is the Supabase Storage bucket id. It must be `qa-artifacts` for the standard TapeCoach admin storage lane; do not set it to a boolean feature-flag value such as `true`.
 
+## Owned Supabase Runtime
+
+Lovable reserves the `SUPABASE_` secret prefix. For server-side writes to the owned Supabase project, configure these server-only secrets in Lovable:
+
+```text
+TAPECOACH_SUPABASE_URL
+TAPECOACH_SUPABASE_SERVICE_ROLE_KEY
+```
+
+The server admin client prefers `TAPECOACH_SUPABASE_URL` and `TAPECOACH_SUPABASE_SERVICE_ROLE_KEY`. Legacy `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supported only as local/dev/backward-compatible fallbacks.
+
+The browser/public Supabase client must use only Vite public env:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+VITE_SUPABASE_PROJECT_ID
+```
+
+Never expose `TAPECOACH_SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SERVICE_ROLE_KEY` to browser/client code.
+
 ## Secret Names
 
 Document names only. Do not print, paste, log or commit secret values.
 
 ```text
+TAPECOACH_SUPABASE_URL
+TAPECOACH_SUPABASE_SERVICE_ROLE_KEY
 RECONCILER_SECRET
 ANON_SESSION_SECRET
 MUX_TOKEN_ID
