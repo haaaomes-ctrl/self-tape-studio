@@ -8,6 +8,7 @@
 
 import type { EvidencePass } from "./evidence-pass.server";
 import { isValidTimestamp } from "./evidence-pass.server";
+import { createAnalysisAiProvider, type AnalysisAiProvider } from "./analysis-ai-provider.server";
 import {
   buildPlainJsonReportInstruction,
   buildReportJsonSkeletonFromTool,
@@ -107,6 +108,7 @@ export type RunReportPolishArgs = {
   model?: string;
   usageContext?: TakeAiUsageContext;
   recoveryInstruction?: string;
+  aiProvider?: AnalysisAiProvider;
 };
 
 export type RunReportPolishResult =
@@ -229,7 +231,8 @@ export function buildReportPolishRequestBodyForProvider(input: {
 }
 
 export async function runReportPolish(args: RunReportPolishArgs): Promise<RunReportPolishResult> {
-  const model = args.model ?? DEFAULT_MODEL;
+  const aiProvider = args.aiProvider ?? createAnalysisAiProvider({ lovableApiKey: args.apiKey });
+  const model = aiProvider.resolveModel("step2", args.model ?? DEFAULT_MODEL);
   const providerContract = selectReportProviderContract(model);
   const startedAt = Date.now();
   const recordUsage = async (input: {
@@ -242,6 +245,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
     await recordTakeAiUsage({
       ...args.usageContext,
       step: "report_polish",
+      provider: aiProvider.id,
       model,
       promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
       providerContract,
@@ -288,22 +292,16 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
   else args.signal.addEventListener("abort", abortFromCaller, { once: true });
 
   try {
-    resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${args.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(
-        buildReportPolishRequestBodyForProvider({
-          model,
-          systemPrompt: POLISH_SYSTEM_PROMPT,
-          userText,
-          reportTool: args.reportTool,
-          providerContract,
-        }),
-      ),
+    resp = await aiProvider.chatCompletions({
+      body: buildReportPolishRequestBodyForProvider({
+        model,
+        systemPrompt: POLISH_SYSTEM_PROMPT,
+        userText,
+        reportTool: args.reportTool,
+        providerContract,
+      }),
       signal: fetchController.signal,
+      role: "step2",
     });
   } catch (err) {
     const error = timedOut

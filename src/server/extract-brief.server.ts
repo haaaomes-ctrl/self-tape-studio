@@ -13,6 +13,7 @@ import type {
   ExtractedBrief,
   MaterialPolicy,
 } from "@/lib/audition-rules";
+import { createAnalysisAiProvider } from "./analysis-ai-provider.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 import { S10_BRIEF_INTELLIGENCE_PROMPT_VERSION } from "./s10-report-prompt-map.server";
 
@@ -431,9 +432,12 @@ export function deriveS10BriefRuntimeFacts(
   };
 }
 
-export function buildBriefExtractionRequestBody(briefText: string) {
+export function buildBriefExtractionRequestBody(
+  briefText: string,
+  model = "google/gemini-2.5-flash",
+) {
   return {
-    model: "google/gemini-2.5-flash",
+    model,
     messages: [
       { role: "system", content: BRIEF_INTELLIGENCE_SYSTEM_PROMPT },
       { role: "user", content: briefText.slice(0, 8000) },
@@ -497,9 +501,9 @@ export async function extractBriefFromText(
   briefText: string,
   usageContext?: TakeAiUsageContext,
 ): Promise<ExtractedBriefWithMeta | null> {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) {
-    console.warn("extractBriefFromText: LOVABLE_API_KEY missing");
+  const aiProvider = createAnalysisAiProvider({ lovableApiKey: process.env.LOVABLE_API_KEY });
+  if (!aiProvider.isConfigured()) {
+    console.warn(`extractBriefFromText: ${aiProvider.missingConfigMessage()}`);
     return null;
   }
   if (!briefText || briefText.trim().length < 5) return null;
@@ -508,7 +512,7 @@ export async function extractBriefFromText(
   const timeoutHandle = setTimeout(() => controller.abort(), BRIEF_EXTRACTION_TIMEOUT_MS);
   let timedOut = false;
   const startedAt = Date.now();
-  const model = "google/gemini-2.5-flash";
+  const model = aiProvider.resolveModel("brief_extraction", "google/gemini-2.5-flash");
   const recordUsage = async (input: {
     status: "success" | "failure" | "timeout";
     httpStatus?: number | null;
@@ -519,6 +523,7 @@ export async function extractBriefFromText(
     await recordTakeAiUsage({
       ...usageContext,
       step: "brief_extraction",
+      provider: aiProvider.id,
       model,
       promptVersion: S10_BRIEF_INTELLIGENCE_PROMPT_VERSION,
       providerContract: "tool_call",
@@ -535,14 +540,10 @@ export async function extractBriefFromText(
   };
 
   try {
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildBriefExtractionRequestBody(briefText)),
+    const resp = await aiProvider.chatCompletions({
+      body: buildBriefExtractionRequestBody(briefText, model),
       signal: controller.signal,
+      role: "brief_extraction",
     });
 
     if (!resp.ok) {
