@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { buildQAArtifactDownloadFilename, parseQAArtifactPath, stableCollisionSuffix } from "@/lib/admin-storage-utils";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { setResponseHeader } from "@tanstack/react-start/server";
@@ -15,6 +14,11 @@ const LEGACY_ZIP_TMP_PREFIX = "admin-zips";
 const PAGE_SIZE = 1000;
 const ZIP_TMP_TTL_MS = 2 * 60 * 60 * 1000;
 
+async function adminStorageBucket() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin.storage.from(getBucketName());
+}
+
 export function isAdminZipTempPath(path: string): boolean {
   const normalized = path.replace(/^\/+/, '').replace(/^qa-artifacts\//, '');
   return normalized.startsWith(`${ZIP_TMP_PREFIX}/`) || normalized.startsWith(`${LEGACY_ZIP_TMP_PREFIX}/`);
@@ -25,10 +29,11 @@ export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
   const failed: Array<{ path: string; error: string }> = [];
   const deleted: string[] = [];
   const candidates: string[] = [];
+  const storage = await adminStorageBucket();
   for (const prefix of prefixes) {
     let offset = 0;
     while (true) {
-      const { data, error } = await supabaseAdmin.storage.from(getBucketName()).list(prefix, {
+      const { data, error } = await storage.list(prefix, {
         limit: PAGE_SIZE,
         offset,
         sortBy: { column: 'name', order: 'asc' },
@@ -51,7 +56,7 @@ export async function cleanupExpiredAdminZipsImpl(now = Date.now()) {
     }
   }
   for (const path of candidates) {
-    const { error: rmErr } = await supabaseAdmin.storage.from(getBucketName()).remove([path]);
+    const { error: rmErr } = await storage.remove([path]);
     if (rmErr) failed.push({ path, error: rmErr.message });
     else deleted.push(path);
   }
@@ -91,11 +96,12 @@ export function assertAdminClaims(claims: { email?: string | null } | null | und
 
 export async function listAllArtifactsImpl() {
   const results: ArtifactEntry[] = [];
+  const storage = await adminStorageBucket();
 
   async function walk(prefix: string): Promise<void> {
     let offset = 0;
     while (true) {
-      const { data, error } = await supabaseAdmin.storage.from(getBucketName()).list(prefix, {
+      const { data, error } = await storage.list(prefix, {
         limit: PAGE_SIZE,
         offset,
         sortBy: { column: "name", order: "asc" },
@@ -136,8 +142,9 @@ export async function listAllArtifactsImpl() {
 
 export async function checkExactArtifactKeysImpl(paths: string[]) {
   const results: Array<{ path: string; exists: boolean; error: string | null }> = [];
+  const storage = await adminStorageBucket();
   for (const objectPath of paths) {
-    const { data, error } = await supabaseAdmin.storage.from(getBucketName()).createSignedUrl(objectPath, 60);
+    const { data, error } = await storage.createSignedUrl(objectPath, 60);
     if (error) {
       const msg = error.message ?? 'unknown';
       const notFound = /not\s*found|does not exist/i.test(msg);
@@ -150,11 +157,12 @@ export async function checkExactArtifactKeysImpl(paths: string[]) {
 }
 export async function zipSelectedArtifactsImpl(paths: string[]) {
   await cleanupExpiredAdminZipsImpl();
+  const storage = await adminStorageBucket();
   const { default: JSZip } = await import(/* @vite-ignore */ "jszip");
   const zip = new JSZip();
   const used = new Set<string>();
   for (const path of paths) {
-    const { data: blob, error } = await supabaseAdmin.storage.from(getBucketName()).download(path);
+    const { data: blob, error } = await storage.download(path);
     if (error || !blob) throw new Response(`Failed to download for zip: ${error?.message ?? path}`, { status: 500 });
     let name = buildQAArtifactDownloadFilename(path);
     if (used.has(name)) {
@@ -172,16 +180,14 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
   const expiresAt = new Date(Date.now() + ZIP_TMP_TTL_MS).toISOString();
   const objectPath = `${ZIP_TMP_PREFIX}/${Date.now()}-${Math.random().toString(36).slice(2)}.zip`;
 
-  const { error: uploadError } = await supabaseAdmin.storage.from(getBucketName()).upload(objectPath, zipBlob, {
+  const { error: uploadError } = await storage.upload(objectPath, zipBlob, {
     contentType: "application/zip",
     upsert: false,
     metadata: { temp_zip: "true", expires_at: expiresAt },
   });
   if (uploadError) throw new Response(`Failed to stage zip: ${uploadError.message}`, { status: 500 });
 
-  const { data: signed, error: signError } = await supabaseAdmin.storage
-    .from(getBucketName())
-    .createSignedUrl(objectPath, SIGNED_URL_TTL_SECONDS, { download: filename });
+  const { data: signed, error: signError } = await storage.createSignedUrl(objectPath, SIGNED_URL_TTL_SECONDS, { download: filename });
   if (signError || !signed?.signedUrl) throw new Response(`Failed to sign zip: ${signError?.message ?? "unknown"}`, { status: 500 });
 
   return {
@@ -193,8 +199,9 @@ export async function zipSelectedArtifactsImpl(paths: string[]) {
 
 export async function deleteSelectedArtifactsImpl(paths: string[]) {
   const results: Array<{ path: string; ok: boolean; error: string | null }> = [];
+  const storage = await adminStorageBucket();
   for (const path of paths) {
-    const { error } = await supabaseAdmin.storage.from(getBucketName()).remove([path]);
+    const { error } = await storage.remove([path]);
     results.push({ path, ok: !error, error: error?.message ?? null });
   }
   return { results };
@@ -242,9 +249,8 @@ export const signArtifactDownload = createServerFn({ method: "POST" })
       setResponseHeader("Cache-Control", "no-store");
     } catch {}
 
-    const { data: signed, error } = await supabaseAdmin.storage
-      .from(getBucketName())
-      .createSignedUrl(data.path, SIGNED_URL_TTL_SECONDS, { download: buildQAArtifactDownloadFilename(data.path) });
+    const storage = await adminStorageBucket();
+    const { data: signed, error } = await storage.createSignedUrl(data.path, SIGNED_URL_TTL_SECONDS, { download: buildQAArtifactDownloadFilename(data.path) });
 
     if (error || !signed?.signedUrl) {
       throw new Response(`Failed to sign URL: ${error?.message ?? "unknown error"}`, {
