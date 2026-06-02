@@ -8,7 +8,7 @@ TapeCoach is an AI-led professional self-tape critique system. The performer-fac
 
 Do not optimise for a clean internal proof layer at the expense of performer-facing usefulness.
 
-S10 is already being implemented. The performer-level, brief/no-brief, role/material, Professional 90+ calibration and audition take lifecycle rules in this file are controlling amendments to merge into the relevant in-flight S10 work. They are not a reason to discard useful implementation that already satisfies the README.
+S10 is already being implemented. The performer-level, brief/no-brief, role/material, Professional 0–100 level-relative score calibration and audition take lifecycle rules in this file are controlling amendments to merge into the relevant in-flight S10 work. They are not a reason to discard useful implementation that already satisfies the README.
 
 ---
 
@@ -20,98 +20,6 @@ S10 is already being implemented. The performer-level, brief/no-brief, role/mate
 4. This `AGENTS.md` defines implementation operating rules for agents.
 
 If there is a conflict, `README.md` wins.
-
----
-
-## Build and generated source contracts
-
-`npm run build` is not enough to prove TypeScript correctness.
-
-For implementation work, especially S10 work, agents must treat semantic typechecking as a required contract:
-
-```bash
-npm exec tsc -- --noEmit
-```
-
-Supabase schema and generated TypeScript types must move together.
-
-If a migration adds or changes a table, view, RPC, column, enum, relationship or generated return shape that application code uses, `src/integrations/supabase/types.ts` must reflect that schema before the work is considered complete. Do not hide generated-type drift with broad casts, `never` workarounds or generic adapters unless the schema genuinely cannot be represented and the decision is documented.
-
-TanStack route definitions and generated route output must also stay aligned. If routes or framework-generated route registration change, `src/routeTree.gen.ts` must match the current route tree before merge.
-
-Do not discard `src/routeTree.gen.ts` changes merely because the file is generated. In this TanStack Start / Lovable stack, the build can generate framework registration needed by Lovable preview/publish, including `@tanstack/react-start` module augmentation. If `npm run build`, a route change, a dependency/config change or Lovable compatibility check changes `src/routeTree.gen.ts`, agents must:
-
-- inspect the exact diff;
-- classify whether it is deterministic route/framework registration output or unrelated churn;
-- run `npm exec tsc -- --noEmit`, `npm run build` and relevant route/report tests;
-- commit deterministic required output through the current controlled branch/PR;
-- record the reason in the PR and monday.com/checkpoint.
-
-Only remove generated route-tree changes when inspection proves they are unrelated transient artefacts and the clean source still passes the same type/build checks. Older guidance that treated `src/routeTree.gen.ts` as never-changing is superseded by this rule for current TanStack Start / Lovable compatibility.
-
-Lovable or preview refresh commits are high-risk for generated-file drift. After any refresh or external main update, re-check generated Supabase types, TanStack route output and semantic TypeScript before continuing S10 work.
-
-If generated-file drift is introduced externally while an S10 item is parked at an operator gate, fix build integrity on a dedicated build-fix branch before starting the next S10 item. Keep that branch limited to generated/source-of-truth repair and do not use it to implement later S10 scope.
-
-Before asking Lovable to sync, publish or validate a preview, agents must confirm the GitHub commit includes required generated compatibility output and that local build/typecheck do not leave uncommitted generated changes. If Lovable preview appears broken, first ask for read-only diagnostics and compare Git/source state; do not ask Lovable to "fix", "repair", "refresh", "regenerate" or make source edits. If Lovable must generate or alter source for preview to work, stop and move that deterministic generated change into a controlled GitHub branch/PR instead of allowing a direct Lovable repair commit.
-
-For S10 operator Lovable/browser validation, give Lovable a read-only validation prompt like this, adapted only for the current item/surface:
-
-```text
-Do not edit source, regenerate files, run migrations, repair preview or change configuration.
-
-If the preview looks stale, first use only a browser hard refresh or Lovable/GitHub sync/publish of the currently merged GitHub commit. Do not implement anything to make the preview work.
-
-Using the currently synced/published GitHub commit, perform only read-only validation:
-
-1. Confirm which surface you are testing:
-   - Lovable editor preview
-   - tapecoach.co.uk
-   - tapecoach.lovable.app
-   - other URL
-
-2. Open the required authenticated route or workflow for the current gate. For S10-10, open an authenticated completed-take report route, not just the landing page.
-
-3. For S10-10, confirm:
-   - report route loads
-   - Print / Save as PDF is visible
-   - safe take context/version labels are visible
-   - no raw take IDs are visible
-   - Professional competitive calibration is visible on a Professional 90+ report
-   - Score zone is visible
-   - browser print preview / Save as PDF opens and contains the report
-   - no public share link or stored export flow appears
-   - no console, route, hydration, blank-page or failed network errors
-
-Return only pass/fail results and sanitized errors. Do not implement anything.
-```
-
-Git and Lovable publishing do not apply Supabase SQL migrations or prove the live PostgREST schema cache has reloaded.
-
-For work that adds or changes Supabase tables, views, RPCs, columns, enums, triggers or relationships used at runtime, live validation must include:
-
-- confirmation that the matching migration or repair SQL was applied to the target Supabase project;
-- direct SQL verification of the live columns, views or RPCs the runtime depends on;
-- a PostgREST schema cache reload after DDL/RPC changes, for example `NOTIFY pgrst, 'reload schema';` where supported.
-
-If live logs say a table column, view or RPC could not be found in the schema cache, classify it as a Supabase schema/cache gate failure. Do not treat that as a Lovable source repair problem, and do not force Lovable to regenerate or overwrite source files. Apply or verify the SQL, reload the schema cache, then retry the live workflow.
-
-When live validation exposes several connected runtime failures, do not jump from patch to patch. First verify the whole dependency graph for that workflow: schema objects, RPCs, queue tables, pg_cron jobs, Vault-backed secrets, canonical URLs and PostgREST visibility. Apply one source-of-truth repair that makes the workflow coherent.
-
-Cron jobs must target stable production endpoints unless a task explicitly defines a preview-only test. Do not leave Lovable preview URLs, worker-bundle URLs or query-token URLs in durable Supabase cron commands. Cron authentication should use Vault-backed headers or bearer tokens, not pasted preview tokens.
-
-For the S10 email dispatcher, keep ownership boundaries explicit:
-
-- Brevo owns transactional email delivery.
-- Lovable owns deployment/sync/publish of the merged Git commit.
-- Supabase owns schema, queue state, idempotency and dispatch audit.
-- cron owns scheduling only and must be enabled last.
-
-The legacy route path `/lovable/email/queue/process` may remain for compatibility, but that path name must not be treated as delivery ownership. Do not use Lovable Email or Lovable build/run identifiers as the final CRM transactional delivery mechanism. Runtime CRM lifecycle emails must use `message_id` and `idempotency_key`; do not set `run_id = message_id`.
-
-Real queue draining must remain disabled until schema migration, Brevo credentials, sender/domain/template setup, Lovable sync/publish and dry-run or sandbox validation have passed. Dispatcher modes such as `disabled`, `dry_run`, `sandbox` and `enabled` should be DB/admin-controlled, with any environment kill-switch only able to force dispatch off.
-
-Full-repo lint may be blocked by pre-existing formatting debt, but that does not replace type safety. In that case, record the lint blocker and run focused lint, `npm exec tsc -- --noEmit`, build and relevant tests for the changed surface.
 
 ---
 
@@ -161,7 +69,7 @@ TapeCoach’s simplest flow is:
    - AI applies the selected performer-level standard;
    - AI applies role/material context where supported;
    - AI explains score meaning and recommendation;
-   - AI runs Professional 90+ competitive calibration where applicable;
+   - AI applies level-relative 0–100 score calibration where scores are visible;
    - AI repair prompts run if a module is missing, thin, generic or contradictory.
 5. Report/UI layer:
    - code pipes AI outputs into the report model and UI;
@@ -181,7 +89,7 @@ Observed tape provides the evidence.
 Role/material research adds secondary specificity where supported.
 Audition take slots determine which active takes are analysed or compared.
 Score expresses readiness against the available evidence.
-Professional 90+ adds competitive nuance.
+Professional scoring applies stricter evidence thresholds across the full 0–100 scale; scores in the 90s should be rare.
 The UI must make the source basis visible.
 ```
 
@@ -208,7 +116,7 @@ Every authenticated performer-facing report must help the performer understand:
 - what to do next;
 - what could not be assessed;
 - what the score means, where visible;
-- what Professional 90+ zone applies, where applicable;
+- what the score means at the selected level, including Professional score suppressors/raisers where applicable;
 - which active take versions were analysed or compared, where applicable.
 
 A safe but unhelpful report fails.
@@ -231,7 +139,7 @@ Authenticated performer-facing reports should use all useful available informati
 - technique-library commentary;
 - role/material calibration where source basis supports it;
 - scores and comparison values in authenticated/operator/test mode;
-- Professional 90+ competitive calibration where applicable;
+- level-relative 0–100 score calibration where scores are visible;
 - take slot/version context and comparison context where applicable;
 - timestamped or time-banded notes where available;
 - professional judgement;
@@ -439,7 +347,7 @@ Known-material research may:
 - clarify role/material demands;
 - support task-specific feedback;
 - nuance score reasoning;
-- help distinguish high-scoring Professional takes;
+- help explain Professional score meaning across the full 0–100 scale;
 - inform what to preserve or refine.
 
 Known-material research must not:
@@ -489,61 +397,43 @@ Secondary context: known role/material baseline, where used
 
 ---
 
-## Professional 90–100 competitive calibration
+## Professional 0–100 level-relative score calibration
 
-At Professional level, scores above 90 must not collapse into generic excellence language.
+Professional level does not activate a separate high-score-only scoring subsystem.
 
-Professional 90+ scores require a competitive calibration pass when:
+Professional level means the evidence thresholds are higher across the full 0–100 scale. A score in the 90s should be difficult to achieve and should appear only when the tape shows exceptional Professional evidence across the relevant brief, performance, technical, role/material and selected-level criteria.
 
-```text
-selected performer level = Professional
-score >= 90
-tape is technically assessable
-no mandatory brief blocker dominates the recommendation
-```
+When selected level is Professional and score language is visible, the AI must explain:
 
-The AI must place the tape into one zone:
-
-| Zone | Meaning |
-|---|---|
-| 90–91 | Professionally viable. Good enough to submit, but exposed in a highly competitive field by one or more visible gaps. |
-| 92–93 | Solid professional contender. Competitive and credible, but not clearly standout. |
-| 94–95 | Strong professional contender. Strong, specific and casting-facing, with limited refinements. |
-| 96–97 | Standout professional take. Highly competitive, distinctive and technically secure. |
-| 98–100 | Exceptional / benchmark take. Rare. No visible retake reason from available evidence. |
-
-The AI must explain:
-
-- why the score sits in its specific 90–100 zone;
-- what makes the tape competitive;
-- what suppresses it from the next zone;
+- the Professional standard applied;
+- what evidence supports the actual score;
+- what meets Professional standard;
+- what falls short of Professional standard;
+- what holds the score down;
+- what would raise the score;
 - what should be preserved;
-- whether retaking is strategically useful or risky;
-- how this take compares to another high-scoring take, where comparison is enabled.
+- whether retaking is strategically useful or risky.
 
-Do not treat a 91, 94, 97 and 99 as equivalent.
+The report must not:
 
-Do not imply guaranteed casting, callback, booking or employment outcome.
-
-Do not overclaim tiny differences between high-scoring takes.
-
-If two high-scoring takes are effectively equivalent, say so.
-
-If the compared media is the same video, do not create a false winner.
+- treat Professional scoring as harsher wording only;
+- describe lower-level excellence as Professional-standard without evidence;
+- bundle Professional reports in the 90s into a special high-score-only system;
+- imply guaranteed casting, callback, booking or employment outcome;
+- overclaim tiny score differences between Professional takes.
 
 The rendered report should show:
 
 ```text
-Professional competitive calibration
-Score zone: [...]
-Competitive meaning: [...]
-Why this zone: [...]
-What holds it below the next zone: [...]
+Professional score calibration
+Standard applied: [...]
+Score meaning: [...]
+What supports this score: [...]
+What holds the score down: [...]
+What would raise the score: [...]
 Retake strategy: [...]
 Preserve: [...]
 ```
-
----
 
 ## AI module question map
 
@@ -565,7 +455,7 @@ The AI should be explicitly asked to populate:
 - technique-library commentary;
 - timestamped commentary;
 - scores / calibration where enabled;
-- Professional 90+ competitive calibration where applicable;
+- level-relative 0–100 score calibration where scores are visible;
 - comparison where enabled;
 - active take slot/version context where comparison is enabled;
 - next action;
@@ -606,7 +496,7 @@ The AI should provide:
 - prioritisation;
 - strengths;
 - optional polish;
-- Professional 90+ competitive calibration where applicable;
+- level-relative 0–100 score calibration where scores are visible;
 - comparison judgement across active take versions;
 - take slot/version awareness;
 - timestamped notes;
@@ -648,7 +538,7 @@ The UI may:
 - show scoring basis;
 - show judged-against level;
 - show role/material source basis;
-- show Professional competitive calibration;
+- show Professional 0–100 score calibration;
 - show take slot and compared take version context where applicable;
 - show timestamped notes;
 - highlight fix-first and must-fix items.
@@ -704,7 +594,7 @@ Examples:
 - If scoring basis is missing, ask the AI to classify scoring mode.
 - If selected-level reasoning is missing, ask the AI to state the level standard applied.
 - If role/material context is used without source basis, ask for truth-state/source repair.
-- If Professional 90+ score lacks competitive zone, ask for Professional competitive calibration.
+- If Professional score explanation is missing, ask for Professional 0–100 level-relative score calibration.
 
 Generic fallback copy must not be the primary content of any report module.
 
@@ -957,7 +847,7 @@ A report fails if, despite available brief and media evidence, it collapses to g
 - selected-level judgement without level-specific reasoning;
 - no-brief report with brief-complete language;
 - role/material context without source basis;
-- Professional 90+ score without competitive zone;
+- Professional score without level-relative score explanation;
 - an empty next-take plan;
 - “report polish unavailable” as a reason to withhold useful guidance.
 
@@ -1058,7 +948,7 @@ Expected:
 - specific strengths;
 - technique commentary;
 - optional polish if useful;
-- Professional 90+ calibration if score is 90+;
+- Professional 0–100 level-relative score calibration where score language is visible;
 - submit checklist;
 - specific do-not-overfix guidance;
 - no thin shell.
@@ -1120,14 +1010,14 @@ Expected:
 - uncertainty is visible;
 - no hidden mandatory requirements are invented.
 
-### Fixture I — Professional 91 / 94 / 97 / 99 differentiation
+### Fixture I — Professional score calibration across 0–100
 
 Expected:
 
-- each score lands in the correct competitive zone;
-- reports do not use the same generic excellence language;
+- reports explain score meaning across low, mid, high and rare top-band Professional scores;
+- reports do not use generic excellence language;
 - retake strategy is explicit;
-- score suppressors and preserve guidance are visible.
+- score suppressors, score raisers and preserve guidance are visible.
 
 ### Fixture J — tiny high-score comparison
 
@@ -1234,7 +1124,7 @@ Preferred artefacts include:
 - scoring context;
 - level calibration;
 - role/material calibration where applicable;
-- Professional competitive calibration where applicable;
+- level-relative score calibration where scores are visible;
 - per-take report/QA status where applicable;
 - comparison run status where applicable;
 - report model;
@@ -1304,7 +1194,7 @@ When rebuilding S10, work in this order, allowing in-flight work to be amended r
 5. Add role/material resolver where supplied.
 6. Validate AI output quality.
 7. Pipe AI output to the report UI.
-8. Add Professional 90+ competitive calibration.
+8. Add level-relative 0–100 score calibration.
 9. Test route/PDF usefulness.
 10. Add QA artefacts and release proof.
 
@@ -1312,137 +1202,9 @@ Do not start with payload gates, source-kind restrictions or QA artefact archite
 
 ---
 
-## Automation planning and sequencing
-
-Automation work may be organised into labelled, ordered work items.
-
-A work item may use any current project prefix, for example:
-
-```text
-DS-01
-DS-02
-FX-01
-FX-02
-QA-01
-MIG-01
-```
-
-Do not hard-code a specific prefix such as `DS`.
-
-Use the source-of-truth backlog, board, group, ordering column, title, item key, delivery plan, or automation prompt to determine:
-
-- the current work item prefix;
-- the ordered sequence;
-- the next eligible item;
-- whether an item is Done, Deferred, parked, blocked or active.
-
-In this file, “work item” means the current ordered unit of implementation, whatever prefix or label the active plan uses. Existing wording such as “slice” means the same thing where the context is implementation sequencing.
-
-Every work item must have its own planning pass before implementation.
-
-A fresh planning pass is a required step before each work item. It is not a reason to stop the automation.
-
-For backlog-drainer automations, the intended sequence is:
-
-```text
-Select next eligible work item
-Run fresh planning pass
-Implement if safe
-Test
-PR
-Merge or close down according to branch-protection rules
-Clean up
-Sync source of truth
-Select next eligible work item
-Run fresh planning pass
-Continue
-```
-
-The controlling invariant is:
-
-```text
-At most one active work item at a time.
-Not at most one work item per automation run.
-Not at most one planning pass per automation run.
-```
-
-A backlog-drainer automation may complete multiple ordered work items in one run, provided each work item is separately planned, implemented, tested, merged or otherwise closed down, cleaned up and synced before the next work item begins.
-
-Do not stop merely because the next work item:
-
-- has a different prefix;
-- starts a new phase;
-- is larger;
-- is higher risk;
-- is runtime-facing;
-- is credit-facing;
-- is migration-facing;
-- is integration-facing;
-- touches a different product surface;
-- requires fresh planning.
-
-Stop only when the fresh planning pass identifies a real blocker, such as:
-
-- unresolved product decision;
-- protected-surface change requiring explicit user direction;
-- unsafe ambiguity;
-- failing source-of-truth access;
-- Git, GitHub, monday.com, CI, authentication, branch-protection or connector-policy blocker;
-- dirty working tree or conflicting branch / PR;
-- context or runtime limits that make continuation unsafe.
-
-If the plan is safe, continue automatically.
-
-A planning pass should review:
-
-- the selected source-of-truth work item;
-- item updates, subitems, blockers, links and files where available;
-- `README.md`;
-- applicable `AGENTS.md` files;
-- current repository implementation;
-- relevant tests;
-- recently completed related work items where visible;
-- open or recently merged related branches / PRs where visible.
-
-A planning pass should produce a concise implementation plan covering:
-
-- selected item key, item ID where known and title;
-- current interpretation of the item;
-- whether the original item wording still matches the current repository state;
-- whether previous work has refined, narrowed or superseded the expected deliverable;
-- smallest useful implementation scope;
-- files and product surfaces expected to change;
-- protected or high-risk surfaces to avoid;
-- implementation sequence;
-- acceptance criteria;
-- checks and tests to run;
-- risks, assumptions and blockers.
-
-A backlog-drainer automation may refine, narrow, verify, park or resequence work during planning. It must not broaden scope, merge unrelated work items, or skip the source-of-truth status for convenience.
-
-If the automation prompt explicitly says it is a sequential backlog drainer, any older instruction that says “complete only one item per run” is obsolete. The intended rule is one active work item at a time, not one work item per run.
-
-Preferred branch naming for automation work:
-
-```text
-codex/<item-key-lowercase>-short-title
-```
-
-Examples:
-
-```text
-codex/ds-12-credit-reservation
-codex/fx-01-feedback-flow
-codex/qa-03-report-fixtures
-```
-
-Use the current item key in the branch name. Do not assume the key prefix is always `DS`.
-
----
-
 ## Definition of done
 
-A work item / slice is not done unless:
+A slice is not done unless:
 
 - source/tests/build pass;
 - route/PDF report surface is useful;
@@ -1456,7 +1218,7 @@ A work item / slice is not done unless:
 - admin can inspect per-take and per-comparison report/QA status where QA is enabled;
 - AI outputs are routed to the UI;
 - no generic thin-shell copy is introduced;
-- Professional 90+ reports include competitive nuance where applicable;
+- Professional reports include level-relative score calibration where applicable;
 - high-risk red-line content is suppressed or rewritten;
 - assumptions are confirmed with operator where needed;
 - QA artefact status is clear;
@@ -1487,7 +1249,7 @@ Do not:
 - use role/material research to invent mandatory requirements;
 - infer appearance, body/type, marketability, bookability or callback likelihood;
 - treat a high score as a substitute for professional feedback;
-- flatten Professional scores above 90 into generic “excellent”;
+- treat Professional scores in the 90s as a separate generic “excellent” bucket;
 - compare duplicate/same-video takes as though they are different performances;
 - allow more than three active takes for one audition;
 - silently overwrite replaced take reports or QA proof;
@@ -1500,7 +1262,7 @@ Do not:
 
 ## Final rule
 
-If the performer would not find the report useful within 60 seconds, the work item / slice fails.
+If the performer would not find the report useful within 60 seconds, the slice fails.
 
 The report should make these visible:
 
@@ -1520,7 +1282,7 @@ Where applicable, it should also make these visible:
 ```text
 Brief achievement: [...]
 Role / material context: [...]
-Professional competitive zone: [...]
+Professional score calibration: [...]
 Comparison reasoning: [...]
 Active take versions compared: [...]
 ```
