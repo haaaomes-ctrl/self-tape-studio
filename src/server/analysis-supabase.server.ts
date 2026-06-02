@@ -143,23 +143,26 @@ export function createAnalysisSupabaseClient(
   env?: AnalysisRuntimeEnvInput | null,
 ): CreateAnalysisSupabaseClientResult {
   const resolved = resolveAnalysisRuntimeEnv(env);
+  const diagnostics: AnalysisSupabaseConfigDiagnostics = {
+    supabase_url_configured: resolved.diagnostics.supabase_url_configured,
+    supabase_url_host: resolved.diagnostics.supabase_url_host,
+    supabase_service_role_key_configured: resolved.diagnostics.supabase_service_role_key_configured,
+  };
   if (!resolved.supabaseUrl || !resolved.supabaseServiceRoleKey) {
-    return {
-      ok: false,
-      code: "server_misconfigured",
-      diagnostics: {
-        supabase_url_configured: resolved.diagnostics.supabase_url_configured,
-        supabase_url_host: resolved.diagnostics.supabase_url_host,
-        supabase_service_role_key_configured:
-          resolved.diagnostics.supabase_service_role_key_configured,
-      },
-    };
+    return { ok: false, code: "server_misconfigured", diagnostics };
   }
-  const client = createSupabaseAdminClientForRuntimeEnv({
-    TAPECOACH_SUPABASE_URL: resolved.supabaseUrl,
-    TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: resolved.supabaseServiceRoleKey,
-  });
-  return { ok: true, client };
+  // The pair is present but may still be invalid (e.g. a malformed URL, which
+  // createClient rejects by throwing). Treat any construction failure as a safe
+  // config error so the adapter never throws on misconfiguration.
+  try {
+    const client = createSupabaseAdminClientForRuntimeEnv({
+      TAPECOACH_SUPABASE_URL: resolved.supabaseUrl,
+      TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: resolved.supabaseServiceRoleKey,
+    });
+    return { ok: true, client };
+  } catch {
+    return { ok: false, code: "server_misconfigured", diagnostics };
+  }
 }
 
 function resolveClient(

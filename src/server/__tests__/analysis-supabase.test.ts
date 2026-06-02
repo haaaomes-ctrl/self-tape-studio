@@ -323,6 +323,16 @@ describe("analysis supabase adapter", () => {
     });
   });
 
+  it("returns server_misconfigured instead of throwing when the Supabase URL is malformed", () => {
+    // Both values are present (pass the presence check) but the URL is invalid;
+    // createClient throws on it. The adapter must catch and fail safe, not throw.
+    const result = createAnalysisSupabaseClient({
+      TAPECOACH_SUPABASE_URL: "not a valid url",
+      TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: "owned-service-role",
+    });
+    expect(result).toMatchObject({ ok: false, code: "server_misconfigured" });
+  });
+
   it("writes QA artefacts to the configured bucket, defaulting to qa-artifacts", async () => {
     // Custom configured bucket.
     const custom = makeClient([{ error: null }]);
