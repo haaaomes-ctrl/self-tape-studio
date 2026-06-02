@@ -3,6 +3,7 @@
 export type ProviderSafeErrorCategory =
   | "provider_request_contract_error"
   | "provider_media_url_error"
+  | "provider_auth_config_failure"
   | "provider_unavailable"
   | "provider_timeout"
   | "parser_error"
@@ -323,6 +324,7 @@ export function classifyAiGatewayProviderError(
 ): ProviderSafeErrorCategory {
   const message = normaliseProviderErrorText(body);
   if (message.includes("abort") || message.includes("timeout")) return "provider_timeout";
+  if (httpStatus === 401 || httpStatus === 403) return "provider_auth_config_failure";
   if (httpStatus === 408 || httpStatus === 504) return "provider_timeout";
   if (httpStatus === 429 || (typeof httpStatus === "number" && httpStatus >= 500)) {
     return "provider_unavailable";

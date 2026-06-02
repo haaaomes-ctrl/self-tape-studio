@@ -16,6 +16,7 @@ import {
   S10_OBSERVATION_MODULE_SYSTEM_PROMPT,
   S10_OBSERVATION_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
+import { createAnalysisAiProvider, type AnalysisAiProvider } from "./analysis-ai-provider.server";
 import { cloneForProviderToolSchema } from "./provider-tool-schema.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 
@@ -856,6 +857,7 @@ export type RunEvidencePassArgs = {
    */
   withFutureDimensions?: boolean;
   usageContext?: TakeAiUsageContext;
+  aiProvider?: AnalysisAiProvider;
 };
 
 export type RunEvidencePassResult =
@@ -875,6 +877,7 @@ export type RunEvidencePassResult =
       safe_error_category:
         | "provider_request_contract_error"
         | "provider_response_schema_error"
+        | "provider_auth_config_failure"
         | "provider_timeout"
         | "provider_unavailable"
         | "parser_error"
@@ -896,6 +899,7 @@ export function classifyEvidencePassSafeErrorCategory(
   if (message.toLowerCase().includes("abort") || message.toLowerCase().includes("timeout")) {
     return "provider_timeout";
   }
+  if (httpStatus === 401 || httpStatus === 403) return "provider_auth_config_failure";
   if (httpStatus === 400 || httpStatus === 422) return "provider_request_contract_error";
   if (httpStatus === 408 || httpStatus === 504) return "provider_timeout";
   if (httpStatus === 429 || (typeof httpStatus === "number" && httpStatus >= 500))
@@ -1191,7 +1195,8 @@ export function normaliseCompactStep1EvidenceForEvidencePass(
 }
 
 export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvidencePassResult> {
-  const model = args.model ?? DEFAULT_MODEL;
+  const aiProvider = args.aiProvider ?? createAnalysisAiProvider({ lovableApiKey: args.apiKey });
+  const model = aiProvider.resolveModel("step1", args.model ?? DEFAULT_MODEL);
   const startedAt = Date.now();
   const withDims = !!args.withFutureDimensions;
 
@@ -1223,6 +1228,7 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       ...args.usageContext,
       step: "evidence_pass",
       model,
+      provider: aiProvider.id,
       promptVersion: S10_OBSERVATION_PROMPT_VERSION,
       providerContract,
       status: input.status,
@@ -1237,23 +1243,17 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
     });
   };
   try {
-    resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${args.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(
-        buildEvidencePassRequestBodyForProvider({
-          model,
-          contextText: args.contextText,
-          videoUrl: args.videoUrl,
-          systemPrompt,
-          toolForCall,
-          providerContract,
-        }),
-      ),
+    resp = await aiProvider.chatCompletions({
+      body: buildEvidencePassRequestBodyForProvider({
+        model,
+        contextText: args.contextText,
+        videoUrl: args.videoUrl,
+        systemPrompt,
+        toolForCall,
+        providerContract,
+      }),
       signal: args.signal,
+      role: "step1",
     });
   } catch (err) {
     await recordUsage({

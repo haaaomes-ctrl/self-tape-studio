@@ -56,7 +56,25 @@ ANALYSIS_DISPATCH_SECRET
 ANALYSIS_RUN_SECRET
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
+OPENROUTER_API_KEY
 ```
+
+## OpenRouter Analysis Provider
+
+OpenRouter is optional for this slice. The existing Lovable AI gateway remains the default analysis provider unless `OPENROUTER_API_KEY` is explicitly configured in server/runtime env.
+
+Document names only. Do not print, paste, log or commit secret values.
+
+```text
+OPENROUTER_API_KEY
+OPENROUTER_SITE_URL
+OPENROUTER_APP_TITLE
+S10_MODEL_STEP1
+S10_MODEL_STEP2
+S10_MODEL_RECOVERY
+```
+
+`OPENROUTER_SITE_URL` maps to the optional `HTTP-Referer` header. `OPENROUTER_APP_TITLE` maps to the optional `X-OpenRouter-Title` header. Model names are server/runtime configuration for the S10 evidence, report-polish and recovery calls respectively.
 
 ## Owned Supabase Cutover Health
 

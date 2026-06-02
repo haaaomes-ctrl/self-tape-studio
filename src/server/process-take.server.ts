@@ -12,6 +12,7 @@ import { deriveS10BriefRuntimeFacts, extractBriefFromText } from "./extract-brie
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
+import { createAnalysisAiProvider } from "./analysis-ai-provider.server";
 import {
   runEvidencePass,
   filterRunEvidencePassForStep1,
@@ -3355,8 +3356,9 @@ export async function runProcessTake(
       "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre). Be specific, prioritised, and constructive.",
     ].join("\n\n");
 
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
+    const aiProvider = createAnalysisAiProvider({ lovableApiKey: process.env.LOVABLE_API_KEY });
+    if (!aiProvider.isConfigured()) throw new Error(aiProvider.missingConfigMessage());
+    const apiKey = process.env.LOVABLE_API_KEY ?? "";
 
     // POST_AI_FINALISE_TIMEOUT_MS bounds parse + scrubs + score recompute +
     // persist combined as a wall-clock deadline from the start of finalising.
@@ -3591,6 +3593,7 @@ export async function runProcessTake(
       const evResult = await runEvidencePass({
         videoUrl: evidenceUrl,
         apiKey,
+        aiProvider,
         signal: evAc.signal,
         contextText: evidenceContext,
         durationSeconds: take.mux_duration_seconds ?? null,
@@ -4026,6 +4029,7 @@ export async function runProcessTake(
         reportPolishStartedAtIso = new Date(polishAttemptStartedAt).toISOString();
         const polishArgs = {
           apiKey,
+          aiProvider,
           signal: polishAc.signal,
           evidence: step2Evidence,
           briefBlock,
@@ -4262,23 +4266,17 @@ export async function runProcessTake(
     }
 
     const callAI = (videoUrl: string, signal: AbortSignal, model: string) => {
-      return fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(
-          buildSinglePassReportRequestBodyForProvider({
-            model,
-            systemPrompt: buildSystemPrompt(),
-            userText,
-            // CRITICAL: video MP4s must be sent as `file_url`, NOT `image_url`.
-            // Gemini via the Lovable AI Gateway rejects `image_url` for video/mp4.
-            videoUrl,
-          }),
-        ),
+      return aiProvider.chatCompletions({
+        body: buildSinglePassReportRequestBodyForProvider({
+          model,
+          systemPrompt: buildSystemPrompt(),
+          userText,
+          // CRITICAL: video MP4s must be sent as `file_url`, NOT `image_url`.
+          // Gemini via the Lovable AI Gateway rejects `image_url` for video/mp4.
+          videoUrl,
+        }),
         signal,
+        role: "recovery",
       });
     };
 
@@ -4293,20 +4291,23 @@ export async function runProcessTake(
     const GEMINI_BACKOFF_MS = [10_000, 30_000];
 
     const circuitOpenAtStart = isCircuitOpen();
-    const initialModel = circuitOpenAtStart ? ANALYSIS_MODEL_FALLBACK : ANALYSIS_MODEL_PRIMARY;
+    const recoveryPrimaryModel = aiProvider.resolveModel("recovery", ANALYSIS_MODEL_PRIMARY);
+    const recoveryFallbackModel = aiProvider.resolveModel("recovery", ANALYSIS_MODEL_FALLBACK);
+    const initialModel = circuitOpenAtStart ? recoveryFallbackModel : recoveryPrimaryModel;
     if (circuitOpenAtStart) {
       console.warn("[take-pipeline] ai_circuit_fallback_selected", {
         take_id: takeId,
-        model: ANALYSIS_MODEL_FALLBACK,
+        model: recoveryFallbackModel,
       });
       metric("ai_circuit_fallback_selected", {
         take_id: takeId,
-        model: ANALYSIS_MODEL_FALLBACK,
+        model: recoveryFallbackModel,
       });
     }
     let currentModel = initialModel;
     const isSinglePassFallbackAttempt = (model: string): boolean =>
-      model === ANALYSIS_MODEL_FALLBACK || circuitOpenAtStart;
+      circuitOpenAtStart ||
+      (recoveryPrimaryModel !== recoveryFallbackModel && model === recoveryFallbackModel);
     const singlePassUsageStep = (model: string) =>
       isSinglePassFallbackAttempt(model) ? "fallback" : "single_pass_report";
 
@@ -4350,8 +4351,8 @@ export async function runProcessTake(
       console.info("[take-pipeline] ai_model_selected", {
         take_id: takeId,
         model: currentModel,
-        primary: ANALYSIS_MODEL_PRIMARY,
-        fallback: ANALYSIS_MODEL_FALLBACK,
+        primary: recoveryPrimaryModel,
+        fallback: recoveryFallbackModel,
         circuit_open: circuitOpenAtStart,
       });
       console.log("[take-pipeline] gemini request started", {
@@ -4477,6 +4478,7 @@ export async function runProcessTake(
             ...aiUsageContext,
             step: singlePassUsageStep(currentModel),
             model: currentModel,
+            provider: aiProvider.id,
             promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
             providerContract: selectReportProviderContract(currentModel),
             status: "failure",
@@ -4503,6 +4505,7 @@ export async function runProcessTake(
             ...aiUsageContext,
             step: singlePassUsageStep(currentModel),
             model: currentModel,
+            provider: aiProvider.id,
             promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
             providerContract: selectReportProviderContract(currentModel),
             status: "failure",
@@ -4553,6 +4556,7 @@ export async function runProcessTake(
           ...aiUsageContext,
           step: singlePassUsageStep(currentModel),
           model: currentModel,
+          provider: aiProvider.id,
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           providerContract: selectReportProviderContract(currentModel),
           status: timedOut ? "timeout" : "failure",
@@ -4647,8 +4651,8 @@ export async function runProcessTake(
         // Switch to fallback model for the retry (unless we already started on
         // the fallback because the circuit was open).
         const previousModel = currentModel;
-        if (currentModel === ANALYSIS_MODEL_PRIMARY) {
-          currentModel = ANALYSIS_MODEL_FALLBACK;
+        if (currentModel === recoveryPrimaryModel && recoveryFallbackModel !== currentModel) {
+          currentModel = recoveryFallbackModel;
           console.warn("[take-pipeline] ai_fallback_selected", {
             take_id: takeId,
             from_model: previousModel,
@@ -4782,6 +4786,7 @@ export async function runProcessTake(
           ...aiUsageContext,
           step: singlePassUsageStep(currentModel),
           model: currentModel,
+          provider: aiProvider.id,
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           providerContract: selectReportProviderContract(currentModel),
           status: "success",
@@ -4801,6 +4806,7 @@ export async function runProcessTake(
           ...aiUsageContext,
           step: singlePassUsageStep(currentModel),
           model: currentModel,
+          provider: aiProvider.id,
           promptVersion: S10_PROFESSIONAL_JUDGEMENT_PROMPT_VERSION,
           providerContract: selectReportProviderContract(currentModel),
           status: "failure",
@@ -6064,6 +6070,7 @@ export async function runProcessTake(
         });
         let retryResult = await runReportPolish({
           apiKey,
+          aiProvider,
           signal: moduleRepairAc.signal,
           evidence: twoStepEvidence,
           briefBlock,
@@ -6096,6 +6103,7 @@ export async function runProcessTake(
           });
           const salvage = await runReportPolish({
             apiKey,
+            aiProvider,
             signal: moduleRepairAc.signal,
             evidence: twoStepEvidence,
             briefBlock,
