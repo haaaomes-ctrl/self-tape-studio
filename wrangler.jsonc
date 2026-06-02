@@ -35,4 +35,9 @@
       }
     ]
   }
+"vars": {
+  "APP_ENV": "production",
+  "QA_ARTIFACT_STORAGE_BUCKET": "qa-artifacts",
+  "QA_ARTIFACT_SINK": "storage"
+}
 }
