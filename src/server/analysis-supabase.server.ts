@@ -135,6 +135,16 @@ function safeErrorSummary(error: unknown): { code: string | null; message: strin
   return { code: null, message: String(error).replace(/\s+/g, " ").slice(0, 180) };
 }
 
+/**
+ * Coerces a score for the integer takes.overall_score / takes.confidence columns:
+ * rounds finite numbers and maps non-finite/non-number to null — mirrors the
+ * existing persistence guard in process-take.server.ts. Without this, a fractional
+ * AI-derived value would be rejected by the integer column and fail the write.
+ */
+function coerceScore(value: number | null): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
+}
+
 export type CreateAnalysisSupabaseClientResult =
   | { ok: true; client: AnalysisSupabaseClient }
   | { ok: false; code: "server_misconfigured"; diagnostics: AnalysisSupabaseConfigDiagnostics };
@@ -432,8 +442,8 @@ export async function saveReport(
     .update({
       report: payload.report as never,
       scores: payload.scores as never,
-      overall_score: payload.overallScore,
-      confidence: payload.confidence,
+      overall_score: coerceScore(payload.overallScore),
+      confidence: coerceScore(payload.confidence),
       compliance_flags: payload.complianceFlags as never,
       score_breakdown: payload.scoreBreakdown as never,
       report_model_status: "rendered",
@@ -486,8 +496,8 @@ export async function markTakeComplete(
       report_model_status: "rendered",
       report: payload.report as never,
       scores: payload.scores as never,
-      overall_score: payload.overallScore,
-      confidence: payload.confidence,
+      overall_score: coerceScore(payload.overallScore),
+      confidence: coerceScore(payload.confidence),
       error_message: null,
       compliance_flags: payload.complianceFlags as never,
       score_breakdown: payload.scoreBreakdown as never,

@@ -274,6 +274,30 @@ describe("analysis supabase adapter", () => {
     expect(result).toEqual({ kind: "not_active" });
   });
 
+  it("coerces fractional/non-finite scores to integers/null before persisting (matches existing)", async () => {
+    const fractional = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
+    await markTakeComplete(
+      TAKE_ID,
+      { ...reportPayload, overallScore: 82.5, confidence: 70.2 },
+      null,
+      { client: fractional.client },
+    );
+    const p = fractional.calls.update[0][0] as Record<string, unknown>;
+    expect(p.overall_score).toBe(83);
+    expect(p.confidence).toBe(70);
+
+    const nonFinite = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
+    await markTakeComplete(
+      TAKE_ID,
+      { ...reportPayload, overallScore: Number.NaN, confidence: null },
+      null,
+      { client: nonFinite.client },
+    );
+    const p2 = nonFinite.calls.update[0][0] as Record<string, unknown>;
+    expect(p2.overall_score).toBeNull();
+    expect(p2.confidence).toBeNull();
+  });
+
   it("markTakeError writes the safe [failure_code:...] format, guarded by run id", async () => {
     const { client, calls } = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
 
