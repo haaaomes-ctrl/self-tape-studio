@@ -76,6 +76,45 @@ S10_MODEL_RECOVERY
 
 `OPENROUTER_SITE_URL` maps to the optional `HTTP-Referer` header. `OPENROUTER_APP_TITLE` maps to the optional `X-OpenRouter-Title` header. Model names are server/runtime configuration for the S10 evidence, report-polish and recovery calls respectively.
 
+## Analysis Runtime Env (runtime-neutral)
+
+`src/server/analysis-runtime-env.server.ts` defines a server-only, runtime-neutral
+contract (`AnalysisRuntimeEnv`) so the analysis pipeline can receive its
+configuration through a single injected object in either the Lovable runtime or the
+Cloudflare Worker runtime. It is server-only and must never be imported by
+browser/client code.
+
+Document names only. Do not print, paste, log or commit secret values.
+
+```text
+TAPECOACH_SUPABASE_URL
+TAPECOACH_SUPABASE_SERVICE_ROLE_KEY
+OPENROUTER_API_KEY
+OPENROUTER_SITE_URL
+OPENROUTER_APP_TITLE
+S10_MODEL_STEP1
+S10_MODEL_STEP2
+S10_MODEL_RECOVERY
+MUX_TOKEN_ID
+MUX_TOKEN_SECRET
+MUX_WEBHOOK_SECRET
+QA_ARTIFACT_STORAGE_BUCKET
+QA_ARTIFACT_SINK
+```
+
+- `resolveAnalysisRuntimeEnv` inspects runtime env safely and returns nullable
+  values plus boolean-only diagnostics (safe Supabase host only; never secret values).
+- `requireAnalysisRuntimeEnv` is the strict guard for the **future direct Worker
+  analysis runtime**. It requires the owned Supabase pair and `OPENROUTER_API_KEY`,
+  because the durable Worker runner uses OpenRouter as its transport.
+  `OPENROUTER_API_KEY` is **not** required for the current Lovable-managed AI path,
+  which keeps the Lovable AI gateway as its default provider. `requireAnalysisRuntimeEnv`
+  is not wired into any current production analysis path yet.
+- `mapCloudflareEnvToAnalysisRuntimeEnvInput` maps a Cloudflare Worker `env` binding
+  into the contract by extracting only the known keys above. It never reads
+  `process.env`. Legacy `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` remain dev/local
+  fallbacks only and are never mixed with the TapeCoach-owned pair.
+
 ## Owned Supabase Cutover Health
 
 The Lovable → owned Supabase cutover health check is server-only and protected by `CUTOVER_HEALTH_SECRET`:
