@@ -12,7 +12,7 @@
 
 ## 1. Source hierarchy
 
-`README.md` is the controlling product contract for TapeCoach behaviour, report requirements, scoring rules, performer-level calibration, brief/no-brief semantics, role/material research, QA artefacts, validator gates, public/private boundaries and release decisions.
+`README.md` is the controlling product contract for TapeCoach behaviour, report requirements, scoring rules, performer-level calibration, brief/no-brief semantics, role/material research, audition take lifecycle, QA artefacts, validator gates, public/private boundaries and release decisions.
 
 `AGENTS.md` defines the implementation operating rules agents must follow. It does not override `README.md`.
 
@@ -46,7 +46,8 @@ The performer-facing report is the product. It should help the performer underst
 14. what should not be over-fixed;
 15. what to do next;
 16. how to interpret score and comparison language where visible;
-17. for high-scoring Professional tapes, what separates this take from other strong professional submissions.
+17. for Professional tapes, how the full 0–100 score reflects the stricter selected-level standard;
+18. where multiple takes exist, which active take versions were compared and whether any replacement made a comparison stale.
 
 The report should feel like a combined perspective from:
 
@@ -81,11 +82,12 @@ The corrected roadmap uses this hierarchy:
 5. Brief/no-brief score semantics
 6. Role/material task specificity where supplied
 7. Technique and timestamp commentary
-8. Score/comparison meaning and Professional 90+ nuance
-9. Same-video and operator assumption handling
-10. Route/PDF acceptance
-11. QA artefacts as secondary proof
-12. Release governance
+8. Score/comparison meaning and level-relative 0–100 score calibration
+9. Audition take slot lifecycle and replacement handling
+10. Same-video and operator assumption handling
+11. Route/PDF acceptance
+12. QA artefacts as secondary proof
+13. Release governance
 ```
 
 The failed hierarchy was:
@@ -126,7 +128,7 @@ Useful ideas to preserve or rebuild carefully:
 - timestamped commentary;
 - technique-library commentary;
 - score terminology alignment;
-- professional score nuance above 90.
+- level-relative professional score calibration across the full 0–100 scale.
 
 Ideas to discard or quarantine:
 
@@ -186,7 +188,7 @@ Includes:
 - technique-library pass;
 - timestamp pass;
 - score calibration pass;
-- Professional 90+ competitive calibration pass;
+- level-relative 0–100 score calibration pass;
 - comparison pass;
 - module completeness check;
 - repair prompts.
@@ -256,14 +258,30 @@ Includes:
 
 - scoring mode semantics;
 - score-to-terminology mapping;
-- professional score nuance above 90;
+- level-relative professional score calibration across the full 0–100 scale;
 - sub-dimension scoring;
 - brief blockers overriding performance scores;
 - comparison reasoning;
 - high-score comparison safeguards;
 - operator/test diagnostic score chips.
 
-### Track H — Media and same-video handling
+
+### Track H — Audition take lifecycle and admin reports
+
+Goal: make the three-take audition model explicit and inspectable.
+
+Includes:
+
+- maximum of three active take slots;
+- active versus replaced take versions;
+- take replacement lifecycle;
+- one individual report per take version;
+- one QA/admin artefact bundle per take report where QA is enabled;
+- comparison runs across active take versions;
+- stale comparison detection after replacement;
+- admin visibility for take reports, comparison reports and QA status.
+
+### Track I — Media and same-video handling
 
 Goal: handle Mux/media readiness, timestamps, continuity, duplicates and retests.
 
@@ -277,7 +295,7 @@ Includes:
 - same-video changed brief/level/role handling;
 - same-video comparison safeguards.
 
-### Track I — QA and operations
+### Track J — QA and operations
 
 Goal: prove the report without replacing it.
 
@@ -288,7 +306,7 @@ Includes:
 - level calibration artefacts;
 - brief/no-brief scoring artefacts;
 - role/material calibration artefacts;
-- Professional 90+ calibration artefacts;
+- level-relative Professional score calibration artefacts;
 - red-line trace;
 - route/PDF snapshots;
 - operator assumption log;
@@ -315,6 +333,7 @@ What did the brief require, if supplied?
 What was achieved/missed?
 What is fix-first?
 What should I preserve?
+Which active take versions were analysed or compared, where applicable?
 What should I do next?
 What could not be assessed?
 ```
@@ -343,8 +362,9 @@ Must preserve:
 - brief/no-brief scoring semantics;
 - selected-level calibration;
 - score terminology alignment;
-- high-professional nuance;
-- comparison reasoning;
+- level-relative Professional score calibration;
+- comparison reasoning across up to three active take slots;
+- active/replaced take version clarity;
 - same-video safeguards.
 
 ### Level 4 — Role/material-aware feedback
@@ -361,7 +381,7 @@ Must preserve:
 
 ### Level 5 — Operational/release proof
 
-Adds stronger artefacts, provenance, operator confirmation, release and production gates.
+Adds stronger artefacts, per-take/per-comparison admin QA status, provenance, operator confirmation, release and production gates.
 
 Level 5 is not allowed to degrade Level 1–4 report value.
 
@@ -378,6 +398,7 @@ Rebuild from S9-19 into a full-value, AI-led authenticated report system.
 S10 is already in implementation. The additions below should be merged into the relevant S10 workstreams:
 
 - S10.1a into prompt/question-map work;
+- S10.2a into take lifecycle, comparison and admin QA work;
 - S10.3a into brief intelligence and score semantics;
 - S10.3b into brief intelligence / role material resolver work;
 - S10.8a into score terminology and professional nuance.
@@ -429,7 +450,9 @@ A S10 slice cannot be accepted if it only improves internal proof or code struct
 - docs state selected level is a judgement standard;
 - docs state no-brief scoring is baseline only;
 - docs state role/material research is secondary to the brief;
-- docs state Professional 90+ scores require competitive nuance;
+- docs state Professional scoring is stricter across the full 0–100 scale and does not use a separate high-score high-score-only system;
+- docs state one audition supports up to three active take slots with replacement/version history;
+- docs state each take and comparison run requires admin-visible report/QA status where QA is enabled;
 - docs state thin-shell output is failure;
 - docs state QA artefacts are proof, not the product;
 - roadmap remains sequencing-only.
@@ -550,6 +573,9 @@ Acceptance:
 **Deliverables:**
 
 - `AnalysisInputContext`;
+- `AuditionTakeSlotState`;
+- `TakeReportRun`;
+- `AuditionComparisonRun`;
 - `BriefScoringContext`;
 - `PerformerLevelStandard`;
 - `BriefRequirement`;
@@ -557,7 +583,7 @@ Acceptance:
 - `KnownMaterialBaselineProfile`;
 - `RoleMaterialCalibrationPass`;
 - `TechniqueCommentary`;
-- `ProfessionalCompetitiveCalibration`;
+- `LevelRelativeScoreCalibration`;
 - `FullReportModel`;
 - `AuthenticatedReportModel`;
 - `OperatorAssumptionLog`.
@@ -568,9 +594,69 @@ Acceptance:
 - no broad public-safe restrictions are introduced;
 - no report behaviour is degraded;
 - architecture supports full-value output;
-- types support level calibration, no-brief scoring, role/material context and Professional 90+ nuance.
+- types support level calibration, no-brief scoring, role/material context, audition take lifecycle and level-relative Professional score calibration.
 
 ---
+
+
+### S10.2a — Audition Take Slot Lifecycle and Admin QA Contract
+
+**Purpose:** Make the three-take audition model explicit before comparison and QA work hardens.
+
+**Problem:** The product supports up to three takes per audition, but the documentation and implementation must explicitly define take slots, replacement behaviour, active versus replaced versions, per-take reports, per-take QA artefacts, comparison runs and admin visibility.
+
+**Deliverables:**
+
+- `AuditionTakeSlot` model for Take 1, Take 2 and Take 3;
+- active take version model;
+- replaced take version model;
+- take replacement lifecycle;
+- per-take report requirement;
+- per-take QA artefact requirement;
+- comparison run model;
+- comparison stale/refresh rule when a take is replaced;
+- admin UI contract for take reports and QA artefacts;
+- route/PDF/admin checks.
+
+**Acceptance:**
+
+- each audition has no more than three active take slots;
+- each active take can produce an individual report;
+- each take replacement creates a new take version and fresh analysis run;
+- replaced versions are not silently overwritten;
+- ordinary comparison uses only active take versions;
+- comparison identifies the take versions compared;
+- replacing a take invalidates or refreshes comparison;
+- each take report has admin-visible QA artefact status where QA is enabled;
+- each comparison run has admin-visible QA artefact status where QA is enabled;
+- same-video / duplicate handling applies across uploads, replacements and comparisons.
+
+**Prompt:**
+
+```text
+Implement S10.2a — Audition Take Slot Lifecycle and Admin QA Contract.
+
+Purpose:
+Define the product lifecycle for up to three active take slots per audition, including replacement, per-take reports, comparison runs and admin QA proof.
+
+Deliverables:
+- AuditionTakeSlot model for slots 1, 2 and 3;
+- take version status model;
+- take replacement lifecycle;
+- per-take report and QA status;
+- comparison run model across active take versions;
+- stale comparison handling when an active take is replaced;
+- admin UI/report/QA status contract;
+- fixtures for three active takes, replacement and same-video replacement.
+
+Acceptance:
+- no more than three active takes exist for one audition;
+- replacement creates a new take version and analysis run;
+- previous versions remain admin-inspectable subject to retention policy;
+- ordinary comparison uses active take versions only;
+- comparison identifies compared take versions;
+- admin can see per-take and per-comparison report/QA status.
+```
 
 ### S10.3 — Brief intelligence and authenticated brief transparency
 
@@ -661,7 +747,7 @@ Acceptance:
 - prompt for role/character/material research;
 - scoring rules for primary brief demands vs secondary known-material demands;
 - UI block: `Role / material context`;
-- Professional 90+ role-specific competitive calibration;
+- role-specific Professional score calibration across the full 0–100 scale;
 - route/PDF checks for role/material context;
 - fixtures for known role, ambiguous role, no brief, and conflict with brief.
 
@@ -670,7 +756,7 @@ Acceptance:
 - supplied brief always outranks known-material research;
 - known-material research never invents hidden brief requirements;
 - known-material research can nuance scoring only where evidence is observable or audible;
-- role/material context can affect score bands and Professional 90+ zones;
+- role/material context can affect score bands and level-relative Professional score explanations;
 - no role research creates appearance, body/type, marketability, bookability or casting outcome language;
 - no report says “right/wrong for the role” without brief-bounded, evidence-led wording;
 - route/PDF shows the role/material source basis and uncertainty;
@@ -745,7 +831,8 @@ Acceptance:
 - scoring basis is visible;
 - judged-against level is visible;
 - role/material source basis is visible where applicable;
-- Professional 90+ zone is visible where applicable;
+- take slot and take version context are visible where applicable;
+- level-relative Professional score explanation is visible where applicable;
 - if AI output exists but is not rendered, that is treated as a routing bug.
 
 ---
@@ -793,16 +880,16 @@ Acceptance:
 
 ---
 
-### S10.8 — Score terminology and professional nuance
+### S10.8 — Score terminology and professional calibration
 
-**Purpose:** Align visible scores with report language and preserve nuance for professional takes clustered above 90.
+**Purpose:** Align visible scores with report language and apply selected-level score standards across the full 0–100 scale, especially the stricter Professional standard.
 
 **Deliverables:**
 
 - score-to-language map;
 - scoring mode language;
 - selected-level score calibration;
-- professional-score nuance policy;
+- Professional 0–100 score calibration policy;
 - sub-dimension score language;
 - brief blocker override rules;
 - role/material score contribution rules;
@@ -812,67 +899,67 @@ Acceptance:
 
 - score chips do not contradict verdicts;
 - score language does not contradict scoring basis;
-- a high score does not flatten professional feedback;
-- strong professional takes above 90 still receive meaningful written nuance;
+- score language does not flatten Professional feedback;
+- Professional scores in every band receive meaningful written nuance; scores in the 90s are rare and evidence-led;
 - brief blockers can override performance quality;
 - no-brief high scores are labelled as baseline quality only.
 
 ---
 
-### S10.8a — Professional 90–100 Competitive Calibration
+### S10.8a — Level-relative Professional 0–100 score calibration
 
-**Purpose:** Ensure high-scoring Professional tapes do not collapse into a flat “excellent” bucket.
+**Purpose:** Ensure Professional scoring is stricter across the full 0–100 scale rather than using a separate high-score-only calibration subsystem.
 
-**Problem:** At Professional level, many viable performers may score above 90. A broad 85–100 band does not provide enough competitive clarity for serious audition use.
+**Problem:** The older Professional high-score-only model over-focused on differentiating already high scores. The updated product rule is broader: selected performer level changes the evidence threshold for every score band. A Professional 72, 84 or 92 must all receive score explanations calibrated to Professional standards. Scores in the 90s should be rare because the Professional bar is higher across the whole scale, not because a special module activates only at the top.
 
 **Deliverables:**
 
-- Professional 90–100 zone map;
-- `ProfessionalCompetitiveCalibration` schema;
-- high-score Professional calibration prompt;
-- Professional competitive sub-dimensions;
-- high-score comparison rules;
-- same-zone / different-zone comparison language;
-- UI block: `Professional competitive calibration`;
-- route/PDF checks for 90+ nuance;
-- fixtures for 91, 94, 97 and 99 Professional reports.
+- level-relative 0–100 score map by selected performer level;
+- Professional full-scale score-band expectations;
+- `LevelRelativeScoreCalibration` schema;
+- prompt and repair prompt for score meaning, suppressors, raisers, preserve guidance and retake strategy;
+- Professional score sub-dimensions;
+- comparison rules that do not overclaim small numerical differences;
+- UI block: `Score meaning` / `Professional score calibration`;
+- route/PDF checks for full-scale Professional score explanation;
+- fixtures for sub-ready, viable, strong and rare-exceptional Professional reports across the full scale.
 
 **Acceptance:**
 
-- a 91, 94, 97 and 99 do not produce the same written judgement;
-- every 90+ Professional score explains why it sits in that zone;
-- every 90+ Professional report identifies competitive differentiators;
-- every 90+ Professional report identifies what, if anything, suppresses the score from the next zone;
-- retake strategy is explicit;
+- Professional reports do not rely on a separate high-score-only scoring system;
+- every visible Professional score explains the actual score band, not only scores in the 90s;
+- scores in the 90s are rare and require exceptional evidence;
+- a Professional 62, 74, 86 and 92 produce meaningfully different score explanations, suppressors, raisers, preserve guidance and retake strategy;
+- lower-level excellence is not described as Professional-standard without evidence;
 - high scores do not imply guaranteed casting, callback, booking or employment outcome;
 - tiny score differences are not overclaimed;
 - same-video comparisons cannot create a false winner;
-- route/PDF surfaces the 90+ competitive calibration clearly.
+- route/PDF surfaces score meaning, score suppressors, score raisers, preserve guidance and retake strategy where score language is visible.
 
 **Prompt:**
 
 ```text
-Implement S10.8a — Professional 90–100 Competitive Calibration.
+Implement S10.8a — Level-relative Professional 0–100 score calibration.
 
 Purpose:
-When selected level is Professional and score is 90+, classify the score into a competitive zone and explain why.
+When selected level is Professional and score language is visible, explain the score against the stricter Professional standard across the full 0–100 scale. Do not use a separate high-score-only calibration subsystem.
 
 Deliverables:
-- zone map for 90–91, 92–93, 94–95, 96–97, 98–100;
-- ProfessionalCompetitiveCalibration schema;
+- level-relative score map for every selected performer level;
+- Professional full-scale score-band expectations;
+- LevelRelativeScoreCalibration schema;
 - prompt and repair prompt;
-- UI block;
+- UI score-meaning block;
 - route/PDF assertions;
-- fixtures for 91/94/97/99.
+- fixtures across low, mid, high and rare-exceptional Professional scores.
 
 Acceptance:
-- no flat "excellent" bucket;
-- retake strategy is explicit;
-- score suppressors and preserve guidance are visible;
+- no separate high-score-only Professional scoring system;
+- score meaning is explained for the actual score;
+- score suppressors, score raisers, preserve guidance and retake strategy are visible;
+- scores in the 90s are rare and evidence-led;
 - no guaranteed outcome language.
 ```
-
----
 
 ### S10.9 — Same-video and duplicate-upload handling
 
@@ -913,7 +1000,7 @@ Acceptance:
 - optional polish;
 - submit checklist;
 - do-not-overfix guidance;
-- Professional competitive zone where applicable.
+- level-relative Professional score calibration where applicable.
 
 **Acceptance:**
 
@@ -922,7 +1009,7 @@ Acceptance:
 - strengths are specific;
 - optional polish is useful and finite;
 - no “This affects readability, not talent” as sole strength;
-- Professional 90+ reports include competitive calibration;
+- Professional reports include level-relative score calibration;
 - no thin shell.
 
 ---
@@ -971,7 +1058,7 @@ Acceptance:
 - Canary A and Canary B pass visually and textually;
 - thin-shell phrases are blocked;
 - scoring basis and selected level are visible;
-- Professional 90+ zone is visible where applicable;
+- level-relative Professional score explanation is visible where applicable;
 - role/material source basis is visible where applicable.
 
 ---
@@ -986,7 +1073,10 @@ Acceptance:
 - scoring context artefact;
 - level calibration artefact;
 - role/material calibration artefact where applicable;
-- Professional competitive calibration artefact where applicable;
+- level-relative Professional score calibration artefact where applicable;
+- take lifecycle artefact where applicable;
+- comparison run artefact where applicable;
+- per-take report/QA status artefacts where applicable;
 - report model artefacts;
 - red-line filter trace;
 - report quality check;
@@ -999,6 +1089,7 @@ Acceptance:
 - missing artefacts are clearly diagnosed;
 - report still renders if artefacts fail;
 - artefact failure blocks proof/release, not user report generation;
+- admin can see per-take and per-comparison QA artefact status where QA is enabled;
 - no secrets, signed URLs, raw prompts or raw responses leak.
 
 ---
@@ -1025,9 +1116,10 @@ Likely work:
 - partial brief;
 - ambiguous role/material;
 - known role/material;
-- multiple takes;
+- one, two and three active takes;
+- take replacement;
 - duplicate video;
-- high-scoring Professional takes;
+- Professional takes across score bands;
 - same tape judged at different levels;
 - early-career performer calibration.
 
@@ -1077,8 +1169,9 @@ Turn score/comparison diagnostics into a consistent authenticated product featur
 Likely work:
 
 - sub-dimension score explanation;
-- Professional >90 nuance;
-- comparison reasoning;
+- full-scale Professional scoring nuance;
+- comparison reasoning across active take versions;
+- stale comparison handling after replacement;
 - same-video comparison safeguards;
 - score trend across takes;
 - role/material contribution to score;
@@ -1127,6 +1220,7 @@ Strengthen proof without degrading report value.
 Likely work:
 
 - stable QA artefact emission;
+- per-take and per-comparison admin QA visibility;
 - operator confirmation workflows;
 - report model snapshots;
 - AI prompt/version provenance;
@@ -1209,7 +1303,7 @@ no mandatory blocker;
 specific strengths;
 specific technique commentary;
 optional polish;
-Professional competitive calibration if score is 90+;
+level-relative Professional score calibration when score language is visible;
 submit checklist;
 do-not-overfix.
 ```
@@ -1340,53 +1434,35 @@ Professional run identifies the higher-level gap;
 report preserves strengths while explaining why the Professional bar is higher.
 ```
 
-### Fixture L — Professional 91: viable but exposed
+### Fixture L — Professional low-range score calibration
 
 ```text
 Expected:
-score zone: 90–91 professionally viable;
-recommendation supports submission or submit-if-deadline-close;
-report explains competitive risk;
-report says what would move the tape into 92–93;
-no generic "excellent" copy;
-retake only if a specific low-risk fix is available.
+Professional score language explains why the tape sits below submission-ready Professional standard; the fix-first item is specific; lower-level strengths are not described as Professional readiness.
 ```
 
-### Fixture M — Professional 94: strong contender
+### Fixture M — Professional mid-range score calibration
 
 ```text
 Expected:
-score zone: 94–95 strong professional contender;
-report explains why this is stronger than merely viable;
-report explains why it is not yet 96–97;
-optional polish is separated from must-fix;
-submit is supported;
-preserve guidance is specific.
+Professional score language explains viable elements and meaningful competitive gaps; score suppressors and score raisers are concrete; retake strategy is tied to the highest-impact improvement.
 ```
 
-### Fixture N — Professional 97: standout
+### Fixture N — Professional strong score calibration
 
 ```text
 Expected:
-score zone: 96–97 standout professional take;
-report identifies standout evidence;
-no unnecessary retake loop;
-retake strategy says submit unless a confirmed brief/admin/technical issue exists;
-optional polish is minimal and clearly labelled.
+Report may support submission if no mandatory blocker exists; score language explains why the tape is strong but not exceptional; optional polish is separated from must-fix; preserve guidance is specific.
 ```
 
-### Fixture O — Professional 99: exceptional / benchmark
+### Fixture O — Professional rare top-band score calibration
 
 ```text
 Expected:
-score zone: 98–100 exceptional / benchmark take;
-report says no visible retake reason from available evidence;
-no guaranteed outcome language;
-report preserves uncertainty;
-next action is a submission checklist, not performance correction.
+Score in the 90s is treated as rare and exceptional; report explains the evidence that justifies the top-band score; no guaranteed outcome language; next action is usually a submission checklist, not performance correction.
 ```
 
-### Fixture P — two high-scoring Professional takes
+### Fixture P — Professional take comparison
 
 ```text
 Brief:
@@ -1444,7 +1520,7 @@ known role/material baseline is secondary;
 report references role-specific demands only as task/material context;
 no appearance/type/castability language;
 score nuance explains why the take is professionally viable / solid / strong / standout;
-Professional 90+ zone reflects role-specific competitive clarity.
+level-relative Professional score explanation reflects role-specific competitive clarity.
 ```
 
 ### Fixture S — known role conflicts with supplied brief
@@ -1573,6 +1649,63 @@ repair prompt or operator confirmation requested;
 report does not publish contradictory score language.
 ```
 
+
+### Fixture AA — three active takes
+
+```text
+Input:
+One audition with Take 1, Take 2 and Take 3 active.
+
+Expected:
+all three active takes have individual reports;
+all three active takes have QA artefact status in admin where QA is enabled;
+comparison runs across the three active take versions;
+comparison identifies which take versions were compared;
+route/PDF/admin surfaces do not imply a fourth active take exists.
+```
+
+### Fixture AB — replace Take 2
+
+```text
+Input:
+Audition has Take 1, Take 2 and Take 3.
+User replaces Take 2 with a new self-tape.
+
+Expected:
+Take 2 v1 becomes replaced or archived;
+Take 2 v2 becomes active;
+Take 2 v2 receives a new analysis run and individual report;
+Take 2 v2 receives QA artefact status in admin where QA is enabled;
+previous comparison is marked stale or regenerated;
+new comparison uses Take 1 active, Take 2 v2 active and Take 3 active;
+Take 2 v1 remains inspectable in admin subject to retention policy.
+```
+
+### Fixture AC — replace with same video
+
+```text
+Input:
+User replaces Take 3 with the same underlying media.
+
+Expected:
+same-video / duplicate handling activates;
+replacement is marked duplicate, probable duplicate or intentional retest;
+new report may be generated for regression/retest, but comparison must not create a false winner;
+admin shows duplicate/same-video status and QA artefact status.
+```
+
+### Fixture AD — one or two active takes
+
+```text
+Input:
+Audition has only Take 1, or only Take 1 and Take 2.
+
+Expected:
+one active take: individual report only, no ordinary comparison;
+two active takes: comparison between the two active versions only;
+empty slots are shown as empty, not failed.
+```
+
 ---
 
 ## 11. Operating rules for roadmap slices
@@ -1589,11 +1722,12 @@ Every slice must satisfy these rules:
 8. **Technique commentary by default.** Attempt it where evidence exists.
 9. **Timestamp commentary by default.** Attempt timestamps/time bands where available.
 10. **Score language must align.** Numeric values must not contradict report language.
-11. **Professional 90+ nuance matters.** High-scoring professional takes still need written distinction.
-12. **Same-video handling is explicit.** Duplicate/retest/comparison cases must not be ambiguous.
-13. **Operator assumptions are tested.** Canary-critical assumptions must be confirmed or marked uncertain.
-14. **QA is proof, not product.** Artefact work must not starve report value.
-15. **Minimal env sprawl.** Product toggles belong in admin/database config where possible.
+11. **Level-relative Professional score calibration matters.** Professional tapes need stricter 0–100 score explanation, not only high-score differentiation.
+12. **Take lifecycle is explicit.** One audition has up to three active take slots; replacement creates a new take version and stale comparisons are refreshed or marked stale.
+13. **Same-video handling is explicit.** Duplicate/retest/comparison cases must not be ambiguous.
+14. **Operator assumptions are tested.** Canary-critical assumptions must be confirmed or marked uncertain.
+15. **QA is proof, not product.** Artefact work must not starve report value.
+16. **Minimal env sprawl.** Product toggles belong in admin/database config where possible.
 
 ---
 
@@ -1609,8 +1743,12 @@ Pause or rollback a slice if any of these occurs:
 - no-brief report claims brief achievement;
 - role/material research invents hidden requirements or unsafe casting/type language;
 - score language contradicts report terminology;
-- Professional 90+ score collapses to generic excellence;
+- Professional score collapses to generic excellence;
 - same-video comparison creates a false winner;
+- more than three active takes can exist for one audition;
+- replacing a take silently overwrites earlier report/QA proof;
+- comparison mixes active and replaced versions unintentionally;
+- admin cannot see take/comparison report and QA status where QA is enabled;
 - QA/proof work blocks useful report generation unnecessarily;
 - product toggles are implemented as env-var sprawl;
 - production/customer/Level 2 approval is claimed without a dedicated release slice.
@@ -1642,7 +1780,9 @@ Brief/no-brief score semantics.
 Role/material context where source basis supports it.
 Technique and timestamp commentary.
 Score/comparison nuance.
-Professional 90+ competitive calibration.
+level-relative 0–100 score calibration.
+Audition take slot lifecycle and replacement history.
+Per-take and per-comparison admin QA visibility.
 Same-video handling.
 Route/PDF first acceptance.
 QA as secondary proof.
