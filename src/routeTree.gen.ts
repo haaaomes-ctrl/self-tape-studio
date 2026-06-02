@@ -41,6 +41,7 @@ import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux
 import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 import { Route as ApiInternalRunAnalysisRouteImport } from './routes/api/internal/run-analysis'
+import { Route as ApiInternalCutoverHealthRouteImport } from './routes/api/internal/cutover-health'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as LovableEmailAuthWebhookRouteImport } from './routes/lovable/email/auth/webhook'
 import { Route as LovableEmailAuthPreviewRouteImport } from './routes/lovable/email/auth/preview'
@@ -207,6 +208,12 @@ const ApiInternalRunAnalysisRoute = ApiInternalRunAnalysisRouteImport.update({
   path: '/api/internal/run-analysis',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalCutoverHealthRoute =
+  ApiInternalCutoverHealthRouteImport.update({
+    id: '/api/internal/cutover-health',
+    path: '/api/internal/cutover-health',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const LovableEmailQueueProcessRoute =
   LovableEmailQueueProcessRouteImport.update({
     id: '/lovable/email/queue/process',
@@ -251,6 +258,7 @@ export interface FileRoutesByFullPath {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/api/internal/cutover-health': typeof ApiInternalCutoverHealthRoute
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
@@ -288,6 +296,7 @@ export interface FileRoutesByTo {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/api/internal/cutover-health': typeof ApiInternalCutoverHealthRoute
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
@@ -326,6 +335,7 @@ export interface FileRoutesById {
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/refund-credit-policy': typeof LegalRefundCreditPolicyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/api/internal/cutover-health': typeof ApiInternalCutoverHealthRoute
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
@@ -365,6 +375,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/refund-credit-policy'
     | '/legal/terms'
+    | '/api/internal/cutover-health'
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/refund-credit-policy'
     | '/legal/terms'
+    | '/api/internal/cutover-health'
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
@@ -439,6 +451,7 @@ export interface FileRouteTypes {
     | '/legal/privacy'
     | '/legal/refund-credit-policy'
     | '/legal/terms'
+    | '/api/internal/cutover-health'
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
@@ -472,6 +485,7 @@ export interface RootRouteChildren {
   LegalPrivacyRoute: typeof LegalPrivacyRoute
   LegalRefundCreditPolicyRoute: typeof LegalRefundCreditPolicyRoute
   LegalTermsRoute: typeof LegalTermsRoute
+  ApiInternalCutoverHealthRoute: typeof ApiInternalCutoverHealthRoute
   ApiInternalRunAnalysisRoute: typeof ApiInternalRunAnalysisRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
@@ -709,6 +723,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalRunAnalysisRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/cutover-health': {
+      id: '/api/internal/cutover-health'
+      path: '/api/internal/cutover-health'
+      fullPath: '/api/internal/cutover-health'
+      preLoaderRoute: typeof ApiInternalCutoverHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/lovable/email/queue/process': {
       id: '/lovable/email/queue/process'
       path: '/lovable/email/queue/process'
@@ -773,6 +794,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalPrivacyRoute: LegalPrivacyRoute,
   LegalRefundCreditPolicyRoute: LegalRefundCreditPolicyRoute,
   LegalTermsRoute: LegalTermsRoute,
+  ApiInternalCutoverHealthRoute: ApiInternalCutoverHealthRoute,
   ApiInternalRunAnalysisRoute: ApiInternalRunAnalysisRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,

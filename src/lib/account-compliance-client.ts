@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { upsertCurrentUserAccountCompliance } from "@/server-fns/account-compliance.functions";
 import {
-  buildAccountComplianceRecord,
   isAccountComplianceComplete,
   type AccountComplianceRecord,
   type AccountRouteFormState,
@@ -12,11 +12,12 @@ export async function saveAccountCompliance(
   userId: string,
   state: AccountRouteFormState,
 ): Promise<AccountComplianceRecord> {
-  const record = buildAccountComplianceRecord(userId, state);
-  const { error } = await supabase
-    .from("account_compliance")
-    .upsert(record, { onConflict: "user_id" });
-  if (error) throw error;
+  const record = (await upsertCurrentUserAccountCompliance({
+    data: state,
+  })) as AccountComplianceRecord;
+  if (record.user_id !== userId) {
+    throw new Error("Account route could not be saved for this session. Please sign in again.");
+  }
   return record;
 }
 

@@ -11,6 +11,8 @@ export interface UploadErrorInfo {
     | "policy_acceptance"
     | "config"
     | "mux"
+    | "server_config"
+    | "prerequisite"
     | "not_found"
     | "forbidden"
     | "unknown";
@@ -52,6 +54,24 @@ export function describeUploadError(err: unknown): UploadErrorInfo {
       kind: "policy_acceptance",
       message: raw.replace(/^POLICY_ACCEPTANCE_REQUIRED:\s*/, ""),
     };
+  }
+  if (/^server_supabase_misconfigured:/i.test(raw)) {
+    return {
+      kind: "server_config",
+      message: raw.replace(/^server_supabase_misconfigured:\s*/i, ""),
+    };
+  }
+  if (/^mux_config_missing:/i.test(raw)) {
+    return { kind: "config", message: raw.replace(/^mux_config_missing:\s*/i, "") };
+  }
+  if (/^upload_prerequisite_missing:/i.test(raw)) {
+    return {
+      kind: "prerequisite",
+      message: raw.replace(/^upload_prerequisite_missing:\s*/i, ""),
+    };
+  }
+  if (/^mux_upload_failed:/i.test(raw)) {
+    return { kind: "mux", message: raw.replace(/^mux_upload_failed:\s*/i, "") };
   }
   if (raw.startsWith("MUX_CONFIG:")) {
     return { kind: "config", message: raw.replace(/^MUX_CONFIG:\s*/, "") };

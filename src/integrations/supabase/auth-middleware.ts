@@ -3,13 +3,24 @@ import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClientDatabase } from "./client-database";
+import {
+  requireSupabasePublicRuntimeConfig,
+  SupabasePublicRuntimeConfigError,
+} from "./public-runtime";
 
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
-    const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-    const SUPABASE_PUBLISHABLE_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    let publicConfig: ReturnType<typeof requireSupabasePublicRuntimeConfig>;
+    try {
+      publicConfig = requireSupabasePublicRuntimeConfig();
+    } catch (error) {
+      if (error instanceof SupabasePublicRuntimeConfigError) {
+        console.error("[supabase-auth] public_runtime_config_missing", {
+          operation: "require_supabase_auth",
+          code: "public_supabase_misconfigured",
+          ...error.diagnostics,
+        });
+      }
       throw new Response(
         "Missing Supabase environment variables. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are set.",
         { status: 500 },
@@ -38,8 +49,8 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     }
 
     const supabase = createClient<SupabaseClientDatabase>(
-      SUPABASE_URL!,
-      SUPABASE_PUBLISHABLE_KEY!,
+      publicConfig.supabaseUrl,
+      publicConfig.publishableKey,
       {
         global: {
           headers: {
