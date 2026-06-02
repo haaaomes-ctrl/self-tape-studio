@@ -12,7 +12,9 @@ import { deriveS10BriefRuntimeFacts, extractBriefFromText } from "./extract-brie
 import { metric, TEN_MINUTES_MS } from "./metrics.server";
 import { isCircuitOpen, recordAiFailure } from "./ai-circuit-breaker.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
-import { createAnalysisAiProvider } from "./analysis-ai-provider.server";
+import { createAnalysisAiProvider, type AnalysisAiProvider } from "./analysis-ai-provider.server";
+import type { AnalysisRuntimeEnvInput } from "./analysis-runtime-env.server";
+import type { AnalysisSupabaseClient } from "./analysis-supabase.server";
 import {
   runEvidencePass,
   filterRunEvidencePassForStep1,
@@ -2372,6 +2374,63 @@ export type RunProcessTakeOptions = {
   includeErrorRetry?: boolean;
 };
 
+/**
+ * Env shape accepted by the analysis job. Extends the Slice 2 runtime-env
+ * contract (AnalysisRuntimeEnvInput) with the additional optional analysis
+ * tuning keys the pipeline reads via buildJobEnv — timeouts, retries and the
+ * Lovable API key. All values are `unknown` and validated at read time; only
+ * string entries are honoured in explicit mode. A plain AnalysisRuntimeEnvInput
+ * is assignable here (the extra keys are optional), so the future Worker can
+ * pass its mapped runtime env directly.
+ */
+export type AnalysisJobEnvInput = AnalysisRuntimeEnvInput & {
+  LOVABLE_API_KEY?: unknown;
+  ANALYSIS_GEMINI_TIMEOUT_MS?: unknown;
+  ANALYSIS_TOTAL_TIMEOUT_MS?: unknown;
+  ANALYSIS_MAX_RETRIES?: unknown;
+  POST_AI_FINALISE_TIMEOUT_MS?: unknown;
+};
+
+export type RunAnalysisJobParams = {
+  takeId: string;
+  allowOriginal?: boolean;
+  preClaimed?: boolean;
+  includeErrorRetry?: boolean;
+  /** Optional logging/metrics context; not consumed by the pipeline itself. */
+  trigger?: string;
+  reason?: string;
+  /**
+   * Server-only runtime env. Omit to read from process.env (current Lovable
+   * behaviour). When provided, routed keys read ONLY from this object (no
+   * process.env fallback), so Worker execution cannot accidentally depend on
+   * local/Lovable process.env.
+   */
+  env?: AnalysisJobEnvInput | null;
+  /**
+   * REQUIRED injected AI provider. The runProcessTake wrapper passes the Lovable
+   * provider; a future Cloudflare Worker passes the OpenRouter provider. The
+   * seam never creates or infers a provider itself.
+   */
+  aiProvider: AnalysisAiProvider;
+  /** Reserved for Slice 5 lifecycle wiring (claim/finalisation/heartbeat). Unused in this slice. */
+  analysisSupabase?: AnalysisSupabaseClient;
+};
+
+/**
+ * Resolves the env object the analysis job reads routed keys from. Omitted env
+ * => process.env (preserves current Lovable behaviour). Explicit env => ONLY the
+ * provided string entries, never falling back to process.env, so a Worker cannot
+ * accidentally read local/Lovable env. Never mutates process.env.
+ */
+export function buildJobEnv(injectedEnv?: AnalysisJobEnvInput | null): NodeJS.ProcessEnv {
+  if (injectedEnv === undefined || injectedEnv === null) return process.env;
+  const explicit: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(injectedEnv)) {
+    if (typeof value === "string") explicit[key] = value;
+  }
+  return explicit;
+}
+
 type AnalysisRunClaimPhase = "analysis_pending" | "analysing" | "finalising";
 
 export type AnalysisRunClaimResult =
@@ -2592,11 +2651,43 @@ export function computeSubmissionVerdict(input: {
  * responsible for authorisation (webhook signature verification, or
  * authenticated server function with ownership check).
  */
+/**
+ * Compatibility wrapper preserving the existing Lovable/default behaviour and
+ * public signature. Builds the default Lovable AI provider and delegates to the
+ * runtime-neutral runAnalysisJob seam. A future Cloudflare Worker calls
+ * runAnalysisJob directly with its own env + (OpenRouter) provider.
+ */
 export async function runProcessTake(
   takeId: string,
   allowOriginal = false,
   options: RunProcessTakeOptions = {},
 ): Promise<RunProcessTakeResult> {
+  const aiProvider = createAnalysisAiProvider({ lovableApiKey: process.env.LOVABLE_API_KEY });
+  return runAnalysisJob({
+    takeId,
+    allowOriginal,
+    preClaimed: options.preClaimed,
+    includeErrorRetry: options.includeErrorRetry,
+    aiProvider,
+  });
+}
+
+/**
+ * Runtime-neutral analysis execution seam. Holds the heavy S10 pipeline and
+ * accepts injected runtime capabilities. `aiProvider` is REQUIRED (callers pass
+ * it explicitly). `env`, when provided, is used in explicit mode (no process.env
+ * fallback for routed keys); omit it to preserve current process.env behaviour.
+ * `analysisSupabase` is accepted but reserved for Slice 5 lifecycle wiring and is
+ * not used here. This slice does NOT change report output, claim/finalisation,
+ * credit/refund or terminal-error persistence, prompts, scoring or QA.
+ */
+export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunProcessTakeResult> {
+  const { takeId, allowOriginal = false, env: injectedEnv } = params;
+  const options: RunProcessTakeOptions = {
+    preClaimed: params.preClaimed,
+    includeErrorRetry: params.includeErrorRetry,
+  };
+  const jobEnv = buildJobEnv(injectedEnv);
   const runStartedAt = Date.now();
   const { data: take, error: takeErr } = await supabaseAdmin
     .from("takes")
@@ -2826,9 +2917,9 @@ export async function runProcessTake(
   // Defaults are intentionally aggressive to prevent the 10-minute wall-clock
   // bug where a stuck Gemini call burns the entire E2E budget. Override via
   // env if a workspace needs different bounds.
-  const ANALYSIS_GEMINI_TIMEOUT_MS = Number(process.env.ANALYSIS_GEMINI_TIMEOUT_MS ?? 90_000);
-  const ANALYSIS_TOTAL_TIMEOUT_MS = Number(process.env.ANALYSIS_TOTAL_TIMEOUT_MS ?? 540_000);
-  const ANALYSIS_MAX_RETRIES = Number(process.env.ANALYSIS_MAX_RETRIES ?? 1);
+  const ANALYSIS_GEMINI_TIMEOUT_MS = Number(jobEnv.ANALYSIS_GEMINI_TIMEOUT_MS ?? 90_000);
+  const ANALYSIS_TOTAL_TIMEOUT_MS = Number(jobEnv.ANALYSIS_TOTAL_TIMEOUT_MS ?? 540_000);
+  const ANALYSIS_MAX_RETRIES = Number(jobEnv.ANALYSIS_MAX_RETRIES ?? 1);
 
   type FailureCode =
     | "gemini_timeout"
@@ -3356,15 +3447,15 @@ export async function runProcessTake(
       "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre). Be specific, prioritised, and constructive.",
     ].join("\n\n");
 
-    const aiProvider = createAnalysisAiProvider({ lovableApiKey: process.env.LOVABLE_API_KEY });
+    const aiProvider = params.aiProvider;
     if (!aiProvider.isConfigured()) throw new Error(aiProvider.missingConfigMessage());
-    const apiKey = process.env.LOVABLE_API_KEY ?? "";
+    const apiKey = jobEnv.LOVABLE_API_KEY ?? "";
 
     // POST_AI_FINALISE_TIMEOUT_MS bounds parse + scrubs + score recompute +
     // persist combined as a wall-clock deadline from the start of finalising.
     // Default is 90s — long enough for normal post-processing + persistence,
     // short enough that we never leave a take stuck on "Finalising results".
-    const POST_AI_FINALISE_TIMEOUT_MS = Number(process.env.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000);
+    const POST_AI_FINALISE_TIMEOUT_MS = Number(jobEnv.POST_AI_FINALISE_TIMEOUT_MS ?? 90_000);
     const finaliseExceeded = () =>
       finaliseStartedAt > 0 && Date.now() - finaliseStartedAt > POST_AI_FINALISE_TIMEOUT_MS;
     const finaliseElapsedMs = () => (finaliseStartedAt > 0 ? Date.now() - finaliseStartedAt : 0);
