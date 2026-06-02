@@ -2374,6 +2374,23 @@ export type RunProcessTakeOptions = {
   includeErrorRetry?: boolean;
 };
 
+/**
+ * Env shape accepted by the analysis job. Extends the Slice 2 runtime-env
+ * contract (AnalysisRuntimeEnvInput) with the additional optional analysis
+ * tuning keys the pipeline reads via buildJobEnv — timeouts, retries and the
+ * Lovable API key. All values are `unknown` and validated at read time; only
+ * string entries are honoured in explicit mode. A plain AnalysisRuntimeEnvInput
+ * is assignable here (the extra keys are optional), so the future Worker can
+ * pass its mapped runtime env directly.
+ */
+export type AnalysisJobEnvInput = AnalysisRuntimeEnvInput & {
+  LOVABLE_API_KEY?: unknown;
+  ANALYSIS_GEMINI_TIMEOUT_MS?: unknown;
+  ANALYSIS_TOTAL_TIMEOUT_MS?: unknown;
+  ANALYSIS_MAX_RETRIES?: unknown;
+  POST_AI_FINALISE_TIMEOUT_MS?: unknown;
+};
+
 export type RunAnalysisJobParams = {
   takeId: string;
   allowOriginal?: boolean;
@@ -2388,7 +2405,7 @@ export type RunAnalysisJobParams = {
    * process.env fallback), so Worker execution cannot accidentally depend on
    * local/Lovable process.env.
    */
-  env?: AnalysisRuntimeEnvInput | null;
+  env?: AnalysisJobEnvInput | null;
   /**
    * REQUIRED injected AI provider. The runProcessTake wrapper passes the Lovable
    * provider; a future Cloudflare Worker passes the OpenRouter provider. The
@@ -2405,7 +2422,7 @@ export type RunAnalysisJobParams = {
  * provided string entries, never falling back to process.env, so a Worker cannot
  * accidentally read local/Lovable env. Never mutates process.env.
  */
-export function buildJobEnv(injectedEnv?: AnalysisRuntimeEnvInput | null): NodeJS.ProcessEnv {
+export function buildJobEnv(injectedEnv?: AnalysisJobEnvInput | null): NodeJS.ProcessEnv {
   if (injectedEnv === undefined || injectedEnv === null) return process.env;
   const explicit: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(injectedEnv)) {
