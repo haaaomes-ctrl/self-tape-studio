@@ -1,7 +1,7 @@
 # TapeCoach Requirements — AI-Led Full-Value Self-Tape Report System
 
 **Document status:** controlling README for the S10 reset and rebuilt TapeCoach evaluation/report system.  
-**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, professional competitive calibration, audition take lifecycle, comparison handling, admin QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.  
+**Purpose:** define product behaviour, report requirements, AI analysis contract, performer-level calibration, brief/no-brief score semantics, role/material research, level-relative professional score calibration, audition take lifecycle, comparison handling, admin QA proof expectations, public/private boundaries and release decisions that implementation agents must follow.  
 **Supersedes:** earlier README/report design notes where they conflict with this document.  
 **Language:** UK English.  
 **Architecture reset:** S10 reset after rollback to S9-19 and report-value regressions.  
@@ -53,7 +53,7 @@ Mandatory guardrails:
 - Selected performer level must be used as an assessment standard, not as tone.
 - Scoring basis must be explicit: brief-supplied, partial-brief, no-brief baseline or brief-uncertain.
 - Role/material research may support judgement only where source basis and observed evidence allow.
-- Professional 90+ scores must not collapse into generic excellence language.
+- Professional scoring must use stricter level-relative evidence thresholds across the full 0–100 scale; scores in the 90s should be rare and require exceptional evidence.
 - Each audition supports up to three active take slots; replacing a take creates a new take version and a fresh report/QA run.
 - Ordinary comparison is between the active versions of Take 1, Take 2 and Take 3.
 - Canonical run identity is `take-[raw_core]`; `take-take-*` is invalid.
@@ -75,7 +75,7 @@ The central product questions are:
 > What does the tape communicate at the selected level?  
 > Where role/material is supplied, how specifically does the tape serve that task?  
 > At Professional level, is this merely competent, or competitive?  
-> At Professional 90+, what separates this tape from other already-strong professional submissions?  
+> Across the Professional 0–100 scale, what evidence holds the score where it is, what would raise it, what should be preserved, and whether retaking is strategically useful or risky?  
 > What must be fixed first, what else should improve, what should be preserved, and what should not be over-fixed?  
 > If the audition has up to three active takes, which active take or combination of choices best serves the submission, and why?
 
@@ -101,7 +101,7 @@ Every authenticated performer-facing report must help the performer understand:
 18. what not to over-fix;
 19. what could not be assessed reliably;
 20. how score and comparison language should be interpreted, where scores or comparisons are visible;
-21. for Professional 90+ reports, the competitive zone, differentiators, score suppressors and retake strategy;
+21. for Professional reports, the selected-level score standard, score suppressors, score raisers, preserve guidance and retake strategy across the full 0–100 scale;
 22. where multiple takes exist, which active take versions were analysed or compared, and whether any replacement made a previous comparison stale.
 
 The judgement should combine practical agent, casting-aware reviewer, acting coach, vocal/singing coach, movement/dance coach, musical-theatre package coach, commercial/screen-task coach, self-tape technician and audition-coach perspectives.
@@ -117,7 +117,7 @@ Observed tape provides the evidence.
 Role/material research adds secondary specificity where supported.
 Audition take slots determine which active takes are analysed or compared.
 Score expresses readiness against the available evidence.
-Professional 90+ adds competitive nuance.
+Professional scoring applies stricter evidence thresholds across the full 0–100 scale; scores in the 90s should be rare.
 The UI and admin surfaces must make the source basis, active take versions and QA status visible where applicable.
 ```
 
@@ -157,7 +157,7 @@ The AI should provide:
 - prioritisation;
 - strengths;
 - optional polish;
-- professional competitive calibration where applicable;
+- level-relative professional score calibration where applicable;
 - comparison judgement across active takes;
 - take-slot and active-version awareness;
 - score reasoning;
@@ -211,7 +211,7 @@ The authenticated performer-facing report should use all useful available inform
 - scores and comparison values in authenticated/operator/test mode;
 - timestamped or time-banded notes where available;
 - professional judgement;
-- Professional 90+ competitive calibration where applicable;
+- level-relative 0–100 score calibration where scores are visible;
 - active take slot/version context and comparison context where applicable;
 - per-take and per-comparison QA/admin status where applicable;
 - operator-confirmed assumptions.
@@ -255,7 +255,7 @@ Selected level calibration ≠ tone.
 Professional judgement ≠ harsh wording.
 Role/material research ≠ hidden casting requirement.
 High score ≠ no useful feedback.
-Professional 90+ ≠ flat excellence.
+Professional scoring ≠ a special top-band category; the full 0–100 scale must be stricter at Professional level.
 ```
 
 ---
@@ -293,7 +293,7 @@ The simplest TapeCoach flow is:
    - technique-library and timestamp commentary are attempted by default where evidence allows;
    - performer-level standard is applied before final recommendation;
    - role/material calibration is applied where source basis and evidence support it;
-   - Professional 90+ competitive calibration is applied where applicable.
+   - Professional 0–100 level-relative score calibration is applied where applicable.
 
 5. **Report/UI layer**
    - code pipes AI outputs into the report model and UI;
@@ -343,7 +343,7 @@ Performer level calibration pass
         ↓
 Score and recommendation calibration
         ↓
-Professional 90+ competitive calibration, if applicable
+level-relative score calibration, where scores are visible
         ↓
 Report model composer
         ↓
@@ -674,7 +674,7 @@ The AI should provide:
 - technique-library commentary;
 - score reasoning;
 - comparison judgement across active take versions where relevant;
-- Professional competitive calibration where applicable;
+- level-relative 0–100 score calibration where scores are visible;
 - next action;
 - do-not-overfix;
 - limitations.
@@ -712,7 +712,7 @@ Examples:
 - If timestamps are unavailable, ask for component-level commentary instead.
 - If scoring basis is missing, ask the AI to classify brief-supplied / partial-brief / no-brief / brief-uncertain.
 - If selected-level reasoning is missing, ask the AI to state the applied level standard.
-- If Professional 90+ nuance is missing, ask the AI to place the tape in a 90–100 competitive zone.
+- If Professional full-scale score nuance is missing, ask the AI to explain the tape on the 0–100 level-relative scale.
 
 Only after repair fails should the report explain a limitation.
 
@@ -740,7 +740,7 @@ The AI must be explicitly asked to populate:
 - technique-library commentary;
 - timestamped commentary;
 - scores / calibration where enabled;
-- Professional 90+ competitive calibration where applicable;
+- level-relative 0–100 score calibration where scores are visible;
 - comparison where enabled;
 - next action;
 - do-not-overfix;
@@ -998,40 +998,36 @@ Ask the AI to explain the score in relation to:
 
 A score must not be just a number. It must have language.
 
-### 6.13 Professional competitive calibration prompt
+### 6.13 Professional 0–100 score calibration prompt
 
 Run this prompt when:
 
 - selected performer level is Professional;
-- the tape is assessable;
-- no mandatory brief blocker dominates the recommendation;
-- the total score is 90 or above, or comparison mode includes high-scoring Professional takes.
+- the tape is assessable enough to score;
+- score language, score chips or score-relative recommendations are visible.
 
 Purpose:
 
 ```text
-Differentiate strong Professional tapes that cluster in the 90–100 range.
+Apply Professional evidence thresholds across the full 0–100 scale.
 ```
 
-Do not treat 90–100 as one flat excellence band.
+Professional is not a separate top-band calibration mode. Professional level means the same 0–100 scale is marked more stringently because the evidence threshold is higher across every band. Scores in the 90s should be rare and should appear only when the tape shows exceptional Professional evidence against the supplied task, selected level, observable performance, technical setup and any supported role/material context.
 
 Tasks:
 
-1. Place the tape in one Professional competitive zone:
-   - 90–91 professionally viable;
-   - 92–93 solid professional contender;
-   - 94–95 strong professional contender;
-   - 96–97 standout professional take;
-   - 98–100 exceptional / benchmark take.
-2. Explain why this zone was chosen.
-3. Identify the top competitive differentiators.
-4. Identify anything suppressing the score from the next zone.
-5. Identify what should be preserved.
-6. State whether a retake is strategically useful or risky.
-7. If comparing takes, explain the competitive advantage of each take.
-8. If the difference between two high-scoring takes is marginal, say so.
-9. Do not imply guaranteed casting, callback, booking or employment outcome.
-10. Preserve uncertainty where the evidence is incomplete.
+1. State the Professional standard applied.
+2. Explain what evidence supports the actual score band, whatever the score is.
+3. Identify what meets the Professional standard.
+4. Identify what falls short of Professional standard.
+5. Identify score suppressors: the concrete evidence holding the score down.
+6. Identify score raisers: what would move the score higher.
+7. Identify what should be preserved.
+8. State whether retaking is strategically useful or risky.
+9. If comparing takes, explain the evidence-based advantage without overclaiming small numerical differences.
+10. Do not treat scores in the 90s as a separate report category or scoring subsystem.
+11. Do not imply guaranteed casting, callback, booking or employment outcome.
+12. Preserve uncertainty where the evidence is incomplete.
 
 ### 6.14 Comparison prompt
 
@@ -1093,7 +1089,7 @@ recommendation
 brief
 observed_tape
 scores
-professional_competitive_calibration
+level_relative_score_calibration
 comparison
 fix_hierarchy
 strengths
@@ -1114,7 +1110,7 @@ The authenticated report should render:
 3. scoring basis;
 4. judged-against selected performer level;
 5. readiness / score / comparison chips where enabled;
-6. Professional competitive zone where applicable;
+6. Professional score-band meaning where applicable;
 7. why this recommendation;
 8. what the brief asked for, if supplied;
 9. brief achievement, if brief supplied;
@@ -1154,12 +1150,15 @@ Primary standard: [supplied brief]
 Secondary context: [known role/material baseline, if used]
 ```
 
-When Professional score is 90+, it must show:
+When selected level is Professional and score language is visible, it must show:
 
 ```text
-Professional competitive calibration
-Score zone: [90–91 / 92–93 / 94–95 / 96–97 / 98–100]
-Competitive meaning: [...]
+Professional score calibration
+Standard applied: [Professional casting-facing standard]
+Score meaning: [...]
+What supports this score: [...]
+What holds the score down: [...]
+What would raise the score: [...]
 Retake strategy: [...]
 ```
 
@@ -1175,7 +1174,7 @@ A report fails if, despite available brief and media evidence, it collapses to g
 - brief achievement without itemised evidence;
 - level calibration without the selected-level standard;
 - score without scoring basis;
-- Professional 90+ score without zone nuance;
+- Professional score without level-relative score explanation;
 - role/material context without source basis;
 - an empty next-take plan;
 - “report polish unavailable” as a reason to withhold useful guidance.
@@ -1341,7 +1340,7 @@ Level calibration pass:
 - What is the single highest-impact fix?
 - Is this submit, submit-if-deadline-close, review carefully or retake required at Professional level?
         ↓
-Professional competitive calibration if score is 90+
+Professional level-relative score calibration
         ↓
 UI output:
 - “Judged against: Professional”
@@ -1349,7 +1348,7 @@ UI output:
 - why this recommendation is Professional-level
 - Professional-level evidence that works
 - Professional-level gaps
-- competitive zone if 90+
+- score-band meaning and score suppressors
 - fix first
 - preserve guidance
 - retake strategy
@@ -1499,7 +1498,7 @@ fully submission-ready for the audition
 For Professional:
 
 ```text
-A no-brief Professional tape may reach the Professional 90+ competitive zone only as a baseline Professional tape.
+A no-brief Professional tape may score highly only as a baseline Professional tape. Scores in the 90s should remain rare and must not imply full audition-specific readiness without a supplied brief.
 
 It must not be described as fully competitive for a specific role, production, brief or casting task unless that context is supplied or reliably resolved.
 ```
@@ -1707,14 +1706,14 @@ Brief-primary demands can affect:
 - recommendation;
 - score caps;
 - selected-level readiness;
-- Professional 90+ competitive zone.
+- selected-level score-band meaning.
 
 Secondary known-material demands can affect:
 
 - sub-dimension nuance;
 - role/material specificity;
 - style/genre fit where supported;
-- Professional competitiveness;
+- Professional-level competitiveness;
 - what to preserve;
 - optional polish;
 - score movement within a band.
@@ -1745,7 +1744,7 @@ Known-material baseline may include:
 - relationship stakes where relevant to the supplied material;
 - strong acting-through-song demand where singing is present;
 - role-specific vocal/story integration;
-- high Professional competition if auditioning at Professional level.
+- stricter Professional evidence thresholds if auditioning at Professional level.
 
 Primary judgement:
 Did the performer meet the supplied brief?
@@ -1753,8 +1752,8 @@ Did the performer meet the supplied brief?
 Secondary judgement:
 Did the tape show observable role-specific evidence that supports the known material?
 
-Professional 90+ nuance:
-A technically excellent vocal take may still sit at 92–93 rather than 96–97 if the story pressure, lyric intention or character arc is clear but not distinctive.
+Professional score calibration across 0–100:
+A technically excellent vocal take may still score in the high-but-sub-exceptional range if the story pressure, lyric intention or character arc is clear but not distinctive enough for the very top of the Professional scale.
 ```
 
 Correct report language:
@@ -1763,7 +1762,7 @@ Correct report language:
 Judged against: Professional.
 Role/material context: Elphaba, Wicked.
 
-The supplied brief is the primary standard. Known-material context suggests the role benefits from clear moral conviction, outsider pressure and story-led vocal choices. In this tape, the vocal line is secure and the final phrase has stronger conviction, but the opening reads more generally intense than specifically role-driven. That keeps this in the solid professional contender zone rather than the standout zone.
+The supplied brief is the primary standard. Known-material context suggests the role benefits from clear moral conviction, outsider pressure and story-led vocal choices. In this tape, the vocal line is secure and the final phrase has stronger conviction, but the opening reads more generally intense than specifically role-driven. That keeps this in the solid Professional score band rather than the standout-level band.
 ```
 
 Incorrect report language:
@@ -1830,54 +1829,49 @@ Scores should be explained through dimensions such as:
 - technical assessability;
 - self-tape presentation;
 - selected-level calibration;
-- Professional competitive zone where applicable;
+- Professional score-band meaning where applicable;
 - comparison advantage.
 
-### 11.4 Professional 90–100 Competitive Calibration
+### 11.4 Professional 0–100 level-relative score calibration
 
-At Professional level, many viable performers may score above 90.
+Professional scoring must be more stringent across the full 0–100 scale.
 
-A single broad `85–100 = strong submission / submit` band is not enough for Professional decision-making.
+Do not create a separate high-score-only calibration subsystem. Do not bundle Professional reports into a special scores-in-the-90s category. The whole Professional scale must carry higher evidence thresholds than lower selected levels.
 
-A 91, 94, 97 and 99 may all support submission, but they should not produce the same report.
+A Professional score in the 90s should be difficult to achieve. It should appear only when the tape shows exceptional evidence across the relevant supplied brief, observable performance, technical assessability, selected-level standard and supported role/material context.
 
-At Professional 90+, TapeCoach must provide competitive clarity:
-
-```text
-What makes this tape competitive?
-What keeps it from the next zone?
-Would another take likely improve it?
-What must be preserved?
-What is optional polish?
-What is the risk in retaking?
-```
-
-Activation rule:
+Professional score explanation must answer:
 
 ```text
-selected_performer_level = professional
-AND score >= 90
-AND the tape is technically assessable
-AND no mandatory brief blocker dominates the recommendation
+What Professional standard was applied?
+What evidence supports this actual score?
+What meets Professional standard?
+What holds the score down?
+What would raise the score?
+What should be preserved?
+Is retaking strategically useful or risky?
 ```
 
-If a mandatory brief blocker exists, do not run the 90+ competitive zone as the main recommendation logic. The report should say:
+If a mandatory brief blocker exists, Professional score language must not override the blocker. The report should say:
 
 ```text
 The performance evidence may be strong, but Professional submission readiness is blocked by missing required material.
 ```
 
-### 11.5 Professional 90–100 zone map
+### 11.5 Professional full-scale score-band expectations
 
-| Score zone | Competitive meaning | Report language | Typical action |
-|---|---|---|---|
-| 90–91 | Professionally viable | Good enough to submit, but exposed in a highly competitive field by one or more visible gaps. | Submit if deadline is close; retake only if the fix is clear and low-risk. |
-| 92–93 | Solid professional contender | Competitive and credible, with specific strengths, but not yet clearly standout. | Submit-supporting; retake only for a targeted improvement. |
-| 94–95 | Strong professional contender | Strong, specific and casting-facing, with only limited refinements remaining. | Usually submit; preserve the core choices. |
-| 96–97 | Standout professional take | Highly competitive, distinctive and technically secure; any notes are fine-tuning. | Submit unless there is a brief/admin issue. Do not chase unnecessary retakes. |
-| 98–100 | Exceptional / benchmark take | Rare zone. No visible retake reason from available evidence; differences are likely taste, role fit or comparison-specific. | Submit. Do not retake unless the brief changes or there is a confirmed technical/admin problem. |
+These bands are guides for score meaning at Professional level. They are not a public scoring release policy and do not replace the AI's evidence-led explanation.
 
-A 98–100 score does not mean:
+| Score band | Professional meaning | Typical action |
+|---|---|---|
+| 0–39 | Not reliably assessable or materially below Professional submission standard. | Retake or resolve assessability/material blockers before relying on the report. |
+| 40–54 | Major Professional readiness gaps or mandatory brief/technical issues dominate. | Retake required if possible, with fix-first driven by the largest blocker. |
+| 55–69 | Some Professional evidence exists, but the tape carries meaningful submission risk. | Review carefully or retake if the highest-impact fix is practical. |
+| 70–79 | Viable Professional elements are visible, but the tape is not yet strongly competitive. | Submit only if deadline pressure or context supports it; otherwise targeted retake/review. |
+| 80–89 | Professional-standard or near submission-ready evidence, with specific refinements or risks. | Usually submit-supporting if no mandatory blocker exists; preserve strongest choices. |
+| 90–100 | Rare, exceptional Professional evidence across the relevant criteria. | Usually submit; do not retake unless there is a specific high-value, low-risk fix or a brief/admin issue. |
+
+A top-band Professional score does not mean:
 
 ```text
 guaranteed callback
@@ -1889,12 +1883,12 @@ objectively best possible take
 It means:
 
 ```text
-From the available evidence, this is an exceptionally strong Professional submission against the selected level, supplied task and observed tape.
+From the available evidence, this is exceptionally strong against the selected Professional standard and the available task context.
 ```
 
-### 11.6 Professional competitive differentiators
+### 11.6 Professional score suppressors, raisers and retake strategy
 
-When competition is high, professionals distinguish strong tapes through small but meaningful differences.
+At Professional level, every visible score should explain why it is not higher and what would raise it.
 
 Evaluate:
 
@@ -1904,10 +1898,10 @@ Evaluate:
 - vocal / singing specificity;
 - movement / physical precision;
 - camera and self-tape readability;
-- distinctiveness and memorability;
+- distinctiveness and memorability where observable;
 - casting-facing risk;
 - retake risk;
-- comparison advantage.
+- comparison advantage where comparison is valid.
 
 Do not say the performer is “memorable” as generic praise. Say what creates that effect.
 
@@ -1931,7 +1925,7 @@ Do not retake for general polish. Submit this version.
 
 ### 11.7 High-score comparison rules
 
-When comparing high-scoring Professional takes, TapeCoach must not overstate tiny numerical differences.
+When comparing Professional take comparisons, TapeCoach must not overstate tiny numerical differences.
 
 | Score difference | Interpretation |
 |---|---|
@@ -1940,10 +1934,10 @@ When comparing high-scoring Professional takes, TapeCoach must not overstate tin
 | 4–5 points | Likely meaningful. Explain what materially improves competitiveness. |
 | 6+ points | Significant difference, unless same-video / assessability / brief mismatch invalidates comparison. |
 
-If two takes are in the same zone:
+If two takes sit in the same broad Professional score band:
 
 ```text
-Both takes sit in the same Professional competitive zone. The better choice depends on [brief precision / acting specificity / vocal security / technical clarity / style fit].
+Both takes sit in the same broad Professional score band. The better choice depends on [brief precision / acting specificity / vocal security / technical clarity / style fit].
 ```
 
 If the difference is too close to call:
@@ -2205,21 +2199,22 @@ type AuditionComparisonRun = {
     | "not_applicable";
 };
 
-type ProfessionalCompetitiveZone =
-  | "90_91_professionally_viable"
-  | "92_93_solid_professional_contender"
-  | "94_95_strong_professional_contender"
-  | "96_97_standout_professional_take"
-  | "98_100_exceptional_benchmark_take";
+type ProfessionalScoreBand =
+  | "0_39_not_reliably_assessable_or_materially_below_professional"
+  | "40_54_major_professional_readiness_gap"
+  | "55_69_meaningful_professional_submission_risk"
+  | "70_79_viable_professional_elements_not_strongly_competitive"
+  | "80_89_professional_standard_or_near_submission_ready"
+  | "90_100_rare_exceptional_professional_evidence";
 
-type ProfessionalRetakeStrategy =
+type ScoreRetakeStrategy =
   | "submit_do_not_retake"
   | "submit_retake_only_for_specific_fix"
   | "submit_if_deadline_close_targeted_retake_possible"
   | "review_before_submit_due_to_specific_risk"
   | "retake_required_due_to_blocker";
 
-type ProfessionalCompetitiveDimension =
+type ProfessionalScoreDimension =
   | "brief_precision"
   | "role_or_material_fit"
   | "acting_specificity"
@@ -2232,8 +2227,8 @@ type ProfessionalCompetitiveDimension =
   | "retake_risk"
   | "comparison_advantage";
 
-type ProfessionalCompetitiveDimensionJudgement = {
-  dimension: ProfessionalCompetitiveDimension;
+type ProfessionalScoreDimensionJudgement = {
+  dimension: ProfessionalScoreDimension;
   rating:
     | "not_assessable"
     | "professional_viable"
@@ -2250,20 +2245,21 @@ type ProfessionalCompetitiveDimensionJudgement = {
   performerFacingNote: string;
 };
 
-type ProfessionalCompetitiveCalibration = {
+type ProfessionalScoreCalibration = {
   applies: boolean;
   selectedLevel: "professional";
   totalScore: number;
-  zone: ProfessionalCompetitiveZone;
-  zoneLabel: string;
-  zoneSummary: string;
-  whyThisZone: string[];
-  competitiveDifferentiators: string[];
+  scoreBand: ProfessionalScoreBand;
+  scoreBandLabel: string;
+  scoreBandSummary: string;
+  whyThisScore: string[];
+  professionalStrengths: string[];
   scoreSuppressors: string[];
+  scoreRaisers: string[];
   preserveAtAllCosts: string[];
-  retakeStrategy: ProfessionalRetakeStrategy;
+  retakeStrategy: ScoreRetakeStrategy;
   retakeRisk: string;
-  dimensions: ProfessionalCompetitiveDimensionJudgement[];
+  dimensions: ProfessionalScoreDimensionJudgement[];
   comparisonNotes?: {
     comparedTakeId?: string;
     advantage?: string;
@@ -2439,7 +2435,7 @@ Examples:
 - do not rework achieved brief components;
 - do not keep retaking a strong complete package without a concrete purpose;
 - do not spend time on optional polish before missing mandatory material;
-- do not retake a high-scoring Professional tape unless the likely improvement is specific and worth the risk.
+- do not retake a strong Professional tape unless the likely improvement is specific and worth the risk.
 
 ---
 
@@ -2479,7 +2475,7 @@ It should include:
 - what specifically works;
 - what to preserve;
 - optional polish, if useful;
-- Professional 90+ competitive zone where applicable;
+- Professional score-band meaning where applicable;
 - what not to change;
 - final submit checklist.
 
@@ -2776,7 +2772,7 @@ Where QA is enabled, preferred artefacts include:
 - `ai/level_calibration.json`;
 - `ai/brief_scoring_context.json`;
 - `ai/role_material_calibration.json` where relevant;
-- `ai/professional_competitive_calibration.json` where relevant;
+- `ai/level_relative_score_calibration.json` where relevant;
 - `take/take_lifecycle.json` where relevant;
 - `comparison/comparison_run.json` where relevant;
 - `report/full_report_model.json`;
@@ -2870,7 +2866,7 @@ Examples:
 - `comparison_chips_visible`;
 - `technique_library_enabled`;
 - `role_material_research_enabled`;
-- `professional_competitive_calibration_enabled`;
+- `level_relative_score_calibration_enabled`;
 - `report_mode`;
 - `ai_model_primary`;
 - `ai_model_fallback`.
@@ -3052,49 +3048,45 @@ Expected:
 - Professional run identifies the higher-level gap;
 - report preserves strengths while explaining why the Professional bar is higher.
 
-### Fixture L — Professional 91: viable but exposed
+### Fixture L — Professional low-range score calibration
 
 Expected:
 
-- score zone: 90–91 professionally viable;
-- recommendation supports submission or submit-if-deadline-close;
-- report explains competitive risk;
-- report says what would move the tape into 92–93;
-- no generic “excellent” copy;
-- retake only if a specific low-risk fix is available.
+- Professional score language explains why the tape sits below submission-ready Professional standard;
+- the report separates assessability, brief blockers and performance gaps;
+- the fix-first item is specific and evidence-led;
+- lower-level strengths are not described as Professional readiness.
 
-### Fixture M — Professional 94: strong contender
+### Fixture M — Professional mid-range score calibration
 
 Expected:
 
-- score zone: 94–95 strong professional contender;
-- report explains why this is stronger than merely viable;
-- report explains why it is not yet 96–97;
+- Professional score language explains visible viable elements and meaningful competitive gaps;
+- score suppressors are concrete;
+- score raisers are practical;
+- retake strategy is tied to the highest-impact improvement, not vague polish.
+
+### Fixture N — Professional strong score calibration
+
+Expected:
+
+- report may support submission if no mandatory blocker exists;
+- score language explains why the tape is strong but not exceptional;
 - optional polish is separated from must-fix;
-- submit is supported;
-- preserve guidance is specific.
+- preserve guidance is specific;
+- no special top-band calibration block is required.
 
-### Fixture N — Professional 97: standout
-
-Expected:
-
-- score zone: 96–97 standout professional take;
-- report identifies standout evidence;
-- no unnecessary retake loop;
-- retake strategy says submit unless a confirmed brief/admin/technical issue exists;
-- optional polish is minimal and clearly labelled.
-
-### Fixture O — Professional 99: exceptional / benchmark
+### Fixture O — Professional rare top-band score calibration
 
 Expected:
 
-- score zone: 98–100 exceptional / benchmark take;
-- report says no visible retake reason from available evidence;
+- score in the 90s is treated as rare and exceptional;
+- report explains the evidence that justifies the top-band score;
+- report states what, if anything, holds the score below 100;
 - no guaranteed outcome language;
-- report preserves uncertainty;
-- next action is a submission checklist, not performance correction.
+- next action is usually a submission checklist, not performance correction.
 
-### Fixture P — two high-scoring Professional takes
+### Fixture P — two Professional take comparisons
 
 Expected:
 
@@ -3133,7 +3125,7 @@ Expected:
 - report references role-specific demands only as task/material context;
 - no appearance/type/castability language;
 - score nuance explains why the take is professionally viable / solid / strong / standout;
-- Professional 90+ zone reflects role-specific competitive clarity.
+- Professional score meaning reflects role-specific competitive clarity where evidence supports it.
 
 ### Fixture S — known role conflicts with supplied brief
 
@@ -3299,7 +3291,7 @@ A performer should be able to understand within 60 seconds:
 - top fix;
 - brief achievement, where brief exists;
 - role/material source basis, where used;
-- Professional competitive zone, where applicable;
+- Professional score-band meaning, where applicable;
 - active take slots / compared take versions, where applicable;
 - admin-visible per-take/per-comparison QA status where QA is enabled;
 - next action.
@@ -3327,7 +3319,7 @@ Report-value changes should include tests for:
 - technique commentary;
 - timestamped commentary where available;
 - score terminology alignment;
-- Professional 90+ calibration;
+- level-relative 0–100 score calibration;
 - same-video handling;
 - take slot lifecycle;
 - take replacement invalidation/refresh;
@@ -3385,7 +3377,7 @@ Use maturity levels as release-control language, not as a reason to suppress use
 | Level 3 | Brief-intelligent module detection and package analysis. |
 | Level 4 | Role/material/repertoire-aware feedback. |
 | Level 5 | Comparison-aware and competitive readiness feedback. |
-| Level 6 | Professional/agent mode with deeper calibration and operator tools. |
+| Level 6 | Professional/agent mode with stricter full-scale scoring and operator tools. |
 
 ### 30.2 Release gates
 
@@ -3417,7 +3409,7 @@ S10 is already in implementation. The sequence below remains the controlling ord
 10. Technique-library commentary.
 11. Timestamped commentary.
 12. Score terminology and professional nuance.
-13. Professional 90–100 competitive calibration.
+13. Professional 0–100 level-relative score calibration.
 14. Same-video / duplicate-upload handling.
 15. Positive brief-complete report path.
 16. Incomplete mandatory package path.
@@ -3505,13 +3497,13 @@ score/comparison chips may be visible in authenticated/operator/test mode; produ
 Previous issue:
 
 ```text
-high professional scores risked flattening report value
+Professional scores risked being treated as a high-score special case rather than calibrated across 0–100
 ```
 
 Resolved rule:
 
 ```text
-professional nuance must be expressed through sub-dimensions and written judgement, especially above 90
+professional nuance must be expressed through sub-dimensions and written judgement, especially in the 90s
 ```
 
 ### 32.7 Same-video uploads
@@ -3617,7 +3609,7 @@ Do not:
 - let a no-brief score imply brief achievement;
 - use role/material research to invent mandatory requirements;
 - infer appearance, body/type, marketability, bookability or callback likelihood;
-- flatten Professional scores above 90 into generic “excellent”.
+- flatten Professional scoring into generic excellence language.
 
 ---
 
@@ -3656,7 +3648,7 @@ Use the brief as the task authority.
 Use role/material research only with source basis and observed evidence.
 Use active take slots for comparison and preserve replacement history in admin/QA.
 Make no-brief limitations visible.
-Preserve Professional 90+ nuance.
+Preserve Professional 0–100 level-relative score calibration.
 Test assumptions with the operator.
 Never accept a report that is safe but useless.
 ```
