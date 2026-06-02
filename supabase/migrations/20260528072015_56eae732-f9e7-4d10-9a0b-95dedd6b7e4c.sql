@@ -14,6 +14,9 @@ ALTER TABLE public.partner_package_presets
     OR
     (partner_type = 'coach' AND display_context = 'coach_pilot'
        AND billing_period = 'monthly' AND package_tier IN ('starter', 'studio'))
+    OR
+    (partner_type = 'agent' AND display_context = 'agent_trial'
+       AND billing_period = 'monthly' AND package_tier IN ('trial', 'growth'))
   );
 
 ALTER TABLE public.partner_package_presets
@@ -26,6 +29,10 @@ ALTER TABLE public.partner_package_presets
     (partner_type = 'coach' AND credits_per_member = per_user_cap
        AND per_user_cap IN (6, 10)
        AND total_credits >= included_seats * credits_per_member)
+    OR
+    (partner_type = 'agent' AND credits_per_member = per_user_cap
+       AND per_user_cap IN (3, 6)
+       AND total_credits >= included_seats * credits_per_member)
   );
 
 ALTER TABLE public.partner_package_presets
@@ -37,6 +44,9 @@ ALTER TABLE public.partner_package_presets
     OR
     (partner_type = 'coach' AND pool_period_type = 'monthly'
        AND progress_visibility_scope = 'named_progress')
+    OR
+    (partner_type = 'agent' AND pool_period_type = 'monthly'
+       AND progress_visibility_scope = 'limited_usage_readiness')
   );
 
 INSERT INTO public.partner_package_presets (
