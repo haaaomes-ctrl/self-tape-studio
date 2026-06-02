@@ -203,22 +203,10 @@ describe("analysis supabase adapter", () => {
     expect(result).toEqual({ kind: "take_not_found" });
   });
 
-  it("saveReport writes report columns without flipping status", async () => {
+  it("saveReport writes report columns without flipping status, guarded by run id", async () => {
     const { client, calls } = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
 
-    const result = await saveReport(
-      TAKE_ID,
-      {
-        report: reportPayload.report,
-        scores: reportPayload.scores,
-        overallScore: reportPayload.overallScore,
-        confidence: reportPayload.confidence,
-        complianceFlags: reportPayload.complianceFlags,
-        scoreBreakdown: reportPayload.scoreBreakdown,
-      },
-      null,
-      { client },
-    );
+    const result = await saveReport(TAKE_ID, reportPayload, null, { client });
 
     expect(result).toEqual({ kind: "saved" });
     const payload = calls.update[0][0] as Record<string, unknown>;
@@ -227,15 +215,16 @@ describe("analysis supabase adapter", () => {
     expect(payload).not.toHaveProperty("processing_phase");
     expect(payload.report_model_status).toBe("rendered");
     expect(payload.report).toEqual(reportPayload.report);
-    // Guarded by the active processing state.
+    // Guarded by active processing state AND the caller-supplied run id.
     expect(calls.eq).toEqual([
       ["id", TAKE_ID],
       ["status", "processing"],
+      ["analysis_run_id", "run-1"],
     ]);
     expect(calls.in).toEqual([["processing_phase", ["analysing", "finalising"]]]);
   });
 
-  it("markTakeComplete atomically writes report columns AND complete state in one update", async () => {
+  it("markTakeComplete atomically writes report columns AND complete state in one guarded update", async () => {
     const { client, calls } = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
 
     const result = await markTakeComplete(TAKE_ID, reportPayload, null, { client });
@@ -254,22 +243,29 @@ describe("analysis supabase adapter", () => {
       compliance_flags: reportPayload.complianceFlags,
       score_breakdown: reportPayload.scoreBreakdown,
     });
-    // Same guard as the existing pipeline completion.
+    // Existing pipeline completion guard PLUS the run-id ownership guard.
     expect(calls.eq).toEqual([
       ["id", TAKE_ID],
       ["status", "processing"],
+      ["analysis_run_id", "run-1"],
     ]);
     expect(calls.in).toEqual([["processing_phase", ["analysing", "finalising"]]]);
   });
 
-  it("markTakeComplete no-ops (not_active) when the guarded update matches no row", async () => {
-    const { client } = makeClient([{ data: [], error: null }]);
+  it("markTakeComplete no-ops (not_active) when the run matches but the state is no longer active", async () => {
+    const { client } = makeClient([
+      { data: [], error: null }, // guarded update matched 0 rows
+      {
+        data: { status: "complete", processing_phase: "complete", analysis_run_id: "run-1" },
+        error: null,
+      },
+    ]);
     const result = await markTakeComplete(TAKE_ID, reportPayload, null, { client });
     expect(result).toEqual({ kind: "not_active" });
   });
 
-  it("markTakeError writes the safe [failure_code:...] format", async () => {
-    const { client, calls } = makeClient([{ error: null }]);
+  it("markTakeError writes the safe [failure_code:...] format, guarded by run id", async () => {
+    const { client, calls } = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
 
     const result = await markTakeError(
       TAKE_ID,
@@ -288,7 +284,38 @@ describe("analysis supabase adapter", () => {
       analysis_run_id: "run-9",
       report_model_status: "failed",
     });
-    expect(calls.eq).toEqual([["id", TAKE_ID]]);
+    expect(calls.eq).toEqual([
+      ["id", TAKE_ID],
+      ["status", "processing"],
+      ["analysis_run_id", "run-9"],
+    ]);
+    expect(calls.in).toEqual([["processing_phase", ["analysing", "finalising"]]]);
+  });
+
+  it("a stale run cannot saveReport / markTakeComplete / markTakeError over a reclaimed take", async () => {
+    // For each helper: the guarded update matches 0 rows, then the readback shows
+    // the row is owned by a NEWER analysis_run_id => stale_run safe no-op.
+    const reclaimedReadback = {
+      data: { status: "processing", processing_phase: "analysing", analysis_run_id: "newer-run" },
+      error: null,
+    };
+
+    const save = makeClient([{ data: [], error: null }, reclaimedReadback]);
+    expect(await saveReport(TAKE_ID, reportPayload, null, { client: save.client })).toEqual({
+      kind: "stale_run",
+    });
+
+    const complete = makeClient([{ data: [], error: null }, reclaimedReadback]);
+    expect(
+      await markTakeComplete(TAKE_ID, reportPayload, null, { client: complete.client }),
+    ).toEqual({ kind: "stale_run" });
+
+    const err = makeClient([{ data: [], error: null }, reclaimedReadback]);
+    expect(
+      await markTakeError(TAKE_ID, "analysis_timeout", "late failure", "run-1", null, {
+        client: err.client,
+      }),
+    ).toEqual({ kind: "stale_run" });
   });
 
   it("returns server_misconfigured (safe diagnostics) when the service-role key is absent", async () => {
@@ -386,6 +413,10 @@ describe("analysis supabase adapter", () => {
       "utf8",
     );
     expect(moduleSource).toContain("SERVER-ONLY");
+    // Cancellation + active-version checks are documented as runner preflight (Slice 4/5).
+    expect(moduleSource).toContain("RUNNER PREFLIGHT");
+    expect(moduleSource).toContain("Cancelled by user");
+    expect(moduleSource).toContain("take_version_status");
 
     const clientImportedModules = [
       "src/lib/admin-storage.functions.ts",

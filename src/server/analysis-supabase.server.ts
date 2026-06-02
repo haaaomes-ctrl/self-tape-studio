@@ -13,11 +13,18 @@
 // Key invariants preserved from process-take.server.ts:
 // - claimTakeForAnalysis is the atomic ownership boundary; its WHERE predicate
 //   only matches pending/error rows, so an active `processing` row is never
-//   reset or re-claimed by this adapter.
+//   reset or re-claimed by this adapter. It mirrors the existing claim predicate
+//   exactly — user-cancellation and active-version pre-checks are RUNNER
+//   PREFLIGHT responsibilities (Slice 4/5), as documented on the function.
 // - markTakeComplete is the normal finalisation path: it writes the final
 //   report columns AND the complete state together in ONE guarded update.
 // - saveReport is optional/intermediate only and never flips status.
 // - markTakeError writes the safe `[failure_code:CODE] message` format.
+// - saveReport, markTakeComplete and markTakeError additionally guard on the
+//   caller-supplied analysisRunId, so a stale delivery cannot overwrite a take a
+//   newer run has reclaimed (returns stale_run). This is a deliberate, safe
+//   strengthening over the existing low-level UPDATEs, justified because this
+//   adapter is Worker-facing and takes the run id as caller input.
 import { createSupabaseAdminClientForRuntimeEnv } from "@/integrations/supabase/client.server";
 import {
   DEFAULT_QA_ARTIFACT_STORAGE_BUCKET,
@@ -206,6 +213,19 @@ export type ClaimTakeForAnalysisResult =
  * matches ONLY pending (runnable phases) or, optionally, error/error rows — so
  * an active `processing` row is never reset by this adapter. Staleness policy is
  * left to the caller (the active row's `updatedAt` is returned).
+ *
+ * This claim mirrors the existing process-take.server.ts predicate EXACTLY and
+ * deliberately does not embed higher-level lifecycle checks. RUNNER PREFLIGHT
+ * RESPONSIBILITIES (Slice 4/5), mirroring what runProcessTake performs today:
+ *  - do NOT retry user-cancelled rows: resetTake marks cancellations as
+ *    status='error'/processing_phase='error' with an error_message containing
+ *    "Cancelled by user"; the runner must skip those before claiming, even with
+ *    `includeErrorRetry` (which otherwise reclaims any error/error row);
+ *  - do NOT analyse replaced take versions: the replacement RPC marks the prior
+ *    version `take_version_status='replaced'`; the runner must confirm the take
+ *    is the active version before claiming;
+ *  - manual retry is the only path that may reclaim eligible non-cancelled
+ *    error/error rows (`includeErrorRetry`).
  */
 export async function claimTakeForAnalysis(
   takeId: string,
@@ -349,20 +369,52 @@ export async function loadTakeContext(
   };
 }
 
+type WriteMiss =
+  | { kind: "stale_run" }
+  | { kind: "not_active" }
+  | { kind: "missing" }
+  | { kind: "readback_error"; error: { code: string | null; message: string | null } };
+
+/**
+ * Classifies why a run-id-guarded write matched no row. Because this adapter
+ * takes a caller-supplied analysisRunId, a 0-row write can mean the row was
+ * reclaimed by a newer run (stale_run — a safe no-op that must NOT overwrite the
+ * newer run), left the active state (not_active), or was deleted (missing).
+ */
+async function classifyWriteMiss(
+  client: AnalysisSupabaseClient,
+  takeId: string,
+  expectedRunId: string,
+): Promise<WriteMiss> {
+  const { data, error } = await client
+    .from("takes")
+    .select("status, processing_phase, analysis_run_id")
+    .eq("id", takeId)
+    .maybeSingle();
+  if (error) return { kind: "readback_error", error: safeErrorSummary(error) };
+  if (!data) return { kind: "missing" };
+  if ((data.analysis_run_id ?? null) !== expectedRunId) return { kind: "stale_run" };
+  return { kind: "not_active" };
+}
+
 export type SaveReportResult =
   | { kind: "saved" }
+  | { kind: "stale_run" }
   | { kind: "not_active" }
+  | { kind: "missing" }
   | { kind: "save_error"; error: { code: string | null; message: string | null } }
   | ServerMisconfigured;
 
 /**
  * Intermediate/optional report persistence. Writes the report columns guarded
- * by the active processing state, and sets report_model_status='rendered', but
- * does NOT flip status. The normal finalisation path is markTakeComplete.
+ * by the active processing state AND the caller-supplied analysisRunId, sets
+ * report_model_status='rendered', but does NOT flip status. The run-id guard
+ * means a stale run cannot overwrite a newer run's report (returns stale_run).
+ * The normal finalisation path is markTakeComplete.
  */
 export async function saveReport(
   takeId: string,
-  columns: AnalysisReportColumns,
+  payload: AnalysisCompletePayload,
   env?: AnalysisRuntimeEnvInput | null,
   deps?: AnalysisSupabaseDeps,
 ): Promise<SaveReportResult> {
@@ -372,35 +424,43 @@ export async function saveReport(
   const { data, error } = await resolved.client
     .from("takes")
     .update({
-      report: columns.report as never,
-      scores: columns.scores as never,
-      overall_score: columns.overallScore,
-      confidence: columns.confidence,
-      compliance_flags: columns.complianceFlags as never,
-      score_breakdown: columns.scoreBreakdown as never,
+      report: payload.report as never,
+      scores: payload.scores as never,
+      overall_score: payload.overallScore,
+      confidence: payload.confidence,
+      compliance_flags: payload.complianceFlags as never,
+      score_breakdown: payload.scoreBreakdown as never,
       report_model_status: "rendered",
     })
     .eq("id", takeId)
     .eq("status", "processing")
     .in("processing_phase", [...REPORT_WRITABLE_PROCESSING_PHASES])
+    .eq("analysis_run_id", payload.analysisRunId)
     .select("id");
 
   if (error) return { kind: "save_error", error: safeErrorSummary(error) };
-  return Array.isArray(data) && data.length > 0 ? { kind: "saved" } : { kind: "not_active" };
+  if (Array.isArray(data) && data.length > 0) return { kind: "saved" };
+  const miss = await classifyWriteMiss(resolved.client, takeId, payload.analysisRunId);
+  if (miss.kind === "readback_error") return { kind: "save_error", error: miss.error };
+  return miss;
 }
 
 export type MarkTakeCompleteResult =
   | { kind: "completed" }
+  | { kind: "stale_run" }
   | { kind: "not_active" }
+  | { kind: "missing" }
   | { kind: "complete_error"; error: { code: string | null; message: string | null } }
   | ServerMisconfigured;
 
 /**
  * Normal finalisation path. Writes the final report columns AND the complete
  * state together in ONE guarded atomic update — mirrors the completion update
- * in process-take.server.ts. Guarded by `status='processing' AND
- * processing_phase IN ('analysing','finalising')`, so it never overwrites an
- * already-complete/errored take or one that left the active state.
+ * in process-take.server.ts, plus an analysisRunId ownership guard. Guarded by
+ * `status='processing' AND processing_phase IN ('analysing','finalising') AND
+ * analysis_run_id = payload.analysisRunId`, so it never overwrites an
+ * already-complete/errored take, one that left the active state (not_active),
+ * or one a newer run has reclaimed (stale_run).
  */
 export async function markTakeComplete(
   takeId: string,
@@ -429,20 +489,31 @@ export async function markTakeComplete(
     .eq("id", takeId)
     .eq("status", "processing")
     .in("processing_phase", [...REPORT_WRITABLE_PROCESSING_PHASES])
+    .eq("analysis_run_id", payload.analysisRunId)
     .select("id");
 
   if (error) return { kind: "complete_error", error: safeErrorSummary(error) };
-  return Array.isArray(data) && data.length > 0 ? { kind: "completed" } : { kind: "not_active" };
+  if (Array.isArray(data) && data.length > 0) return { kind: "completed" };
+  const miss = await classifyWriteMiss(resolved.client, takeId, payload.analysisRunId);
+  if (miss.kind === "readback_error") return { kind: "complete_error", error: miss.error };
+  return miss;
 }
 
 export type MarkTakeErrorResult =
   | { kind: "marked" }
+  | { kind: "stale_run" }
+  | { kind: "not_active" }
+  | { kind: "missing" }
   | { kind: "mark_error_failed"; error: { code: string | null; message: string | null } }
   | ServerMisconfigured;
 
 /**
  * Writes the terminal failure state with the safe `[failure_code:CODE] message`
- * format — mirrors markTerminalFailure in process-take.server.ts (update by id).
+ * format. Like the other write helpers, it is guarded by the active processing
+ * state AND the caller-supplied analysisRunId — a deliberate, safe strengthening
+ * over markTerminalFailure in process-take.server.ts (which updates by id only),
+ * because this Worker-facing adapter takes a caller-supplied run id and must not
+ * let a stale delivery error-out a take a newer run has reclaimed (stale_run).
  * `code` and `message` must be operator-safe (no secrets / signed URLs / raw
  * model output); the caller is responsible for using safe values.
  */
@@ -457,7 +528,7 @@ export async function markTakeError(
   const resolved = resolveClient(env, deps);
   if (resolved.kind === "server_misconfigured") return resolved;
 
-  const { error } = await resolved.client
+  const { data, error } = await resolved.client
     .from("takes")
     .update({
       status: "error",
@@ -466,10 +537,17 @@ export async function markTakeError(
       analysis_run_id: analysisRunId,
       report_model_status: "failed",
     })
-    .eq("id", takeId);
+    .eq("id", takeId)
+    .eq("status", "processing")
+    .in("processing_phase", [...REPORT_WRITABLE_PROCESSING_PHASES])
+    .eq("analysis_run_id", analysisRunId)
+    .select("id");
 
   if (error) return { kind: "mark_error_failed", error: safeErrorSummary(error) };
-  return { kind: "marked" };
+  if (Array.isArray(data) && data.length > 0) return { kind: "marked" };
+  const miss = await classifyWriteMiss(resolved.client, takeId, analysisRunId);
+  if (miss.kind === "readback_error") return { kind: "mark_error_failed", error: miss.error };
+  return miss;
 }
 
 export type SaveQaArtifactInput = {
