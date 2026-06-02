@@ -163,19 +163,29 @@ describe("analysis supabase adapter", () => {
     expect(result).toEqual({ kind: "already_complete" });
   });
 
-  it("heartbeat updates only updated_at for allowed active phases", async () => {
+  it("heartbeat updates only updated_at for allowed active phases, guarded by run id", async () => {
     const { client, calls } = makeClient([{ data: [{ id: TAKE_ID }], error: null }]);
 
-    const result = await heartbeatTake(TAKE_ID, null, { client });
+    const result = await heartbeatTake(TAKE_ID, "run-1", null, { client });
 
     expect(result).toEqual({ kind: "updated" });
     // Only updated_at is written.
     expect(Object.keys(calls.update[0][0] as object)).toEqual(["updated_at"]);
-    expect(calls.eq[0]).toEqual(["id", TAKE_ID]);
+    // Guarded by id + run-id ownership; active status/phase via .in().
+    expect(calls.eq).toEqual([
+      ["id", TAKE_ID],
+      ["analysis_run_id", "run-1"],
+    ]);
     expect(calls.in).toEqual([
       ["status", ["pending", "processing"]],
       ["processing_phase", ["analysis_pending", "analysing", "finalising"]],
     ]);
+  });
+
+  it("heartbeat no-ops (not_active) when the run no longer owns the take", async () => {
+    const { client } = makeClient([{ data: [], error: null }]);
+    const result = await heartbeatTake(TAKE_ID, "run-1", null, { client });
+    expect(result).toEqual({ kind: "not_active" });
   });
 
   it("loadTakeContext returns raw take + audition rows", async () => {

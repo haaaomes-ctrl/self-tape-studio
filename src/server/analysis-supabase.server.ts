@@ -301,10 +301,15 @@ export type HeartbeatTakeResult =
 /**
  * Refreshes a take's `updated_at` so the orphan reconciler does not force-error
  * a still-running take. Touches ONLY `updated_at`, and only for active phases —
- * mirrors writeProcessingHeartbeat in process-take.server.ts.
+ * mirrors writeProcessingHeartbeat in process-take.server.ts, plus the same
+ * analysisRunId ownership guard as the other write helpers: a stale Worker that
+ * no longer owns the take (reclaimed by a newer run) cannot keep its `updated_at`
+ * fresh and must stop heartbeating (returns not_active). Returns not_active for a
+ * miss (stale or no-longer-active) without a readback — heartbeat misses are benign.
  */
 export async function heartbeatTake(
   takeId: string,
+  analysisRunId: string,
   env?: AnalysisRuntimeEnvInput | null,
   deps?: AnalysisSupabaseDeps,
 ): Promise<HeartbeatTakeResult> {
@@ -317,6 +322,7 @@ export async function heartbeatTake(
     .eq("id", takeId)
     .in("status", ["pending", "processing"])
     .in("processing_phase", ["analysis_pending", "analysing", "finalising"])
+    .eq("analysis_run_id", analysisRunId)
     .select("id");
 
   if (error) return { kind: "heartbeat_error", error: safeErrorSummary(error) };
