@@ -226,11 +226,15 @@ export function requireAnalysisRuntimeEnv(
   };
 }
 
-const ANALYSIS_RUNTIME_ENV_KEYS = [
+// Keys extracted from a Cloudflare Worker `env` binding. The legacy
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY names are intentionally EXCLUDED: the
+// Worker is the durable production analysis runtime, and legacy names are
+// dev/local fallbacks only. Excluding them makes a Worker env that lacks the
+// owned TAPECOACH pair fail safe via requireAnalysisRuntimeEnv rather than
+// silently pointing direct analysis at the legacy Supabase project.
+const CLOUDFLARE_ANALYSIS_RUNTIME_ENV_KEYS = [
   "TAPECOACH_SUPABASE_URL",
   "TAPECOACH_SUPABASE_SERVICE_ROLE_KEY",
-  "SUPABASE_URL",
-  "SUPABASE_SERVICE_ROLE_KEY",
   "OPENROUTER_API_KEY",
   "OPENROUTER_SITE_URL",
   "OPENROUTER_APP_TITLE",
@@ -249,12 +253,17 @@ const ANALYSIS_RUNTIME_ENV_KEYS = [
  * input shape by extracting only the keys the analysis runtime consumes. This
  * is intentionally explicit and MUST NOT read `process.env` — the Worker
  * runtime has no Node `process.env`; secrets arrive on the `env` binding.
+ *
+ * Legacy SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY names are not extracted, so a
+ * Worker configured only with the legacy pair fails safe instead of resolving
+ * to the legacy Supabase project. Configure the owned TAPECOACH pair on the
+ * Worker binding.
  */
 export function mapCloudflareEnvToAnalysisRuntimeEnvInput(
   cfEnv: Record<string, unknown>,
 ): AnalysisRuntimeEnvInput {
   const mapped: Record<string, unknown> = {};
-  for (const key of ANALYSIS_RUNTIME_ENV_KEYS) {
+  for (const key of CLOUDFLARE_ANALYSIS_RUNTIME_ENV_KEYS) {
     mapped[key] = cfEnv[key];
   }
   return mapped as AnalysisRuntimeEnvInput;

@@ -140,6 +140,25 @@ describe("analysis runtime env", () => {
     );
   });
 
+  it("does not honour legacy Supabase names in the Cloudflare Worker mapper (fails safe)", () => {
+    const cfEnv: Record<string, unknown> = {
+      // Only the legacy pair is present on the Worker binding — no owned TAPECOACH pair.
+      SUPABASE_URL: "https://legacy-project.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "legacy-service-role",
+      OPENROUTER_API_KEY: SECRET_VALUES.openRouter,
+    };
+
+    // The mapper drops legacy names, so the owned Supabase pair is absent.
+    const resolved = resolveAnalysisRuntimeEnvFromCloudflare(cfEnv);
+    expect(resolved.supabaseUrl).toBeNull();
+    expect(resolved.supabaseServiceRoleKey).toBeNull();
+
+    // The durable Worker guard fails safe rather than resolving the legacy project.
+    expect(() =>
+      requireAnalysisRuntimeEnv(mapCloudflareEnvToAnalysisRuntimeEnvInput(cfEnv)),
+    ).toThrow(AnalysisRuntimeConfigError);
+  });
+
   it("resolves from process.env on the Lovable/Node path when no env is injected", () => {
     vi.stubEnv("TAPECOACH_SUPABASE_URL", "https://node-process-env.supabase.co");
     vi.stubEnv("TAPECOACH_SUPABASE_SERVICE_ROLE_KEY", SECRET_VALUES.serviceRole);

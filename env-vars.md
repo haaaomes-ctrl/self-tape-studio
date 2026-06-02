@@ -112,8 +112,11 @@ QA_ARTIFACT_SINK
   is not wired into any current production analysis path yet.
 - `mapCloudflareEnvToAnalysisRuntimeEnvInput` maps a Cloudflare Worker `env` binding
   into the contract by extracting only the known keys above. It never reads
-  `process.env`. Legacy `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` remain dev/local
-  fallbacks only and are never mixed with the TapeCoach-owned pair.
+  `process.env`. It deliberately does **not** extract the legacy `SUPABASE_URL` /
+  `SUPABASE_SERVICE_ROLE_KEY` names: those are dev/local fallbacks only, so a Worker
+  configured with just the legacy pair fails safe (the strict guard throws) instead
+  of resolving to the legacy Supabase project. Configure the owned `TAPECOACH_SUPABASE_*`
+  pair on the Worker binding.
 
 ## Owned Supabase Cutover Health
 
