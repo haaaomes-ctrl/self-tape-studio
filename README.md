@@ -2854,7 +2854,7 @@ Expected categories:
 
 Do not add env vars for ordinary product behaviour. The maximum of three active take slots is a product invariant in this README, not an environment toggle.
 
-Owned Supabase migration note: Lovable reserves the `SUPABASE_` secret prefix, so TapeCoach server/admin Supabase runtime must prefer `TAPECOACH_SUPABASE_URL` and `TAPECOACH_SUPABASE_SERVICE_ROLE_KEY`. Legacy `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are local/dev fallback names only. Browser Supabase configuration remains Vite-public only: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_SUPABASE_PROJECT_ID`. The service-role key must never be exposed to client/browser code.
+Owned Supabase migration note: Lovable reserves the `SUPABASE_` secret prefix, so TapeCoach server/admin Supabase runtime must prefer `TAPECOACH_SUPABASE_URL` and `TAPECOACH_SUPABASE_SERVICE_ROLE_KEY`. Legacy `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are local/dev fallback names only. Browser Supabase configuration remains Vite-public only: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_SUPABASE_PROJECT_ID`. The service-role key must never be exposed to client/browser code. The protected cutover health route `POST /api/internal/cutover-health` requires `CUTOVER_HEALTH_SECRET` and may report only safe host/status/boolean diagnostics, never secret values.
 
 ### 25.2 Product configuration
 

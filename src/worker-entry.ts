@@ -7,6 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import startEntry from "@tanstack/react-start/server-entry";
 import { setSupabaseAdminRuntimeEnvResolver } from "@/integrations/supabase/client.server";
+import { setSupabasePublicRuntimeEnvResolver } from "@/integrations/supabase/public-runtime";
 
 export interface RequestExecutionContext {
   waitUntil: (promise: Promise<unknown>) => void;
@@ -29,6 +30,7 @@ type QueueBatch<T = unknown> = {
 const runtimeStorage = new AsyncLocalStorage<RuntimeStore>();
 
 setSupabaseAdminRuntimeEnvResolver(() => runtimeStorage.getStore()?.env ?? null);
+setSupabasePublicRuntimeEnvResolver(() => runtimeStorage.getStore()?.env ?? null);
 
 /**
  * Returns the current request's Cloudflare ExecutionContext, or `null` if

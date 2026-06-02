@@ -1,21 +1,102 @@
 // Server-only Mux helpers. Never import from client code.
 import Mux from "@mux/mux-node";
+import { getRequestEnv } from "@/worker-entry";
 
 const MUX_STREAM_ORIGIN = "https://stream.mux.com";
+// eslint-disable-next-line no-control-regex
 const TRAILING_MP4_GARBAGE_RE = /(\.mp4)[\\/\s\u0000-\u001F\u007F]+$/i;
+// eslint-disable-next-line no-control-regex
 const INVALID_PLAYBACK_ID_RE = /[\\/\s?#\u0000-\u001F\u007F]/;
+// eslint-disable-next-line no-control-regex
 const INVALID_URL_CHARS_RE = /[\s\u0000-\u001F\u007F]/;
 
 let _client: Mux | undefined;
+let _clientKey: string | undefined;
+
+export type MuxRuntimeEnv = {
+  MUX_TOKEN_ID?: unknown;
+  MUX_TOKEN_SECRET?: unknown;
+  MUX_WEBHOOK_SECRET?: unknown;
+};
+
+export type MuxRuntimeDiagnostics = {
+  mux_token_id_present: boolean;
+  mux_token_secret_present: boolean;
+  mux_webhook_secret_present: boolean;
+};
+
+export class MuxRuntimeConfigError extends Error {
+  diagnostics: MuxRuntimeDiagnostics;
+
+  constructor(diagnostics: MuxRuntimeDiagnostics) {
+    super(
+      "Missing Mux server environment variables. Ensure MUX_TOKEN_ID and MUX_TOKEN_SECRET are set.",
+    );
+    this.name = "MuxRuntimeConfigError";
+    this.diagnostics = diagnostics;
+  }
+}
+
+function cleanUnknownEnvValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function currentRuntimeEnv(env?: MuxRuntimeEnv | null): MuxRuntimeEnv | null {
+  return env === undefined ? (getRequestEnv<MuxRuntimeEnv>() ?? null) : env;
+}
+
+function readRuntimeValue(env: MuxRuntimeEnv | null, key: keyof MuxRuntimeEnv): string | null {
+  const hasRuntimeEnv = env !== undefined && env !== null;
+  return (
+    cleanUnknownEnvValue(env?.[key]) ??
+    (hasRuntimeEnv ? null : cleanUnknownEnvValue(process.env[key]))
+  );
+}
+
+export function resolveMuxRuntimeConfig(env?: MuxRuntimeEnv | null): {
+  tokenId: string | null;
+  tokenSecret: string | null;
+  webhookSecret: string | null;
+  diagnostics: MuxRuntimeDiagnostics;
+} {
+  const runtimeEnv = currentRuntimeEnv(env);
+  const tokenId = readRuntimeValue(runtimeEnv, "MUX_TOKEN_ID");
+  const tokenSecret = readRuntimeValue(runtimeEnv, "MUX_TOKEN_SECRET");
+  const webhookSecret = readRuntimeValue(runtimeEnv, "MUX_WEBHOOK_SECRET");
+
+  return {
+    tokenId,
+    tokenSecret,
+    webhookSecret,
+    diagnostics: {
+      mux_token_id_present: Boolean(tokenId),
+      mux_token_secret_present: Boolean(tokenSecret),
+      mux_webhook_secret_present: Boolean(webhookSecret),
+    },
+  };
+}
+
+export function requireMuxRuntimeConfig(env?: MuxRuntimeEnv | null): {
+  tokenId: string;
+  tokenSecret: string;
+  webhookSecret: string | null;
+  diagnostics: MuxRuntimeDiagnostics;
+} {
+  const { tokenId, tokenSecret, webhookSecret, diagnostics } = resolveMuxRuntimeConfig(env);
+
+  if (!tokenId || !tokenSecret) {
+    throw new MuxRuntimeConfigError(diagnostics);
+  }
+
+  return { tokenId, tokenSecret, webhookSecret, diagnostics };
+}
 
 export function getMux(): Mux {
-  if (!_client) {
-    const tokenId = process.env.MUX_TOKEN_ID;
-    const tokenSecret = process.env.MUX_TOKEN_SECRET;
-    if (!tokenId || !tokenSecret) {
-      throw new Error("MUX_TOKEN_ID / MUX_TOKEN_SECRET are not configured");
-    }
+  const { tokenId, tokenSecret } = requireMuxRuntimeConfig();
+  const nextClientKey = `${tokenId}:${tokenSecret}`;
+  if (!_client || _clientKey !== nextClientKey) {
     _client = new Mux({ tokenId, tokenSecret });
+    _clientKey = nextClientKey;
   }
   return _client;
 }

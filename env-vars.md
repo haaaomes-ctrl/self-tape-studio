@@ -23,6 +23,7 @@ Lovable reserves the `SUPABASE_` secret prefix. For server-side writes to the ow
 ```text
 TAPECOACH_SUPABASE_URL
 TAPECOACH_SUPABASE_SERVICE_ROLE_KEY
+CUTOVER_HEALTH_SECRET
 ```
 
 The server admin client prefers `TAPECOACH_SUPABASE_URL` and `TAPECOACH_SUPABASE_SERVICE_ROLE_KEY`. Legacy `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supported only as local/dev/backward-compatible fallbacks.
@@ -45,6 +46,7 @@ Document names only. Do not print, paste, log or commit secret values.
 TAPECOACH_SUPABASE_URL
 TAPECOACH_SUPABASE_SERVICE_ROLE_KEY
 RECONCILER_SECRET
+CUTOVER_HEALTH_SECRET
 ANON_SESSION_SECRET
 MUX_TOKEN_ID
 MUX_TOKEN_SECRET
@@ -54,6 +56,26 @@ ANALYSIS_DISPATCH_SECRET
 ANALYSIS_RUN_SECRET
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
+```
+
+## Owned Supabase Cutover Health
+
+The Lovable → owned Supabase cutover health check is server-only and protected by `CUTOVER_HEALTH_SECRET`:
+
+```text
+POST /api/internal/cutover-health
+Authorization: Bearer CUTOVER_HEALTH_SECRET
+```
+
+It returns safe status JSON only: Supabase host, env presence booleans, core table checks, private storage bucket checks for `audition-videos` and `qa-artifacts`, optional admin-user/account-compliance status, and Mux env presence booleans. It must never return secret values, service-role keys, Mux tokens, signed URLs or raw stack traces.
+
+Post-deploy check:
+
+```bash
+curl -sS -X POST https://<lovable-domain>/api/internal/cutover-health \
+  -H "Authorization: Bearer $CUTOVER_HEALTH_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"admin_email":"o.halawi90@gmail.com"}'
 ```
 
 ## External Analysis Worker Dispatch

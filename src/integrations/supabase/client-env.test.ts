@@ -16,11 +16,16 @@ import {
   setSupabaseAdminRuntimeEnvResolver,
   SupabaseAdminRuntimeConfigError,
 } from "./client.server";
+import {
+  resolveSupabasePublicRuntimeConfig,
+  setSupabasePublicRuntimeEnvResolver,
+} from "./public-runtime";
 
 describe("Supabase env boundaries", () => {
   afterEach(() => {
     createClientMock.mockClear();
     setSupabaseAdminRuntimeEnvResolver(null);
+    setSupabasePublicRuntimeEnvResolver(null);
     vi.unstubAllEnvs();
   });
 
@@ -145,8 +150,31 @@ describe("Supabase env boundaries", () => {
     expect(source).not.toContain("process.env");
   });
 
+  it("resolves server-side public Supabase auth config without service-role env", () => {
+    const out = resolveSupabasePublicRuntimeConfig({
+      VITE_SUPABASE_URL: "https://owned-public.supabase.co",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "owned-publishable",
+      TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: "must-not-be-used",
+    } as Record<string, unknown>);
+
+    expect(out).toMatchObject({
+      supabaseUrl: "https://owned-public.supabase.co",
+      publishableKey: "owned-publishable",
+      diagnostics: {
+        vite_supabase_url_configured: true,
+        vite_supabase_url_host: "owned-public.supabase.co",
+        vite_supabase_publishable_key_configured: true,
+      },
+    });
+  });
+
   it("does not statically import the service-role admin client from client-imported modules", async () => {
-    const clientImportedModules = ["src/lib/admin-storage.functions.ts"];
+    const clientImportedModules = [
+      "src/lib/admin-storage.functions.ts",
+      "src/server-fns/account-compliance.functions.ts",
+      "src/server-fns/credit-balance.functions.ts",
+      "src/server-fns/mux.functions.ts",
+    ];
 
     for (const modulePath of clientImportedModules) {
       const source = await readFile(path.join(process.cwd(), modulePath), "utf8");
