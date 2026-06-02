@@ -113,7 +113,15 @@ function cleanUnknownEnvValue(value: unknown): string | null {
 }
 
 function currentRuntimeEnv(env?: AnalysisRuntimeEnvInput | null): AnalysisRuntimeEnvInput | null {
-  return env === undefined ? (getRequestEnv<AnalysisRuntimeEnvInput>() ?? null) : env;
+  if (env !== undefined) return env;
+  // No explicit env: the request runtime env is the Cloudflare Worker binding, so
+  // map it through the same legacy-excluding extractor as the explicit Cloudflare
+  // path. This keeps the no-arg strict guard fail-safe on a legacy-only binding
+  // (rather than silently resolving the legacy Supabase project) and consistent
+  // with mapCloudflareEnvToAnalysisRuntimeEnvInput. The Node `process.env` path
+  // (requestEnv null) keeps legacy fallbacks for dev/local via the owned resolver.
+  const requestEnv = getRequestEnv<Record<string, unknown>>();
+  return requestEnv ? mapCloudflareEnvToAnalysisRuntimeEnvInput(requestEnv) : null;
 }
 
 /**

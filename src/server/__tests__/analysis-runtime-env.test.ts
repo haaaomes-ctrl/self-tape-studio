@@ -2,6 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Mock the Worker request-env accessor so we can simulate a Cloudflare Worker
+// binding for the no-arg resolution path. Defaults to null (Node/dev path).
+const getRequestEnvMock = vi.hoisted(() => vi.fn((): Record<string, unknown> | null => null));
+vi.mock("@/worker-entry", () => ({ getRequestEnv: getRequestEnvMock }));
+
 import {
   AnalysisRuntimeConfigError,
   mapCloudflareEnvToAnalysisRuntimeEnvInput,
@@ -40,6 +45,7 @@ function fullOwnedEnv(): AnalysisRuntimeEnvInput {
 describe("analysis runtime env", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    getRequestEnvMock.mockReturnValue(null);
   });
 
   it("resolves the full Lovable/app runtime env from an injected object", () => {
@@ -157,6 +163,27 @@ describe("analysis runtime env", () => {
     expect(() =>
       requireAnalysisRuntimeEnv(mapCloudflareEnvToAnalysisRuntimeEnvInput(cfEnv)),
     ).toThrow(AnalysisRuntimeConfigError);
+  });
+
+  it("excludes legacy Supabase names on the no-arg Worker request env path (fails safe)", () => {
+    // Simulate a Cloudflare Worker request whose binding carries only the legacy pair.
+    getRequestEnvMock.mockReturnValue({
+      SUPABASE_URL: "https://legacy-project.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "legacy-service-role",
+      OPENROUTER_API_KEY: SECRET_VALUES.openRouter,
+    });
+    const legacyResolved = resolveAnalysisRuntimeEnv();
+    expect(legacyResolved.supabaseUrl).toBeNull();
+    expect(legacyResolved.supabaseServiceRoleKey).toBeNull();
+    expect(() => requireAnalysisRuntimeEnv()).toThrow(AnalysisRuntimeConfigError);
+
+    // The owned TAPECOACH pair on the same request-env path resolves normally.
+    getRequestEnvMock.mockReturnValue({
+      TAPECOACH_SUPABASE_URL: "https://worker-owned.supabase.co",
+      TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: SECRET_VALUES.serviceRole,
+      OPENROUTER_API_KEY: SECRET_VALUES.openRouter,
+    });
+    expect(requireAnalysisRuntimeEnv().supabaseUrl).toBe("https://worker-owned.supabase.co");
   });
 
   it("resolves from process.env on the Lovable/Node path when no env is injected", () => {
