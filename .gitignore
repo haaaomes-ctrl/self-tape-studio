@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# analysis-worker dry-run build output
+analysis-worker/.dry/
+analysis-worker/analysis-worker/

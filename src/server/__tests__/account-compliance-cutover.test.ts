@@ -14,7 +14,9 @@ const fromMock = vi.hoisted(() =>
   })),
 );
 
-vi.mock("@/worker-entry", () => ({
+// The runtime-env ALS helpers + Supabase resolver side-effects now live in this
+// TanStack-free module (extracted from @/worker-entry); mock it to a null env.
+vi.mock("@/server/runtime-env-als.server", () => ({
   getRequestEnv: () => null,
 }));
 

@@ -232,10 +232,11 @@ describe("worker analysis consumer", () => {
     });
   });
 
-  it("the queue handler wraps execution in runtimeStorage.run and delegates to the consumer", async () => {
+  it("the queue handler wraps execution in the runtime env context and delegates to the consumer", async () => {
     const src = await readFile(path.join(process.cwd(), "src/worker-entry.ts"), "utf8");
     expect(src).toContain("runQueuedAnalysisJob");
-    expect(src).toMatch(/runtimeStorage\.run\(\{\s*ctx,\s*env\s*\}/);
+    // ALS wrap (now via the TanStack-free runtime-env-als module's helper).
+    expect(src).toMatch(/runWithRuntimeContext\(\{\s*ctx,\s*env\s*\}/);
     // The queue handler no longer imports runProcessTake directly.
     expect(src).not.toMatch(/const \{ runProcessTake \} = await import/);
   });

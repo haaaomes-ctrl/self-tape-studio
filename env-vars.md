@@ -2,6 +2,8 @@
 
 This file documents expected QA environment values and secret names for operator verification. It does not change deployed environment configuration.
 
+For runtime ownership/boundaries (which Worker owns what, the variable-vs-secret split, and the dedicated Cloudflare analysis Worker's Cloudflare config), see `docs/architecture/` — ADR-0003 and the cutover checklist runbook.
+
 ## Expected QA Values
 
 ```text

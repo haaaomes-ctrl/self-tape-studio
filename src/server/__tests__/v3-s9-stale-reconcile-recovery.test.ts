@@ -348,8 +348,8 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toContain('await import("@/server/worker-analysis-consumer.server")');
     expect(source).toContain("runQueuedAnalysisJob");
     // Execution is wrapped in the runtime env context so supabaseAdmin resolves
-    // owned Supabase in the Worker.
-    expect(source).toMatch(/runtimeStorage\.run\(\{\s*ctx,\s*env\s*\}/);
+    // owned Supabase in the Worker (via the TanStack-free runtime-env-als helper).
+    expect(source).toMatch(/runWithRuntimeContext\(\{\s*ctx,\s*env\s*\}/);
   });
 
   it("wrangler binds the durable analysis queue producer and consumer", async () => {

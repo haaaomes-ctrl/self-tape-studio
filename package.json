@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "deploy:analysis-worker": "wrangler deploy -c analysis-worker/wrangler.jsonc",
+    "dry-run:analysis-worker": "wrangler deploy -c analysis-worker/wrangler.jsonc --dry-run --outdir analysis-worker/.dry"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",

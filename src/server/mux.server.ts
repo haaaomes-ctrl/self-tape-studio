@@ -1,6 +1,6 @@
 // Server-only Mux helpers. Never import from client code.
 import Mux from "@mux/mux-node";
-import { getRequestEnv } from "@/worker-entry";
+import { getRequestEnv } from "@/server/runtime-env-als.server";
 
 const MUX_STREAM_ORIGIN = "https://stream.mux.com";
 // eslint-disable-next-line no-control-regex

@@ -21,6 +21,12 @@ S10 is already being implemented. The performer-level, brief/no-brief, role/mate
 
 If there is a conflict, `README.md` wins.
 
+Before any change to runtime topology, where analysis executes, deployment, or
+queue/Worker wiring, read `docs/architecture/` first (ADRs + runbooks) and follow
+its invariants — e.g. the dedicated Cloudflare analysis Worker (`analysis-worker/`),
+the one-consumer rule for `tapecoach-analysis-jobs`, and the TanStack-free Worker
+constraint. Topology changes that contradict an ADR require a new ADR.
+
 ---
 
 ## Core doctrine
@@ -172,12 +178,12 @@ Rewrite before suppressing where safe.
 
 Examples:
 
-| Unsafe / overstrong | Preferred rewrite |
-|---|---|
-| “This guarantees a callback.” | “This supports submission readiness from the available evidence.” |
-| “This proves professional mastery.” | “This reads strongly against the selected level in the observed areas.” |
-| “You are right for this role.” | “The observed tape supports the role/material demands that were assessable from the supplied task.” |
-| “You are not bookable for this.” | “Casting outcome cannot be predicted; the report can only assess the submitted tape against the available evidence.” |
+| Unsafe / overstrong                 | Preferred rewrite                                                                                                    |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| “This guarantees a callback.”       | “This supports submission readiness from the available evidence.”                                                    |
+| “This proves professional mastery.” | “This reads strongly against the selected level in the observed areas.”                                              |
+| “You are right for this role.”      | “The observed tape supports the role/material demands that were assessable from the supplied task.”                  |
+| “You are not bookable for this.”    | “Casting outcome cannot be predicted; the report can only assess the submitted tape against the available evidence.” |
 
 ---
 
@@ -668,23 +674,23 @@ Default score-band language must be mode-aware.
 
 With a supplied brief:
 
-| Score band | Typical report meaning |
-|---|---|
-| 0–39 | Not submission-ready / not assessable because serious missing evidence, technical blocker or incomplete required package prevents reliable judgement. |
-| 40–54 | Retake required if possible because a major brief, performance or presentation issue blocks submission readiness. |
-| 55–69 | Review carefully because some usable material exists, but there is meaningful brief, performance, technical or uncertainty risk. |
-| 70–84 | Submit if deadline is close because the tape is submission-supporting, with manageable caveats or optional polish. |
-| 85–100 | Strong submission / submit because the tape is brief-complete or mostly brief-complete, assessable, strong for selected level and not blocked by a mandatory brief issue. |
+| Score band | Typical report meaning                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0–39       | Not submission-ready / not assessable because serious missing evidence, technical blocker or incomplete required package prevents reliable judgement.                     |
+| 40–54      | Retake required if possible because a major brief, performance or presentation issue blocks submission readiness.                                                         |
+| 55–69      | Review carefully because some usable material exists, but there is meaningful brief, performance, technical or uncertainty risk.                                          |
+| 70–84      | Submit if deadline is close because the tape is submission-supporting, with manageable caveats or optional polish.                                                        |
+| 85–100     | Strong submission / submit because the tape is brief-complete or mostly brief-complete, assessable, strong for selected level and not blocked by a mandatory brief issue. |
 
 Without a supplied brief:
 
-| Score band | Typical report meaning |
-|---|---|
-| 0–39 | Not reliably assessable or not ready on observable performance/setup evidence. |
-| 40–54 | Retake recommended because a major observable performance, task-readability or technical issue limits usefulness. |
-| 55–69 | Review carefully because the tape has usable elements but meaningful observable risk, uncertainty or selected-level gap remains. |
-| 70–84 | Baseline submission-supporting for the selected level, assuming the unseen brief does not add requirements this tape fails. |
-| 85–100 | Strong baseline tape for the selected level, based on observable performance and setup only. Brief achievement is not assessed. |
+| Score band | Typical report meaning                                                                                                           |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 0–39       | Not reliably assessable or not ready on observable performance/setup evidence.                                                   |
+| 40–54      | Retake recommended because a major observable performance, task-readability or technical issue limits usefulness.                |
+| 55–69      | Review carefully because the tape has usable elements but meaningful observable risk, uncertainty or selected-level gap remains. |
+| 70–84      | Baseline submission-supporting for the selected level, assuming the unseen brief does not add requirements this tape fails.      |
+| 85–100     | Strong baseline tape for the selected level, based on observable performance and setup only. Brief achievement is not assessed.  |
 
 The verdict is not determined by score alone. Required brief failures, missing material, non-assessability or critical technical issues can override the numerical band.
 
@@ -707,7 +713,6 @@ The system must distinguish:
 Visible score/comparison chips do not by themselves mean public scoring or comparison recommendation is production-approved.
 
 ---
-
 
 ## Audition take slots, replacement and admin QA
 
@@ -1034,7 +1039,6 @@ Expected:
 - system marks duplicate, retest or uncertain;
 - operator confirmation requested where needed;
 - comparison does not recommend one duplicate over another as different performances.
-
 
 ### Fixture L — three active takes
 

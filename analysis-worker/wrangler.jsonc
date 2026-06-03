@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // Dedicated Cloudflare ANALYSIS Worker — durable analysis runtime, separate
+  // from the TanStack/Lovable app. Deployed via `npm run deploy:analysis-worker`
+  // (wrangler deploy -c analysis-worker/wrangler.jsonc). This is the ONLY worker
+  // that may consume tapecoach-analysis-jobs.
+  "name": "tapecoach-analysis-worker",
+  "compatibility_date": "2025-09-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "index.ts",
+  // Resolve the repo's `@/` path alias (→ <repo>/src) for wrangler's bundler,
+  // since the shared analysis modules import via `@/...`.
+  "alias": {
+    "@": "../src",
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYSIS_QUEUE",
+        "queue": "tapecoach-analysis-jobs",
+      },
+    ],
+    "consumers": [
+      {
+        "queue": "tapecoach-analysis-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+      },
+    ],
+  },
+  // Non-secret variables. Secrets (TAPECOACH_SUPABASE_SERVICE_ROLE_KEY,
+  // OPENROUTER_API_KEY, MUX_TOKEN_ID/SECRET/WEBHOOK_SECRET, ANALYSIS_DISPATCH_SECRET,
+  // RECONCILER_SECRET) are configured in the Cloudflare dashboard, not here.
+  "vars": {
+    "ANALYSIS_EXECUTION_MODE": "direct_openrouter",
+    "TAPECOACH_SUPABASE_URL": "https://sdsrmeomaafvuhdedlnl.supabase.co",
+    "QA_ARTIFACT_STORAGE_BUCKET": "qa-artifacts",
+    "QA_ARTIFACT_SINK": "storage",
+    "OPENROUTER_SITE_URL": "https://tapecoach.co.uk",
+    "OPENROUTER_APP_TITLE": "TapeCoach",
+    "S10_MODEL_STEP1": "google/gemini-3.5-flash",
+    "S10_MODEL_STEP2": "google/gemini-3.5-flash",
+    "S10_MODEL_RECOVERY": "google/gemini-3.1-flash-lite",
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+    },
+  },
+}

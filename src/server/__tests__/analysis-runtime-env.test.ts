@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock the Worker request-env accessor so we can simulate a Cloudflare Worker
 // binding for the no-arg resolution path. Defaults to null (Node/dev path).
+// analysis-runtime-env.server reads getRequestEnv from the TanStack-free ALS module.
 const getRequestEnvMock = vi.hoisted(() => vi.fn((): Record<string, unknown> | null => null));
-vi.mock("@/worker-entry", () => ({ getRequestEnv: getRequestEnvMock }));
+vi.mock("@/server/runtime-env-als.server", () => ({ getRequestEnv: getRequestEnvMock }));
 
 import {
   AnalysisRuntimeConfigError,
