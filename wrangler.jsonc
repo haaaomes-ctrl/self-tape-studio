@@ -31,13 +31,15 @@
       {
         "queue": "tapecoach-analysis-jobs",
         "max_batch_size": 1,
-        "max_batch_timeout": 5
+        "max_batch_timeout": 5,
+        "max_retries": 3
       }
     ]
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "ANALYSIS_EXECUTION_MODE": "current_worker",
+    "QA_ARTIFACT_STORAGE_BUCKET": "qa-artifacts",
+    "QA_ARTIFACT_SINK": "storage"
   }
-"vars": {
-  "APP_ENV": "production",
-  "QA_ARTIFACT_STORAGE_BUCKET": "qa-artifacts",
-  "QA_ARTIFACT_SINK": "storage"
-}
 }

@@ -2,6 +2,11 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metric } from "@/server/metrics.server";
 import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
 import { getRequestCtx, getRequestEnv, scheduleBackground } from "@/worker-entry";
+import {
+  describeWorkerAnalysisReadiness,
+  isDirectAnalysisDispatchReady,
+  resolveAnalysisExecutionMode,
+} from "@/server/worker-analysis-consumer.server";
 
 export type AnalysisJobReason =
   | "mux_asset_ready"
@@ -65,6 +70,7 @@ export type AnalysisDispatchResult = {
     | "analysis_external_dispatch_take_lookup_failed"
     | "analysis_queue_unavailable"
     | "analysis_queue_send_failed"
+    | "analysis_direct_mode_not_ready"
     | "analysis_dispatch_unavailable";
 };
 
@@ -390,7 +396,30 @@ export async function dispatchAnalysisJob(
   deps: AnalysisDispatchDeps = {},
 ): Promise<AnalysisDispatchResult> {
   const env = getRuntimeEnv(deps);
-  const externalDispatchUrl = cleanEnvValue(env?.ANALYSIS_DISPATCH_URL);
+  const isDirectMode = resolveAnalysisExecutionMode(env) === "direct_openrouter";
+
+  // Direct mode takes precedence over the legacy external bridge: when the
+  // in-Worker consumer runs analysis directly (ANALYSIS_EXECUTION_MODE=
+  // direct_openrouter), the take must go to the in-Worker queue, NOT to a
+  // configured ANALYSIS_DISPATCH_URL. If direct mode is not ready (missing queue
+  // binding / owned Supabase / OpenRouter / Mux / QA), fail safe BEFORE either
+  // the external bridge or the no-queue waitUntil fallback can run it on the
+  // wrong provider — routing to the existing mark-failed + credit-release path.
+  if (isDirectMode && !isDirectAnalysisDispatchReady(env)) {
+    console.error("[analysis-queue] direct mode dispatch not ready; refusing to enqueue", {
+      take_id: params.takeId,
+      reason: params.reason,
+      readiness: describeWorkerAnalysisReadiness(env),
+    });
+    metric("analysis_enqueue_failed", {
+      take_id: params.takeId,
+      reason: params.reason,
+      failure_code: "analysis_direct_mode_not_ready",
+    });
+    return { ok: false, method: "none", failureCode: "analysis_direct_mode_not_ready" };
+  }
+
+  const externalDispatchUrl = isDirectMode ? null : cleanEnvValue(env?.ANALYSIS_DISPATCH_URL);
   if (externalDispatchUrl) {
     const externalDispatchSecret = cleanEnvValue(env?.ANALYSIS_DISPATCH_SECRET);
     if (!externalDispatchSecret) {

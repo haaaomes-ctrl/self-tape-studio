@@ -340,11 +340,16 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).not.toContain("runProcessTake(takeId)");
   });
 
-  it("worker queue consumer owns runProcessTake execution", async () => {
+  it("worker queue consumer owns analysis execution inside the runtime env context", async () => {
     const source = await readFile(path.join(process.cwd(), "src/worker-entry.ts"), "utf8");
     expect(source).toContain("async queue(");
-    expect(source).toContain('await import("@/server/process-take.server")');
-    expect(source).toContain("runProcessTake(body.takeId)");
+    // The consumer delegates to the Slice 5 worker analysis consumer (which runs
+    // runProcessTake in current_worker mode or runAnalysisJob in direct mode).
+    expect(source).toContain('await import("@/server/worker-analysis-consumer.server")');
+    expect(source).toContain("runQueuedAnalysisJob");
+    // Execution is wrapped in the runtime env context so supabaseAdmin resolves
+    // owned Supabase in the Worker.
+    expect(source).toMatch(/runtimeStorage\.run\(\{\s*ctx,\s*env\s*\}/);
   });
 
   it("wrangler binds the durable analysis queue producer and consumer", async () => {
