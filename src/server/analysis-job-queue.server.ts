@@ -420,6 +420,31 @@ export async function dispatchAnalysisJob(
     return dispatchAnalysisJobExternally(params, externalDispatchUrl, externalDispatchSecret, deps);
   }
 
+  // Direct-mode readiness guard: when the in-Worker consumer will run analysis
+  // directly (ANALYSIS_EXECUTION_MODE=direct_openrouter), do NOT enqueue (or fall
+  // back to the Lovable waitUntil path for) a job the consumer could not safely
+  // run or mark terminal — missing queue binding, owned Supabase, OpenRouter, Mux
+  // or QA env. This is checked BEFORE the no-queue waitUntil fallback so a
+  // direct-mode dispatch with a missing/misnamed ANALYSIS_QUEUE fails safe
+  // (analysis_direct_mode_not_ready → existing mark-failed + credit-release path)
+  // instead of silently running runProcessTake on the Lovable provider.
+  if (
+    resolveAnalysisExecutionMode(env) === "direct_openrouter" &&
+    !isDirectAnalysisDispatchReady(env)
+  ) {
+    console.error("[analysis-queue] direct mode dispatch not ready; refusing to enqueue", {
+      take_id: params.takeId,
+      reason: params.reason,
+      readiness: describeWorkerAnalysisReadiness(env),
+    });
+    metric("analysis_enqueue_failed", {
+      take_id: params.takeId,
+      reason: params.reason,
+      failure_code: "analysis_direct_mode_not_ready",
+    });
+    return { ok: false, method: "none", failureCode: "analysis_direct_mode_not_ready" };
+  }
+
   const queue = getAnalysisQueue(env);
   if (!queue) {
     console.error(
@@ -441,29 +466,6 @@ export async function dispatchAnalysisJob(
           ...fallback,
           failureCode: fallback.failureCode ?? "analysis_queue_unavailable",
         };
-  }
-
-  // Direct-mode readiness guard: when the in-Worker consumer will run analysis
-  // directly (ANALYSIS_EXECUTION_MODE=direct_openrouter), do NOT enqueue a job
-  // the consumer could not safely run or mark terminal (missing owned Supabase /
-  // OpenRouter / Mux / QA env). Returning a safe failure lets the caller route
-  // through the existing dispatch-failure path (mark take error + release
-  // credit) instead of leaving the take stuck in analysis_pending.
-  if (
-    resolveAnalysisExecutionMode(env) === "direct_openrouter" &&
-    !isDirectAnalysisDispatchReady(env)
-  ) {
-    console.error("[analysis-queue] direct mode dispatch not ready; refusing to enqueue", {
-      take_id: params.takeId,
-      reason: params.reason,
-      readiness: describeWorkerAnalysisReadiness(env),
-    });
-    metric("analysis_enqueue_failed", {
-      take_id: params.takeId,
-      reason: params.reason,
-      failure_code: "analysis_direct_mode_not_ready",
-    });
-    return { ok: false, method: "none", failureCode: "analysis_direct_mode_not_ready" };
   }
 
   try {

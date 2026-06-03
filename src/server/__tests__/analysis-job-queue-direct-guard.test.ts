@@ -35,6 +35,34 @@ describe("dispatch direct-mode readiness guard", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("fails safe (does not fall back to waitUntil) when direct mode is set but the queue binding is missing", async () => {
+    // No ANALYSIS_QUEUE binding: must return analysis_direct_mode_not_ready BEFORE
+    // the no-queue waitUntil fallback, so it never silently runs runProcessTake.
+    const runProcessTake = vi.fn(async () => ({ ok: true }) as const);
+    const env: Record<string, unknown> = {
+      ANALYSIS_EXECUTION_MODE: "direct_openrouter",
+      TAPECOACH_SUPABASE_URL: "https://owned.supabase.co",
+      TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: "svc",
+      OPENROUTER_API_KEY: "or-key",
+      MUX_TOKEN_ID: "mux-id",
+      MUX_TOKEN_SECRET: "mux-secret",
+      QA_ARTIFACT_STORAGE_BUCKET: "qa-artifacts",
+      QA_ARTIFACT_SINK: "storage",
+    };
+
+    const result = await dispatchAnalysisJob(
+      { takeId: "take-1", reason: "mux_asset_ready" },
+      { env, runProcessTake, hasRequestContext: () => true },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      method: "none",
+      failureCode: "analysis_direct_mode_not_ready",
+    });
+    expect(runProcessTake).not.toHaveBeenCalled();
+  });
+
   it("enqueues normally when direct mode is fully ready", async () => {
     const send = vi.fn(async (_msg: unknown) => undefined);
     const result = await dispatchAnalysisJob(
