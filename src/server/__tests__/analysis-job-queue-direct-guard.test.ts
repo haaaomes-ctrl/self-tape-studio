@@ -74,6 +74,25 @@ describe("dispatch direct-mode readiness guard", () => {
     expect(send.mock.calls[0][0]).toMatchObject({ takeId: "take-1", reason: "mux_asset_ready" });
   });
 
+  it("direct mode takes precedence over the legacy external bridge (enqueues to the in-Worker queue)", async () => {
+    const send = vi.fn(async (_msg: unknown) => undefined);
+    const externalFetch = vi.fn(async () => new Response("{}"));
+    const env = readyDirectEnv({ send });
+    // Cutover env still has the legacy external dispatch configured.
+    env.ANALYSIS_DISPATCH_URL = "https://legacy-worker.example/api/internal/run-analysis";
+    env.ANALYSIS_DISPATCH_SECRET = "legacy-secret";
+
+    const result = await dispatchAnalysisJob(
+      { takeId: "take-1", reason: "mux_asset_ready" },
+      { env, fetch: externalFetch as unknown as typeof fetch },
+    );
+
+    expect(result).toEqual({ ok: true, method: "queue" });
+    expect(send).toHaveBeenCalledTimes(1);
+    // The legacy external bridge must NOT be called in direct mode.
+    expect(externalFetch).not.toHaveBeenCalled();
+  });
+
   it("does not apply the direct guard in current_worker mode (enqueues even without OpenRouter)", async () => {
     const send = vi.fn(async (_msg: unknown) => undefined);
     const env = readyDirectEnv({ send });

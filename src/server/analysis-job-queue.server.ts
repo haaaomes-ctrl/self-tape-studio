@@ -396,7 +396,30 @@ export async function dispatchAnalysisJob(
   deps: AnalysisDispatchDeps = {},
 ): Promise<AnalysisDispatchResult> {
   const env = getRuntimeEnv(deps);
-  const externalDispatchUrl = cleanEnvValue(env?.ANALYSIS_DISPATCH_URL);
+  const isDirectMode = resolveAnalysisExecutionMode(env) === "direct_openrouter";
+
+  // Direct mode takes precedence over the legacy external bridge: when the
+  // in-Worker consumer runs analysis directly (ANALYSIS_EXECUTION_MODE=
+  // direct_openrouter), the take must go to the in-Worker queue, NOT to a
+  // configured ANALYSIS_DISPATCH_URL. If direct mode is not ready (missing queue
+  // binding / owned Supabase / OpenRouter / Mux / QA), fail safe BEFORE either
+  // the external bridge or the no-queue waitUntil fallback can run it on the
+  // wrong provider — routing to the existing mark-failed + credit-release path.
+  if (isDirectMode && !isDirectAnalysisDispatchReady(env)) {
+    console.error("[analysis-queue] direct mode dispatch not ready; refusing to enqueue", {
+      take_id: params.takeId,
+      reason: params.reason,
+      readiness: describeWorkerAnalysisReadiness(env),
+    });
+    metric("analysis_enqueue_failed", {
+      take_id: params.takeId,
+      reason: params.reason,
+      failure_code: "analysis_direct_mode_not_ready",
+    });
+    return { ok: false, method: "none", failureCode: "analysis_direct_mode_not_ready" };
+  }
+
+  const externalDispatchUrl = isDirectMode ? null : cleanEnvValue(env?.ANALYSIS_DISPATCH_URL);
   if (externalDispatchUrl) {
     const externalDispatchSecret = cleanEnvValue(env?.ANALYSIS_DISPATCH_SECRET);
     if (!externalDispatchSecret) {
@@ -418,31 +441,6 @@ export async function dispatchAnalysisJob(
       };
     }
     return dispatchAnalysisJobExternally(params, externalDispatchUrl, externalDispatchSecret, deps);
-  }
-
-  // Direct-mode readiness guard: when the in-Worker consumer will run analysis
-  // directly (ANALYSIS_EXECUTION_MODE=direct_openrouter), do NOT enqueue (or fall
-  // back to the Lovable waitUntil path for) a job the consumer could not safely
-  // run or mark terminal — missing queue binding, owned Supabase, OpenRouter, Mux
-  // or QA env. This is checked BEFORE the no-queue waitUntil fallback so a
-  // direct-mode dispatch with a missing/misnamed ANALYSIS_QUEUE fails safe
-  // (analysis_direct_mode_not_ready → existing mark-failed + credit-release path)
-  // instead of silently running runProcessTake on the Lovable provider.
-  if (
-    resolveAnalysisExecutionMode(env) === "direct_openrouter" &&
-    !isDirectAnalysisDispatchReady(env)
-  ) {
-    console.error("[analysis-queue] direct mode dispatch not ready; refusing to enqueue", {
-      take_id: params.takeId,
-      reason: params.reason,
-      readiness: describeWorkerAnalysisReadiness(env),
-    });
-    metric("analysis_enqueue_failed", {
-      take_id: params.takeId,
-      reason: params.reason,
-      failure_code: "analysis_direct_mode_not_ready",
-    });
-    return { ok: false, method: "none", failureCode: "analysis_direct_mode_not_ready" };
   }
 
   const queue = getAnalysisQueue(env);
