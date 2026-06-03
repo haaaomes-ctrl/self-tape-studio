@@ -352,11 +352,22 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toMatch(/runWithRuntimeContext\(\{\s*ctx,\s*env\s*\}/);
   });
 
-  it("wrangler binds the durable analysis queue producer and consumer", async () => {
-    const source = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
-    expect(source).toContain('"binding": "ANALYSIS_QUEUE"');
-    expect(source).toContain('"queue": "tapecoach-analysis-jobs"');
-    expect(source).toContain('"max_batch_size": 1');
+  it("the durable analysis queue consumer lives ONLY on the dedicated analysis worker", async () => {
+    // App worker (root): keeps the producer binding but must NOT be a consumer
+    // (one-consumer rule, ADR-0003 — Cloudflare rejects multiple consumers per queue).
+    const appSource = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
+    expect(appSource).toContain('"binding": "ANALYSIS_QUEUE"');
+    expect(appSource).toContain('"queue": "tapecoach-analysis-jobs"');
+    expect(appSource).not.toContain('"consumers"');
+
+    // Dedicated analysis worker: owns BOTH the producer and the sole consumer.
+    const workerSource = await readFile(
+      path.join(process.cwd(), "analysis-worker/wrangler.jsonc"),
+      "utf8",
+    );
+    expect(workerSource).toContain('"consumers"');
+    expect(workerSource).toContain('"queue": "tapecoach-analysis-jobs"');
+    expect(workerSource).toContain('"max_batch_size": 1');
   });
 
   it("wrangler deploys to the analysis worker named in ANALYSIS_DISPATCH_URL", async () => {

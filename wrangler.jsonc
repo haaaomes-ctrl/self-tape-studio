@@ -20,26 +20,23 @@
   // to lift the CPU ceiling (otherwise the Free default CPU limit can kill the
   // report assembly — `exceededCpu`). Wall-clock is already 15min for queue
   // consumers, so wall-clock is not the binding limit.
+  // The consumer for tapecoach-analysis-jobs lives ONLY on the dedicated analysis
+  // Worker (analysis-worker/wrangler.jsonc) — see docs/architecture ADR-0003's
+  // one-consumer rule. Cloudflare Queues rejects multiple consumers for one queue,
+  // so this app Worker must NOT declare a consumer. The producer binding is kept
+  // for the app's legacy in-Worker dispatch fallback.
   "queues": {
     "producers": [
       {
         "binding": "ANALYSIS_QUEUE",
-        "queue": "tapecoach-analysis-jobs"
-      }
-    ],
-    "consumers": [
-      {
         "queue": "tapecoach-analysis-jobs",
-        "max_batch_size": 1,
-        "max_batch_timeout": 5,
-        "max_retries": 3
-      }
-    ]
+      },
+    ],
   },
   "vars": {
     "APP_ENV": "production",
     "ANALYSIS_EXECUTION_MODE": "current_worker",
     "QA_ARTIFACT_STORAGE_BUCKET": "qa-artifacts",
-    "QA_ARTIFACT_SINK": "storage"
-  }
+    "QA_ARTIFACT_SINK": "storage",
+  },
 }
