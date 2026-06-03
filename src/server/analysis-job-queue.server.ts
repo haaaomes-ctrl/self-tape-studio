@@ -2,6 +2,11 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metric } from "@/server/metrics.server";
 import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
 import { getRequestCtx, getRequestEnv, scheduleBackground } from "@/worker-entry";
+import {
+  describeWorkerAnalysisReadiness,
+  isDirectAnalysisDispatchReady,
+  resolveAnalysisExecutionMode,
+} from "@/server/worker-analysis-consumer.server";
 
 export type AnalysisJobReason =
   | "mux_asset_ready"
@@ -65,6 +70,7 @@ export type AnalysisDispatchResult = {
     | "analysis_external_dispatch_take_lookup_failed"
     | "analysis_queue_unavailable"
     | "analysis_queue_send_failed"
+    | "analysis_direct_mode_not_ready"
     | "analysis_dispatch_unavailable";
 };
 
@@ -435,6 +441,29 @@ export async function dispatchAnalysisJob(
           ...fallback,
           failureCode: fallback.failureCode ?? "analysis_queue_unavailable",
         };
+  }
+
+  // Direct-mode readiness guard: when the in-Worker consumer will run analysis
+  // directly (ANALYSIS_EXECUTION_MODE=direct_openrouter), do NOT enqueue a job
+  // the consumer could not safely run or mark terminal (missing owned Supabase /
+  // OpenRouter / Mux / QA env). Returning a safe failure lets the caller route
+  // through the existing dispatch-failure path (mark take error + release
+  // credit) instead of leaving the take stuck in analysis_pending.
+  if (
+    resolveAnalysisExecutionMode(env) === "direct_openrouter" &&
+    !isDirectAnalysisDispatchReady(env)
+  ) {
+    console.error("[analysis-queue] direct mode dispatch not ready; refusing to enqueue", {
+      take_id: params.takeId,
+      reason: params.reason,
+      readiness: describeWorkerAnalysisReadiness(env),
+    });
+    metric("analysis_enqueue_failed", {
+      take_id: params.takeId,
+      reason: params.reason,
+      failure_code: "analysis_direct_mode_not_ready",
+    });
+    return { ok: false, method: "none", failureCode: "analysis_direct_mode_not_ready" };
   }
 
   try {

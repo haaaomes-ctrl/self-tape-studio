@@ -12,6 +12,7 @@ import {
   type CutoverRuntimeEnv,
 } from "@/server/cutover-diagnostics.server";
 import { getRequestEnv } from "@/worker-entry";
+import { describeWorkerAnalysisReadiness } from "@/server/worker-analysis-consumer.server";
 
 export const CUTOVER_HEALTH_VERSION = "lovable-owned-supabase-cutover-2026-06-02";
 
@@ -294,6 +295,7 @@ export async function handleCutoverHealthRequest(
         ...resolveAdminCutoverDiagnostics(runtimeEnv),
         ...resolvePublicCutoverDiagnostics(runtimeEnv),
       },
+      analysis_runtime: describeWorkerAnalysisReadiness(envValues as Record<string, unknown>),
       errors,
     },
     {

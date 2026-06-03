@@ -85,27 +85,35 @@ export default {
 
   async queue(
     batch: QueueBatch,
-    _env: Record<string, unknown>,
-    _ctx: RequestExecutionContext,
+    env: Record<string, unknown>,
+    ctx: RequestExecutionContext,
   ): Promise<void> {
-    const { runProcessTake } = await import("@/server/process-take.server");
+    const { runQueuedAnalysisJob } = await import("@/server/worker-analysis-consumer.server");
     for (const message of batch.messages) {
       const body = message.body as { takeId?: unknown; reason?: unknown; enqueuedAt?: unknown };
       if (typeof body.takeId !== "string" || body.takeId.trim().length === 0) {
         console.error("[analysis-queue] invalid message body", { body });
         continue;
       }
+      const takeId = body.takeId;
+      const reason = typeof body.reason === "string" ? body.reason : null;
       console.log("[analysis-queue] job started", {
-        take_id: body.takeId,
-        reason: typeof body.reason === "string" ? body.reason : null,
+        take_id: takeId,
+        reason,
         enqueued_at: typeof body.enqueuedAt === "string" ? body.enqueuedAt : null,
       });
-      const result = await runProcessTake(body.takeId);
-      console.log("[analysis-queue] job completed", {
-        take_id: body.takeId,
-        reason: typeof body.reason === "string" ? body.reason : null,
-        result,
-      });
+      // Wrap in runtimeStorage.run so server modules (supabaseAdmin) resolve the
+      // Worker runtime env, just like the fetch handler. Without this, in-Worker
+      // analysis cannot reach owned Supabase.
+      const outcome = await runtimeStorage.run({ ctx, env }, () =>
+        runQueuedAnalysisJob({ takeId, reason, env }),
+      );
+      console.log("[analysis-queue] job completed", { take_id: takeId, reason, outcome });
+      // Cloudflare Queues: throwing retries the batch (max_batch_size is 1, so it
+      // retries this single message). Returning acks it.
+      if (outcome.outcome === "retry") {
+        throw new Error(`[analysis-queue] retry requested for take ${takeId}: ${outcome.detail}`);
+      }
     }
   },
 };
