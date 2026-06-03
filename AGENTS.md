@@ -15,11 +15,12 @@ S10 is already being implemented. The performer-level, brief/no-brief, role/mate
 ## Source hierarchy
 
 1. `README.md` is the controlling product contract.
-2. `docs/tapecoach/s10-target-architecture.md` defines the target S10 architecture.
-3. Roadmap / delivery docs define sequencing only.
-4. This `AGENTS.md` defines implementation operating rules for agents.
+2. This `AGENTS.md` defines implementation operating rules for agents.
+3. `docs/architecture/` is authoritative for runtime topology, ownership boundaries, deployment, and where analysis executes (ADRs + runbooks). It does not override `README.md`'s product contract; this `AGENTS.md` delegates runtime-topology authority to it.
+4. `docs/tapecoach/s10-target-architecture.md` defines the target S10 architecture.
+5. Roadmap / delivery docs define sequencing only.
 
-If there is a conflict, `README.md` wins.
+This ordering mirrors the source hierarchy in `CLAUDE.md`. If there is a conflict, `README.md` wins.
 
 Before any change to runtime topology, where analysis executes, deployment, or
 queue/Worker wiring, read `docs/architecture/` first (ADRs + runbooks) and follow
