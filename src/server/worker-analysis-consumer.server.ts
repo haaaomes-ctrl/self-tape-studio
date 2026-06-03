@@ -147,10 +147,34 @@ export type RunQueuedAnalysisDeps = {
   runProcessTake?: (takeId: string) => Promise<RunProcessTakeResult>;
   runAnalysisJob?: (params: RunAnalysisJobParams) => Promise<RunProcessTakeResult>;
   createOpenRouterProvider?: (env: AnalysisRuntimeEnvInput) => AnalysisAiProvider;
+  /**
+   * Marks a take terminally failed and releases its reserved credit (the existing
+   * dispatch-failure path). Used when an already-queued direct-mode job cannot run
+   * but the take is still markable (Supabase reachable). Injectable for tests.
+   */
+  markDispatchFailure?: (input: {
+    takeId: string;
+    reason: string | null;
+    failureCode: string;
+  }) => Promise<void>;
 };
 
 function defaultCreateOpenRouterProvider(env: AnalysisRuntimeEnvInput): AnalysisAiProvider {
   return new OpenRouterChatProvider({ env, fetchImpl: fetch });
+}
+
+async function defaultMarkDispatchFailure(input: {
+  takeId: string;
+  reason: string | null;
+  failureCode: string;
+}): Promise<void> {
+  const mod = await import("./analysis-job-queue.server");
+  await mod.markAnalysisQueueDispatchFailure({
+    takeId: input.takeId,
+    // reason is used only for logging/metrics on the failure path.
+    reason: (input.reason as never) ?? "mux_asset_ready",
+    failureCode: input.failureCode as never,
+  });
 }
 
 /**
@@ -176,22 +200,42 @@ export async function runQueuedAnalysisJob(input: {
     const mapped = mapCloudflareEnvToAnalysisRuntimeEnvInput(env);
     const resolved = resolveAnalysisRuntimeEnv(mapped);
 
-    // Already-queued job arrives but direct config is missing: ack (do not loop)
-    // with a safe diagnostic. New jobs are blocked earlier at dispatch.
+    // Already-queued job arrives but direct config is missing (a secret was
+    // removed/misnamed after enqueue; the dispatch guard only protects NEW jobs).
+    // Do not loop. If the take is still markable (Supabase reachable), surface a
+    // terminal failure + release its reserved credit so it does not stay stuck
+    // pending; otherwise log loudly and ack (the reconciler recovers the take).
     if (!resolved.supabaseUrl || !resolved.supabaseServiceRoleKey) {
-      console.error("[analysis-queue] direct mode missing Supabase env — acking job", {
-        take_id: takeId,
-        supabase_url_configured: resolved.diagnostics.supabase_url_configured,
-        supabase_service_role_key_configured:
-          resolved.diagnostics.supabase_service_role_key_configured,
-      });
+      // Supabase unreachable: cannot mark the take terminal here.
+      console.error(
+        "[analysis-queue] direct mode missing Supabase env — cannot mark take; acking",
+        {
+          take_id: takeId,
+          supabase_url_configured: resolved.diagnostics.supabase_url_configured,
+          supabase_service_role_key_configured:
+            resolved.diagnostics.supabase_service_role_key_configured,
+        },
+      );
       return { outcome: "ack", mode, takeId, detail: "server_misconfigured_supabase" };
     }
     if (!resolved.openRouterApiKey) {
-      console.error("[analysis-queue] direct mode missing OpenRouter key — acking job", {
+      console.error("[analysis-queue] direct mode missing OpenRouter key — marking take failed", {
         take_id: takeId,
         openrouter_api_key_configured: resolved.diagnostics.openrouter_api_key_configured,
       });
+      const markDispatchFailure = deps.markDispatchFailure ?? defaultMarkDispatchFailure;
+      try {
+        await markDispatchFailure({
+          takeId,
+          reason: input.reason ?? null,
+          failureCode: "analysis_direct_mode_not_ready",
+        });
+      } catch (error) {
+        console.error("[analysis-queue] failed to mark direct-mode config failure", {
+          take_id: takeId,
+          error: safeErrorCode(error),
+        });
+      }
       return { outcome: "ack", mode, takeId, detail: "server_misconfigured_openrouter" };
     }
 

@@ -174,26 +174,37 @@ describe("worker analysis consumer", () => {
       expect(out).toMatchObject({ outcome: "ack", detail: "controlled_error" });
     });
 
-    it("acks safely (without running) when OpenRouter key is missing", async () => {
+    it("marks the take failed + acks when OpenRouter key is missing (Supabase reachable)", async () => {
       const runAnalysisJob = vi.fn(async () => OK);
+      const markDispatchFailure = vi.fn(async () => undefined);
       const out = await runQueuedAnalysisJob({
         takeId: "t",
+        reason: "mux_asset_ready",
         env: directEnv({ OPENROUTER_API_KEY: undefined }),
-        deps: { runAnalysisJob },
+        deps: { runAnalysisJob, markDispatchFailure },
       });
       expect(out).toMatchObject({ outcome: "ack", detail: "server_misconfigured_openrouter" });
       expect(runAnalysisJob).not.toHaveBeenCalled();
+      // Supabase IS reachable, so the take is marked terminal + credit released.
+      expect(markDispatchFailure).toHaveBeenCalledWith({
+        takeId: "t",
+        reason: "mux_asset_ready",
+        failureCode: "analysis_direct_mode_not_ready",
+      });
     });
 
-    it("acks safely (without running) when owned Supabase env is missing", async () => {
+    it("acks WITHOUT marking when owned Supabase env is missing (cannot mark)", async () => {
       const runAnalysisJob = vi.fn(async () => OK);
+      const markDispatchFailure = vi.fn(async () => undefined);
       const out = await runQueuedAnalysisJob({
         takeId: "t",
         env: directEnv({ TAPECOACH_SUPABASE_SERVICE_ROLE_KEY: undefined }),
-        deps: { runAnalysisJob },
+        deps: { runAnalysisJob, markDispatchFailure },
       });
       expect(out).toMatchObject({ outcome: "ack", detail: "server_misconfigured_supabase" });
       expect(runAnalysisJob).not.toHaveBeenCalled();
+      // Supabase unreachable => cannot mark the take terminal.
+      expect(markDispatchFailure).not.toHaveBeenCalled();
     });
 
     it("retries a transient provider failure", async () => {
