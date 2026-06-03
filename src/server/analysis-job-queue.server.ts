@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { metric } from "@/server/metrics.server";
 import { releaseReportCreditForTake } from "@/server/credit-ledger.server";
-import { getRequestCtx, getRequestEnv, scheduleBackground } from "@/worker-entry";
+import { getRequestCtx, getRequestEnv, scheduleBackground } from "@/server/runtime-env-als.server";
 import {
   describeWorkerAnalysisReadiness,
   isDirectAnalysisDispatchReady,

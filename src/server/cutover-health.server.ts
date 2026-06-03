@@ -11,7 +11,7 @@ import {
   safeErrorSummary,
   type CutoverRuntimeEnv,
 } from "@/server/cutover-diagnostics.server";
-import { getRequestEnv } from "@/worker-entry";
+import { getRequestEnv } from "@/server/runtime-env-als.server";
 import { describeWorkerAnalysisReadiness } from "@/server/worker-analysis-consumer.server";
 
 export const CUTOVER_HEALTH_VERSION = "lovable-owned-supabase-cutover-2026-06-02";

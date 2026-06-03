@@ -17,7 +17,7 @@ import {
   resolveSupabaseAdminRuntimeConfig,
   type SupabaseAdminRuntimeEnv,
 } from "@/integrations/supabase/client.server";
-import { getRequestEnv } from "@/worker-entry";
+import { getRequestEnv } from "@/server/runtime-env-als.server";
 
 export type AnalysisRuntimeEnvInput = SupabaseAdminRuntimeEnv & {
   OPENROUTER_API_KEY?: unknown;

@@ -6,7 +6,7 @@ import {
   resolveSupabasePublicRuntimeConfig,
   type SupabasePublicRuntimeEnv,
 } from "@/integrations/supabase/public-runtime";
-import { getRequestEnv } from "@/worker-entry";
+import { getRequestEnv } from "@/server/runtime-env-als.server";
 
 export type CutoverRuntimeEnv = SupabaseAdminRuntimeEnv &
   SupabasePublicRuntimeEnv & {

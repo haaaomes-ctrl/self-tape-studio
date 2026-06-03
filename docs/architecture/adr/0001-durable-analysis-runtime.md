@@ -1,8 +1,11 @@
-# ADR-001: Durable Analysis Runtime
+# ADR-0001: Durable Analysis Runtime
 
 ## Status
 
-Accepted
+Accepted. The runtime _topology_ (where the durable runner lives) is refined by
+[ADR-0003: Dedicated Cloudflare Analysis Worker](./0003-dedicated-cloudflare-analysis-worker.md):
+the durable runner is a **separate** Cloudflare Worker (`analysis-worker/`), not the
+TanStack/Lovable app Worker. The decisions and non-goals below still hold.
 
 ## Date
 

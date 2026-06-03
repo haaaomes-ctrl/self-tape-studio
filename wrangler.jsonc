@@ -1,45 +1,28 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  // Worker service name. MUST stay in sync with the deployed analysis worker
-  // and the producer's ANALYSIS_DISPATCH_URL host
-  // (https://tapecoach-analysis-worker.o-halawi90.workers.dev/api/internal/run-analysis).
-  // Cloudflare Workers Builds deploys to the service named here, so a mismatch
-  // would publish to a different worker and leave the dispatch target stale
-  // (404 / analysis_external_dispatch_failed). Do not rename without updating
-  // ANALYSIS_DISPATCH_URL to match.
-  "name": "tapecoach-analysis-worker",
+  // NEUTRALISED / TRANSITIONAL — do not deploy this config to the production
+  // analysis service. The durable analysis runtime is the dedicated worker in
+  // `analysis-worker/wrangler.jsonc` (service name `tapecoach-analysis-worker`,
+  // the ANALYSIS_DISPATCH_URL target). See docs/architecture ADR-0003.
+  //
+  // This root config was the old app+queue hybrid. Under the current topology the
+  // TanStack/Lovable app is hosted by Lovable, not deployed to Cloudflare from
+  // here. To remove the footgun where two configs could deploy to the same
+  // Cloudflare service and overwrite each other, this config:
+  //   - uses a distinct, clearly-unused service name (NOT tapecoach-analysis-worker);
+  //   - declares NO queue producer/consumer bindings (the dedicated analysis
+  //     Worker owns the ANALYSIS_QUEUE producer and the sole tapecoach-analysis-jobs
+  //     consumer).
+  // Cloudflare Workers Builds for `tapecoach-analysis-worker` must use
+  // `npm run deploy:analysis-worker` (analysis-worker/wrangler.jsonc), never this file.
+  "name": "tapecoach-app-worker-unused",
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker-entry.ts",
-  // NOTE: a custom `limits.cpu_ms` is intentionally NOT set here. This account
-  // is on the Workers **Free** plan, which rejects custom CPU limits at deploy
-  // (Cloudflare API error 100328: "CPU limits are not supported for the Free
-  // plan"). The two-step report build is CPU-heavy on 10-minute-max self-tapes,
-  // so when the account moves to **Workers Paid**, add:
-  //   "limits": { "cpu_ms": 300000 }   // 5-min queue-consumer maximum
-  // to lift the CPU ceiling (otherwise the Free default CPU limit can kill the
-  // report assembly — `exceededCpu`). Wall-clock is already 15min for queue
-  // consumers, so wall-clock is not the binding limit.
-  "queues": {
-    "producers": [
-      {
-        "binding": "ANALYSIS_QUEUE",
-        "queue": "tapecoach-analysis-jobs"
-      }
-    ],
-    "consumers": [
-      {
-        "queue": "tapecoach-analysis-jobs",
-        "max_batch_size": 1,
-        "max_batch_timeout": 5,
-        "max_retries": 3
-      }
-    ]
-  },
   "vars": {
     "APP_ENV": "production",
     "ANALYSIS_EXECUTION_MODE": "current_worker",
     "QA_ARTIFACT_STORAGE_BUCKET": "qa-artifacts",
-    "QA_ARTIFACT_SINK": "storage"
-  }
+    "QA_ARTIFACT_SINK": "storage",
+  },
 }

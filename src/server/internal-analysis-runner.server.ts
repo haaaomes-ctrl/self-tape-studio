@@ -15,7 +15,7 @@ import {
   type RunProcessTakeOptions,
   type RunProcessTakeResult,
 } from "@/server/process-take.server";
-import { getRequestEnv } from "@/worker-entry";
+import { getRequestEnv } from "@/server/runtime-env-als.server";
 
 type InternalAnalysisRunEnv = SupabaseAdminRuntimeEnv & {
   ANALYSIS_RUN_SECRET?: string;
