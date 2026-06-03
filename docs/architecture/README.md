@@ -32,6 +32,7 @@ Owned Supabase ........................... system of record: DB, auth, storage,
 - [ADR-0001 — Durable Analysis Runtime](./adr/0001-durable-analysis-runtime.md)
 - [ADR-0002 — Platform Portability & Lovable Exit Path](./adr/0002-platform-portability-and-lovable-exit-path.md)
 - [ADR-0003 — Dedicated Cloudflare Analysis Worker](./adr/0003-dedicated-cloudflare-analysis-worker.md)
+- [ADR-0004 — Lovable Cloud Exit & Clean Owned-Supabase Cutover](./adr/0004-lovable-cloud-exit-clean-cutover.md)
 
 ## Runbooks
 
