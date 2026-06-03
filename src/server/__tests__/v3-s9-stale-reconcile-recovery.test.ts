@@ -352,33 +352,40 @@ describe("v3 s9 stale reconcile recovery guardrails", () => {
     expect(source).toMatch(/runWithRuntimeContext\(\{\s*ctx,\s*env\s*\}/);
   });
 
-  it("the durable analysis queue consumer lives ONLY on the dedicated analysis worker", async () => {
-    // App worker (root): keeps the producer binding but must NOT be a consumer
-    // (one-consumer rule, ADR-0003 — Cloudflare rejects multiple consumers per queue).
+  it("the analysis queue producer + consumer live ONLY on the dedicated analysis worker", async () => {
+    // Root app config is neutralised: NO queue bindings at all (one-consumer rule,
+    // ADR-0003 — Cloudflare rejects multiple consumers per queue, and only the
+    // dedicated worker may own the producer/consumer).
     const appSource = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
-    expect(appSource).toContain('"binding": "ANALYSIS_QUEUE"');
-    expect(appSource).toContain('"queue": "tapecoach-analysis-jobs"');
+    // No queue bindings at all on the root config (queues block absent). (The
+    // explanatory comment may mention the queue name; the binding must be absent.)
+    expect(appSource).not.toContain('"queues"');
     expect(appSource).not.toContain('"consumers"');
+    expect(appSource).not.toContain('"producers"');
 
     // Dedicated analysis worker: owns BOTH the producer and the sole consumer.
     const workerSource = await readFile(
       path.join(process.cwd(), "analysis-worker/wrangler.jsonc"),
       "utf8",
     );
+    expect(workerSource).toContain('"producers"');
     expect(workerSource).toContain('"consumers"');
     expect(workerSource).toContain('"queue": "tapecoach-analysis-jobs"');
     expect(workerSource).toContain('"max_batch_size": 1');
   });
 
-  it("wrangler deploys to the analysis worker named in ANALYSIS_DISPATCH_URL", async () => {
-    const source = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
-    // Cloudflare Workers Builds deploys to the service named in `name`. It must
-    // match the deployed analysis worker + the producer's ANALYSIS_DISPATCH_URL
-    // host (tapecoach-analysis-worker.*.workers.dev/api/internal/run-analysis),
-    // or the build publishes a different worker and the dispatch target stays
-    // stale (404 / analysis_external_dispatch_failed).
-    expect(source).toContain('"name": "tapecoach-analysis-worker"');
-    expect(source).not.toContain('"name": "tanstack-start-app"');
+  it("only the dedicated analysis worker config targets the tapecoach-analysis-worker service", async () => {
+    // The dedicated worker keeps the ANALYSIS_DISPATCH_URL target service name.
+    const workerSource = await readFile(
+      path.join(process.cwd(), "analysis-worker/wrangler.jsonc"),
+      "utf8",
+    );
+    expect(workerSource).toContain('"name": "tapecoach-analysis-worker"');
+
+    // The neutralised root app config must NOT use that service name, so it can
+    // never deploy over / overwrite the dedicated analysis worker.
+    const appSource = await readFile(path.join(process.cwd(), "wrangler.jsonc"), "utf8");
+    expect(appSource).not.toContain('"name": "tapecoach-analysis-worker"');
   });
 
   it("analysis dispatch uses queue when the binding is available", async () => {

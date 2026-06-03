@@ -54,8 +54,13 @@ Run the durable analysis runtime as a **separate, dedicated Cloudflare Worker**.
 - Cloudflare **Workers Builds for `tapecoach-analysis-worker` must deploy
   `analysis-worker/wrangler.jsonc`** — deploy command `npm run deploy:analysis-worker`
   (`wrangler deploy -c analysis-worker/wrangler.jsonc`).
-- The root / full app Worker (root `wrangler.jsonc`, `src/worker-entry.ts`) **must
-  not be deployed as a second consumer** of the queue.
+- **Only `analysis-worker/wrangler.jsonc` may target the `tapecoach-analysis-worker`
+  service.** To remove the overwrite footgun, the root `wrangler.jsonc` is
+  **neutralised**: it uses a distinct, clearly-unused service name
+  (`tapecoach-app-worker-unused`), not `tapecoach-analysis-worker`, and declares
+  **no queue producer/consumer bindings**. It must not be deployed to the analysis
+  service. (`src/worker-entry.ts`'s `queue` handler is left as dead/transitional
+  code only — not attached to any queue.)
 - `ANALYSIS_RUN_ENDPOINT` and `ANALYSIS_RUN_SECRET` are **not** part of this
   architecture and must not be reintroduced.
 

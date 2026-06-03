@@ -40,6 +40,12 @@ export default {
     );
   },
 
+  // TRANSITIONAL / DEAD: this queue handler is retained only so this entry stays
+  // a drop-in if ever needed. Under the current topology the durable analysis
+  // runtime is the dedicated worker (analysis-worker/index.ts), and the root
+  // wrangler.jsonc declares NO consumer binding — so this handler is NOT attached
+  // to tapecoach-analysis-jobs and does not run. Retire it in the cleanup slice
+  // once the dedicated worker is proven (see docs/architecture ADR-0003).
   async queue(
     batch: QueueBatch,
     env: Record<string, unknown>,
