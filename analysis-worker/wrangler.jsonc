@@ -42,6 +42,16 @@
     "S10_MODEL_STEP1": "google/gemini-3.5-flash",
     "S10_MODEL_STEP2": "google/gemini-3.5-flash",
     "S10_MODEL_RECOVERY": "google/gemini-3.1-flash-lite",
+    // Runtime feature flags read by process-take.server via process.env (which
+    // Cloudflare populates from these vars under nodejs_compat). Without them the
+    // worker would run degraded (single-step, no QA). Values match env-vars.md's
+    // expected QA values; process-take threads only timeout/model/Lovable keys
+    // through the injected env, so these flags must be present here.
+    "TWO_STEP_ANALYSIS_ENABLED": "true",
+    "V3_QA_ARTIFACTS_ENABLED": "true",
+    "INTERNAL_QA_EMIT": "true",
+    "QA_ARTIFACT_LOG_FALLBACK": "true",
+    "INTERNAL_COMPARISON_TRIGGER_ENABLED": "true",
   },
   "observability": {
     "logs": {

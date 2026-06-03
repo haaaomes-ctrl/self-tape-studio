@@ -64,7 +64,13 @@ Run the durable analysis runtime as a **separate, dedicated Cloudflare Worker**.
 Variables (non-secret): `ANALYSIS_EXECUTION_MODE=direct_openrouter`,
 `TAPECOACH_SUPABASE_URL`, `QA_ARTIFACT_STORAGE_BUCKET=qa-artifacts`,
 `QA_ARTIFACT_SINK=storage`, `OPENROUTER_SITE_URL`, `OPENROUTER_APP_TITLE`,
-`S10_MODEL_STEP1/STEP2/RECOVERY`.
+`S10_MODEL_STEP1/STEP2/RECOVERY`, plus the analysis feature flags
+`process-take.server` reads via `process.env` (Cloudflare populates `process.env`
+from vars under `nodejs_compat`): `TWO_STEP_ANALYSIS_ENABLED=true`,
+`V3_QA_ARTIFACTS_ENABLED=true`, `INTERNAL_QA_EMIT=true`,
+`QA_ARTIFACT_LOG_FALLBACK=true`, `INTERNAL_COMPARISON_TRIGGER_ENABLED=true`
+(match env-vars.md's expected QA values, else the worker runs degraded:
+single-step, no QA).
 
 Secrets: `TAPECOACH_SUPABASE_SERVICE_ROLE_KEY`, `OPENROUTER_API_KEY`,
 `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`, `MUX_WEBHOOK_SECRET`, `ANALYSIS_DISPATCH_SECRET`,
