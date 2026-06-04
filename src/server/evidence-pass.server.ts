@@ -17,6 +17,7 @@ import {
   S10_OBSERVATION_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import { createAnalysisAiProvider, type AnalysisAiProvider } from "./analysis-ai-provider.server";
+import { logProviderError } from "./provider-error-log.server";
 import { cloneForProviderToolSchema } from "./provider-tool-schema.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 
@@ -1256,15 +1257,9 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       role: "step1",
     });
   } catch (err) {
-    // TEMP diagnostic: raw provider error stack (internal logs only) — remove
-    // once provider failures are stable post illegal-invocation fix. Signed/
-    // token query params are redacted in case an error message embeds a URL.
-    console.error(
-      "[raw-ai-error]",
-      ((err as Error | undefined)?.stack ?? String(err)).replace(
-        /([?&](?:token|mux_token|signature)=)[^&\s'"]+/gi,
-        "$1[redacted]",
-      ),
+    logProviderError(
+      { stage: "evidence_pass", provider: aiProvider.id, model, httpStatus: null },
+      err,
     );
     await recordUsage({
       status: args.signal.aborted ? "timeout" : "failure",
