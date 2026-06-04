@@ -1256,6 +1256,16 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       role: "step1",
     });
   } catch (err) {
+    // TEMP diagnostic: raw provider error stack (internal logs only) — remove
+    // once provider failures are stable post illegal-invocation fix. Signed/
+    // token query params are redacted in case an error message embeds a URL.
+    console.error(
+      "[raw-ai-error]",
+      ((err as Error | undefined)?.stack ?? String(err)).replace(
+        /([?&](?:token|mux_token|signature)=)[^&\s'"]+/gi,
+        "$1[redacted]",
+      ),
+    );
     await recordUsage({
       status: args.signal.aborted ? "timeout" : "failure",
       httpStatus: null,
