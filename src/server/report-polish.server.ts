@@ -20,6 +20,7 @@ import {
   type ReportProviderContract,
 } from "./provider-tool-schema.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
+import { logProviderError } from "./provider-error-log.server";
 import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
@@ -304,6 +305,10 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
       role: "step2",
     });
   } catch (err) {
+    logProviderError(
+      { stage: "report_polish", provider: aiProvider.id, model, httpStatus: null },
+      err,
+    );
     const error = timedOut
       ? "report_polish_timeout"
       : err instanceof Error
