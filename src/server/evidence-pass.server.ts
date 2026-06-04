@@ -1256,6 +1256,7 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       role: "step1",
     });
   } catch (err) {
+    console.error("[raw-ai-error]", (err as Error | undefined)?.stack ?? String(err));
     await recordUsage({
       status: args.signal.aborted ? "timeout" : "failure",
       httpStatus: null,
