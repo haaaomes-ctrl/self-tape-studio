@@ -176,7 +176,9 @@ export async function createMuxDirectUploadForAuthenticatedUser(input: {
 
     // 1. Quota gate
     try {
-      await assertWithinAnalysisQuota({ kind: "user", userId }, "createMuxDirectUpload");
+      await assertWithinAnalysisQuota({ kind: "user", userId }, "createMuxDirectUpload", {
+        email: claimEmail(claims),
+      });
     } catch (err) {
       if (err instanceof QuotaExceededError) {
         console.warn("[mux-upload] quota_rejected", {

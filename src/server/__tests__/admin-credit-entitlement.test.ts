@@ -217,6 +217,40 @@ describe("admin unlimited credit entitlement", () => {
     expect(processTakeSource).toContain("consumeReportCreditReservation");
   });
 
+  it("wires the daily quota gate through the entitlement-aware resolver", async () => {
+    const quotaSource = await readFile(
+      path.join(process.cwd(), "src/server/quota.server.ts"),
+      "utf8",
+    );
+    const muxUploadSource = await readFile(
+      path.join(process.cwd(), "src/server-fns/mux-upload.impl.server.ts"),
+      "utf8",
+    );
+    const retrySource = await readFile(
+      path.join(process.cwd(), "src/server-fns/process-take.functions.ts"),
+      "utf8",
+    );
+
+    // The gate resolves admin entitlement and the paid-grant exemption.
+    expect(quotaSource).toContain("resolveCreditEntitlementForUser");
+    expect(quotaSource).toContain("isUnlimitedAdminCreditEntitlement");
+    expect(quotaSource).toContain("ensureAdminQuotaExemptionRow");
+    expect(quotaSource).toContain("PAID_QUOTA_EXEMPT_CREDIT_SOURCES");
+    // Free tiers and admin_grant must never appear in the paid-exempt set.
+    expect(quotaSource).not.toContain('"free_signup"');
+    expect(quotaSource).not.toContain('"free_monthly"');
+    expect(quotaSource).not.toContain('"admin_grant"');
+
+    // Both call sites thread the verified-claims email into the gate so the
+    // admin path needs no extra auth admin round-trip.
+    expect(muxUploadSource).toMatch(
+      /assertWithinAnalysisQuota\([^;]*\{\s*email: claimEmail\(claims\),?\s*\}/,
+    );
+    expect(retrySource).toMatch(
+      /assertWithinAnalysisQuota\([^;]*\{ email: claimEmail\(context\.claims\) \}/,
+    );
+  });
+
   it("does not import the server-only entitlement helper from client or public code", async () => {
     const checkedDirs = ["src/routes", "src/components", "src/lib", "src/server-fns"];
     const offenders: string[] = [];

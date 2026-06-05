@@ -89,7 +89,11 @@ export const retryProcessTake = createServerFn({ method: "POST" })
       return { ok: true as const, alreadyRunning: true as const };
     }
     try {
-      await assertWithinAnalysisQuota({ kind: "user", userId: context.userId }, "retryProcessTake");
+      await assertWithinAnalysisQuota(
+        { kind: "user", userId: context.userId },
+        "retryProcessTake",
+        { email: claimEmail(context.claims) },
+      );
     } catch (err) {
       if (err instanceof QuotaExceededError) {
         metric("quota_rejection", {
