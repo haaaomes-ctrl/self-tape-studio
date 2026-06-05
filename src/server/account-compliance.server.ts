@@ -116,6 +116,53 @@ async function repairMissingAccountComplianceFromClaims(
   });
 }
 
+/**
+ * Self-healing compliance read (dashboard-load path). Returns the user's
+ * account_compliance row; if it is MISSING, derives it once from the
+ * caller's verified auth-metadata claims via the existing repair (the same
+ * mechanism the upload-time gate uses — that call stays in place as defence
+ * in depth).
+ *
+ * Properties relied on by callers:
+ * - Self-scoped: callers pass the middleware-resolved userId/claims only —
+ *   this can never repair another user's row.
+ * - Idempotent under concurrency: the repair upserts ON CONFLICT (user_id),
+ *   so a simultaneous dashboard load + upload-time repair cannot error or
+ *   duplicate.
+ * - Version bumps still re-prompt: the repair only fires when NO row exists,
+ *   and accountRouteFormStateFromAuthMetadata declines metadata whose policy
+ *   versions are not current — stale EXISTING rows are returned untouched,
+ *   never rewritten to current versions.
+ */
+export async function getAccountComplianceForUser(
+  userId: string,
+  claims?: unknown,
+): Promise<AccountComplianceRecord | null> {
+  const { data, error } = await supabaseAdmin
+    .from("account_compliance")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    safeCutoverLog("error", "[account-compliance] read_lookup_failed", {
+      operation: "account_compliance_read_lookup",
+      code: "account_compliance_lookup_failed",
+      user_id: userId,
+      table: "account_compliance",
+      action: "select",
+      error,
+    });
+    return null;
+  }
+
+  let row = data as AccountComplianceRecord | null;
+  if (!row && claims) {
+    row = await repairMissingAccountComplianceFromClaims(userId, claims);
+  }
+  return row;
+}
+
 export async function assertAccountComplianceForReport(
   userId: string,
   claims?: unknown,
