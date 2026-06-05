@@ -55,7 +55,7 @@ MUX_TOKEN_SECRET
 MUX_WEBHOOK_SECRET
 ANALYSIS_DISPATCH_URL
 ANALYSIS_DISPATCH_SECRET
-ANALYSIS_RUN_SECRET
+ANALYSIS_RUN_SECRET   # deprecated — scheduled for removal, see "External Analysis Worker Dispatch"
 STRIPE_SECRET_KEY
 STRIPE_WEBHOOK_SECRET
 OPENROUTER_API_KEY
@@ -142,29 +142,36 @@ curl -sS -X POST https://<lovable-domain>/api/internal/cutover-health \
 
 ## External Analysis Worker Dispatch
 
-`ANALYSIS_DISPATCH_URL` enables server-side dispatch to the external Cloudflare analysis Worker. When this URL is configured, TapeCoach treats the external Worker as the authoritative analysis dispatch path and must not silently fall back to request `waitUntil` if dispatch fails.
+Analysis executes in the dedicated Cloudflare analysis Worker (`analysis-worker/`) per ADR-0003. The app (`dispatchAnalysisJob`, `src/server/analysis-job-queue.server.ts`) chooses the dispatch path in this order:
 
-Do not configure `ANALYSIS_DISPATCH_URL` for production uploads until the external Worker `/health` response confirms:
+1. **Direct mode (production)** — when `ANALYSIS_EXECUTION_MODE=direct_openrouter`, the app enqueues to the Cloudflare Queue `tapecoach-analysis-jobs` via the `ANALYSIS_QUEUE` producer binding; the dedicated Worker is the only consumer and runs `runAnalysisJob` directly. In this mode `ANALYSIS_DISPATCH_URL` is deliberately ignored, and a readiness guard fails the dispatch safely (mark-failed + credit release) rather than letting an unready job fall through to the wrong path.
+2. **HTTP dispatch** — when not in direct mode and `ANALYSIS_DISPATCH_URL` is set, the app POSTs the job to the Worker's `/dispatch-analysis` endpoint with `Authorization: Bearer ANALYSIS_DISPATCH_SECRET`; the Worker authenticates and enqueues to the same queue. Configuring the URL without `ANALYSIS_DISPATCH_SECRET` is a hard dispatch failure, not a silent fallback.
+3. **`waitUntil` fallback (degraded)** — only if no queue binding is available; the analysis runs inside the request worker and may be terminated mid-flight. Logged and metricked as degraded.
+
+The Worker's `GET /health` returns safe readiness booleans only:
 
 ```json
 {
+  "ok": true,
+  "execution_mode": "direct_openrouter",
   "queue_binding_available": true,
-  "analysis_run_endpoint_configured": true
+  "supabase_env_present": true,
+  "openrouter_key_present": true,
+  "mux_env_present": true,
+  "qa_bucket_configured": true
 }
 ```
 
-`queue_binding_available=true` alone proves queue dispatch only. It does not prove live analysis completion. External dispatch success means the job was queued, not that the tape was analysed.
+`queue_binding_available=true` proves queue dispatch only. It does not prove live analysis completion — dispatch success means the job was queued, not that the tape was analysed.
 
-If `ANALYSIS_RUN_ENDPOINT` points back to Lovable, treat that as a bridge only; Lovable request lifetime limits may still apply to long Gemini/finalising work. The durable target is either a Cloudflare Queue consumer that runs the real S10 analysis code directly, or a backend that supports long-running analysis jobs.
+`RECONCILER_SECRET` protects the public reconciler/admin endpoints (`/api/public/reconcile-stale-takes`, `/api/public/admin-config`, `/api/public/admin-quota-exemption`). The Supabase Vault secret named `RECONCILER_SECRET` (read by the pg_cron reconcile job) and the app-env `RECONCILER_SECRET` must hold the **same value**, or the every-minute reconcile call 401s.
 
-`ANALYSIS_RUN_SECRET` protects TapeCoach's internal analysis runner endpoint. Configure the external Worker `ANALYSIS_RUN_ENDPOINT` to call:
+### Deprecated — scheduled for removal (see ADR-0003)
 
-```text
-POST /api/internal/run-analysis
-Authorization: Bearer ANALYSIS_RUN_SECRET
-```
+The Stage-2 "bridge" (Worker calling back into the Lovable app to run analysis) is **not** part of the live architecture and must not be reintroduced (ADR-0003).
 
-The internal endpoint is a Stage 2 bridge into the existing TapeCoach `runProcessTake` path. It returns `mark_complete=false` because TapeCoach owns report/status persistence. After deployment, run one full-length Professional take through the queue; if Lovable request limits still terminate the run, Stage 3 is to move the real runner into Cloudflare or another durable long-running backend.
+- `ANALYSIS_RUN_ENDPOINT` — zero code references; do not configure.
+- `ANALYSIS_RUN_SECRET` — read only by the vestigial `/api/internal/run-analysis` route (`handleInternalAnalysisRunRequest`), which has no live callers. The route, handler and secret are flagged for a separate removal PR; do not build anything new against them.
 
 ## Verification Rule
 
