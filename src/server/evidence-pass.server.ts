@@ -17,6 +17,7 @@ import {
   S10_OBSERVATION_PROMPT_VERSION,
 } from "./s10-report-prompt-map.server";
 import { createAnalysisAiProvider, type AnalysisAiProvider } from "./analysis-ai-provider.server";
+import { logProviderError } from "./provider-error-log.server";
 import { cloneForProviderToolSchema } from "./provider-tool-schema.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 
@@ -1256,6 +1257,10 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
       role: "step1",
     });
   } catch (err) {
+    logProviderError(
+      { stage: "evidence_pass", provider: aiProvider.id, model, httpStatus: null },
+      err,
+    );
     await recordUsage({
       status: args.signal.aborted ? "timeout" : "failure",
       httpStatus: null,

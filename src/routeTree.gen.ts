@@ -29,6 +29,7 @@ import { Route as LegalRefundCreditPolicyRouteImport } from './routes/legal/refu
 import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
 import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-report-disclaimer'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as AdminLaunchGovernanceRouteImport } from './routes/admin/launch-governance'
@@ -38,6 +39,7 @@ import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
 import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
+import { Route as ApiPublicAdminQuotaExemptionRouteImport } from './routes/api/public/admin-quota-exemption'
 import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 import { Route as ApiInternalRunAnalysisRouteImport } from './routes/api/internal/run-analysis'
@@ -146,6 +148,11 @@ const LegalAiReportDisclaimerRoute = LegalAiReportDisclaimerRouteImport.update({
   path: '/legal/ai-report-disclaimer',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
   id: '/audition/$auditionId',
   path: '/audition/$auditionId',
@@ -192,6 +199,12 @@ const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   path: '/api/public/mux-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAdminQuotaExemptionRoute =
+  ApiPublicAdminQuotaExemptionRouteImport.update({
+    id: '/api/public/admin-quota-exemption',
+    path: '/api/public/admin-quota-exemption',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicAdminProductCatalogueRoute =
   ApiPublicAdminProductCatalogueRouteImport.update({
     id: '/api/public/admin-product-catalogue',
@@ -253,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/privacy': typeof LegalPrivacyRoute
@@ -262,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
+  '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -291,6 +306,7 @@ export interface FileRoutesByTo {
   '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/privacy': typeof LegalPrivacyRoute
@@ -300,6 +316,7 @@ export interface FileRoutesByTo {
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
+  '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -330,6 +347,7 @@ export interface FileRoutesById {
   '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/privacy': typeof LegalPrivacyRoute
@@ -339,6 +357,7 @@ export interface FileRoutesById {
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
+  '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -370,6 +389,7 @@ export interface FileRouteTypes {
     | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/auth/callback'
     | '/legal/ai-report-disclaimer'
     | '/legal/cookies'
     | '/legal/privacy'
@@ -379,6 +399,7 @@ export interface FileRouteTypes {
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
+    | '/api/public/admin-quota-exemption'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -408,6 +429,7 @@ export interface FileRouteTypes {
     | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/auth/callback'
     | '/legal/ai-report-disclaimer'
     | '/legal/cookies'
     | '/legal/privacy'
@@ -417,6 +439,7 @@ export interface FileRouteTypes {
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
+    | '/api/public/admin-quota-exemption'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -446,6 +469,7 @@ export interface FileRouteTypes {
     | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/auth/callback'
     | '/legal/ai-report-disclaimer'
     | '/legal/cookies'
     | '/legal/privacy'
@@ -455,6 +479,7 @@ export interface FileRouteTypes {
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
+    | '/api/public/admin-quota-exemption'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -480,6 +505,7 @@ export interface RootRouteChildren {
   TrustRoute: typeof TrustRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   LegalAiReportDisclaimerRoute: typeof LegalAiReportDisclaimerRoute
   LegalCookiesRoute: typeof LegalCookiesRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
@@ -489,6 +515,7 @@ export interface RootRouteChildren {
   ApiInternalRunAnalysisRoute: typeof ApiInternalRunAnalysisRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
+  ApiPublicAdminQuotaExemptionRoute: typeof ApiPublicAdminQuotaExemptionRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
   ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
@@ -639,6 +666,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LegalAiReportDisclaimerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/audition/$auditionId': {
       id: '/audition/$auditionId'
       path: '/audition/$auditionId'
@@ -700,6 +734,13 @@ declare module '@tanstack/react-router' {
       path: '/api/public/mux-webhook'
       fullPath: '/api/public/mux-webhook'
       preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/admin-quota-exemption': {
+      id: '/api/public/admin-quota-exemption'
+      path: '/api/public/admin-quota-exemption'
+      fullPath: '/api/public/admin-quota-exemption'
+      preLoaderRoute: typeof ApiPublicAdminQuotaExemptionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/admin-product-catalogue': {
@@ -789,6 +830,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrustRoute: TrustRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   LegalAiReportDisclaimerRoute: LegalAiReportDisclaimerRoute,
   LegalCookiesRoute: LegalCookiesRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,
@@ -798,6 +840,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalRunAnalysisRoute: ApiInternalRunAnalysisRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,
+  ApiPublicAdminQuotaExemptionRoute: ApiPublicAdminQuotaExemptionRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
   ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,

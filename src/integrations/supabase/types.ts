@@ -1962,6 +1962,24 @@ export type Database = {
         }
         Relationships: []
       }
+      quota_exempt_users: {
+        Row: {
+          created_at: string
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       report_credit_reservations: {
         Row: {
           audition_id: string | null

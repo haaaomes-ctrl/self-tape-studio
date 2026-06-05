@@ -1,5 +1,6 @@
 // SERVER-ONLY. AI provider transport adapters for TapeCoach analysis.
 // Do not import this module from client/browser code.
+import { logProviderError } from "./provider-error-log.server";
 
 export type AnalysisAiProviderId = "lovable_ai_gateway" | "openrouter";
 
@@ -108,7 +109,10 @@ abstract class BaseAnalysisAiProvider implements AnalysisAiProvider {
   protected readonly fetchImpl: FetchLike;
 
   constructor(fetchImpl?: FetchLike) {
-    this.fetchImpl = fetchImpl ?? fetch;
+    // Bind to the global scope: calling `this.fetchImpl(...)` as a method
+    // rebinds `this` to the provider instance, which makes the native fetch
+    // throw "TypeError: Illegal invocation" on Cloudflare Workers.
+    this.fetchImpl = (fetchImpl ?? globalThis.fetch).bind(globalThis);
   }
 
   abstract isConfigured(): boolean;
@@ -131,7 +135,8 @@ abstract class BaseAnalysisAiProvider implements AnalysisAiProvider {
     let response: Response;
     try {
       response = await this.chatCompletions(input);
-    } catch {
+    } catch (err) {
+      logProviderError({ stage: "provider_request", provider: this.id, httpStatus: null }, err);
       return {
         ok: false,
         provider: this.id,
