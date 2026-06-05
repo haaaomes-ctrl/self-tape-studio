@@ -7,9 +7,9 @@
 --   - audition-videos: ZERO objects. Mux Direct Upload is the media path —
 --     nothing in the codebase uploads to this bucket (only a delete path in
 --     src/server-fns/delete.functions.ts and the cutover-health existence
---     check). 750 MB is a purely defensive ceiling sized for a possible
---     future direct-video fallback (~10 min 1080p); it can be lowered once
---     a real writer exists.
+--     check). With no writer, the cap is kept deliberately TIGHT (50 MB,
+--     operator review 2026-06-05); bump it deliberately if a direct-video
+--     fallback is ever built.
 --
 -- Deliberately NO retention/deletion jobs in this migration: retention is
 -- held pending operator sign-off (audition-videos retention is a
@@ -20,5 +20,5 @@ SET file_size_limit = 26214400        -- 25 MB
 WHERE id = 'qa-artifacts';
 
 UPDATE storage.buckets
-SET file_size_limit = 786432000       -- 750 MB
+SET file_size_limit = 52428800        -- 50 MB
 WHERE id = 'audition-videos';
