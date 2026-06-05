@@ -91,11 +91,19 @@ function LoginPage() {
           try {
             await saveAccountCompliance(data.user.id, accountRouteForm);
           } catch (saveErr) {
+            // Expected when email confirmation is enabled: there is no
+            // session yet, so the authenticated save fails. The consent is
+            // already persisted in auth metadata at signUp — not data loss.
             console.warn("account_compliance_signup_save_failed", saveErr);
-            toast.warning("Account created. Complete the account route before uploading.");
           }
         }
-        toast.success("Account created — you're in.");
+        if (data.session) {
+          toast.success("Account created — you're in.");
+        } else {
+          toast.success(
+            "Account created — check your email. We've sent a confirmation link; click it to verify your address before continuing.",
+          );
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email: parsed.data.email,
