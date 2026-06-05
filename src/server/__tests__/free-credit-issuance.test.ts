@@ -101,16 +101,52 @@ describe("reconcileFreeCreditsForUser", () => {
     configWithToggle(true);
   });
 
-  it("grants exactly one free_signup credit to a fresh user (stable idempotency key)", async () => {
+  it("grants EXACTLY ONE credit (free_signup only) to a fresh user — monthly must not fire at signup", async () => {
     grantsTable([]);
     const result = await reconcile("user-fresh-1");
     expect(result.signup_granted).toBe(true);
+    expect(result.monthly_granted).toBe(false);
+    // The double-grant bug: signup + monthly in the same pass. Pin to one.
+    expect(mocks.grantFundedCredits).toHaveBeenCalledTimes(1);
     expect(mocks.grantFundedCredits).toHaveBeenCalledWith({
       user_id: "user-fresh-1",
       source: "free_signup",
       credit_amount: 1,
       idempotency_key: "free_signup:user-fresh-1",
     });
+  });
+
+  it("monthly is NOT due while the most recent free-tier grant is a free_signup under 31 days old", async () => {
+    grantsTable([
+      {
+        source: "free_signup",
+        status: "active",
+        remaining_credits: 1,
+        expires_at: null,
+        granted_at: daysAgo(5),
+      },
+    ]);
+    const result = await reconcile("user-young-signup");
+    expect(result.signup_granted).toBe(false);
+    expect(result.monthly_granted).toBe(false);
+    expect(mocks.grantFundedCredits).not.toHaveBeenCalled();
+  });
+
+  it("monthly IS due once the most recent free-tier grant (the signup) is older than 31 days", async () => {
+    grantsTable([
+      {
+        source: "free_signup",
+        status: "exhausted",
+        remaining_credits: 0,
+        expires_at: null,
+        granted_at: daysAgo(32),
+      },
+    ]);
+    const result = await reconcile("user-aged-signup");
+    expect(result.monthly_granted).toBe(true);
+    expect(mocks.grantFundedCredits).toHaveBeenCalledTimes(1);
+    const call = mocks.grantFundedCredits.mock.calls[0][0];
+    expect(call.source).toBe("free_monthly");
   });
 
   it("never re-grants free_signup when any row exists, even exhausted", async () => {
