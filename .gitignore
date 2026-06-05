@@ -34,3 +34,10 @@ dist-ssr
 # analysis-worker dry-run build output
 analysis-worker/.dry/
 analysis-worker/analysis-worker/
+
+# Claude Code local state (settings, worktrees) — never commit
+.claude/
+
+# Local QA artefact output from test runs. Intentional committed fixtures
+# (e.g. qa-artifacts/GF-01-*) remain tracked; use `git add -f` to add new ones.
+qa-artifacts/
