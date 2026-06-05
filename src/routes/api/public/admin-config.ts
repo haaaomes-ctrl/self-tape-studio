@@ -13,7 +13,7 @@
 //   - 401 if header missing or mismatched
 //   - All field validation happens server-side. Negative/zero/non-integer
 //     values are rejected with 400.
-//   - Only the three documented fields can be written. No model keys,
+//   - Only the documented fields can be written. No model keys,
 //     prompts, scoring weights, or other tuning is editable here.
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
@@ -25,13 +25,15 @@ const UpdateSchema = z
     quota_enabled: z.boolean().optional(),
     daily_submission_cap: z.number().int().positive().max(10_000).optional(),
     max_takes_per_audition: z.number().int().positive().max(1_000).optional(),
+    free_monthly_includes_funded_users: z.boolean().optional(),
   })
   .strict()
   .refine(
     (v) =>
       v.quota_enabled !== undefined ||
       v.daily_submission_cap !== undefined ||
-      v.max_takes_per_audition !== undefined,
+      v.max_takes_per_audition !== undefined ||
+      v.free_monthly_includes_funded_users !== undefined,
     { message: "At least one field must be provided" },
   );
 
@@ -86,9 +88,7 @@ export const Route = createFileRoute("/api/public/admin-config")({
         }
 
         // Log the change (no PII).
-        console.log(
-          `[admin-config] updated ${JSON.stringify({ fields: Object.keys(update) })}`,
-        );
+        console.log(`[admin-config] updated ${JSON.stringify({ fields: Object.keys(update) })}`);
 
         const cfg = await getResolvedConfig();
         return Response.json(cfg);

@@ -27,19 +27,29 @@ credit sources below, and there is **no active per-user daily submission cap**
 | `school_funded` / `coach_funded` / `agent_funded` / `platform_funded` / `sponsor_campaign` | per allocation  | funding-period expiry where set                                                                                                                                           | Partner credit-pool allocation RPCs                                                              |
 | `admin_grant`                                                                              | per grant       | per grant                                                                                                                                                                 | Manual only: `admin_grant_user_credits` (requires ≥12-char `admin_reason`, audited)              |
 
-**Implementation status of the free sources (verified against code and the
-live database on 2026-06-05):** the `free_signup` and `free_monthly` semantics
-above are fully encoded — source enums, grant-policy code, DB constraints,
-balance/snapshot UI copy, and the CRM emails (`free_report_available`,
-`monthly_free_report`) all exist — but **no automated issuance path is wired
-yet**. There is no `auth.users` trigger, no scheduled job, and no claim
-endpoint that grants them; `grantFundedCredits`
-(`src/server/credit-ledger.server.ts:111`) currently has no automated caller
-for free sources, and the live `credit_grants` table held zero rows at
-verification time. Until issuance is wired (or grants are made manually via
-the admin console), a standard account holds no credits and is blocked by the
-credit gate (`CREDIT_REQUIRED`, HTTP 402) — which is the credit model working
-as designed, minus the free on-ramp.
+**Free-source issuance (wired 2026-06-05; Monday 2969404421):** the
+`free_signup` and `free_monthly` semantics above are fully encoded — source
+enums, grant-policy code, DB constraints, balance/snapshot UI copy, and the
+CRM emails (`free_report_available`, `monthly_free_report`). Issuance is
+**lazy and app-side**: `reconcileFreeCreditsForUser`
+(`src/server/free-credit-issuance.server.ts`) runs at dashboard load
+(`getCreditBalance`) and at the report-reservation choke point
+(`reserveReportCreditForTake`), plus a daily pg_cron job that calls the
+secret-gated `/api/public/free-credit-reconcile` endpoint for dormant users
+(candidates pre-filtered by the service-role `list_free_credit_due_users`
+helper). All grants flow through the idempotent `grant_funded_credits` RPC
+via the TS wrapper `grantFundedCredits`
+(`src/server/credit-ledger.server.ts`).
+
+**Why app-side, not a DB trigger/SQL cron:** the CRM emails are rendered and
+enqueued by the TS wrapper — a SQL-level grant cannot send them, and the lazy
+hooks fire at the only moments a credit can be spent. (An `auth.users`
+trigger would additionally need GoTrue-role EXECUTE plumbing, but the email
+constraint is the deciding reason.) The monthly grant still issues when the
+lifecycle email is consent-suppressed — grant ≠ email. The
+`free_monthly_includes_funded_users` toggle in `app_config` (default true)
+controls whether holders of ACTIVE paid/funded credits also receive the
+monthly allowance.
 
 ### The admin account is unconstrained
 

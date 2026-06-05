@@ -39,6 +39,7 @@ import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
 import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
+import { Route as ApiPublicFreeCreditReconcileRouteImport } from './routes/api/public/free-credit-reconcile'
 import { Route as ApiPublicAdminQuotaExemptionRouteImport } from './routes/api/public/admin-quota-exemption'
 import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
@@ -199,6 +200,12 @@ const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   path: '/api/public/mux-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicFreeCreditReconcileRoute =
+  ApiPublicFreeCreditReconcileRouteImport.update({
+    id: '/api/public/free-credit-reconcile',
+    path: '/api/public/free-credit-reconcile',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicAdminQuotaExemptionRoute =
   ApiPublicAdminQuotaExemptionRouteImport.update({
     id: '/api/public/admin-quota-exemption',
@@ -277,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
+  '/api/public/free-credit-reconcile': typeof ApiPublicFreeCreditReconcileRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -317,6 +325,7 @@ export interface FileRoutesByTo {
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
+  '/api/public/free-credit-reconcile': typeof ApiPublicFreeCreditReconcileRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -358,6 +367,7 @@ export interface FileRoutesById {
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
   '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
+  '/api/public/free-credit-reconcile': typeof ApiPublicFreeCreditReconcileRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -400,6 +410,7 @@ export interface FileRouteTypes {
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
     | '/api/public/admin-quota-exemption'
+    | '/api/public/free-credit-reconcile'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -440,6 +451,7 @@ export interface FileRouteTypes {
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
     | '/api/public/admin-quota-exemption'
+    | '/api/public/free-credit-reconcile'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -480,6 +492,7 @@ export interface FileRouteTypes {
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
     | '/api/public/admin-quota-exemption'
+    | '/api/public/free-credit-reconcile'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -516,6 +529,7 @@ export interface RootRouteChildren {
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
   ApiPublicAdminQuotaExemptionRoute: typeof ApiPublicAdminQuotaExemptionRoute
+  ApiPublicFreeCreditReconcileRoute: typeof ApiPublicFreeCreditReconcileRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
   ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
@@ -736,6 +750,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/free-credit-reconcile': {
+      id: '/api/public/free-credit-reconcile'
+      path: '/api/public/free-credit-reconcile'
+      fullPath: '/api/public/free-credit-reconcile'
+      preLoaderRoute: typeof ApiPublicFreeCreditReconcileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/admin-quota-exemption': {
       id: '/api/public/admin-quota-exemption'
       path: '/api/public/admin-quota-exemption'
@@ -841,6 +862,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,
   ApiPublicAdminQuotaExemptionRoute: ApiPublicAdminQuotaExemptionRoute,
+  ApiPublicFreeCreditReconcileRoute: ApiPublicFreeCreditReconcileRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
   ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,
