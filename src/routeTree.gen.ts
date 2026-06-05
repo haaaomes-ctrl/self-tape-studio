@@ -29,6 +29,7 @@ import { Route as LegalRefundCreditPolicyRouteImport } from './routes/legal/refu
 import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalCookiesRouteImport } from './routes/legal/cookies'
 import { Route as LegalAiReportDisclaimerRouteImport } from './routes/legal/ai-report-disclaimer'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AuditionAuditionIdRouteImport } from './routes/audition.$auditionId'
 import { Route as AdminStorageDownloadsRouteImport } from './routes/admin/storage-downloads'
 import { Route as AdminLaunchGovernanceRouteImport } from './routes/admin/launch-governance'
@@ -147,6 +148,11 @@ const LegalAiReportDisclaimerRoute = LegalAiReportDisclaimerRouteImport.update({
   path: '/legal/ai-report-disclaimer',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuditionAuditionIdRoute = AuditionAuditionIdRouteImport.update({
   id: '/audition/$auditionId',
   path: '/audition/$auditionId',
@@ -260,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/privacy': typeof LegalPrivacyRoute
@@ -299,6 +306,7 @@ export interface FileRoutesByTo {
   '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/privacy': typeof LegalPrivacyRoute
@@ -339,6 +347,7 @@ export interface FileRoutesById {
   '/admin/launch-governance': typeof AdminLaunchGovernanceRoute
   '/admin/storage-downloads': typeof AdminStorageDownloadsRoute
   '/audition/$auditionId': typeof AuditionAuditionIdRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/legal/ai-report-disclaimer': typeof LegalAiReportDisclaimerRoute
   '/legal/cookies': typeof LegalCookiesRoute
   '/legal/privacy': typeof LegalPrivacyRoute
@@ -380,6 +389,7 @@ export interface FileRouteTypes {
     | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/auth/callback'
     | '/legal/ai-report-disclaimer'
     | '/legal/cookies'
     | '/legal/privacy'
@@ -419,6 +429,7 @@ export interface FileRouteTypes {
     | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/auth/callback'
     | '/legal/ai-report-disclaimer'
     | '/legal/cookies'
     | '/legal/privacy'
@@ -458,6 +469,7 @@ export interface FileRouteTypes {
     | '/admin/launch-governance'
     | '/admin/storage-downloads'
     | '/audition/$auditionId'
+    | '/auth/callback'
     | '/legal/ai-report-disclaimer'
     | '/legal/cookies'
     | '/legal/privacy'
@@ -493,6 +505,7 @@ export interface RootRouteChildren {
   TrustRoute: typeof TrustRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   AuditionAuditionIdRoute: typeof AuditionAuditionIdRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   LegalAiReportDisclaimerRoute: typeof LegalAiReportDisclaimerRoute
   LegalCookiesRoute: typeof LegalCookiesRoute
   LegalPrivacyRoute: typeof LegalPrivacyRoute
@@ -653,6 +666,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LegalAiReportDisclaimerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/audition/$auditionId': {
       id: '/audition/$auditionId'
       path: '/audition/$auditionId'
@@ -810,6 +830,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrustRoute: TrustRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   AuditionAuditionIdRoute: AuditionAuditionIdRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   LegalAiReportDisclaimerRoute: LegalAiReportDisclaimerRoute,
   LegalCookiesRoute: LegalCookiesRoute,
   LegalPrivacyRoute: LegalPrivacyRoute,

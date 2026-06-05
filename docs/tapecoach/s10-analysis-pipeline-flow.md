@@ -35,10 +35,10 @@ Upload (Mux direct upload)
 ```
 
 ### Dispatch branches (§2)
-`dispatchAnalysisJob` (analysis-job-queue.server.ts) chooses, in order:
-1. **Cloudflare Queue** (`ANALYSIS_QUEUE` binding) → `dispatch_method: "queue"`. Consumed by `src/worker-entry.ts` `queue()` which imports and calls `runProcessTake` (`[analysis-queue] job started / job completed`).
-2. **External dispatch** (`ANALYSIS_DISPATCH_URL`) → POST `src/routes/api/internal/run-analysis.ts` → `runProcessTake`. `dispatch_source: "external_worker"`.
-3. **`waitUntil` fallback** (in-request) → `dispatch_method: "wait_until_fallback"`. Warned as risky (request worker may terminate mid-flight).
+`dispatchAnalysisJob` (analysis-job-queue.server.ts) chooses, in order (see ADR-0003 for the topology):
+1. **Direct mode (production)** — `ANALYSIS_EXECUTION_MODE=direct_openrouter`: a readiness guard fails safe if the direct runtime isn't ready; otherwise the app enqueues to the Cloudflare Queue `tapecoach-analysis-jobs` (`ANALYSIS_QUEUE` producer binding) → `dispatch_method: "queue"`. Consumed ONLY by the dedicated analysis Worker (`analysis-worker/index.ts` `queue()` → `runAnalysisJob`, `[analysis-worker] job started / job completed`). `ANALYSIS_DISPATCH_URL` is deliberately ignored in this mode.
+2. **External dispatch** (non-direct mode, `ANALYSIS_DISPATCH_URL` set) → POST to the dedicated Worker's `/dispatch-analysis` endpoint (Bearer `ANALYSIS_DISPATCH_SECRET`), which enqueues to the same queue. `dispatch_source: "external_worker"`. NOT `/api/internal/run-analysis` — that route is a vestigial Stage-2 bridge with no live callers, scheduled for removal (ADR-0003).
+3. **`waitUntil` fallback** (in-request, no queue binding) → `dispatch_method: "wait_until_fallback"`. Warned as risky (request worker may terminate mid-flight).
 
 > **Observability implication (confirmed with Lovable):** worker logs for these
 > branches land under different prefixes (`[analysis-queue] …`, `[take-pipeline] …`),
