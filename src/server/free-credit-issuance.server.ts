@@ -3,6 +3,9 @@
 // Credits are the sole usage governor (ADR-0005). This module wires the free
 // on-ramp: one free_signup credit per account, plus a monthly ALLOWANCE
 // (free_monthly: at most one per rolling 31 days — not a balance top-up).
+// The allowance is anchored on the most recent free-tier grant of EITHER
+// source: signup occupies the first period, so a fresh account gets exactly
+// ONE credit at signup and the monthly cadence begins ~31 days later.
 //
 // Issuance is deliberately APP-SIDE because the CRM emails live in the TS
 // wrapper: grantFundedCredits() renders and enqueues free_report_available /
@@ -141,15 +144,22 @@ async function doReconcile(
       signupGranted = await grantOnce(userId, "free_signup", `free_signup:${userId}`);
     }
 
-    // free_monthly allowance: at most one per rolling 31 days. The rolling
-    // read below is the authoritative gate; the calendar-month idempotency
+    // free_monthly allowance: at most one per rolling 31 days, anchored on
+    // the most recent FREE-TIER grant of EITHER source. The signup credit
+    // occupies the first period: a fresh account gets ONLY free_signup at
+    // signup, and free_monthly first becomes due ~31 days later. The signup
+    // pass itself never grants monthly (`hasSignupGrant` gate below), so the
+    // in-pass signup grant cannot be missed by the pre-pass snapshot. The
+    // rolling read is the authoritative gate; the calendar-month idempotency
     // key only collapses concurrent same-period calls on the unique index.
     let monthlyGranted = false;
     const windowStartMs = now.getTime() - FREE_MONTHLY_ALLOWANCE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    const hasRecentMonthly = grants.some(
-      (g) => g.source === "free_monthly" && new Date(g.granted_at).getTime() > windowStartMs,
+    const hasRecentFreeTierGrant = grants.some(
+      (g) =>
+        (g.source === "free_signup" || g.source === "free_monthly") &&
+        new Date(g.granted_at).getTime() > windowStartMs,
     );
-    if (!hasRecentMonthly) {
+    if (hasSignupGrant && !hasRecentFreeTierGrant) {
       const cfg = await getResolvedConfig();
       // status is not time-swept: an expired grant still reads
       // status='active', so the expires_at AND remaining checks are
