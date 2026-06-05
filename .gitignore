@@ -35,6 +35,13 @@ dist-ssr
 analysis-worker/.dry/
 analysis-worker/analysis-worker/
 
+# Claude Code local state (settings, worktrees) — never commit
+.claude/
+
+# Local QA artefact output from test runs. Intentional committed fixtures
+# (e.g. qa-artifacts/GF-01-*) remain tracked; use `git add -f` to add new ones.
+qa-artifacts/
+
 # Local env overrides (real secrets never belong in tracked files).
 # NOTE: .env itself is deliberately tracked: it holds ONLY public Supabase
 # client values and is maintained by the Lovable sync (audited 2026-06-05).
