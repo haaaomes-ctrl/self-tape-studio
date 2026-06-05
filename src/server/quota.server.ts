@@ -12,6 +12,12 @@
 import { startOfDay } from "date-fns";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getResolvedConfig, SAFE_DEFAULTS } from "./app-config.server";
+import {
+  isUnlimitedAdminCreditEntitlement,
+  logCreditEntitlement,
+  resolveCreditEntitlementForUser,
+} from "./credit-entitlement.server";
+import { ensureAdminQuotaExemptionRow } from "./quota-exemption.server";
 
 // Anon lifetime cap is intentionally hard-coded (out of scope for app_config).
 export const ANON_LIFETIME_CAP = 2;
@@ -48,17 +54,58 @@ export class QuotaExceededError extends Error {
   }
 }
 
-export type QuotaIdentity =
-  | { kind: "user"; userId: string }
-  | { kind: "anon"; anonId: string };
+export type QuotaIdentity = { kind: "user"; userId: string } | { kind: "anon"; anonId: string };
+
+// Paid/funded credit-grant sources that exempt a user from the FREE-tier
+// daily cap. Deliberately excludes free_signup and free_monthly (free tiers
+// must stay capped) and admin_grant (admin accounts are exempted solely via
+// quota_exempt_users). MUST stay in sync with the source list in the
+// enforce_daily_takes_cap trigger (supabase/migrations/20260605090000).
+export const PAID_QUOTA_EXEMPT_CREDIT_SOURCES = [
+  "user_paid",
+  "school_funded",
+  "coach_funded",
+  "agent_funded",
+  "platform_funded",
+  "sponsor_campaign",
+] as const;
+
+// True when the user holds an active, unexpired paid/funded grant with
+// credits remaining. Fails CLOSED to the normal cap path on read errors —
+// a lookup failure must never widen the quota.
+async function hasActivePaidCreditGrant(userId: string, op: string): Promise<boolean> {
+  const { count, error } = await supabaseAdmin
+    .from("credit_grants")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .gt("remaining_credits", 0)
+    .in("source", [...PAID_QUOTA_EXEMPT_CREDIT_SOURCES])
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+
+  if (error) {
+    console.warn(`[quota] ${op} paid_grant_lookup_failed — falling through to cap`, {
+      user_id: userId,
+      error: error.message,
+    });
+    return false;
+  }
+  return (count ?? 0) > 0;
+}
 
 /**
  * Throws QuotaExceededError if the identity is at or over its cap.
  * Logs every rejection (and a debug line for every check).
+ *
+ * Tier-aware: the daily cap is a FREE-tier control. Admin accounts
+ * (unlimited_admin entitlement) and users with an active paid/funded credit
+ * grant are exempt. Pass `opts.email` (from verified JWT claims) where
+ * available to avoid an auth admin lookup on the admin path.
  */
 export async function assertWithinAnalysisQuota(
   identity: QuotaIdentity,
   op: string,
+  opts?: { email?: string | null },
 ): Promise<void> {
   if (identity.kind === "user") {
     // Resolve admin-managed config (with safe defaults). When quota is
@@ -69,6 +116,26 @@ export async function assertWithinAnalysisQuota(
       return;
     }
     const cap = cfg.daily_submission_cap;
+
+    // Tier exemption (a): admin/test accounts via the existing
+    // credit-entitlement system. Also reconciles the DB-trigger-side
+    // exemption row (idempotent; non-fatal if the upsert fails).
+    const entitlement = await resolveCreditEntitlementForUser({
+      userId: identity.userId,
+      email: opts?.email ?? null,
+    });
+    if (isUnlimitedAdminCreditEntitlement(entitlement)) {
+      logCreditEntitlement(entitlement, `quota:${op}`);
+      // Self-healing: keep the DB-trigger-side exemption row present.
+      // Failure is logged inside and the app-layer exemption still stands.
+      await ensureAdminQuotaExemptionRow(identity.userId).catch(() => {});
+      return;
+    }
+
+    // Tier exemption (b): active paid/funded credit grant.
+    if (await hasActivePaidCreditGrant(identity.userId, op)) {
+      return;
+    }
 
     const since = startOfDay(new Date()).toISOString();
     const { count, error } = await supabaseAdmin
@@ -84,9 +151,7 @@ export async function assertWithinAnalysisQuota(
 
     const used = count ?? 0;
     if (used >= cap) {
-      console.warn(
-        `[quota] REJECTED ${op} — used=${used} cap=${cap} scope=user_daily`,
-      );
+      console.warn(`[quota] REJECTED ${op} — used=${used} cap=${cap} scope=user_daily`);
       throw new QuotaExceededError({
         scope: "user_daily",
         cap,
@@ -156,9 +221,7 @@ export function quotaErrorToResponse(err: unknown): Response | unknown {
  * which has no caller context — the trust comes from the verified Mux
  * signature, and the take row tells us who owns the upload.
  */
-export async function resolveTakeIdentity(
-  takeId: string,
-): Promise<QuotaIdentity | null> {
+export async function resolveTakeIdentity(takeId: string): Promise<QuotaIdentity | null> {
   const { data, error } = await supabaseAdmin
     .from("takes")
     .select("user_id, anon_id")

@@ -38,6 +38,7 @@ import { Route as AdminAnalyticsRouteImport } from './routes/admin/analytics'
 import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as ApiPublicReconcileStaleTakesRouteImport } from './routes/api/public/reconcile-stale-takes'
 import { Route as ApiPublicMuxWebhookRouteImport } from './routes/api/public/mux-webhook'
+import { Route as ApiPublicAdminQuotaExemptionRouteImport } from './routes/api/public/admin-quota-exemption'
 import { Route as ApiPublicAdminProductCatalogueRouteImport } from './routes/api/public/admin-product-catalogue'
 import { Route as ApiPublicAdminConfigRouteImport } from './routes/api/public/admin-config'
 import { Route as ApiInternalRunAnalysisRouteImport } from './routes/api/internal/run-analysis'
@@ -192,6 +193,12 @@ const ApiPublicMuxWebhookRoute = ApiPublicMuxWebhookRouteImport.update({
   path: '/api/public/mux-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAdminQuotaExemptionRoute =
+  ApiPublicAdminQuotaExemptionRouteImport.update({
+    id: '/api/public/admin-quota-exemption',
+    path: '/api/public/admin-quota-exemption',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicAdminProductCatalogueRoute =
   ApiPublicAdminProductCatalogueRouteImport.update({
     id: '/api/public/admin-product-catalogue',
@@ -262,6 +269,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
+  '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -300,6 +308,7 @@ export interface FileRoutesByTo {
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
+  '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -339,6 +348,7 @@ export interface FileRoutesById {
   '/api/internal/run-analysis': typeof ApiInternalRunAnalysisRoute
   '/api/public/admin-config': typeof ApiPublicAdminConfigRoute
   '/api/public/admin-product-catalogue': typeof ApiPublicAdminProductCatalogueRoute
+  '/api/public/admin-quota-exemption': typeof ApiPublicAdminQuotaExemptionRoute
   '/api/public/mux-webhook': typeof ApiPublicMuxWebhookRoute
   '/api/public/reconcile-stale-takes': typeof ApiPublicReconcileStaleTakesRoute
   '/api/public/stripe-webhook': typeof ApiPublicStripeWebhookRoute
@@ -379,6 +389,7 @@ export interface FileRouteTypes {
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
+    | '/api/public/admin-quota-exemption'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -417,6 +428,7 @@ export interface FileRouteTypes {
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
+    | '/api/public/admin-quota-exemption'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -455,6 +467,7 @@ export interface FileRouteTypes {
     | '/api/internal/run-analysis'
     | '/api/public/admin-config'
     | '/api/public/admin-product-catalogue'
+    | '/api/public/admin-quota-exemption'
     | '/api/public/mux-webhook'
     | '/api/public/reconcile-stale-takes'
     | '/api/public/stripe-webhook'
@@ -489,6 +502,7 @@ export interface RootRouteChildren {
   ApiInternalRunAnalysisRoute: typeof ApiInternalRunAnalysisRoute
   ApiPublicAdminConfigRoute: typeof ApiPublicAdminConfigRoute
   ApiPublicAdminProductCatalogueRoute: typeof ApiPublicAdminProductCatalogueRoute
+  ApiPublicAdminQuotaExemptionRoute: typeof ApiPublicAdminQuotaExemptionRoute
   ApiPublicMuxWebhookRoute: typeof ApiPublicMuxWebhookRoute
   ApiPublicReconcileStaleTakesRoute: typeof ApiPublicReconcileStaleTakesRoute
   ApiPublicStripeWebhookRoute: typeof ApiPublicStripeWebhookRoute
@@ -702,6 +716,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMuxWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/admin-quota-exemption': {
+      id: '/api/public/admin-quota-exemption'
+      path: '/api/public/admin-quota-exemption'
+      fullPath: '/api/public/admin-quota-exemption'
+      preLoaderRoute: typeof ApiPublicAdminQuotaExemptionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/admin-product-catalogue': {
       id: '/api/public/admin-product-catalogue'
       path: '/api/public/admin-product-catalogue'
@@ -798,6 +819,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalRunAnalysisRoute: ApiInternalRunAnalysisRoute,
   ApiPublicAdminConfigRoute: ApiPublicAdminConfigRoute,
   ApiPublicAdminProductCatalogueRoute: ApiPublicAdminProductCatalogueRoute,
+  ApiPublicAdminQuotaExemptionRoute: ApiPublicAdminQuotaExemptionRoute,
   ApiPublicMuxWebhookRoute: ApiPublicMuxWebhookRoute,
   ApiPublicReconcileStaleTakesRoute: ApiPublicReconcileStaleTakesRoute,
   ApiPublicStripeWebhookRoute: ApiPublicStripeWebhookRoute,
