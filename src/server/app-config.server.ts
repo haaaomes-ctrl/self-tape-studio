@@ -19,6 +19,10 @@ export interface ResolvedConfig {
   future_evidence_enabled: boolean;
   future_report_enabled: boolean;
   future_qa_trace_enabled: boolean;
+  // When false, users holding ACTIVE funded-source credits (the ADR-0005
+  // paid set) do not receive the free_monthly allowance; they resume once
+  // those credits lapse. Default true: everyone gets the monthly credit.
+  free_monthly_includes_funded_users: boolean;
   source: "config" | "default";
 }
 
@@ -29,6 +33,7 @@ export const SAFE_DEFAULTS: Omit<ResolvedConfig, "source"> = {
   future_evidence_enabled: false,
   future_report_enabled: false,
   future_qa_trace_enabled: false,
+  free_monthly_includes_funded_users: true,
 };
 
 function sanitiseInt(v: unknown, fallback: number): number {
@@ -58,7 +63,7 @@ export async function getResolvedConfig(): Promise<ResolvedConfig> {
     const { data, error } = await supabaseAdmin
       .from("app_config")
       .select(
-        "quota_enabled, daily_submission_cap, max_takes_per_audition, future_evidence_enabled, future_report_enabled, future_qa_trace_enabled",
+        "quota_enabled, daily_submission_cap, max_takes_per_audition, future_evidence_enabled, future_report_enabled, future_qa_trace_enabled, free_monthly_includes_funded_users",
       )
       .eq("id", "singleton")
       .maybeSingle();
@@ -89,6 +94,10 @@ export async function getResolvedConfig(): Promise<ResolvedConfig> {
           row.future_qa_trace_enabled,
           SAFE_DEFAULTS.future_qa_trace_enabled,
         ),
+        free_monthly_includes_funded_users: sanitiseBool(
+          row.free_monthly_includes_funded_users,
+          SAFE_DEFAULTS.free_monthly_includes_funded_users,
+        ),
         source: "config",
       };
     }
@@ -104,6 +113,7 @@ export async function getResolvedConfig(): Promise<ResolvedConfig> {
     future_evidence_enabled: resolved.future_evidence_enabled,
     future_report_enabled: resolved.future_report_enabled,
     future_qa_trace_enabled: resolved.future_qa_trace_enabled,
+    free_monthly_includes_funded_users: resolved.free_monthly_includes_funded_users,
     source: resolved.source,
   });
   if (summary !== lastLoggedSummary) {

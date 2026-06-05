@@ -13,6 +13,13 @@ export const getCreditBalance = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     try {
+      // Lazy free-credit issuance: ensure free_signup / due free_monthly
+      // grants exist before the snapshot so the first dashboard paint
+      // already shows them. Never throws (cannot trip the unavailable path).
+      const { reconcileFreeCreditsForUser } = await import("@/server/free-credit-issuance.server");
+      await reconcileFreeCreditsForUser(context.userId, {
+        email: claimEmail(context.claims),
+      });
       const { getUserCreditBalanceSnapshot } = await import("@/server/credit-balance.server");
       return await getUserCreditBalanceSnapshot(context.userId);
     } catch (error) {

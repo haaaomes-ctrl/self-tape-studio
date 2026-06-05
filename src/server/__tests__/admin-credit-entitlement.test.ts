@@ -20,6 +20,17 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
+// The reservation path lazily reconciles free credits for non-admin users;
+// stub it here so these entitlement tests keep exercising the reserve RPC
+// mocks in isolation (the reconcile has its own suite).
+vi.mock("@/server/free-credit-issuance.server", () => ({
+  reconcileFreeCreditsForUser: vi.fn(async () => ({
+    ok: true,
+    signup_granted: false,
+    monthly_granted: false,
+  })),
+}));
+
 function fromMaybeSingle(data: unknown, error: unknown = null) {
   const maybeSingle = vi.fn(async () => ({ data, error }));
   const eq = vi.fn(() => ({ maybeSingle }));

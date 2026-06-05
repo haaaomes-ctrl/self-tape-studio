@@ -288,6 +288,7 @@ export type Database = {
       app_config: {
         Row: {
           daily_submission_cap: number
+          free_monthly_includes_funded_users: boolean
           future_evidence_enabled: boolean
           future_qa_trace_enabled: boolean
           future_report_enabled: boolean
@@ -299,6 +300,7 @@ export type Database = {
         }
         Insert: {
           daily_submission_cap?: number
+          free_monthly_includes_funded_users?: boolean
           future_evidence_enabled?: boolean
           future_qa_trace_enabled?: boolean
           future_report_enabled?: boolean
@@ -310,6 +312,7 @@ export type Database = {
         }
         Update: {
           daily_submission_cap?: number
+          free_monthly_includes_funded_users?: boolean
           future_evidence_enabled?: boolean
           future_qa_trace_enabled?: boolean
           future_report_enabled?: boolean
@@ -3520,6 +3523,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: string
+      }
+      list_free_credit_due_users: {
+        Args: { p_limit?: number }
+        Returns: string[]
       }
       mark_consumer_credit_payment_failed: {
         Args: {

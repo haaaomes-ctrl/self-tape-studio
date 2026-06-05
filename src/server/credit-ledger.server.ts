@@ -259,6 +259,21 @@ export async function reserveReportCreditForTake(
     };
   }
 
+  // Lazy free-credit issuance at the reservation choke point (covers upload,
+  // retry, webhook and pipeline callers in one place). Null guard is
+  // mandatory: webhook/anon takes can resolve no user, and a null-keyed
+  // grant would be a shared poison idempotency key. The reconcile never
+  // throws, and we reuse the entitlement resolved above (no second auth
+  // round-trip). Dynamic import avoids a static module cycle with
+  // free-credit-issuance.server (which imports grantFundedCredits from here).
+  if (entitlementUserId) {
+    const { reconcileFreeCreditsForUser } = await import("./free-credit-issuance.server");
+    await reconcileFreeCreditsForUser(entitlementUserId, {
+      email: input.requested_by_user_email,
+      entitlement,
+    });
+  }
+
   const { data, error } = await supabaseAdmin.rpc("reserve_report_credit_for_take", {
     p_take_id: input.take_id,
     p_requested_by_user_id: input.requested_by_user_id ?? undefined,
