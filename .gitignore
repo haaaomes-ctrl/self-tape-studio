@@ -34,3 +34,9 @@ dist-ssr
 # analysis-worker dry-run build output
 analysis-worker/.dry/
 analysis-worker/analysis-worker/
+
+# Local env overrides (real secrets never belong in tracked files).
+# NOTE: .env itself is deliberately tracked: it holds ONLY public Supabase
+# client values and is maintained by the Lovable sync (audited 2026-06-05).
+.env.local
+.env.*.local
