@@ -164,7 +164,7 @@ The Worker's `GET /health` returns safe readiness booleans only:
 
 `queue_binding_available=true` proves queue dispatch only. It does not prove live analysis completion — dispatch success means the job was queued, not that the tape was analysed.
 
-`RECONCILER_SECRET` protects the public reconciler/admin endpoints (`/api/public/reconcile-stale-takes`, `/api/public/admin-config`, `/api/public/admin-quota-exemption`). The Supabase Vault secret named `RECONCILER_SECRET` (read by the pg_cron reconcile job) and the app-env `RECONCILER_SECRET` must hold the **same value**, or the every-minute reconcile call 401s.
+`RECONCILER_SECRET` protects the public reconciler/admin endpoints (`/api/public/reconcile-stale-takes`, `/api/public/admin-config`, `/api/public/admin-quota-exemption`, `/api/public/free-credit-reconcile`). The Supabase Vault secret named `RECONCILER_SECRET` and the app-env `RECONCILER_SECRET` must hold the **same value**, or the cron calls 401. Two pg_cron jobs read it from Vault: `reconcile-stale-takes` (every minute) and `free-credit-reconcile` (daily 06:00 UTC — the issuance happens app-side so the CRM emails fire; see ADR-0005).
 
 ### Deprecated — scheduled for removal (see ADR-0003)
 
