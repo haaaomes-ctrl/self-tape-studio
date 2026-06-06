@@ -36,7 +36,7 @@ export const LEGAL_POLICY_LINKS: Array<{
   { slug: "cookies", label: "Cookies", to: "/legal/cookies" },
   {
     slug: "ai-report-disclaimer",
-    label: "AI report disclaimer",
+    label: "Disclaimer",
     to: "/legal/ai-report-disclaimer",
   },
   {
