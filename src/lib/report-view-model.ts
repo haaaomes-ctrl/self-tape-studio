@@ -1840,6 +1840,11 @@ export function buildReportViewModel(
       data: presentationNotes.length > 0 ? presentationNotes : null,
       display: { notes: presentationNotes },
       hasContent: presentationNotes.length > 0,
+      // S10.P1d fallback guard: when presentation notes are deliberately
+      // omitted (no legacy recovery), the route must not mention them at
+      // all — absence is hidden, not a "not assessed" gap. They are
+      // cosmetic camera-readability tips and never affect the score.
+      emptyKindWhenAbsent: "hidden",
     }),
     limitations: env<string[] | null, LimitationsDisplay>({
       key: "limitations",

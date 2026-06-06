@@ -26,6 +26,10 @@ const UpdateSchema = z
     daily_submission_cap: z.number().int().positive().max(10_000).optional(),
     max_takes_per_audition: z.number().int().positive().max(1_000).optional(),
     free_monthly_includes_funded_users: z.boolean().optional(),
+    // Template 3 report-view kill-switch (false = legacy V2 view). Read by
+    // a narrow fail-open query, NOT getResolvedConfig() — see
+    // src/server/report-view-config.server.ts for why.
+    tpl3_report_view_enabled: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -33,7 +37,8 @@ const UpdateSchema = z
       v.quota_enabled !== undefined ||
       v.daily_submission_cap !== undefined ||
       v.max_takes_per_audition !== undefined ||
-      v.free_monthly_includes_funded_users !== undefined,
+      v.free_monthly_includes_funded_users !== undefined ||
+      v.tpl3_report_view_enabled !== undefined,
     { message: "At least one field must be provided" },
   );
 
@@ -57,7 +62,11 @@ export const Route = createFileRoute("/api/public/admin-config")({
         const denied = authorise(request);
         if (denied) return denied;
         const cfg = await getResolvedConfig();
-        return Response.json(cfg);
+        const { getTpl3ReportViewEnabled } = await import("@/server/report-view-config.server");
+        return Response.json({
+          ...cfg,
+          tpl3_report_view_enabled: await getTpl3ReportViewEnabled(),
+        });
       },
       POST: async ({ request }) => {
         const denied = authorise(request);
@@ -91,7 +100,11 @@ export const Route = createFileRoute("/api/public/admin-config")({
         console.log(`[admin-config] updated ${JSON.stringify({ fields: Object.keys(update) })}`);
 
         const cfg = await getResolvedConfig();
-        return Response.json(cfg);
+        const { getTpl3ReportViewEnabled } = await import("@/server/report-view-config.server");
+        return Response.json({
+          ...cfg,
+          tpl3_report_view_enabled: await getTpl3ReportViewEnabled(),
+        });
       },
     },
   },

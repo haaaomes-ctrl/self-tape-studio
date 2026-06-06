@@ -591,4 +591,64 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       "do_not_pick_winner",
     );
   });
+
+  describe("Template 3 print/PDF surface completeness", () => {
+    it("renders every card in print markup, including the new fix-bucket cards", () => {
+      const { html } = buildStrongV2();
+
+      // Hero + grid chrome carry the print-section class so each card keeps
+      // break-inside: avoid; print = all expanded (the grid never collapses).
+      expect(html).toContain("tc-tpl3-hero");
+      expect(html).toContain("tc-tpl3-grid");
+      expect(html).toContain("tc-report-print-section");
+
+      // Mandatory at-a-glance line in the hero.
+      expect(html).toContain("Overall readiness");
+      expect(html).toContain("Judged against:");
+      expect(html).toContain("Scoring basis:");
+
+      // Operator-approved verdict chip copy (submit decision).
+      expect(html).toContain("Ready to submit");
+
+      // Existing module headings keep rendering.
+      for (const heading of [
+        "Selected-level calibration",
+        "Brief achievement",
+        "Observed tape",
+        "Category scores",
+        "Component breakdown",
+        "Strengths and preserve",
+        "Technique commentary",
+        "Timestamped and time-banded notes",
+        "Next action plan",
+      ]) {
+        expect(html).toContain(heading);
+      }
+
+      // The fix-bucket surfaces stay visible: Optional polish via the fix
+      // section or its empty-state card; Do-not-over-fix via its card.
+      expect(html).toContain("Optional polish");
+      expect(html).toMatch(/Do not over-?fix/i);
+    });
+
+    it("renders visible empty-state cards (never hidden, never faked) for canary A", () => {
+      const { html } = buildCanaryV2();
+
+      // Canary's verdict chip uses the operator-approved retake copy.
+      expect(html).toContain("Retake before submitting");
+      // Pinned legacy decision wording stays alongside the chip.
+      expect(html).toContain("Retake required if possible");
+
+      // Empty-state copy renders as honest absence, not generic filler.
+      const emptyStateMentions = html.match(/Not assessed for this take/g) ?? [];
+      const positiveMentions =
+        html.match(/No submission risks flagged|No limitations recorded|Nothing flagged/g) ?? [];
+      expect(emptyStateMentions.length + positiveMentions.length).toBeGreaterThan(0);
+
+      // Empty-states never replace real content: the canary's populated
+      // decision-critical modules still render their sections.
+      expect(html).toContain("Prioritised fixes");
+      expect(html).toContain("Brief achievement");
+    });
+  });
 });
