@@ -295,6 +295,7 @@ export type Database = {
           id: string
           max_takes_per_audition: number
           quota_enabled: boolean
+          tpl3_report_view_enabled: boolean
           updated_at: string
           updated_by: string | null
         }
@@ -307,6 +308,7 @@ export type Database = {
           id?: string
           max_takes_per_audition?: number
           quota_enabled?: boolean
+          tpl3_report_view_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
         }
@@ -319,6 +321,7 @@ export type Database = {
           id?: string
           max_takes_per_audition?: number
           quota_enabled?: boolean
+          tpl3_report_view_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
         }

@@ -308,6 +308,26 @@
   outline-offset: 2px;
 }
 
+/* Template 3 report grid — colour-coded cards, 2 columns on desktop,
+   stacked on mobile. The span utility only exists at the 2-column width so
+   a span-2 card can never create phantom columns on mobile. */
+.tc-tpl3-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.125rem;
+  align-items: start;
+}
+
+@media (min-width: 48rem) {
+  .tc-tpl3-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tc-tpl3-grid .tc-tpl3-span2 {
+    grid-column: span 2;
+  }
+}
+
 @media print {
   @page {
     margin: 14mm;
@@ -315,6 +335,26 @@
 
   body {
     background: white !important;
+    color: #111827 !important;
+  }
+
+  /* Template 3: print stacks every card full-width in document order —
+     "print = all expanded"; the grid has no collapsed state by design. */
+  .tc-tpl3-grid {
+    display: block;
+  }
+
+  .tc-tpl3-grid > * {
+    margin-bottom: 0.75rem;
+  }
+
+  .tc-tpl3-hero {
+    background: white !important;
+    border: 1px solid #d1d5db !important;
+  }
+
+  .tc-tpl3-hero *,
+  .tc-tpl3-hero {
     color: #111827 !important;
   }
 
