@@ -381,16 +381,20 @@ export type VerdictDisplay = {
 };
 
 const VERDICT_DISPLAY: Record<string, VerdictDisplay> = {
-  submit: { key: "submit", chipWord: "Submit", tone: "success" },
+  submit: { key: "submit", chipWord: "Ready to submit", tone: "success" },
   submit_if_deadline_is_close: {
     key: "submit_if_close",
-    chipWord: "Submit if deadline is close",
+    chipWord: "Submit only if you're out of time",
     tone: "royal",
   },
-  review_carefully: { key: "review_carefully", chipWord: "Review carefully", tone: "warning" },
+  review_carefully: {
+    key: "review_carefully",
+    chipWord: "Check the report before you submit",
+    tone: "warning",
+  },
   retake_required_if_possible: {
     key: "retake",
-    chipWord: "Retake if possible",
+    chipWord: "Retake before submitting",
     tone: "danger",
   },
 };
@@ -410,8 +414,11 @@ export function verdictDisplay(decision: unknown): VerdictDisplay | null {
 /**
  * Brief/requirement achievement status → status chip.
  *
- * not_assessable and not_applicable are DISTINCT muted chips — never
- * collapsed into "Missing". Absent vs not-assessable is a core honesty rule.
+ * not_assessable and not_applicable stay DISTINCT kinds — never collapsed
+ * into "Not met". Absent vs not-assessable is a core honesty rule:
+ * not_assessable is a VISIBLE, scoring-relevant gap ("Missing from your
+ * tape"), while not_applicable rows are hidden at the row level (a
+ * requirement that does not apply to the tape is noise, not honesty).
  */
 export type StatusChipKind =
   | "achieved"
@@ -427,11 +434,11 @@ export type StatusChipDisplay = {
 };
 
 const STATUS_CHIPS: Record<BriefAchievementStatus, StatusChipDisplay> = {
-  achieved: { kind: "achieved", label: "Achieved", tone: "success" },
-  mostly_achieved: { kind: "partial", label: "Mostly achieved", tone: "success" },
-  partly_achieved: { kind: "partial", label: "Partial", tone: "warning" },
-  not_achieved: { kind: "missing", label: "Missing", tone: "danger" },
-  not_assessable: { kind: "not_assessable", label: "Not assessable", tone: "muted" },
+  achieved: { kind: "achieved", label: "Met", tone: "success" },
+  mostly_achieved: { kind: "partial", label: "Mostly there", tone: "success" },
+  partly_achieved: { kind: "partial", label: "Partly there", tone: "warning" },
+  not_achieved: { kind: "missing", label: "Not met", tone: "danger" },
+  not_assessable: { kind: "not_assessable", label: "Missing from your tape", tone: "muted" },
   not_applicable: { kind: "not_applicable", label: "Not applicable", tone: "muted" },
 };
 
@@ -453,11 +460,11 @@ export function observedStatusChipDisplay(status: unknown): StatusChipDisplay | 
   if (!key) return null;
   switch (key) {
     case "present":
-      return { kind: "achieved", label: "Present", tone: "success" };
+      return { kind: "achieved", label: "Shown", tone: "success" };
     case "partially_present":
-      return { kind: "partial", label: "Partially present", tone: "warning" };
+      return { kind: "partial", label: "Partly shown", tone: "warning" };
     case "absent":
-      return { kind: "missing", label: "Absent", tone: "danger" };
+      return { kind: "missing", label: "Not shown", tone: "danger" };
     case "not_assessable":
       return { kind: "not_assessable", label: "Not assessable", tone: "muted" };
     case "uncertain":
@@ -1108,35 +1115,42 @@ export function buildReportViewModel(
     if (id) matrixByRequirementId.set(id, row);
   }
 
-  const briefRequirementRows: BriefRequirementRow[] = briefRequirementsRaw.map((row) => {
-    const id = safeStr(row.id);
-    const matrixRow = id ? matrixByRequirementId.get(id) : undefined;
-    return {
-      id,
-      summary: safeStr(row.summary),
-      briefText: safeStr(row.brief_text),
+  // not_applicable rows are hidden at the row level (same hide pattern as
+  // technique areas and comparison). not_assessable rows STAY visible — they
+  // are the scoring-relevant "Missing from your tape" gap.
+  const briefRequirementRows: BriefRequirementRow[] = briefRequirementsRaw
+    .map((row) => {
+      const id = safeStr(row.id);
+      const matrixRow = id ? matrixByRequirementId.get(id) : undefined;
+      return {
+        id,
+        summary: safeStr(row.summary),
+        briefText: safeStr(row.brief_text),
+        importance: safeStr(row.importance),
+        category: safeStr(row.category),
+        expectedEvidence: safeStr(row.expected_evidence_in_tape),
+        chip: matrixRow ? statusChipDisplay(matrixRow.achievement_status) : null,
+        evidence: matrixRow ? safeStr(matrixRow.evidence_summary) : null,
+      };
+    })
+    .filter((row) => row.chip?.kind !== "not_applicable");
+
+  const achievementRows: AchievementRequirementRow[] = matrixResults
+    .map((row) => ({
+      requirementId: safeStr(row.requirement_id),
+      summary: safeStr(row.requirement_summary),
       importance: safeStr(row.importance),
       category: safeStr(row.category),
-      expectedEvidence: safeStr(row.expected_evidence_in_tape),
-      chip: matrixRow ? statusChipDisplay(matrixRow.achievement_status) : null,
-      evidence: matrixRow ? safeStr(matrixRow.evidence_summary) : null,
-    };
-  });
-
-  const achievementRows: AchievementRequirementRow[] = matrixResults.map((row) => ({
-    requirementId: safeStr(row.requirement_id),
-    summary: safeStr(row.requirement_summary),
-    importance: safeStr(row.importance),
-    category: safeStr(row.category),
-    chip: statusChipDisplay(row.achievement_status),
-    observedChip: observedStatusChipDisplay(row.observed_status),
-    completionStatus: safeStr(row.completion_status),
-    evidence: safeStr(row.evidence_summary),
-    submissionImpact: safeStr(row.submission_impact),
-    fixCategory: safeStr(row.fix_category),
-    recommendedAction: safeStr(row.recommended_action),
-    confidence: safeStr(row.confidence),
-  }));
+      chip: statusChipDisplay(row.achievement_status),
+      observedChip: observedStatusChipDisplay(row.observed_status),
+      completionStatus: safeStr(row.completion_status),
+      evidence: safeStr(row.evidence_summary),
+      submissionImpact: safeStr(row.submission_impact),
+      fixCategory: safeStr(row.fix_category),
+      recommendedAction: safeStr(row.recommended_action),
+      confidence: safeStr(row.confidence),
+    }))
+    .filter((row) => row.chip?.kind !== "not_applicable");
   const achievedCount = achievementRows.filter((row) => row.chip?.kind === "achieved").length;
 
   // ── observed tape / component breakdown ──
@@ -1163,7 +1177,8 @@ export function buildReportViewModel(
       completionStatus: safeStr(row.completion_status),
       evidence: safeStr(row.evidence_summary),
       assessabilityNotes: safeStr(row.assessability_notes),
-    }));
+    }))
+    .filter((row) => row.presentChip?.kind !== "not_applicable");
   const mediaRows: Array<[string, string]> = mediaSummary
     ? (
         [
@@ -1227,7 +1242,8 @@ export function buildReportViewModel(
         timestampRef: safeArr<string>(row.timestamp_refs)[0] ?? null,
         confidence: safeStr(row.confidence),
       } satisfies ComponentBreakdownRow;
-    });
+    })
+    .filter((row) => row.observedChip?.kind !== "not_applicable");
 
   // ── fix hierarchy ──
   const fixHierarchy = safeObj(s10?.fix_hierarchy);

@@ -106,6 +106,25 @@ describe("display mappers", () => {
     expect(observedStatusChipDisplay("not_applicable")?.kind).toBe("not_applicable");
   });
 
+  it("pins the agreed performer-facing copy (verdict chips + core brief labels)", () => {
+    // Operator-approved wording (PR #199 review, 2026-06-06). If this test
+    // fails, the copy drifted — that is a product decision, not a refactor.
+    expect(verdictDisplay("submit")?.chipWord).toBe("Ready to submit");
+    expect(verdictDisplay("submit_if_deadline_is_close")?.chipWord).toBe(
+      "Submit only if you're out of time",
+    );
+    expect(verdictDisplay("review_carefully")?.chipWord).toBe("Check the report before you submit");
+    expect(verdictDisplay("retake_required_if_possible")?.chipWord).toBe(
+      "Retake before submitting",
+    );
+
+    expect(statusChipDisplay("achieved")?.label).toBe("Met");
+    expect(statusChipDisplay("mostly_achieved")?.label).toBe("Mostly there");
+    expect(statusChipDisplay("partly_achieved")?.label).toBe("Partly there");
+    expect(statusChipDisplay("not_achieved")?.label).toBe("Not met");
+    expect(statusChipDisplay("not_assessable")?.label).toBe("Missing from your tape");
+  });
+
   it("applies the design score tone thresholds", () => {
     expect(scoreTone(80)).toBe("success");
     expect(scoreTone(79)).toBe("royal");
@@ -213,6 +232,41 @@ describe("canary A (incomplete mandatory package) through the shim", () => {
     const kinds = new Set(display.requirements.map((row) => row.chip?.kind));
     // Canary A has a missing mandatory side — the matrix must say so.
     expect(kinds.has("missing")).toBe(true);
+  });
+
+  it("hides not_applicable requirement rows but keeps not_assessable rows visible", () => {
+    const report = canaryV2Report();
+    const view = report.s10_view_model as Record<string, unknown>;
+    const matrix = view.brief_achievement_matrix as Record<string, unknown>;
+    const results = matrix.requirement_results as Array<Record<string, unknown>>;
+    const template = { ...results[0] };
+    results.push(
+      {
+        ...template,
+        requirement_id: "req-not-applicable",
+        requirement_summary: "Requirement that does not apply to this tape",
+        achievement_status: "not_applicable",
+      },
+      {
+        ...template,
+        requirement_id: "req-not-assessable",
+        requirement_summary: "Requirement the tape never shows",
+        achievement_status: "not_assessable",
+      },
+    );
+
+    const model = vm(report);
+    const display = model.modules.briefAchievement.display as BriefAchievementDisplay;
+    const ids = display.requirements.map((row) => row.requirementId);
+    // not_applicable → NO row (hidden, same pattern as technique/comparison).
+    expect(ids).not.toContain("req-not-applicable");
+    // not_assessable → row STAYS visible as the scoring-relevant gap.
+    const gapRow = display.requirements.find((row) => row.requirementId === "req-not-assessable");
+    expect(gapRow).toBeDefined();
+    expect(gapRow?.chip?.kind).toBe("not_assessable");
+    expect(gapRow?.chip?.label).toBe("Missing from your tape");
+    // The hidden row is also excluded from the visible total.
+    expect(display.totalCount).toBe(display.requirements.length);
   });
 
   it("is lossless: rawFallback is the exact persisted report object", () => {
