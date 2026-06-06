@@ -37,3 +37,18 @@ npm exec prettier -- --check <changed files>
 npm run build
 npm run dry-run:analysis-worker  # ONLY when analysis-worker/ (or its deps) changed
 ```
+
+## Knowledge corpus (knowledge/)
+
+This repo carries a knowledge corpus under `knowledge/` — the reasoning, research, decisions and history behind the spine. It is NOT the source of truth: the spine (`README.md`, `AGENTS.md`, this file, `docs/`) is controlling, and on conflict README wins. The corpus is the _why_; the spine is the _what_.
+
+Before starting non-trivial work, consult the corpus for relevant context (decisions, research, prior threads). The design of record is `knowledge/00-meta/DESIGN.md`.
+
+Operating rules for the corpus:
+
+- **Write-boundary:** only create or modify files under `knowledge/`. Never edit the spine or application code directly — propose those changes for a reviewed PR.
+- **Notes follow the schema** in `.claude/skills/tc-vault-note`. Status is one of `exploratory | current | superseded | decided`; treat `exploratory`/`superseded` notes as non-authoritative.
+- **Generated files** (`knowledge/00-meta/INDEX.md`, `DELTA-REGISTER.md`) are produced by skills — do not hand-edit; rerun the skill.
+- **Skills** available: `tc-vault-note`, `tc-conversation-ingestion`, `tc-knowledge-index`, `tc-delta-register`, `tc-handoff`.
+- **Cross-surface work:** tasks handed from a chat surface arrive as handoff notes under `knowledge/05-handoffs/` (see `tc-handoff`). Read the open handoff, do the work, record results back to the note and link the PR — instead of expecting copy-pasted instructions.
+- **At session end:** offer to capture the session via `tc-conversation-ingestion` (decisions, research, open questions, completed handoffs).
