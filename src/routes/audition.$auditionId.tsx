@@ -13,8 +13,22 @@ import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { UploadPolicyNotice } from "@/components/legal-policy-links";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AUDITION_DISCIPLINES,
+  AUDITION_DISCIPLINE_LABELS,
+  isAuditionDiscipline,
+  type AuditionDiscipline,
+} from "@/lib/audition-rules";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAccountCompliance } from "@/lib/account-compliance-client";
@@ -149,6 +163,8 @@ interface Audition {
   brief_source: "full" | "guided" | "none";
   mode: "brief" | "baseline";
   audition_level?: "learning" | "amateur" | "emerging" | "professional" | null;
+  /** ARCH-Δ2: user-selected discipline. NULL only on legacy pre-Δ2 auditions. */
+  discipline?: AuditionDiscipline | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   extracted_brief?: any;
 }
@@ -173,7 +189,7 @@ function AuditionPage() {
   async function refresh(reason: string = "poll") {
     const { data: aud } = await supabase
       .from("auditions")
-      .select("id, title, brief, brief_source, mode, audition_level, extracted_brief")
+      .select("id, title, brief, brief_source, mode, audition_level, discipline, extracted_brief")
       .eq("id", auditionId)
       .single();
     if (aud) setAudition(aud as Audition);
@@ -1931,6 +1947,12 @@ function AddTakeBlock({
   const [uploadPct, setUploadPct] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const takeIdRef = useRef<string | null>(null);
+  // ARCH-Δ2: one discipline per audition — takes inherit it. Legacy
+  // (pre-Δ2) auditions have NULL discipline: this dialog requires a
+  // one-time selection and persists it to the audition BEFORE the take is
+  // created (backfill-on-next-take; a discipline is never guessed).
+  const [backfillDiscipline, setBackfillDiscipline] = useState<AuditionDiscipline | "">("");
+  const needsDisciplineBackfill = !isAuditionDiscipline(audition.discipline);
 
   function cancelUpload() {
     abortRef.current?.abort();
@@ -1950,6 +1972,10 @@ function AddTakeBlock({
 
   async function upload() {
     if (!file || !user) return;
+    if (needsDisciplineBackfill && !isAuditionDiscipline(backfillDiscipline)) {
+      toast.error("Choose the discipline for this audition before uploading.");
+      return;
+    }
 
     if (checklist) {
       const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
@@ -1980,6 +2006,18 @@ function AddTakeBlock({
     setBusy(true);
     setUploadPct(0);
     try {
+      // Legacy-audition backfill: persist the one-time discipline selection
+      // BEFORE creating the take so the analysis guard sees it.
+      if (needsDisciplineBackfill && isAuditionDiscipline(backfillDiscipline)) {
+        const { error: disciplineErr } = await supabase
+          .from("auditions")
+          .update({ discipline: backfillDiscipline })
+          .eq("id", audition.id);
+        if (disciplineErr) {
+          throw new Error("Could not save the discipline for this audition. Please try again.");
+        }
+      }
+
       const signals = await buildTakeUploadSignals(file, checklist);
       const analyticsAttribution = buildAnalyticsAttributionMetadata(
         readStoredAnalyticsAttribution(),
@@ -2067,6 +2105,42 @@ function AddTakeBlock({
       <p className="mt-1 text-sm text-muted-foreground">
         Same brief, same scoring weights — easy to compare.
       </p>
+      {needsDisciplineBackfill ? (
+        <div className="mt-3">
+          <Label className="text-sm font-medium">
+            What are you auditioning with?{" "}
+            <span className="text-destructive" aria-hidden="true">
+              *
+            </span>
+          </Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Required. This audition predates discipline selection — choose it once and every take in
+            this audition uses it.
+          </p>
+          <Select
+            value={backfillDiscipline}
+            onValueChange={(v) => setBackfillDiscipline(v as AuditionDiscipline)}
+          >
+            <SelectTrigger className="mt-2" aria-required="true">
+              <SelectValue placeholder="Select a discipline…" />
+            </SelectTrigger>
+            <SelectContent>
+              {AUDITION_DISCIPLINES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {AUDITION_DISCIPLINE_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <p className="mt-1 text-sm text-muted-foreground">
+          Discipline:{" "}
+          <span className="font-medium text-foreground">
+            {AUDITION_DISCIPLINE_LABELS[audition.discipline as AuditionDiscipline]}
+          </span>
+        </p>
+      )}
       <UploadPolicyNotice className="mt-3" />
       <CreditUseNotice className="mt-3" enabled={Boolean(user)} />
       <div className="mt-4 flex items-center gap-3">

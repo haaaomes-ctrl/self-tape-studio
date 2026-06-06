@@ -18,6 +18,12 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  AUDITION_DISCIPLINES,
+  AUDITION_DISCIPLINE_LABELS,
+  isAuditionDiscipline,
+  type AuditionDiscipline,
+} from "@/lib/audition-rules";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -85,6 +91,9 @@ function NewAuditionPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState("");
+  // ARCH-Δ2: discipline is MANDATORY and has no default — the performer
+  // must consciously choose before upload (never silently "unknown").
+  const [discipline, setDiscipline] = useState<AuditionDiscipline | "">("");
   const [auditionLevel, setAuditionLevel] = useState<
     "learning" | "amateur" | "emerging" | "professional"
   >("emerging");
@@ -144,6 +153,10 @@ function NewAuditionPage() {
     const titleParsed = titleSchema.safeParse(title || "Untitled audition");
     if (!titleParsed.success) {
       toast.error("Title is required");
+      return;
+    }
+    if (!isAuditionDiscipline(discipline)) {
+      toast.error("Choose the discipline for this audition before uploading.");
       return;
     }
 
@@ -207,6 +220,7 @@ function NewAuditionPage() {
             brief_source: briefSource,
             mode,
             audition_level: auditionLevel,
+            discipline,
             analytics_attribution: analyticsAttribution as never,
           },
         ])
@@ -328,6 +342,35 @@ function NewAuditionPage() {
                 className="mt-2"
                 maxLength={120}
               />
+
+              <div className="mt-5">
+                <Label className="text-sm font-medium">
+                  What are you auditioning with?{" "}
+                  <span className="text-destructive" aria-hidden="true">
+                    *
+                  </span>
+                </Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Required. Your discipline sets the scoring weights, category labels and technique
+                  feedback for this audition. Musical Theatre covers singing, acting and how they
+                  integrate — choose it as one discipline.
+                </p>
+                <Select
+                  value={discipline}
+                  onValueChange={(v) => setDiscipline(v as AuditionDiscipline)}
+                >
+                  <SelectTrigger className="mt-2" aria-required="true">
+                    <SelectValue placeholder="Select a discipline…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AUDITION_DISCIPLINES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {AUDITION_DISCIPLINE_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
               <div className="mt-5">
                 <Label className="text-sm font-medium">Your level</Label>

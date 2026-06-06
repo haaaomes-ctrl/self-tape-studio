@@ -5,6 +5,7 @@ import {
 } from "@/integrations/supabase/client.server";
 import { assertWithinAnalysisQuota, QuotaExceededError } from "@/server/quota.server";
 import { getResolvedConfig } from "@/server/app-config.server";
+import { isAuditionDiscipline } from "@/lib/audition-rules";
 import { metric } from "@/server/metrics.server";
 import { assertAccountComplianceForReport } from "@/server/account-compliance.server";
 import { safeCutoverLog } from "@/server/cutover-diagnostics.server";
@@ -279,6 +280,31 @@ export async function createMuxDirectUploadForAuthenticatedUser(input: {
         metric("upload_url_failure", { take_id: takeId, reason: "per_audition_cap" });
         throw new Error(
           `QUOTA_EXCEEDED: This audition already has the maximum of ${cfg.max_takes_per_audition} takes. Delete an existing take to add a new one.`,
+        );
+      }
+    }
+
+    // 3.55 Discipline gate (ARCH-Δ2). A discipline is MANDATORY before any
+    // upload: it drives scoring weights, category labels and technique
+    // commentary, and is never silently defaulted to "unknown". Placed
+    // BEFORE the credit reservation so nothing is spent on a blocked
+    // upload. New auditions always carry it (insert validation); this
+    // protects legacy (pre-Δ2) auditions and any future path.
+    {
+      const { data: auditionRow, error: auditionErr } = await supabaseAdmin
+        .from("auditions")
+        .select("discipline")
+        .eq("id", take.audition_id)
+        .single();
+      const discipline = auditionRow?.discipline ?? null;
+      if (auditionErr || !isAuditionDiscipline(discipline)) {
+        console.warn("[mux-upload] discipline_missing", {
+          take_id: takeId,
+          audition_id: take.audition_id,
+        });
+        metric("upload_url_failure", { take_id: takeId, reason: "discipline_missing" });
+        throw new Error(
+          "DISCIPLINE_REQUIRED: Choose the discipline for this audition before uploading.",
         );
       }
     }

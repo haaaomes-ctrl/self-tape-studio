@@ -7,6 +7,7 @@ export interface UploadErrorInfo {
   kind:
     | "quota"
     | "credit_required"
+    | "discipline_required"
     | "auth"
     | "policy_acceptance"
     | "config"
@@ -48,6 +49,12 @@ export function describeUploadError(err: unknown): UploadErrorInfo {
   }
   if (raw.startsWith("CREDIT_REQUIRED:")) {
     return { kind: "credit_required", message: raw.replace(/^CREDIT_REQUIRED:\s*/, "") };
+  }
+  if (raw.startsWith("DISCIPLINE_REQUIRED:")) {
+    return {
+      kind: "discipline_required",
+      message: raw.replace(/^DISCIPLINE_REQUIRED:\s*/, ""),
+    };
   }
   if (raw.startsWith("POLICY_ACCEPTANCE_REQUIRED:")) {
     return {

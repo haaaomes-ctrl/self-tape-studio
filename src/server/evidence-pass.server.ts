@@ -20,6 +20,7 @@ import { createAnalysisAiProvider, type AnalysisAiProvider } from "./analysis-ai
 import { logProviderError } from "./provider-error-log.server";
 import { cloneForProviderToolSchema } from "./provider-tool-schema.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
+import type { AuditionType } from "@/lib/audition-rules";
 
 const DEFAULT_MODEL = process.env.EVIDENCE_PASS_MODEL ?? "google/gemini-3-flash-preview";
 
@@ -859,6 +860,15 @@ export type RunEvidencePassArgs = {
   withFutureDimensions?: boolean;
   usageContext?: TakeAiUsageContext;
   aiProvider?: AnalysisAiProvider;
+  /**
+   * ARCH-Δ2: the resolved analysis AuditionType from the user-selected
+   * discipline. Stamped onto the EvidencePass (Step 2 locks it into
+   * report.audition_type) so weightsForType, category labels and the
+   * vocal-row policy activate. Optional only for legacy callers/tests;
+   * the live caller always provides it — absent, the historic "unknown"
+   * applies.
+   */
+  auditionType?: AuditionType;
 };
 
 export type RunEvidencePassResult =
@@ -1112,12 +1122,16 @@ function secondsToTimestamp(value: unknown): string | null {
 
 export function normaliseCompactStep1EvidenceForEvidencePass(
   compact: CompactStep1EvidenceResponse,
+  auditionType?: AuditionType,
 ): EvidencePass {
   const ev: EvidencePass = {
     evidence_version: "1",
     step1_provider_contract: "plain_json_observations",
     step1_observations: compact.observations,
-    audition_type: "unknown",
+    // ARCH-Δ2: the user-selected discipline's resolved AuditionType. The
+    // historic hardcoded "unknown" applies only when no type is provided
+    // (legacy callers/tests) — the live caller always provides it.
+    audition_type: auditionType ?? "unknown",
     observed_tape_sequence: compact.observed_tape_sequence ?? [],
     component_verifications: compact.component_verifications ?? [],
     media_observation_summary: compact.media_observation_summary,
@@ -1314,7 +1328,7 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
     evidenceFinishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
     if (providerContract === "plain_json_observations") {
       const compact = parseCompactStep1EvidenceContent(choice?.message?.content);
-      parsed = normaliseCompactStep1EvidenceForEvidencePass(compact);
+      parsed = normaliseCompactStep1EvidenceForEvidencePass(compact, args.auditionType);
     } else {
       const tc = choice?.message?.tool_calls?.[0];
       if (!tc?.function?.arguments) {
@@ -1337,6 +1351,12 @@ export async function runEvidencePass(args: RunEvidencePassArgs): Promise<RunEvi
         };
       }
       parsed = JSON.parse(tc.function.arguments) as EvidencePass;
+    }
+    // ARCH-Δ2: the user-selected discipline ALWAYS wins over any
+    // model-inferred audition_type, on both provider contracts. Step 2
+    // locks evidence.audition_type into report.audition_type.
+    if (parsed && args.auditionType) {
+      parsed.audition_type = args.auditionType;
     }
   } catch (err) {
     const truncated = evidenceFinishReason === "length";
