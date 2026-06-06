@@ -33,7 +33,7 @@ export function UploadPolicyNotice({ className }: { className?: string }) {
     <p className={cn("text-xs leading-relaxed text-muted-foreground", className)}>
       Uploads are processed under the <LegalPolicyLink slug="terms">Terms</LegalPolicyLink>,{" "}
       <LegalPolicyLink slug="privacy">Privacy Policy</LegalPolicyLink> and{" "}
-      <LegalPolicyLink slug="ai-report-disclaimer">AI report disclaimer</LegalPolicyLink>. Credit
+      <LegalPolicyLink slug="ai-report-disclaimer">Disclaimer</LegalPolicyLink>. Credit
       restoration for failed reports is covered in the{" "}
       <LegalPolicyLink slug="refund-credit-policy">Refund and credit policy</LegalPolicyLink>.
     </p>
