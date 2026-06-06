@@ -75,7 +75,7 @@ export const LEGAL_POLICIES: Record<LegalPolicySlug, LegalPolicy> = {
           "At launch, TapeCoach uses account-route and age-band declarations only. We do not ask for exact/full date of birth, passport details or identity verification.",
           "Users select 13+ self-service, parent/guardian, or under-13 performer route.",
           "Under-13 standalone use is blocked. Under-13 use must be parent/guardian managed with parent/guardian attestation.",
-          "Terms, Privacy Policy and AI report disclaimer acceptance are required before report-generating use.",
+          "Terms, Privacy Policy and Disclaimer acceptance are required before report-generating use.",
           "Marketing consent is separate, optional and off by default.",
         ],
       },
