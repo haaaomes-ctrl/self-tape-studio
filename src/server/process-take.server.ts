@@ -1123,13 +1123,17 @@ const ANALYSIS_MODEL_FALLBACK = process.env.ANALYSIS_MODEL_FALLBACK ?? "google/g
 import {
   applyCapsAndLabel,
   bandsForLevel,
+  buildAuditionDisciplinePromptLine,
   buildS10PerformerLevelPromptBlock,
   computeBlockers,
   deterministicCompliance,
+  disciplineToAuditionType,
+  isAuditionDiscipline,
   recomputeOverall,
   toUKTerms,
   ukifyDeep,
   weightsForType,
+  type AuditionDiscipline,
   type AuditionLevel,
   type AuditionType,
   type ExtractedBrief,
@@ -2831,7 +2835,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
 
   const { data: audition, error: audErr } = await supabaseAdmin
     .from("auditions")
-    .select("id, brief, brief_source, mode, title, audition_level, extracted_brief")
+    .select("id, brief, brief_source, mode, title, audition_level, discipline, extracted_brief")
     .eq("id", take.audition_id)
     .single();
 
@@ -2841,6 +2845,13 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
 
   const auditionLevel = ((audition as { audition_level?: string }).audition_level ??
     "emerging") as AuditionLevel;
+  // ARCH-Δ2: the user-selected discipline is the PRIMARY source of the
+  // analysis AuditionType (brief inference stays secondary brief
+  // intelligence). It is mandatory — the guard below fails the run loudly
+  // rather than ever defaulting to "unknown". The mapped value is resolved
+  // after the guard (markTerminalFailure is defined later in this scope).
+  const auditionDiscipline = ((audition as { discipline?: string | null }).discipline ??
+    null) as AuditionDiscipline | null;
   const aiUsageContext: TakeAiUsageContext = {
     takeId,
     auditionId: audition.id,
@@ -2941,7 +2952,8 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     | "mux_static_rendition_errored"
     | "mux_static_rendition_skipped"
     | "stale_timeout"
-    | "report_credit_unavailable";
+    | "report_credit_unavailable"
+    | "discipline_missing";
 
   // Terminal-state tracking: any path that writes status=error/complete must
   // flip this to true so the finally-block fallback doesn't double-write.
@@ -3130,6 +3142,21 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
   }
 
   try {
+    // ARCH-Δ2 analysis-entry guard (backstop behind the DISCIPLINE_REQUIRED
+    // upload gate): a missing discipline fails the run loudly — credit
+    // refunded via markTerminalFailure, take marked error with a clear,
+    // actionable message — and NEVER silently defaults to "unknown".
+    // Reachable only for legacy (pre-Δ2) auditions via webhook/reconciler/
+    // manual retries.
+    if (!isAuditionDiscipline(auditionDiscipline)) {
+      await markTerminalFailure(
+        "discipline_missing",
+        "Discipline missing for this audition. Select a discipline on the audition and retry the analysis.",
+      );
+      return { ok: false, error: "Discipline missing for this audition" };
+    }
+    const resolvedAuditionType: AuditionType = disciplineToAuditionType(auditionDiscipline);
+
     try {
       const reservation = await reserveReportCreditForTake({
         take_id: takeId,
@@ -3436,9 +3463,13 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     )}`;
 
     const levelBlock = buildS10PerformerLevelPromptBlock(auditionLevel);
+    // ARCH-Δ2: deterministic discipline context line (level-block precedent)
+    // injected into Step 1 and Step 2 prompts.
+    const disciplineBlock = buildAuditionDisciplinePromptLine(auditionDiscipline);
 
     const userText = [
       `Audition title: ${audition.title}`,
+      disciplineBlock,
       levelBlock,
       briefBlock,
       extractedBlock,
@@ -3648,6 +3679,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
       const twoStepStartedAt = Date.now();
       const evidenceContext = [
         `Audition title: ${audition.title}`,
+        disciplineBlock,
         levelBlock,
         briefBlock,
         extractedBlock,
@@ -3690,6 +3722,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
         durationSeconds: take.mux_duration_seconds ?? null,
         withFutureDimensions,
         usageContext: aiUsageContext,
+        auditionType: resolvedAuditionType,
       }).finally(() => clearTimeout(evTimer));
       evidencePassCompletedAtIso = new Date().toISOString();
       evidencePassDurationMs = evResult.durationMs;
@@ -4129,6 +4162,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
           briefRequirements: extractedBrief?.brief_requirements ?? [],
           signalsBlock,
           levelBlock,
+          disciplineBlock,
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
           usageContext: aiUsageContext,
@@ -5129,7 +5163,11 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     console.log("[take-pipeline] finalising_score_recompute_started", {
       take_id: takeId,
     });
-    const auditionType = (report.audition_type ?? "unknown") as AuditionType;
+    // ARCH-Δ2: the user-selected discipline is authoritative on BOTH paths —
+    // two-step (already locked via evidence.audition_type) and single-pass
+    // (where the model's own output could disagree). Stamp before weighting.
+    report.audition_type = resolvedAuditionType;
+    const auditionType = resolvedAuditionType;
     const weights = weightsForType(auditionType);
     const modelScores = (report.scores ?? {}) as Record<string, number | null>;
     const recomputed = recomputeOverall(modelScores, weights);
@@ -6170,6 +6208,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
           briefRequirements: extractedBrief?.brief_requirements ?? [],
           signalsBlock,
           levelBlock,
+          disciplineBlock,
           auditionTitle: audition.title,
           reportTool: REPORT_TOOL,
           usageContext: aiUsageContext,
@@ -6203,6 +6242,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
             briefRequirements: extractedBrief?.brief_requirements ?? [],
             signalsBlock,
             levelBlock,
+            disciplineBlock,
             auditionTitle: audition.title,
             reportTool: REPORT_TOOL,
             usageContext: aiUsageContext,

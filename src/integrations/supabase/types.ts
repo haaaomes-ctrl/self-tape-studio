@@ -400,6 +400,7 @@ export type Database = {
           brief: string | null
           brief_source: string
           created_at: string
+          discipline: string | null
           extracted_brief: Json | null
           id: string
           mode: string
@@ -414,6 +415,7 @@ export type Database = {
           brief?: string | null
           brief_source?: string
           created_at?: string
+          discipline?: string | null
           extracted_brief?: Json | null
           id?: string
           mode?: string
@@ -428,6 +430,7 @@ export type Database = {
           brief?: string | null
           brief_source?: string
           created_at?: string
+          discipline?: string | null
           extracted_brief?: Json | null
           id?: string
           mode?: string

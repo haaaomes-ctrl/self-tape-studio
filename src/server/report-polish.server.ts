@@ -104,6 +104,11 @@ export type RunReportPolishArgs = {
   briefRequirements?: unknown[] | null;
   signalsBlock: string;
   levelBlock: string;
+  /**
+   * ARCH-Δ2: deterministic discipline context line (level-block precedent)
+   * — the user-selected discipline, also locked into evidence.audition_type.
+   */
+  disciplineBlock?: string;
   auditionTitle: string;
   reportTool: unknown;
   model?: string;
@@ -268,6 +273,7 @@ export async function runReportPolish(args: RunReportPolishArgs): Promise<RunRep
 
   const userText = [
     `Audition title: ${args.auditionTitle}`,
+    args.disciplineBlock ?? "",
     args.levelBlock,
     args.briefBlock,
     args.extractedBlock,

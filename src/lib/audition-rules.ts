@@ -322,6 +322,80 @@ export const AUDITION_LEVEL_LABELS: Record<AuditionLevel, string> = {
   professional: "Professional",
 };
 
+// ── ARCH-Δ2: user-selected audition discipline ─────────────────────────────
+//
+// The discipline is a MANDATORY pre-upload selection persisted on the
+// audition row (auditions.discipline) — one discipline per submission; all
+// takes inherit it. It is the primary source of the analysis AuditionType
+// (the user's selection always wins over brief inference, which remains
+// secondary brief intelligence). Musical Theatre is ONE composite
+// discipline (singing + acting dimensions + integration), not two.
+
+export type AuditionDiscipline =
+  | "acting"
+  | "musical_theatre"
+  | "singing_voice"
+  | "dance"
+  | "commercial";
+
+export const AUDITION_DISCIPLINES = [
+  "acting",
+  "musical_theatre",
+  "singing_voice",
+  "dance",
+  "commercial",
+] as const satisfies readonly AuditionDiscipline[];
+
+export const AUDITION_DISCIPLINE_LABELS: Record<AuditionDiscipline, string> = {
+  acting: "Acting",
+  musical_theatre: "Musical Theatre",
+  singing_voice: "Singing / Voice",
+  dance: "Dance",
+  commercial: "Commercial",
+};
+
+export function isAuditionDiscipline(value: unknown): value is AuditionDiscipline {
+  return typeof value === "string" && (AUDITION_DISCIPLINES as readonly string[]).includes(value);
+}
+
+/**
+ * Maps the user-facing discipline to the analysis AuditionType that drives
+ * weightsForType, category labels and vocal-row policy.
+ *
+ * singing_voice maps to "song" (NOT the label-only "voice" value): "voice"
+ * has label entries but NO weightsForType entry, so "song" is required for
+ * the vocal-forward weights to activate. "monologue"/"hybrid" remain enum
+ * values for legacy/brief-extraction use; new runs never produce them at
+ * the top level, and "unknown" becomes impossible on new runs.
+ */
+export function disciplineToAuditionType(discipline: AuditionDiscipline): AuditionType {
+  switch (discipline) {
+    case "acting":
+      return "acting_scene";
+    case "musical_theatre":
+      return "musical_theatre";
+    case "singing_voice":
+      return "song";
+    case "dance":
+      return "dance";
+    case "commercial":
+      return "commercial";
+  }
+}
+
+/**
+ * Deterministic discipline context line injected into the Step 1 and
+ * Step 2 prompts (level-block precedent: a deterministic input block, not a
+ * module-map change; no prompt-map version bump).
+ */
+export function buildAuditionDisciplinePromptLine(discipline: AuditionDiscipline): string {
+  const label = AUDITION_DISCIPLINE_LABELS[discipline];
+  if (discipline === "musical_theatre") {
+    return `AUDITION DISCIPLINE: ${label} (${discipline}) — single composite discipline: assess singing, acting and their integration as one package.`;
+  }
+  return `AUDITION DISCIPLINE: ${label} (${discipline}) — selected by the performer; assess against this discipline's demands.`;
+}
+
 export type S10PerformerLevel =
   | "learning_school"
   | "amateur_community"
