@@ -130,7 +130,7 @@ export function AccountRouteFields({ value, onChange, disabled = false }: Accoun
           label={
             <>
               I understand TapeCoach uses AI analysis, as described in the{" "}
-              <LegalPolicyLink slug="ai-report-disclaimer">AI report disclaimer</LegalPolicyLink>,
+              <LegalPolicyLink slug="ai-report-disclaimer">Disclaimer</LegalPolicyLink>,
               and cannot guarantee casting, callback, booking or employment outcomes.
             </>
           }
