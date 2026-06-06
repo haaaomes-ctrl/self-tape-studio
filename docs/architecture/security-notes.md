@@ -48,6 +48,15 @@ confirmed only service-role server code invokes them. All four (plus the
 analytics/crm/cost helpers) have pinned `search_path`
 (migration `20260605130500`).
 
+## list_free_credit_due_users — service-role only by design
+
+SECURITY DEFINER candidate-selection helper for free-credit issuance
+(migration `20260605150000`): reads `auth.users` minus `quota_exempt_users`
+to find users due a free credit. `search_path` pinned, EXECUTE revoked from
+anon/authenticated/PUBLIC, granted to service_role only — it is called
+solely by the secret-gated `/api/public/free-credit-reconcile` endpoint. It
+SELECTs candidates only; granting happens app-side (ADR-0005).
+
 ## record_analytics_event — anon-callable by design
 
 This is the client analytics ingest path and stays executable by anon and

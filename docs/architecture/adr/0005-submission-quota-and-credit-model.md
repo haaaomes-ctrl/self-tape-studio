@@ -51,6 +51,19 @@ lifecycle email is consent-suppressed — grant ≠ email. The
 controls whether holders of ACTIVE paid/funded credits also receive the
 monthly allowance.
 
+**Cadence anchor (load-bearing; fixed 2026-06-05 after a live double-grant,
+PR #195):** the monthly allowance is anchored on the most recent free-tier
+grant of EITHER source. `free_monthly` is due only when a `free_signup`
+grant already exists AND no free-tier grant (`free_signup` OR
+`free_monthly`) was issued in the last 31 days — and the signup pass itself
+never grants monthly. Net invariant: **a fresh account receives exactly ONE
+credit at signup**, with the monthly allowance first due ~31 days after the
+signup grant and every 31 days from the last free-tier grant thereafter.
+Keying the monthly gate on `free_monthly` history alone reintroduces the
+signup double-grant — the rule lives in BOTH deciders
+(`reconcileFreeCreditsForUser` and the `list_free_credit_due_users` SQL
+helper) and is pinned by a fresh-signup "exactly one grant call" test.
+
 ### The admin account is unconstrained
 
 The admin/test account `o.halawi90@gmail.com`
