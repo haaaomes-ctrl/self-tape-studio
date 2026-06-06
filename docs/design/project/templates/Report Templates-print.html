@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TapeCoach · Report View — Template Explorations (print)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #EEF1F5; }
+
+  /* on-screen: stack the directions with light separation */
+  .print-tpl { background: #F8F9FB; }
+  .print-band {
+    display: flex; align-items: center; gap: 16px;
+    padding: 18px 28px; background: #091E42; color: #fff;
+  }
+  .print-num {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 9px;
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px;
+  }
+  .print-nm { font-size: 18px; font-weight: 800; letter-spacing: -.01em; line-height: 1.1; }
+  .print-bl { font-size: 12.5px; color: rgba(255,255,255,.72); margin-top: 2px; }
+  .print-brand { margin-left: auto; flex-shrink: 0; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.55); font-weight: 700; }
+
+  @media screen {
+    .print-tpl { margin-bottom: 22px; box-shadow: 0 2px 18px rgba(9,30,66,.08); }
+  }
+
+  @media print {
+    @page { size: A4 portrait; margin: 0.5cm; }
+    html, body { background: #fff !important; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+    /* each direction begins on a fresh page */
+    .print-tpl { break-before: page; margin: 0; box-shadow: none; }
+    .print-tpl:first-child { break-before: avoid; }
+    /* don't let the label band detach from its report */
+    .print-band { break-after: avoid; break-inside: avoid; }
+    /* template roots set min-height:100% / 100vh — neutralise so pages don't pad out */
+    .print-tpl > div { min-height: 0 !important; }
+
+    /* hide in-report print buttons — useless on paper */
+    .tc-btn { display: none !important; }
+
+    /* keep small blocks together where reasonable */
+    .tc-card, section, li { break-inside: avoid; }
+
+    /* freeze animations at their end state (don't revert fade-ins) */
+    *, *::before, *::after {
+      animation-delay: -99s !important; animation-duration: .001s !important;
+      animation-iteration-count: 1 !important; animation-fill-mode: both !important;
+      animation-play-state: running !important; transition-duration: 0s !important;
+    }
+  }
+  .tc-scroll::-webkit-scrollbar { width: 0; height: 0; }
+  .tc-scroll { scrollbar-width: none; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="report-data.js"></script>
+<script type="text/babel" src="tpl-shared.jsx"></script>
+<script type="text/babel" src="tpl1-verdict.jsx"></script>
+<script type="text/babel" src="tpl2-collapsible.jsx"></script>
+<script type="text/babel" src="tpl3-colour.jsx"></script>
+<script type="text/babel" src="tpl4-sidebar.jsx"></script>
+<script type="text/babel" src="tpl5-tabbed.jsx"></script>
+<script type="text/babel" src="tpl6-dashboard.jsx"></script>
+<script type="text/babel" src="app-print.jsx"></script>
+</body>
+</html>
