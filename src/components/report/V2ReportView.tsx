@@ -14,7 +14,7 @@
 // The pre-Template-3 view is kept verbatim as V2ReportViewLegacy behind the
 // app_config kill-switch `tpl3_report_view_enabled` (default true).
 
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,59 @@ import {
 } from "./tpl3/tpl3-primitives";
 import { V2ReportViewLegacy } from "./V2ReportViewLegacy";
 import { getReportViewMode } from "@/server-fns/report-view-config.functions";
+import { whoAmIAdmin } from "@/lib/admin-storage.functions";
+
+// OPERATOR-ONLY diagnostics (PR-3). Lazy so the panel code never loads in
+// the performer path; the mount renders nothing unless whoAmIAdmin confirms
+// admin at runtime (static renders never run effects → provably absent from
+// the performer/test surface). The fetch behind it is admin-asserted
+// server-side regardless.
+const Tpl3DiagnosticPanelLazy = lazy(() => import("./tpl3/Tpl3DiagnosticPanel"));
+
+function AdminReportDiagnostics({
+  takeId,
+  viewModel,
+}: {
+  takeId: string;
+  viewModel: ReportViewModel;
+}) {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    whoAmIAdmin()
+      .then((who) => {
+        if (!cancelled && (who as { isAdmin?: boolean })?.isAdmin === true) setIsAdmin(true);
+      })
+      .catch(() => {
+        // non-admin / unauthenticated: render nothing
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!isAdmin) return null;
+  return (
+    <div className="tc-print-exclude rounded-[14px] border border-dashed border-border p-4">
+      <button
+        type="button"
+        className="text-xs font-semibold text-muted-foreground underline underline-offset-2"
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? "Hide diagnostics" : "Show diagnostics"} (operator only)
+      </button>
+      {open && (
+        <Suspense
+          fallback={<p className="mt-2 text-xs text-muted-foreground">Loading diagnostics…</p>}
+        >
+          <div className="mt-3">
+            <Tpl3DiagnosticPanelLazy takeId={takeId} viewModel={viewModel} />
+          </div>
+        </Suspense>
+      )}
+    </div>
+  );
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type V2 = any;
@@ -556,6 +609,7 @@ export function V2ReportView({
   replacesTakeId,
   sameVideoStatus,
   auditionType,
+  takeId,
 }: {
   report: V2;
   takeNumber?: number;
@@ -565,6 +619,8 @@ export function V2ReportView({
   replacesTakeId?: string | null;
   sameVideoStatus?: string | null;
   auditionType?: AuditionTypeForLabels;
+  /** Enables the operator-only diagnostics mount; no takeId → no mount. */
+  takeId?: string | null;
 }) {
   // Kill-switch: app_config.tpl3_report_view_enabled=false flips back to the
   // legacy view. Fails open to Template 3 (static renders, fn errors, and
@@ -2596,6 +2652,9 @@ export function V2ReportView({
         {renderFixBucketCards(viewModel)}
         {renderEmptyStateCards(viewModel, emptyCardSuppress)}
       </div>
+
+      {/* OPERATOR-ONLY diagnostics — never performer-facing, never printed */}
+      {takeId && viewModel && <AdminReportDiagnostics takeId={takeId} viewModel={viewModel} />}
     </div>
   );
 }

@@ -1071,6 +1071,7 @@ function TakeView({
         replacesTakeId={take.replaces_take_id}
         sameVideoStatus={take.same_video_status}
         auditionType={r.audition_type ?? null}
+        takeId={take.id}
       />
     );
   }
