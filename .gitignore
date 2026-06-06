@@ -35,8 +35,10 @@ dist-ssr
 analysis-worker/.dry/
 analysis-worker/analysis-worker/
 
-# Claude Code local state (settings, worktrees) — never commit
-.claude/
+# Claude Code local state (settings, worktrees) — never commit.
+# Skills are tracked: .claude/* ignores direct children, !.claude/skills/ re-includes skills.
+.claude/*
+!.claude/skills/
 
 # Local QA artefact output from test runs. Intentional committed fixtures
 # (e.g. qa-artifacts/GF-01-*) remain tracked; use `git add -f` to add new ones.
@@ -47,3 +49,6 @@ qa-artifacts/
 # client values and is maintained by the Lovable sync (audited 2026-06-05).
 .env.local
 .env.*.local
+
+# Obsidian workspace state for the knowledge vault (machine-local, not shared)
+knowledge/.obsidian/

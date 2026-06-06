@@ -5,3 +5,7 @@ dist
 pnpm-lock.yaml
 package-lock.json
 routeTree.gen.ts
+
+# Knowledge OS generated files (maintained by tc-* skills, not Prettier)
+knowledge/00-meta/INDEX.md
+knowledge/00-meta/DELTA-REGISTER.md
