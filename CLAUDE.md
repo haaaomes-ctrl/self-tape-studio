@@ -46,7 +46,7 @@ Before starting non-trivial work, consult the corpus for relevant context (decis
 
 Operating rules for the corpus:
 
-- **Write-boundary:** only create or modify files under `knowledge/`. Never edit the spine or application code directly — propose those changes for a reviewed PR.
+- **Write-boundary (corpus work only):** when working on the knowledge corpus (the tc-\* skills, capture, indexing), only create or modify files under `knowledge/`, and propose any spine change as a note plus a reviewed PR. This scopes the corpus tooling — it does NOT restrict normal development, where application code is edited through the usual branch + PR workflow.
 - **Notes follow the schema** in `.claude/skills/tc-vault-note`. Status is one of `exploratory | current | superseded | decided`; treat `exploratory`/`superseded` notes as non-authoritative.
 - **Generated files** (`knowledge/00-meta/INDEX.md`, `DELTA-REGISTER.md`) are produced by skills — do not hand-edit; rerun the skill.
 - **Skills** available: `tc-vault-note`, `tc-conversation-ingestion`, `tc-knowledge-index`, `tc-delta-register`, `tc-handoff`.
