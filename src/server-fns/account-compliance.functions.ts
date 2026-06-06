@@ -23,3 +23,14 @@ export const upsertCurrentUserAccountCompliance = createServerFn({ method: "POST
       operation: "account_compliance_server_fn_upsert",
     });
   });
+
+// Self-healing compliance read for the dashboard guard. Deliberately takes
+// NO input: the user id and claims come solely from the verified session
+// middleware, so the repair is self-scoped to the caller and can never
+// touch another user's row.
+export const getCurrentUserAccountCompliance = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { getAccountComplianceForUser } = await import("@/server/account-compliance.server");
+    return getAccountComplianceForUser(context.userId, context.claims);
+  });
