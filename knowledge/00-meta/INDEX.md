@@ -16,7 +16,16 @@
 ### AGENTS §Code responsibilities
 
 - **current** — [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] (high)
+- **current** — [[session-state-claude-code-2026-06-07-pre-compaction]] (high)
 - **current** — [[arch-d3-rescope-division-of-authority]] (high)
+
+### AGENTS §Performer level calibration
+
+- **current** — [[arch-d6-score-model-architecture]] (high)
+
+### AGENTS §Professional 0–100 level-relative score calibration
+
+- **current** — [[arch-d6-score-model-architecture]] (high)
 
 ### AGENTS §Route/PDF first acceptance
 
@@ -25,6 +34,15 @@
 ### AGENTS §Score terminology alignment
 
 - **current** — [[arch-d3-rescope-division-of-authority]] (high)
+- **current** — [[arch-d6-score-model-architecture]] (high)
+
+### README §1.6 Calibration doctrine
+
+- **current** — [[arch-d6-score-model-architecture]] (high)
+
+### README §8. Performer Level Calibration Architecture
+
+- **current** — [[arch-d6-score-model-architecture]] (high)
 
 ## Documentation gaps (controlling facts with no live evidence)
 
@@ -38,7 +56,6 @@
 - README §5. AI analysis engine — no current/decided note
 - README §6. AI module question map — no current/decided note
 - README §7. Report model and required sections — no current/decided note
-- README §8. Performer Level Calibration Architecture — no current/decided note
 - README §9. Brief-Supplied and No-Brief Scoring Architecture — no current/decided note
 - README §10. Role / Character Research and Known-Material Calibration — no current/decided note
 - README §11. Scores, score terminology and professional nuance — no current/decided note
@@ -74,9 +91,7 @@
 - AGENTS §Narrow high-risk red lines only — no current/decided note
 - AGENTS §Supplied brief transparency — no current/decided note
 - AGENTS §Brief / no-brief score semantics — no current/decided note
-- AGENTS §Performer level calibration — no current/decided note
 - AGENTS §Role / Character Research and Known-Material Calibration — no current/decided note
-- AGENTS §Professional 0–100 level-relative score calibration — no current/decided note
 - AGENTS §AI module question map — no current/decided note
 - AGENTS §One AI question per UI module — no current/decided note
 - AGENTS §AI responsibilities — no current/decided note
@@ -159,5 +174,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 5/1/0/0
-- Gaps (##-level): 119 | Orphans: 2 | Unresolved: 0
+- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 7/1/0/0
+- Gaps (##-level): 116 | Orphans: 2 | Unresolved: 0
