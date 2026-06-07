@@ -3,7 +3,7 @@ id: arch-d3-evidence-binding-gate-handoff-2026-06-07
 title: ARCH-Δ3 evidence-binding gate — handoff (merged, live-validation defect open)
 tier: corpus
 status: current
-spine_anchor: ["AGENTS §Code responsibilities", "docs/architecture §Invariants"]
+spine_anchor: ["AGENTS §Code responsibilities", "ADR-0003"]
 decided_ref: null
 supersedes: []
 superseded_by: null
