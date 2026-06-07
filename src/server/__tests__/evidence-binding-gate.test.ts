@@ -445,4 +445,47 @@ describe("wiring order (source-text assertions)", () => {
     expect(source).toContain("getEvidenceBindingGateEnabled()");
     expect(source).toContain("report.evidence_binding_gate = {");
   });
+
+  it("audit trail is mirrored into score_breakdown UNCONDITIONALLY (survives the v2 projection)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const source = fs.readFileSync(path.resolve(__dirname, "../process-take.server.ts"), "utf8");
+
+    // (a) The mirror line exists, with the deliberate `?? null` (honest null,
+    // never a fabricated default object).
+    const mirrorLine =
+      "evidence_binding_gate: (report as Record<string, unknown>).evidence_binding_gate ?? null,";
+    const mirror = source.indexOf(mirrorLine);
+    expect(mirror).toBeGreaterThan(-1);
+
+    // The mirror sits INSIDE the scoreBreakdown literal that the
+    // score_breakdown COLUMN write persists.
+    const literalStart = source.indexOf("const scoreBreakdown = {");
+    const columnWrite = source.indexOf("score_breakdown: scoreBreakdown");
+    expect(literalStart).toBeGreaterThan(-1);
+    expect(mirror).toBeGreaterThan(literalStart);
+    expect(columnWrite).toBeGreaterThan(mirror);
+
+    // (b) UNCONDITIONAL: no guard wraps the mirror. The window immediately
+    // preceding the mirror line (after the s10_module_readiness block ends —
+    // its closing `})),` map is the last code before the mirror's comment)
+    // contains no `if (`, no ternary, no && and no reference to the gate's
+    // action count. The mirror line itself is a plain object property.
+    const windowBefore = source.slice(Math.max(0, mirror - 600), mirror);
+    expect(windowBefore).not.toContain("if (");
+    expect(windowBefore).not.toContain("&&");
+    expect(windowBefore).not.toContain("gated.actions");
+    expect(windowBefore).not.toContain("action_count >");
+    expect(windowBefore).not.toContain("action_count ===");
+
+    // (c) The always-on run log exists so quiet passes are visible in worker
+    // logs (previously only action-bearing and disabled runs logged).
+    expect(source).toContain('console.log("[take-pipeline] evidence_binding_gate_run", {');
+    const runLog = source.indexOf("evidence_binding_gate_run");
+    const actionGuard = source.indexOf("if (gated.actions.length > 0)");
+    expect(runLog).toBeGreaterThan(-1);
+    expect(actionGuard).toBeGreaterThan(-1);
+    // The run log fires BEFORE (outside) the action_count>0 guard.
+    expect(runLog).toBeLessThan(actionGuard);
+  });
 });
