@@ -137,6 +137,11 @@ import {
   normaliseBriefAchievementMatrix,
   type S10TechnicalMediaSignals,
 } from "./s10-brief-achievement-matrix.server";
+import {
+  applyEvidenceBindingGate,
+  EVIDENCE_BINDING_GATE_VERSION,
+} from "./evidence-binding-gate.server";
+import { getEvidenceBindingGateEnabled } from "./evidence-binding-gate-config.server";
 import { applyReadinessScoreSemantics } from "./s10-readiness-score-semantics.server";
 import { applyS10FixHierarchyNextAction } from "./s10-fix-hierarchy-next-action.server";
 import {
@@ -5115,6 +5120,57 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
         readiness_impact: report.brief_achievement_matrix.readiness_impact,
         mandatory_status: report.brief_achievement_matrix.mandatory_status,
       });
+    }
+
+    // ARCH-Δ3: deterministic evidence-binding gate — runs on BOTH paths,
+    // directly after matrix shape-normalisation and before any matrix
+    // consumer, so readiness semantics / fixes / critique / view receive
+    // the gated matrix. Only mutation authority: the R4 verdict-coherence
+    // collapse + breakdown cap (per-row authority stays with
+    // normaliseBriefAchievementMatrix; R2/R3 are assert-only audit flags).
+    // Kill-switch fails OPEN TO ON (truthfulness gate).
+    if (await getEvidenceBindingGateEnabled()) {
+      const gated = applyEvidenceBindingGate({
+        matrix: report.brief_achievement_matrix ?? null,
+        briefRequirements: extractedBrief?.brief_requirements ?? [],
+        observedTapeSequence: s10ObservationContext.observed_tape_sequence ?? [],
+        componentVerifications: s10ObservationContext.component_verifications ?? [],
+        briefAdherenceBreakdown:
+          report.brief_adherence_breakdown &&
+          typeof report.brief_adherence_breakdown === "object" &&
+          !Array.isArray(report.brief_adherence_breakdown)
+            ? (report.brief_adherence_breakdown as Record<string, unknown>)
+            : null,
+      });
+      if (gated.matrix) report.brief_achievement_matrix = gated.matrix;
+      if (gated.briefAdherenceBreakdown) {
+        report.brief_adherence_breakdown = gated.briefAdherenceBreakdown;
+      }
+      report.evidence_binding_gate = {
+        version: EVIDENCE_BINDING_GATE_VERSION,
+        applied: gated.applied,
+        action_count: gated.actions.length,
+        actions: gated.actions,
+      };
+      if (gated.actions.length > 0) {
+        console.warn("[take-pipeline] evidence_binding_gate_actions", {
+          take_id: takeId,
+          action_count: gated.actions.length,
+          codes: [...new Set(gated.actions.map((action) => action.code))],
+        });
+        metric("evidence_binding_gate_applied", {
+          take_id: takeId,
+          action_count: gated.actions.length,
+        });
+      }
+    } else {
+      report.evidence_binding_gate = {
+        version: EVIDENCE_BINDING_GATE_VERSION,
+        applied: false,
+        action_count: 0,
+        actions: [],
+      };
+      console.warn("[take-pipeline] evidence_binding_gate_disabled", { take_id: takeId });
     }
 
     // Capture the model's raw overall before any server recomputation.
