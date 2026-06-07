@@ -35,7 +35,7 @@ CORPUS (knowledge/)   research · decisions-context · conversations · ideas ·
 OBSIDIAN (core)       Bases dashboards · Properties (=schema) · Git sync · Local REST API+MCP
 SKILLS                tc-vault-note · tc-conversation-ingestion · tc-knowledge-index ·
                       tc-delta-register · tc-handoff
-SURFACES              Claude Code/Codex (native fs) · Cowork/Desktop (MCP) · Claude.ai (GitHub conn.)
+SURFACES              Claude Code/Codex (native fs) · Cowork/Desktop (MCP) · Claude.ai (GitHub conn. — bounded snapshot, not live)
 ```
 
 ## 4. Data model
@@ -48,7 +48,7 @@ Front-matter on every note (full schema in `tc-vault-note`). Status lifecycle `e
 - **Skills (`.claude/skills/`)** — the consistency layer: `tc-vault-note` (schema), `tc-conversation-ingestion` (capture), `tc-knowledge-index` (spine→evidence + gaps), `tc-delta-register` (forward gaps + drift), **`tc-handoff` (chat↔Code work orders that replace copy-paste)**.
 - **Generated artifacts** — `INDEX.md`, `DELTA-REGISTER.md` (the AI/automation equivalents of the human dashboards).
 - **Obsidian cockpit** — Properties (the schema), **Bases** dashboards (status board, evidence-by-anchor, research queue, supersession history, **capture log**, **handoff board**), graph/Canvas (human), Templater/QuickAdd (template enforcement).
-- **Integration hub** — Local REST API + built-in MCP; per surface: Claude Code/Codex native filesystem; Cowork/Desktop via Obsidian MCP or Filesystem MCP; Claude.ai via GitHub connector (or Tailscale for live). Config in `OBSIDIAN-SETUP.md`.
+- **Integration hub** — Local REST API + built-in MCP; per surface: Claude Code/Codex native filesystem; Cowork/Desktop via Obsidian MCP or Filesystem MCP. claude.ai (web/app) does **not** read the live corpus: via the GitHub connector it loads a bounded snapshot of repo files into a Project's knowledge — subject to the Project knowledge limit, with retrieval degrading past it — useful as a briefing, but not a live or complete read. Full, live read/write of the vault is Claude Code. See `SESSION-CONTINUITY.md` for the complete surface→capability map and the briefing loop that bridges this. Config in `OBSIDIAN-SETUP.md`.
 - **Sync** — Obsidian Git auto-commit/pull.
 
 ## 6. Write model and safety (default settled by the private-repo decision)
