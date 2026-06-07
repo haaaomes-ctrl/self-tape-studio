@@ -55,6 +55,8 @@ Front-matter on every note (full schema in `tc-vault-note`). Status lifecycle `e
 
 The write-boundary is enforced both by instruction (skills write only `knowledge/`) and now **structurally**: because the repo is private and the **vault is opened on the `knowledge/` subfolder** (not the repo root), the Local REST API and its MCP cannot address the spine or application code — they are outside the vault. Corpus writes still flow through skills → git → PR. The Obsidian MCP is read-primary; any live write is confined to `knowledge/` by the vault boundary. Never symlink the spine or code into the vault. Result: even with Obsidian at the core, the system is structurally incapable of editing the spine or code outside a reviewed PR. (This makes risk R3 Low by construction.)
 
+**Scope of the boundary (important):** the write-boundary constrains the _corpus tooling_ — the skills, capture, and indexing that operate on `knowledge/`. It does **not** restrict normal development: application code is edited through the usual branch + PR workflow, and at the team level the Developer agent is the one write path to code (see `AGENT-ECOSYSTEM.md`). This distinction must be explicit anywhere the boundary is stated in always-loaded context (e.g. the `CLAUDE.md` pointer), so a coding agent never misreads it as a prohibition on editing code.
+
 ## 7. The SRO operating model and the agent layer
 
 The manual relay is agent-to-agent with the operator as the wire. The fix is to let the agents communicate directly and put the operator at SRO altitude.

@@ -159,42 +159,123 @@ Skills are the reusable instructions Claude Code follows for knowledge tasks. Th
 
 ---
 
-# Part C — Your daily habit (the five-minute one)
+# Part C — Your daily habit: capture the session (the five-minute one)
 
-This is the single habit that makes the whole thing pay off: at the end of a working session, capture what mattered.
+**What this does, and why it's the keystone.** This is the habit that turns the empty filing system into a knowledge base. Every working session throws off decisions, dead-ends you ruled out, research, and open questions — and left in the chat window, they evaporate. Five minutes at the end of a session distils the few things worth keeping into proper notes. Skip it and the vault stays thin (exactly what you noticed when you opened it); do it consistently and the corpus compounds — and the index and dashboards finally have something to work with. It's also your debrief: the review step is where _you_ see "what did we decide today, and what's still open."
 
-1. At the end of a session (in Claude Code, or a Claude.ai Project chat with the skills enabled):
+**When to run it.** At the end of a working session or day, and after any thread that produced something worth remembering — a decision, a design discussion, a research dig. Skip it after trivial or purely operational chats; there's nothing to keep.
+
+**Where to run it.** In Claude Code, or in a Claude.ai Project chat with the five skills enabled (Settings → Features → Skills). It works on the conversation you've just had, so run it in that same session before you close it.
+
+### Step 1 — Trigger the capture
 
 > **Say to Claude Code:**
 >
 > ```text
-> Capture this session. Review what we did and propose a small number of well-formed notes for the knowledge vault — decisions, useful research, and open questions — using the tc-vault-note schema. Show them to me to edit and approve before saving. Keep it to a few sharp notes, not everything.
+> Capture this session. Review what we did and propose a small number of well-formed notes for the knowledge vault — decisions, useful research, and open questions — using the tc-vault-note schema. Set the discipline field where a note is specific to one (acting / mt / singing / dance / commercial), add a Monday reference if it ties to tracked work, and tag any note that still has unresolved questions `open-question`. Show them to me to edit and approve before saving anything. Keep it to a few sharp notes, not a transcript.
 > ```
 
-2. **Read the proposed notes, tweak anything, and approve.** This quick review is your "what did we decide / what's still open" debrief.
-3. The approved notes are saved under `knowledge/` and synced to GitHub (Obsidian Git does this, or say "commit the new notes").
+The `tc-conversation-ingestion` skill reads back over the session, picks the items worth keeping, and drafts each as a complete note — not a stub — following the schema. It proposes first and saves nothing yet.
 
-Keep the bar high: a few sharp notes beat a transcript dump. If you ever want to keep a full raw chat, tell Claude Code to put it in `knowledge/90-archive/` — that keeps it without cluttering your real notes.
+✓ **You should see:** a short list of proposed notes — usually two to four from a substantive session — each with a title, a status, a discipline tag where relevant, and a written-out body. Anything that should change the README or architecture is flagged as a `decided` note _plus a proposal_, never applied to the spine directly.
+⚠️ **If nothing happens or it misreads you:** say "use the tc-conversation-ingestion skill to capture this session."
+⚠️ **If it proposes ten notes or a wall of text:** say "be more selective — only the few things genuinely worth keeping, and fold related points into one note." The bar is signal, not coverage.
+
+### Step 2 — Review and approve (your 60-second judgement)
+
+Read the proposals and adjust. You're checking four things:
+
+- **Worth keeping?** Cut anything trivial.
+- **One idea per note?** Ask it to split a note that's trying to hold two.
+- **Right status?** New thinking is `exploratory`; your settled best understanding is `current`; a ratified decision is `decided` (with a proposal to change the spine); anything it replaces should mark the old note `superseded`.
+- **Tagged right?** Discipline set if it's discipline-specific; a Monday reference if it ties to tracked work.
+
+Edit the wording inline, or just tell Code what to change, then approve. This pass is the entire point of "propose, don't auto-save" — it's the bar that keeps the corpus sharp, and it doubles as your end-of-day debrief.
+
+> **Say to Claude Code (optional, recommended):**
+>
+> ```text
+> Before we save, give me a quick on-screen briefing of this session: decisions, open questions, anything handed to Code, and anything completed.
+> ```
+>
+> This briefing is for _you_, on screen — it isn't saved as a note (it only summarises the notes you're about to keep).
+
+### Step 3 — Save and sync
+
+On your approval, the notes are written under `knowledge/` in the right folder (research → `10-research/`, decision context → `20-decisions-context/`, ideas → `40-product-ideas/`, and so on). If Obsidian Git is running (Part B, Step 3b) they sync to GitHub on the next interval; otherwise tell Code "commit the new notes."
+
+✓ **You should see:** the new notes appear in Obsidian's sidebar within a minute or two, and — once you've built them — your **Capture log** and **Status board** dashboards (Part D) update to include them.
+
+### Step 4 — Keep the raw thread, only if it earns it (optional)
+
+If a session was rich enough that you might want the full transcript later, tell Code "archive the raw conversation to `knowledge/90-archive/`." That preserves it losslessly without cluttering your real notes — the same archive-vs-corpus split that governs the backfill. Most sessions don't need it; the distilled notes are usually enough.
+
+---
+
+**The one rule that keeps this valuable:** a few sharp notes beat a transcript dump, every time. The corpus is worth something _because_ it's curated — let captures balloon and retrieval degrades and the dashboards turn to noise. When in doubt, keep less; you can always distil more from the archive later.
+
+**The rhythm.** At about five minutes a session, this compounds quietly — a month of disciplined captures is a genuinely useful knowledge base. It's also the "review outcomes" half of your SRO role: the capture review plus the dashboards are how you stay on top of what the system (and later the agents) produce, without living in the detail.
 
 ---
 
 # Part D — Build your cockpit (dashboards)
 
-Dashboards turn your notes into at-a-glance views. They use Obsidian's built-in **Bases** feature (no plugin needed). In Obsidian: open the **Command Palette** (Cmd/Ctrl-P) → type "Bases" → **Bases: Create new base**, and make these five (you can ask Claude Code to give you the exact filter settings for each):
+**What this does and why.** Dashboards turn your notes into at-a-glance views — the "review outcomes" half of your SRO role. They use Obsidian's built-in **Bases** (a core plugin, nothing to install). One expectation to set: your vault is nearly empty right now, so these will look sparse until your captures and the backfill fill them — you're building the instruments before there's much to read, and they come alive as notes accrue. They also key off note **properties**, so the meta-docs like DESIGN/README (which have no `status` field) won't clutter them; only proper schema notes appear.
 
-- **Status board** — every note grouped by `status` (exploratory / current / superseded / decided).
-- **Capture log** — notes by date, newest first; plus a view that surfaces open questions.
-- **Handoff board** — work items grouped by status (requested / in progress / done).
-- **Research queue** — exploratory research notes, sorted by confidence.
-- **Supersession history** — notes that have been replaced, and why.
+**First, confirm Bases is on:** Settings → Core plugins → make sure **Bases** is enabled (it's on by default in recent Obsidian).
 
-> **Say to Claude Code (if you'd like the settings spelled out):**
+A note on shape: rather than five separate files, the cleaner approach is **one base with five views** that you switch between — that's how Bases is designed to be used.
+
+## The fast path (recommended): let Code build it
+
+The quickest route is to have Claude Code write the base file for you, configured to your schema; then you just open it and tweak.
+
+> **Say to Claude Code:**
 >
 > ```text
-> Give me the exact field names and filter settings to create each of these five Obsidian Bases from my note schema: status board, capture log, handoff board, research queue, supersession history.
+> Create an Obsidian Base file at knowledge/00-meta/cockpit.base for my corpus, using the tc-vault-note schema (properties include: status, type, discipline, confidence, created, updated, tags, source, superseded_by, supersession_reason, pr, monday_ref). Give it these views, Table layout unless noted:
+> 1. Status board — notes where status is not empty; columns title, status, discipline, updated; grouped by status.
+> 2. Capture log — notes where status is not empty; columns title, created, updated, status, discipline; sorted by created, newest first.
+> 3. Handoffs — notes where type is "handoff"; columns title, status, pr, monday_ref, updated; grouped by status.
+> 4. Research queue — notes where status is "exploratory" and tags contains "research"; columns title, confidence, discipline, updated; grouped by confidence.
+> 5. Superseded — notes where status is "superseded"; columns title, superseded_by, supersession_reason, updated; sorted by updated, newest first.
+> 6. Open questions — notes where tags contains "open-question"; columns title, discipline, status, updated; sorted by updated, newest first.
+> Use valid current Bases YAML syntax, and tell me how to open it in Obsidian.
 > ```
 
-✓ **You should see:** live tables that update as your notes grow. This is the "review outcomes" half of your job as the operator.
+Then in Obsidian, open `cockpit.base` from the sidebar and switch views from the menu in the **top-left**.
+
+## The manual path (to understand and tweak it)
+
+Worth knowing even if Code built it, so you can adjust filters yourself.
+
+**Create the base:** Command Palette (Cmd/Ctrl-P) → **Bases: Create new base** → name it (e.g. "Cockpit") → save it in the vault (e.g. in `00-meta/`).
+
+**The toolbar** across the top is where everything happens: **View** (create/switch views, pick the layout — Table, Cards, List), **Filter** (which notes show), **Properties** (which columns show), **Sort** (sorts _and_ groups), **Results** (limit/export), **Search**, **New**.
+
+**To build one view:**
+
+1. **Filter** → add a condition as **Property / Operator / Value** (e.g. Property `status`, Operator _is not empty_). "All the following are true" combines conditions with AND.
+2. **Properties** → tick the fields you want as columns.
+3. **Sort** → choose a property to sort by, or **group by** a property to cluster notes into sections (Obsidian groups by one property at a time).
+4. **View → Add view** for the next one; each view keeps its own filter, columns, and sort.
+
+(There's also a `</>` **advanced editor** in the Filter menu if you ever want the raw syntax.)
+
+### The five views, spelled out
+
+- **Status board** — Filter: `status` _is not empty_. Columns: title, status, discipline, updated. **Group by** `status`. → every note clustered into exploratory / current / superseded / decided.
+- **Capture log** — Filter: `status` _is not empty_. Columns: title, created, updated, status, discipline. Sort: `created`, new → old. → what you've captured, most recent first.
+- **Handoff board** — Filter: `type` _is_ `handoff`. Columns: title, status, pr, monday_ref, updated. **Group by** `status`. → requested / in_progress / done / blocked. (Try the **Cards** layout for a kanban feel.)
+- **Research queue** — Filter: `status` _is_ `exploratory` **and** `tags` _contains_ `research`. Columns: title, confidence, discipline, updated. **Group by** `confidence`. → high / medium / low clusters. (Confidence is a text field, so _group_ it rather than sort — sorting high/medium/low alphabetically isn't meaningful.)
+- **Supersession history** — Filter: `status` _is_ `superseded`. Columns: title, superseded_by, supersession_reason, updated. Sort: `updated`, new → old. → what was replaced, and why.
+- **Open questions** — Filter: `tags` _contains_ `open-question`. Columns: title, discipline, status, updated. Sort: `updated`, new → old. → a live list of unresolved questions across the corpus.
+
+### How the open-questions view stays populated
+
+Bases filters on a note's **properties**, not on body text, so open questions are surfaced via a tag rather than by reading the `## Open questions` heading. The capture skill (`tc-conversation-ingestion`) applies this for you: any note it creates that still has open questions is tagged `open-question`, and the tag is removed once the questions are resolved — so the view is a live to-do, not an ever-growing pile. Two practical notes: add "tag any note with unresolved questions `open-question`" to your Step-1 capture prompt as reinforcement, and for older or hand-written notes you can also run Obsidian's search `line:("## Open questions")` to catch any that predate the tag.
+
+✓ **You should see:** one base with several views you can switch between — sparse now, filling as you capture and backfill. This is your operator cockpit: the review-outcomes half of the job, at a glance.
 
 ---
 

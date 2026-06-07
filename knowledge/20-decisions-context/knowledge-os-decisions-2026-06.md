@@ -48,7 +48,7 @@ Collaborative end-of-session capture via `tc-conversation-ingestion`; **selectiv
 
 ## 7 — Context/memory commits
 
-Via Code: the `CLAUDE.md` pointer and the **PR cycle + ADR rule + decision escalation** (proposals in `00-meta/proposals/`), applied by hand via PR.
+Via Code: the `CLAUDE.md` pointer and the **PR cycle + ADR rule + decision escalation** (proposals in `00-meta/proposals/`), applied by hand via PR. The `CLAUDE.md` write-boundary line is **scoped to corpus work** with an explicit carve-out for normal development — because the file is always-loaded, an absolute "never edit code" would risk a coding agent (e.g. the Developer) misreading it as a global ban. The boundary constrains corpus tooling; code is edited via branch + PR.
 
 ## 8 — SRO operating model
 

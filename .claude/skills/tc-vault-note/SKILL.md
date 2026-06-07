@@ -58,6 +58,6 @@ updated: <YYYY-MM-DD>
 
 ## Body (one idea per note)
 
-`## Summary` · `## Context / why` · `## Detail` · `## Open questions` · `## Links`. `[[wikilinks]]` help humans; AI retrieval keys off front-matter and headings, so always set `spine_anchor`/`tags`/`discipline`.
+`## Summary` · `## Context / why` · `## Detail` · `## Open questions` · `## Links`. `[[wikilinks]]` help humans; AI retrieval keys off front-matter and headings, so always set `spine_anchor`/`tags`/`discipline`. **Convention:** if a note has content under `## Open questions`, add the tag `open-question` so it surfaces in the open-questions dashboard view; remove the tag once the questions are resolved.
 
 After writing a note that relates to the spine, recommend rerunning `tc-knowledge-index`.
