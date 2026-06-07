@@ -39,6 +39,7 @@
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
+- ~~superseded~~ — [[handoff-d6-build-start]]
 
 ### README §1.6 Calibration doctrine
 
@@ -49,12 +50,14 @@
 - **current** — [[arch-d6-handoff-2026-06-07]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
+- ~~superseded~~ — [[handoff-d6-build-start]]
 
 ### README §8. Performer Level Calibration Architecture
 
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
+- ~~superseded~~ — [[handoff-d6-build-start]]
 
 ### README §8.3 Level-specific flows
 
