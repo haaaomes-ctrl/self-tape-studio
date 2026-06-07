@@ -63,7 +63,7 @@ export function getAgeBandDeclaration(route: AccountRoute): AgeBandDeclaration {
 
 export function validateAccountRouteFormState(state: AccountRouteFormState): string | null {
   if (!state.termsAccepted || !state.privacyAccepted || !state.aiDisclaimerAccepted) {
-    return "Accept the required Terms, Privacy Policy and Disclaimer before continuing.";
+    return "Accept the required Terms, Privacy Policy and AI report disclaimer before continuing.";
   }
   if (isParentManagedRoute(state.accountRoute) && !state.parentGuardianAttested) {
     return "Parent/guardian attestation is required for this account route.";
