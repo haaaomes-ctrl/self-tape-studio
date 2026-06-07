@@ -12,7 +12,7 @@ source: claude-code
 source_ref: "Operator routing instruction following Δ6 decision capture, 2026-06-07 (post PR #217)"
 discipline: null
 monday_ref: "2967682223"
-tags: [arch-deltas, decisions, spine-reconciliation, routing, conformance, score-model, open-question]
+tags: [arch-deltas, decisions, spine-reconciliation, routing, conformance, score-model]
 confidence: high
 created: 2026-06-07
 updated: 2026-06-07
@@ -122,12 +122,18 @@ finding and the existing spine clauses**, not on the unverified F1–F9 table.
 
 ## Open questions
 
+None remaining at decision level (reconciled 2026-06-07, after ADR-0008 merged). The items
+below are downstream execution, owned elsewhere — not open questions about this routing plan:
+
 - Δ11 execution: the Category 2 additions and Category 3 corrections as a reviewed spine PR
-  (separate, deliberate; not part of this note's PR).
-- ARCH-DOC execution: ADR-0008 write-up referencing the S10-03 reopening and S10-14
-  supersession rationale.
-- Conformance-test authoring: which existing pinned tests must be rewritten (they currently
-  encode the defective behaviour) vs which new clause-conformance tests are added.
+  (separate, deliberate; not part of this note's PR). Still pending; owned by Δ11.
+- ARCH-DOC execution — **RESOLVED (2026-06-07):** ADR-0008 written and merged
+  (`docs/architecture/adr/0008-canonical-score-invariant.md`); the S10-03 reopening and S10-14
+  supersession rationale is durable via its References to [[arch-d6-score-model-architecture]].
+- Conformance-test authoring — **owned by ADR-0008 (Decision property 4) and
+  [[arch-d6-phase1-as-is-score-map]]** (§Conformance-test corpus implied): one pinned test per
+  verified divergence; `s10-v2-score-category-fallback-guard` deliberately rewritten, not
+  fixed-to-pass.
 
 ## Links
 

@@ -177,20 +177,15 @@ derives from.
 
 ## Open questions
 
-- **Phase 1 inversion table (F1–F9, flattering-only theorem, F5 prose-upgrade, F9 dead-caps,
-  withheld set H1–H4) — stated in a parallel session, provenance UNCONFIRMED, not durably
-  captured (vault, handoff notes and git all checked); PENDING from-source re-derivation
-  (report-only, real file:line) in the single owning Δ6 session before it can anchor Phase 2
-  safety design.** The reported rows for reference, none established: F1–F9 divergence
-  conditions; a universality claim that the rendered headline score is never lower than the
-  deterministic persisted score; an F5 mechanism (prose pattern-matching raising the AI score,
-  reported at `s10-readiness-score-semantics.server.ts:383-404`); an F9 mechanism (deterministic
-  caps overwritten before render by the v2 projection, reported at
-  `v2-report-builder.server.ts:424` and `:343-352`). The architecture decisions above do NOT
-  depend on these exact rows, only on the grounded two-authority/no-SSOT finding (Repro A,
-  Repro B, one-way `min()` reconciliation).
-- ADR-0008 ratification: this note proposes the slot; the formal ADR write is held for separate
-  review (spine write-boundary).
+- **RESOLVED (2026-06-07): Phase 1 inversion table — the from-source re-derivation is COMPLETE,
+  captured in [[arch-d6-phase1-as-is-score-map]] and ratified by ADR-0008.** The
+  "flattering-only" / "rendered never lower than deterministic" theorem is **REFUTED** — R-vs-D
+  is non-monotone (the render also withholds harsher than D). F9-as-described (deterministic
+  caps overwritten by the v2 projection) was not confirmed; F5 was re-characterised as a
+  prose-driven A-raise. The architecture decisions above did not depend on the prior table and
+  are unaffected.
+- **RESOLVED (2026-06-07): ADR-0008 ratification** — written and merged as
+  `docs/architecture/adr/0008-canonical-score-invariant.md`.
 - Data/IP counsel sign-off on the rubric corpus scope before scale ingestion (advisory,
   non-blocking — see noted concern above).
 - Expert panel logistics: who, how many tapes per discrimination round, and the divergence
@@ -206,8 +201,7 @@ derives from.
   build whose authority framing this decision supersedes).
 - [[arch-d3-rescope-division-of-authority]] — Δ3 rescope decision (gate as R4-only mutator);
   Δ6 inherits its division-of-authority framing.
-- [[arch-d6-phase1-as-is-score-map]] — Δ6 Phase 1 as-is field map / inversion table (not yet
-  captured as a vault note; forward link — to be written from the pending from-source
-  re-derivation, see Open questions).
+- [[arch-d6-phase1-as-is-score-map]] — Δ6 Phase 1 as-is field map / inversion table (the
+  completed from-source re-derivation; ratified by ADR-0008).
 - Monday: Δ6 2967682223 · S10-03 2952749999 (reopened/blocked) · S10-14 2952750147
   (closed/superseded).
