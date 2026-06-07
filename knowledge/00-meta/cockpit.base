@@ -1,0 +1,103 @@
+filters:
+  and:
+    - file.ext == "md"
+    - tier == "corpus"
+properties:
+  title:
+    displayName: Title
+  status:
+    displayName: Status
+  discipline:
+    displayName: Discipline
+  confidence:
+    displayName: Confidence
+  created:
+    displayName: Created
+  updated:
+    displayName: Updated
+  source:
+    displayName: Source
+  pr:
+    displayName: PR
+  monday_ref:
+    displayName: Monday
+  superseded_by:
+    displayName: Superseded by
+  supersession_reason:
+    displayName: Reason
+  file.name:
+    displayName: Note
+views:
+  - type: table
+    name: Status board
+    filters:
+      and:
+        - status != null
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - title
+      - status
+      - discipline
+      - updated
+  - type: table
+    name: Capture log
+    filters:
+      and:
+        - status != null
+    order:
+      - file.name
+      - title
+      - created
+      - updated
+      - status
+      - discipline
+    sort:
+      - property: created
+        direction: DESC
+  - type: table
+    name: Handoffs
+    filters:
+      and:
+        - type == "handoff"
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - title
+      - status
+      - pr
+      - monday_ref
+      - updated
+  - type: table
+    name: Research queue
+    filters:
+      and:
+        - status == "exploratory"
+        - tags.contains("research")
+    groupBy:
+      property: confidence
+      direction: ASC
+    order:
+      - file.name
+      - title
+      - confidence
+      - discipline
+      - updated
+  - type: table
+    name: Superseded
+    filters:
+      and:
+        - status == "superseded"
+    order:
+      - file.name
+      - title
+      - superseded_by
+      - supersession_reason
+      - updated
+    sort:
+      - property: updated
+        direction: DESC
