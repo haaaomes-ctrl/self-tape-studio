@@ -101,3 +101,18 @@ views:
     sort:
       - property: updated
         direction: DESC
+
+  - type: table
+    name: Open questions
+    filters:
+      and:
+        - 'tags.contains("open-question")'
+    sort:
+      - property: updated
+        direction: DESC
+    order:
+      - file.name
+      - title
+      - discipline
+      - status
+      - updated
