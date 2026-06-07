@@ -137,6 +137,7 @@ export type MetricName =
   | "s10_module_repair_retry_json_salvage_started"
   | "s10_module_degraded_render"
   | "s10_decision_critical_blocked"
+  | "evidence_binding_gate_applied"
   | "s10_step1_evidence_projected_for_polish"
   | "s10_module_quality_recovery_started"
   | "s10_module_quality_recovery_persisted"

@@ -288,6 +288,7 @@ export type Database = {
       app_config: {
         Row: {
           daily_submission_cap: number
+          evidence_binding_gate_enabled: boolean
           free_monthly_includes_funded_users: boolean
           future_evidence_enabled: boolean
           future_qa_trace_enabled: boolean
@@ -301,6 +302,7 @@ export type Database = {
         }
         Insert: {
           daily_submission_cap?: number
+          evidence_binding_gate_enabled?: boolean
           free_monthly_includes_funded_users?: boolean
           future_evidence_enabled?: boolean
           future_qa_trace_enabled?: boolean
@@ -314,6 +316,7 @@ export type Database = {
         }
         Update: {
           daily_submission_cap?: number
+          evidence_binding_gate_enabled?: boolean
           free_monthly_includes_funded_users?: boolean
           future_evidence_enabled?: boolean
           future_qa_trace_enabled?: boolean

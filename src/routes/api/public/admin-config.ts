@@ -30,6 +30,10 @@ const UpdateSchema = z
     // a narrow fail-open query, NOT getResolvedConfig() — see
     // src/server/report-view-config.server.ts for why.
     tpl3_report_view_enabled: z.boolean().optional(),
+    // ARCH-Δ3 evidence-binding gate kill-switch (false = gate disabled).
+    // Narrow fail-open-to-ON read — see
+    // src/server/evidence-binding-gate-config.server.ts.
+    evidence_binding_gate_enabled: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -38,7 +42,8 @@ const UpdateSchema = z
       v.daily_submission_cap !== undefined ||
       v.max_takes_per_audition !== undefined ||
       v.free_monthly_includes_funded_users !== undefined ||
-      v.tpl3_report_view_enabled !== undefined,
+      v.tpl3_report_view_enabled !== undefined ||
+      v.evidence_binding_gate_enabled !== undefined,
     { message: "At least one field must be provided" },
   );
 
@@ -63,9 +68,12 @@ export const Route = createFileRoute("/api/public/admin-config")({
         if (denied) return denied;
         const cfg = await getResolvedConfig();
         const { getTpl3ReportViewEnabled } = await import("@/server/report-view-config.server");
+        const { getEvidenceBindingGateEnabled } =
+          await import("@/server/evidence-binding-gate-config.server");
         return Response.json({
           ...cfg,
           tpl3_report_view_enabled: await getTpl3ReportViewEnabled(),
+          evidence_binding_gate_enabled: await getEvidenceBindingGateEnabled(),
         });
       },
       POST: async ({ request }) => {
@@ -101,9 +109,12 @@ export const Route = createFileRoute("/api/public/admin-config")({
 
         const cfg = await getResolvedConfig();
         const { getTpl3ReportViewEnabled } = await import("@/server/report-view-config.server");
+        const { getEvidenceBindingGateEnabled } =
+          await import("@/server/evidence-binding-gate-config.server");
         return Response.json({
           ...cfg,
           tpl3_report_view_enabled: await getTpl3ReportViewEnabled(),
+          evidence_binding_gate_enabled: await getEvidenceBindingGateEnabled(),
         });
       },
     },
