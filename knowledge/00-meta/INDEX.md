@@ -39,6 +39,7 @@
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
+- ~~superseded~~ — [[handoff-d6-build-start]]
 
 ### README §1.6 Calibration doctrine
 
@@ -49,12 +50,14 @@
 - **current** — [[arch-d6-handoff-2026-06-07]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
+- ~~superseded~~ — [[handoff-d6-build-start]]
 
 ### README §8. Performer Level Calibration Architecture
 
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
+- ~~superseded~~ — [[handoff-d6-build-start]]
 
 ### README §8.3 Level-specific flows
 
@@ -178,6 +181,7 @@
 - ADR-0004 — no current/decided note
 - ADR-0005 — no current/decided note
 - ADR-0007 — no current/decided note
+- ADR-0008 — no current/decided note
 
 ## Orphan notes (no spine anchor)
 
@@ -190,5 +194,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 10/1/0/0
-- Gaps (##-level): 116 | Orphans: 2 | Unresolved: 0
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 10/1/0/0
+- Gaps (##-level): 117 | Orphans: 2 | Unresolved: 0
