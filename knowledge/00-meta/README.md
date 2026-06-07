@@ -76,6 +76,7 @@ Phased and additive (branch + PR throughout). Cheap foundation first; heavy ampl
 ## 10. Document map
 
 - **Design:** `DESIGN.md` (authoritative) · `KNOWLEDGE-OS.md` (origin)
+- **Session continuity:** `SESSION-CONTINUITY.md` — the capture-out / brief-in loop between chat and Code, and the surface→capability map
 - **Build:** `IMPLEMENTATION-PLAN.md` (phases/tranches) · `IMPLEMENTATION-GUIDE.md` (runbook) · `OBSIDIAN-SETUP.md` (config)
 - **Skills:** `SKILLS-SPEC.md` + the five `.claude/skills/tc-*`
 - **Agents:** `AGENT-ECOSYSTEM.md` · `10-research/agent-lessons-identified.md`
