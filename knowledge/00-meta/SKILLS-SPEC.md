@@ -27,6 +27,7 @@
 - **Propose → review → approve → commit**, never silent capture. The review step is your debrief and oversight.
 - **The session briefing is on-screen only**, not a committed note — it summarises notes that already exist.
 - Items that affect the spine become a `decided` note + a _proposal_, never a spine edit.
+- **Open-question tag:** notes left with unresolved questions are tagged `open-question` (and untagged on resolution) so they surface in the open-questions dashboard view — Bases filters on properties, not body text.
   **Escalates / boundary:** writes `knowledge/` only; surfaces contradictions as drift.
 
 ## tc-knowledge-index — traceability and gaps

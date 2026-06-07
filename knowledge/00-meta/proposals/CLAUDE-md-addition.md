@@ -13,7 +13,7 @@ Before starting non-trivial work, consult the corpus for relevant context (decis
 
 Operating rules for the corpus:
 
-- **Write-boundary:** only create or modify files under `knowledge/`. Never edit the spine or application code directly — propose those changes for a reviewed PR.
+- **Write-boundary (corpus work only):** when working on the knowledge corpus (the tc-\* skills, capture, indexing), only create or modify files under `knowledge/`, and propose any spine change as a note plus a reviewed PR. This scopes the corpus tooling — it does NOT restrict normal development, where application code is edited through the usual branch + PR workflow.
 - **Notes follow the schema** in `.claude/skills/tc-vault-note`. Status is one of `exploratory | current | superseded | decided`; treat `exploratory`/`superseded` notes as non-authoritative.
 - **Generated files** (`knowledge/00-meta/INDEX.md`, `DELTA-REGISTER.md`) are produced by skills — do not hand-edit; rerun the skill.
 - **Skills** available: `tc-vault-note`, `tc-conversation-ingestion`, `tc-knowledge-index`, `tc-delta-register`, `tc-handoff`.
@@ -24,3 +24,5 @@ Operating rules for the corpus:
 ## Why this block and not more
 
 `CLAUDE.md` is always-loaded context, so every line costs budget on every session. This block is deliberately short: it tells an agent the corpus exists, where the design lives, the five rules that keep it safe, and the two routines (handoffs in, capture out) that remove the manual relay. Everything else lives in `knowledge/` and is read on demand. Do not paste the full DESIGN into `CLAUDE.md` — point to it.
+
+The write-boundary bullet is deliberately scoped to _corpus work_ and states the carve-out for normal development explicitly. Because this block is always loaded, an absolute "never edit application code" would risk a coding agent (e.g. the Tranche-1 Developer, whose job is to edit code) misreading it as a global prohibition. The boundary constrains the corpus tooling; code is edited the normal way, via branch + PR.

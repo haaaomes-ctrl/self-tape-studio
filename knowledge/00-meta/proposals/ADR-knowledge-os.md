@@ -1,6 +1,6 @@
 # PROPOSAL — ADR: Adopt the TapeCoach Knowledge OS (apply via Claude Code, do not auto-apply)
 
-> This is a _proposed_ ADR for the spine, to live at `docs/architecture/adr/`. Per the write-boundary, this system does not write the spine. Apply via Claude Code and assign the next number (records show ADRs 0005–0010 exist, so this is likely **ADR-0011** — confirm before committing). Recording the adoption at the controlling tier means future agents and contributors see it as a first-class architectural decision, not just corpus content.
+> This is a _proposed_ ADR for the spine, to live at `docs/architecture/adr/`. Per the write-boundary, the corpus tooling does not write the spine. Apply via Claude Code and assign the **next free number** — confirm against `docs/architecture/adr/` before committing (in the `self-tape-studio` repo this was **ADR-0007**; an earlier guess of 0011, based on stale notes, was wrong — always verify against the actual folder). Recording the adoption at the controlling tier means future agents and contributors see it as a first-class architectural decision, not just corpus content.
 
 ---
 

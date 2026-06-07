@@ -20,6 +20,10 @@ Turn sessions into durable, retrievable knowledge without flooding the vault. Ap
 4. **Archive the raw thread** verbatim to `90-archive/` if it should be kept — not as a note.
 5. **Report.**
 
+## Open-question tagging convention
+
+When a note you create still carries unresolved questions (i.e. it has content under `## Open questions`), add the tag `open-question` to its front-matter `tags`. This is how open questions surface in the dashboards — the "Open questions" view filters on `tags contains open-question` (Bases filters on properties, not body text, so the tag is what makes them findable). When a question is later resolved (in a future capture or note update), **remove the `open-question` tag** so the view stays a live list of what's genuinely still open.
+
 ## Selective but fully-formed (the approval cycle)
 
 Be **selective** about _which_ notes to create (a few sharp ones from a long thread, not fifteen), but generate each selected note **in full** — complete reasoning, well-structured body — so the operator's approve/commit cycle is easy: they review a finished artifact, edit if needed, and approve, rather than fleshing out a stub. Nothing is lost because the raw transcript is archived.
