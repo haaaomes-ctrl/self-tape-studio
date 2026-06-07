@@ -3,7 +3,7 @@ id: handoff-d6-build-start
 title: Δ6 build start — implement canonical-score R=D; report detail re-pointed to deterministic value; test-first
 tier: corpus
 type: handoff
-status: requested
+status: blocked
 target: claude-code
 source: claude-project
 created: 2026-06-07
@@ -19,6 +19,26 @@ monday_ref: "2967682223"
 tags: [handoff, arch-deltas, score-model, level-calibration, build, conformance]
 ---
 
+## FIRST ACTION — scope-confirmation gate (BLOCKING)
+
+Before writing ANY test or code, the picking-up session MUST stop and obtain the operator's explicit
+confirmation of the first-slice target. This is a hard gate, not a courtesy.
+
+1. Read the Context artifacts (ADR-0008, the as-is map, architecture + spine notes).
+2. Propose the first vertical slice to the operator — the recommended slice is the report-detail
+   headline number (the branch selector at v2-report-builder.server.ts:306-320, divergences N1-N4)
+   plus the cross-surface consistency test — and state it as a proposal, with the failing-test plan
+   and the blast-radius/deploy implications.
+3. STOP and wait for the operator to confirm the slice (or redirect to a different surface). Do NOT
+   write tests or code until the operator has explicitly confirmed the target.
+4. Only after explicit confirmation, proceed test-first on the confirmed slice under the normal
+   PR-and-hold flow.
+
+If the operator is not present in the session, remain blocked at step 3 — do not proceed on the
+recommended slice by default. This gate overrides the "requested → picked up without per-item
+sign-off" backlog default for the FIRST slice specifically: the operator confirms scope once, at the
+start, before code exists.
+
 ## Plan
 
 The Δ6 derivation track is closed and ratified. This work-order BEGINS THE BUILD: make the rendered
@@ -30,7 +50,7 @@ architecture — it is settled and ratified in ADR-0008. Implement against the s
 AI judgement A and must be re-pointed to the canonical D-derived value. The list/dashboard/ranking/
 admin surfaces already render D and are correct — do NOT move them toward A.
 
-**Suggested first vertical slice (operator confirms scope at session start):** the headline number
+**First vertical slice (SUBJECT TO THE SCOPE-CONFIRMATION GATE ABOVE — proposed, not yet confirmed):** the headline number
 on the report detail — the branch selector at v2-report-builder.server.ts:306-320 (N1-N4). Write the
 failing conformance test that the rendered headline equals canonical D, plus the cross-surface
 consistency test (report detail == list/dashboard for the same take), THEN re-point the selector.
