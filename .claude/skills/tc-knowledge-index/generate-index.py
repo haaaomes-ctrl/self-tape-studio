@@ -66,17 +66,31 @@ def parse_front_matter(text: str):
     if end == -1:
         return None
     fm: dict[str, object] = {}
-    for line in text[3:end].splitlines():
-        m = re.match(r"^([A-Za-z_]+):\s*(.*)$", line)
+    lines = text[3:end].splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"^([A-Za-z_]+):\s*(.*)$", lines[i])
         if not m:
+            i += 1
             continue
         key, raw = m.group(1), m.group(2).split(" #")[0].strip()
+        # A flow array may open on the line after the key (prettier reflows
+        # long arrays that way); pull the opening bracket onto `raw`.
+        if raw == "" and i + 1 < len(lines) and lines[i + 1].strip().startswith("["):
+            i += 1
+            raw = lines[i].split(" #")[0].strip()
+        # Accumulate a multi-line flow array until its closing bracket so the
+        # joined text parses identically to the single-line form.
+        while raw.startswith("[") and "]" not in raw and i + 1 < len(lines):
+            i += 1
+            raw = f"{raw} {lines[i].split(' #')[0].strip()}"
         lm = FM_LIST.match(raw)
         if lm:
-            items = [i.strip().strip("\"'") for i in lm.group(1).split(",") if i.strip()]
+            items = [item.strip().strip("\"'") for item in lm.group(1).split(",") if item.strip()]
             fm[key] = items
         else:
             fm[key] = raw.strip("\"'")
+        i += 1
     return fm
 
 
