@@ -35,6 +35,8 @@ Owned Supabase ........................... system of record: DB, auth, storage,
 - [ADR-0004 — Lovable Cloud Exit & Clean Owned-Supabase Cutover](./adr/0004-lovable-cloud-exit-clean-cutover.md)
 - [ADR-0005 — Submission Quota and Credit Model](./adr/0005-submission-quota-and-credit-model.md)
 - [ADR-0006 — Signup Consent Capture and the Self-Healing Compliance Projection](./adr/0006-signup-consent-capture-and-compliance-projection.md)
+- [ADR-0007 — Adopt a Two-Tier Knowledge OS with an Obsidian Cockpit](./adr/0007-adopt-two-tier-knowledge-os.md)
+- [ADR-0008 — Canonical Score Invariant: One Deterministic Score per Take, Every Surface Derives From It](./adr/0008-canonical-score-invariant.md)
 
 ## Runbooks
 
