@@ -35,14 +35,24 @@
 
 - **current** — [[arch-d3-rescope-division-of-authority]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
+- **current** — [[arch-d6-spine-reconciliation]] (high)
 
 ### README §1.6 Calibration doctrine
 
 - **current** — [[arch-d6-score-model-architecture]] (high)
 
+### README §11.4 Professional 0–100 level-relative score calibration
+
+- **current** — [[arch-d6-spine-reconciliation]] (high)
+
 ### README §8. Performer Level Calibration Architecture
 
 - **current** — [[arch-d6-score-model-architecture]] (high)
+- **current** — [[arch-d6-spine-reconciliation]] (high)
+
+### README §8.3 Level-specific flows
+
+- **current** — [[arch-d6-spine-reconciliation]] (high)
 
 ## Documentation gaps (controlling facts with no live evidence)
 
@@ -174,5 +184,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 7/1/0/0
+- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 8/1/0/0
 - Gaps (##-level): 116 | Orphans: 2 | Unresolved: 0
