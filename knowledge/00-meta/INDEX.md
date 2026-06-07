@@ -7,6 +7,7 @@
 ### ADR-0003
 
 - **current** — [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] (high)
+- **current** — [[run-t1-evidence-binding-gate-2026-06-07]] (high)
 
 ### ADR-0006
 
@@ -16,6 +17,10 @@
 
 - **current** — [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] (high)
 - **current** — [[arch-d3-rescope-division-of-authority]] (high)
+
+### AGENTS §Route/PDF first acceptance
+
+- **current** — [[run-t1-evidence-binding-gate-2026-06-07]] (high)
 
 ### AGENTS §Score terminology alignment
 
@@ -86,7 +91,6 @@
 - AGENTS §Timestamped commentary — no current/decided note
 - AGENTS §Technique-library commentary — no current/decided note
 - AGENTS §Golden fixtures — no current/decided note
-- AGENTS §Route/PDF first acceptance — no current/decided note
 - AGENTS §QA artefacts — no current/decided note
 - AGENTS §Operator-tested assumptions — no current/decided note
 - AGENTS §Minimal env/config principle — no current/decided note
@@ -155,5 +159,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 4/1/0/0
-- Gaps (##-level): 120 | Orphans: 2 | Unresolved: 0
+- Headings scanned: 397 (+ 7 ADRs) | Notes (current/decided/exploratory/superseded): 5/1/0/0
+- Gaps (##-level): 119 | Orphans: 2 | Unresolved: 0
