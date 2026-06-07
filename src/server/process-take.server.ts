@@ -5152,6 +5152,13 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
         action_count: gated.actions.length,
         actions: gated.actions,
       };
+      // Always-on run log: quiet passes (action_count 0) must be visible in
+      // worker logs — previously only action-bearing and disabled runs logged.
+      console.log("[take-pipeline] evidence_binding_gate_run", {
+        take_id: takeId,
+        applied: gated.applied,
+        action_count: gated.actions.length,
+      });
       if (gated.actions.length > 0) {
         console.warn("[take-pipeline] evidence_binding_gate_actions", {
           take_id: takeId,
@@ -6608,6 +6615,14 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
           decision_critical: result.decision_critical,
         })),
       },
+      // ARCH-Δ3 audit-trail mirror (s10_module_readiness precedent): the v2
+      // persistence projection (buildV2Report) constructs a fixed-shape
+      // V2Report, so report.evidence_binding_gate never survives into the
+      // report column — score_breakdown is the diagnostics column that does.
+      // UNCONDITIONAL (every gated run, including quiet applied:true/0 and
+      // kill-switch-off applied:false). `?? null` is deliberate: persist an
+      // honest null if the block is ever missing, never fabricate a default.
+      evidence_binding_gate: (report as Record<string, unknown>).evidence_binding_gate ?? null,
       compliance_flags: complianceFlags,
       presentation_notes_count: presentationNotes.length,
       safety_rewrite_applied: safetyRewriteApplied,
