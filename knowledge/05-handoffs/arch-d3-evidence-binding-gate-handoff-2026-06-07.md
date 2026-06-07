@@ -1,6 +1,6 @@
 ---
 id: arch-d3-evidence-binding-gate-handoff-2026-06-07
-title: ARCH-Δ3 evidence-binding gate — handoff (merged, live-validation defect open)
+title: ARCH-Δ3 evidence-binding gate — handoff (RESOLVED 2026-06-07 — persist-projection defect fixed, live-proven)
 tier: corpus
 status: current
 spine_anchor: ["AGENTS §Code responsibilities", "ADR-0003"]
@@ -12,7 +12,7 @@ source: claude-code
 source_ref: "ARCH-Δ2/Δ3 build session + operator handoff brief, 2026-06-07 (PRs #203, #204, #205)"
 discipline: null
 monday_ref: null
-tags: [handoff, arch-deltas, evidence-binding-gate, pipeline, open-question]
+tags: [handoff, arch-deltas, evidence-binding-gate, pipeline]
 confidence: high
 created: 2026-06-07
 updated: 2026-06-07
@@ -20,11 +20,51 @@ updated: 2026-06-07
 
 ## Summary
 
-Δ3 (#204) and the consent revert (#205) are merged; the kill-switch migration is applied and
-verified; the worker is deployed and provably contains the gate code. BUT the gate is not
-firing on live takes: two no-brief MT takes persisted with NO `evidence_binding_gate` block
-at all — not even the disabled-branch `applied:false` form — meaning the wiring's code path
-was not executed. One diagnostic step is queued before any fix.
+RESOLVED. Δ3 is merged, deployed and live-proven end-to-end. The "gate not firing"
+live-validation defect was neither of the original hypotheses: the gate executed correctly
+on every path — its audit block was being silently dropped by the V2Report persistence
+projection (root cause H3). Fixed by PR #212 (mirror into the `score_breakdown` column);
+live row `fe3e880a` proves the mirror persists. See **Resolution (2026-06-07)** below; the
+sections beneath it preserve the original investigation state as written pre-resolution.
+
+## Resolution (2026-06-07)
+
+- **Root cause = H3 (persist projection):** `buildV2Report` constructs a fixed-shape
+  `V2Report`; `report.evidence_binding_gate` is not a field of it, so the audit block
+  written onto the working report was dropped at the persistence projection on EVERY path.
+  **H1 (path coverage) REFUTED in source** — all terminal report-persisting paths
+  (two-step success, polish fallback, module-quality recovery, single-pass, baseline) pass
+  the gate wiring before the single rendered-report write. **H2 (matrix location) REFUTED
+  at gate-time** — the matrix is top-level when the gate reads it (set ~30 lines above);
+  the projection re-homes it under `s10_view_model` afterwards. The gate's R4 effect always
+  propagated (the view-model embeds the gated matrix); only observability was lost.
+- **Fix = PR #212** (squash-merged `97eaa493`): mirror the audit object into the
+  `score_breakdown` column, UNCONDITIONAL (every gated run, incl. quiet
+  `applied:true/action_count:0` and kill-switch-off `applied:false`), following the
+  `s10_module_readiness` precedent; plus an always-on `evidence_binding_gate_run` worker
+  log so quiet passes are visible. No migration. No report-schema/public-boundary change.
+- **Live proof = take `fe3e880a-7e02-4985-aaf4-6c4d828bb363`:**
+  `score_breakdown.evidence_binding_gate = {version:"evidence_binding_gate_v1",
+  applied:true, action_count:0, actions:[]}`; the report has NO top-level
+  `evidence_binding_gate` key and NO top-level `brief_achievement_matrix` (matrix at
+  `s10_view_model.brief_achievement_matrix`) — confirming the projection behaviour exactly
+  as traced.
+- **Deploy confirmed live** by re-grepping the worker bundle for the
+  `evidence_binding_gate_run` marker and the scoreBreakdown mirror line BEFORE reading the
+  row (merge ≠ live lesson applied).
+- The "difficulty overcome" phrase was found in neither the repo source nor either
+  persisted report — UI-side copy or paraphrase; it played no role in the defect.
+
+**Carry-forward (nice-to-have validation, NOT outstanding Δ3 work):** the first persisted
+`action_count >= 1` row (a positive-but-unlocated verdict collapsing to `not_assessable`
+via R4) is the cleanest end-to-end proof of R4's visible corrective effect; the trace
+already confirmed R4 propagates into the persisted matrix and scoring, so this is
+confirmation-in-the-wild only.
+
+---
+
+_The sections below preserve the original investigation state (2026-06-07,
+pre-resolution) as history._
 
 ## Context / why
 
@@ -72,21 +112,22 @@ block. Two live hypotheses, not yet distinguished:
 Δ3's item should read: "merged but live-validation found a path-coverage defect; gate not
 yet firing" — held until the trace distinguishes H1/H2.
 
-## Single next step
+## Single next step (completed — see Resolution above)
 
-Send the drafted diagnostic brief to Claude Code (INVESTIGATE-ONLY, no patch): trace which
+~~Send the drafted diagnostic brief to Claude Code (INVESTIGATE-ONLY, no patch): trace which
 terminal report-persisting paths in `process-take.server.ts` execute the gate wiring, and
-where `brief_achievement_matrix` lives at gate-time vs persist-time. Fix from the findings.
+where `brief_achievement_matrix` lives at gate-time vs persist-time. Fix from the findings.~~
+Done: the trace refuted H1/H2, identified H3, and PR #212 fixed it.
 
 ## Open questions
 
-1. H1 vs H2 — which explains the absent audit block (or both)?
-2. Why do both live takes report "difficulty overcome", and which terminal path does that
-   string correspond to?
-3. Should the Δ3 gate get an ADR (would be ADR-0008 — none exists; ADRs currently end at
-   0007 Knowledge OS)?
+(none — resolved 2026-06-07. The original questions and their answers: H1 vs H2 → neither,
+root cause was H3 (persist projection); "difficulty overcome" → not pipeline or report copy,
+played no role. The ADR question — should the gate get ADR-0008? — is NOT carried on this
+handoff: it belongs to the ARCH-DOC / ADR-0008 workstream.)
 
 ## Links
 
 [[arch-d3-rescope-division-of-authority]] · [[consent-copy-ai-disclaimer-revert]] ·
-PRs #203 #204 #205 · monday 2971908011 (Δ3a reason codes)
+PRs #203 #204 #205 · **PR #212 (`97eaa493`) — the persist-projection fix** ·
+monday 2971908011 (Δ3a reason codes)
