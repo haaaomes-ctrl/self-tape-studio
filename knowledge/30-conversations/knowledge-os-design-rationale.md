@@ -3,7 +3,7 @@ id: knowledge-os-design-rationale
 title: TapeCoach Knowledge OS — design conversation and rationale
 tier: corpus
 status: current
-spine_anchor: []
+spine_anchor: ["CLAUDE §Knowledge corpus"]
 decided_ref: null
 supersedes: []
 superseded_by: null
@@ -51,6 +51,7 @@ Knowledge is fragmented across ChatGPT, Claude, Claude Code, Codex, GitHub, Mond
 
 ## Links
 
+- [[knowledge-os-decisions-2026-06]] — the resolved design decisions captured from this rationale.
 - Spec: `knowledge/00-meta/KNOWLEDGE-OS.md`
 - Rollout: `knowledge/00-meta/IMPLEMENTATION-GUIDE.md`
 - Skills: `.claude/skills/tc-vault-note`, `tc-conversation-ingestion`, `tc-knowledge-index`, `tc-delta-register`

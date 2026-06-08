@@ -84,13 +84,14 @@ harsher than D), so the contract is R = D, not "R ≥ D".
 - Landed in order: #217 architecture → #218 spine reconciliation → #219 handoff → #220 index parser
   fix → #221 as-is map → #222 ADR.
 - Vault reconcile PR (chore/d6-reconcile-resolved-open-questions): NOT YET MERGED — the architecture
-  note still *reads* as if the inversion table is pending; it is NOT, it is ratified in ADR-0008. Do
+  note still _reads_ as if the inversion table is pending; it is NOT, it is ratified in ADR-0008. Do
   not be misled by that stale signal.
 
 ## Acceptance
 
 The build's acceptance suite = the conformance corpus from the as-is map, one pinned test per
 verified divergence, each asserting the canonical model makes the divergence impossible:
+
 - Number-drift N1 recompute / N2 audio cap / N3 role-fit / N4 matrix-min — rendered number cannot
   drift off the canonical value.
 - Verdict-label V1 blocker cap / V2 brief-adherence floor / V3 level-axis — verdict derives from the
@@ -113,7 +114,7 @@ then implement to green; never weaken a test to make code pass.
 - Test-first; plan-first; PR-and-HOLD (operator reviews the diff; Code does not merge).
 - This touches the SCORING RENDER PATH. Blast radius is real: manual-approval + dry-run + canary +
   worker redeploy. Call out migration/deploy implications explicitly in the PR.
-- The pinned guard src/server/__tests__/s10-v2-score-category-fallback-guard.test.ts must be
+- The pinned guard src/server/**tests**/s10-v2-score-category-fallback-guard.test.ts must be
   SELECTIVELY RE-PINNED, NOT inverted or deleted. Its score/category/compliance assertions pin the
   headline to the A-side readiness (e.g. `expect(v2.overall_readiness).not.toBe(report.overall_score)`)
   — THAT is the defect, flip those to the canonical D-derived value. BUT the same file legitimately
@@ -127,7 +128,18 @@ then implement to green; never weaken a test to make code pass.
 - Verify claims from source with file:line; if a line number has drifted, STOP and report rather
   than guessing.
 
+## Links
+
+- [[arch-d6-canonical-score-computation-spec]] — the operational computation spec this build implements (canonical D; the `min(.,A)` removed).
+- [[arch-d6-phase1-as-is-score-map]] — the verified as-is defect map / conformance corpus this build implements.
+- [[arch-d6-score-model-architecture]] — the target architecture.
+- [[arch-d6-spine-reconciliation]] — the conformance-test requirement.
+- [[arch-d6-handoff-2026-06-07]] — the prior Δ6 session handoff that commissioned the derivation.
+- ADR-0008 (plain text — lives in docs/architecture/adr/, outside the vault) — the R=D contract this build implements.
+- Monday: Δ6 2967682223.
+
 ## Results (filled in by Claude Code)
+
 - Branch / PR:
 - What changed:
 - Deviations / decisions made:

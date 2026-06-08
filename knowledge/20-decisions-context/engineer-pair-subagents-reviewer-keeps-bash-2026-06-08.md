@@ -3,7 +3,7 @@ id: engineer-pair-subagents-reviewer-keeps-bash-2026-06-08
 title: Engineer pair — committed subagents, and the reviewer keeps Bash
 tier: corpus
 status: decided
-spine_anchor: []
+spine_anchor: ["CLAUDE §Knowledge corpus"]
 decided_ref: null
 supersedes: []
 superseded_by: null

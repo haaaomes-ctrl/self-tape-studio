@@ -48,6 +48,13 @@
 - **current** — [[arch-d6-spine-reconciliation]] (high)
 - ~~superseded~~ — [[handoff-d6-build-start]]
 
+### CLAUDE §Knowledge corpus (knowledge/)
+
+- **decided** — [[engineer-pair-subagents-reviewer-keeps-bash-2026-06-08]] (high)
+- **decided** — [[knowledge-os-decisions-2026-06]] (high)
+- **decided** — [[slack-control-plane-free-workspace-2026-06-08]] (high)
+- **current** — [[knowledge-os-design-rationale]] (high)
+
 ### README §1.6 Calibration doctrine
 
 - **current** — [[arch-d6-score-model-architecture]] (high)
@@ -146,7 +153,6 @@
 - CLAUDE §Source hierarchy (if these conflict, STOP and report) — no current/decided note
 - CLAUDE §Mandatory task-start procedure (no edits before this) — no current/decided note
 - CLAUDE §Verification baseline (the REAL gates) — no current/decided note
-- CLAUDE §Knowledge corpus (knowledge/) — no current/decided note
 - roadmap §1. Source hierarchy — no current/decided note
 - roadmap §2. Product north star — no current/decided note
 - roadmap §3. Roadmap correction after S10 regression — no current/decided note
@@ -194,10 +200,7 @@
 
 ## Orphan notes (no spine anchor)
 
-- [[engineer-pair-subagents-reviewer-keeps-bash-2026-06-08]] — decisions, agents, subagents, engineer-pair, tooling, write-boundary, meta
-- [[knowledge-os-decisions-2026-06]] — knowledge-management, meta, decisions, obsidian, agents, slack, courier
-- [[slack-control-plane-free-workspace-2026-06-08]] — decisions, slack, control-plane, observability, agents, meta
-- [[knowledge-os-design-rationale]] — knowledge-management, meta, architecture, skills, obsidian, mcp, process
+- (none)
 
 ## Unresolved anchors (label matches no heading — fix the note)
 
@@ -206,4 +209,4 @@
 ## Counts
 
 - Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 13/3/0/0
-- Gaps (##-level): 116 | Orphans: 4 | Unresolved: 0
+- Gaps (##-level): 115 | Orphans: 0 | Unresolved: 0
