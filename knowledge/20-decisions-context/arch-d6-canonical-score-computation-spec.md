@@ -22,7 +22,7 @@ tags:
   [arch-deltas, decisions, score-model, canonical-score, conformance, pipeline, level-calibration]
 confidence: high
 created: 2026-06-07
-updated: 2026-06-07
+updated: 2026-06-08
 ---
 
 ## Purpose
@@ -84,6 +84,15 @@ voice, singing) are governed by the per-discipline weights (`weightsForType`), n
   where A<det); becomes canonical D automatically once N4a removes the min. This movement is the fix, not a
   regression, and supersedes the earlier "do not move the aggregates" framing (which rested on the false
   premise that they already showed pure D). See the ADR-0008 addendum.
+
+### Conditional contradiction (refinement)
+
+The report-route two-number contradiction — the "Dominant overall score" block (today persisted
+`min(det,A)`) directly above `V2ReportView` (today A) — is **conditional, not universal**: it shows
+only where a cap binds below A so `min(det,A)=det<A` (e.g. Repro-B audio: block 60 vs A 94). Where
+`det ≥ A`, today's persisted `min(det,A)=A`, so both already render the same number and there is no
+visible contradiction (canary 42, strong 91) — N4a then makes every surface render canonical D,
+closing it in every regime.
 
 ## Withhold semantics (preserved exactly)
 
