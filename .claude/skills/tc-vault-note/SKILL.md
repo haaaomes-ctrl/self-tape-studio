@@ -60,4 +60,24 @@ updated: <YYYY-MM-DD>
 
 `## Summary` · `## Context / why` · `## Detail` · `## Open questions` · `## Links`. `[[wikilinks]]` help humans; AI retrieval keys off front-matter and headings, so always set `spine_anchor`/`tags`/`discipline`. **Convention:** if a note has content under `## Open questions`, add the tag `open-question` so it surfaces in the open-questions dashboard view; remove the tag once the questions are resolved.
 
+## Link wiring (a note must feed BOTH indexes)
+
+Every note has two independent retrieval paths, and a note is only fully wired when it feeds **both**:
+
+- **Frontmatter `spine_anchor`** is read by the `tc-knowledge-index` script — the spine→evidence map.
+- **Body `[[wikilinks]]`** are read by Obsidian's graph — note→note navigation.
+
+Three rules, applied to every note before saving:
+
+1. **Spine connections go in the `spine_anchor` frontmatter array** — never in the body as the wiring mechanism. List the relevant `"ADR-XXXX"` and `"<FILE> §<section name>"` (README/AGENTS-clause) labels. A note that relates to a controlling fact MUST carry the anchor; only genuinely standalone research is a legitimate orphan (`spine_anchor: []`).
+2. **Note→note connections go in the body as `[[note-id]]`** — both inline where you reference another note and collected in a `## Links` section. Any note that names or builds on another corpus note MUST link it with `[[...]]` so the graph connects; a note with related siblings but no body wikilinks is half-wired (feeds the index, dark in the graph).
+3. **ADR/README/AGENTS references in the BODY are PLAIN TEXT — never `[[...]]`.** Write `ADR-0008`, not `[[ADR-0008]]`. The spine lives outside the `knowledge/` vault scope, so a wikilink to it dangles in Obsidian's graph. The spine connection is carried by `spine_anchor` (rule 1); the body just mentions it by name.
+
+### Pre-save checklist (apply to every note)
+
+- [ ] `spine_anchor` lists every relevant ADR / README / AGENTS clause (or is deliberately `[]` for standalone research).
+- [ ] Every other corpus note this one references appears as a `[[note-id]]` in the body, with a `## Links` section.
+- [ ] No `[[ADR-…]]` / `[[README …]]` / `[[AGENTS …]]` wikilinks anywhere — spine is plain text in the body, anchored in frontmatter.
+- [ ] If `## Open questions` has content, the `open-question` tag is set.
+
 After writing a note that relates to the spine, recommend rerunning `tc-knowledge-index`.

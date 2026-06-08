@@ -20,6 +20,16 @@ Turn sessions into durable, retrievable knowledge without flooding the vault. Ap
 4. **Archive the raw thread** verbatim to `90-archive/` if it should be kept — not as a note.
 5. **Report.**
 
+## Link wiring (every ingested note feeds BOTH indexes)
+
+Apply the `tc-vault-note` **Link wiring** rules and pre-save checklist to every note you create here — they are what make a note retrievable through both the `tc-knowledge-index` script and Obsidian's graph:
+
+1. **Spine connections in the `spine_anchor` frontmatter array** (`"ADR-XXXX"`, `"<FILE> §<section name>"`). When ingestion yields a `decided` note, its `decided_ref` is the spine clause it ratifies; mirror that clause in `spine_anchor` too so the index resolves it. Deliberate orphans (`spine_anchor: []`) are fine for standalone research.
+2. **Note→note connections as body `[[note-id]]`** — ingestion usually produces a cluster (a decision + its open question + a research note); wire that cluster together with `[[...]]` links and a `## Links` section so the graph reflects the thread, not just isolated notes.
+3. **ADR/README/AGENTS in the body as PLAIN TEXT, never `[[...]]`** — they live outside the vault and a wikilink dangles. Anchor them in frontmatter; mention them by name in prose.
+
+Run the pre-save checklist from `tc-vault-note` before proposing the notes for review.
+
 ## Open-question tagging convention
 
 When a note you create still carries unresolved questions (i.e. it has content under `## Open questions`), add the tag `open-question` to its front-matter `tags`. This is how open questions surface in the dashboards — the "Open questions" view filters on `tags contains open-question` (Bases filters on properties, not body text, so the tag is what makes them findable). When a question is later resolved (in a future capture or note update), **remove the `open-question` tag** so the view stays a live list of what's genuinely still open.
