@@ -188,7 +188,9 @@
 
 ## Orphan notes (no spine anchor)
 
+- [[engineer-pair-subagents-reviewer-keeps-bash-2026-06-08]] — decisions, agents, subagents, engineer-pair, tooling, write-boundary, meta
 - [[knowledge-os-decisions-2026-06]] — knowledge-management, meta, decisions, obsidian, agents, slack, courier
+- [[slack-control-plane-free-workspace-2026-06-08]] — decisions, slack, control-plane, observability, agents, meta
 - [[knowledge-os-design-rationale]] — knowledge-management, meta, architecture, skills, obsidian, mcp, process
 
 ## Unresolved anchors (label matches no heading — fix the note)
@@ -197,5 +199,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 12/1/0/0
-- Gaps (##-level): 117 | Orphans: 2 | Unresolved: 0
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 12/3/0/0
+- Gaps (##-level): 117 | Orphans: 4 | Unresolved: 0
