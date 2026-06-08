@@ -24,10 +24,15 @@ export const s10StrongCompleteProfessionalOperatorFacts = {
   },
 } as const;
 
+// Δ6: overall_score / overall_score_final carry the canonical deterministic value D
+// (recompute of `scores` under MT weights = .3*93 + .3*94 + .15*96 + .15*91 + .1*90
+// = 93.15 → 93; complete package + audio ≥60 → no cap). The AI judgement A
+// (readiness_score_judgement.overall_submission_readiness_score) stays 91 — it informs
+// narration, never the headline number. Pre-Δ6 these legacy fields were a stale 96.
 export const s10StrongCompleteProfessionalLegacySnapshot = {
   audition_type: "musical_theatre",
-  overall_score: 96,
-  overall_score_final: 96,
+  overall_score: 93,
+  overall_score_final: 93,
   headline: "Submit",
   casting_headline: "Submit",
   verdict: "Submit",

@@ -40,7 +40,7 @@ describe("S10 report view-model routing", () => {
     expect(v2.s10_view_model?.section_source_map.component_breakdown.module).toContain(
       "component_verifications",
     );
-    expect(v2.overall_readiness).toBe(42);
+    expect(v2.overall_readiness).toBe(54); // Δ6 canonical D (was A = 42)
     expect(v2.headline).toMatch(/Retake required/i);
     expect(v2.fix_first).toMatch(/Side 1/i);
     const output = JSON.stringify(v2);

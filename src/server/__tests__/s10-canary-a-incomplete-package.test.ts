@@ -61,18 +61,23 @@ describe("S10.11 Canary A incomplete mandatory package fixture", () => {
     expect(side1?.completion_status).not.toBe("complete");
   });
 
-  it("keeps the legacy false-positive raw report unchanged and diagnostic only", () => {
+  it("keeps the legacy raw report unchanged and diagnostic-only (honest D-side post-Δ6)", () => {
     const { report, v2 } = buildCanaryV2();
     const historicalSnapshot = JSON.stringify(s10CanaryALegacyFalsePositiveRawReport);
 
     expect(JSON.stringify(s10CanaryALegacyFalsePositiveRawReport)).toBe(historicalSnapshot);
-    expect(report.overall_score).toBe(93);
-    expect(report.brief_adherence_breakdown).toMatchObject({ material_compliance: 100 });
-    expect(JSON.stringify(report)).toContain("Naturalistic acting with good pace");
+    // Δ6: the legacy/persisted D-side is now the honest canonical value (overall_score 54,
+    // material_compliance 25), because the headline reads it. It remains diagnostic-only for
+    // the rendered category/strength prose (the S10 A-side supplies that).
+    expect(report.overall_score).toBe(54);
+    expect(report.brief_adherence_breakdown).toMatchObject({ material_compliance: 25 });
+    expect(JSON.stringify(report)).toContain(
+      "Observed song portion only; completion not confirmed.",
+    );
     expect(JSON.stringify(report)).toContain("00:05");
 
     expect(v2.source_mode).toBe("s10_ai_report_model");
-    expect(v2.overall_readiness).toBe(42);
+    expect(v2.overall_readiness).toBe(54);
     expect(v2.brief_adherence_breakdown).toMatchObject({ material_compliance: 25 });
     expect(v2.fix_first).toMatch(/Side 1/i);
     expect(JSON.stringify(v2)).not.toContain("Naturalistic acting with good pace");
@@ -141,11 +146,11 @@ describe("S10.11 Canary A incomplete mandatory package fixture", () => {
     for (const allowed of s10CanaryAExpectedViewModel.allowed_route_content) {
       expect(html).toContain(allowed);
     }
-    expect(html).toContain("42");
+    expect(html).toContain("54"); // Δ6: the visible headline is canonical D (54), not A (42)
     expect(html).toContain("Record/include the full required Side 1 acting scene");
     expect(html).toContain("Playback-check the end of the song");
     expect(html).toContain("Not observed");
-    expect(html).not.toContain("93");
+    expect(html).not.toContain("93"); // the old false-positive D never renders
 
     for (const forbidden of s10CanaryAExpectedViewModel.forbidden_route_content) {
       expect(html).not.toContain(forbidden);

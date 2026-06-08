@@ -389,8 +389,12 @@ describe("S10.15 route/PDF content acceptance harness", () => {
 
   it("renders a fix limitation rather than legacy fix fields when S10 fix hierarchy is missing", () => {
     const report = buildS10CanaryAReportInput();
-    report.fix_first = "Correct the file naming convention";
-    report.priority_fixes = [{ headline: "Correct the file naming convention" }];
+    // Δ6: canary fixture's fix_first/priority_fixes are now honest `as const` literals;
+    // cast to Record to inject the arbitrary legacy fix data this test exercises.
+    (report as Record<string, unknown>).fix_first = "Correct the file naming convention";
+    (report as Record<string, unknown>).priority_fixes = [
+      { headline: "Correct the file naming convention" },
+    ];
     delete (report as Record<string, unknown>).s10_fix_hierarchy;
     const v2 = buildV2Report({
       legacyReport: report,

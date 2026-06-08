@@ -100,7 +100,7 @@ describe("S10.12 strong complete professional fixture", () => {
 
     expect(JSON.stringify(s10StrongCompleteProfessionalLegacySnapshot)).toBe(historicalSnapshot);
     expect(JSON.stringify(report)).toContain("Strong choices.");
-    expect(report.overall_score).toBe(96);
+    expect(report.overall_score).toBe(93); // Δ6 canonical D (recompute 93; was stale 96)
 
     expect(v2.source_mode).toBe("s10_ai_report_model");
     expect(v2.overall_readiness).toBeGreaterThanOrEqual(85);
