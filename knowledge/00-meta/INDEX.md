@@ -36,6 +36,12 @@
 ### AGENTS §Performer level calibration
 
 - **current** — [[arch-d6-handoff-2026-06-07]] (high)
+- **current** — [[drr-acting-overview]] (medium)
+- **current** — [[drr-commercial-overview]] (medium)
+- **current** — [[drr-dance-overview]] (medium)
+- **current** — [[drr-mt-overview]] (medium)
+- **current** — [[drr-programme-overview]] (medium)
+- **current** — [[drr-voice-overview]] (medium)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 
 ### AGENTS §Professional 0–100 level-relative score calibration
@@ -58,6 +64,15 @@
 - **current** — [[arch-d6-spine-reconciliation]] (high)
 - ~~superseded~~ — [[handoff-d6-build-start]]
 
+### AGENTS §Technique-library commentary
+
+- **current** — [[drr-acting-overview]] (medium)
+- **current** — [[drr-commercial-overview]] (medium)
+- **current** — [[drr-dance-overview]] (medium)
+- **current** — [[drr-mt-overview]] (medium)
+- **current** — [[drr-programme-overview]] (medium)
+- **current** — [[drr-voice-overview]] (medium)
+
 ### CLAUDE §Knowledge corpus (knowledge/)
 
 - **decided** — [[engineer-pair-subagents-reviewer-keeps-bash-2026-06-08]] (high)
@@ -67,7 +82,12 @@
 
 ### README §1.6 Calibration doctrine
 
+- **current** — [[drr-programme-overview]] (medium)
 - **current** — [[arch-d6-score-model-architecture]] (high)
+
+### README §10. Role / Character Research and Known-Material Calibration
+
+- **current** — [[drr-programme-overview]] (medium)
 
 ### README §11.4 Professional 0–100 level-relative score calibration
 
@@ -76,6 +96,26 @@
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
 - ~~superseded~~ — [[handoff-d6-build-start]]
+
+### README §18. Technique-library commentary
+
+- **current** — [[drr-acting-overview]] (medium)
+- **current** — [[drr-commercial-overview]] (medium)
+- **current** — [[drr-dance-overview]] (medium)
+- **current** — [[drr-mt-overview]] (medium)
+- **current** — [[drr-programme-overview]] (medium)
+- **current** — [[drr-voice-commercial-ratification-gap]] (medium)
+- **current** — [[drr-voice-overview]] (medium)
+
+### README §19. Discipline and module detection
+
+- **current** — [[drr-acting-overview]] (medium)
+- **current** — [[drr-commercial-overview]] (medium)
+- **current** — [[drr-dance-overview]] (medium)
+- **current** — [[drr-mt-overview]] (medium)
+- **current** — [[drr-programme-overview]] (medium)
+- **current** — [[drr-voice-commercial-ratification-gap]] (medium)
+- **current** — [[drr-voice-overview]] (medium)
 
 ### README §8. Performer Level Calibration Architecture
 
@@ -103,7 +143,6 @@
 - README §6. AI module question map — no current/decided note
 - README §7. Report model and required sections — no current/decided note
 - README §9. Brief-Supplied and No-Brief Scoring Architecture — no current/decided note
-- README §10. Role / Character Research and Known-Material Calibration — no current/decided note
 - README §11. Scores, score terminology and professional nuance — no current/decided note
 - README §12. Data model additions — no current/decided note
 - README §13. Readiness recommendations — no current/decided note
@@ -111,8 +150,6 @@
 - README §15. Fix hierarchy and next action — no current/decided note
 - README §16. Strengths, preserve and positive feedback — no current/decided note
 - README §17. Timestamped commentary — no current/decided note
-- README §18. Technique-library commentary — no current/decided note
-- README §19. Discipline and module detection — no current/decided note
 - README §20. Musical Theatre package requirements — no current/decided note
 - README §21. Comparison requirements — no current/decided note
 - README §22. High-risk red-line filter — no current/decided note
@@ -150,7 +187,6 @@
 - AGENTS §Same video and duplicate upload handling — no current/decided note
 - AGENTS §Thin-shell anti-regression rule — no current/decided note
 - AGENTS §Timestamped commentary — no current/decided note
-- AGENTS §Technique-library commentary — no current/decided note
 - AGENTS §Golden fixtures — no current/decided note
 - AGENTS §QA artefacts — no current/decided note
 - AGENTS §Operator-tested assumptions — no current/decided note
@@ -208,7 +244,74 @@
 
 ## Orphan notes (no spine anchor)
 
-- (none)
+- [[drr-acting-01-source-census]] — discipline-rubric-research, acting, stage-s0
+- [[drr-acting-02-batch-b1]] — discipline-rubric-research, acting, stage-extraction
+- [[drr-acting-03-batch-b2]] — discipline-rubric-research, acting, stage-extraction
+- [[drr-acting-04-batch-b3]] — discipline-rubric-research, acting, stage-extraction
+- [[drr-acting-05-batch-b4]] — discipline-rubric-research, acting, stage-extraction
+- [[drr-acting-06-synthesis]] — discipline-rubric-research, acting, stage-synthesis
+- [[drr-acting-07-synthesis-audit]] — discipline-rubric-research, acting, stage-audit
+- [[drr-acting-08-synthesis-revision]] — discipline-rubric-research, acting, stage-revision
+- [[drr-acting-09-final-audit]] — discipline-rubric-research, acting, stage-final-audit
+- [[drr-acting-10-output-spec]] — discipline-rubric-research, acting, stage-output-spec
+- [[drr-acting-11-bridge-qa]] — discipline-rubric-research, acting, stage-qa
+- [[drr-acting-12-lessons]] — discipline-rubric-research, acting, stage-lessons
+- [[drr-acting-13-v5-maturity-audit]] — discipline-rubric-research, acting, stage-maturity-audit
+- [[drr-acting-14-final-handoff]] — discipline-rubric-research, acting, stage-handoff
+- [[drr-commercial-01-source-census]] — discipline-rubric-research, commercial, stage-s0
+- [[drr-commercial-02-batch-b1]] — discipline-rubric-research, commercial, stage-extraction
+- [[drr-commercial-03-batch-b2]] — discipline-rubric-research, commercial, stage-extraction
+- [[drr-commercial-04-batch-b3]] — discipline-rubric-research, commercial, stage-extraction
+- [[drr-commercial-05-batch-b4]] — discipline-rubric-research, commercial, stage-extraction
+- [[drr-commercial-06-synthesis]] — discipline-rubric-research, commercial, stage-synthesis
+- [[drr-commercial-07-audit]] — discipline-rubric-research, commercial, stage-audit
+- [[drr-commercial-08-revision]] — discipline-rubric-research, commercial, stage-revision
+- [[drr-commercial-09-output-spec]] — discipline-rubric-research, commercial, stage-output-spec
+- [[drr-commercial-10-final-audit]] — discipline-rubric-research, commercial, stage-final-audit
+- [[drr-commercial-11-implementation]] — discipline-rubric-research, commercial, stage-implementation
+- [[drr-commercial-12-final-handoff]] — discipline-rubric-research, commercial, stage-handoff
+- [[drr-dance-01-source-census]] — discipline-rubric-research, dance, stage-s0
+- [[drr-dance-02-batch-b1]] — discipline-rubric-research, dance, stage-extraction
+- [[drr-dance-03-batch-b2]] — discipline-rubric-research, dance, stage-extraction
+- [[drr-dance-04-batch-b3]] — discipline-rubric-research, dance, stage-extraction
+- [[drr-dance-05-batch-b4]] — discipline-rubric-research, dance, stage-extraction
+- [[drr-dance-06-synthesis]] — discipline-rubric-research, dance, stage-synthesis
+- [[drr-dance-07-audit]] — discipline-rubric-research, dance, stage-audit
+- [[drr-dance-08-revision]] — discipline-rubric-research, dance, stage-revision
+- [[drr-dance-09-final-audit]] — discipline-rubric-research, dance, stage-final-audit
+- [[drr-dance-10-output-spec]] — discipline-rubric-research, dance, stage-output-spec
+- [[drr-dance-11-lessons]] — discipline-rubric-research, dance, stage-lessons
+- [[drr-dance-12-pre-prod-qa]] — discipline-rubric-research, dance, stage-qa
+- [[drr-dance-13-final-handoff]] — discipline-rubric-research, dance, stage-handoff
+- [[drr-mt-01-source-census]] — discipline-rubric-research, mt, stage-s0
+- [[drr-mt-02-source-census-repair]] — discipline-rubric-research, mt, stage-s0
+- [[drr-mt-03-batch-b1]] — discipline-rubric-research, mt, stage-extraction
+- [[drr-mt-04-batch-b1-cont]] — discipline-rubric-research, mt, stage-extraction
+- [[drr-mt-05-batch-b2-draft]] — discipline-rubric-research, mt, stage-extraction
+- [[drr-mt-06-batch-b2]] — discipline-rubric-research, mt, stage-extraction
+- [[drr-mt-07-batch-b3]] — discipline-rubric-research, mt, stage-extraction
+- [[drr-mt-08-batch-b4]] — discipline-rubric-research, mt, stage-extraction
+- [[drr-mt-09-synthesis]] — discipline-rubric-research, mt, stage-synthesis
+- [[drr-mt-10-gap-audit]] — discipline-rubric-research, mt, stage-audit
+- [[drr-mt-11-audit-revision]] — discipline-rubric-research, mt, stage-revision
+- [[drr-mt-12-final-audit]] — discipline-rubric-research, mt, stage-final-audit
+- [[drr-mt-13-v5-output-spec-patch]] — discipline-rubric-research, mt, stage-output-spec
+- [[drr-mt-14-v5-live-output-qa]] — discipline-rubric-research, mt, stage-qa
+- [[drr-mt-15-v5-maturity-audit]] — discipline-rubric-research, mt, stage-maturity-audit
+- [[drr-mt-16-lessons]] — discipline-rubric-research, mt, stage-lessons
+- [[drr-mt-17-final-handoff]] — discipline-rubric-research, mt, stage-handoff
+- [[drr-voice-01-source-census]] — discipline-rubric-research, commercial, stage-s0, voice
+- [[drr-voice-02-batch-b1]] — discipline-rubric-research, commercial, stage-extraction, voice
+- [[drr-voice-03-batch-b2]] — discipline-rubric-research, commercial, stage-extraction, voice
+- [[drr-voice-04-batch-b3]] — discipline-rubric-research, commercial, stage-extraction, voice
+- [[drr-voice-05-batch-b4]] — discipline-rubric-research, commercial, stage-extraction, voice
+- [[drr-voice-06-synthesis]] — discipline-rubric-research, commercial, stage-synthesis, voice
+- [[drr-voice-07-audit]] — discipline-rubric-research, commercial, stage-audit, voice
+- [[drr-voice-08-revision]] — discipline-rubric-research, commercial, stage-revision, voice
+- [[drr-voice-09-final-audit]] — discipline-rubric-research, commercial, stage-final-audit, voice
+- [[drr-voice-10-output-spec]] — discipline-rubric-research, commercial, stage-output-spec, voice
+- [[drr-voice-11-v5-maturity-audit]] — discipline-rubric-research, commercial, stage-maturity-audit, voice
+- [[drr-voice-12-final-handoff]] — discipline-rubric-research, commercial, stage-handoff, voice
 
 ## Unresolved anchors (label matches no heading — fix the note)
 
@@ -216,5 +319,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 15/3/0/0
-- Gaps (##-level): 113 | Orphans: 0 | Unresolved: 0
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 88/3/0/2
+- Gaps (##-level): 109 | Orphans: 68 | Unresolved: 0
