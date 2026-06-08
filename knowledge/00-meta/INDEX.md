@@ -13,6 +13,10 @@
 
 - **current** — [[consent-copy-ai-disclaimer-revert]] (high)
 
+### ADR-0008
+
+- **current** — [[arch-d6-canonical-score-computation-spec]] (high)
+
 ### AGENTS §Code responsibilities
 
 - **current** — [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] (high)
@@ -38,6 +42,7 @@
 - **current** — [[gemini-flash-lite-assessment-learnings-2026-06-07]] (high)
 - **current** — [[willars-reference-take-benchmark-2026-06-07]] (high)
 - **current** — [[arch-d3-rescope-division-of-authority]] (high)
+- **current** — [[arch-d6-canonical-score-computation-spec]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
@@ -50,6 +55,7 @@
 ### README §11.4 Professional 0–100 level-relative score calibration
 
 - **current** — [[arch-d6-handoff-2026-06-07]] (high)
+- **current** — [[arch-d6-canonical-score-computation-spec]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
 - ~~superseded~~ — [[handoff-d6-build-start]]
@@ -57,6 +63,7 @@
 ### README §8. Performer Level Calibration Architecture
 
 - **current** — [[willars-reference-take-benchmark-2026-06-07]] (high)
+- **current** — [[arch-d6-canonical-score-computation-spec]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
@@ -184,7 +191,6 @@
 - ADR-0004 — no current/decided note
 - ADR-0005 — no current/decided note
 - ADR-0007 — no current/decided note
-- ADR-0008 — no current/decided note
 
 ## Orphan notes (no spine anchor)
 
@@ -199,5 +205,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 12/3/0/0
-- Gaps (##-level): 117 | Orphans: 4 | Unresolved: 0
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 13/3/0/0
+- Gaps (##-level): 116 | Orphans: 4 | Unresolved: 0
