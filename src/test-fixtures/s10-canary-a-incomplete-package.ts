@@ -23,52 +23,59 @@ export const s10CanaryAOperatorFacts = {
   },
 } as const;
 
+// Δ6 (render-locus correction): the legacy/persisted D-side is now HONEST, because the
+// canonical headline reads it. It was previously a hand-crafted false positive
+// (overall_score 93, material_compliance 100, "Strong for this level"/"Correct material").
+// Corrected, derived NOT invented:
+//   scores (honest, Side 1 absent → acting dropped): {vocal 72, brief_adherence 25,
+//     technical 82, audio 86}
+//   recomputeOverall(scores, MT weights) — acting absent so renormalise over .70:
+//     72*(.3/.7) + 25*(.15/.7) + 82*(.15/.7) + 86*(.1/.7) = 66.07 → 66
+//   hard mandatory blocker (Side 1 absent, not_achieved/submission_blocker) → matrix cap 54
+//   N4a (min removed): overall = 54.  Canonical D = 54.
+// The AI judgement A (readiness_score_judgement.overall_submission_readiness_score) stays
+// 42 — it informs narration, never the headline number. The render-strips guards still
+// assert the OLD false-positive strings never reach the performer surface.
 export const s10CanaryALegacyFalsePositiveRawReport = {
   audition_type: "musical_theatre",
-  overall_score: 93,
-  overall_score_final: 93,
-  headline: "Strong for this level",
-  casting_headline: "Strong for this level",
-  verdict: "Strong for this level",
-  verdict_final: "Strong for this level",
-  casting_insight: "well aligned with the supplied brief",
+  overall_score: 54,
+  overall_score_final: 54,
+  headline: "Retake required if possible: the required Side 1 is missing.",
+  casting_headline: "Retake required if possible: the required Side 1 is missing.",
+  verdict: "Retake required if possible",
+  verdict_final: "Retake required if possible",
+  casting_insight: "Required Side 1 acting scene is missing and the song/package is incomplete.",
   scores: {
-    technical: 92,
-    audio: 88,
-    vocal: 94,
-    acting: 91,
-    brief_adherence: 90,
-    professional_presentation: 93,
+    vocal: 72,
+    brief_adherence: 25,
+    technical: 82,
+    audio: 86,
   },
   brief_adherence_breakdown: {
-    material_compliance: 100,
-    note: "Correct material, orientation, and framing.",
+    material_compliance: 25,
+    note: "Required Side 1 missing; song/package completion not confirmed.",
   },
   detected_components: [
-    { type: "acting_scene", score: 92, note: "Naturalistic acting with good pace" },
-    { type: "song", score: 94, note: "Strong contemporary legit vocal with clear storytelling" },
+    {
+      type: "song",
+      score: 72,
+      note: "Observed song portion only; completion not confirmed.",
+    },
   ],
-  strengths: [
-    { point: "Correct material, orientation, and framing" },
-    { point: "Single-file submission as requested" },
-    { point: "The easy-going warmth and wit are very present." },
-  ],
-  improvements: [{ point: "Correct the file naming convention" }],
-  coaching_drills: ["Use one pass to strengthen blocked material."],
-  fix_first: "Correct the file naming convention",
-  priority_fixes: [{ headline: "Correct the file naming convention" }],
+  strengths: [{ point: "Audio and framing are assessable for the observed portion." }],
+  improvements: [{ point: "Record and include the required Side 1 acting scene." }],
+  coaching_drills: ["Record the full Side 1 and confirm the song runs to the end in one video."],
+  fix_first: "Record/include the required Side 1 acting scene.",
+  priority_fixes: [{ headline: "Record/include the required Side 1 acting scene." }],
   category_rationale: {
-    acting: { what_works: "Naturalistic acting with good pace" },
-    vocal: { what_works: "Strong contemporary legit vocal with clear storytelling" },
-    brief_adherence: { what_works: "Correct material, orientation, and framing" },
+    audio: { what_works: "Audio is assessable for the observed portion." },
+    brief_adherence: { what_works: "" },
   },
   timestamped_notes: [
-    { timestamp: "00:05", note: "Strong start to the scene" },
-    { timestamp: "00:25", note: "Good use of eyeline" },
-    { timestamp: "00:55", note: "transition into the song" },
-    { timestamp: "01:35", note: "Excellent vocal control on the sustained notes" },
+    { timestamp: "00:05", note: "Intro before the observed song portion." },
+    { timestamp: "00:55", note: "Observed song portion begins; completion not confirmed." },
   ],
-  presentation_notes: ["Single-file submission as requested"],
+  presentation_notes: ["Audio and framing are assessable."],
 } as const;
 
 export const s10CanaryABriefContext = {

@@ -1021,9 +1021,11 @@ export function buildReportViewModel(
 
   // ── score summary ──
   const scoreSummary = safeObj(s10?.score_summary);
+  // Δ6: the visible S10 headline reads canonical D (s10.canonical_overall_score), gated by
+  // the UNCHANGED scoreAuthorized provenance predicate; score_summary stays = A.
   const overall = isS10
     ? scoreAuthorized
-      ? safeNum(scoreSummary?.overall_submission_readiness_score)
+      ? safeNum(s10?.canonical_overall_score)
       : null
     : safeNum(report.overall_readiness);
   const categoryRowsRaw = scoreAuthorized

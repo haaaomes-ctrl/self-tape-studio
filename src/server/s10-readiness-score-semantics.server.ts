@@ -633,10 +633,13 @@ export function applyReadinessScoreSemantics(input: {
   });
   const warnings = [...judgement.score_contradiction_warnings];
   const constraint = deriveReadinessConstraint(input.matrix);
-  let overall =
-    judgement.overall_submission_readiness_score != null
-      ? Math.min(input.currentOverallScore, judgement.overall_submission_readiness_score)
-      : input.currentOverallScore;
+  // Δ6/ADR-0008 N4a: the canonical score is the pure deterministic value. The AI
+  // judgement A (judgement.overall_submission_readiness_score) marks dimensions and
+  // informs narration/gating but NEVER owns the number — the prior `min(.,A)` is
+  // removed so A can no longer pull the score down untraceably. Strictness lives in
+  // the three levers (AI prompt catalogue, the matrix caps below, discipline weights),
+  // never here. The matrix cap (N4b) immediately below is unchanged.
+  let overall = input.currentOverallScore;
 
   if (constraint.cap != null && overall > constraint.cap) {
     addWarning(warnings, {
@@ -712,6 +715,10 @@ export function applyReadinessScoreSemantics(input: {
     overall,
     judgement,
     warnings,
+    // Δ6 N4a shifted this flag's meaning: with `min(.,A)` gone, `overall` differs from
+    // `currentOverallScore` only when the matrix cap (N4b) fired — so the first term now
+    // means "matrix-capped" (not "min-or-matrix moved"); the second term still trips on
+    // any cap/contradiction warning. Both terms retained deliberately.
     capped: overall !== input.currentOverallScore || warnings.length > 0,
   };
 }

@@ -79,6 +79,13 @@ export type S10PerformerReportViewModel = {
     category_scores: ReadinessAndScoreJudgement["category_scores"];
     component_scores: ReadinessAndScoreJudgement["component_scores"];
   };
+  /**
+   * Δ6 canonical deterministic value D (= takes.overall_score / overall_score_final,
+   * canonical after the N4a min removal). The performer-visible headline renders from
+   * THIS field; score_summary.overall_submission_readiness_score stays = A (the AI
+   * judgement) and continues to feed narration, gating and suppression.
+   */
+  canonical_overall_score: number | null;
   scoring_context: S10ScoringContext;
   role_material_context: S10RoleMaterialContext;
   brief_context: BriefContext | null;
@@ -1504,6 +1511,10 @@ export function buildS10PerformerReportViewModel(input: {
       category_scores: readiness?.category_scores ?? [],
       component_scores: readiness?.component_scores ?? [],
     },
+    // Δ6: canonical deterministic D (persisted as takes.overall_score /
+    // report.overall_score_final after N4a). Distinct from score_summary (= A).
+    canonical_overall_score:
+      asNumber(report.overall_score_final) ?? asNumber(report.overall_score) ?? null,
     scoring_context: scoringContext,
     role_material_context: roleMaterialContext,
     brief_context: briefContext,
@@ -1616,6 +1627,7 @@ export function buildS10LimitedPerformerReportViewModel(
       category_scores: [],
       component_scores: [],
     },
+    canonical_overall_score: null,
     scoring_context: buildS10ScoringContext({
       scoringMode: "brief_uncertain",
       briefContext: null,

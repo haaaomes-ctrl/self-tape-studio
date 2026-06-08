@@ -504,9 +504,10 @@ export function V2ReportViewLegacy({
     s10SectionSourceMap,
     "submission_guidance",
   );
+  // Δ6: S10 headline reads canonical D, gated by the unchanged s10ScoreAuthorized predicate.
   const overall = isS10
     ? s10ScoreAuthorized
-      ? safeNum(s10ScoreSummary?.overall_submission_readiness_score)
+      ? safeNum(s10?.canonical_overall_score)
       : null
     : safeNum(report.overall_readiness);
   const headline = isS10

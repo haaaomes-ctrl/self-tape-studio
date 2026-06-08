@@ -794,9 +794,13 @@ export function V2ReportView({
     s10SectionSourceMap,
     "submission_guidance",
   );
+  // Δ6: the visible S10 headline reads the canonical deterministic value D
+  // (s10.canonical_overall_score), gated by the UNCHANGED s10ScoreAuthorized provenance
+  // predicate so the withhold seam is identical. score_summary.overall_submission_readiness_score
+  // stays = A and continues to feed narration/gating elsewhere.
   const overall = isS10
     ? s10ScoreAuthorized
-      ? safeNum(s10ScoreSummary?.overall_submission_readiness_score)
+      ? safeNum(s10?.canonical_overall_score)
       : null
     : safeNum(report.overall_readiness);
   const headline = isS10

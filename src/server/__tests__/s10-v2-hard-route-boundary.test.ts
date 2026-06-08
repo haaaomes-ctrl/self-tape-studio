@@ -548,7 +548,9 @@ describe("S10.P1e hard V2 route boundary", () => {
     const html = render(v2);
 
     expect(html).toContain("Submit: strong complete professional package");
-    expect(html).toContain("91");
+    // Δ6: the route renders the view-model canonical headline (D = 93), proving it ignores
+    // the bogus legacy payload `overall_readiness = 12` set above. Pre-Δ6 this was A = 91.
+    expect(html).toContain("93");
     expect(html).toContain("Why this recommendation");
     expect(html).not.toContain("Why this isn&#x27;t ready");
     expect(html).not.toContain("Why this isn't ready");

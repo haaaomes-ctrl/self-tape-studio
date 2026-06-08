@@ -231,7 +231,7 @@ describe("S10 report view rendering", () => {
     for (const allowed of s10CanaryAExpectedViewModel.allowed_route_content) {
       expect(html).toContain(allowed);
     }
-    expect(html).toContain("42");
+    expect(html).toContain("54"); // Δ6: the visible headline is canonical D (54), not A (42)
     expect(html).toContain("Record/include the full required Side 1 acting scene");
     expect(html).toContain("Playback-check the end of the song");
     expect(html).toContain("Not observed");
@@ -240,7 +240,7 @@ describe("S10 report view rendering", () => {
       expect(html).not.toContain(forbidden);
     }
     expect(html).not.toMatch(/\bcomplete package\b/i);
-    expect(html).not.toContain("93");
+    expect(html).not.toContain("93"); // the old false-positive D never renders
   });
 
   it("renders supplied brief details and requirement classifications for Canary A", () => {
@@ -288,7 +288,8 @@ describe("S10 report view rendering", () => {
     expect(html).toContain("Timestamped and time-banded notes");
     expect(html).toContain("Professional competitive calibration");
     expect(html).toContain("Score zone:");
-    expect(html).toContain("90-91");
+    // Δ6: the zone follows the canonical headline D (93 → "92-93"); pre-Δ6 it tracked A (91).
+    expect(html).toContain("92-93");
     expect(html).toContain("Retake strategy:");
 
     for (const forbidden of s10StrongCompleteProfessionalExpectedViewModel.forbidden_route_content) {
@@ -327,6 +328,9 @@ describe("S10 report view rendering", () => {
       ...(view.score_summary as Record<string, unknown>),
       overall_submission_readiness_score: 82,
     };
+    // Δ6: the visible headline (ScoreRing) reads the canonical field, so the sub-90 scenario
+    // must set it; score_summary/A is no longer what drives the rendered overall.
+    view.canonical_overall_score = 82;
     report.overall_readiness = 82;
     view.selected_level_calibration = {
       ...(view.selected_level_calibration as Record<string, unknown>),

@@ -303,8 +303,15 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     readiness.decision !== "submit" &&
     readiness.decision !== "submit_if_deadline_is_close";
 
+  // Δ6: the V2 payload `overall_readiness` carries canonical D (= the view model's
+  // canonical_overall_score) for cross-surface / QA / legacy-branch consistency, with the
+  // withhold-null path preserved via the A-null signal. The performer-VISIBLE headline
+  // renders from s10_view_model.canonical_overall_score directly (V2ReportView ScoreRing /
+  // PDF report-view-model), not from this payload field.
   const overall = s10View
-    ? clampScore(scoreSummary?.overall_submission_readiness_score)
+    ? scoreSummary?.overall_submission_readiness_score == null
+      ? null
+      : clampScore(s10View.canonical_overall_score)
     : (asNum(r.overall_score_final) ?? asNum(r.overall_score) ?? asNum(r.overall_readiness));
 
   const headline = s10View

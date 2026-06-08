@@ -37,8 +37,13 @@ describe("S10.P1b V2 score/category fallback guard", () => {
     const v2 = buildStrong(report);
 
     expect(v2.source_mode).toBe("s10_ai_report_model");
-    expect(v2.overall_readiness).toBe(91);
-    expect(v2.overall_readiness).not.toBe(report.overall_score);
+    // Δ6: the headline is the canonical deterministic value D (93), not the AI judgement
+    // A (91). Post-Δ6 the persisted overall_score equals D, so "not contaminated" now
+    // means the headline differs from A (not from overall_score, which it legitimately equals).
+    expect(v2.overall_readiness).toBe(93);
+    expect(v2.overall_readiness).not.toBe(
+      report.readiness_score_judgement.overall_submission_readiness_score,
+    );
     expect(v2.scores).toMatchObject({
       acting: 91,
       vocal: 92,
@@ -106,7 +111,7 @@ describe("S10.P1b V2 score/category fallback guard", () => {
 
     const v2 = buildCanary(report);
 
-    expect(v2.overall_readiness).toBe(42);
+    expect(v2.overall_readiness).toBe(54);
     expect(v2.scores).toBeNull();
     expect(v2.category_notes).toBeNull();
     expect(v2.category_rationale).toBeNull();
@@ -128,14 +133,19 @@ describe("S10.P1b V2 score/category fallback guard", () => {
     );
   });
 
-  it("keeps Canary A on S10 score truth despite false-positive legacy scores", () => {
+  it("keeps Canary A category/material on S10 A-side truth (Slice 3 deferred); D-side honest", () => {
     const report = buildS10CanaryAReportInput();
     const v2 = buildCanary(report);
     const output = JSON.stringify(v2);
 
-    expect(v2.overall_readiness).toBe(42);
+    expect(v2.overall_readiness).toBe(54);
     expect(v2.scores).toMatchObject({ brief_adherence: 25, audio: 86, technical: 82 });
-    expect(v2.scores?.brief_adherence).not.toBe(report.scores.brief_adherence);
+    // Δ6: category scores still render from the A-side (Slice 3 re-points them). The
+    // canary's deterministic legacy `scores` are now honest, so they CONVERGE with the
+    // A-side value (both brief_adherence 25) — the former false-positive divergence
+    // (legacy 90 vs A-side 25) is gone.
+    expect(v2.scores?.brief_adherence).toBe(25);
+    expect(report.scores.brief_adherence).toBe(25);
     expect(v2.brief_adherence_breakdown).toMatchObject({ material_compliance: 25 });
     expect(output).not.toContain('"overall_readiness":93');
     expect(output).not.toContain('"material_compliance":100');
