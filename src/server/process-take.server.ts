@@ -2576,6 +2576,10 @@ export type SubmissionVerdict = {
   reason: string;
   // True when a hard blocker forced the verdict below what the score alone would suggest.
   blocked: boolean;
+  // Δ6: true when applyCapsAndLabel downshifted the label (audio/brief/blocker/Strong→Ready
+  // cap fired). Surfaced from the existing computation so the canonical verdict mapper can
+  // split a passing label into submit (clean) vs review_carefully (clears the bar but capped).
+  capped: boolean;
 };
 
 /**
@@ -2652,6 +2656,7 @@ export function computeSubmissionVerdict(input: {
     label: finalLabel,
     reason: toUKTerms(verdictReason),
     blocked: isBlocked,
+    capped,
   };
 }
 

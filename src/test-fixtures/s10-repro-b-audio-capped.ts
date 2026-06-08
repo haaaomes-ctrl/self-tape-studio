@@ -44,6 +44,18 @@ export function buildS10ReproBAudioCappedReportInput() {
   // Poor audio capture is BOTH the cap trigger and the recompute input.
   report.scores = { ...(report.scores as Record<string, number>), audio: S10_REPRO_B_AUDIO_SCORE };
 
+  // Δ6 Slice 2: override the inherited strong-fixture verdict. The <35 audio is a hard blocker
+  // (computeBlockers audio_low), so the deterministic verdict is retake — coherent with the
+  // audio-capped D=60. This makes Repro-B the inflation case on BOTH axes: A would show a high
+  // score + submit; canonical shows D=60 + retake.
+  report.submission_verdict = {
+    label: "Not ready yet",
+    reason:
+      "Audio is too unclear to judge the tape fairly — re-record with clearer sound before submitting.",
+    blocked: true,
+    capped: true,
+  };
+
   // The AI judgement A stays HIGH and inflated relative to the capped
   // deterministic value — this is exactly the contamination the headline fix
   // removes (the AI under-penalised the poor audio; the matrix/audio chain

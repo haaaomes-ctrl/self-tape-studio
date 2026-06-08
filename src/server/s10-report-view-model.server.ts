@@ -10,6 +10,7 @@ import {
   S10_ROUTE_REQUIRED_SECTION_KEYS,
   isUsableS10PerformerReportViewModel,
   validateS10RouteSectionSourceEntry,
+  canonicalVerdictDecision,
 } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
@@ -26,6 +27,8 @@ import type {
   S10TimestampedCommentary,
   S10RouteSectionKey,
   S10RouteSectionSource,
+  CanonicalVerdictDecision,
+  VerdictLabel,
 } from "@/lib/audition-rules";
 import type {
   ComponentVerification,
@@ -86,6 +89,13 @@ export type S10PerformerReportViewModel = {
    * judgement) and continues to feed narration, gating and suppression.
    */
   canonical_overall_score: number | null;
+  /**
+   * Δ6 Slice 2 canonical VERDICT (render decision vocabulary), derived deterministically from
+   * the persisted submission_verdict (label + capped + blocked) via canonicalVerdictDecision.
+   * The performer-visible verdict renders from THIS field; recommendation.decision stays = A.
+   * `reason` carries the deterministic submission_verdict.reason (tone-honest).
+   */
+  canonical_verdict: { decision: CanonicalVerdictDecision; reason: string | null } | null;
   scoring_context: S10ScoringContext;
   role_material_context: S10RoleMaterialContext;
   brief_context: BriefContext | null;
@@ -208,6 +218,27 @@ function asText(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Δ6 Slice 2: derive the canonical verdict from the persisted deterministic submission_verdict
+ * ({label, reason, blocked, capped} — canonical after Slice 1's N4a). Returns the render decision
+ * vocabulary + the deterministic reason. Null when no verdict was persisted. The A-side
+ * recommendation.decision is never consulted here.
+ */
+function canonicalVerdictFromReport(
+  report: Record<string, unknown>,
+): { decision: CanonicalVerdictDecision; reason: string | null } | null {
+  const sv = isRecord(report.submission_verdict) ? report.submission_verdict : null;
+  if (!sv) return null;
+  return {
+    decision: canonicalVerdictDecision({
+      label: (asText(sv.label) ?? "") as VerdictLabel | string,
+      capped: sv.capped === true,
+      blocked: sv.blocked === true,
+    }),
+    reason: asText(sv.reason),
+  };
 }
 
 type RouteObservationConstraint = {
@@ -1515,6 +1546,9 @@ export function buildS10PerformerReportViewModel(input: {
     // report.overall_score_final after N4a). Distinct from score_summary (= A).
     canonical_overall_score:
       asNumber(report.overall_score_final) ?? asNumber(report.overall_score) ?? null,
+    // Δ6 Slice 2: canonical verdict from the persisted deterministic submission_verdict
+    // (label+capped+blocked → render decision). Distinct from recommendation.decision (= A).
+    canonical_verdict: canonicalVerdictFromReport(report),
     scoring_context: scoringContext,
     role_material_context: roleMaterialContext,
     brief_context: briefContext,
@@ -1628,6 +1662,7 @@ export function buildS10LimitedPerformerReportViewModel(
       component_scores: [],
     },
     canonical_overall_score: null,
+    canonical_verdict: null,
     scoring_context: buildS10ScoringContext({
       scoringMode: "brief_uncertain",
       briefContext: null,

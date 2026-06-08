@@ -37,6 +37,15 @@ export const s10StrongCompleteProfessionalLegacySnapshot = {
   casting_headline: "Submit",
   verdict: "Submit",
   verdict_final: "Submit",
+  // Δ6 Slice 2: the persisted deterministic verdict (computeSubmissionVerdict at canonical
+  // D=93, professional, no blocker → label "Strong for this level", not capped/blocked).
+  // Maps to canonical decision "submit". recommendation.decision (= A) is also "submit".
+  submission_verdict: {
+    label: "Strong for this level",
+    reason: "Lands strongly at your level — send with confidence.",
+    blocked: false,
+    capped: false,
+  },
   casting_insight: "Strong choices.",
   scores: {
     technical: 91,

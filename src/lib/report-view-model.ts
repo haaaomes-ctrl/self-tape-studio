@@ -1003,7 +1003,12 @@ export function buildReportViewModel(
 
   // ── recommendation ──
   const recommendation = safeObj(s10?.recommendation);
-  const decisionRaw = guidanceAuthorized ? safeStr(recommendation?.decision) : null;
+  // Δ6 Slice 2: the visible verdict reads the canonical deterministic decision
+  // (s10.canonical_verdict.decision), gated by the UNCHANGED guidanceAuthorized predicate;
+  // recommendation.decision stays = A (narration). The deterministic reason is on canonical_verdict.reason.
+  const decisionRaw = guidanceAuthorized
+    ? safeStr(safeObj(s10?.canonical_verdict)?.decision)
+    : null;
   const headline = isS10
     ? readinessAuthorized
       ? safeStr(recommendation?.headline)
