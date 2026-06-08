@@ -591,7 +591,10 @@ export function V2ReportViewLegacy({
       ].slice(0, 6)
     : safeArr<string>(report.presentation_notes).filter((s): s is string => typeof s === "string");
   const riskFlags = isS10 ? [] : safeArr<{ severity?: string; flag?: string }>(report.risk_flags);
-  const s10CategoryRows = safeArr<Record<string, unknown>>(s10ScoreSummary?.category_scores).filter(
+  // Δ6 Slice 3: the visible category scores read the canonical, matrix-capped
+  // s10.canonical_category_scores (A rows, score = report.scores[category_id]); the existing
+  // presence seam is unchanged. score_summary.category_scores stays = A (narration).
+  const s10CategoryRows = safeArr<Record<string, unknown>>(s10?.canonical_category_scores).filter(
     (row) => isRouteCategoryKey(safeStr(row.category_id)),
   );
   const s10ComponentScores = safeArr<Record<string, unknown>>(s10ScoreSummary?.component_scores);

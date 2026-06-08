@@ -1033,8 +1033,11 @@ export function buildReportViewModel(
       ? safeNum(s10?.canonical_overall_score)
       : null
     : safeNum(report.overall_readiness);
+  // Δ6 Slice 3: the visible category scores read the canonical, matrix-capped
+  // s10.canonical_category_scores (A rows, score = report.scores[category_id]), gated by the
+  // UNCHANGED scoreAuthorized provenance predicate; score_summary.category_scores stays = A.
   const categoryRowsRaw = scoreAuthorized
-    ? safeArr<Record<string, unknown>>(scoreSummary?.category_scores)
+    ? safeArr<Record<string, unknown>>(s10?.canonical_category_scores)
     : [];
   const legacyScores = !isS10 ? safeObj(report.scores) : null;
   const legacyCategoryNotes = !isS10 ? safeObj(report.category_notes) : null;
@@ -1670,7 +1673,10 @@ export function buildReportViewModel(
         overall,
         overallTone: overall != null ? scoreTone(overall) : null,
         performanceQuality: safeNum(scoreSummary?.performance_quality_score),
-        briefCompletion: safeNum(scoreSummary?.brief_completion_score),
+        // Δ6 Slice 3: the visible material_compliance reads canonical s10.canonical_material_compliance
+        // (matrix-capped report.brief_adherence_breakdown), gated at the view-model chokepoint to the
+        // existing brief_completion authority; score_summary.brief_completion_score stays = A.
+        briefCompletion: safeNum(s10?.canonical_material_compliance),
         bandLabel: safeStr(scoreSummary?.score_band_label)
           ? sentenceLabelize(scoreSummary?.score_band_label)
           : null,
