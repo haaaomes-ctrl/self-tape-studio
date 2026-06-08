@@ -737,6 +737,39 @@ export function canonicalVerdictDecision(input: {
   return "retake_required_if_possible";
 }
 
+/**
+ * Δ6: harden a canonical verdict reason so it is performer-safe BY CONSTRUCTION. The
+ * deterministic blocked reason is built as `Blocked: ${blocker message}.`
+ * (computeSubmissionVerdict) — that raw "Blocked:" phrasing is performer-forbidden on this
+ * minors-facing product. The operative signal is the "Blocked:" prefix, which a blocked
+ * take's deterministic reason always carries (`blocked` is part of the contract and coincides
+ * with it). Any reason WITHOUT the prefix — every tone-honest non-blocked reason, and any
+ * already-safe reason — is returned unchanged.
+ *
+ * When the prefix is present, REUSE the existing performer-safe block_reasons rather than
+ * inventing copy. Caveat handled: process-take pushes `verdict.reason` into block_reasons, so
+ * block_reasons[0] can itself be the raw "Blocked: …" line — the first "Blocked:"-prefixed
+ * entry is therefore skipped. If no performer-safe block reason exists, strip the token and
+ * reframe to an action-honest sentence (no "Blocked:" survives).
+ */
+export function performerSafeVerdictReason(input: {
+  reason: string | null;
+  blocked: boolean;
+  blockReasons: unknown;
+}): string | null {
+  const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+  if (!/^blocked\s*:/i.test(reason)) return input.reason;
+  const reused = (Array.isArray(input.blockReasons) ? input.blockReasons : [])
+    .filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+    .map((r) => r.trim())
+    .find((r) => !/^blocked\s*:/i.test(r));
+  if (reused) return reused;
+  const stripped = reason.replace(/^blocked\s*:\s*/i, "").replace(/\s*\.\s*$/, "");
+  return stripped
+    ? `Not ready to send — ${stripped}. Record a fresh take before submitting.`
+    : "Not ready to send — record a fresh take before submitting.";
+}
+
 // -------------------- Server-side score recomputation --------------------
 
 export type CategoryScores = Partial<Record<WeightedCategory, number | null | undefined>>;

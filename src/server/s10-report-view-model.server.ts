@@ -11,6 +11,7 @@ import {
   isUsableS10PerformerReportViewModel,
   validateS10RouteSectionSourceEntry,
   canonicalVerdictDecision,
+  performerSafeVerdictReason,
 } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
@@ -237,7 +238,15 @@ function canonicalVerdictFromReport(
       capped: sv.capped === true,
       blocked: sv.blocked === true,
     }),
-    reason: asText(sv.reason),
+    // Δ6: sanitise the deterministic reason so the field is performer-safe by construction.
+    // The raw blocked reason ("Blocked: …") is performer-forbidden; reuse the existing
+    // performer-safe block_reasons (both submission_verdict and block_reasons are present on
+    // the report wherever this runs — the render-time persisted report JSONB).
+    reason: performerSafeVerdictReason({
+      reason: asText(sv.reason),
+      blocked: sv.blocked === true,
+      blockReasons: report.block_reasons,
+    }),
   };
 }
 
