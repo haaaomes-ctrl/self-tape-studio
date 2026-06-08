@@ -97,6 +97,24 @@ export type S10PerformerReportViewModel = {
    * `reason` carries the deterministic submission_verdict.reason (tone-honest).
    */
   canonical_verdict: { decision: CanonicalVerdictDecision; reason: string | null } | null;
+  /**
+   * Δ6 Slice 3 canonical CATEGORY scores. A's category rows (readiness.category_scores),
+   * preserving narration, with each row's SCORE replaced by the deterministic
+   * report.scores[category_id] (matrix-capped for brief_adherence via capNumberField).
+   * The performer-visible category card renders from THIS field; score_summary.category_scores
+   * stays = A. Guarantees the displayed categories are exactly the deterministic marks that fed D
+   * (no category↔overall drift), even where A and report.scores were authored independently.
+   */
+  canonical_category_scores: ReadinessAndScoreJudgement["category_scores"];
+  /**
+   * Δ6 Slice 3 canonical MATERIAL_COMPLIANCE (the brief-completion sub-surface), from the
+   * deterministic report.brief_adherence_breakdown.material_compliance (matrix-capped via
+   * capNumberField). The performer-visible material_compliance renders from THIS field;
+   * score_summary.brief_completion_score stays = A. Null-safe; gated to the EXISTING
+   * brief_completion authority (present iff A's brief_completion_score is present) so the
+   * withhold seam is identical.
+   */
+  canonical_material_compliance: number | null;
   scoring_context: S10ScoringContext;
   role_material_context: S10RoleMaterialContext;
   brief_context: BriefContext | null;
@@ -259,6 +277,26 @@ function canonicalVerdictFromReport(
       blockReasons: report.block_reasons,
     }),
   };
+}
+
+/**
+ * Δ6 Slice 3 — canonical category scores. Returns A's category rows (narration preserved) with
+ * each row's SCORE re-pointed to the deterministic report.scores[category_id] (matrix-capped for
+ * brief_adherence via capNumberField at semantics time). Where report.scores lacks a category
+ * (e.g. movement / mt_package, which are not keys in the flat scores map), the A row — including
+ * its score — is preserved unchanged (null-safe fallback). report.scores is the deterministic
+ * mark set that fed the canonical overall D, so the displayed categories cannot drift from it.
+ */
+function canonicalCategoryScoresFromReport(
+  readiness: ReadinessAndScoreJudgement | null,
+  report: Record<string, unknown>,
+): ReadinessAndScoreJudgement["category_scores"] {
+  const rows = readiness?.category_scores ?? [];
+  const reportScores = isRecord(report.scores) ? report.scores : {};
+  return rows.map((row) => {
+    const canonical = asNumber(reportScores[row.category_id]);
+    return canonical != null ? { ...row, score: canonical } : row;
+  });
 }
 
 type RouteObservationConstraint = {
@@ -1569,6 +1607,19 @@ export function buildS10PerformerReportViewModel(input: {
     // Δ6 Slice 2: canonical verdict from the persisted deterministic submission_verdict
     // (label+capped+blocked → render decision). Distinct from recommendation.decision (= A).
     canonical_verdict: canonicalVerdictFromReport(report),
+    // Δ6 Slice 3: canonical category scores (A rows with score = report.scores[category_id],
+    // matrix-capped for brief_adherence). Distinct from score_summary.category_scores (= A).
+    canonical_category_scores: canonicalCategoryScoresFromReport(readiness, report),
+    // Δ6 Slice 3: canonical material_compliance (matrix-capped report.brief_adherence_breakdown).
+    // Gated to the EXISTING brief_completion authority — present iff A's brief_completion_score is
+    // present — so the withhold seam is identical. Distinct from score_summary.brief_completion_score (= A).
+    canonical_material_compliance:
+      asNumber((readiness as Record<string, unknown> | null)?.brief_completion_score) != null
+        ? (asNumber(
+            (isRecord(report.brief_adherence_breakdown) ? report.brief_adherence_breakdown : null)
+              ?.material_compliance,
+          ) ?? null)
+        : null,
     scoring_context: scoringContext,
     role_material_context: roleMaterialContext,
     brief_context: briefContext,
@@ -1683,6 +1734,8 @@ export function buildS10LimitedPerformerReportViewModel(
     },
     canonical_overall_score: null,
     canonical_verdict: null,
+    canonical_category_scores: [],
+    canonical_material_compliance: null,
     scoring_context: buildS10ScoringContext({
       scoringMode: "brief_uncertain",
       briefContext: null,

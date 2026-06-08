@@ -574,6 +574,10 @@ describe("S10.P1e hard V2 route boundary", () => {
     const s10 = v2.s10_view_model as Record<string, unknown>;
     s10.component_breakdown = [];
     (s10.score_summary as Record<string, unknown>).category_scores = [];
+    // Δ6 Slice 3: the visible category card now reads the canonical sub-surface field, so the
+    // "S10 category absent" scenario must empty it too (the boundary — no legacy v2.scores
+    // fallback in S10 mode — is what this test still asserts).
+    s10.canonical_category_scores = [];
     const sourceMap = s10.section_source_map as Record<string, Record<string, unknown>>;
     sourceMap.component_breakdown = {
       source: "specific_limitation",
