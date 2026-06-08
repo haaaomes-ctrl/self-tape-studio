@@ -42,6 +42,8 @@ views:
       - status
       - discipline
       - updated
+    columnSize:
+      file.name: 355
   - type: table
     name: Capture log
     filters:
@@ -101,18 +103,17 @@ views:
     sort:
       - property: updated
         direction: DESC
-
   - type: table
     name: Open questions
     filters:
       and:
-        - 'tags.contains("open-question")'
-    sort:
-      - property: updated
-        direction: DESC
+        - tags.contains("open-question")
     order:
       - file.name
       - title
       - discipline
       - status
       - updated
+    sort:
+      - property: updated
+        direction: DESC
