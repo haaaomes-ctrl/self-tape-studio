@@ -532,8 +532,7 @@ export function V2ReportViewLegacy({
   const reliabilityReason = isS10 ? null : safeStr(report.reliability_reason);
   const legacyFixFirst = safeStr(report.fix_first);
   const s10Decision = s10SubmissionGuidanceAuthorized ? s10CanonicalDecision : null;
-  const s10HasBlockingDecision =
-    !!s10Decision && !["submit", "submit_if_deadline_is_close"].includes(s10Decision);
+  const s10HasBlockingDecision = !!s10Decision && !["submit"].includes(s10Decision);
   const s10SubmissionRiskSource = safeObj(s10SectionSourceMap?.submission_risk);
   const s10HasRiskSource = safeStr(s10SubmissionRiskSource?.source) === "s10_authoritative_module";
   const s10Rationale = s10SubmissionGuidanceAuthorized

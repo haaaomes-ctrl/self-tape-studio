@@ -1510,8 +1510,7 @@ export function buildReportViewModel(
     : [];
   const s10RiskSource = sectionSource(sourceMap, "submission_risk");
   const s10HasRiskSource = s10RiskSource.source === "s10_authoritative_module";
-  const s10HasBlockingDecision =
-    !!decisionRaw && !["submit", "submit_if_deadline_is_close"].includes(decisionRaw);
+  const s10HasBlockingDecision = !!decisionRaw && !["submit"].includes(decisionRaw);
   const riskRows: TitleDetailRow[] = isS10
     ? s10HasRiskSource || s10HasBlockingDecision
       ? rationaleRows

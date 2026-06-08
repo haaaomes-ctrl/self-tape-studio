@@ -310,6 +310,43 @@ describe("strong complete professional through the shim", () => {
   });
 });
 
+// Δ6 Slice 2 residual: the submission-risk block keys off the CANONICAL verdict decision, whose
+// type union is {submit | review_carefully | retake_required_if_possible} — the dropped A-side
+// hedge submit_if_deadline_is_close can never occur (proven exhaustively in
+// canonical-verdict-decision.test.ts), which is why its exclusion-array entry is dead code. With
+// the authoritative submission_risk source forced off, the block is driven SOLELY by whether the
+// canonical decision is blocking, so this pins the classification unchanged: submit and absent →
+// not blocking; review_carefully and retake_required_if_possible → blocking.
+describe("blocking-decision classification (canonical decision drives the submission-risk block)", () => {
+  function reportWithCanonicalDecision(decision: string | null) {
+    const report = canaryV2Report();
+    const s10 = report.s10_view_model as Record<string, unknown>;
+    // Isolate the decision: turn the authoritative submission_risk source off (to a valid
+    // non-authoritative value that keeps the view-model usable) so only the canonical decision
+    // can populate the block. The fixture already carries a non-empty recommendation.rationale,
+    // which the block surfaces ONLY when the decision is blocking.
+    const sourceMap = s10.section_source_map as Record<string, unknown>;
+    sourceMap.submission_risk = { source: "not_applicable" };
+    const canonicalVerdict = s10.canonical_verdict as Record<string, unknown>;
+    canonicalVerdict.decision = decision;
+    return report;
+  }
+
+  it("review_carefully and retake_required_if_possible are blocking", () => {
+    for (const decision of ["review_carefully", "retake_required_if_possible"]) {
+      const model = vm(reportWithCanonicalDecision(decision));
+      expect(model.modules.submissionRisk.state, decision).toBe("populated");
+    }
+  });
+
+  it("submit and an absent decision are not blocking", () => {
+    for (const decision of ["submit", null]) {
+      const model = vm(reportWithCanonicalDecision(decision));
+      expect(model.modules.submissionRisk.state, decision ?? "null").toBe("empty");
+    }
+  });
+});
+
 describe("readiness-driven state resolution (newer pipeline runs)", () => {
   function withReadiness(
     report: Record<string, unknown>,
