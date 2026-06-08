@@ -11,6 +11,7 @@ import {
   isUsableS10PerformerReportViewModel,
   validateS10RouteSectionSourceEntry,
   canonicalVerdictDecision,
+  performerSafeVerdictReason,
 } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
@@ -237,7 +238,26 @@ function canonicalVerdictFromReport(
       capped: sv.capped === true,
       blocked: sv.blocked === true,
     }),
-    reason: asText(sv.reason),
+    // Δ6: sanitise the deterministic reason so the field is performer-safe by construction.
+    // The raw blocked reason ("Blocked: …") is performer-forbidden; reuse the existing
+    // performer-safe block_reasons (skipping any "Blocked:"-prefixed entry).
+    //
+    // WHERE THIS RUNS (verified from source): canonicalVerdictFromReport runs where the
+    // canonical_verdict snapshot is BUILT — at PROCESS time, not render time. Chain:
+    // process-take → buildRouteReportForPersistence (process-take.server.ts:6737) → buildV2Report
+    // (v2-report-builder.server.ts:569/293) → buildS10PerformerReportViewModel → here. At that point
+    // report.submission_verdict (set process-take:5748) and report.block_reasons (set :5930, the
+    // IN-MEMORY array — distinct from the V2Report's PROJECTED block_reasons at v2-report-builder:480)
+    // are both present in memory. The performer surface then reads the PERSISTED snapshot
+    // (report.s10_view_model — V2ReportView.tsx:661 / V2ReportViewLegacy.tsx:371, rendered at
+    // audition.$auditionId.tsx). submission_verdict is NOT on the persisted JSONB, so this is a
+    // process-time / FORWARD-ONLY sanitisation: pre-existing snapshots retain the raw reason and need
+    // re-analysis before any future slice renders it. (composeS10AuthenticatedReportModel is uncalled.)
+    reason: performerSafeVerdictReason({
+      reason: asText(sv.reason),
+      blocked: sv.blocked === true,
+      blockReasons: report.block_reasons,
+    }),
   };
 }
 
