@@ -158,6 +158,10 @@ import {
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
 import {
+  applyObservationIdIntegrityGuard,
+  buildTwoStepEvidenceContext,
+} from "./s10-observation-pass.server";
+import {
   evaluateS10ModuleReadiness,
   summariseS10ModuleReadinessForPersistence,
 } from "./s10-module-readiness.server";
@@ -3687,15 +3691,20 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
 
     if (isTwoStepEnabled()) {
       const twoStepStartedAt = Date.now();
-      const evidenceContext = [
-        `Audition title: ${audition.title}`,
+      // Δ5-S1 (D5.3): Step 1 is a LEVEL-BLIND observation pass — levelBlock is
+      // deliberately NOT part of the evidence context so the same tape yields
+      // the same located evidence regardless of selected level. Level enters
+      // only at Step-2 marking (the single-pass userText / runReportPolish /
+      // module-repair calls retain levelBlock). The pure helper makes this
+      // invariance unit-testable (observation-invariance gate).
+      const evidenceContext = buildTwoStepEvidenceContext({
+        auditionTitle: audition.title,
         disciplineBlock,
-        levelBlock,
         briefBlock,
         extractedBlock,
         signalsBlock,
-        `Analysis tier: ${tier} rendition.`,
-      ].join("\n\n");
+        tier,
+      });
 
       console.log("[take-pipeline] evidence_pass_started", {
         ...baseLog,
@@ -5082,6 +5091,31 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
       singlePassOutput: report as Record<string, unknown>,
       report: report as Record<string, unknown>,
     });
+
+    // Δ5-S1: deterministic observation-ID integrity guard. Runs ONCE here, on
+    // the resolver output that BOTH the two-step and single-pass paths flow
+    // through, and BEFORE any downstream consumer reads
+    // s10ObservationContext.{observed_tape_sequence,component_verifications}.
+    // The model-filled IDs (observed_tape_sequence[].id,
+    // component_verifications[].requirement_id) can arrive blank/duplicate; the
+    // guard makes them non-empty + unique so Δ5-S2 anchors can reference them.
+    // It rewrites ONLY blank/duplicate IDs — no mark/verdict/score/content
+    // change. Mutating the resolved context in place means every existing
+    // consumer (report fields below, technical signals, brief matrix, the
+    // evidence-binding gate, etc.) sees the guarded IDs without further edits.
+    const observationIdGuard = applyObservationIdIntegrityGuard({
+      observed_tape_sequence: s10ObservationContext.observed_tape_sequence,
+      component_verifications: s10ObservationContext.component_verifications,
+    });
+    s10ObservationContext.observed_tape_sequence = observationIdGuard.observed_tape_sequence;
+    s10ObservationContext.component_verifications = observationIdGuard.component_verifications;
+    if (observationIdGuard.fallbacks_applied > 0) {
+      metric("s10_observation_id_guard_applied", {
+        take_id: takeId,
+        value: observationIdGuard.fallbacks_applied,
+      });
+    }
+
     report.observed_tape_sequence = s10ObservationContext.observed_tape_sequence;
     report.component_verifications = s10ObservationContext.component_verifications;
     report.media_observation_summary = s10ObservationContext.media_observation_summary;
