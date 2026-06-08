@@ -18,6 +18,10 @@
 
 - **current** — [[consent-copy-ai-disclaimer-revert]] (high)
 
+### ADR-0007
+
+- **current** — [[session-capture-rubric-research-import-2026-06-08]] (high)
+
 ### ADR-0008
 
 - **current** — [[arch-d6-canonical-score-computation-spec]] (high)
@@ -240,7 +244,6 @@
 - ADR-0001 — no current/decided note
 - ADR-0002 — no current/decided note
 - ADR-0004 — no current/decided note
-- ADR-0007 — no current/decided note
 
 ## Orphan notes (no spine anchor)
 
@@ -319,5 +322,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 88/3/0/2
-- Gaps (##-level): 109 | Orphans: 68 | Unresolved: 0
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 89/3/0/2
+- Gaps (##-level): 108 | Orphans: 68 | Unresolved: 0
