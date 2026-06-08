@@ -1495,7 +1495,7 @@ COMMERCIAL-IMPLEMENTATION-HANDOFF complete. Ready for cross-branch implementatio
 
 ## Links
 
-- **Previous:** [[drr-commercial-10-final-audit]] — Final Audit
+- **Previous:** [[drr-commercial-10-output-spec]] — Output Spec
 - **Next:** [[drr-commercial-12-final-handoff]] — Final Handoff
 - **Thread overview:** [[drr-commercial-overview]]
 - **Programme:** [[drr-programme-overview]]

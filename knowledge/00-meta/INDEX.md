@@ -266,8 +266,8 @@
 - [[drr-commercial-06-synthesis]] — discipline-rubric-research, commercial, stage-synthesis
 - [[drr-commercial-07-audit]] — discipline-rubric-research, commercial, stage-audit
 - [[drr-commercial-08-revision]] — discipline-rubric-research, commercial, stage-revision
-- [[drr-commercial-09-output-spec]] — discipline-rubric-research, commercial, stage-output-spec
-- [[drr-commercial-10-final-audit]] — discipline-rubric-research, commercial, stage-final-audit
+- [[drr-commercial-09-final-audit]] — discipline-rubric-research, commercial, stage-final-audit
+- [[drr-commercial-10-output-spec]] — discipline-rubric-research, commercial, stage-output-spec
 - [[drr-commercial-11-implementation]] — discipline-rubric-research, commercial, stage-implementation
 - [[drr-commercial-12-final-handoff]] — discipline-rubric-research, commercial, stage-handoff
 - [[drr-dance-01-source-census]] — discipline-rubric-research, dance, stage-s0

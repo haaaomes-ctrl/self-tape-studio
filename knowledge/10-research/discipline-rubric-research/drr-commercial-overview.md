@@ -40,7 +40,7 @@ The Commercial weighting is acting-as-presence 60% / brief_adherence 20% / techn
 
 ## Deviations / findings
 
-- **Late-stage order (recorded, not flipped).** By **content** the Commercial Output-Spec consumes the Final-Audit (it cites COMMERCIAL-FINAL-D01/D02), so the logical sequence is Syn → Audit → Rev → **Final-Audit → Output-Spec** → Implementation. The chain here keeps the **file-date** order (Output-Spec before Final-Audit) per operator instruction; this is the flag. See [[drr-commercial-09-output-spec]] and [[drr-commercial-10-final-audit]].
+- **Late-stage order (corrected to content-logical).** By **content** the Commercial Output-Spec consumes the Final-Audit (it cites COMMERCIAL-FINAL-D01/D02), so the chain follows that dependency: Syn → Audit → Rev → **Final-Audit → Output-Spec** → Implementation. The filesystem timestamps (which place the Output-Spec file earlier) are unreliable and were overridden in favour of the content dependency. See [[drr-commercial-09-final-audit]] and [[drr-commercial-10-output-spec]].
 - **Unique implementation-readiness step** ([[drr-commercial-11-implementation]]): NOT live wiring, code or deployment — an *implementation-readiness* pack (rule→production-requirement matrix, per-section report-behaviour requirements, exclusion/safety pack, generic-phrase replacement guide, display-verification + live-QA/regression packs, and a non-regression protection pack). It is "production-readiness planning material, not implementation."
 - **B2/B3 birthtime inversion** — `C-B2` was created after `C-B3` by clock; ordered by batch number (B2 before B3). All output-spec/implementation work is **synthetic** (no live Commercial reports/PDFs/comparison pages existed); live-output QA gates release, not consolidation.
 
@@ -58,8 +58,8 @@ For a shared-schema product, discipline maturity comes from tightening evidence 
 6. [[drr-commercial-06-synthesis]] — Synthesis
 7. [[drr-commercial-07-audit]] — Synthesis Audit
 8. [[drr-commercial-08-revision]] — Synthesis Revision
-9. [[drr-commercial-09-output-spec]] — Output Spec _(by content, follows the Final Audit)_
-10. [[drr-commercial-10-final-audit]] — Final Audit
+9. [[drr-commercial-09-final-audit]] — Final Audit
+10. [[drr-commercial-10-output-spec]] — Output Spec _(consumes the Final Audit; placed after it)_
 11. [[drr-commercial-11-implementation]] — Implementation-Readiness _(unique to Commercial; not live wiring)_
 12. [[drr-commercial-12-final-handoff]] — Final Handoff
 

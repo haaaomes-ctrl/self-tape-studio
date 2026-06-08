@@ -2272,6 +2272,6 @@ COMMERCIAL-REV complete. Ready for COMMERCIAL-FINAL-AUDIT.
 ## Links
 
 - **Previous:** [[drr-commercial-07-audit]] — Synthesis Audit
-- **Next:** [[drr-commercial-09-output-spec]] — Output Spec
+- **Next:** [[drr-commercial-09-final-audit]] — Final Audit
 - **Thread overview:** [[drr-commercial-overview]]
 - **Programme:** [[drr-programme-overview]]

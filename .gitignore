@@ -53,3 +53,10 @@ qa-artifacts/
 
 # Obsidian workspace state for the knowledge vault (machine-local, not shared)
 knowledge/.obsidian/
+
+# Imported research provenance — kept locally, never committed (large verbatim
+# Merged consolidations + raw RTF originals; canonical source is the original
+# research folder, and each step note already carries the content verbatim).
+# The .gitkeep placeholder stays tracked so the archive dir exists in git.
+knowledge/90-archive/*
+!knowledge/90-archive/.gitkeep

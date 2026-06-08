@@ -1,5 +1,5 @@
 ---
-id: drr-commercial-10-final-audit
+id: drr-commercial-09-final-audit
 title: Commercial — Final Audit
 tier: corpus
 status: current
@@ -21,7 +21,7 @@ updated: 2026-06-08
 
 # Commercial — Final Audit
 
-> **Imported research — Discipline Rubric Research programme.** Step 10 of 12 in the Commercial thread (`stage-final-audit`). Original file: `5. Commercial/COMMERCIAL-FINAL-AUDIT .md`. Original date: 2026-05-06 (filesystem birthtime — no reliable in-content date; corroborated by the filename stage/batch convention and folder order). Imported: 2026-06-08. Converted from RTF to Markdown on import. Preserved verbatim below — research evidence, not the live rubric; the consolidated rubric for this discipline is the archived *Merged* file referenced from [[drr-commercial-overview]].
+> **Imported research — Discipline Rubric Research programme.** Step 9 of 12 in the Commercial thread (`stage-final-audit`). Original file: `5. Commercial/COMMERCIAL-FINAL-AUDIT .md`. Original date: 2026-05-06 (filesystem birthtime — no reliable in-content date; corroborated by the filename stage/batch convention and folder order). Imported: 2026-06-08. Converted from RTF to Markdown on import. Preserved verbatim below — research evidence, not the live rubric; the consolidated rubric for this discipline is the archived *Merged* file referenced from [[drr-commercial-overview]].
 
 ---
 
@@ -1484,7 +1484,7 @@ COMMERCIAL-FINAL-AUDIT complete. Ready for COMMERCIAL-OUTPUT-SPEC / Non-Regressi
 
 ## Links
 
-- **Previous:** [[drr-commercial-09-output-spec]] — Output Spec
-- **Next:** [[drr-commercial-11-implementation]] — Implementation
+- **Previous:** [[drr-commercial-08-revision]] — Synthesis Revision
+- **Next:** [[drr-commercial-10-output-spec]] — Output Spec
 - **Thread overview:** [[drr-commercial-overview]]
 - **Programme:** [[drr-programme-overview]]
