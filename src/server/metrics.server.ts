@@ -146,7 +146,10 @@ export type MetricName =
   | "s10_residual_level_calibration_applied"
   | "s10_residual_technique_commentary_applied"
   | "two_step_fallback_used"
-  | "two_step_total_ai_duration_ms";
+  | "two_step_total_ai_duration_ms"
+  // Δ5-S1 observation-ID integrity guard (deterministic; fires only when ≥1
+  // blank/duplicate observation ID was replaced with a stable fallback).
+  | "s10_observation_id_guard_applied";
 
 export interface MetricFields {
   take_id?: string | null;

@@ -157,7 +157,10 @@ import {
   scrubS10TimestampedCommentaryProjection,
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
-import { buildTwoStepEvidenceContext } from "./s10-observation-pass.server";
+import {
+  applyObservationIdIntegrityGuard,
+  buildTwoStepEvidenceContext,
+} from "./s10-observation-pass.server";
 import {
   evaluateS10ModuleReadiness,
   summariseS10ModuleReadinessForPersistence,
@@ -5088,6 +5091,31 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
       singlePassOutput: report as Record<string, unknown>,
       report: report as Record<string, unknown>,
     });
+
+    // Δ5-S1: deterministic observation-ID integrity guard. Runs ONCE here, on
+    // the resolver output that BOTH the two-step and single-pass paths flow
+    // through, and BEFORE any downstream consumer reads
+    // s10ObservationContext.{observed_tape_sequence,component_verifications}.
+    // The model-filled IDs (observed_tape_sequence[].id,
+    // component_verifications[].requirement_id) can arrive blank/duplicate; the
+    // guard makes them non-empty + unique so Δ5-S2 anchors can reference them.
+    // It rewrites ONLY blank/duplicate IDs — no mark/verdict/score/content
+    // change. Mutating the resolved context in place means every existing
+    // consumer (report fields below, technical signals, brief matrix, the
+    // evidence-binding gate, etc.) sees the guarded IDs without further edits.
+    const observationIdGuard = applyObservationIdIntegrityGuard({
+      observed_tape_sequence: s10ObservationContext.observed_tape_sequence,
+      component_verifications: s10ObservationContext.component_verifications,
+    });
+    s10ObservationContext.observed_tape_sequence = observationIdGuard.observed_tape_sequence;
+    s10ObservationContext.component_verifications = observationIdGuard.component_verifications;
+    if (observationIdGuard.fallbacks_applied > 0) {
+      metric("s10_observation_id_guard_applied", {
+        take_id: takeId,
+        value: observationIdGuard.fallbacks_applied,
+      });
+    }
+
     report.observed_tape_sequence = s10ObservationContext.observed_tape_sequence;
     report.component_verifications = s10ObservationContext.component_verifications;
     report.media_observation_summary = s10ObservationContext.media_observation_summary;
