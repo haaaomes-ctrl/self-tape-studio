@@ -9,3 +9,7 @@ routeTree.gen.ts
 # Knowledge OS generated files (maintained by tc-* skills, not Prettier)
 knowledge/00-meta/INDEX.md
 knowledge/00-meta/DELTA-REGISTER.md
+
+# Imported research — verbatim originals (and archived provenance), never reformat
+knowledge/10-research/discipline-rubric-research/
+knowledge/90-archive/
