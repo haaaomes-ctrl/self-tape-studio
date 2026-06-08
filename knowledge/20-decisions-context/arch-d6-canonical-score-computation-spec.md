@@ -15,7 +15,7 @@ supersedes: []
 superseded_by: null
 supersession_reason: null
 source: claude-project
-source_ref: "Δ6 canonical computation spec, from-source trace 2026-06-07, origin/main; jointly verified with Claude Code"
+source_ref: "Δ6 canonical computation spec, from-source trace 2026-06-07, origin/main; jointly verified with Claude Code. Render-locus correction 2026-06-08 (from-source trace, origin/main): all four report-detail surfaces render from the view-model chokepoint (buildS10PerformerReportViewModel), not the v2-report-builder payload lines previously cited; capped-flag clause restored to both terms."
 discipline: null
 monday_ref: "2967682223"
 tags:
@@ -44,8 +44,9 @@ judgement object A is computed in parallel and touches the number only at that `
 (deterministic verdict from the number at level bands; rendered verdict reads A's decision — the known V3
 divergence) and the sub-surfaces (category scores clamped only; brief_adherence and material_compliance
 capped against the MATRIX via `capNumberField`, not against A) contain NO further hidden A-movers. Slices
-2 and 3 are therefore the same render-reads-A architecture, fixed the same way (re-point to canonical),
-with no additional landmines — the spec is verified-complete for all three slices, not provisional.
+2 and 3 are therefore the same render-reads-A architecture, fixed the same way (re-point the view-model
+chokepoint + the visible render to a distinct canonical field — see the render-locus correction in §Surface
+bindings), with no additional landmines — the spec is verified-complete for all three slices, not provisional.
 
 ## The canonical computation (definition of D)
 
@@ -72,14 +73,38 @@ voice, singing) are governed by the per-discipline weights (`weightsForType`), n
 
 ## Surface bindings (every surface derives from the canonical number)
 
-- Report-detail headline — today A (v2-report-builder.server.ts:306-307); must read canonical D (withhold-null
-  preserved). Slice 1.
-- Report-detail verdict — today A's decision (v2-report-builder.server.ts:318-322); must derive from canonical
-  D at level-relative bands. Slice 2.
-- Report-detail category scores — today A, uncapped (v2-report-builder.server.ts:343-352); must be canonical,
-  matrix-capped. Slice 3.
-- Report-detail material_compliance — today A's brief_completion_score (v2-report-builder.server.ts:424); must
-  be canonical. Slice 3.
+**Render-locus correction (from-source trace, 2026-06-08, origin/main — supersedes the `v2-report-builder`
+line citations carried in the earlier draft of this section).** The four performer-visible report-detail
+fields are NOT rendered from `v2-report-builder.server.ts` — those lines assemble the V2 _payload_ and feed
+only the legacy/non-S10 render branch. For S10, the visible surfaces — `V2ReportView.tsx` (ScoreRing,
+decision, category, brief-adherence) and the PDF model `src/lib/report-view-model.ts` — read the **view-model
+chokepoint**: `buildS10PerformerReportViewModel`'s `recommendation` + `score_summary` assembly
+(s10-report-view-model.server.ts ~:1483-1510), every field sourced from `readiness` (= A). Canonical D is NOT
+currently present on that view-model object. So each slice must (i) thread the persisted canonical value
+(`takes.overall_score`, canonical after N4a) into `buildS10PerformerReportViewModel`'s input and surface it
+as a DISTINCT canonical field on the view-model object, and (ii) re-point the visible render to read that
+field, gated by the EXISTING provenance predicate (`s10ScoreAuthorized` etc.) so the withhold seam is
+unchanged. `readiness`/`score_summary`/`recommendation` STAY = A — they feed narration, gating, the ≥90
+suppression, the observed-tape reconcile and `numericScoresVisible`; canonical values are added alongside,
+never overwritten. Making the persisted number canonical (N4a) is necessary but NOT sufficient for the
+visible surface.
+
+- Report-detail headline — visible render reads `score_summary.overall_submission_readiness_score` (= A;
+  `visibleS10Score`, s10-report-view-model.server.ts ~:1281-1283) at `V2ReportView.tsx` ScoreRing (~:797-801)
+  and PDF `report-view-model.ts` (~:1024-1028). Fix: surface a distinct `canonical_overall_score` (= D) on the
+  view model; re-point both render reads to it via `s10ScoreAuthorized ? canonicalD : null`. The
+  `v2-report-builder.server.ts:306-308` `overall_readiness` payload field is also re-pointed to D (cross-surface
+  / QA / legacy-branch consistency), but it is NOT the visible headline. Slice 1.
+- Report-detail verdict — visible render reads `recommendation.decision` (= A's decision) at `V2ReportView.tsx`
+  (~:814/:820) and PDF `report-view-model.ts` (~:1006). Fix: derive a canonical verdict from D at level-relative
+  bands, surface it as a distinct view-model field, re-point the render. Slice 2.
+- Report-detail category scores — visible render reads `score_summary.category_scores` (= A) at `V2ReportView.tsx`
+  (~:881) and PDF `report-view-model.ts` (~:1030). Fix: surface canonical, matrix-capped category scores as a
+  distinct view-model field, re-point the render. Slice 3.
+- Report-detail material_compliance — visible render reads `score_summary.brief_completion_score` (= A;
+  section-source-map module `readiness_score_judgement.brief_completion_score`) at PDF `report-view-model.ts`
+  (~:1667 `briefCompletion`) and the `V2ReportView.tsx` brief-adherence section. Fix: surface a canonical
+  material_compliance as a distinct view-model field, re-point the render. Slice 3.
 - Take list / dashboard / ranking / admin — render `takes.overall_score`, today = min(det,A) (A-contaminated
   where A<det); becomes canonical D automatically once N4a removes the min. This movement is the fix, not a
   regression, and supersedes the earlier "do not move the aggregates" framing (which rested on the false
@@ -97,9 +122,13 @@ closing it in every regime.
 ## Withhold semantics (preserved exactly)
 
 When the S10 model deliberately withholds (score_summary/readiness null — H1 observed-tape reconcile at
-s10-report-view-model.server.ts:574; missing-readiness), the headline stays null. Selector shape:
-`s10View ? (withheld ? null : canonicalD) : legacyD`. Matrix caps (N4b) remain — an incomplete package is
-still capped into the retake/review band; removing the min does not remove the cap.
+s10-report-view-model.server.ts:574; missing-readiness), the headline stays null. The VISIBLE render gates on
+the EXISTING provenance predicate `s10ScoreAuthorized` (the `score_summary` section-source-map authority):
+`s10ScoreAuthorized ? canonicalD : null`. Do NOT introduce a second predicate keyed on the canonical field's
+presence — that would open a new withhold seam. (The `v2-report-builder` payload selector
+`s10View ? (withheld ? null : canonicalD) : legacyD` is the payload-field analogue, not the visible-surface
+gate.) Matrix caps (N4b) remain — an incomplete package is still capped into the retake/review band; removing
+the min does not remove the cap.
 
 ## Fixture expected outputs (from source; the ratifiable numbers)
 
@@ -114,20 +143,38 @@ still capped into the retake/review band; removing the min does not remove the c
 
 ## Build-mechanics note
 
-Removing the min shifts the meaning of the function's `capped` return flag (sem:715:
-`overall !== currentOverallScore`) — it now means "matrix-capped" rather than "min-or-matrix moved". The
-build must re-point that flag's semantics and any test asserting it, deliberately.
+Removing the min shifts the meaning of the function's `capped` return flag. The flag is
+`capped: overall !== input.currentOverallScore || warnings.length > 0` (s10-readiness-score-semantics.server.ts:715
+— BOTH terms; the earlier draft of this spec dropped the `|| warnings.length > 0` term). With the min gone,
+the first term `overall !== input.currentOverallScore` becomes true ONLY when the matrix cap (N4b) fires, so
+it now means "matrix-capped" rather than "min-or-matrix moved"; the second term (`warnings.length > 0`) is
+unchanged and still trips on any cap/contradiction warning. The build must re-point that flag's meaning and
+any test asserting it, deliberately.
 
 ## Build sequence
 
-1. Slice 1 (headline + the N4a edit): remove min at sem:638; re-point headline to canonical D (withhold-null
-   preserved); add the Repro-B audio-capped fixture; correct the canary fixture's false-positive D-side to
-   honest inputs and assert canonical D=54; assert strong canonical D=93; re-point the `capped` flag semantics;
-   selective re-pin of the guard test (preserve null-on-missing, source_map, legacy_projection); assert
-   aggregates equal the headline (cross-surface consistency). Slice 1 legitimately includes the pipeline min
-   removal — not render-only.
-2. Slice 2: verdict → canonical D at level-relative bands (V1-V3).
-3. Slice 3: category scores + material_compliance → canonical, matrix-capped (S1-S2).
+Each slice = pipeline (where relevant) + VIEW-MODEL threading (surface a DISTINCT canonical field on
+`buildS10PerformerReportViewModel`, never overwriting `readiness`/`score_summary`/`recommendation` = A) +
+VISIBLE-RENDER re-point (`V2ReportView.tsx` + PDF `report-view-model.ts`, gated by the existing
+`s10*Authorized` provenance predicate). See the render-locus correction in §Surface bindings. Re-pointing the
+persisted/payload number alone (N4a + the `v2-report-builder` field) does NOT move the visible surface.
+
+1. Slice 1 — canonical headline end-to-end: (pipeline) remove min at sem:638 so `overall = currentOverallScore`,
+   matrix cap N4b unchanged; (view model) thread `takes.overall_score` into `buildS10PerformerReportViewModel`'s
+   input and surface a distinct `canonical_overall_score` at the recommendation/score_summary assembly
+   (~:1483-1510); (render) re-point the headline at `V2ReportView.tsx` ScoreRing (~:797-801) and PDF
+   `report-view-model.ts` (~:1024-1028) to read it via `s10ScoreAuthorized ? canonicalD : null`. Plus: add the
+   Repro-B audio-capped fixture; correct the canary fixture's false-positive D-side to honest inputs and assert
+   canonical D=54; assert strong canonical D=93; re-point the `capped` flag meaning; selective re-pin of the
+   guard test (preserve null-on-missing, source_map, legacy_projection, input-purity); assert aggregates equal
+   the visible headline (cross-surface consistency). Transient cross-slice caveat: until Slice 2 the headline
+   reads canonical D while the verdict still reads A's decision — coherent for the fixtures (strong D=93/submit,
+   canary D=54/retake, Repro-B per band).
+2. Slice 2 — verdict: derive a canonical verdict from D at level-relative bands, surface it as a distinct
+   view-model field, re-point the visible verdict render (`V2ReportView.tsx` ~:814/:820; PDF ~:1006) (V1-V3).
+3. Slice 3 — category scores + material_compliance: surface canonical, matrix-capped values as distinct
+   view-model fields, re-point the visible renders (category `V2ReportView.tsx` ~:881 / PDF ~:1030;
+   material_compliance `score_summary.brief_completion_score`, PDF ~:1667) (S1-S2).
    Each test-first, PR-and-hold, scoring-path blast-radius (manual-approval + dry-run + canary + worker redeploy).
 
 ## Links
