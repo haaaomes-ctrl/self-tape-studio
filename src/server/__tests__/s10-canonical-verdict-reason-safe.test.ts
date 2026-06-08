@@ -86,6 +86,17 @@ describe("Δ6 — canonical_verdict.reason performer-safe by construction", () =
     expect(canonicalVerdict(v2)?.reason as string).not.toMatch(/blocked\s*:/i);
   });
 
+  it("fallback: EMPTY block_reasons also degrades to the reframed sentence (no Blocked:)", () => {
+    // Documents the empty-array case end-to-end (the helper reads the in-memory block_reasons;
+    // when it carries no performer-safe entry the fallback is operative — see STEP 3 finding).
+    const raw = "Blocked: audio is too unclear to fairly judge the performance.";
+    const v2 = buildWith({ label: "Not ready yet", reason: raw, blocked: true, capped: true }, []);
+    expect(canonicalVerdict(v2)?.reason).toBe(
+      "Not ready to send — audio is too unclear to fairly judge the performance. Record a fresh take before submitting.",
+    );
+    expect(canonicalVerdict(v2)?.reason as string).not.toMatch(/blocked\s*:/i);
+  });
+
   it("withhold: no submission_verdict → canonical_verdict null", () => {
     const v2 = buildWith(null, []);
     expect(canonicalVerdict(v2)).toBeNull();
