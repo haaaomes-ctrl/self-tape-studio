@@ -157,6 +157,7 @@ import {
   scrubS10TimestampedCommentaryProjection,
 } from "./s10-timestamped-commentary.server";
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
+import { buildTwoStepEvidenceContext } from "./s10-observation-pass.server";
 import {
   evaluateS10ModuleReadiness,
   summariseS10ModuleReadinessForPersistence,
@@ -3687,15 +3688,20 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
 
     if (isTwoStepEnabled()) {
       const twoStepStartedAt = Date.now();
-      const evidenceContext = [
-        `Audition title: ${audition.title}`,
+      // Δ5-S1 (D5.3): Step 1 is a LEVEL-BLIND observation pass — levelBlock is
+      // deliberately NOT part of the evidence context so the same tape yields
+      // the same located evidence regardless of selected level. Level enters
+      // only at Step-2 marking (the single-pass userText / runReportPolish /
+      // module-repair calls retain levelBlock). The pure helper makes this
+      // invariance unit-testable (observation-invariance gate).
+      const evidenceContext = buildTwoStepEvidenceContext({
+        auditionTitle: audition.title,
         disciplineBlock,
-        levelBlock,
         briefBlock,
         extractedBlock,
         signalsBlock,
-        `Analysis tier: ${tier} rendition.`,
-      ].join("\n\n");
+        tier,
+      });
 
       console.log("[take-pipeline] evidence_pass_started", {
         ...baseLog,
