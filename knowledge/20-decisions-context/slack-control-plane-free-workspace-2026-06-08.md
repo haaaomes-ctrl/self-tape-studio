@@ -3,7 +3,7 @@ id: slack-control-plane-free-workspace-2026-06-08
 title: Slack control plane runs on a free Slack workspace
 tier: corpus
 status: decided
-spine_anchor: []
+spine_anchor: ["CLAUDE §Knowledge corpus"]
 decided_ref: null
 supersedes: []
 superseded_by: null

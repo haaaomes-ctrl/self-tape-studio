@@ -3,7 +3,14 @@ id: arch-d6-score-model-architecture
 title: Δ6 score-model architecture — analysis-first canonical score, level as marking standard, authored rubric model
 tier: corpus
 status: current
-spine_anchor: ["README §Calibration doctrine", "README §Performer Level Calibration Architecture", "AGENTS §Performer level calibration", "AGENTS §Professional 0–100 level-relative score calibration", "AGENTS §Score terminology alignment"]
+spine_anchor:
+  [
+    "README §Calibration doctrine",
+    "README §Performer Level Calibration Architecture",
+    "AGENTS §Performer level calibration",
+    "AGENTS §Professional 0–100 level-relative score calibration",
+    "AGENTS §Score terminology alignment",
+  ]
 decided_ref: null
 supersedes: []
 superseded_by: null
@@ -65,7 +72,7 @@ derives from.
 
 ### Core score model
 
-- **Analysis precedes the score.** Step 1 observes and locates evidence; Step 2 *marks* that
+- **Analysis precedes the score.** Step 1 observes and locates evidence; Step 2 _marks_ that
   evidence against brief × level; the score is **computed deterministically** from marked
   dimensions plus hard caps. The AI judges dimensions; it never emits or moves the final number.
 - **One canonical score.** Every surface — render, narration, verdict, category scores,
@@ -80,13 +87,13 @@ derives from.
 ### Score vs subjectivity (MD-voice)
 
 - The score is the **consistent gate**; subjective judgement must **not** move the number.
-- **MD-voice** is a separate, bounded (2–3 sentences), suppressible module rendered *below* the
+- **MD-voice** is a separate, bounded (2–3 sentences), suppressible module rendered _below_ the
   score, framed explicitly as one subjective practitioner view. It is evidence-gated, forbidden
   from contradicting the verdict, and is the designated home for developmental (non-gate)
   feedback.
 - **Reasoning:** consistency is the product promise — the same tape must earn the same number.
   Containment keeps the report lean and quarantines AI hallucination away from the number. The
-  reported F5 prose-upgrade is precisely what *unquarantined* qualitative judgement would look
+  reported F5 prose-upgrade is precisely what _unquarantined_ qualitative judgement would look
   like — prose reaching in and raising a score (that specific mechanism is pending verification,
   see Open questions; the quarantine decision stands on the grounded two-authority finding).
 
@@ -102,8 +109,8 @@ derives from.
   prompt-instructed score relativity and once on the D side as verdict-label bands) or float
   unchecked (today the A-side decision bands are level-flat while the D-side label bands are
   level-relative, so the two can disagree).
-- **Rubric model, not threshold model.** Higher tiers add genuinely *different assessable
-  criteria*, not the same dimensions with a moved bar. **Reasoning:** honest 0–100 calibration
+- **Rubric model, not threshold model.** Higher tiers add genuinely _different assessable
+  criteria_, not the same dimensions with a moved bar. **Reasoning:** honest 0–100 calibration
   requires it; a threshold model bunches good professionals near the top — flat criteria with no
   real discriminating value.
 - **S10-03 (Level-Relative Performer Calibration, Monday 2952749999, was Complete) found NOT
@@ -153,7 +160,7 @@ derives from.
   accepted the exposure.
 - **Method invariant (architecture, independent of corpus scope):** the rubric is **authored
   from codified expert criteria and validated by expert discrimination**. Performance media —
-  however expert or widely available — is research signal and ratification *fixtures*, never the
+  however expert or widely available — is research signal and ratification _fixtures_, never the
   rubric's raw training corpus. **Reasoning:** this prevents the rubric becoming "what is
   common/available online" instead of "what is expert" — the same disease class one layer up:
   uncontrolled input reaching in and setting the standard (cf. the reported F5 mechanism,
@@ -162,7 +169,7 @@ derives from.
 ### Sequencing
 
 - **Plumbing first:** build the canonical-score model + level-invariant Step 1 against the
-  *current* dimension set. This fixes the render-vs-persisted divergence class (including the
+  _current_ dimension set. This fixes the render-vs-persisted divergence class (including the
   reported flattering-only behaviour, pending verification — see Open questions) and the
   level-divergence defects regardless of rubric richness, and defines the shape the rubric
   plugs into.
@@ -170,7 +177,7 @@ derives from.
   human/research dependency — it is **not** a normal engineering task and must not block the
   plumbing.
 - **Build discipline:** plan-first → design-review → PR-hold (operator merge protocol). High
-  blast radius: the pinned test suite encodes the current *defective* behaviour (e.g.
+  blast radius: the pinned test suite encodes the current _defective_ behaviour (e.g.
   `s10-v2-score-category-fallback-guard` asserts the rendered score equals the AI judgement
   score) and must be deliberately rewritten, not "fixed to pass". Scoring-path changes are
   manual-approval edits + `dry-run:analysis-worker` + canary + worker redeploy post-merge.
@@ -203,5 +210,6 @@ derives from.
   Δ6 inherits its division-of-authority framing.
 - [[arch-d6-phase1-as-is-score-map]] — Δ6 Phase 1 as-is field map / inversion table (the
   completed from-source re-derivation; ratified by ADR-0008).
+- [[arch-d6-canonical-score-computation-spec]] — the operational computation spec (canonical D; the single `min(.,A)` site removed) that operationalises this note for the build.
 - Monday: Δ6 2967682223 · S10-03 2952749999 (reopened/blocked) · S10-14 2952750147
   (closed/superseded).

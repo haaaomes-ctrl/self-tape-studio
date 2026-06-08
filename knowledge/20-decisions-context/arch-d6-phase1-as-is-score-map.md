@@ -77,7 +77,7 @@ extends those into the full divergence inventory.
   score is **only ever lowered by the matrix `constraint.cap`** (`:347-355`) and can be **raised**
   by the stale-package block (`:380-398`). It is **never** lowered to the audio/role-fit/recompute
   -capped `currentOverallScore`.
-- **The `min()` at `:636-639`** lowers the *returned local* `overall` (→ D). It does **not** write
+- **The `min()` at `:636-639`** lowers the _returned local_ `overall` (→ D). It does **not** write
   back into the judgement object — grep for any writeback of the reconciled overall into
   `readiness_score_judgement.overall_submission_readiness_score` returns nothing. So **A retains
   the matrix-capped-only AI score; D is A min'd against the deterministic caps.**
@@ -127,9 +127,9 @@ These act on the **verdict label**, NOT on the number `overall` (which is why th
 ### A-raise
 
 - **R1 — stale-package prose upgrade** (`s10-...:380-398`): when `!constraint.decision` ∧
-  `matrixHasClearMandatoryMaterial` ∧ decision ∈ {review_carefully, retake_required} ∧
+  `matrixHasClearMandatoryMaterial` ∧ decision ∈ {review*carefully, retake_required} ∧
   `mentionsStaleMandatoryPackageGap(prose)`, A is **raised** to ≥70 (or ≥85 for "submit") via
-  `readinessScore = Math.max(..., minimumScore)`. This is a genuine prose-driven *raise* of A
+  `readinessScore = Math.max(..., minimumScore)`. This is a genuine prose-driven \_raise* of A
   (located at `:383-404`, contra the prior "F5" which mislabelled the mechanism as a category
   prose-upgrade). D is untouched, so this widens A−D upward.
 
@@ -143,7 +143,7 @@ Within the S10 report-detail surface the inversion is not confined to the headli
   (0-100)** and are **not matrix-capped** (`s10-...:453-522`); the matrix `capNumberField` caps
   (`:653-668`) apply to the D-side `scores.brief_adherence` and `material_compliance`, and
   component scores get nulled when absent/blocked (`:246-262`) — but the **rendered A category
-  scores carry no matrix cap at all**, so this surface is *less* constrained than the A headline.
+  scores carry no matrix cap at all**, so this surface is _less_ constrained than the A headline.
 - **S2 — material_compliance**: rendered from A's `brief_completion_score`
   (`v2-report-builder.server.ts:424`), itself only `clampScore`'d (`s10-...:469-472`), not D's
   `brief_adherence_breakdown.material_compliance`.
@@ -179,7 +179,7 @@ navigated from is on D. This is not only an inflation defect; it is a visible in
 contradiction between user-facing surfaces.
 
 **Fix-direction implication (informs the build, not a new decision).** The list/dashboard/ranking/
-admin surfaces are *already* on the deterministic value; only the report-detail surfaces read A. So
+admin surfaces are _already_ on the deterministic value; only the report-detail surfaces read A. So
 the canonical-score convergence is toward the **D-side value** (the honest, capped number) — the
 report detail must be made to render the canonical/D value, not the dashboard made to render A. This
 is the operational meaning of R = D here.
@@ -199,7 +199,7 @@ is the operational meaning of R = D here.
 ### The fork (verified mutually-exclusive, not a race)
 
 Order is fixed at `s10-report-view-model.server.ts:1102`: `reconcileReadinessWithObservedTape`
-runs and **overwrites `readiness`** (incl. nulling the score) *before* `visibleS10Score` reads it
+runs and **overwrites `readiness`** (incl. nulling the score) _before_ `visibleS10Score` reads it
 at `:1282`. So:
 
 - **Restrictive observed-tape constraints present (non-empty map)** → H1 fires, A nulled, render
@@ -274,7 +274,7 @@ V1-V3 (verdict derives from the canonical value at the correct level bands), R1 
 the number), S1-S2 (sub-surfaces derive from canonical, category scores matrix-capped), H1/H2/H4
 (withholding is deliberate model output, not an artefact of which authority was read), one test on
 the fork itself (after R=D there is only one number, so the inflation-vs-withhold gate no longer
-selects *which number* shows), and — added from the surface-split finding — a **cross-surface
+selects _which number_ shows), and — added from the surface-split finding — a **cross-surface
 consistency test**: the number/verdict shown on the report detail must equal the number/verdict on
 the take list, dashboard, ranking and admin export for the same take (today the report detail reads
 A while those read D). Note the existing pinned guard `s10-v2-score-category-fallback-guard` asserts
@@ -301,5 +301,6 @@ confirmed (legacy branch unreachable). Downstream actions (not open questions ab
 - [[arch-d6-handoff-2026-06-07]] — the session handoff that commissioned this derivation.
 - [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] — the observed-tape evidence work H1
   depends on.
+- [[arch-d6-canonical-score-computation-spec]] — the operational computation spec (canonical D; the single `min(.,A)` site removed) that operationalises this note for the build.
 - Monday: Δ6 2967682223 · S10-03 2952749999 (reopened/blocked) · S10-14 2952750147
   (closed/superseded).

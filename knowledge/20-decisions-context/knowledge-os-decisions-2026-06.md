@@ -3,7 +3,7 @@ id: knowledge-os-decisions-2026-06
 title: Knowledge OS — resolved design decisions
 tier: corpus
 status: decided
-spine_anchor: []
+spine_anchor: ["CLAUDE §Knowledge corpus"]
 decided_ref: null
 supersedes: []
 superseded_by: null
@@ -72,4 +72,4 @@ The README is the north star; the roadmap is the sequence. Atomise the README in
 
 ## Links
 
-- `[[knowledge-os-design-rationale]]` · Design `DESIGN.md` · Plan `IMPLEMENTATION-PLAN.md` · Agents `AGENT-ECOSYSTEM.md` · Lessons `10-research/agent-lessons-identified.md` · Proposals `00-meta/proposals/`
+- [[knowledge-os-design-rationale]] — the design rationale these decisions record. · Design `DESIGN.md` · Plan `IMPLEMENTATION-PLAN.md` · Agents `AGENT-ECOSYSTEM.md` · Lessons `10-research/agent-lessons-identified.md` · Proposals `00-meta/proposals/`

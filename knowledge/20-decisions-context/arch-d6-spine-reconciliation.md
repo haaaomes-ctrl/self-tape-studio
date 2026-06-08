@@ -3,7 +3,13 @@ id: arch-d6-spine-reconciliation
 title: Δ6 spine reconciliation change set — conformance vs additions vs corrections, routed to Δ11 and ARCH-DOC
 tier: corpus
 status: current
-spine_anchor: ["AGENTS §Score terminology alignment", "README §Professional 0–100 level-relative score calibration", "README §Performer Level Calibration Architecture", "README §Level-specific flows"]
+spine_anchor:
+  [
+    "AGENTS §Score terminology alignment",
+    "README §Professional 0–100 level-relative score calibration",
+    "README §Performer Level Calibration Architecture",
+    "README §Level-specific flows",
+  ]
 decided_ref: null
 supersedes: []
 superseded_by: null
@@ -27,7 +33,7 @@ wins on conflict" holds, and spine edits happen deliberately under Δ11, not her
 
 **Key finding (the durable lesson): the spine was SUBSTANTIALLY CORRECT; the defect was code
 drifting from it undetected** — the MAST "verification failure" pattern (spec right, conformance
-never verified). Most of Δ6 is *conformance to existing doctrine*, not new doctrine. Implication:
+never verified). Most of Δ6 is _conformance to existing doctrine_, not new doctrine. Implication:
 the Δ6 build needs **conformance tests against the named spine clauses** (AGENTS
 §Score terminology alignment, README §11.4, README §8.x flows), not only new-behaviour tests, so
 the drift cannot silently recur.
@@ -65,7 +71,7 @@ where the spine is silent, Δ11 adds; where the spine is contradicted by an arte
 
 - **Single-canonical-score / no-second-authority:** add an AGENTS clause — one canonical score;
   the AI marks dimensions but never emits/moves the number; all surfaces derive from it. The
-  spine forbids *contradictions* but is **silent on the multi-authority architecture** — that
+  spine forbids _contradictions_ but is **silent on the multi-authority architecture** — that
   silence is the gap the drift used.
 - **Step-1 level-invariance as a stated invariant:** observations are facts; level changes only
   the marking. The spine says level is first-class and not tone, but does not state observation
@@ -104,7 +110,7 @@ corrections. Category 4 = new ADR + consolidation references. README-wins holds 
 ### Conformance-test requirement (from the key finding)
 
 Because the failure mode was unverified conformance rather than wrong doctrine, the Δ6 build's
-acceptance suite must include tests that assert the *named spine clauses* hold end-to-end:
+acceptance suite must include tests that assert the _named spine clauses_ hold end-to-end:
 
 - AGENTS §Score terminology alignment — no rendered score may contradict report language
   (blocker-vs-submit, brief-complete-with-no-brief, and the live-found variants).
@@ -141,5 +147,6 @@ below are downstream execution, owned elsewhere — not open questions about thi
   the spine against.
 - [[arch-d3-rescope-division-of-authority]] — prior division-of-authority decision in the same
   lineage.
+- [[arch-d6-canonical-score-computation-spec]] — the operational computation spec (canonical D; the single `min(.,A)` site removed) that operationalises this note for the build.
 - Monday: Δ6 2967682223 · S10-03 2952749999 (reopened/blocked) · S10-14 2952750147
   (closed/superseded).
