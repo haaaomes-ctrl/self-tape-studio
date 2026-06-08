@@ -25,6 +25,7 @@
 ### ADR-0008
 
 - **current** — [[arch-d6-canonical-score-computation-spec]] (high)
+- **current** — [[arch-d6-slice1-outcome-slice2-verdict-mapping]] (high)
 
 ### AGENTS §Code responsibilities
 
@@ -65,6 +66,7 @@
 - **current** — [[arch-d6-canonical-score-computation-spec]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
 - **current** — [[arch-d6-score-model-architecture]] (high)
+- **current** — [[arch-d6-slice1-outcome-slice2-verdict-mapping]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
 - ~~superseded~~ — [[handoff-d6-build-start]]
 
@@ -98,6 +100,7 @@
 - **current** — [[arch-d6-handoff-2026-06-07]] (high)
 - **current** — [[arch-d6-canonical-score-computation-spec]] (high)
 - **current** — [[arch-d6-phase1-as-is-score-map]] (high)
+- **current** — [[arch-d6-slice1-outcome-slice2-verdict-mapping]] (high)
 - **current** — [[arch-d6-spine-reconciliation]] (high)
 - ~~superseded~~ — [[handoff-d6-build-start]]
 
@@ -322,5 +325,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 89/3/0/2
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 90/3/0/2
 - Gaps (##-level): 108 | Orphans: 68 | Unresolved: 0
