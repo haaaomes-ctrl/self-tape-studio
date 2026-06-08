@@ -4,11 +4,11 @@
 
 This file keeps implementation agents aligned with TapeCoach’s S10 direction.
 
-TapeCoach is an AI-led professional self-tape critique system. The performer-facing report is the product. QA artefacts, gates and diagnostics prove the report; they do not replace it.
+TapeCoach is an AI-led professional self-tape critique system. The performer-facing report is the product; QA artefacts, gates and diagnostics prove it, they do not replace it.
 
 Do not optimise for a clean internal proof layer at the expense of performer-facing usefulness.
 
-S10 is already being implemented. The performer-level, brief/no-brief, role/material, Professional 0–100 level-relative score calibration and audition take lifecycle rules in this file are controlling amendments to merge into the relevant in-flight S10 work. They are not a reason to discard useful implementation that already satisfies the README.
+S10 is already being implemented. The performer-level, brief/no-brief, role/material, Professional 0–100 score calibration and take-lifecycle rules here are controlling amendments to merge into in-flight S10 work — not a reason to discard useful implementation that already satisfies the README.
 
 ---
 
@@ -16,17 +16,13 @@ S10 is already being implemented. The performer-level, brief/no-brief, role/mate
 
 1. `README.md` is the controlling product contract.
 2. This `AGENTS.md` defines implementation operating rules for agents.
-3. `docs/architecture/` is authoritative for runtime topology, ownership boundaries, deployment, and where analysis executes (ADRs + runbooks). It does not override `README.md`'s product contract; this `AGENTS.md` delegates runtime-topology authority to it.
+3. `docs/architecture/` is authoritative for runtime topology, ownership, deployment, and where analysis executes (ADRs + runbooks). It does not override `README.md`’s product contract; this file delegates runtime-topology authority to it.
 4. `docs/tapecoach/s10-target-architecture.md` defines the target S10 architecture.
 5. Roadmap / delivery docs define sequencing only.
 
-This ordering mirrors the source hierarchy in `CLAUDE.md`. If there is a conflict, `README.md` wins.
+This mirrors the hierarchy in `CLAUDE.md`. On conflict, `README.md` wins.
 
-Before any change to runtime topology, where analysis executes, deployment, or
-queue/Worker wiring, read `docs/architecture/` first (ADRs + runbooks) and follow
-its invariants — e.g. the dedicated Cloudflare analysis Worker (`analysis-worker/`),
-the one-consumer rule for `tapecoach-analysis-jobs`, and the TanStack-free Worker
-constraint. Topology changes that contradict an ADR require a new ADR.
+Before changing runtime topology, where analysis executes, deployment, or queue/Worker wiring, read `docs/architecture/` first and follow its invariants — the dedicated analysis Worker (`analysis-worker/`), the one-consumer rule for `tapecoach-analysis-jobs`, and the TanStack-free Worker constraint. Changes contradicting an ADR require a new ADR.
 
 ---
 
@@ -76,7 +72,7 @@ TapeCoach’s simplest flow is:
    - AI applies the selected performer-level standard;
    - AI applies role/material context where supported;
    - AI explains score meaning and recommendation;
-   - AI applies level-relative 0–100 score calibration where scores are visible;
+   - AI applies level-relative 0–100 score calibration where visible;
    - AI repair prompts run if a module is missing, thin, generic or contradictory.
 5. Report/UI layer:
    - code pipes AI outputs into the report model and UI;
@@ -104,7 +100,7 @@ The UI must make the source basis visible.
 
 ## Product goal
 
-Every authenticated performer-facing report must help the performer understand:
+Every authenticated report must help the performer understand:
 
 - whether to submit, retake or review carefully;
 - why;
@@ -126,13 +122,11 @@ Every authenticated performer-facing report must help the performer understand:
 - what the score means at the selected level, including Professional score suppressors/raisers where applicable;
 - which active take versions were analysed or compared, where applicable.
 
-A safe but unhelpful report fails.
-
 ---
 
 ## Full-value authenticated report mode
 
-Authenticated performer-facing reports should use all useful available information, including:
+Authenticated reports should use all useful available information, including:
 
 - supplied brief text;
 - selected performer level;
@@ -146,13 +140,13 @@ Authenticated performer-facing reports should use all useful available informati
 - technique-library commentary;
 - role/material calibration where source basis supports it;
 - scores and comparison values in authenticated/operator/test mode;
-- level-relative 0–100 score calibration where scores are visible;
+- level-relative 0–100 score calibration where visible;
 - take slot/version context and comparison context where applicable;
 - timestamped or time-banded notes where available;
 - professional judgement;
 - operator-confirmed assumptions.
 
-Do not suppress content merely because it is detailed, brief-derived, level-specific, role-specific, technique-related, score-related, comparison-related, positive, critical or professionally specific.
+Do not suppress content just because it is detailed, brief-, level-, role-, technique-, score- or comparison-specific, positive, critical or professionally specific.
 
 ---
 
@@ -179,12 +173,13 @@ Rewrite before suppressing where safe.
 
 Examples:
 
-| Unsafe / overstrong                 | Preferred rewrite                                                                                                    |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| “This guarantees a callback.”       | “This supports submission readiness from the available evidence.”                                                    |
-| “This proves professional mastery.” | “This reads strongly against the selected level in the observed areas.”                                              |
-| “You are right for this role.”      | “The observed tape supports the role/material demands that were assessable from the supplied task.”                  |
-| “You are not bookable for this.”    | “Casting outcome cannot be predicted; the report can only assess the submitted tape against the available evidence.” |
+<!-- prettier-ignore -->
+| Unsafe / overstrong | Preferred rewrite |
+| --- | --- |
+| “This guarantees a callback.” | “This supports submission readiness from the available evidence.” |
+| “This proves professional mastery.” | “This reads strongly against the selected level in the observed areas.” |
+| “You are right for this role.” | “The observed tape supports the role/material demands assessable from the supplied task.” |
+| “You are not bookable for this.” | “Casting outcome cannot be predicted; the report can only assess the submitted tape against the available evidence.” |
 
 ---
 
@@ -280,7 +275,7 @@ No report may say “no brief supplied” and also claim brief achievement.
 
 ## Performer level calibration
 
-The selected performer level must be passed into the AI judgement context and used as an assessment standard.
+The selected performer level must be passed into the AI judgement context as an assessment standard.
 
 Do not treat selected level as:
 
@@ -294,7 +289,7 @@ Treat selected level as:
 
 - part of the AI brain;
 - part of the readiness standard;
-- part of the score standard where scores are visible;
+- part of the score standard where visible;
 - part of the recommendation logic;
 - part of the fix hierarchy;
 - part of the report explanation.
@@ -320,7 +315,7 @@ A report fails if:
 - selected level is captured but not used;
 - Professional level only makes the wording harsher;
 - lower-level excellence is described as Professional-standard without evidence;
-- the same tape with a different selected level produces copied judgement with only wording changes;
+- the same tape at a different selected level produces copied judgement with only wording changes;
 - a mandatory brief blocker is hidden by level-based praise;
 - an assessability blocker is mislabelled as performance weakness.
 
@@ -336,7 +331,7 @@ Professional level requires the AI to distinguish:
 
 ## Role / Character Research and Known-Material Calibration
 
-When a brief, uploaded material or user input identifies a production, role, character, scene, song, copy, routine or known material, the AI should run a role/material resolver before final judgement.
+When a brief, uploaded material or user input identifies a production, role, character, scene, song, copy, routine or known material, the AI should run a role/material resolver before judging.
 
 The resolver must separate:
 
@@ -408,7 +403,7 @@ Secondary context: known role/material baseline, where used
 
 Professional level does not activate a separate high-score-only scoring subsystem.
 
-Professional level means the evidence thresholds are higher across the full 0–100 scale. A score in the 90s should be difficult to achieve and should appear only when the tape shows exceptional Professional evidence across the relevant brief, performance, technical, role/material and selected-level criteria.
+Professional level means higher evidence thresholds across the full 0–100 scale. A 90s score should be hard to achieve, appearing only when the tape shows exceptional Professional evidence across the relevant brief, performance, technical, role/material and selected-level criteria.
 
 When selected level is Professional and score language is visible, the AI must explain:
 
@@ -444,9 +439,9 @@ Preserve: [...]
 
 ## AI module question map
 
-Before implementing or changing report output, identify which AI module questions are needed.
+Before changing report output, identify the AI module questions needed.
 
-The AI should be explicitly asked to populate:
+The AI must be explicitly asked to populate:
 
 - scoring basis;
 - performer level calibration;
@@ -462,14 +457,14 @@ The AI should be explicitly asked to populate:
 - technique-library commentary;
 - timestamped commentary;
 - scores / calibration where enabled;
-- level-relative 0–100 score calibration where scores are visible;
+- level-relative 0–100 score calibration where visible;
 - comparison where enabled;
 - active take slot/version context where comparison is enabled;
 - next action;
 - do-not-overfix;
 - not-assessable limitations.
 
-If a UI report section exists, there must be an AI question designed to populate it.
+If a UI report section exists, an AI question must be designed to populate it.
 
 ---
 
@@ -477,7 +472,7 @@ If a UI report section exists, there must be an AI question designed to populate
 
 Every visible report section must have a corresponding AI prompt question.
 
-If a developer adds or changes a UI report module, they must also define:
+If a developer adds or changes a UI report module, they must define:
 
 - the AI question that populates it;
 - the expected structured output;
@@ -485,7 +480,7 @@ If a developer adds or changes a UI report module, they must also define:
 - the repair prompt;
 - how the output is routed to the UI.
 
-Do not add report UI sections that are primarily populated by code filler.
+Do not add report UI sections primarily populated by code filler.
 
 ---
 
@@ -503,7 +498,7 @@ The AI should provide:
 - prioritisation;
 - strengths;
 - optional polish;
-- level-relative 0–100 score calibration where scores are visible;
+- level-relative 0–100 score calibration where visible;
 - comparison judgement across active take versions;
 - take slot/version awareness;
 - timestamped notes;
@@ -528,7 +523,7 @@ The code should provide:
 - per-take and per-comparison admin status;
 - QA artefacts.
 
-The code must not invent professional feedback such as strengths, technique notes, optional polish, level reasoning, role/material judgement, score explanation or readiness rationale.
+The code must not invent professional feedback â strengths, technique notes, optional polish, level reasoning, role/material judgement, score explanation or readiness rationale.
 
 ---
 
@@ -593,7 +588,7 @@ Instead:
 Examples:
 
 - If strengths are generic, ask the AI for specific strengths from the tape.
-- If technique commentary is missing despite visible evidence, ask the AI for technique commentary.
+- If technique commentary is missing despite visible evidence, ask the AI for it.
 - If next action is empty, ask the AI for a submit checklist or retake plan.
 - If comparison is present but no reasoning exists, ask the AI to compare the active takes.
 - If comparison does not identify compared take versions, repair the comparison context before rendering.
@@ -609,9 +604,9 @@ Generic fallback copy must not be the primary content of any report module.
 
 ## No AI, no report brain
 
-If AI analysis fails, the system may produce a limited report only if it clearly explains what failed and what can still be assessed.
+If AI analysis fails, the system may produce a limited report only if it clearly states what failed and what can still be assessed.
 
-The system must not pretend that deterministic fallback copy is professional analysis.
+The system must not pretend deterministic fallback copy is professional analysis.
 
 If the AI cannot produce a module after repair prompting, the report should say:
 
@@ -619,15 +614,13 @@ If the AI cannot produce a module after repair prompting, the report should say:
 - what evidence is missing;
 - what the performer can do next.
 
-It should not produce a thin shell.
-
 ---
 
 ## Score terminology alignment
 
 Visible scores must align with report terminology.
 
-A score is not just a number. It must map to:
+A score must map to:
 
 - scoring basis;
 - selected performer level;
@@ -675,33 +668,35 @@ Default score-band language must be mode-aware.
 
 With a supplied brief:
 
-| Score band | Typical report meaning                                                                                                                                                    |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0–39       | Not submission-ready / not assessable because serious missing evidence, technical blocker or incomplete required package prevents reliable judgement.                     |
-| 40–54      | Retake required if possible because a major brief, performance or presentation issue blocks submission readiness.                                                         |
-| 55–69      | Review carefully because some usable material exists, but there is meaningful brief, performance, technical or uncertainty risk.                                          |
-| 70–84      | Submit if deadline is close because the tape is submission-supporting, with manageable caveats or optional polish.                                                        |
-| 85–100     | Strong submission / submit because the tape is brief-complete or mostly brief-complete, assessable, strong for selected level and not blocked by a mandatory brief issue. |
+<!-- prettier-ignore -->
+| Score band | Typical report meaning |
+| --- | --- |
+| 0–39 | Not submission-ready / not assessable: serious missing evidence, a technical blocker or an incomplete required package prevents reliable judgement. |
+| 40–54 | Retake required if possible: a major brief, performance or presentation issue blocks submission readiness. |
+| 55–69 | Review carefully: usable material exists, but meaningful brief, performance, technical or uncertainty risk remains. |
+| 70–84 | Submit if deadline is close: the tape is submission-supporting, with manageable caveats or optional polish. |
+| 85–100 | Strong submission / submit: brief-complete or mostly brief-complete, assessable, strong for selected level, not blocked by a mandatory brief issue. |
 
 Without a supplied brief:
 
-| Score band | Typical report meaning                                                                                                           |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 0–39       | Not reliably assessable or not ready on observable performance/setup evidence.                                                   |
-| 40–54      | Retake recommended because a major observable performance, task-readability or technical issue limits usefulness.                |
-| 55–69      | Review carefully because the tape has usable elements but meaningful observable risk, uncertainty or selected-level gap remains. |
-| 70–84      | Baseline submission-supporting for the selected level, assuming the unseen brief does not add requirements this tape fails.      |
-| 85–100     | Strong baseline tape for the selected level, based on observable performance and setup only. Brief achievement is not assessed.  |
+<!-- prettier-ignore -->
+| Score band | Typical report meaning |
+| --- | --- |
+| 0–39 | Not reliably assessable or not ready on observable performance/setup evidence. |
+| 40–54 | Retake recommended: a major observable performance, task-readability or technical issue limits usefulness. |
+| 55–69 | Review carefully: usable elements exist but meaningful observable risk, uncertainty or selected-level gap remains. |
+| 70–84 | Baseline submission-supporting for the selected level, assuming the unseen brief adds no requirements this tape fails. |
+| 85–100 | Strong baseline tape for the selected level, on observable performance and setup only. Brief achievement is not assessed. |
 
-The verdict is not determined by score alone. Required brief failures, missing material, non-assessability or critical technical issues can override the numerical band.
+The verdict is not score alone: required brief failures, missing material, non-assessability or critical technical issues can override the band.
 
 ---
 
 ## Score and comparison display modes
 
-Numeric score and comparison chips may remain visible in authenticated/operator/test mode. Comparison chips apply to active take versions unless an admin/operator explicitly requests a historical comparison.
+Numeric score and comparison chips may remain visible in authenticated/operator/test mode. Comparison chips apply to active take versions unless an operator explicitly requests a historical one.
 
-If visible, they must be treated as diagnostic or authenticated report information, not production/customer release approval.
+If visible, treat them as diagnostic or authenticated report information, not production/customer release approval.
 
 The system must distinguish:
 
@@ -711,7 +706,7 @@ The system must distinguish:
 - comparison chip visibility;
 - comparison recommendation approval.
 
-Visible score/comparison chips do not by themselves mean public scoring or comparison recommendation is production-approved.
+Visible chips do not themselves mean public scoring or comparison recommendation is production-approved.
 
 ---
 
@@ -729,11 +724,11 @@ Do not implement arbitrary active take counts unless `README.md` is updated.
 
 Each take slot may be replaced by a newly uploaded self-tape.
 
-Replacing a take must create a new take version and a new analysis/report run. Do not silently overwrite the previous take report or QA proof.
+Replacing a take must create a new take version and analysis/report run; do not silently overwrite the previous take report or QA proof.
 
 Ordinary comparison uses the active version of each available take slot.
 
-If a take is replaced, any comparison that used the previous active version is stale and must be regenerated or clearly marked stale.
+If a take is replaced, any comparison using the previous active version is stale and must be regenerated or clearly marked stale.
 
 Each take version must produce:
 
@@ -777,7 +772,7 @@ A slice fails if:
 
 The system must explicitly handle same-video uploads.
 
-A same-video upload means the submitted media appears to be the same underlying self-tape as a previous take, based on available signals such as:
+A same-video upload means the submitted media appears to be the same self-tape as a previous take, based on signals such as:
 
 - file identity;
 - file size;
@@ -787,7 +782,7 @@ A same-video upload means the submitted media appears to be the same underlying 
 - operator confirmation;
 - matching brief / audition context.
 
-Same-video handling matters because the system must not treat an accidental duplicate as a genuinely new performance take.
+Same-video handling matters: the system must not treat an accidental duplicate as a genuinely new performance take.
 
 ### Same-video scenarios
 
@@ -836,7 +831,7 @@ Operator-confirmed fields may include:
 - changed_level_same_media;
 - changed_role_context_same_media.
 
-If the system is uncertain, it must not guess. It should mark same-video status as uncertain and ask for operator confirmation.
+If uncertain, the system must not guess: mark same-video status as uncertain and ask for operator confirmation.
 
 ---
 
@@ -857,8 +852,6 @@ A report fails if, despite available brief and media evidence, it collapses to g
 - an empty next-take plan;
 - “report polish unavailable” as a reason to withhold useful guidance.
 
-Thin-shell reports are unacceptable.
-
 ---
 
 ## Timestamped commentary
@@ -874,7 +867,7 @@ Timestamped commentary should identify:
 - technical/framing/audio issues;
 - performance moments to refine.
 
-If timestamps are unavailable, the report must still provide useful component-level commentary.
+If timestamps are unavailable, the report must still give useful component-level commentary.
 
 ---
 
@@ -1129,7 +1122,7 @@ Preferred artefacts include:
 - scoring context;
 - level calibration;
 - role/material calibration where applicable;
-- level-relative score calibration where scores are visible;
+- level-relative score calibration where visible;
 - per-take report/QA status where applicable;
 - comparison run status where applicable;
 - report model;
@@ -1141,7 +1134,7 @@ Preferred artefacts include:
 
 ## Operator-tested assumptions
 
-Any assumption that affects canary acceptance must be confirmed by the operator.
+Any assumption affecting canary acceptance must be confirmed by the operator.
 
 Examples:
 
@@ -1164,13 +1157,13 @@ Examples:
 
 If an assumption is uncertain, ask for operator confirmation or mark it as uncertain.
 
-Operator feedback should become a fixture, regression test or prompt improvement.
+Operator feedback should become a fixture, test or prompt improvement.
 
 ---
 
 ## Minimal env/config principle
 
-Do not add environment variables for ordinary product behaviour. The maximum of three active take slots is a product invariant, not an environment variable.
+Do not add environment variables for ordinary product behaviour. The three-active-take-slot maximum is a product invariant, not an env var.
 
 Use env vars only for secrets and deployment/runtime basics.
 
@@ -1190,7 +1183,7 @@ Ordinary product behaviour that should not become env-var sprawl includes:
 
 ## Report-value first sequence
 
-When rebuilding S10, work in this order, allowing in-flight work to be amended rather than restarted:
+When rebuilding S10, work in this order, amending in-flight work, not restarting:
 
 1. Define AI questions for each report module.
 2. Add performer-level calibration questions and schema.
