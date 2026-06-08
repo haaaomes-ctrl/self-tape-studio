@@ -520,15 +520,18 @@ export function V2ReportViewLegacy({
       ? safeStr(s10Recommendation?.score_explanation)
       : null
     : safeStr(report.insight);
+  // Δ6 Slice 2: S10 verdict reads the canonical deterministic decision, gated by the unchanged
+  // s10SubmissionGuidanceAuthorized predicate. recommendation.decision stays = A.
+  const s10CanonicalDecision = safeStr(safeObj(s10?.canonical_verdict)?.decision);
   const verdict = isS10
     ? s10SubmissionGuidanceAuthorized
-      ? sentenceLabelize(s10Recommendation?.decision)
+      ? sentenceLabelize(s10CanonicalDecision)
       : null
     : safeStr(report.verdict);
   const reliability = isS10 ? null : safeStr(report.reliability);
   const reliabilityReason = isS10 ? null : safeStr(report.reliability_reason);
   const legacyFixFirst = safeStr(report.fix_first);
-  const s10Decision = s10SubmissionGuidanceAuthorized ? safeStr(s10Recommendation?.decision) : null;
+  const s10Decision = s10SubmissionGuidanceAuthorized ? s10CanonicalDecision : null;
   const s10HasBlockingDecision =
     !!s10Decision && !["submit", "submit_if_deadline_is_close"].includes(s10Decision);
   const s10SubmissionRiskSource = safeObj(s10SectionSourceMap?.submission_risk);

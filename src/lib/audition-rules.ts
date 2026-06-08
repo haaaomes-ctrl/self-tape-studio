@@ -700,6 +700,43 @@ export function labelForScore(score: number, level: AuditionLevel): VerdictLabel
   return "Not ready yet";
 }
 
+/**
+ * Δ6 Slice 2 — the canonical VERDICT decision (render vocabulary), derived deterministically
+ * from the persisted SubmissionVerdict (label + capped + blocked, all canonical after Slice 1's
+ * N4a made the number deterministic). The A-side recommendation.decision is NOT used — this
+ * removes the last A-as-authority path on the visible verdict, mirroring how N4a removed it
+ * from the number.
+ *
+ * Ratified mapping (operator decision, honesty principle):
+ *   blocked                                          → retake_required_if_possible
+ *   "Strong for this level" | "Ready to submit", !capped → submit
+ *   "Strong for this level" | "Ready to submit",  capped → review_carefully
+ *       (clears the bar but a cap/flag fired — "submittable, but check it")
+ *   "Worth another take" | "Not ready yet" | unknown → retake_required_if_possible
+ *       ("Worth another take" honestly says a focused retake will lift it above the bar —
+ *        softening it to review_carefully would reintroduce the flattering-direction error.)
+ *
+ * submit_if_deadline_is_close is NEVER emitted: it is an A-side hedge the deterministic system
+ * never makes (the AI cannot know the performer's deadline).
+ */
+export type CanonicalVerdictDecision =
+  | "submit"
+  | "review_carefully"
+  | "retake_required_if_possible";
+
+export function canonicalVerdictDecision(input: {
+  label: VerdictLabel | string;
+  capped: boolean;
+  blocked: boolean;
+}): CanonicalVerdictDecision {
+  if (input.blocked) return "retake_required_if_possible";
+  if (input.label === "Strong for this level" || input.label === "Ready to submit") {
+    return input.capped ? "review_carefully" : "submit";
+  }
+  // "Worth another take", "Not ready yet", or any unrecognised label → honest retake.
+  return "retake_required_if_possible";
+}
+
 // -------------------- Server-side score recomputation --------------------
 
 export type CategoryScores = Partial<Record<WeightedCategory, number | null | undefined>>;

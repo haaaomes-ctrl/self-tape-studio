@@ -44,6 +44,18 @@ export const s10CanaryALegacyFalsePositiveRawReport = {
   casting_headline: "Retake required if possible: the required Side 1 is missing.",
   verdict: "Retake required if possible",
   verdict_final: "Retake required if possible",
+  // Δ6 Slice 2: the persisted deterministic verdict (computeSubmissionVerdict at canonical
+  // D=54 with the brief blocker — Side 1 absent, brief_adherence 25 < 45 → label "Not ready
+  // yet", capped + blocked). Maps to canonical decision "retake_required_if_possible".
+  // reason is performer-safe (the raw internal "Blocked: …" phrasing is on the forbidden
+  // route-content list); blocked/capped/label carry the deterministic state → retake.
+  submission_verdict: {
+    label: "Not ready yet",
+    reason:
+      "The required Side 1 acting scene is missing — record it and shoot a fresh take before submitting.",
+    blocked: true,
+    capped: true,
+  },
   casting_insight: "Required Side 1 acting scene is missing and the song/package is incomplete.",
   scores: {
     vocal: 72,
