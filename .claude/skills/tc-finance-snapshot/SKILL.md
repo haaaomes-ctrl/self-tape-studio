@@ -24,7 +24,7 @@ names below are the contract the queries run against.
 > agent's tool grant omitting every mutation tool and (b) this skill's SELECT-only rule —
 > a contract, not yet a structural guarantee. The structural fix (a dedicated read-only
 > Postgres role with only `USAGE` + `SELECT` on the finance views, or running the Supabase
-> MCP in `--read-only` mode) is a follow-up BA item; see `knowledge/60-finance/README.md`.
+> MCP in `--read-only` mode) is a follow-up BA item; see `knowledge/60-finance/finance-area-readme.md`.
 
 ## Grounded schema (verified against the live schema, 2026-06-08)
 
@@ -237,7 +237,7 @@ Body sections (downside first):
 - `## Data quality` — freshness (query 9), empty/stale views, synthetic-usage caveat.
 - `## Recommendations` — proposed BA items for the SRO (what / why / evidence), never
   actions taken.
-- `## Links` — `[[<prior-snapshot-id>]]` if one exists; `60-finance/README` for the area.
+- `## Links` — `[[<prior-snapshot-id>]]` if one exists; `[[finance-area-readme]]` for the area.
 
 Each figure line carries its source, e.g.
 `Break-even gap: £275.00 (cfo_monthly_burn_dashboard.break_even_gap_gbp, 2026-06; planning-fixed component only)`.

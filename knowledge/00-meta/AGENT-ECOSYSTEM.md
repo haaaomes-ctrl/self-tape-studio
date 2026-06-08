@@ -23,7 +23,7 @@
 | Spine                 | none directly        | Proposals (Architect → ADRs; BA → requirements appendix), via PR |
 | Corpus (`knowledge/`) | all reasoning agents | `tc-vault-note`, `tc-handoff`                                    |
 
-**Read-boundary (CFO).** The CFO adds one new access path: a **read-only** path to the owned Supabase finance data — the DS-16 AI-cost baseline and DS-17 CFO dashboard views (plus DS-04/06/13), **SELECT/views only**. It sits on top of that finance data and is **advisory**: it writes only finance snapshots to the corpus (`knowledge/60-finance/`, via `tc-finance-snapshot`) and never mutates money, pricing, Stripe or config. Finance recommendations go to the SRO and become BA items built by the engineer pair via PR. Read-only is enforced today by the agent's tool grant + the skill's SELECT-only rule (a contract); the structural read-only DB role is a tracked follow-up (`60-finance/README.md`).
+**Read-boundary (CFO).** The CFO adds one new access path: a **read-only** path to the owned Supabase finance data — the DS-16 AI-cost baseline and DS-17 CFO dashboard views (plus DS-04/06/13), **SELECT/views only**. It sits on top of that finance data and is **advisory**: it writes only finance snapshots to the corpus (`knowledge/60-finance/`, via `tc-finance-snapshot`) and never mutates money, pricing, Stripe or config. Finance recommendations go to the SRO and become BA items built by the engineer pair via PR. Read-only is enforced today by the agent's tool grant + the skill's SELECT-only rule (a contract); the structural read-only DB role is a tracked follow-up (`60-finance/finance-area-readme.md`).
 
 ## Role contracts
 
