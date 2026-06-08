@@ -36,9 +36,10 @@ analysis-worker/.dry/
 analysis-worker/analysis-worker/
 
 # Claude Code local state (settings, worktrees) — never commit.
-# Skills are tracked: .claude/* ignores direct children, !.claude/skills/ re-includes skills.
+# Skills and agents are tracked: .claude/* ignores direct children, the !lines re-include them.
 .claude/*
 !.claude/skills/
+!.claude/agents/
 
 # Local QA artefact output from test runs. Intentional committed fixtures
 # (e.g. qa-artifacts/GF-01-*) remain tracked; use `git add -f` to add new ones.
