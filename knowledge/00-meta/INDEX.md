@@ -9,6 +9,11 @@
 - **current** — [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] (high)
 - **current** — [[run-t1-evidence-binding-gate-2026-06-07]] (high)
 
+### ADR-0005
+
+- **current** — [[cfo-advisory-role-read-only]] (high)
+- **current** — [[finance-area-readme]] (high)
+
 ### ADR-0006
 
 - **current** — [[consent-copy-ai-disclaimer-revert]] (high)
@@ -22,6 +27,11 @@
 - **current** — [[arch-d3-evidence-binding-gate-handoff-2026-06-07]] (high)
 - **current** — [[session-state-claude-code-2026-06-07-pre-compaction]] (high)
 - **current** — [[arch-d3-rescope-division-of-authority]] (high)
+
+### AGENTS §Minimal env/config principle
+
+- **current** — [[cfo-advisory-role-read-only]] (high)
+- **current** — [[finance-area-readme]] (high)
 
 ### AGENTS §Performer level calibration
 
@@ -144,7 +154,6 @@
 - AGENTS §Golden fixtures — no current/decided note
 - AGENTS §QA artefacts — no current/decided note
 - AGENTS §Operator-tested assumptions — no current/decided note
-- AGENTS §Minimal env/config principle — no current/decided note
 - AGENTS §Report-value first sequence — no current/decided note
 - AGENTS §Definition of done — no current/decided note
 - AGENTS §Forbidden failure modes — no current/decided note
@@ -195,7 +204,6 @@
 - ADR-0001 — no current/decided note
 - ADR-0002 — no current/decided note
 - ADR-0004 — no current/decided note
-- ADR-0005 — no current/decided note
 - ADR-0007 — no current/decided note
 
 ## Orphan notes (no spine anchor)
@@ -208,5 +216,5 @@
 
 ## Counts
 
-- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 13/3/0/0
-- Gaps (##-level): 115 | Orphans: 0 | Unresolved: 0
+- Headings scanned: 397 (+ 8 ADRs) | Notes (current/decided/exploratory/superseded): 15/3/0/0
+- Gaps (##-level): 113 | Orphans: 0 | Unresolved: 0
