@@ -8,6 +8,7 @@ import type {
   ReadinessAndScoreJudgement,
   S10FixHierarchy,
   S10NextActionPlan,
+  S10NoteCategory,
   S10ProfessionalCritique,
   S10TechniqueCommentary,
   S10TimestampedCommentary,
@@ -27,6 +28,7 @@ import {
   type EvidencePass,
   type ObservedTapeSequence,
 } from "./evidence-pass.server";
+import { metric } from "./metrics.server";
 
 type Confidence = "low" | "medium" | "high";
 
@@ -58,6 +60,26 @@ const TIMESTAMP_PRECISIONS: S10TimestampPrecision[] = [
   "order_only",
   "unavailable",
 ];
+
+// Δ6 P5 (DISPLAY-ONLY) — per-note valence and linked scoring category. These
+// never feed any score/cap/verdict/gate computation; they only colour and label
+// the note in the report UI.
+const VALENCES = ["strength", "neutral", "improvement"] as const;
+const NOTE_CATEGORIES = [
+  "technical",
+  "audio",
+  "vocal",
+  "acting",
+  "brief_adherence",
+  "professional_presentation",
+] as const;
+
+// Absence or any invalid value → null → no category tag (no default category).
+function normaliseNoteCategory(value: unknown): S10NoteCategory | null {
+  return typeof value === "string" && (NOTE_CATEGORIES as readonly string[]).includes(value)
+    ? (value as S10NoteCategory)
+    : null;
+}
 
 const SECTIONS: S10TimestampedSection[] = [
   "brief_requirement",
@@ -276,6 +298,26 @@ function parseNote(value: unknown, index: number): S10TimestampedNote | null {
   const section = oneOf(value.section, SECTIONS, "observed_component");
   const componentType = oneOf(value.component_type, COMPONENT_TYPES, "unknown");
   const componentStatus = oneOf(value.component_status, COMPONENT_STATUSES, "uncertain");
+  // Hoisted (needed by the Δ6 P5 reconciliation guard below before the return).
+  const linkedFixIds = stringList(value.linked_fix_ids);
+  const linkedStrengthIds = stringList(value.linked_strength_ids);
+  const isMissingComponentNote = value.is_missing_component_note === true;
+  // Δ6 P5 (DISPLAY-ONLY): per-note valence + deterministic reconciliation guard.
+  // A note authored "strength" that is actually a fix or a missing-component note,
+  // with no strength link, is self-contradicting → correct it to "improvement".
+  // A note linked to BOTH a strength and a fix is genuinely mixed → leave it.
+  let valence = oneOf(value.valence, VALENCES, "neutral");
+  if (
+    valence === "strength" &&
+    (isMissingComponentNote || linkedFixIds.length > 0) &&
+    linkedStrengthIds.length === 0
+  ) {
+    valence = "improvement";
+    metric("s10_valence_reconciled_to_improvement", {
+      reason: "strength_valence_on_fix_or_missing_note",
+    });
+  }
+  const linkedCategory = normaliseNoteCategory(value.linked_category);
   return {
     id: text(value.id, `s10_ts_${index + 1}`),
     timecode,
@@ -293,8 +335,8 @@ function parseNote(value: unknown, index: number): S10TimestampedNote | null {
     linked_observed_sequence_ids: stringList(value.linked_observed_sequence_ids),
     linked_component_verification_ids: stringList(value.linked_component_verification_ids),
     linked_matrix_result_ids: stringList(value.linked_matrix_result_ids),
-    linked_fix_ids: stringList(value.linked_fix_ids),
-    linked_strength_ids: stringList(value.linked_strength_ids),
+    linked_fix_ids: linkedFixIds,
+    linked_strength_ids: linkedStrengthIds,
     linked_technique_observation_ids: stringList(value.linked_technique_observation_ids),
     component_type: componentType,
     component_status: componentStatus,
@@ -308,10 +350,12 @@ function parseNote(value: unknown, index: number): S10TimestampedNote | null {
     ),
     legacy_source_used: value.legacy_source_used === true,
     legacy_source_path: text(value.legacy_source_path) || null,
-    is_missing_component_note: value.is_missing_component_note === true,
+    is_missing_component_note: isMissingComponentNote,
     is_projection_safe: value.is_projection_safe === true,
     projection_block_reason: text(value.projection_block_reason) || null,
     confidence: oneOf(value.confidence, ["high", "medium", "low"] as const, "medium"),
+    valence,
+    linked_category: linkedCategory,
     is_generic_fallback: false,
   };
 }
@@ -355,6 +399,9 @@ function createMissingActingNote(matrix: BriefAchievementMatrix): S10Timestamped
     is_projection_safe: false,
     projection_block_reason: "missing component notes must not be projected with fake timestamps",
     confidence: "high",
+    // Δ6 P5 (DISPLAY-ONLY): a missing-component note is an area to work on.
+    valence: "improvement",
+    linked_category: null,
     is_generic_fallback: false,
   };
 }
@@ -398,6 +445,9 @@ function createPlaybackCheckNote(matrix: BriefAchievementMatrix): S10Timestamped
     is_projection_safe: false,
     projection_block_reason: "order-only playback check has no safe legacy timestamp",
     confidence: "medium",
+    // Δ6 P5 (DISPLAY-ONLY): a plain process/playback check — a neutral observation.
+    valence: "neutral",
+    linked_category: null,
     is_generic_fallback: false,
   };
 }
@@ -536,7 +586,8 @@ function normaliseNote(
       affected_field: `s10_timestamped_commentary.notes[${index}]`,
       original_value: combined,
       corrected_value: "removed",
-      reason: "S10 component verification confirms the required acting scene, so stale missing-Side-1 notes must not render.",
+      reason:
+        "S10 component verification confirms the required acting scene, so stale missing-Side-1 notes must not render.",
       source: out.legacy_source_used ? "legacy_timestamped_notes" : "s10_ai_judgement",
     });
     return null;

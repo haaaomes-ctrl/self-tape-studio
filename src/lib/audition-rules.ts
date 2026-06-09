@@ -1541,6 +1541,18 @@ export type S10TimestampedWarning = {
   internal_only: true;
 };
 
+// Δ6 P5 — AI-authored per-note valence + linked scoring category on a
+// timestamped note. DISPLAY-ONLY: these never feed any score, cap, verdict or
+// gate computation; they only colour and label the note in the report UI.
+export type S10NoteValence = "strength" | "neutral" | "improvement";
+export type S10NoteCategory =
+  | "technical"
+  | "audio"
+  | "vocal"
+  | "acting"
+  | "brief_adherence"
+  | "professional_presentation";
+
 export type S10TimestampedNote = {
   id: string;
   timecode: string | null;
@@ -1573,6 +1585,10 @@ export type S10TimestampedNote = {
   is_projection_safe: boolean;
   projection_block_reason?: string | null;
   confidence: "high" | "medium" | "low";
+  // Δ6 P5 (DISPLAY-ONLY): valence colours the note; linked_category tags the
+  // scoring category the moment bears on. Neither moves any score or verdict.
+  valence: S10NoteValence;
+  linked_category: S10NoteCategory | null;
   is_generic_fallback: false;
 };
 
