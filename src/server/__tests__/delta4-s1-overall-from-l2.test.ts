@@ -28,6 +28,7 @@ function row(category_id: CategoryScore["category_id"], score: number | null): C
     close_gap: "",
     confidence: "high",
     blocked_or_not_assessable_reason: null,
+    supported_by: [],
   };
 }
 

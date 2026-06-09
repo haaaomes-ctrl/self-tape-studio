@@ -159,6 +159,7 @@ import {
 import { resolveS10ObservationContext } from "./s10-observation-context.server";
 import {
   applyObservationIdIntegrityGuard,
+  buildGuardedObservationIdSet,
   buildTwoStepEvidenceContext,
 } from "./s10-observation-pass.server";
 import {
@@ -1532,6 +1533,12 @@ export const REPORT_TOOL = {
                   close_gap: { type: "string" },
                   confidence: { type: "string", enum: ["low", "medium", "high"] },
                   blocked_or_not_assessable_reason: { type: ["string", "null"] },
+                  supported_by: {
+                    type: "array",
+                    items: { type: "string" },
+                    description:
+                      "Observation IDs from Step 1 that justify this score — observed_tape_sequence[].id and/or component_verifications[].requirement_id. Leave empty ONLY when the dimension is not assessable (score null) or blocked.",
+                  },
                 },
                 required: [
                   "category_id",
@@ -2324,6 +2331,7 @@ Single-pass S10 recovery rules:
 - Treat s10_timestamped_commentary as authoritative for timestamped/time-banded commentary. Existing timestamped_notes is a compatibility projection only. Do not directly repopulate timestamped_notes from raw_report.timestamped_notes or legacy prose. Missing components may receive "Not observed" notes without fake timecodes; partial song notes must say observed portion only.
 - Fill the existing submit_audition_report fields with AI-authored module answers: overall readiness, score/chip, verdict, prioritised fixes, why this score/category_rationale, category scores, component breakdown, strengths, improvements, timestamped notes, submission risk, role fit, presentation notes and next action.
 - Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
+- For each category_scores entry, populate supported_by with the Step 1 observation IDs that justify the score: the observed_tape_sequence[].id and/or component_verifications[].requirement_id values that the mark rests on. For a not-assessable or blocked dimension (score null or blocked_or_not_assessable_reason set), leave supported_by empty.
 - Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
 - Never fill missing modules with generic fallback copy. If a module is unavailable, say exactly what is not assessable and what the performer should record/check next.
 
@@ -5473,6 +5481,58 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
         repair_prompt_status: readinessSemantics.judgement.repair_prompt_status,
         warning_count: readinessSemantics.warnings.length,
       });
+    }
+
+    // ---- Δ5-S2: per-dimension evidence-anchor orphan-check ----
+    // `report.readiness_score_judgement.category_scores[].supported_by` cites
+    // Step-1 observation IDs. Validate each anchor against the GUARDED Step-1 ID
+    // set (the guard ran at the resolver above, so s10ObservationContext carries
+    // stabilised, unique IDs). Orphan anchors (no matching observation) are
+    // dropped; a non-exempt (scored, non-blocked) mark that ends with no valid
+    // anchor is flagged. The check mutates ONLY supported_by — never a score —
+    // so the Δ4-S1 flat-score projection above (which reads only
+    // category_id/score) is unaffected regardless of ordering. We clean the
+    // NORMALISED judgement (post applyReadinessScoreSemantics) so the persisted
+    // category_scores carry only valid anchors; report.readiness_score_judgement
+    // and readinessSemantics.judgement are the same object reference, so the
+    // downstream fix-hierarchy consumer sees the cleaned anchors too.
+    //
+    // A6 (guard ordering): the orphan-check validates against the GUARDED set,
+    // which is safe regardless of guard placement. Moving the guard ahead of
+    // Step-2 marking would require mutating the Step-1 IDs on `twoStepEvidence`,
+    // which the resolver-truth/evidence-state QA artefacts, locked-field and
+    // unsupported-claim enforcement all key on — i.e. the partial/fragile
+    // Step-1→Step-2 handoff the plan reserves for Δ5-S3. So the guard move is
+    // DEFERRED to S3; the orphan-check never persists a broken ref, and in the
+    // rare pre-guard-rename case it can only over-drop (never invent).
+    {
+      const { checkSupportedByAnchors } = await import("./score-projection.server");
+      const guardedObservationIds = buildGuardedObservationIdSet({
+        observed_tape_sequence: s10ObservationContext.observed_tape_sequence,
+        component_verifications: s10ObservationContext.component_verifications,
+      });
+      const anchorCheck = checkSupportedByAnchors(
+        readinessSemantics.judgement.category_scores,
+        guardedObservationIds,
+      );
+      readinessSemantics.judgement.category_scores = anchorCheck.categoryScores;
+      if (anchorCheck.orphansDropped > 0) {
+        metric("s10_supported_by_orphan_dropped", {
+          take_id: takeId,
+          value: anchorCheck.orphansDropped,
+        });
+      }
+      if (anchorCheck.missingForScoredDimension > 0) {
+        console.warn("[take-pipeline] s10_supported_by_missing_for_scored_dimension", {
+          take_id: takeId,
+          missing_count: anchorCheck.missingForScoredDimension,
+          category_ids: anchorCheck.missingCategoryIds,
+        });
+        metric("s10_supported_by_missing_for_scored_dimension", {
+          take_id: takeId,
+          value: anchorCheck.missingForScoredDimension,
+        });
+      }
     }
 
     // ---- S10.6 fix hierarchy / next action ----

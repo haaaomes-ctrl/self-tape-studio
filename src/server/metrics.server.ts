@@ -154,7 +154,16 @@ export type MetricName =
   // anomalous S10 path where marked category_scores exist (so a projection was
   // produced) yet the deterministic overall D came back 0/NaN. A contract
   // anomaly — the model's holistic overall A is NOT substituted.
-  | "s10_deterministic_overall_missing";
+  | "s10_deterministic_overall_missing"
+  // Δ5-S2 per-dimension evidence-anchor binding (supported_by). Deterministic
+  // orphan-check, run after marking against the GUARDED Step-1 observation ID
+  // set. Fires only when ≥1 orphan anchor (citing no real Step-1 observation)
+  // was dropped from a category score's supported_by.
+  | "s10_supported_by_orphan_dropped"
+  // Δ5-S2: fires only when ≥1 NON-exempt (scored, non-blocked) category mark
+  // ended with no valid supporting Step-1 anchor — visible incomplete adoption,
+  // not a hard failure.
+  | "s10_supported_by_missing_for_scored_dimension";
 
 export interface MetricFields {
   take_id?: string | null;

@@ -1180,6 +1180,12 @@ export type CategoryScore = {
   close_gap: string;
   confidence: "low" | "medium" | "high";
   blocked_or_not_assessable_reason: string | null;
+  // Δ5-S2 per-dimension evidence anchor: Step-1 observation IDs
+  // (observed_tape_sequence[].id and/or component_verifications[].requirement_id)
+  // that justify this mark. Always present — the normaliser defaults it to []
+  // and the deterministic orphan-check drops any ID with no matching guarded
+  // Step-1 observation. Empty is legitimate for a not-assessable/blocked mark.
+  supported_by: string[];
 };
 
 export type ComponentScore = {

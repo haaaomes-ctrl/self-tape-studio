@@ -155,3 +155,80 @@ export function resolveFinalisedOverall(input: {
     usedWeights: recomputed.usedWeights,
   };
 }
+
+/** Result of the Δ5-S2 per-dimension evidence-anchor orphan-check. */
+export type SupportedByAnchorCheckResult = {
+  /**
+   * The input category scores with each `supported_by` filtered to valid
+   * (guarded) Step-1 observation IDs. ONLY `supported_by` is touched — `score`
+   * and every other field are preserved, so the Δ4-S1 flat-score projection
+   * (which reads only `category_id`/`score`) is unaffected.
+   */
+  categoryScores: CategoryScore[];
+  /** Total orphan IDs (citing no guarded Step-1 observation) dropped. */
+  orphansDropped: number;
+  /**
+   * Count of NON-exempt marks (scored AND not blocked) that ended with no valid
+   * anchor. Exempt = score == null OR blocked_or_not_assessable_reason set.
+   */
+  missingForScoredDimension: number;
+  /** category_ids of the non-exempt marks flagged as missing an anchor. */
+  missingCategoryIds: string[];
+};
+
+/**
+ * Δ5-S2 — deterministic per-dimension evidence-anchor orphan-check.
+ *
+ * For each marked category score:
+ *  - filter `supported_by` to IDs present in the GUARDED Step-1 observation ID
+ *    set (built via `buildGuardedObservationIdSet` AFTER the integrity guard);
+ *    drop any orphan (no matching observation) and count it;
+ *  - a mark is EXEMPT from needing an anchor iff `score == null` OR
+ *    `blocked_or_not_assessable_reason` is a non-empty string;
+ *  - a NON-exempt mark whose filtered `supported_by` is empty is FLAGGED.
+ *
+ * PURE: no logging, metrics or I/O. The pipeline emits metrics off the returned
+ * counts. Returns the cleaned category scores so persisted/derived surfaces
+ * carry only valid anchors. Mutates ONLY `supported_by` — never `score` or any
+ * other field — so it cannot disturb the Δ4-S1 dimension projection.
+ */
+export function checkSupportedByAnchors(
+  categoryScores: ReadonlyArray<CategoryScore> | null | undefined,
+  guardedObservationIds: ReadonlySet<string>,
+): SupportedByAnchorCheckResult {
+  const rows = categoryScores ?? [];
+  let orphansDropped = 0;
+  let missingForScoredDimension = 0;
+  const missingCategoryIds: string[] = [];
+
+  const cleaned = rows.map((row) => {
+    const wasArray = Array.isArray(row.supported_by);
+    const original = wasArray ? row.supported_by : [];
+    const filtered = original.filter((id) => guardedObservationIds.has(id));
+    orphansDropped += original.length - filtered.length;
+
+    const exempt =
+      row.score == null ||
+      (typeof row.blocked_or_not_assessable_reason === "string" &&
+        row.blocked_or_not_assessable_reason.trim().length > 0);
+    if (!exempt && filtered.length === 0) {
+      missingForScoredDimension += 1;
+      missingCategoryIds.push(row.category_id);
+    }
+
+    // Touch supported_by only; preserve the row by reference when nothing
+    // changed AND it was already a proper array (so the output always carries a
+    // real string[]). Defensive: a row whose supported_by was absent/non-array
+    // is normalised to [].
+    return wasArray && filtered.length === original.length
+      ? row
+      : { ...row, supported_by: filtered };
+  });
+
+  return {
+    categoryScores: cleaned,
+    orphansDropped,
+    missingForScoredDimension,
+    missingCategoryIds,
+  };
+}

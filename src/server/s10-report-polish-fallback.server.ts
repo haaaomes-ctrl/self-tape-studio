@@ -642,6 +642,11 @@ function buildCategoryScores(input: {
       categoryId === "brief_adherence" && input.mode === "baseline"
         ? "No supplied brief was available; brief achievement is not assessed."
         : null,
+    // Δ5-S2: deterministic fallback rows carry no model-cited anchors; default
+    // to [] so supported_by is always present. The orphan-check exempts the
+    // blocked baseline brief_adherence row; non-exempt synthesised rows with no
+    // anchor are surfaced by the missing-anchor metric, as intended.
+    supported_by: [] as string[],
   });
 
   return [

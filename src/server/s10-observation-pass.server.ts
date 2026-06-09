@@ -137,3 +137,24 @@ export function applyObservationIdIntegrityGuard(
 
   return { observed_tape_sequence, component_verifications, fallbacks_applied: fallbacks };
 }
+
+/**
+ * Δ5-S2 — the single definition of the VALID Step-1 observation ID space that
+ * a per-dimension anchor (`category_scores[].supported_by`) may cite: the union
+ * of `observed_tape_sequence[].id` and `component_verifications[].requirement_id`.
+ *
+ * Call this AFTER `applyObservationIdIntegrityGuard` has run on the same
+ * observation context, so the set contains the stabilised (non-empty, unique)
+ * IDs the anchors are validated against. Only non-empty string IDs are included
+ * — a defensively blank/duplicate ID never widens the valid set. Pure, no I/O.
+ */
+export function buildGuardedObservationIdSet(input: ObservationIdGuardInput): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of input.observed_tape_sequence) {
+    if (isNonEmptyId(entry.id)) ids.add(entry.id);
+  }
+  for (const entry of input.component_verifications) {
+    if (isNonEmptyId(entry.requirement_id)) ids.add(entry.requirement_id);
+  }
+  return ids;
+}

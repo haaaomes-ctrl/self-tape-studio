@@ -319,13 +319,35 @@ describe("S10.5 readiness recommendation and score semantics", () => {
       briefRequirements: [
         requirement("req002", "Record Side 1 acting scene", "material"),
         requirement("req003", "Record the contemporary legit MT song", "material"),
-        requirement("req004", "Only record Side 1 and the song for the initial self-tape", "material"),
+        requirement(
+          "req004",
+          "Only record Side 1 and the song for the initial self-tape",
+          "material",
+        ),
         requirement("req005", "Upload as one continuous final video", "technical"),
       ],
       componentVerifications: [
-        verification("req002", "Record Side 1 acting scene", "present", "complete", "Side 1 is complete."),
-        verification("req003", "Record the contemporary legit MT song", "present", "complete", "Song is complete."),
-        verification("req005", "Upload as one continuous final video", "present", "complete", "One continuous video is complete."),
+        verification(
+          "req002",
+          "Record Side 1 acting scene",
+          "present",
+          "complete",
+          "Side 1 is complete.",
+        ),
+        verification(
+          "req003",
+          "Record the contemporary legit MT song",
+          "present",
+          "complete",
+          "Song is complete.",
+        ),
+        verification(
+          "req005",
+          "Upload as one continuous final video",
+          "present",
+          "complete",
+          "One continuous video is complete.",
+        ),
       ],
       observedTapeSequence: [],
       mediaObservationSummary: {
@@ -429,5 +451,48 @@ describe("S10.5 readiness recommendation and score semantics", () => {
     expect(judgement.overall_submission_readiness_score).toBeLessThanOrEqual(54);
     expect(judgement.repair_prompt_status).toBe("classified_contradictory");
     expect(judgement.score_contradiction_warnings.length).toBeGreaterThan(0);
+  });
+
+  it("Δ5-S2: defaults category_scores[].supported_by to a string-filtered array", () => {
+    const matrix = canaryMatrix();
+    const judgement = normaliseReadinessScoreJudgement({
+      judgement: {
+        decision: "review_carefully",
+        overall_submission_readiness_score: 60,
+        score_band_label: "review_carefully",
+        rationale: ["Usable but incomplete."],
+        category_scores: [
+          // Absent supported_by -> [].
+          { category_id: "acting", score: 70, blocked_or_not_assessable_reason: null },
+          // Garbage entries (non-strings + blanks) are filtered; valid IDs kept.
+          {
+            category_id: "vocal",
+            score: 65,
+            blocked_or_not_assessable_reason: null,
+            supported_by: ["ots-0", "", "  ", 7, null, undefined, "cv-song"],
+          },
+          // Non-array supported_by -> [].
+          {
+            category_id: "audio",
+            score: 80,
+            blocked_or_not_assessable_reason: null,
+            supported_by: "ots-0",
+          },
+        ],
+      },
+      matrix,
+      currentOverallScore: 60,
+      currentScores: { acting: 70, vocal: 65, audio: 80 },
+      selectedLevel: "professional",
+    });
+
+    const byId = Object.fromEntries(judgement.category_scores.map((c) => [c.category_id, c]));
+    expect(byId.acting.supported_by).toEqual([]);
+    expect(byId.vocal.supported_by).toEqual(["ots-0", "cv-song"]);
+    expect(byId.audio.supported_by).toEqual([]);
+    // Every row always carries the array (never undefined).
+    for (const c of judgement.category_scores) {
+      expect(Array.isArray(c.supported_by)).toBe(true);
+    }
   });
 });
