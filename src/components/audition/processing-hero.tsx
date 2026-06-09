@@ -44,45 +44,44 @@ export function ProcessingHero({
         className="tc-proc-scan pointer-events-none absolute inset-x-0 top-0 h-12"
       />
 
-      {/* SVG goo filter + figure */}
+      {/* SVG figure with a soft gooey filter so joints blob together as
+          the limbs ripple. Stroke widths are intentionally chunky so the
+          colour-matrix threshold doesn't erase them. */}
       <svg
         aria-hidden
         viewBox="0 0 160 200"
         className="tc-proc-figure relative h-44 w-32 sm:h-52"
       >
         <defs>
-          <filter id="tc-proc-goo">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="2.6" result="blur" />
+          <filter id="tc-proc-goo" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur" />
             <feColorMatrix
               in="blur"
               mode="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -10"
+              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 10 -4"
               result="goo"
             />
-            <feBlend in="SourceGraphic" in2="goo" />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
           </filter>
         </defs>
 
-        <g
-          filter="url(#tc-proc-goo)"
-          fill="none"
-          stroke="var(--brand-navy)"
-          strokeWidth="7"
-          strokeLinecap="round"
-          className="tc-proc-body"
-        >
+        <g filter="url(#tc-proc-goo)" className="tc-proc-body">
           {/* Head */}
           <circle cx="80" cy="34" r="16" className="tc-proc-head" fill="var(--brand-navy)" />
           {/* Torso */}
-          <path d="M80 52 Q82 90 80 130" className="tc-proc-torso" />
-          {/* Left arm */}
-          <path d="M80 70 Q60 92 56 118" className="tc-proc-arm-l" />
-          {/* Right arm */}
-          <path d="M80 70 Q100 92 104 118" className="tc-proc-arm-r" />
-          {/* Left leg */}
-          <path d="M80 130 Q66 158 60 184" className="tc-proc-leg-l" />
-          {/* Right leg */}
-          <path d="M80 130 Q94 158 100 184" className="tc-proc-leg-r" />
+          <path
+            d="M80 52 Q82 90 80 130"
+            className="tc-proc-torso"
+            stroke="var(--brand-navy)"
+            strokeWidth="9"
+            strokeLinecap="round"
+            fill="none"
+          />
+          {/* Limbs */}
+          <path d="M80 70 Q60 92 56 118" className="tc-proc-arm-l" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
+          <path d="M80 70 Q100 92 104 118" className="tc-proc-arm-r" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
+          <path d="M80 130 Q66 158 60 184" className="tc-proc-leg-l" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
+          <path d="M80 130 Q94 158 100 184" className="tc-proc-leg-r" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
         </g>
       </svg>
 
