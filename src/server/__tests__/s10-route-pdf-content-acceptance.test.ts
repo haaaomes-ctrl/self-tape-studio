@@ -185,7 +185,9 @@ describe("S10.15 route/PDF content acceptance harness", () => {
         "Brief achievement",
         "Supplied brief details",
         "Requirement classification",
-        "What the brief asked for",
+        // Δ6 P4 (S11-UX-03): the dual per-requirement listing ("What the brief
+        // asked for" + "Requirement result") is consolidated into ONE table.
+        "Brief requirements checked",
         "Observed tape",
         "Prioritised fixes",
         "Next action plan",

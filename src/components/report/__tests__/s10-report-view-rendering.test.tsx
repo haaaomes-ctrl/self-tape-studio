@@ -252,7 +252,9 @@ describe("S10 report view rendering", () => {
       "Material: Professional MT self-tape package requiring Side 1 plus a contemporary legit song.",
     );
     expect(text).toContain("Upload: Upload one file only.");
-    expect(text).toContain("File naming: Use LASTNAME_FIRSTNAME_CANARYA.mp4.");
+    // Δ6 P4 — the file-naming context row is relabelled to make the required
+    // convention explicit; the value (which carries the convention) is unchanged.
+    expect(text).toContain("Required filename: Use LASTNAME_FIRSTNAME_CANARYA.mp4.");
 
     expect(text).toContain("Requirement classification");
     expect(text).toContain("Mandatory: 6");
@@ -262,14 +264,23 @@ describe("S10 report view rendering", () => {
     expect(text).toContain("Technical: 1");
     expect(text).toContain("Role context: 1");
 
+    // Δ6 P4 — the per-requirement listing is consolidated into ONE table. Each
+    // requirement summary still appears, with its evidence / submission impact /
+    // next action (no separate "What the brief asked for" + "Requirement result"
+    // pair). achievement_test / submission_impact_if_missing from the supplied
+    // list no longer render for matrix-covered rows; their result is the table.
     expect(text).toContain("Required Side 1 acting scene");
     expect(text).toContain("Contemporary legit MT song");
     expect(text).toContain("One continuous video containing the full package");
     expect(text).toContain("One final checked file");
+    expect(text).toContain("Brief requirements checked");
     expect(text).toContain(
-      "Achievement check: Side 1 is present and complete in the submitted tape.",
+      "The required Side 1 acting scene was not identified in the submitted tape.",
     );
-    expect(text).toContain("If missing: Mandatory acting material is missing.");
+    expect(text).toContain("Record and include the full required Side 1 acting scene.");
+    expect(text).not.toContain("Requirement result");
+    expect(text).not.toContain("Achievement check:");
+    expect(text).not.toContain("If missing:");
   });
 
   it("renders a strong complete report with useful S10 density", () => {
@@ -373,13 +384,20 @@ describe("S10 report view rendering", () => {
     }) as unknown as Record<string, unknown>;
     const text = routeText(render(v2));
 
+    // Δ6 P4 — the reconciled row now reads in the consolidated table as a
+    // "Status not assessable" attention row (the matrix achievement_status the
+    // reconciler downgraded to). The old dash-joined "achievement / observed /
+    // completion" string is retired with the dual listing.
+    expect(text).toContain("Required Side 1 acting scene Status not assessable");
     expect(text).toContain(
-      "Required Side 1 acting scene — not assessable / observed uncertain / completion uncertain",
+      "Evidence The required Side 1 acting scene is not confirmed from the tape.",
     );
     expect(text).toContain("S10 route reconciled this row with stricter observed-tape evidence");
     expect(text).toContain("Overall readiness —");
     expect(text).toContain("Record/include the full required Side 1 acting scene");
+    // The stale "present / complete" status echo no longer renders anywhere.
     expect(text).not.toContain("Required Side 1 acting scene — present / complete");
+    expect(text).not.toContain("Required Side 1 acting scene Status achieved");
     expect(text).not.toContain("Preserve the complete Side 1 plus song package");
     expect(text).not.toContain("Acting objective and scene partner focus are clear");
   });
@@ -764,5 +782,210 @@ describe("S10 report view rendering", () => {
 
     expect(html).toContain("Technique commentary is not available for this report.");
     expect(html).not.toContain("[object Object]");
+  });
+
+  // Δ6 P4 / S11-UX-03 — Brief de-dup + better brief-achievement table.
+  // Slice the rendered route to JUST the "Brief achievement" Section so the
+  // de-dup assertions are not confused by the same summary echoed in the
+  // separate "Observed tape" / fix / technique sections.
+  function briefAchievementSection(html: string): string {
+    const start = html.indexOf("Brief achievement");
+    const end = html.indexOf("Observed tape");
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    return html.slice(start, end);
+  }
+  function countOccurrences(haystack: string, needle: string): number {
+    return haystack.split(needle).length - 1;
+  }
+
+  // Clause 1 — Single per-requirement table. A requirement summary that the
+  // matrix carries must appear EXACTLY ONCE inside the Brief-achievement
+  // Section (the one consolidated table), not duplicated across a separate
+  // "What the brief asked for" list AND a "Requirement result" list. Fails
+  // first against the pre-P4 double-listing (count 2).
+  it("renders a single consolidated per-requirement table, not two listings", () => {
+    const section = briefAchievementSection(routeText(render(strongCompleteV2Report())));
+
+    // The two pre-P4 per-requirement sub-headings are retired. ("What the
+    // brief asked for" survives ONCE in the Section hint sentence, so assert
+    // it no longer appears a second time as a standalone sub-block heading;
+    // pre-P4 it appeared twice — hint + sub-heading.)
+    expect(countOccurrences(section, "What the brief asked for")).toBe(1);
+    expect(section).not.toContain("Requirement result");
+    // Exactly one consolidated table.
+    expect(countOccurrences(section, "Brief requirements checked")).toBe(1);
+
+    // Each requirement summary the matrix carries appears once in the table.
+    for (const summary of [
+      "Required Side 1 acting scene",
+      "Contemporary legit MT song",
+      "One continuous video containing the full package",
+      "One final checked file",
+    ]) {
+      expect(
+        countOccurrences(section, summary),
+        `"${summary}" should appear exactly once in the Brief-achievement table`,
+      ).toBe(1);
+    }
+  });
+
+  // Clause 1 (cont.) — A brief_requirements row NOT represented in the matrix
+  // (the orphan "Role context"/ctx-role, matched by id↔requirement_id then
+  // summary↔requirement_summary) is folded into the same table so no required
+  // brief information is dropped — appearing once, still under one Section.
+  it("folds an orphan brief requirement into the consolidated table without dropping it", () => {
+    const section = briefAchievementSection(routeText(render(canaryV2Report())));
+
+    // ctx-role has no matrix requirement_result, so it must be appended as a row.
+    expect(countOccurrences(section, "Role context")).toBeGreaterThanOrEqual(1);
+    // The orphan carries its brief evidence/impact, not a fabricated status.
+    expect(section).toContain(
+      "Role context informs judgement but is not separate required material.",
+    );
+    // No standalone "What the brief asked for" sub-block (only the hint remains).
+    expect(countOccurrences(section, "What the brief asked for")).toBe(1);
+    expect(section).not.toContain("Requirement result");
+  });
+
+  // Clause 2 — De-dup status. The per-item present/observed status lines no
+  // longer re-state in "Observed tape"; achievement status lives only in the
+  // matrix table. Observed tape keeps each item's evidence + assessability.
+  it("removes per-item status re-statement from Observed tape, keeping evidence", () => {
+    const html = render(strongCompleteV2Report());
+    const observedStart = html.indexOf("Observed tape");
+    expect(observedStart).toBeGreaterThanOrEqual(0);
+    const observed = html.slice(observedStart);
+
+    // The old "label — Present / Complete" status echo is gone from Observed tape.
+    expect(observed).not.toMatch(/Required Side 1 acting scene[\s\S]{0,40}—[\s\S]{0,40}Present/i);
+    expect(observed).not.toContain(" / Complete");
+
+    // The tape's physical-content evidence and assessability notes still render.
+    const observedText = routeText(observed);
+    expect(observedText).toContain("Side 1 and song appear in one continuous final video.");
+
+    // Achievement status still appears, but in the Brief-achievement table.
+    const section = routeText(briefAchievementSection(routeText(html)));
+    expect(section.toLowerCase()).toContain("achieved");
+  });
+
+  // Clause 3 — Collapse achieved rows behind a native <details>. Attention
+  // rows (blocker / not_achieved / partly_achieved / not_assessable) render
+  // expanded; achieved/mostly/not_applicable non-blocker rows sit behind a
+  // "Show N achieved requirements" expander that is collapsed by default.
+  it("collapses achieved requirements behind a default-collapsed expander", () => {
+    const html = render(canaryV2Report());
+    const section = briefAchievementSection(html);
+
+    // A <details> summary advertises the collapsed achieved count (canary has
+    // exactly one achieved row, so the label is singular).
+    expect(section).toMatch(/Show \d+ achieved requirements?/);
+    // Collapsed by default — no `open` attribute on the <details>.
+    expect(section).toMatch(
+      /<details(?![^>]*\bopen\b)[^>]*>[\s\S]*Show \d+ achieved requirements?/,
+    );
+
+    // The only achieved row in canary (Landscape framing) lives INSIDE <details>.
+    const detailsStart = section.indexOf("<details");
+    const detailsEnd = section.indexOf("</details>");
+    expect(detailsStart).toBeGreaterThanOrEqual(0);
+    expect(detailsEnd).toBeGreaterThan(detailsStart);
+    const collapsed = section.slice(detailsStart, detailsEnd);
+    expect(routeText(collapsed)).toContain("Landscape close-up/head-and-shoulders framing");
+
+    // An attention row (the blocker) renders OUTSIDE / BEFORE the expander.
+    const beforeDetails = section.slice(0, detailsStart);
+    expect(routeText(beforeDetails)).toContain("Required Side 1 acting scene");
+  });
+
+  // Clause 3 (cont.) — A fixture with no collapsible (achieved) rows renders no
+  // expander. The strong-complete fixture is all-achieved/final-check, so the
+  // attention set is empty and the expander instead holds the whole table; the
+  // negative case is exercised by forcing every row into the attention set.
+  it("renders no achieved-expander when there are no collapsible rows", () => {
+    const report = canaryV2Report();
+    const view = mutableS10View(report);
+    const matrix = view.brief_achievement_matrix as Record<string, unknown>;
+    // Force every requirement_result into the attention set (all not_achieved).
+    matrix.requirement_results = (matrix.requirement_results as Array<Record<string, unknown>>).map(
+      (r) => ({ ...r, achievement_status: "not_achieved", submission_impact: "material_gap" }),
+    );
+
+    const section = briefAchievementSection(render(report));
+    expect(section).not.toMatch(/Show \d+ achieved requirements/);
+    expect(section).not.toContain("<details");
+  });
+
+  // Clause 4 — Submission impact. A submission_blocker requirement is flagged
+  // clearly (a destructive/warning badge), distinct from a plain impact label.
+  it("flags a submission_blocker requirement clearly in the table", () => {
+    const html = render(canaryV2Report());
+    const section = briefAchievementSection(html);
+
+    // The blocker row carries a visually distinct indicator (destructive badge).
+    expect(section).toMatch(/bg-destructive|text-destructive|border-destructive/);
+    // And it still surfaces the readable impact label (labelize lower-cases it).
+    expect(routeText(section)).toContain("submission blocker");
+  });
+
+  // Clause 5 — Guardrails. No-brief must not invent achievements: the Section
+  // returns null and the empty/limitation state covers the gap; no requirement
+  // rows are fabricated.
+  it("invents no requirement rows on a no-brief report", () => {
+    const html = render(noBriefBaselineV2Report());
+    const text = routeText(html);
+
+    // The whole brief Section is absent (brief_achievement_matrix deleted), so
+    // no consolidated brief table / requirement listing is fabricated. (The
+    // observed-tape + component-breakdown modules still legitimately mention
+    // "Required Side 1 acting scene" — that is observed evidence, not a brief
+    // claim — so the guard targets the brief-table chrome specifically.)
+    expect(text).not.toContain("What the brief asked for");
+    expect(text).not.toContain("Brief requirements checked");
+    expect(text).not.toContain("Supplied brief details");
+    expect(text).not.toContain("Requirement classification");
+    expect(text).not.toMatch(/Show \d+ achieved requirements?/);
+  });
+
+  // Clause 5 (cont.) — A not_assessable requirement surfaces as a limitation in
+  // the attention/lead set, never silently as achieved or failed. Canary's
+  // file-naming row is achievement_status === "not_assessable".
+  it("surfaces a not_assessable requirement in the lead set, not as achieved", () => {
+    const html = render(canaryV2Report());
+    const section = briefAchievementSection(html);
+
+    const detailsStart = section.indexOf("<details");
+    const lead = detailsStart >= 0 ? section.slice(0, detailsStart) : section;
+    // File naming (not_assessable) is in the lead/attention set, above any expander.
+    expect(routeText(lead)).toContain("File naming instruction");
+    // Its status reads as not assessable (labelize lower-cases it) — not "achieved".
+    expect(routeText(lead)).toMatch(/File naming instruction Status not assessable/);
+  });
+
+  // Clause 6 — Legacy isolation. The whole Brief-achievement Section (and its
+  // new consolidated table / achieved-expander) is gated behind `isS10`. A
+  // non-S10 report never reaches that JSX, so none of its strings appear. The
+  // S10 table only renders within the isS10 block, proving the de-dup is
+  // S10-scoped and the legacy/limited surfaces are untouched. (Byte-identity of
+  // V2ReportViewLegacy.tsx is additionally enforced by the diff check.)
+  it("never renders the S10 brief-achievement table on a non-S10 report", () => {
+    // A report with no s10_view_model / S10 modules / source_mode is non-S10.
+    const nonS10Report = {
+      version: 2,
+      template_id: "v2-component",
+      audition_type: "musical_theatre",
+      overall_readiness: 72,
+    } as Record<string, unknown>;
+
+    const html = render(nonS10Report);
+
+    // None of the S10 brief-table chrome appears on the non-S10 path.
+    expect(html).not.toContain("What the brief asked for");
+    expect(html).not.toContain("Requirement result");
+    expect(html).not.toContain("Brief requirements checked");
+    expect(html).not.toMatch(/Show \d+ achieved requirements/);
+    // No requirement summary rows are fabricated on the non-S10 path.
+    expect(html).not.toContain("Required Side 1 acting scene");
   });
 });

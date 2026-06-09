@@ -463,7 +463,9 @@ function briefContextRows(value: unknown): Array<[string, string]> {
     ["Role context", context.role_description_summary],
     ["Deadline", context.deadline_summary],
     ["Upload", context.upload_summary],
-    ["File naming", context.file_naming_summary],
+    // Δ6 P4 — make the REQUIRED filename convention explicit (render-only; the
+    // value already carries the convention, e.g. "Use LASTNAME_FIRSTNAME_X.mp4.").
+    ["Required filename", context.file_naming_summary],
   ].flatMap(([label, raw]) => {
     const value = safeStr(raw);
     return value ? ([[label as string, value]] as Array<[string, string]>) : [];
@@ -529,6 +531,195 @@ function hasRenderableBriefAchievementRow(value: unknown): boolean {
     row.submission_impact,
     row.recommended_action,
   ].some((candidate) => !!safeStr(candidate));
+}
+
+// Δ6 P4 / S11-UX-03 — the consolidated brief-achievement table.
+//
+// The report previously listed each requirement TWICE under "Brief
+// achievement": once as the supplied "What the brief asked for" list
+// (brief_requirements) and once as the "Requirement result" list
+// (requirement_results). This collapses them into ONE per-requirement table
+// built from the achievement matrix, then FOLDS IN any supplied requirement
+// the matrix does not represent (matched by id↔requirement_id, falling back to
+// summary↔requirement_summary) so no required brief information is dropped.
+//
+// Code responsibility only: deduplicate + route the existing AI fields. No
+// content is invented — orphan rows carry their own supplied brief fields.
+type BriefAchievementTableRow = {
+  key: string;
+  requirement: string;
+  // achievement_status (matrix) — null on a supplied-only orphan row.
+  achievementStatus: string | null;
+  evidence: string | null;
+  submissionImpact: string | null;
+  nextAction: string | null;
+  // True when submission_impact === "submission_blocker" — flagged clearly.
+  isBlocker: boolean;
+  // True for the attention (lead, expanded) set; false → collapsed set.
+  isAttention: boolean;
+};
+
+// Attention rows lead and render expanded: a submission blocker, or an
+// achievement status that is not a clean pass. Everything else (achieved /
+// mostly_achieved / not_applicable, non-blocker) collapses behind the expander.
+function isAttentionAchievementRow(
+  achievementStatus: string | null,
+  submissionImpact: string | null,
+): boolean {
+  if (submissionImpact === "submission_blocker") return true;
+  return (
+    achievementStatus === "not_achieved" ||
+    achievementStatus === "partly_achieved" ||
+    achievementStatus === "not_assessable"
+  );
+}
+
+function briefAchievementTableRows(
+  matrixRows: Array<Record<string, unknown>>,
+  briefRequirements: Array<Record<string, unknown>>,
+): BriefAchievementTableRow[] {
+  const rows: BriefAchievementTableRow[] = [];
+  // Match keys present in the matrix so orphan supplied requirements can be
+  // detected: both the requirement_id and the (lower-cased) summary.
+  const matrixIds = new Set<string>();
+  const matrixSummaries = new Set<string>();
+  for (const row of matrixRows) {
+    const id = safeStr(row.requirement_id);
+    if (id) matrixIds.add(id);
+    const summary = safeStr(row.requirement_summary);
+    if (summary) matrixSummaries.add(summary.toLowerCase());
+  }
+
+  matrixRows.forEach((row, index) => {
+    const requirement = safeStr(row.requirement_summary) ?? "Requirement";
+    const achievementStatus = safeStr(row.achievement_status);
+    const submissionImpact = safeStr(row.submission_impact);
+    rows.push({
+      key: safeStr(row.requirement_id) ?? `matrix-${index}`,
+      requirement,
+      achievementStatus,
+      evidence: safeStr(row.evidence_summary),
+      submissionImpact,
+      nextAction: safeStr(row.recommended_action),
+      isBlocker: submissionImpact === "submission_blocker",
+      isAttention: isAttentionAchievementRow(achievementStatus, submissionImpact),
+    });
+  });
+
+  // Fold supplied requirements the matrix does not represent. Match by id then
+  // by summary; append using the supplied row's own fields (no fabricated
+  // achievement status — the orphan never claims an observed result).
+  briefRequirements.forEach((req, index) => {
+    const id = safeStr(req.id) ?? safeStr(req.requirement_id);
+    const summary = safeStr(req.summary) ?? safeStr(req.brief_text);
+    const representedById = id != null && matrixIds.has(id);
+    const representedBySummary = summary != null && matrixSummaries.has(summary.toLowerCase());
+    if (representedById || representedBySummary) return;
+    if (!summary) return;
+    const submissionImpact = safeStr(req.submission_impact_if_missing);
+    rows.push({
+      key: id ?? `brief-${index}`,
+      requirement: summary,
+      achievementStatus: null,
+      evidence: safeStr(req.expected_evidence_in_tape),
+      submissionImpact,
+      nextAction: safeStr(req.achievement_test),
+      isBlocker: false,
+      // A supplied-only requirement has no observed achievement; surface it in
+      // the lead set so its presence is never hidden behind the expander.
+      isAttention: true,
+    });
+  });
+
+  return rows;
+}
+
+// One requirement, rendered as a responsive card-per-row: stacked
+// label/value pairs on mobile, a labelled multi-column grid on desktop. A
+// submission blocker carries a destructive badge so it reads clearly.
+function BriefAchievementTableRowCard({ row }: { row: BriefAchievementTableRow }) {
+  const fields: Array<{ label: string; node: React.ReactNode }> = [];
+  if (row.achievementStatus) {
+    fields.push({
+      label: "Status",
+      node: <span className="capitalize">{labelize(row.achievementStatus)}</span>,
+    });
+  }
+  if (row.evidence) {
+    fields.push({ label: "Evidence", node: row.evidence });
+  }
+  if (row.submissionImpact) {
+    fields.push({
+      label: "Submission impact",
+      node: row.isBlocker ? (
+        <Badge variant="destructive" className="capitalize">
+          <ShieldAlert className="mr-1 h-3 w-3" aria-hidden="true" />
+          {labelize(row.submissionImpact)}
+        </Badge>
+      ) : (
+        <span className="capitalize">{labelize(row.submissionImpact)}</span>
+      ),
+    });
+  }
+  if (row.nextAction) {
+    fields.push({ label: "Next action", node: row.nextAction });
+  }
+  return (
+    <div
+      className={cn(
+        "rounded-md border p-3",
+        row.isBlocker ? "border-destructive/50" : "border-border",
+      )}
+    >
+      <p className="font-medium">{row.requirement}</p>
+      {fields.length > 0 && (
+        <dl className="mt-2 grid gap-x-4 gap-y-1.5 text-xs sm:grid-cols-[max-content_1fr]">
+          {fields.map((field) => (
+            <div key={field.label} className="sm:contents">
+              <dt className="font-semibold uppercase tracking-wider text-muted-foreground">
+                {field.label}
+              </dt>
+              <dd className="mb-1 text-muted-foreground sm:mb-0">{field.node}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+// The consolidated per-requirement table: attention rows lead (expanded);
+// achieved/non-blocker rows collapse behind a default-collapsed native
+// <details> labelled "Show N achieved requirements". No expander when N === 0.
+function BriefAchievementTable({ rows }: { rows: BriefAchievementTableRow[] }) {
+  const attention = rows.filter((row) => row.isAttention);
+  const collapsed = rows.filter((row) => !row.isAttention);
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Brief requirements checked
+      </p>
+      {attention.length > 0 && (
+        <div className="mt-2 space-y-2 text-sm">
+          {attention.map((row) => (
+            <BriefAchievementTableRowCard key={row.key} row={row} />
+          ))}
+        </div>
+      )}
+      {collapsed.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+            Show {collapsed.length} achieved requirement{collapsed.length === 1 ? "" : "s"}
+          </summary>
+          <div className="mt-2 space-y-2 text-sm">
+            {collapsed.map((row) => (
+              <BriefAchievementTableRowCard key={row.key} row={row} />
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function hasRenderableObservedTapeSequenceRow(value: unknown): boolean {
@@ -1840,6 +2031,9 @@ export function V2ReportView({
               const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results).filter(
                 hasRenderableBriefAchievementRow,
               );
+              // Δ6 P4 — consolidate the matrix rows + orphan supplied
+              // requirements into ONE per-requirement table (no double listing).
+              const tableRows = briefAchievementTableRows(rows, reqs);
               const matrixStatusRows = [
                 ["Overall", s10Matrix?.overall_status],
                 ["Mandatory", s10Matrix?.mandatory_status],
@@ -1905,97 +2099,7 @@ export function V2ReportView({
                       </div>
                     </div>
                   )}
-                  {reqs.length > 0 && (
-                    <div className="mt-4">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        What the brief asked for
-                      </p>
-                      <ul className="mt-2 space-y-2 text-sm">
-                        {reqs.map((r, i) => (
-                          <li
-                            key={safeStr(r.id) ?? i}
-                            className="rounded-md border border-border p-3"
-                          >
-                            <p className="font-medium">
-                              {safeStr(r.summary) ?? safeStr(r.brief_text)}
-                            </p>
-                            {safeStr(r.brief_text) &&
-                              safeStr(r.brief_text) !== safeStr(r.summary) && (
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {safeStr(r.brief_text)}
-                                </p>
-                              )}
-                            {safeStr(r.expected_evidence_in_tape) && (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Evidence expected: {safeStr(r.expected_evidence_in_tape)}
-                              </p>
-                            )}
-                            {safeStr(r.achievement_test) && (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                Achievement check: {safeStr(r.achievement_test)}
-                              </p>
-                            )}
-                            {safeStr(r.submission_impact_if_missing) && (
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                If missing: {safeStr(r.submission_impact_if_missing)}
-                              </p>
-                            )}
-                            <p className="mt-1 text-[11px] uppercase tracking-wider text-muted-foreground">
-                              {labelize(r.importance)} · {labelize(r.category)}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {rows.length > 0 && (
-                    <div className="mt-4">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Requirement result
-                      </p>
-                      <ul className="mt-2 space-y-2 text-sm">
-                        {rows.map((r, i) => {
-                          const statusParts = [
-                            safeStr(r.achievement_status) ? labelize(r.achievement_status) : null,
-                            safeStr(r.observed_status)
-                              ? `observed ${labelize(r.observed_status)}`
-                              : null,
-                            safeStr(r.completion_status)
-                              ? `completion ${labelize(r.completion_status)}`
-                              : null,
-                          ].filter((part): part is string => Boolean(part));
-                          return (
-                            <li key={safeStr(r.requirement_id) ?? i}>
-                              <span className="font-medium">
-                                {safeStr(r.requirement_summary) ?? "Requirement result"}
-                              </span>
-                              {statusParts.length > 0 && (
-                                <>
-                                  {" — "}
-                                  <span className="capitalize">{statusParts.join(" / ")}</span>
-                                </>
-                              )}
-                              {safeStr(r.evidence_summary) && (
-                                <p className="mt-0.5 text-xs text-muted-foreground">
-                                  Evidence: {safeStr(r.evidence_summary)}
-                                </p>
-                              )}
-                              {safeStr(r.submission_impact) && (
-                                <p className="mt-0.5 text-xs text-muted-foreground">
-                                  Submission impact: {labelize(r.submission_impact)}
-                                </p>
-                              )}
-                              {safeStr(r.recommended_action) && (
-                                <p className="mt-0.5 text-xs text-muted-foreground">
-                                  {safeStr(r.recommended_action)}
-                                </p>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )}
+                  {tableRows.length > 0 && <BriefAchievementTable rows={tableRows} />}
                 </Section>
               );
             })()}
@@ -2015,6 +2119,11 @@ export function V2ReportView({
                 >
                   {sequence.length > 0 && (
                     <div className="space-y-2 text-sm">
+                      {/* Δ6 P4 — observed tape carries what the tape physically
+                          contains (label + evidence + assessability). The
+                          per-item present/completion status re-statement was
+                          dropped; achievement status now lives only in the
+                          brief-achievement table above. */}
                       {sequence.map((item, i) => (
                         <p key={safeStr(item.id) ?? i}>
                           <span className="font-medium">
@@ -2022,18 +2131,6 @@ export function V2ReportView({
                               safeStr(item.evidence_summary) ??
                               "Observed item"}
                           </span>
-                          {safeStr(item.present_status) && (
-                            <>
-                              {" — "}
-                              <span className="capitalize">{labelize(item.present_status)}</span>
-                            </>
-                          )}
-                          {safeStr(item.completion_status) && (
-                            <span className="text-muted-foreground">
-                              {" "}
-                              / {labelize(item.completion_status)}
-                            </span>
-                          )}
                           {safeStr(item.evidence_summary) && safeStr(item.label) && (
                             <span className="block text-xs text-muted-foreground">
                               {safeStr(item.evidence_summary)}
@@ -2057,18 +2154,6 @@ export function V2ReportView({
                               safeStr(item.evidence_summary) ??
                               "Observed component"}
                           </span>
-                          {safeStr(item.observed_status) && (
-                            <>
-                              {" — "}
-                              <span className="capitalize">{labelize(item.observed_status)}</span>
-                            </>
-                          )}
-                          {safeStr(item.completion_status) && (
-                            <span className="text-muted-foreground">
-                              {" "}
-                              / {labelize(item.completion_status)}
-                            </span>
-                          )}
                           {safeStr(item.evidence_summary) && (
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {safeStr(item.evidence_summary)}
