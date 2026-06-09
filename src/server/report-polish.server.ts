@@ -21,6 +21,7 @@ import {
 } from "./provider-tool-schema.server";
 import { extractAiTokenUsage, recordTakeAiUsage, type TakeAiUsageContext } from "./ai-usage.server";
 import { logProviderError } from "./provider-error-log.server";
+import { metric } from "./metrics.server";
 import {
   S10_BRIEF_ACHIEVEMENT_MATRIX_PROMPT_VERSION,
   S10_FIX_HIERARCHY_NEXT_ACTION_PROMPT_VERSION,
@@ -841,6 +842,77 @@ export function enforceScoreAlignment(
   }
 
   return { adjusted };
+}
+
+// ---------- Δ6 P2 — practitioner's-voice (MD-voice) enforcement ----------
+
+// Tight, documented submission/readiness-VERDICT family. The practitioner's
+// voice is developmental prose ONLY; it must never make or imply a submission/
+// readiness verdict that could contradict the canonical one. This list is
+// deliberately narrow — verdict language only, never general craft language.
+// If something here is not verdict-language, it does not belong in this list.
+const MD_VOICE_VERDICT_PATTERNS: RegExp[] = [
+  /\bready to submit\b/i,
+  /\bready for submission\b/i,
+  /\bnot ready\b/i,
+  /\bwouldn'?t submit\b/i,
+  /\bdo\s?n'?t submit\b/i,
+  /\bdo not submit\b/i,
+  /\bsubmit (?:it|this)\b/i,
+  /\bsend (?:it|this)\b/i,
+  /\bgood to go\b/i,
+  /\bsafe to submit\b/i,
+];
+
+/**
+ * Δ6 P2 — normalise and gate the subjective practitioner's-voice module.
+ *
+ * In order:
+ *  (a) read report.s10_practitioner_voice; coerce its `.note` (or a bare string
+ *      value) to a trimmed string;
+ *  (b) empty/whitespace → set the module to null and return early;
+ *  (c) truncate to the FIRST 3 sentences;
+ *  (d) if it contains submission/readiness-verdict language → set null AND emit
+ *      `md_voice_suppressed_verdict_claim`;
+ *  (e) NEVER touch any score/verdict field.
+ *
+ * Returns a small summary for logging.
+ */
+export function enforcePractitionerVoiceModule(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report: any,
+  takeId?: string | null,
+): { suppressed: boolean; truncated: boolean } {
+  const raw = report?.s10_practitioner_voice;
+  // (a) coerce.
+  const rawNote =
+    typeof raw === "string"
+      ? raw
+      : raw && typeof raw === "object" && typeof raw.note === "string"
+        ? raw.note
+        : "";
+  const note = rawNote.trim();
+
+  // (b) evidence-gate.
+  if (note.length === 0) {
+    report.s10_practitioner_voice = null;
+    return { suppressed: true, truncated: false };
+  }
+
+  // (c) bound to the first 3 sentences.
+  const sentences = note.split(/(?<=[.!?])\s+/).filter((s: string) => s.trim().length > 0);
+  const truncated = sentences.length > 3;
+  const bounded = (truncated ? sentences.slice(0, 3) : sentences).join(" ").trim();
+
+  // (d) verdict-non-contradiction guard.
+  if (MD_VOICE_VERDICT_PATTERNS.some((re) => re.test(bounded))) {
+    report.s10_practitioner_voice = null;
+    metric("md_voice_suppressed_verdict_claim", { take_id: takeId ?? null });
+    return { suppressed: true, truncated };
+  }
+
+  report.s10_practitioner_voice = { note: bounded };
+  return { suppressed: false, truncated };
 }
 
 // ---------- Legacy deterministic failure renderer ----------

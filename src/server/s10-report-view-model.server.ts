@@ -66,7 +66,14 @@ export type S10SectionSourceEntry = {
 export type S10PerformerReportViewModel = {
   report_version: typeof S10_PERFORMER_REPORT_VIEW_MODEL_VERSION;
   source_mode: typeof S10_REPORT_SOURCE_MODE;
-  section_source_map: Record<S10ReportSectionKey, S10SectionSourceEntry>;
+  // The route-boundary contract is the REQUIRED S10ReportSectionKey set; the
+  // route validator only iterates those keys. Δ6 P2 adds the OPTIONAL, non-route
+  // `practitioner_voice` source entry alongside them — it is deliberately NOT a
+  // required route section because the module is suppressible (a suppressed
+  // report must not fail validation for a missing required section).
+  section_source_map: Record<S10ReportSectionKey, S10SectionSourceEntry> & {
+    practitioner_voice?: S10SectionSourceEntry;
+  };
   recommendation: {
     decision: ReadinessAndScoreJudgement["decision"];
     headline: string;
@@ -138,6 +145,13 @@ export type S10PerformerReportViewModel = {
   professional_critique: S10ProfessionalCritique | null;
   technique_commentary: S10TechniqueCommentary | null;
   timestamped_commentary: S10TimestampedCommentary | null;
+  /**
+   * Δ6 P2 — subjective practitioner's-voice note ("A practitioner's perspective").
+   * Present only when the MD-voice kill-switch is on AND the enforced module note
+   * is a non-empty string; null otherwise. Downstream prose: it never feeds the
+   * score/verdict and is rendered BELOW the score/verdict block.
+   */
+  practitioner_voice: { note: string } | null;
   limitations: string[];
   same_video_status: S10SameVideoEvidence | null;
   comparison_truth: S10ComparisonTruth | null;
@@ -158,6 +172,13 @@ export type S10ViewModelContext = {
   comparisonDisplayMode?: S10ComparisonDisplayMode | null;
   observationSourceKind?: S10ObservationContextSourceKind | null;
   roleMaterialContext?: S10RoleMaterialContext | Record<string, unknown> | null;
+  /**
+   * Δ6 P2 — global MD-voice kill-switch, snapshotted at process time. When false,
+   * the subjective practitioner's-voice field is gated out of the view model
+   * (forward-only: a persisted snapshot is not retroactively changed). Defaults
+   * to enabled when undefined (the reader fails open before the column exists).
+   */
+  mdVoiceEnabled?: boolean;
 };
 
 export const S10_LIMITED_REPORT_MESSAGE =
@@ -1416,6 +1437,26 @@ export function buildS10PerformerReportViewModel(input: {
       : ["Timestamped or time-banded commentary is not available for this report."]),
   ];
 
+  // Δ6 P2 — subjective practitioner's-voice. Read the ENFORCED module note (a
+  // `{ note }` or null after enforcePractitionerVoiceModule). Present only when
+  // the kill-switch is on (mdVoiceEnabled !== false; undefined fails open) AND the
+  // note is a non-empty string. Downstream prose only — never a score/verdict input.
+  const practitionerVoiceNote = (() => {
+    const raw = report.s10_practitioner_voice;
+    const note =
+      raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).note === "string"
+        ? ((raw as Record<string, unknown>).note as string).trim()
+        : typeof raw === "string"
+          ? raw.trim()
+          : "";
+    return note.length > 0 ? note : null;
+  })();
+  const practitionerVoiceVisible =
+    context.mdVoiceEnabled !== false && practitionerVoiceNote != null;
+  const practitionerVoice = practitionerVoiceVisible
+    ? { note: practitionerVoiceNote as string }
+    : null;
+
   const section_source_map: S10PerformerReportViewModel["section_source_map"] = {
     readiness_header: source(
       hasVisibleReadiness,
@@ -1573,6 +1614,13 @@ export function buildS10PerformerReportViewModel(input: {
       module: null,
       limitation: "No diagnostic chips are rendered in this performer report.",
     },
+    // Δ6 P2 — OPTIONAL non-route source entry (ignored by the required-section
+    // route validator). Tracks the practitioner's-voice provenance for parity.
+    practitioner_voice: source(
+      practitionerVoiceVisible,
+      "s10_practitioner_voice",
+      "No practitioner's-perspective note is rendered for this report.",
+    ),
   };
 
   // Δ6 P1 — verdict↔content coherence. Whenever the canonical verdict is non-positive the
@@ -1681,6 +1729,7 @@ export function buildS10PerformerReportViewModel(input: {
     professional_critique: professionalCritique,
     technique_commentary: techniqueCommentary,
     timestamped_commentary: timestampedCommentary,
+    practitioner_voice: practitionerVoice,
     limitations,
     same_video_status: sameVideoEvidence,
     comparison_truth: comparisonTruth,
@@ -1803,6 +1852,7 @@ export function buildS10LimitedPerformerReportViewModel(
     professional_critique: null,
     technique_commentary: null,
     timestamped_commentary: null,
+    practitioner_voice: null,
     limitations: [message],
     same_video_status: null,
     comparison_truth: null,
