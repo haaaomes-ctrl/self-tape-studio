@@ -46,9 +46,12 @@ export type PublicCategory = (typeof PUBLIC_CATEGORIES)[number];
  * non-numeric input so callers can OMIT (never invent zeros for) missing rows.
  *
  * Intentionally a DISTINCT contract from `clampScoreWithFallback` (which
- * substitutes a numeric fallback) and from the max-bounded `clampScore` in
- * s10-brief-achievement-matrix.server.ts. Do not merge these — the null return
- * is load-bearing for the projection's "omit missing" semantics.
+ * substitutes a numeric fallback) and from the third, max-bounded `clampScore`
+ * variant in s10-brief-achievement-matrix.server.ts (signature
+ * `(value, max) -> [0, max]`, falling back to `max` for non-finite input).
+ * Do not consolidate these — the null return here is load-bearing for the
+ * projection's "omit missing" semantics, and the matrix variant's max-bounded
+ * fallback is load-bearing for its own [0, max] contract.
  */
 export function clampScore(value: unknown): number | null {
   const n = typeof value === "number" && Number.isFinite(value) ? value : null;

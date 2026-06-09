@@ -912,10 +912,6 @@ export function matrixHasMandatoryMaterialGap(matrix: BriefAchievementMatrix | n
   );
 }
 
-// Δ4-S1 addendum: intentionally a DISTINCT contract from score-projection's
-// clampScoreWithFallback ([0,100], fallback default 0) and clampScore (null
-// return) — this one clamps to [0, max] and falls back to max. Do not
-// consolidate with them.
 function clampScore(value: unknown, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? value : max;
   return Math.max(0, Math.min(max, Math.round(n)));
