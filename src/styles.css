@@ -449,25 +449,14 @@
 
 .tc-proc-figure { animation: tc-proc-bounce var(--tc-proc-speed) ease-in-out infinite; }
 
-/* SVG element animations need transform-box: fill-box so transform-origin
-   coordinates resolve in the element's own box rather than the viewport. */
-.tc-proc-head,
-.tc-proc-torso,
-.tc-proc-arm-l,
-.tc-proc-arm-r,
-.tc-proc-leg-l,
-.tc-proc-leg-r {
-  transform-box: fill-box;
-}
-
-.tc-proc-head  { animation: tc-proc-head-bob var(--tc-proc-speed) ease-in-out infinite; transform-origin: center; }
-.tc-proc-torso { animation: tc-proc-torso-drip var(--tc-proc-speed) ease-in-out infinite; transform-origin: top; }
-
-/* Limbs pivot at their attachment point (top of the path). */
-.tc-proc-arm-l { animation: tc-proc-swing-a var(--tc-proc-speed) ease-in-out infinite; transform-origin: top right; }
-.tc-proc-arm-r { animation: tc-proc-swing-b var(--tc-proc-speed) ease-in-out infinite; transform-origin: top left; }
-.tc-proc-leg-l { animation: tc-proc-swing-leg-b var(--tc-proc-speed) ease-in-out infinite; transform-origin: top right; }
-.tc-proc-leg-r { animation: tc-proc-swing-leg-a var(--tc-proc-speed) ease-in-out infinite; transform-origin: top left; }
+/* Wrap limbs in <g> elements (transform-box: fill-box is unreliable on
+   stroke-only paths in some browsers); we animate the wrapping group. */
+.tc-proc-head  { animation: tc-proc-head-bob var(--tc-proc-speed) ease-in-out infinite; transform-origin: 80px 34px; }
+.tc-proc-torso { animation: tc-proc-torso-drip var(--tc-proc-speed) ease-in-out infinite; transform-origin: 80px 52px; }
+.tc-proc-arm-l { animation: tc-proc-swing-a var(--tc-proc-speed) ease-in-out infinite; transform-origin: 80px 70px; }
+.tc-proc-arm-r { animation: tc-proc-swing-b var(--tc-proc-speed) ease-in-out infinite; transform-origin: 80px 70px; }
+.tc-proc-leg-l { animation: tc-proc-swing-leg-b var(--tc-proc-speed) ease-in-out infinite; transform-origin: 80px 130px; }
+.tc-proc-leg-r { animation: tc-proc-swing-leg-a var(--tc-proc-speed) ease-in-out infinite; transform-origin: 80px 130px; }
 
 .tc-proc-scan {
   background: linear-gradient(
