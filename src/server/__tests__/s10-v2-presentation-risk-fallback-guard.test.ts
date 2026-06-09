@@ -133,7 +133,13 @@ describe("S10.P1d V2 presentation/risk fallback guard", () => {
   it("keeps Canary A missing-material blocker sourced from S10 modules", () => {
     const report = buildS10CanaryAReportInput() as Record<string, unknown>;
     report.risk_flags = [{ severity: "low", flag: "LOW File naming convention not followed" }];
-    report.block_reasons = ["Legacy file-naming risk"];
+    // Δ6 P1: report.block_reasons is now the deterministic, verdict-coherent source of the
+    // performer-visible "Why this isn't ready" rationale under a non-positive verdict (assembled
+    // fresh at process-take.server.ts:5914-5955). Pin it to the realistic deterministic shortfall
+    // the assembly produces for this incomplete package — the missing required Side 1 — so the
+    // surfaced blocker is the real missing-material shortfall, not the legacy file-naming risk_flag
+    // (which the S10 risk-suppression path, unchanged by P1, must still drop).
+    report.block_reasons = ["The required Side 1 acting scene is missing from the package."];
 
     const v2 = buildCanary(report);
     const html = render(v2 as unknown as Record<string, unknown>);
@@ -146,7 +152,6 @@ describe("S10.P1d V2 presentation/risk fallback guard", () => {
       source: "s10_authoritative_module",
     });
     expect(output).not.toContain("LOW File naming convention not followed");
-    expect(output).not.toContain("Legacy file-naming risk");
     expect(output).not.toContain("Single-file submission as requested");
   });
 

@@ -4,6 +4,7 @@ import {
   hasS10AuthoritativeModules,
   validateV2PublicBoundary,
 } from "@/server/v2-report-builder.server";
+import { buildS10PerformerReportViewModel } from "@/server/s10-report-view-model.server";
 import {
   buildS10CanaryAReportInput,
   buildS10CanaryAViewContext,
@@ -97,6 +98,94 @@ describe("S10 report view-model routing", () => {
       expect(output).not.toContain(forbidden);
     }
     expect(validateV2PublicBoundary(v2, legacy).ok).toBe(true);
+  });
+
+  // Δ6 P1 — verdict↔content coherence. The performer-visible "Why this isn't ready" rationale
+  // must derive from the deterministic, verdict-coherent report.block_reasons whenever the
+  // canonical verdict is non-positive, so it structurally carries the real shortfalls and can
+  // never render all-positive under a not-ready/retake/review verdict. A minimal authoritative
+  // report (one S10 module object + a visible readiness payload) is built directly via
+  // buildS10PerformerReportViewModel.
+  describe("Δ6 P1 verdict↔content rationale coherence", () => {
+    function buildCoherenceReport(overrides: {
+      submission_verdict: Record<string, unknown>;
+      block_reasons?: unknown[];
+      aiRationale: string[];
+    }): Record<string, unknown> {
+      return {
+        // readiness_score_judgement is one of the S10 authoritative module keys, so its presence
+        // as an object satisfies hasActualS10AuthoritativeModuleObjects, and its headline+rationale
+        // satisfy hasVisibleRecommendationPayload so the recommendation object is built.
+        readiness_score_judgement: {
+          decision: "retake_required_if_possible",
+          headline: "Readiness judgement",
+          rationale: overrides.aiRationale,
+          score_explanation: "Explanation of the score.",
+          confidence: "medium",
+        },
+        submission_verdict: overrides.submission_verdict,
+        ...(overrides.block_reasons !== undefined
+          ? { block_reasons: overrides.block_reasons }
+          : {}),
+      };
+    }
+
+    // README §7.2 #13 — "what falls short must carry shortfalls"; README §1.1 — code detects and
+    // repairs contradictory modules. Under a non-positive canonical verdict the rationale must be
+    // the performer-safe deterministic block_reasons, never the (deliberately all-positive) AI
+    // rationale.
+    it("replaces the AI rationale with deterministic block_reasons under a non-positive verdict", () => {
+      const report = buildCoherenceReport({
+        submission_verdict: { label: "Not ready yet", blocked: true },
+        block_reasons: [
+          "a major casting brief instruction wasn't followed",
+          "two or more areas need work",
+        ],
+        aiRationale: ["Lovely energy", "Strong, confident choices"],
+      });
+      const vm = buildS10PerformerReportViewModel({ report });
+      expect(vm?.canonical_verdict?.decision).toBe("retake_required_if_possible");
+      expect(vm?.recommendation?.rationale).toEqual([
+        "a major casting brief instruction wasn't followed",
+        "two or more areas need work",
+      ]);
+      expect(vm?.recommendation?.rationale).not.toEqual([
+        "Lovely energy",
+        "Strong, confident choices",
+      ]);
+    });
+
+    // ADR-0008 — the canonical authority owns the visible value; the "Blocked:" token is
+    // performer-forbidden on this minors-facing product. No surfaced rationale line may begin
+    // "Blocked:", and the non-prefixed shortfall must still surface.
+    it("drops a Blocked:-prefixed block reason but keeps the safe shortfall", () => {
+      const report = buildCoherenceReport({
+        submission_verdict: { label: "Not ready yet", blocked: true },
+        block_reasons: [
+          "Blocked: a major casting brief instruction wasn't followed",
+          "two or more areas need work",
+        ],
+        aiRationale: ["Lovely energy", "Strong, confident choices"],
+      });
+      const vm = buildS10PerformerReportViewModel({ report });
+      const rationale = vm?.recommendation?.rationale ?? [];
+      for (const line of rationale) {
+        expect(line).not.toMatch(/^blocked\s*:/i);
+      }
+      expect(rationale).toContain("two or more areas need work");
+    });
+
+    // Positive (submit) verdict keeps the AI rationale unchanged.
+    it("keeps the AI rationale under a positive (submit) verdict", () => {
+      const report = buildCoherenceReport({
+        submission_verdict: { label: "Ready to submit", capped: false },
+        block_reasons: [],
+        aiRationale: ["Lovely energy", "Strong, confident choices"],
+      });
+      const vm = buildS10PerformerReportViewModel({ report });
+      expect(vm?.canonical_verdict?.decision).toBe("submit");
+      expect(vm?.recommendation?.rationale).toEqual(["Lovely energy", "Strong, confident choices"]);
+    });
   });
 
   it("does not force non-S10 legacy reports into S10 source mode", () => {
