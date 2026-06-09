@@ -988,6 +988,33 @@ export function V2ReportView({
     }, {});
     return Object.keys(rows).length > 0 ? rows : null;
   })();
+  // Δ6 P3b: the S10 Category-scores card row renders the fuller per-category
+  // rationale (architect-ratified) read from the same canonical
+  // s10.canonical_category_scores rows, keyed by category_id. Each field is
+  // presence-gated at render (safeStr trims/nulls empty), so a row with no
+  // rationale shows the score bar only. Supersedes the single categoryNotes line
+  // on the S10 path; legacy keeps categoryNotes unchanged.
+  const s10CategoryRationaleByKey = s10CategoryRows.reduce<
+    Record<
+      string,
+      {
+        what_works: string | null;
+        score_basis: string | null;
+        why_not_full_score: string | null;
+        close_gap: string | null;
+      }
+    >
+  >((acc, row) => {
+    const category = safeStr(row.category_id);
+    if (!category) return acc;
+    acc[category] = {
+      what_works: safeStr(row.what_works),
+      score_basis: safeStr(row.score_basis),
+      why_not_full_score: safeStr(row.why_not_full_score),
+      close_gap: safeStr(row.close_gap),
+    };
+    return acc;
+  }, {});
   const legacyNextPlan = safeArr<string>(
     (report.next_take_plan && (report.next_take_plan as { steps?: unknown }).steps) ?? [],
   ).filter((s): s is string => typeof s === "string");
@@ -1039,6 +1066,235 @@ export function V2ReportView({
   if (scores && Object.keys(scores).length > 0) emptyCardSuppress.add("scoreSummary");
   if (components.length > 0) emptyCardSuppress.add("componentBreakdown");
   if (isS10 && hasS10LevelCalibration) emptyCardSuppress.add("selectedLevelCalibration");
+
+  // Δ6 P3b: extracted from the card grid so the S10 path can render it at the
+  // grid top (promoted) while legacy renders it at its original position. Body
+  // is verbatim; the internal s10/legacy branching is unchanged.
+  const prioritisedFixesSection = (() => {
+    if (s10) {
+      if (!s10FixHierarchy) {
+        return s10FixHierarchyLimitation ? (
+          <Section title="Prioritised fixes">
+            <p className="text-sm text-muted-foreground">{s10FixHierarchyLimitation}</p>
+          </Section>
+        ) : null;
+      }
+      const rawFixFirst = safeObj(s10FixHierarchy.fix_first);
+      const fixFirst = rawFixFirst && itemDedupeKey(rawFixFirst) ? rawFixFirst : null;
+      const seenFixItems = new Set<string>();
+      if (fixFirst) {
+        const key = itemDedupeKey(fixFirst);
+        if (key) seenFixItems.add(key);
+      }
+      const priority = uniqueListItems(safeArr(s10FixHierarchy.priority_fixes), seenFixItems);
+      const must = uniqueListItems(
+        safeArr(s10FixHierarchy.must_fix_before_submitting),
+        seenFixItems,
+      );
+      const should = uniqueListItems(
+        safeArr(s10FixHierarchy.should_improve_if_retaking),
+        seenFixItems,
+      );
+      const optional = uniqueListItems(safeArr(s10FixHierarchy.optional_polish), seenFixItems);
+      const preserve = uniqueListItems(safeArr(s10FixHierarchy.preserve), seenFixItems);
+      const doNotOverfix = uniqueListItems(safeArr(s10FixHierarchy.do_not_overfix), seenFixItems);
+      if (
+        !fixFirst &&
+        priority.length === 0 &&
+        must.length === 0 &&
+        should.length === 0 &&
+        optional.length === 0 &&
+        preserve.length === 0 &&
+        doNotOverfix.length === 0
+      ) {
+        return s10FixHierarchyLimitation ? (
+          <Section title="Prioritised fixes">
+            <p className="text-sm text-muted-foreground">{s10FixHierarchyLimitation}</p>
+          </Section>
+        ) : null;
+      }
+      return (
+        <Section
+          title="Prioritised fixes"
+          hint="Ordered from verified brief/package blockers through optional polish."
+        >
+          {fixFirst && (
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-warning">
+                Fix first
+              </p>
+              <p className="mt-1 font-display text-base font-semibold">
+                {safeStr(fixFirst.title) ?? safeStr(fixFirst.exact_action)}
+              </p>
+              {safeStr(fixFirst.exact_action) && (
+                <p className="mt-1 text-sm">{safeStr(fixFirst.exact_action)}</p>
+              )}
+            </div>
+          )}
+          {priority.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Priority fixes
+              </p>
+              <div className="mt-2">
+                <SimpleList items={priority} marker="→" />
+              </div>
+            </div>
+          )}
+          {must.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Must fix before submitting
+              </p>
+              <div className="mt-2">
+                <SimpleList items={must} marker="→" />
+              </div>
+            </div>
+          )}
+          {should.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Should improve if retaking
+              </p>
+              <div className="mt-2">
+                <SimpleList items={should} marker="→" />
+              </div>
+            </div>
+          )}
+          {optional.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Optional polish
+              </p>
+              <div className="mt-2">
+                <SimpleList items={optional} marker="•" />
+              </div>
+            </div>
+          )}
+          {preserve.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Preserve
+              </p>
+              <div className="mt-2">
+                <SimpleList items={preserve} marker="✓" />
+              </div>
+            </div>
+          )}
+          {doNotOverfix.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Do not over-fix
+              </p>
+              <div className="mt-2">
+                <SimpleList items={doNotOverfix} marker="•" />
+              </div>
+            </div>
+          )}
+        </Section>
+      );
+    }
+    const priorityFixes = safeArr<{ headline?: string; rationale?: string; kind?: string }>(
+      report.priority_fixes,
+    );
+    if (priorityFixes.length > 0) {
+      return (
+        <Section title="Prioritised fixes">
+          <ul className="space-y-3 text-sm">
+            {priorityFixes.map((p, i) => (
+              <li key={i}>
+                <p className="font-display text-base font-semibold leading-snug">
+                  {safeStr(p?.headline) ?? ""}
+                </p>
+                {safeStr(p?.rationale) && (
+                  <p className="mt-1 text-xs text-muted-foreground">{p.rationale}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      );
+    }
+    if (legacyFixFirst) {
+      return (
+        <Section title="Fix this first">
+          <p className="font-display text-lg font-semibold leading-snug">{legacyFixFirst}</p>
+        </Section>
+      );
+    }
+    return null;
+  })();
+
+  // Δ6 P3b: extracted (with the per-category rationale enrichment applied
+  // inline above) so the S10 path can render it at the grid top while legacy
+  // renders it at its original position.
+  const categoryScoresSection = (() => {
+    if (scores) {
+      return (
+        <Section
+          title="Category scores"
+          hint="Discipline-aware labels. Backend score keys are unchanged."
+        >
+          <div className="space-y-3">
+            {CATEGORY_KEYS.map((key) => {
+              const value = scores[key];
+              if (typeof value !== "number") return null;
+              if (key === "vocal" && !shouldShowVocal(t, scores)) return null;
+              return (
+                <div key={key}>
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-sm font-medium">{getCategoryLabel(t, key)}</span>
+                    <span className="text-sm font-semibold tabular-nums">{value}</span>
+                  </div>
+                  <ScoreBar value={value} />
+                  {isS10 ? (
+                    <>
+                      {s10CategoryRationaleByKey[key]?.what_works && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          <span className="font-medium">Works:</span>{" "}
+                          {s10CategoryRationaleByKey[key]?.what_works}
+                        </p>
+                      )}
+                      {s10CategoryRationaleByKey[key]?.score_basis && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          <span className="font-medium">Score basis:</span>{" "}
+                          {s10CategoryRationaleByKey[key]?.score_basis}
+                        </p>
+                      )}
+                      {s10CategoryRationaleByKey[key]?.why_not_full_score && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          <span className="font-medium">Why not full score:</span>{" "}
+                          {s10CategoryRationaleByKey[key]?.why_not_full_score}
+                        </p>
+                      )}
+                      {s10CategoryRationaleByKey[key]?.close_gap && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          <span className="font-medium">Close the gap:</span>{" "}
+                          {s10CategoryRationaleByKey[key]?.close_gap}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    categoryNotes?.[key] && (
+                      <p className="mt-1 text-xs text-muted-foreground">{categoryNotes[key]}</p>
+                    )
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+      );
+    }
+    if (s10 && s10CategoryScoresLimitation) {
+      return (
+        <Section title="Category scores">
+          <p className="text-sm text-muted-foreground">{s10CategoryScoresLimitation}</p>
+        </Section>
+      );
+    }
+    return null;
+  })();
 
   return (
     <div className="tc-report-print-surface space-y-6">
@@ -1260,6 +1516,9 @@ export function V2ReportView({
 
       {/* Colour-coded card grid — 2 columns, stacks on mobile */}
       <div className="tc-tpl3-grid">
+        {/* Δ6 P3b: S10 path promotes these two cards to the grid top. */}
+        {isS10 && categoryScoresSection}
+        {isS10 && prioritisedFixesSection}
         {isS10 && hasS10LevelCalibration && (
           <Section
             title="Selected-level calibration"
@@ -1830,166 +2089,7 @@ export function V2ReportView({
           </>
         )}
 
-        {(() => {
-          if (s10) {
-            if (!s10FixHierarchy) {
-              return s10FixHierarchyLimitation ? (
-                <Section title="Prioritised fixes">
-                  <p className="text-sm text-muted-foreground">{s10FixHierarchyLimitation}</p>
-                </Section>
-              ) : null;
-            }
-            const rawFixFirst = safeObj(s10FixHierarchy.fix_first);
-            const fixFirst = rawFixFirst && itemDedupeKey(rawFixFirst) ? rawFixFirst : null;
-            const seenFixItems = new Set<string>();
-            if (fixFirst) {
-              const key = itemDedupeKey(fixFirst);
-              if (key) seenFixItems.add(key);
-            }
-            const priority = uniqueListItems(safeArr(s10FixHierarchy.priority_fixes), seenFixItems);
-            const must = uniqueListItems(
-              safeArr(s10FixHierarchy.must_fix_before_submitting),
-              seenFixItems,
-            );
-            const should = uniqueListItems(
-              safeArr(s10FixHierarchy.should_improve_if_retaking),
-              seenFixItems,
-            );
-            const optional = uniqueListItems(
-              safeArr(s10FixHierarchy.optional_polish),
-              seenFixItems,
-            );
-            const preserve = uniqueListItems(safeArr(s10FixHierarchy.preserve), seenFixItems);
-            const doNotOverfix = uniqueListItems(
-              safeArr(s10FixHierarchy.do_not_overfix),
-              seenFixItems,
-            );
-            if (
-              !fixFirst &&
-              priority.length === 0 &&
-              must.length === 0 &&
-              should.length === 0 &&
-              optional.length === 0 &&
-              preserve.length === 0 &&
-              doNotOverfix.length === 0
-            ) {
-              return s10FixHierarchyLimitation ? (
-                <Section title="Prioritised fixes">
-                  <p className="text-sm text-muted-foreground">{s10FixHierarchyLimitation}</p>
-                </Section>
-              ) : null;
-            }
-            return (
-              <Section
-                title="Prioritised fixes"
-                hint="Ordered from verified brief/package blockers through optional polish."
-              >
-                {fixFirst && (
-                  <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-warning">
-                      Fix first
-                    </p>
-                    <p className="mt-1 font-display text-base font-semibold">
-                      {safeStr(fixFirst.title) ?? safeStr(fixFirst.exact_action)}
-                    </p>
-                    {safeStr(fixFirst.exact_action) && (
-                      <p className="mt-1 text-sm">{safeStr(fixFirst.exact_action)}</p>
-                    )}
-                  </div>
-                )}
-                {priority.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Priority fixes
-                    </p>
-                    <div className="mt-2">
-                      <SimpleList items={priority} marker="→" />
-                    </div>
-                  </div>
-                )}
-                {must.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Must fix before submitting
-                    </p>
-                    <div className="mt-2">
-                      <SimpleList items={must} marker="→" />
-                    </div>
-                  </div>
-                )}
-                {should.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Should improve if retaking
-                    </p>
-                    <div className="mt-2">
-                      <SimpleList items={should} marker="→" />
-                    </div>
-                  </div>
-                )}
-                {optional.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Optional polish
-                    </p>
-                    <div className="mt-2">
-                      <SimpleList items={optional} marker="•" />
-                    </div>
-                  </div>
-                )}
-                {preserve.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Preserve
-                    </p>
-                    <div className="mt-2">
-                      <SimpleList items={preserve} marker="✓" />
-                    </div>
-                  </div>
-                )}
-                {doNotOverfix.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Do not over-fix
-                    </p>
-                    <div className="mt-2">
-                      <SimpleList items={doNotOverfix} marker="•" />
-                    </div>
-                  </div>
-                )}
-              </Section>
-            );
-          }
-          const priorityFixes = safeArr<{ headline?: string; rationale?: string; kind?: string }>(
-            report.priority_fixes,
-          );
-          if (priorityFixes.length > 0) {
-            return (
-              <Section title="Prioritised fixes">
-                <ul className="space-y-3 text-sm">
-                  {priorityFixes.map((p, i) => (
-                    <li key={i}>
-                      <p className="font-display text-base font-semibold leading-snug">
-                        {safeStr(p?.headline) ?? ""}
-                      </p>
-                      {safeStr(p?.rationale) && (
-                        <p className="mt-1 text-xs text-muted-foreground">{p.rationale}</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            );
-          }
-          if (legacyFixFirst) {
-            return (
-              <Section title="Fix this first">
-                <p className="font-display text-lg font-semibold leading-snug">{legacyFixFirst}</p>
-              </Section>
-            );
-          }
-          return null;
-        })()}
+        {!isS10 && prioritisedFixesSection}
 
         {(() => {
           if (s10) return null;
@@ -2051,44 +2151,7 @@ export function V2ReportView({
         })()}
 
         {/* Categories */}
-        {(() => {
-          if (scores) {
-            return (
-              <Section
-                title="Category scores"
-                hint="Discipline-aware labels. Backend score keys are unchanged."
-              >
-                <div className="space-y-3">
-                  {CATEGORY_KEYS.map((key) => {
-                    const value = scores[key];
-                    if (typeof value !== "number") return null;
-                    if (key === "vocal" && !shouldShowVocal(t, scores)) return null;
-                    return (
-                      <div key={key}>
-                        <div className="flex items-baseline justify-between">
-                          <span className="text-sm font-medium">{getCategoryLabel(t, key)}</span>
-                          <span className="text-sm font-semibold tabular-nums">{value}</span>
-                        </div>
-                        <ScoreBar value={value} />
-                        {categoryNotes?.[key] && (
-                          <p className="mt-1 text-xs text-muted-foreground">{categoryNotes[key]}</p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </Section>
-            );
-          }
-          if (s10 && s10CategoryScoresLimitation) {
-            return (
-              <Section title="Category scores">
-                <p className="text-sm text-muted-foreground">{s10CategoryScoresLimitation}</p>
-              </Section>
-            );
-          }
-          return null;
-        })()}
+        {!isS10 && categoryScoresSection}
 
         {/* Components */}
         {(() => {
