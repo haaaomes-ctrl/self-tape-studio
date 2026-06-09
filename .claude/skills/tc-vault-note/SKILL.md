@@ -1,6 +1,6 @@
 ---
 name: tc-vault-note
-description: The canonical schema, front-matter and status lifecycle for any note in the TapeCoach knowledge corpus (the knowledge/ vault). Use this whenever you create, write, update, or restructure a note under knowledge/ — including capturing research, recording the reasoning behind a decision, or marking a note as superseded or decided. Always use this skill before writing any knowledge/ note so the metadata stays consistent across every tool; do not invent your own front-matter fields or status values.
+description: The canonical schema, front-matter and status lifecycle for any note in the TapeCoach knowledge corpus (the knowledge/ vault). Use this whenever you create, write, update, or restructure a note under knowledge/ — including capturing research, recording the reasoning behind a decision, or marking a note as superseded or decided. Always use this skill before writing any knowledge/ note so the metadata stays consistent across every tool; do not invent your own front-matter fields or status values. It also carries the link-wiring contract — spine refs in the spine_anchor frontmatter, note→note links as body [[wikilinks]] with a ## Links section, ADR/README/AGENTS refs as plain text in the body — and auto-derives that wiring from the body before saving so every note is born fully wired for both the index and the graph.
 ---
 
 # TapeCoach Corpus Note Schema

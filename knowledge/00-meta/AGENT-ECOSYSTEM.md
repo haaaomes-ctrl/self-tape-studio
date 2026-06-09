@@ -29,13 +29,33 @@
 
 Each role now declares an **output format** and **termination conditions** (the two fields the failure research showed are most often missing).
 
-### Developer (implementer)
+### Developer (implementer) — **Tranche 1 (built: `.claude/agents/developer.md`)**
 
-- **Purpose:** implement approved work. **Inputs:** approved handoff/plan, spine, corpus. **Output format:** code on a branch + filled Results in the handoff note + PR. **Authority:** routine/reversible decisions. **Escalates:** ADR-class decisions, blockers. **Terminates:** when acceptance is met (PR opened) or blocked. **Tools/skills:** repo, `tc-handoff`, PR cycle. **Writes:** code (PR), corpus (results).
+The implementer half of the evaluator–optimizer pair; the committed subagent `.claude/agents/developer.md` is its operational definition and this section is its canonical contract.
 
-### Senior Developer / Code Review — **Tranche 1 (with Developer)**
+- **Purpose:** implement approved work as code, prove it against the gates, open a PR for review. It optimises; the senior-dev evaluates. It does not self-approve and it does not merge.
+- **Inputs:** an approved handoff/plan (a `knowledge/05-handoffs/` note) with acceptance criteria; the spine and corpus for context; the senior-dev's findings when iterating.
+- **The one write path:** it is the **only** agent that mutates code, and only ever via **branch + PR** — never a commit to `main`, never a push to someone else's branch, never a self-merge. It opens the PR and **holds**; it does not squash-merge or delete branches unless the operator says so.
+- **Corpus-write nuance:** it may also write the **corpus** (`knowledge/`) — but only to fill handoff Results via `tc-handoff` and capture notes via `tc-vault-note`. It never edits the spine (`README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/**`); spine changes are _proposals_ for a reviewed PR.
+- **Gates (run locally, must pass):** `npm exec tsc -- --noEmit`; `npx vitest run` (3 known pre-existing failures: launch-assets, s10-bug-audit-regressions, admin-credit-entitlement); `npm exec prettier -- --check` on changed files; `npm run build`; `npm run dry-run:analysis-worker` **only** when `analysis-worker/` (or its deps) changed.
+- **Output format:** Branch / Change (file:line) / Acceptance per criterion / Gates (flagging NEW failures vs the 3 known) / PR URL (opened and holding) / open decisions or escalations.
+- **Authority:** routine, reversible, local decisions (no interface or behaviour change). **Escalates:** ADR-class decisions and unresolvable blockers — pause and ask rather than guess.
+- **Terminates:** acceptance met, gates green, PR open and holding, Results filled — or blocked/escalated (an ADR-class decision, a failing gate it cannot resolve, acceptance it cannot meet, or a review loop that hits the cap).
+- **Tools:** `Read, Edit, Write, Grep, Glob, Bash, Skill`. **Skills:** `tc-handoff`, `tc-vault-note`. **Writes:** code (PR), corpus (Results/notes).
 
-- **Purpose:** independent review of plan and diffs. **Inputs:** plan/diff, acceptance, spine, ADR rule. **Output format:** structured findings + verdict (approve / changes / escalate). **Authority:** approve or block at code-quality level; iterate with Developer. **Escalates:** uncertainty, ADR-class concerns, repeated failure to meet acceptance. **Terminates:** approve, or escalate at the max-iteration cap (never silently). **Tools/skills:** review criteria, ADR rule, `tc-knowledge-index`. **Writes:** corpus (review notes).
+### Senior Developer / Code Review — **Tranche 1 (built: `.claude/agents/senior-dev.md`)**
+
+The evaluator half of the pair; the committed subagent `.claude/agents/senior-dev.md` is its operational definition and this section is its canonical contract.
+
+- **Purpose:** independently review the developer's plan and diffs against acceptance, code quality, and the ADR significance rule. It catches what one implementer alone would miss. It verifies; it does not implement.
+- **READ-ONLY on code (hard rule):** it never writes, edits or mutates code — it has **no Edit/Write tools by design**. It reads, inspects, searches and runs read-only checks (`git diff`, `git log`, `tsc`, `vitest`, `prettier --check`, `npm run build`). The single write path to code is the developer's, via branch + PR — not the reviewer's; if a fix is needed it specifies it as a finding. It does not merge, squash, push or delete branches.
+- **Its only writes are corpus review notes** via `tc-vault-note`; never the spine — ADR-class concerns are raised as findings/escalations, not spine edits.
+- **Inputs:** the plan/handoff and its acceptance; the diff (`git diff main...<branch>`) and the developer's report; the spine, ADRs, and the ADR significance rule.
+- **Review dimensions:** acceptance (route/PDF or behaviour, not payload-parity alone); correctness & quality (bugs, edge cases, thin/generic output, test adequacy, style); gates (confirm tsc/vitest/prettier/build pass, flag NEW failures vs the 3 known); ADR significance (an unproposed ADR-class change is an escalation, not a nit).
+- **Output format (every round):** Verdict `approve | changes-requested | escalate`; Round N of MAX; numbered Findings (severity + file:line + the specific change); per-criterion acceptance check; ADR significance.
+- **Authority:** approve or block at code-quality level; iterate with the developer. **Never rubber-stamps** — a reluctant approval is not a valid outcome; escalation is.
+- **Terminates:** approve when acceptance is fully met and gates are green; otherwise changes-requested back to the developer. **Hard cap: MAX 3 review rounds** — if not converged to approve by the end of round 3, **escalate to the operator** (never a round 4); escalate immediately, before the cap, on any ADR-class concern or genuine uncertainty.
+- **Tools:** `Read, Grep, Glob, Bash, Skill` (no Edit/Write by design). **Skills:** `tc-vault-note`. **Writes:** corpus (review notes) only.
 
 ### Business Analyst — **Tranche 2**
 
