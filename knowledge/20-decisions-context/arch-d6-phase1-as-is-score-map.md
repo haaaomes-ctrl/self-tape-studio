@@ -20,7 +20,7 @@ monday_ref: "2967682223"
 tags: [arch-deltas, decisions, score-model, level-calibration, inversion, conformance, pipeline]
 confidence: high
 created: 2026-06-07
-updated: 2026-06-07
+updated: 2026-06-09
 ---
 
 ## Summary
@@ -101,6 +101,12 @@ and persistence at `:5923/:5929/:6903` (full-span scan confirms zero). So this s
 
 - **N1 — recompute** (`:5237`): `recomputeOverall(modelScores, weights)` (weighted, renormalised,
   `audition-rules.ts:711+`) yields a number that can differ from the AI-authored readiness A.
+  **Now fixed by Δ4-S1 (#251, merged):** this map assumed `modelScores` (= `report.scores`) held the
+  marks, but on the live two-step path the model emitted a ZEROED flat-scores skeleton, so N1
+  returned ~0, D fell back to A (`|| report.overall_score`) and the zeroed audio tripped the cap →
+  persisted overall 60 on a clean ~90 take. Δ4-S1 populates `report.scores` from the marked L2
+  `category_scores` before N1, so D is now computed from real marks and the A-over-D fallback is
+  removed on the S10 path. See [[arch-d4-s1-l1-l2-collapse-outcome]].
 - **N2 — audio cap** (`:5246-5248`, re-applied post-role-fit `:5331-5333`): tiered <35→60, <50→62,
   <60→75. A has no audio channel, so A is uncapped here.
 - **N3 — role-fit modifier** (`:5329-5330`): clamped [-10,+5], applied to D only; A never sees it.
