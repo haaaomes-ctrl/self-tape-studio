@@ -1,27 +1,53 @@
-## Rotate SUPABASE_SERVICE_ROLE_KEY
+I want to continue the design planning from your plan
 
-Use the `supabase--rotate_api_keys` tool to generate fresh Supabase API keys for this Lovable Cloud project. This will:
+&nbsp;
 
-1. Generate a new `SUPABASE_SERVICE_ROLE_KEY` (and refresh the publishable/anon key pair).
-2. Update the project's `.env` and internal integration data so server functions and the admin client (`src/integrations/supabase/client.server.ts`) pick up the new key automatically.
-3. Disable the previous keys so any leaked copy stops working.
+## Cinematic aperture loading card with fluid stick character
 
-### After rotation — manual steps you'll need to do
+### Scope
 
-The rotated value is **not** automatically propagated to anything outside this Lovable project. You must update it everywhere it's been pasted, specifically:
+Update `src/components/audition/ProcessingTakeView.tsx` (shared by `/audition/$auditionId` and `/demo-processing`) to replace the small Loader2 spinner with the selected "Cinematic aperture" treatment: a hero panel featuring an animated stick character with a fluid, melting motion style, a scanning grid background, and the 6-stage list intact below.
 
-- **External Cloudflare Worker** — paste the new `SUPABASE_SERVICE_ROLE_KEY` into the Worker's secrets (`wrangler secret put SUPABASE_SERVICE_ROLE_KEY` or via the Cloudflare dashboard) and redeploy.
-- Any other external service, CI secret store, or local `.env` file where the old key was stored.
+Both the demo route and the real processing screen will receive the redesign — the user asked to "bring to life the 6 stages", and both routes share this component.
 
-### What I will NOT touch
+### Visual approach
 
-- No source code changes.
-- No migrations.
-- No edits to `src/integrations/supabase/client.server.ts`, `.env` (manually), or any auto-generated files.
-- No publish/deploy.
+Match the selected prototype's composition exactly:
 
-### Confirmation needed
+- Rounded bordered card with offset shadow on an off-white page.
+- Hero panel (~h-72) on top: subtle dotted grid background + a vertical scan-line that sweeps top→bottom on loop.
+- Centred stick figure (head, torso, two arms, two legs) with `body-bounce`, `head-bob`, and limb-swing keyframes — extended into a **fluid, melting** style via:
+  - SVG figure using `<path>` limbs with control points that ripple (CSS variable / SMIL) so limbs flow rather than pivot rigidly.
+  - A soft `filter: url(#goo)` SVG gooey filter on the figure group so head/joints blob-merge during motion.
+  - Gentle skew/wobble on the torso for a drip feel.
+- Small mono "Subject_01: Active" status chip in the hero corner.
+- Stage-aware: the figure's motion shifts subtly per stage (amplitude/timing toggled via a `data-stage` attribute) so each step feels different. Stage list and all copy stay intact.
+- Below the hero: title (Merriweather), one-line subtitle, the full 6-step list with done / active-pulse / pending rows.
+- Footer chip shows the existing **elapsed timer** (not an "estimated remaining" — AGENTS forbids predicting non-deterministic ETAs).
 
-Rotating immediately invalidates the current service role key. Any system still using the old key (including the Cloudflare Worker you mentioned earlier) will start failing with auth errors until you update it.
+### Brand reconciliation
 
-Confirm and I'll run the rotation, then report back the new key so you can paste it into the Worker.
+The prototype was neo-brutalist mono (#1A1A1A / #F4F4F4). To honour brand memory:
+
+- Keep the prototype's bordered-card composition, scan-line, gooey character, mono chip.
+- Recolour: card border + figure stroke → navy `#091E42`; scan-line + active pulse → royal `#2F80ED`; active stage glow → violet `#7B4DFF`; page bg → off-white `#F8F9FB`; done ticks → success `#2F855A`. All via existing semantic tokens.
+- Headline font: Merriweather. Mono chip: system mono stack (no new font dependency).
+
+Say the word if you'd rather I keep the verbatim mono palette instead.
+
+### Files touched
+
+- `src/components/audition/ProcessingTakeView.tsx` — replace the hero spinner block with the SVG character + scan-line + status chip; keep timer, stage list, reassurance copy, cancel link.
+- `src/styles.css` — add keyframes (`limb-swing-*`, `head-bob`, `body-bounce`, `scan-line`, `melt-drip`) and the gooey SVG filter helper. No new colour tokens.
+- No new packages. No route, schema, server-function, or analysis-pipeline changes.
+
+### Verification
+
+- `/demo-processing` — cycle all 6 stages via demo controls; confirm the character keeps moving, scan-line loops, active row pulses, timer ticks, no layout shift between stages.
+- Spot-check at 375px width — card scales, character doesn't overflow.
+- `tsc --noEmit` clean.
+
+### Out of scope
+
+- No copy changes, no removal of the 6-stage list, no progress percentage.
+- No changes to `/audition/$auditionId` polling or business logic.

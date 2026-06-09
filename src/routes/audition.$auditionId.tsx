@@ -11,6 +11,7 @@ import { CreditUseNotice } from "@/components/credit-balance-panel";
 import { VideoDurationNotice } from "@/components/video-duration-notice";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { UploadPolicyNotice } from "@/components/legal-policy-links";
+import { ProcessingHero } from "@/components/audition/processing-hero";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -786,9 +787,9 @@ function ProcessingTakeView({ take }: { take: Take }) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
-      <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-      <p className="mt-4 font-display text-lg font-semibold">{title}</p>
+    <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-soft sm:p-10">
+      <ProcessingHero stage={phase} />
+      <p className="mt-6 font-display text-lg font-semibold">{title}</p>
       <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
       <p className="mt-3 text-xs text-muted-foreground tabular-nums">
         Elapsed: {formatElapsed(elapsed)}
