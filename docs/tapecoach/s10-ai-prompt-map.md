@@ -15,7 +15,7 @@ Runtime provenance, GateTrace, ValidatorTrace, public/private parity and QA proo
 | S10 fix hierarchy and next action                 | `s10_fix_hierarchy_next_action_v1`                           | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts`          | Step 2 / single-pass post-readiness action planning   | Active embedded module          |
 | S10 strengths, preserve and professional critique | `s10_strengths_preserve_professional_critique_v1`            | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts`          | Step 2 / single-pass post-fix professional critique   | Active embedded module          |
 | S10 technique-library commentary                  | `s10_technique_library_commentary_v1`                        | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts`          | Step 2 / single-pass post-professional critique       | Active embedded module          |
-| S10 timestamped/time-banded commentary            | `s10_timestamped_commentary_v1`                              | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts`          | Step 2 / single-pass post-technique commentary        | Active embedded module          |
+| S10 timestamped/time-banded commentary            | `s10_timestamped_commentary_v2`                              | `src/server/report-polish.server.ts` + `src/server/process-take.server.ts`          | Step 2 / single-pass post-technique commentary        | Active embedded module          |
 | S10 professional judgement/module map             | `s10_professional_judgement_module_map_v1`                   | `src/server/report-polish.server.ts`                                                | Step 2 judgement / report generation                  | Active                          |
 | S10 single-pass professional judgement/module map | `s10_professional_judgement_module_map_v1`                   | `src/server/process-take.server.ts`                                                 | Single-pass recovery                                  | Active                          |
 | S10 module repair                                 | `s10_module_repair_v1`                                       | `src/server/s10-report-prompt-map.server.ts`                                        | Repair prompt template                                | Active template                 |
@@ -180,7 +180,7 @@ S10.8 rules:
 
 ## S10.9 Timestamped And Time-Banded Commentary
 
-The active Step 2 and single-pass prompts embed `s10_timestamped_commentary_v1`. After `s10_technique_commentary`, the AI must produce authoritative `s10_timestamped_commentary` from verified S10 evidence. The existing Step 1 `timestamped_notes` lock remains in place: Step 2 must not directly bypass it. S10.9 validates the richer structured module and then projects only safe notes into legacy `timestamped_notes`.
+The active Step 2 and single-pass prompts embed `s10_timestamped_commentary_v2`. After `s10_technique_commentary`, the AI must produce authoritative `s10_timestamped_commentary` from verified S10 evidence. The existing Step 1 `timestamped_notes` lock remains in place: Step 2 must not directly bypass it. S10.9 validates the richer structured module and then projects only safe notes into legacy `timestamped_notes`.
 
 S10.9 source hierarchy:
 
