@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { brandTitle } from "@/config/brand";
+import { ProcessingHero } from "@/components/audition/processing-hero";
 
 export const Route = createFileRoute("/demo-processing")({
   head: () => ({ meta: [{ title: brandTitle("Processing demo") }] }),
@@ -150,9 +150,9 @@ function DemoProcessingPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-soft">
-          <Loader2 className="mx-auto h-6 w-6 animate-spin text-primary" />
-          <p className="mt-4 font-display text-lg font-semibold">{title}</p>
+        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-soft sm:p-10">
+          <ProcessingHero stage={phase} />
+          <p className="mt-6 font-display text-lg font-semibold">{title}</p>
           <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
           <p className="mt-3 text-xs text-muted-foreground tabular-nums">
             Elapsed: {formatElapsed(elapsed)}
