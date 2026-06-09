@@ -74,8 +74,6 @@ export function ProcessingHero({
           <line x1="80" y1="130" x2="100" y2="184" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
         </g>
       </svg>
-        </g>
-      </svg>
 
       {/* Status chip */}
       <div className="absolute bottom-3 left-3 rounded border border-border bg-background/90 px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-tighter text-foreground">
