@@ -17,6 +17,11 @@
 
 import type { FutureDimensionsResult, FutureComponent } from "./dimensions";
 import {
+  PUBLIC_CATEGORIES,
+  clampScore,
+  deriveDimensionScoresFromCategoryScores,
+} from "./score-projection.server";
+import {
   buildS10LimitedPerformerReportViewModel,
   buildS10PerformerReportViewModel,
   hasS10AuthoritativeModules,
@@ -100,15 +105,11 @@ export interface V2Report {
   };
 }
 
-/** Fixed list mirroring existing six production score fields. */
-export const PUBLIC_CATEGORIES = [
-  "technical",
-  "audio",
-  "vocal",
-  "acting",
-  "brief_adherence",
-  "professional_presentation",
-] as const;
+/**
+ * Re-exported from the single-source-of-truth projection module so existing
+ * importers of `PUBLIC_CATEGORIES` from this file keep working (Δ4-S1).
+ */
+export { PUBLIC_CATEGORIES };
 
 export interface BuildV2ReportArgs {
   legacyReport: Record<string, unknown> | null | undefined;
@@ -152,12 +153,6 @@ function asCategoryNotes(v: unknown): Record<string, string> | null {
     if (typeof raw === "string" && raw.trim()) out[key] = raw;
   }
   return Object.keys(out).length > 0 ? out : null;
-}
-
-function clampScore(value: unknown): number | null {
-  const n = asNum(value);
-  if (n == null) return null;
-  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 function sentenceList(value: unknown, limit = 12): string[] {
@@ -347,15 +342,12 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     ? s10NextPlan
     : (nextPlanFromLegacy ?? (drills.length > 0 ? { steps: drills } : null));
 
+  // Δ4-S1: derive the flat L1 dimension map from the marked L2 category_scores
+  // via the single-source-of-truth helper. Identical filter/clamp to the prior
+  // inline reduce; `null`-when-empty boundary preserved for downstream consumers.
   const s10Scores =
     scoreSummary?.category_scores && scoreSummary.category_scores.length > 0
-      ? scoreSummary.category_scores.reduce<Record<string, number>>((acc, row) => {
-          const score = clampScore(row.score);
-          if (score != null && PUBLIC_CATEGORIES.includes(row.category_id as never)) {
-            acc[row.category_id] = score;
-          }
-          return acc;
-        }, {})
+      ? deriveDimensionScoresFromCategoryScores(scoreSummary.category_scores)
       : null;
   const s10CategoryNotes =
     scoreSummary?.category_scores && scoreSummary.category_scores.length > 0

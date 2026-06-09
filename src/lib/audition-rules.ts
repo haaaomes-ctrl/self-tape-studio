@@ -872,6 +872,42 @@ export function computeBlockers(input: {
   return blockers;
 }
 
+// Single source of truth for the tiered audio cap. Pure: given an overall and a
+// (possibly absent) audio score, returns the capped overall plus whether/why it
+// capped. Absent audio (null) NEVER caps. The thresholds and reason strings are
+// the contract — kept verbatim from the original inline implementation here and
+// in process-take.server.ts (which now both call this helper).
+//   - audio < 35 && overall > 60 → 60
+//   - audio < 50 && overall > 62 → 62
+//   - audio < 60 && overall > 75 → 75
+export function applyAudioCap(
+  overall: number,
+  audio: number | null,
+): { overall: number; capped: boolean; reason?: string } {
+  if (audio != null && audio < 35 && overall > 60) {
+    return {
+      overall: 60,
+      capped: true,
+      reason: "audio is too unclear to fairly judge the performance",
+    };
+  }
+  if (audio != null && audio < 50 && overall > 62) {
+    return {
+      overall: 62,
+      capped: true,
+      reason: "audio clarity needs lifting before this is sendable",
+    };
+  }
+  if (audio != null && audio < 60 && overall > 75) {
+    return {
+      overall: 75,
+      capped: true,
+      reason: "audio is workable but a clearer take would land harder",
+    };
+  }
+  return { overall, capped: false };
+}
+
 // Apply caps to overall + verdict label given blockers and brief adherence.
 export function applyCapsAndLabel(input: {
   overall: number;
@@ -885,24 +921,16 @@ export function applyCapsAndLabel(input: {
   let capped = false;
   let reason: string | undefined;
 
-  // Tiered audio caps:
+  // Tiered audio caps (single source of truth: applyAudioCap):
   //   - <35  → hard blocker (handled in computeBlockers); cap at 60 here as belt-and-braces.
   //   - 35–49 → cap at "Worth another take" (≤62 in level bands typically).
   //   - 50–59 → soft cap at 75; surfaces a risk flag elsewhere but allows
   //             "Ready to submit" if the rest of the tape is strong.
-  const audio = input.scores.audio ?? null;
-  if (audio != null && audio < 35 && overall > 60) {
-    overall = 60;
+  const audioCap = applyAudioCap(overall, input.scores.audio ?? null);
+  overall = audioCap.overall;
+  if (audioCap.capped) {
     capped = true;
-    reason = "audio is too unclear to fairly judge the performance";
-  } else if (audio != null && audio < 50 && overall > 62) {
-    overall = 62;
-    capped = true;
-    reason = "audio clarity needs lifting before this is sendable";
-  } else if (audio != null && audio < 60 && overall > 75) {
-    overall = 75;
-    capped = true;
-    reason = "audio is workable but a clearer take would land harder";
+    reason = audioCap.reason;
   }
 
   let label = labelForScore(overall, input.level);
