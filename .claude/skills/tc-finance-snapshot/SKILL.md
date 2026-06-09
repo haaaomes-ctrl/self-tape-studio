@@ -15,23 +15,26 @@ names below are the contract the queries run against.
 - **Read-boundary:** owned Supabase only, **SELECT and views only**. No INSERT/UPDATE/
   DELETE, no DDL, no `apply_migration`, no edge-function deploy, no Stripe/config. The
   finance views are private by grant (SELECT to `postgres`/`service_role` only — not
-  `anon`/`authenticated`); read them through the service-role MCP query path.
+  `anon`/`authenticated`); the CFO reads them through the `supabase-cfo-ro` MCP, which
+  connects **as the `cfo_readonly` role** via a read-only DSN (env var
+  `CFO_READONLY_DATABASE_URL`) and exposes the read-only `query` tool.
 - **Write-boundary:** writes only under `knowledge/60-finance/`, as a `tc-vault-note`
   note. Never edits the spine, code, or any other corpus area.
 
-> **No-write is structural; finance-scoping is the remaining follow-up.** The CFO's DB path
-> is the dedicated `supabase-cfo-ro` MCP (`read_only=true`), so every query runs as a
-> read-only Postgres user and DML/DDL cannot succeed — no-write is **structural**, not a
-> contract. A finance-scoped `cfo_readonly` role also exists and is verified (`USAGE` +
-> `SELECT` on the 20 finance relations only). The remaining step — the CFO connecting **as**
-> `cfo_readonly` via a direct read-only DSN, so finance-scoping is structural at the
-> connection too — is a tracked follow-up; until then, honour finance-scoping by querying
-> only this skill's grounded query set. See `knowledge/60-finance/finance-area-readme.md`.
+> **Read-only and finance-scoping are both structural at the connection.** The CFO's DB path
+> is the dedicated `supabase-cfo-ro` MCP — a Postgres-protocol MCP that connects **as the
+> `cfo_readonly` role** via a read-only DSN (env var `CFO_READONLY_DATABASE_URL`). The role
+> has **zero write grants** (any DML/DDL is rejected as `permission denied`, and the MCP also
+> runs each query in a read-only transaction) and can **`SELECT` only the 20 finance
+> relations** (DS-04/06/13/16/17) and nothing else. So both no-write and finance-scoping are
+> **structural**, not a contract — there is no interim follow-up. See
+> `knowledge/60-finance/finance-area-readme.md`.
 
 ## Grounded schema (verified against the live schema, 2026-06-08)
 
-Use these names exactly. If a name is not listed, confirm it with `list_tables` or an
-`information_schema.columns` SELECT **before** using it — never invent a table/column/view.
+Use these names exactly. If a name is not listed, confirm it via an
+`information_schema.columns` SELECT through the `query` tool **before** using it — never
+invent a table/column/view.
 
 **DS-16 — AI-usage cost baseline** (`public`):
 
