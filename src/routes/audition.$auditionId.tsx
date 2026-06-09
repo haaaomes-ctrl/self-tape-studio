@@ -1077,6 +1077,9 @@ function TakeView({
   // Phase 3B — schema-version branch. Only "v2-component" routes to the v2
   // renderer; missing/unknown/v1-legacy continues through the existing v1
   // path. Reads via readReportSchemaVersion so renderer source stays clean.
+  // D3: the post-return v1 TakeView path (everything after this branch's early
+  // return) renders only non-"v2-component" reports, of which the live DB
+  // currently has none (dead in practice; retained pending the staged v1 removal).
   if (readReportSchemaVersion(r) === "v2-component") {
     return (
       <V2ReportView

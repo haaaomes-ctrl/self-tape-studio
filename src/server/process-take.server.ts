@@ -6867,6 +6867,12 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     // to choose layout. Legacy stays "v1-legacy"; future component-first
     // reports will write "v2-component" once the future_report_enabled flag
     // is flipped on. Never change the value of an already-persisted report.
+    //
+    // D3: the live persist path always stamps "v2-component" for S10 reports via
+    // buildRouteReportForPersistence; this "v1-legacy" default only applies to a
+    // legacy_passthrough (non-S10) report. As of 2026-06-09 the live DB holds 0
+    // non-"v2-component" reports and `future_report_enabled` is currently FALSE — so
+    // this default is dead IN PRACTICE, but retained as the failure-mode default.
     if (typeof (report as Record<string, unknown>).schema_version !== "string") {
       (report as Record<string, unknown>).schema_version = "v1-legacy";
     }
@@ -7094,6 +7100,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
           analysis_run_id: analysisRunId,
           report_model_status: "rendered",
           report: reportToPersist,
+          // D3 PRESERVE — the denormalised comparison columns. `report.scores` is the CANONICAL derived dimension set (set at :5347 `report.scores = derivedDimensionScores`, Δ4-S1); `overall_score` = round(overall), the canonical overall D after caps/readiness semantics (:5464 applyAudioCap → :5492). These feed CompareView/dashboards and MUST stay canonical. (Distinct from the deprecated in-payload V2Report.scores JSON copy.)
           scores: report.scores,
           overall_score: overallScoreForPersist,
           confidence: confidenceForPersist,
