@@ -1018,6 +1018,22 @@ const S10_TIMESTAMPED_NOTE_SCHEMA = {
     is_projection_safe: { type: "boolean" },
     projection_block_reason: { type: ["string", "null"] },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
+    // Δ6 P5 (DISPLAY-ONLY): optional per-note valence + linked scoring category.
+    // Kept out of `required` so absence is handled by parseNote defaults
+    // (neutral / null); forward-only. Neither moves any score or verdict.
+    valence: { type: ["string", "null"], enum: ["strength", "neutral", "improvement", null] },
+    linked_category: {
+      type: ["string", "null"],
+      enum: [
+        "technical",
+        "audio",
+        "vocal",
+        "acting",
+        "brief_adherence",
+        "professional_presentation",
+        null,
+      ],
+    },
     is_generic_fallback: { type: "boolean", enum: [false] },
   },
   required: [

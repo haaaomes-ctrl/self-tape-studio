@@ -167,7 +167,12 @@ export type MetricName =
   // Δ6 P2 MD-voice: fires when the subjective practitioner's-perspective note was
   // suppressed because it contained submission/readiness-verdict language (it must
   // never imply a verdict that could contradict the canonical one).
-  | "md_voice_suppressed_verdict_claim";
+  | "md_voice_suppressed_verdict_claim"
+  // Δ6 P5 per-note valence: deterministic display-only reconciliation guard. Fires
+  // only when a timestamped note's AI valence was "strength" yet the note links a
+  // fix or is a missing-component note and links no strength — a self-contradiction
+  // corrected to "improvement". Display-only; never moves any score or verdict.
+  | "s10_valence_reconciled_to_improvement";
 
 export interface MetricFields {
   take_id?: string | null;

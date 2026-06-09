@@ -2617,31 +2617,86 @@ export function V2ReportView({
               )}
               {notes.length > 0 && (
                 <ul className="mt-3 space-y-2 text-sm">
-                  {notes.map((n, i) => (
-                    <li key={safeStr(n.id) ?? i} className="flex gap-3">
-                      <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-                        {safeStr(n.display_label) ?? safeStr(n.timecode) ?? "Timing unavailable"}
-                      </span>
-                      <span>
-                        {(safeStr(n.title) ?? safeStr(n.detail)) && (
-                          <span className="font-medium">
-                            {safeStr(n.title) ?? safeStr(n.detail)}
+                  {notes.map((n, i) => {
+                    // Δ6 P5 (DISPLAY-ONLY): valence colours a left rail and a short
+                    // text cue; the CUE TEXT carries the signal independent of colour
+                    // (colour-blind + screen-reader safe). linked_category adds a tag.
+                    const valence = safeStr(n.valence) ?? "neutral";
+                    const railClass =
+                      valence === "strength"
+                        ? "border-success"
+                        : valence === "improvement"
+                          ? "border-warning"
+                          : "border-border";
+                    const cueClass =
+                      valence === "strength"
+                        ? "text-success"
+                        : valence === "improvement"
+                          ? "text-warning"
+                          : "text-muted-foreground";
+                    const cueLabel =
+                      valence === "strength"
+                        ? "Strength"
+                        : valence === "improvement"
+                          ? "Work on"
+                          : "Note";
+                    const rawCategory = safeStr(n.linked_category);
+                    const categoryLabel = (
+                      [
+                        "technical",
+                        "audio",
+                        "vocal",
+                        "acting",
+                        "brief_adherence",
+                        "professional_presentation",
+                      ] as const
+                    ).includes(rawCategory as PublicCategoryKey)
+                      ? getCategoryLabel(t, rawCategory as PublicCategoryKey)
+                      : null;
+                    return (
+                      <li
+                        key={safeStr(n.id) ?? i}
+                        className={cn("flex gap-3 border-l-2 pl-3", railClass)}
+                      >
+                        <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                          {safeStr(n.display_label) ?? safeStr(n.timecode) ?? "Timing unavailable"}
+                        </span>
+                        <span>
+                          <span className="mb-0.5 flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={cn(
+                                "text-[10px] font-semibold uppercase tracking-wider",
+                                cueClass,
+                              )}
+                            >
+                              {cueLabel}
+                            </span>
+                            {categoryLabel && (
+                              <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                {categoryLabel}
+                              </span>
+                            )}
                           </span>
-                        )}
-                        {safeStr(n.title) && safeStr(n.detail) && <> — {safeStr(n.detail)}</>}
-                        {safeStr(n.action) && (
-                          <span className="block text-xs text-muted-foreground">
-                            Action: {safeStr(n.action)}
-                          </span>
-                        )}
-                        {safeStr(n.evidence_summary) && (
-                          <span className="block text-xs text-muted-foreground">
-                            {safeStr(n.evidence_summary)}
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
+                          {(safeStr(n.title) ?? safeStr(n.detail)) && (
+                            <span className="font-medium">
+                              {safeStr(n.title) ?? safeStr(n.detail)}
+                            </span>
+                          )}
+                          {safeStr(n.title) && safeStr(n.detail) && <> — {safeStr(n.detail)}</>}
+                          {safeStr(n.action) && (
+                            <span className="block text-xs text-muted-foreground">
+                              Action: {safeStr(n.action)}
+                            </span>
+                          )}
+                          {safeStr(n.evidence_summary) && (
+                            <span className="block text-xs text-muted-foreground">
+                              {safeStr(n.evidence_summary)}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
               {timestampLimitations.length > 0 && (

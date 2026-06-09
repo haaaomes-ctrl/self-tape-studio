@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createS10PerformerLevelCalibration } from "@/lib/audition-rules";
 import type {
   BriefAchievementMatrix,
@@ -258,6 +258,8 @@ function note(overrides: Partial<S10TimestampedNote>): S10TimestampedNote {
     is_projection_safe: true,
     projection_block_reason: null,
     confidence: "high",
+    valence: "neutral",
+    linked_category: null,
     is_generic_fallback: false,
     ...overrides,
   };
@@ -740,5 +742,248 @@ describe("S10.9 timestamped and time-banded commentary", () => {
 
     expect(scrub.removed).toBeGreaterThan(0);
     expect(JSON.stringify(report)).not.toContain("Useful moment");
+  });
+});
+
+// Δ6 P5 — AI-authored per-note valence + module-link on timestamped commentary.
+// valence/linked_category are DISPLAY-ONLY: they parse defensively, carry a
+// deterministic reconciliation guard against self-contradicting "strength" valence,
+// and must NEVER feed any score/cap/verdict/gate computation.
+describe("Δ6 P5 — per-note valence + linked_category parsing", () => {
+  // Clause 1: parse defaults. Absent/invalid valence → "neutral"; absent/invalid
+  // linked_category → null. FAILS before the parse-path fields exist.
+  it("defaults a missing valence to neutral and a missing linked_category to null", () => {
+    const result = normaliseS10TimestampedCommentary({
+      commentary: {
+        notes: [
+          {
+            id: "plain_note",
+            timecode: "00:10",
+            start_time: "00:10",
+            timestamp_precision: "exact",
+            is_exact_timestamp_supported: true,
+            title: "Observed technical moment",
+            detail: "Framing and audio are clean in this observed beat.",
+            component_type: "technical",
+            component_status: "present",
+            // no valence, no linked_category
+          },
+        ],
+      },
+      matrix: matrix(),
+      readiness,
+      fixHierarchy,
+      nextActionPlan,
+      professionalCritique: critique,
+      techniqueCommentary: technique,
+      observedTapeSequence,
+      componentVerifications: verifications,
+      timestampedEvidence,
+    });
+
+    const parsed = result.notes.find((item) => item.id === "plain_note");
+    expect(parsed).toBeDefined();
+    expect(parsed?.valence).toBe("neutral");
+    expect(parsed?.linked_category).toBeNull();
+  });
+
+  it("coerces an invalid valence to neutral and an invalid linked_category to null", () => {
+    const result = normaliseS10TimestampedCommentary({
+      commentary: {
+        notes: [
+          {
+            id: "garbage_fields",
+            timecode: "00:12",
+            start_time: "00:12",
+            timestamp_precision: "exact",
+            is_exact_timestamp_supported: true,
+            title: "Observed technical moment",
+            detail: "A specific observed technical beat.",
+            component_type: "technical",
+            component_status: "present",
+            valence: "positive", // not one of strength/neutral/improvement
+            linked_category: "casting", // not one of the six Step-1 categories
+          },
+        ],
+      },
+      matrix: matrix(),
+      readiness,
+      fixHierarchy,
+      nextActionPlan,
+      professionalCritique: critique,
+      techniqueCommentary: technique,
+      observedTapeSequence,
+      componentVerifications: verifications,
+      timestampedEvidence,
+    });
+
+    const parsed = result.notes.find((item) => item.id === "garbage_fields");
+    expect(parsed).toBeDefined();
+    expect(parsed?.valence).toBe("neutral");
+    expect(parsed?.linked_category).toBeNull();
+  });
+
+  it("preserves a valid valence and a valid linked_category authored by the AI", () => {
+    const result = normaliseS10TimestampedCommentary({
+      commentary: {
+        notes: [
+          {
+            id: "good_fields",
+            timecode: "00:14",
+            start_time: "00:14",
+            timestamp_precision: "exact",
+            is_exact_timestamp_supported: true,
+            title: "Clean audio capture",
+            detail: "Audio is consistently clear across this observed section.",
+            component_type: "technical",
+            component_status: "present",
+            valence: "strength",
+            linked_category: "audio",
+          },
+        ],
+      },
+      matrix: matrix(),
+      readiness,
+      fixHierarchy,
+      nextActionPlan,
+      professionalCritique: critique,
+      techniqueCommentary: technique,
+      observedTapeSequence,
+      componentVerifications: verifications,
+      timestampedEvidence,
+    });
+
+    const parsed = result.notes.find((item) => item.id === "good_fields");
+    expect(parsed).toBeDefined();
+    expect(parsed?.valence).toBe("strength");
+    expect(parsed?.linked_category).toBe("audio");
+  });
+});
+
+describe("Δ6 P5 — deterministic valence reconciliation guard", () => {
+  // Clause 2a: a "strength" valence on a note that links a FIX (and no strength)
+  // is self-contradicting → reconciled to "improvement" AND emits the metric.
+  it("reconciles strength→improvement when the note links a fix but no strength, and emits the metric", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const result = normaliseS10TimestampedCommentary({
+        commentary: {
+          notes: [
+            {
+              id: "contradicting_fix_note",
+              timecode: "00:16",
+              start_time: "00:16",
+              timestamp_precision: "exact",
+              is_exact_timestamp_supported: true,
+              title: "Audio dropout to address",
+              detail: "Audio dips briefly in this observed technical beat.",
+              component_type: "technical",
+              component_status: "present",
+              valence: "strength",
+              linked_fix_ids: ["fix_audio"],
+              linked_strength_ids: [],
+            },
+          ],
+        },
+        matrix: matrix(),
+        readiness,
+        fixHierarchy,
+        nextActionPlan,
+        professionalCritique: critique,
+        techniqueCommentary: technique,
+        observedTapeSequence,
+        componentVerifications: verifications,
+        timestampedEvidence,
+      });
+
+      const parsed = result.notes.find((item) => item.id === "contradicting_fix_note");
+      expect(parsed).toBeDefined();
+      expect(parsed?.valence).toBe("improvement");
+      const emitted = logSpy.mock.calls.some((call) =>
+        String(call[0]).includes("s10_valence_reconciled_to_improvement"),
+      );
+      expect(emitted).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  // Clause 2b: a "strength" valence on a missing-component note (no strength link)
+  // is self-contradicting → reconciled to "improvement".
+  it("reconciles strength→improvement on a missing-component note with no strength link", () => {
+    const result = normaliseS10TimestampedCommentary({
+      commentary: {
+        notes: [
+          {
+            id: "contradicting_missing_note",
+            timecode: null,
+            start_time: null,
+            timestamp_precision: "unavailable",
+            section: "missing_component",
+            title: "Required Side 1 not observed",
+            detail: "The required Side 1 acting scene was not identified in the submitted tape.",
+            action: "Record or include the required Side 1.",
+            component_type: "acting_scene",
+            component_status: "absent",
+            linked_component_verification_ids: ["req_side_1"],
+            is_missing_component_note: true,
+            is_projection_safe: false,
+            valence: "strength",
+            linked_strength_ids: [],
+          },
+        ],
+      },
+      matrix: matrix(),
+      readiness,
+      fixHierarchy,
+      nextActionPlan,
+      professionalCritique: critique,
+      techniqueCommentary: technique,
+      observedTapeSequence,
+      componentVerifications: verifications,
+      timestampedEvidence,
+    });
+
+    const parsed = result.notes.find((item) => item.id === "contradicting_missing_note");
+    expect(parsed).toBeDefined();
+    expect(parsed?.valence).toBe("improvement");
+  });
+
+  // Clause 2c: a note genuinely linked to BOTH a strength and a fix is mixed →
+  // the guard does NOT fire; the AI's "strength" valence is kept.
+  it("keeps strength when the note links both a strength and a fix (genuinely mixed)", () => {
+    const result = normaliseS10TimestampedCommentary({
+      commentary: {
+        notes: [
+          {
+            id: "mixed_note",
+            timecode: "00:18",
+            start_time: "00:18",
+            timestamp_precision: "exact",
+            is_exact_timestamp_supported: true,
+            title: "Strong delivery with one fixable beat",
+            detail: "The observed technical beat is strong overall with one small thing to tidy.",
+            component_type: "technical",
+            component_status: "present",
+            valence: "strength",
+            linked_fix_ids: ["fix_minor"],
+            linked_strength_ids: ["strength_delivery"],
+          },
+        ],
+      },
+      matrix: matrix(),
+      readiness,
+      fixHierarchy,
+      nextActionPlan,
+      professionalCritique: critique,
+      techniqueCommentary: technique,
+      observedTapeSequence,
+      componentVerifications: verifications,
+      timestampedEvidence,
+    });
+
+    const parsed = result.notes.find((item) => item.id === "mixed_note");
+    expect(parsed).toBeDefined();
+    expect(parsed?.valence).toBe("strength");
   });
 });
