@@ -28,7 +28,7 @@ Apply the `tc-vault-note` **Link wiring** rules and pre-save checklist to every 
 2. **Note→note connections as body `[[note-id]]`** — ingestion usually produces a cluster (a decision + its open question + a research note); wire that cluster together with `[[...]]` links and a `## Links` section so the graph reflects the thread, not just isolated notes.
 3. **ADR/README/AGENTS in the body as PLAIN TEXT, never `[[...]]`** — they live outside the vault and a wikilink dangles. Anchor them in frontmatter; mention them by name in prose.
 
-Run the pre-save checklist from `tc-vault-note` before proposing the notes for review.
+Apply `tc-vault-note`'s **auto-derive before saving** rule too — deterministically scan each body and back-fill `spine_anchor` (every `ADR-NNNN` / `<FILE> §section`) and `## Links` (every inline `[[note-id]]`) so the cluster is born fully wired. Run the pre-save checklist from `tc-vault-note` before proposing the notes for review.
 
 ## Open-question tagging convention
 

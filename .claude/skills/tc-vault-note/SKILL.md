@@ -73,6 +73,14 @@ Three rules, applied to every note before saving:
 2. **Note→note connections go in the body as `[[note-id]]`** — both inline where you reference another note and collected in a `## Links` section. Any note that names or builds on another corpus note MUST link it with `[[...]]` so the graph connects; a note with related siblings but no body wikilinks is half-wired (feeds the index, dark in the graph).
 3. **ADR/README/AGENTS references in the BODY are PLAIN TEXT — never `[[...]]`.** Write `ADR-0008`, not `[[ADR-0008]]`. The spine lives outside the `knowledge/` vault scope, so a wikilink to it dangles in Obsidian's graph. The spine connection is carried by `spine_anchor` (rule 1); the body just mentions it by name.
 
+### Auto-derive before saving
+
+Before saving any note, scan its body and populate the frontmatter and `## Links` automatically, using **deterministic string matches only** — no semantic inference. This mirrors the `tc-knowledge-index` half-wiring guard, so notes are born fully wired rather than being flagged on the next rebuild:
+
+- Every `ADR-NNNN` token in the body → ensure `"ADR-NNNN"` is in `spine_anchor`.
+- Every `README §…` / `AGENTS §…` / `CLAUDE §…` plain-text clause reference in the body → ensure the matching `"<FILE> §<section>"` label is in `spine_anchor`.
+- Every `[[note-id]]` wikilink used inline in the body → ensure it also appears in the `## Links` section.
+
 ### Pre-save checklist (apply to every note)
 
 - [ ] `spine_anchor` lists every relevant ADR / README / AGENTS clause (or is deliberately `[]` for standalone research).
