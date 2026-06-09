@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { Check, Eye } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { brandTitle } from "@/config/brand";
-import { ProcessingHero } from "@/components/audition/processing-hero";
 
 export const Route = createFileRoute("/demo-processing")({
   head: () => ({ meta: [{ title: brandTitle("Processing demo") }] }),
@@ -45,18 +45,74 @@ function stageIndexFor(phase: StageKey, analysisElapsed: number): number {
   return 3;
 }
 
-function PhaseStep({ label, active, done }: { label: string; active: boolean; done: boolean }) {
+function OrbitHero() {
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span
-        className={cn(
-          "inline-block h-2 w-2 rounded-full",
-          done ? "bg-success" : active ? "bg-primary animate-pulse" : "bg-border",
-        )}
+    <div className="relative flex h-64 items-center justify-center overflow-hidden bg-brand-navy">
+      {/* Ambient glows */}
+      <div className="pointer-events-none absolute -left-20 -top-20 h-64 w-64 rounded-full bg-brand-violet/25 blur-[80px] animate-pulse motion-reduce:animate-none" />
+      <div
+        className="pointer-events-none absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-brand-royal/25 blur-[80px] animate-pulse motion-reduce:animate-none"
+        style={{ animationDelay: "1s" }}
       />
-      <span className={cn(done || active ? "text-foreground" : "text-muted-foreground")}>
-        {label}
-      </span>
+
+      {/* Orbit */}
+      <div className="relative flex items-center justify-center">
+        <div
+          className="absolute h-40 w-40 rounded-full border-2 border-brand-violet/40 border-l-transparent border-b-transparent motion-safe:animate-spin motion-reduce:hidden"
+          style={{ animationDuration: "4s" }}
+        />
+        <div
+          className="absolute h-32 w-32 rounded-full border-2 border-brand-royal/40 border-r-transparent border-t-transparent motion-safe:animate-spin motion-reduce:hidden"
+          style={{ animationDuration: "6s", animationDirection: "reverse" }}
+        />
+
+        {/* Core lens */}
+        <div className="relative z-10 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/10 shadow-xl backdrop-blur-md">
+          <Eye className="h-8 w-8 text-brand-off-white" strokeWidth={1.75} />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-transparent via-brand-royal/40 to-transparent motion-safe:animate-[orbitScan_2.4s_ease-in-out_infinite] motion-reduce:hidden" />
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes orbitScan {
+          0%, 100% { transform: translateY(-100%); opacity: 0; }
+          50% { transform: translateY(100%); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+type StageState = "done" | "active" | "pending";
+
+function StageRow({ label, state }: { label: string; state: StageState }) {
+  if (state === "active") {
+    return (
+      <div className="-mx-3 flex items-center gap-3 rounded-xl bg-secondary px-3 py-3 ring-1 ring-primary/15">
+        <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary">
+          <span className="h-2 w-2 rounded-full bg-primary motion-safe:animate-pulse" />
+        </span>
+        <span className="text-sm font-semibold text-primary">{label}</span>
+        <span className="ml-auto rounded bg-primary/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-primary">
+          ACTIVE
+        </span>
+      </div>
+    );
+  }
+  if (state === "done") {
+    return (
+      <div className="flex items-center gap-3 opacity-60">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success">
+          <Check className="h-3 w-3 text-success-foreground" strokeWidth={4} />
+        </span>
+        <span className="text-sm font-medium text-foreground line-through">{label}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <span className="h-5 w-5 shrink-0 rounded-full border-2 border-border" />
+      <span className="text-sm font-medium text-muted-foreground/70">{label}</span>
     </div>
   );
 }
@@ -150,34 +206,46 @@ function DemoProcessingPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-soft sm:p-10">
-          <ProcessingHero stage={phase} />
-          <p className="mt-6 font-display text-lg font-semibold">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
-          <p className="mt-3 text-xs text-muted-foreground tabular-nums">
-            Elapsed: {formatElapsed(elapsed)}
-          </p>
-          <ol className="mx-auto mt-6 max-w-sm space-y-1.5 text-left">
-            {STAGES.map((s, i) => (
-              <li key={s.key}>
-                <PhaseStep label={s.label} active={i === activeIdx} done={i < activeIdx} />
-              </li>
-            ))}
+        <div className="overflow-hidden rounded-3xl border border-border bg-card text-left shadow-soft">
+          <OrbitHero />
+
+          <div className="px-8 pt-8 text-center sm:px-10">
+            <h2 className="font-display text-2xl font-bold text-brand-navy">{title}</h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">{sub}</p>
+            <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-ping" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground tabular-nums">
+                Elapsed: {formatElapsed(elapsed)}
+              </span>
+            </div>
+          </div>
+
+          <ol className="mx-auto mt-8 max-w-sm space-y-3 px-8 pb-6 sm:px-10">
+            {STAGES.map((s, i) => {
+              const state: StageState =
+                i < activeIdx ? "done" : i === activeIdx ? "active" : "pending";
+              return (
+                <li key={s.key}>
+                  <StageRow label={s.label} state={state} />
+                </li>
+              );
+            })}
           </ol>
 
-          <p className="mx-auto mt-6 max-w-md text-xs text-muted-foreground">
-            We're still working. If anything fails, we'll retry automatically.
-          </p>
-          {longWaitNote && (
-            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">{longWaitNote}</p>
-          )}
-          {elapsed >= TIER_LONG_WAIT_SECONDS && (
-            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-              Feel free to grab a tea — we'll keep this running.
-            </p>
+          {(longWaitNote || elapsed >= TIER_LONG_WAIT_SECONDS) && (
+            <div className="mx-auto max-w-md px-8 pb-6 text-center sm:px-10">
+              {longWaitNote && (
+                <p className="text-xs text-muted-foreground">{longWaitNote}</p>
+              )}
+              {elapsed >= TIER_LONG_WAIT_SECONDS && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Feel free to grab a tea — we'll keep this running.
+                </p>
+              )}
+            </div>
           )}
 
-          <div className="mt-8 flex justify-center">
+          <div className="flex justify-center pb-6">
             <Button
               variant="ghost"
               size="sm"
@@ -187,7 +255,18 @@ function DemoProcessingPage() {
               Cancel analysis
             </Button>
           </div>
+
+          {/* Bottom progress bar */}
+          <div className="h-1.5 w-full bg-secondary">
+            <div
+              className={cn(
+                "h-full bg-gradient-to-r from-brand-royal to-brand-violet transition-all duration-700",
+              )}
+              style={{ width: `${Math.round(((activeIdx + 1) / STAGES.length) * 100)}%` }}
+            />
+          </div>
         </div>
+
       </main>
       <SiteFooter />
     </div>
