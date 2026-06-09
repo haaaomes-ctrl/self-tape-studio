@@ -5,7 +5,7 @@ import {
   normaliseCompactStep1EvidenceForEvidencePass,
   normaliseS10ComponentVerifications,
   parseCompactStep1EvidenceContent,
-  projectFilteredStep1EvidenceForPolish,
+  deriveStep2LocatedEvidenceFromFilteredStep1,
 } from "@/server/evidence-pass.server";
 import { S10_OBSERVATION_PROMPT_VERSION } from "@/server/s10-report-prompt-map.server";
 
@@ -412,9 +412,9 @@ describe("S10.3 tape observation and component verification", () => {
       audio_observable_evidence_items: [],
       material_observable_evidence_items: [],
       performance_observable_evidence_items: [],
-    } as unknown as Parameters<typeof projectFilteredStep1EvidenceForPolish>[0];
+    } as unknown as Parameters<typeof deriveStep2LocatedEvidenceFromFilteredStep1>[0];
 
-    const projected = projectFilteredStep1EvidenceForPolish(filtered);
+    const projected = deriveStep2LocatedEvidenceFromFilteredStep1(filtered);
 
     expect(projected.timestamped_evidence.length).toBe(2);
     expect(projected.timestamped_evidence[0]).toMatchObject({

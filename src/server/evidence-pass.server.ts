@@ -1595,6 +1595,8 @@ export type FilteredRunEvidencePassStep1 = {
   performance_observable_evidence_items: FilteredStep1EvidenceItem[];
   candidate_technique_evidence: FilteredStep1EvidenceItem[];
   observable_evidence_items: FilteredStep1EvidenceItem[];
+  step2_timestamped_evidence: EvidencePass["timestamped_evidence"];
+  step2_candidate_technique_evidence: NonNullable<EvidencePass["candidate_technique_evidence"]>;
   unsupported_or_unavailable_evidence: Array<{
     evidence_kind: string;
     status: "not_extracted" | "blocked";
@@ -2391,7 +2393,9 @@ function filteredItemCategory(item: FilteredStep1EvidenceItem): string {
 // (collapsing the report to the evidence-only fallback). This routes the
 // already-safe projection to the polish without touching normalise or the
 // filter's own counting. Judgement-free: no scores or strengths are invented.
-export function projectFilteredStep1EvidenceForPolish(filtered: FilteredRunEvidencePassStep1): {
+export function deriveStep2LocatedEvidenceFromFilteredStep1(
+  filtered: FilteredRunEvidencePassStep1,
+): {
   timestamped_evidence: EvidencePass["timestamped_evidence"];
   candidate_technique_evidence: NonNullable<EvidencePass["candidate_technique_evidence"]>;
 } {
@@ -2485,7 +2489,17 @@ function buildFilteredStep1Result(args: {
     ...unsupported_or_unavailable_evidence.flatMap((item) => item.blocker_codes),
     ...(rejectedKeys.length > 0 ? ["runEvidencePass_prohibited_fields_filtered"] : []),
   ];
-  return {
+  // Build everything except the Step-2 derived fields first, then run the
+  // suppression-safe derivation over the assembled (already-filtered) result so
+  // Step 2 reads timestamped/technique evidence natively. This is the single
+  // point at which S9 suppression has been applied — deriving here (not in the
+  // normaliser) keeps the route suppression-safe. Output is byte-identical to
+  // the retired downstream projection: same observable_evidence_items union +
+  // candidate_technique_evidence input, same dedup/category/cap logic.
+  const base: Omit<
+    FilteredRunEvidencePassStep1,
+    "step2_timestamped_evidence" | "step2_candidate_technique_evidence"
+  > = {
     schema_version: "tapecoach_v3_filtered_run_evidence_pass_step1_v1",
     extractor_source: "runEvidencePass",
     extractor_model_ref: args.model,
@@ -2518,5 +2532,11 @@ function buildFilteredStep1Result(args: {
       (item) => item.evidence_kind,
     ),
     blocker_codes,
+  };
+  const derived = deriveStep2LocatedEvidenceFromFilteredStep1(base as FilteredRunEvidencePassStep1);
+  return {
+    ...base,
+    step2_timestamped_evidence: derived.timestamped_evidence,
+    step2_candidate_technique_evidence: derived.candidate_technique_evidence,
   };
 }
