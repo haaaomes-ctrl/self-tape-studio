@@ -25,6 +25,7 @@ import {
   runReportPolish,
   enforceLockedFields,
   enforceUnsupportedClaims,
+  enforcePractitionerVoiceModule,
   enforceScoreAlignment,
   isRecoverableReportPolishResponseShapeError,
   buildS10ModuleRepairRetryInstruction,
@@ -1861,6 +1862,14 @@ export const REPORT_TOOL = {
             "missing_component_note_count",
             "contradiction_warnings",
           ],
+        },
+        s10_practitioner_voice: {
+          type: "object",
+          description:
+            "Δ6 P2 OPTIONAL — a single subjective practitioner's developmental view. 2–3 sentences of forward-looking, craft-level reflection framed as ONE subjective opinion. It MUST NOT make or imply any submission/readiness verdict (no 'ready to submit', 'not ready', 'good to go', 'send it', etc.) — it is downstream prose that never moves the score or verdict. Omit (or leave note empty) when there is nothing developmental worth saying.",
+          properties: {
+            note: { type: "string" },
+          },
         },
         category_notes: {
           type: "object",
@@ -4385,6 +4394,17 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
               });
             }
           }
+          // Δ6 P2 — normalise/gate the subjective practitioner's-voice module:
+          // evidence-gate, bound to 3 sentences, suppress any verdict-language. It
+          // is downstream prose and never touches score/verdict fields.
+          const mdVoice = enforcePractitionerVoiceModule(twoStepReport, takeId);
+          if (mdVoice.suppressed || mdVoice.truncated) {
+            console.log("[take-pipeline] md_voice_module_enforced", {
+              take_id: takeId,
+              suppressed: mdVoice.suppressed,
+              truncated: mdVoice.truncated,
+            });
+          }
           const polishCompletedEvent = polishRetryAttempted
             ? "report_polish_retry_completed"
             : "report_polish_completed";
@@ -6490,6 +6510,10 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
           const claims = enforceUnsupportedClaims(candidate, twoStepEvidence);
           twoStepEnforcement.unsupported_claims_removed += claims.removed;
           twoStepEnforcement.unsupported_claims_rewritten += claims.rewritten;
+          // Δ6 P2 — gate the practitioner's-voice module on the repair-retry
+          // candidate too, so the same evidence-gate/bound/verdict-suppress rules
+          // apply whichever Step-2 report becomes authoritative.
+          enforcePractitionerVoiceModule(candidate, takeId);
           const retryReadiness = runModuleReadiness(candidate);
           const retryBlockers = retryReadiness.results.filter(
             (result) => result.blocks_report_value,
@@ -6891,6 +6915,10 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     try {
       const { getResolvedConfig: getCfg3b } = await import("./app-config.server");
       const cfg3b = await getCfg3b();
+      // Δ6 P2 — snapshot the MD-voice kill-switch at this process-time persistence
+      // boundary (forward-only; fails open before the column exists).
+      const { getMdVoiceEnabled } = await import("./report-view-config.server");
+      const mdVoiceEnabled = await getMdVoiceEnabled();
       const { buildRouteReportForPersistence, hasS10AuthoritativeModules } =
         await import("./v2-report-builder.server");
       const hasS10ReportModel = hasS10AuthoritativeModules(report as Record<string, unknown>);
@@ -6908,6 +6936,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
               observedTapeSequence: s10ObservationContext.observed_tape_sequence,
               componentVerifications: s10ObservationContext.component_verifications,
               mediaObservationSummary: s10ObservationContext.media_observation_summary,
+              mdVoiceEnabled,
               sameVideoEvidence: liveSameVideoContext?.evidence ?? null,
               comparisonTruth: liveSameVideoContext?.comparison_truth ?? null,
               comparisonDisplayMode: liveSameVideoContext?.comparison_display_mode ?? null,

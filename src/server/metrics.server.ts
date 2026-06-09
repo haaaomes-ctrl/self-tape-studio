@@ -163,7 +163,11 @@ export type MetricName =
   // Δ5-S2: fires only when ≥1 NON-exempt (scored, non-blocked) category mark
   // ended with no valid supporting Step-1 anchor — visible incomplete adoption,
   // not a hard failure.
-  | "s10_supported_by_missing_for_scored_dimension";
+  | "s10_supported_by_missing_for_scored_dimension"
+  // Δ6 P2 MD-voice: fires when the subjective practitioner's-perspective note was
+  // suppressed because it contained submission/readiness-verdict language (it must
+  // never imply a verdict that could contradict the canonical one).
+  | "md_voice_suppressed_verdict_claim";
 
 export interface MetricFields {
   take_id?: string | null;

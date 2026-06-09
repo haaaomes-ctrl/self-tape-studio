@@ -708,6 +708,9 @@ export function V2ReportView({
   const s10FixHierarchy = safeObj(s10?.fix_hierarchy);
   const s10NextActionPlan = safeObj(s10?.next_action_plan);
   const s10ProfessionalCritique = safeObj(s10?.professional_critique);
+  // Δ6 P2 — subjective practitioner's-voice note. Already process-time gated/enforced
+  // into the persisted view model (null when suppressed/absent); render nothing if null.
+  const s10PractitionerVoice = safeStr(safeObj(s10?.practitioner_voice)?.note);
   const s10FixHierarchyLimitation = sourceLimitation(
     s10SectionSourceMap,
     "fix_hierarchy",
@@ -1237,6 +1240,21 @@ export function V2ReportView({
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Δ6 P2 — A practitioner's perspective. Subjective, developmental note
+          rendered BELOW the score/verdict block. Already gated/enforced at process
+          time; render nothing when absent. Carries tc-report-print-section for PDF. */}
+      {isS10 && s10PractitionerVoice && (
+        <div className="tc-report-print-section rounded-[14px] border border-border bg-card p-6 shadow-soft">
+          <p className="font-display text-lg font-semibold leading-snug">
+            A practitioner's perspective
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            One subjective view — it doesn't affect your score.
+          </p>
+          <p className="mt-3 text-sm leading-relaxed">{s10PractitionerVoice}</p>
         </div>
       )}
 
