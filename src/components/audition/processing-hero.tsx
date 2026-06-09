@@ -44,44 +44,32 @@ export function ProcessingHero({
         className="tc-proc-scan pointer-events-none absolute inset-x-0 top-0 h-12"
       />
 
-      {/* SVG figure with a soft gooey filter so joints blob together as
-          the limbs ripple. Stroke widths are intentionally chunky so the
-          colour-matrix threshold doesn't erase them. */}
+      {/* SVG figure. The morphing limb paths give the "fluid / melting"
+          motion — a heavy goo filter ate the thin strokes, so we lean on
+          the animation and rounded line caps instead. */}
       <svg
         aria-hidden
         viewBox="0 0 160 200"
         className="tc-proc-figure relative h-44 w-32 sm:h-52"
       >
-        <defs>
-          <filter id="tc-proc-goo" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur" />
-            <feColorMatrix
-              in="blur"
-              mode="matrix"
-              values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 10 -4"
-              result="goo"
-            />
-            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
-          </filter>
-        </defs>
-
-        <g filter="url(#tc-proc-goo)" className="tc-proc-body">
+        <g
+          className="tc-proc-body"
+          stroke="var(--brand-navy)"
+          strokeWidth="9"
+          strokeLinecap="round"
+          fill="none"
+        >
           {/* Head */}
-          <circle cx="80" cy="34" r="16" className="tc-proc-head" fill="var(--brand-navy)" />
+          <circle cx="80" cy="34" r="16" className="tc-proc-head" fill="var(--brand-navy)" stroke="none" />
+          {/* Neck merge (soft fill blob between head & torso for the gooey feel) */}
+          <ellipse cx="80" cy="52" rx="6" ry="8" fill="var(--brand-navy)" stroke="none" />
           {/* Torso */}
-          <path
-            d="M80 52 Q82 90 80 130"
-            className="tc-proc-torso"
-            stroke="var(--brand-navy)"
-            strokeWidth="9"
-            strokeLinecap="round"
-            fill="none"
-          />
+          <path d="M80 52 Q82 90 80 130" className="tc-proc-torso" />
           {/* Limbs */}
-          <path d="M80 70 Q60 92 56 118" className="tc-proc-arm-l" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
-          <path d="M80 70 Q100 92 104 118" className="tc-proc-arm-r" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
-          <path d="M80 130 Q66 158 60 184" className="tc-proc-leg-l" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
-          <path d="M80 130 Q94 158 100 184" className="tc-proc-leg-r" stroke="var(--brand-navy)" strokeWidth="9" strokeLinecap="round" fill="none" />
+          <path d="M80 70 Q60 92 56 118" className="tc-proc-arm-l" />
+          <path d="M80 70 Q100 92 104 118" className="tc-proc-arm-r" />
+          <path d="M80 130 Q66 158 60 184" className="tc-proc-leg-l" />
+          <path d="M80 130 Q94 158 100 184" className="tc-proc-leg-r" />
         </g>
       </svg>
 
