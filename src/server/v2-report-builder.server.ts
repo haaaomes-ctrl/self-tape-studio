@@ -77,8 +77,24 @@ export interface V2Report {
   insight: string | null;
   verdict: string | null;
   overall_readiness: number | null;
+  /**
+   * @deprecated Redundant non-performer-visible in-payload JSON copy. Canonical category
+   * scores live in `s10_view_model.canonical_category_scores`; canonical material compliance
+   * in `s10_view_model.canonical_material_compliance`. The comparison/dashboard path is the
+   * denormalised `takes.scores` / `takes.overall_score` columns (NOT this field). Retained
+   * pending a staged schema-contract removal (D3); not removed here.
+   * (arch-report-derivation-architecture §D3.)
+   */
   scores: Record<string, number> | null;
   category_notes: Record<string, string> | null;
+  /**
+   * @deprecated Redundant non-performer-visible in-payload JSON copy. Canonical category
+   * scores live in `s10_view_model.canonical_category_scores`; canonical material compliance
+   * in `s10_view_model.canonical_material_compliance`. The comparison/dashboard path is the
+   * denormalised `takes.scores` / `takes.overall_score` columns (NOT this field). Retained
+   * pending a staged schema-contract removal (D3); not removed here.
+   * (arch-report-derivation-architecture §D3.)
+   */
   brief_adherence_breakdown: unknown;
   reliability: string | null;
   reliability_reason: string | null;
@@ -411,12 +427,14 @@ export function buildV2Report(args: BuildV2ReportArgs): V2Report {
     insight,
     verdict,
     overall_readiness: overall,
+    // D3 @deprecated in-payload copy — see V2Report type; performer surface reads canonical_* from s10_view_model.
     scores: s10View ? (hasS10Scores ? s10Scores : null) : asScores(r.scores),
     category_notes: s10View
       ? hasS10CategoryNotes
         ? s10CategoryNotes
         : null
       : asCategoryNotes(r.category_notes),
+    // D3 @deprecated in-payload copy — see V2Report type; performer surface reads canonical_* from s10_view_model.
     brief_adherence_breakdown: s10View
       ? {
           summary: s10View.brief_achievement_matrix?.summary ?? null,
@@ -546,6 +564,11 @@ function isS10V2Candidate(value: unknown): boolean {
   return hasS10AuthoritativeModules(value);
 }
 
+// D3: legacy_passthrough is the fallback for non-S10 / build-failure reports (gated by
+// !hasS10ReportModel; the first branch additionally by future_report_enabled which is
+// currently FALSE). Dead IN PRACTICE — the live DB holds only v2-component reports — but
+// retained as the failure-mode fallback. Removal is a separate, flag-removal-gated decision
+// (D3); NOT removed here. (Three legacy_passthrough returns below are each marked `D3`.)
 export function buildRouteReportForPersistence(
   args: BuildV2ReportArgs & {
     futureReportEnabled: boolean;
@@ -555,6 +578,7 @@ export function buildRouteReportForPersistence(
 ): RouteReportPersistenceResult {
   const hasS10ReportModel = hasS10AuthoritativeModules(args.legacyReport);
   if (!args.futureReportEnabled && !hasS10ReportModel) {
+    // D3 legacy_passthrough (dead in practice; retained) — see function header.
     return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
   }
 
@@ -575,6 +599,7 @@ export function buildRouteReportForPersistence(
       return { outcome: "v2_persisted", reportToPersist: v2Candidate };
     }
     if (!hasS10ReportModel && !candidateHasS10ReportModel) {
+      // D3 legacy_passthrough (dead in practice; retained) — see function header.
       return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
     }
     const failureReason = candidateDroppedS10Boundary
@@ -602,6 +627,7 @@ export function buildRouteReportForPersistence(
     };
   } catch (error) {
     if (!hasS10ReportModel) {
+      // D3 legacy_passthrough (dead in practice; retained) — see function header.
       return { outcome: "legacy_passthrough", reportToPersist: args.legacyReport };
     }
     const limited = buildS10LimitedV2Report({

@@ -441,6 +441,7 @@ export async function saveReport(
     .from("takes")
     .update({
       report: payload.report as never,
+      // D3 PRESERVE — `takes.scores` canonical comparison column (NOT the deprecated in-payload copy). The co-written `report` payload carries a deprecated in-JSON `scores`/`brief_adherence_breakdown` copy (see v2-report-builder V2Report).
       scores: payload.scores as never,
       overall_score: coerceScore(payload.overallScore),
       confidence: coerceScore(payload.confidence),
@@ -495,6 +496,7 @@ export async function markTakeComplete(
       analysis_run_id: payload.analysisRunId,
       report_model_status: "rendered",
       report: payload.report as never,
+      // D3 PRESERVE — `takes.scores` canonical comparison column (NOT the deprecated in-payload copy). The co-written `report` payload carries a deprecated in-JSON `scores`/`brief_adherence_breakdown` copy (see v2-report-builder V2Report).
       scores: payload.scores as never,
       overall_score: coerceScore(payload.overallScore),
       confidence: coerceScore(payload.confidence),
