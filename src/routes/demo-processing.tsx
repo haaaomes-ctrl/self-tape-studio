@@ -206,34 +206,46 @@ function DemoProcessingPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-soft sm:p-10">
-          <ProcessingHero stage={phase} />
-          <p className="mt-6 font-display text-lg font-semibold">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
-          <p className="mt-3 text-xs text-muted-foreground tabular-nums">
-            Elapsed: {formatElapsed(elapsed)}
-          </p>
-          <ol className="mx-auto mt-6 max-w-sm space-y-1.5 text-left">
-            {STAGES.map((s, i) => (
-              <li key={s.key}>
-                <PhaseStep label={s.label} active={i === activeIdx} done={i < activeIdx} />
-              </li>
-            ))}
+        <div className="overflow-hidden rounded-3xl border border-border bg-card text-left shadow-soft">
+          <OrbitHero />
+
+          <div className="px-8 pt-8 text-center sm:px-10">
+            <h2 className="font-display text-2xl font-bold text-brand-navy">{title}</h2>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">{sub}</p>
+            <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-ping" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-secondary-foreground tabular-nums">
+                Elapsed: {formatElapsed(elapsed)}
+              </span>
+            </div>
+          </div>
+
+          <ol className="mx-auto mt-8 max-w-sm space-y-3 px-8 pb-6 sm:px-10">
+            {STAGES.map((s, i) => {
+              const state: StageState =
+                i < activeIdx ? "done" : i === activeIdx ? "active" : "pending";
+              return (
+                <li key={s.key}>
+                  <StageRow label={s.label} state={state} />
+                </li>
+              );
+            })}
           </ol>
 
-          <p className="mx-auto mt-6 max-w-md text-xs text-muted-foreground">
-            We're still working. If anything fails, we'll retry automatically.
-          </p>
-          {longWaitNote && (
-            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">{longWaitNote}</p>
-          )}
-          {elapsed >= TIER_LONG_WAIT_SECONDS && (
-            <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground">
-              Feel free to grab a tea — we'll keep this running.
-            </p>
+          {(longWaitNote || elapsed >= TIER_LONG_WAIT_SECONDS) && (
+            <div className="mx-auto max-w-md px-8 pb-6 text-center sm:px-10">
+              {longWaitNote && (
+                <p className="text-xs text-muted-foreground">{longWaitNote}</p>
+              )}
+              {elapsed >= TIER_LONG_WAIT_SECONDS && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Feel free to grab a tea — we'll keep this running.
+                </p>
+              )}
+            </div>
           )}
 
-          <div className="mt-8 flex justify-center">
+          <div className="flex justify-center pb-6">
             <Button
               variant="ghost"
               size="sm"
@@ -243,7 +255,18 @@ function DemoProcessingPage() {
               Cancel analysis
             </Button>
           </div>
+
+          {/* Bottom progress bar */}
+          <div className="h-1.5 w-full bg-secondary">
+            <div
+              className={cn(
+                "h-full bg-gradient-to-r from-brand-royal to-brand-violet transition-all duration-700",
+              )}
+              style={{ width: `${Math.round(((activeIdx + 1) / STAGES.length) * 100)}%` }}
+            />
+          </div>
         </div>
+
       </main>
       <SiteFooter />
     </div>
