@@ -15,7 +15,7 @@ monday_ref: null
 tags: [finance, cfo, ds-16, ds-17, open-question]
 confidence: high
 created: 2026-06-08
-updated: 2026-06-08
+updated: 2026-06-09
 ---
 
 ## Summary
@@ -78,15 +78,28 @@ is the single grounding anchor for finance queries.
 
 ## Open questions
 
-- **Structural read-only Supabase path (interim today).** The CFO's read-only guarantee is
-  currently enforced by (a) the `cfo` agent's tool grant omitting every mutation tool and
-  (b) the `tc-finance-snapshot` SELECT-only rule — a **contract**, not yet **structural**:
-  the MCP `execute_sql` path can technically run DML. The structural fix is a dedicated
-  read-only Postgres role (`USAGE` + `SELECT` on the finance views only, no write grants
-  anywhere) that the finance read path connects through, or running the Supabase MCP in
-  `--read-only` mode. That needs a DB migration via the operator's merge protocol (or an
-  MCP reconfiguration), so it is a **BA item for the engineer pair**, not something the
-  advisory CFO can or should do itself. Until then, treat finance read-only as interim.
+- **Structural read-only Supabase path — no-write now structural, finance-scoping the
+  remaining follow-up.** Two-part picture as of 2026-06-09:
+  - **No-write is now structural.** The CFO's only DB path is the dedicated
+    `supabase-cfo-ro` MCP (`.mcp.json`), configured `read_only=true&features=database` —
+    every query runs as a read-only Postgres user, so DML/DDL cannot succeed. This replaces
+    the earlier contract-only guarantee (the `cfo` tool grant + the `tc-finance-snapshot`
+    SELECT-only rule); the writable shared `supabase` MCP is no longer in the CFO's tool
+    grant. The `cfo` agent's DB tools are now `mcp__supabase-cfo-ro__execute_sql` /
+    `mcp__supabase-cfo-ro__list_tables`.
+  - **A finance-scoped `cfo_readonly` role exists and is verified.** Created on the live DB
+    (migration `20260609115531_cfo_readonly_finance_role.sql`, recorded in
+    `supabase/migrations/` for repo↔DB parity): `USAGE` on schema `public` + `SELECT` on
+    exactly the 20 finance relations (DS-04/06/13/16/17), **zero write privileges, zero
+    readable relations outside finance**. Created `NOLOGIN` (privilege bundle only; no
+    secret in git).
+  - **Remaining follow-up (tracked BA item):** the CFO connects **as** `cfo_readonly` via a
+    direct read-only DSN, so finance-scoping is structural **at the connection** too (not
+    just no-write). That needs the operator to set the role's LOGIN+password out-of-band and
+    provide a connection string, plus a Postgres-protocol MCP used only by the CFO — an
+    engineer-pair/operator item, not something the advisory CFO does itself. Until that
+    lands, **finance-scoping remains a contract** (honoured via the grounded query set)
+    while **no-write is structural**. The question is narrowed, not fully closed.
 
 ## Links
 
