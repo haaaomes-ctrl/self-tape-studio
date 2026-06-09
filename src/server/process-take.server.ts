@@ -18,7 +18,6 @@ import type { AnalysisSupabaseClient } from "./analysis-supabase.server";
 import {
   runEvidencePass,
   filterRunEvidencePassForStep1,
-  projectFilteredStep1EvidenceForPolish,
   summariseEvidence,
   type EvidencePass,
 } from "./evidence-pass.server";
@@ -4108,26 +4107,25 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
         // candidate_technique_evidence arrive empty even though the model emitted
         // them. The polish reads this evidence directly and is told to use only
         // supplied evidence, so without these it cannot build the timestamped or
-        // technique modules and the report collapses to the fallback shell. Route
-        // the already-computed, S9-suppression-safe projection into the polish
-        // input, only filling fields the raw evidence left empty.
-        const polishEvidenceProjection =
-          projectFilteredStep1EvidenceForPolish(filteredStep1Evidence);
+        // technique modules and the report collapses to the fallback shell.
+        // Δ5-S3: the suppression-safe filter now carries the located set natively
+        // (step2_timestamped_evidence / step2_candidate_technique_evidence); read
+        // it here, only filling fields the native Step-1 evidence left empty.
+        const step2TimestampedFromFilter = filteredStep1Evidence.step2_timestamped_evidence;
+        const step2TechniqueFromFilter = filteredStep1Evidence.step2_candidate_technique_evidence;
         const projectedTimestampedUsed =
           !(
             twoStepEvidence.timestamped_evidence && twoStepEvidence.timestamped_evidence.length > 0
-          ) && polishEvidenceProjection.timestamped_evidence.length > 0;
+          ) && step2TimestampedFromFilter.length > 0;
         const projectedTechniqueUsed =
           !(
             twoStepEvidence.candidate_technique_evidence &&
             twoStepEvidence.candidate_technique_evidence.length > 0
-          ) && polishEvidenceProjection.candidate_technique_evidence.length > 0;
+          ) && step2TechniqueFromFilter.length > 0;
         step1ProjectedTimestampCount = projectedTimestampedUsed
-          ? polishEvidenceProjection.timestamped_evidence.length
+          ? step2TimestampedFromFilter.length
           : 0;
-        step1ProjectedTechniqueCount = projectedTechniqueUsed
-          ? polishEvidenceProjection.candidate_technique_evidence.length
-          : 0;
+        step1ProjectedTechniqueCount = projectedTechniqueUsed ? step2TechniqueFromFilter.length : 0;
         // Durable, SQL-readable route-β liveness/execution signal (also a
         // grep-able metric symbol when the worker-log reader is up).
         metric("s10_step1_evidence_projected_for_polish", {
@@ -4140,12 +4138,12 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
           timestamped_evidence:
             twoStepEvidence.timestamped_evidence && twoStepEvidence.timestamped_evidence.length > 0
               ? twoStepEvidence.timestamped_evidence
-              : polishEvidenceProjection.timestamped_evidence,
+              : step2TimestampedFromFilter,
           candidate_technique_evidence:
             twoStepEvidence.candidate_technique_evidence &&
             twoStepEvidence.candidate_technique_evidence.length > 0
               ? twoStepEvidence.candidate_technique_evidence
-              : polishEvidenceProjection.candidate_technique_evidence,
+              : step2TechniqueFromFilter,
           analysis_evidence_state_ref: step1Dependency.analysisEvidenceStateRef,
           analysis_evidence_state_ref_status: step1Dependency.analysisEvidenceStateRefStatus,
           analysis_evidence_state_persistence_status: step1Dependency.step1QaPersistenceStatus,
