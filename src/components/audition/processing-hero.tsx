@@ -50,22 +50,18 @@ export function ProcessingHero({
       <svg
         aria-hidden
         viewBox="0 0 160 200"
-        className="tc-proc-figure relative h-44 w-32 sm:h-52"
+        className="tc-proc-figure relative h-44 w-32 sm:h-52 text-[#091E42]"
       >
         <g
           className="tc-proc-body"
-          stroke="var(--brand-navy)"
+          stroke="currentColor"
           strokeWidth="9"
           strokeLinecap="round"
           fill="none"
         >
-          {/* Head */}
-          <circle cx="80" cy="34" r="16" className="tc-proc-head" fill="var(--brand-navy)" stroke="none" />
-          {/* Neck merge (soft fill blob between head & torso for the gooey feel) */}
-          <ellipse cx="80" cy="52" rx="6" ry="8" fill="var(--brand-navy)" stroke="none" />
-          {/* Torso */}
+          <circle cx="80" cy="34" r="16" className="tc-proc-head" fill="currentColor" stroke="none" />
+          <ellipse cx="80" cy="52" rx="6" ry="8" fill="currentColor" stroke="none" />
           <path d="M80 52 Q82 90 80 130" className="tc-proc-torso" />
-          {/* Limbs */}
           <path d="M80 70 Q60 92 56 118" className="tc-proc-arm-l" />
           <path d="M80 70 Q100 92 104 118" className="tc-proc-arm-r" />
           <path d="M80 130 Q66 158 60 184" className="tc-proc-leg-l" />
