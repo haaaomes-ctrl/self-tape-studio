@@ -1575,6 +1575,27 @@ export function buildS10PerformerReportViewModel(input: {
     },
   };
 
+  // Δ6 P1 — verdict↔content coherence. Whenever the canonical verdict is non-positive the
+  // performer-visible rationale must derive from the deterministic, verdict-coherent
+  // report.block_reasons (already performer-safe at assembly, with a hard fallback so a
+  // non-positive verdict always carries a real line), never the AI rationale — so it
+  // structurally carries the real shortfalls and can never render all-positive (or name a
+  // blocker the deterministic system didn't raise). Performer-forbidden "Blocked:"-prefixed
+  // lines are dropped here; the canonical reason (itself performer-safe) backstops an empty set.
+  const canonicalVerdict = canonicalVerdictFromReport(report);
+  const deterministicRationale = (() => {
+    const safe = (
+      Array.isArray((report as Record<string, unknown>).block_reasons)
+        ? ((report as Record<string, unknown>).block_reasons as unknown[])
+        : []
+    )
+      .filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+      .map((r) => r.trim())
+      .filter((r) => !/^blocked\s*:/i.test(r));
+    if (safe.length > 0) return safe;
+    return canonicalVerdict?.reason ? [canonicalVerdict.reason] : [];
+  })();
+
   return {
     report_version: S10_PERFORMER_REPORT_VIEW_MODEL_VERSION,
     source_mode: S10_REPORT_SOURCE_MODE,
@@ -1584,7 +1605,15 @@ export function buildS10PerformerReportViewModel(input: {
         ? {
             decision: readiness.decision,
             headline: readiness.headline,
-            rationale: Array.isArray(readiness.rationale) ? readiness.rationale : [],
+            // Positive (submit) keeps the AI rationale; every non-positive verdict replaces it
+            // with the deterministic shortfalls (REPLACE, not merge — mixing risks re-introducing
+            // the incoherent positive lines P1 removes).
+            rationale:
+              canonicalVerdict?.decision === "submit"
+                ? Array.isArray(readiness.rationale)
+                  ? readiness.rationale
+                  : []
+                : deterministicRationale,
             score_explanation: readiness.score_explanation,
             confidence: readiness.confidence,
           }
@@ -1606,7 +1635,8 @@ export function buildS10PerformerReportViewModel(input: {
       asNumber(report.overall_score_final) ?? asNumber(report.overall_score) ?? null,
     // Δ6 Slice 2: canonical verdict from the persisted deterministic submission_verdict
     // (label+capped+blocked → render decision). Distinct from recommendation.decision (= A).
-    canonical_verdict: canonicalVerdictFromReport(report),
+    // P1: reuse the value hoisted above (computed once).
+    canonical_verdict: canonicalVerdict,
     // Δ6 Slice 3: canonical category scores (A rows with score = report.scores[category_id],
     // matrix-capped for brief_adherence). Distinct from score_summary.category_scores (= A).
     canonical_category_scores: canonicalCategoryScoresFromReport(readiness, report),
