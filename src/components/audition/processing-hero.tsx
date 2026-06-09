@@ -50,22 +50,30 @@ export function ProcessingHero({
       <svg
         aria-hidden
         viewBox="0 0 160 200"
-        className="tc-proc-figure relative h-44 w-32 sm:h-52 text-[#091E42]"
+        className="tc-proc-figure relative h-44 w-32 sm:h-52"
+        style={{ color: "#091E42" }}
       >
-        <g
-          className="tc-proc-body"
-          stroke="currentColor"
-          strokeWidth="9"
-          strokeLinecap="round"
-          fill="none"
-        >
-          <circle cx="80" cy="34" r="16" className="tc-proc-head" fill="currentColor" stroke="none" />
-          <ellipse cx="80" cy="52" rx="6" ry="8" fill="currentColor" stroke="none" />
-          <path d="M80 52 Q82 90 80 130" className="tc-proc-torso" />
-          <path d="M80 70 Q60 92 56 118" className="tc-proc-arm-l" />
-          <path d="M80 70 Q100 92 104 118" className="tc-proc-arm-r" />
-          <path d="M80 130 Q66 158 60 184" className="tc-proc-leg-l" />
-          <path d="M80 130 Q94 158 100 184" className="tc-proc-leg-r" />
+        {/* Head */}
+        <circle cx="80" cy="34" r="16" fill="currentColor" />
+        {/* Neck blob */}
+        <ellipse cx="80" cy="52" rx="6" ry="8" fill="currentColor" />
+        {/* Torso */}
+        <line x1="80" y1="52" x2="80" y2="130" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+        {/* Arms — wrapped so we can rotate the group */}
+        <g className="tc-proc-arm-l" style={{ transformOrigin: "80px 70px" }}>
+          <line x1="80" y1="70" x2="56" y2="118" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+        </g>
+        <g className="tc-proc-arm-r" style={{ transformOrigin: "80px 70px" }}>
+          <line x1="80" y1="70" x2="104" y2="118" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+        </g>
+        {/* Legs */}
+        <g className="tc-proc-leg-l" style={{ transformOrigin: "80px 130px" }}>
+          <line x1="80" y1="130" x2="60" y2="184" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+        </g>
+        <g className="tc-proc-leg-r" style={{ transformOrigin: "80px 130px" }}>
+          <line x1="80" y1="130" x2="100" y2="184" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+        </g>
+      </svg>
         </g>
       </svg>
 
