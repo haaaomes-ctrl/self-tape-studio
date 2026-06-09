@@ -1,6 +1,6 @@
 ---
 name: tc-knowledge-index
-description: Regenerate knowledge/00-meta/INDEX.md for the TapeCoach corpus — the generated map from each spine anchor (controlling facts in README/AGENTS/CLAUDE/ADRs/roadmap) to the corpus notes that support it, plus documentation-gap, orphan-note, and unresolved-anchor signals. Use this whenever the user asks to rebuild, refresh, or regenerate the index, after ingesting new notes, or when they ask which controlling facts lack supporting evidence or which notes are unlinked. Always regenerate the whole file rather than hand-editing it.
+description: Regenerate knowledge/00-meta/INDEX.md for the TapeCoach corpus — the generated map from each spine anchor (controlling facts in README/AGENTS/CLAUDE/ADRs/roadmap) to the corpus notes that support it, plus documentation-gap, orphan-note, and unresolved-anchor signals. Use this whenever the user asks to rebuild, refresh, or regenerate the index, after ingesting new notes, or when they ask which controlling facts lack supporting evidence or which notes are unlinked. Always regenerate the whole file rather than hand-editing it. It also runs a standing bidirectional half-wiring guard (flagging body refs missing from spine_anchor/## Links, and spine_anchor entries unsupported by the body), writes a ## Half-wiring section into INDEX.md, and exits non-zero on findings.
 ---
 
 # Regenerate the corpus index

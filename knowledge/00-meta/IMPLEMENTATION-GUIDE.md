@@ -283,6 +283,33 @@ Bases filters on a note's **properties**, not on body text, so open questions ar
 
 These add power but also moving parts. **Don't start here.** Do them one at a time, only once Parts A–D feel routine, and lean on Claude Code to walk you through the exact clicks — some of these are newer features whose menus may have shifted since this was written. Check the official docs (https://docs.claude.com/en/docs/claude-code/overview) for the current steps.
 
+**The two ideas that stop everything drifting.** Before the detail, the whole of Part E rests on two simple principles, and if you remember nothing else, remember these:
+
+1. **One write path.** Only ever _one_ role is allowed to change your actual code, and only ever through a reviewed Pull Request — never straight onto the master copy. Everything and everyone else can read, advise and propose, but the code itself has a single, guarded door. That's what stops a busy team of helpers from quietly contradicting each other in your codebase.
+2. **Explicit contracts.** Every role is written down with a clear job, the tools it's allowed to use, when it must stop, and when it must escalate a decision to you. No role is a vague "do helpful things" assistant — each one has a contract you can read. That's what stops roles from overlapping, looping forever, or rubber-stamping each other.
+
+Keep those two in mind and the rest of Part E is just detail.
+
+## Reference: the skills and the agents in full
+
+This guide stays deliberately novice-level. The **authoritative, full specifications** live in two companion files in the same folder — read those when you want the exact contract rather than the friendly summary, and treat them (not this guide) as the source of truth:
+
+- **`SKILLS-SPEC.md`** — the intent and decisions behind each of your five skills.
+- **`AGENT-ECOSYSTEM.md`** — the full role contract for every agent (built and planned).
+
+The five skills, one line each (full detail in `SKILLS-SPEC.md`):
+
+- **`tc-vault-note`** — the schema every knowledge note follows; it also auto-wires each note's links so it shows up correctly in both the index and Obsidian's graph.
+- **`tc-conversation-ingestion`** — distils a session into a few sharp notes and archives the raw thread; this is your daily Part C habit.
+- **`tc-knowledge-index`** — rebuilds the map from your controlling facts to the notes that support them, and flags any half-wired notes.
+- **`tc-delta-register`** — reports where the product stands versus where it's meant to be, and any contradictions (drift).
+- **`tc-handoff`** — carries an approved plan to Claude Code and the results back, so nothing is copy-pasted by hand.
+
+The agents, one line each (full contracts in `AGENT-ECOSYSTEM.md`):
+
+- **The engineer pair** — a **developer** that writes the code and a **senior-dev** that reviews it, looping until the reviewer approves or escalates to you. **Both already exist** (see E2).
+- **The CFO** — a read-only, advisory finance role that reads your owned finance data and tells you the truth about cost, burn and runway; it never moves money or changes pricing (see E4).
+
 ### E1 — The handoff convention (when you do use a separate chat)
 
 If you plan something in a Claude.ai chat and want Claude Code to build it, use a handoff so nothing gets copy-pasted by hand:
@@ -292,15 +319,22 @@ If you plan something in a Claude.ai chat and want Claude Code to build it, use 
 
 ### E2 — The engineer pair (this is what fully removes you from the middle)
 
-The goal: an **implementer** and a **reviewer** working together inside Claude Code, so you only approve the day's plan and decide the big calls. This uses Claude Code's **Agent Teams**, a newer capability. The simplest way in is to ask Claude Code directly:
+The goal: an **implementer** and a **reviewer** working together inside Claude Code, so you only approve the day's plan and decide the big calls. **Good news — this pair already exists.** It was built and merged (in PR #225) as two **committed subagents**: small, version-controlled role files that live in your repo at `.claude/agents/developer.md` and `.claude/agents/senior-dev.md`. They came with the repo; you don't set them up, enable anything, or configure roles by hand. You just invoke them.
+
+- **`developer`** — implements an approved plan on a branch, runs the project's checks, and opens a PR. It holds the **one write path to code** (branch + PR only, never straight to the master copy, never its own merge).
+- **`senior-dev`** — independently reviews the developer's plan and diff against your acceptance criteria and the ADR rule. It is **read-only on code by design** (it can't edit code — only report findings), loops with the developer to get fixes, and **escalates to you after at most three review rounds** rather than looping forever or rubber-stamping.
+
+The simplest way to use them is just to ask Claude Code to run the pair on a piece of approved work:
 
 > **Say to Claude Code:**
 >
 > ```text
-> I'd like to set up an "engineer pair": one agent that implements changes and a second senior-developer agent that reviews its plan and code against our acceptance criteria and our ADR rule, looping until it approves or escalates to me. Walk me through enabling Agent Teams and configuring these two roles step by step. Set them to escalate to me on uncertainty and to stop after a set number of review rounds rather than looping forever.
+> Use the committed engineer-pair subagents in .claude/agents/ to deliver this work: have the developer implement the approved handoff on a branch and open a PR, then have the senior-dev review it against the acceptance criteria and our ADR rule, looping until it approves or escalates to me. Don't merge — open the PR and hold.
 > ```
 
-Three independent checks should sit before anything merges: the reviewer agent, GitHub's automated PR review, and you. (At the time of writing, Agent Teams is enabled with an experimental setting in Claude Code; ask Claude Code or the docs for the current toggle.)
+**Three independent checks sit before anything merges:** the `senior-dev` agent, GitHub's automated PR review, and you (the SRO). Only then do you merge.
+
+> _On "Agent Teams":_ that's a separate, heavier Claude Code capability for running agents in parallel with a shared task list. Your engineer pair does **not** use it — it runs as two committed subagents in an ordinary review loop, which is all the Tranche-1 pair needs. Agent Teams is a _later_ option to consider only if you ever need genuinely concurrent agent work; the full reasoning is in `AGENT-ECOSYSTEM.md`.
 
 ### E3 — Slack as your control panel
 
@@ -308,7 +342,9 @@ So you can watch and steer from your phone instead of the terminal: connect Clau
 
 ### E4 — The bigger pieces (later, and optional)
 
-In order, each only when a real need shows up: the **README atomisation + Business Analyst & Project Manager** (Tranche 2 — defines your requirements and keeps your Monday backlog healthy), then the **index** and **delta register** (which show what's documented and where the product stands vs. intent), then the **Solutions Architect** (Tranche 3) and **Marketing**. See `IMPLEMENTATION-PLAN.md` for the full sequence. Add each only if it clearly saves you effort or improves decisions.
+These are the roles **specified but not yet built** — unlike the engineer pair (E2), there are no agent files for them yet; their contracts wait in `AGENT-ECOSYSTEM.md` until you decide each one has earned its place. In order, each only when a real need shows up: the **README atomisation + Business Analyst & Project Manager** (Tranche 2 — the BA defines your requirements and the proposed priority; the PM keeps your Monday backlog flowing; you, as SRO, own the final priority), then the **index** and **delta register** (which show what's documented and where the product stands vs. intent), then the **Solutions Architect** (Tranche 3, deferred — your architecture is mature) and **Marketing** (later, in parallel). See `IMPLEMENTATION-PLAN.md` for the full sequence and `AGENT-ECOSYSTEM.md` for each contract. Add each only if it clearly saves you effort or improves decisions.
+
+There is also an **advisory CFO role** (already a committed subagent, `.claude/agents/cfo.md`): a **read-only** finance helper that reads your owned finance data and gives you a grounded, source-cited picture of cost-per-report, burn and runway. It never moves money, changes pricing, or touches your database beyond reading — any change it recommends becomes a normal piece of work for the engineer pair to build via PR. Its full contract is in `AGENT-ECOSYSTEM.md`.
 
 ---
 

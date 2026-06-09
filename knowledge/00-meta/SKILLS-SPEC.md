@@ -15,6 +15,7 @@
 - Anchors use names, not numbers (numbers churn on renumbering).
 - Orphan notes are allowed (research can stand alone); reconciling orphans as the graph grows is the operator's job, while _initial_ connection is automated.
 - **Domain fields added:** `discipline` (acting | mt | singing | dance | commercial) and `monday_ref`, so the corpus is queryable along the axes TapeCoach actually works in.
+- **Link wiring is part of the contract:** a note is only fully wired when it feeds _both_ retrieval paths — spine connections live in the `spine_anchor` frontmatter array (read by `tc-knowledge-index`), note→note connections live in the body as `[[note-id]]` wikilinks collected in a `## Links` section (read by Obsidian's graph), and ADR/README/AGENTS references in the body are **plain text, never `[[...]]`** (the spine sits outside the vault, so a wikilink to it dangles). Before saving, the skill **auto-derives** that wiring from the body using deterministic string matches only — every `ADR-NNNN` and `<FILE> §section` token back-fills `spine_anchor`, every inline `[[note-id]]` back-fills `## Links` — so notes are born fully wired rather than flagged on the next index rebuild (it mirrors the index's half-wiring guard).
   **Escalates / boundary:** writes `knowledge/` only.
 
 ## tc-conversation-ingestion — capture and debrief
@@ -39,6 +40,8 @@
 - Live evidence = `current`/`decided` only, so ideation never distorts gap analysis.
 - Gaps are **advisory prompts** (they spark ideas / get refined), not mandates.
 - **A prompted-and-approved gap resolves four ways**, then clears on reindex: capture the missing reasoning (a note with the right anchor); a spine proposal (if the spine itself lacks something); an `exploratory` idea note; or a "documented: not-required" marker for self-evident facts.
+- **Deterministic scan, not eyeballing:** the regeneration runs through `generate-index.py` (Python, in the skill folder), which parses YAML front-matter and spine headings — repeatable and reliable. It is the only writer of `INDEX.md`.
+- **Standing half-wiring guard:** the same script runs a bidirectional structural check (`find_half_wiring`) and writes a `## Half-wiring` section into `INDEX.md`. Direction A flags body references not yet wired (an `ADR-NNNN` or `<FILE> §section` in the body but absent from `spine_anchor`, an inline `[[note-id]]` missing from `## Links`, or a spine ref wrongly written as `[[...]]`); direction B flags `spine_anchor` entries with no supporting mention in the body. It **exits non-zero on findings**, so a half-wired graph can't pass a rebuild silently — and it pairs with `tc-vault-note`'s auto-derive (notes are born wired; the guard is the backstop).
   **Escalates / boundary:** writes `knowledge/00-meta/INDEX.md` only; never edits the spine to fit an anchor.
 
 ## tc-delta-register — drift and "where are we vs intent"
