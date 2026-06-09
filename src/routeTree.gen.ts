@@ -15,6 +15,7 @@ import { Route as NewRouteImport } from './routes/new'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ExampleReportRouteImport } from './routes/example-report'
+import { Route as DemoProcessingRouteImport } from './routes/demo-processing'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as CreditsSuccessRouteImport } from './routes/credits-success'
@@ -77,6 +78,11 @@ const FaqRoute = FaqRouteImport.update({
 const ExampleReportRoute = ExampleReportRouteImport.update({
   id: '/example-report',
   path: '/example-report',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoProcessingRoute = DemoProcessingRouteImport.update({
+  id: '/demo-processing',
+  path: '/demo-processing',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DemoRoute = DemoRouteImport.update({
@@ -261,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
   '/demo': typeof DemoRoute
+  '/demo-processing': typeof DemoProcessingRoute
   '/example-report': typeof ExampleReportRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
   '/demo': typeof DemoRoute
+  '/demo-processing': typeof DemoProcessingRoute
   '/example-report': typeof ExampleReportRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
@@ -344,6 +352,7 @@ export interface FileRoutesById {
   '/credits-success': typeof CreditsSuccessRoute
   '/dashboard': typeof DashboardRoute
   '/demo': typeof DemoRoute
+  '/demo-processing': typeof DemoProcessingRoute
   '/example-report': typeof ExampleReportRoute
   '/faq': typeof FaqRoute
   '/login': typeof LoginRoute
@@ -387,6 +396,7 @@ export interface FileRouteTypes {
     | '/credits-success'
     | '/dashboard'
     | '/demo'
+    | '/demo-processing'
     | '/example-report'
     | '/faq'
     | '/login'
@@ -428,6 +438,7 @@ export interface FileRouteTypes {
     | '/credits-success'
     | '/dashboard'
     | '/demo'
+    | '/demo-processing'
     | '/example-report'
     | '/faq'
     | '/login'
@@ -469,6 +480,7 @@ export interface FileRouteTypes {
     | '/credits-success'
     | '/dashboard'
     | '/demo'
+    | '/demo-processing'
     | '/example-report'
     | '/faq'
     | '/login'
@@ -511,6 +523,7 @@ export interface RootRouteChildren {
   CreditsSuccessRoute: typeof CreditsSuccessRoute
   DashboardRoute: typeof DashboardRoute
   DemoRoute: typeof DemoRoute
+  DemoProcessingRoute: typeof DemoProcessingRoute
   ExampleReportRoute: typeof ExampleReportRoute
   FaqRoute: typeof FaqRoute
   LoginRoute: typeof LoginRoute
@@ -580,6 +593,13 @@ declare module '@tanstack/react-router' {
       path: '/example-report'
       fullPath: '/example-report'
       preLoaderRoute: typeof ExampleReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo-processing': {
+      id: '/demo-processing'
+      path: '/demo-processing'
+      fullPath: '/demo-processing'
+      preLoaderRoute: typeof DemoProcessingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/demo': {
@@ -844,6 +864,7 @@ const rootRouteChildren: RootRouteChildren = {
   CreditsSuccessRoute: CreditsSuccessRoute,
   DashboardRoute: DashboardRoute,
   DemoRoute: DemoRoute,
+  DemoProcessingRoute: DemoProcessingRoute,
   ExampleReportRoute: ExampleReportRoute,
   FaqRoute: FaqRoute,
   LoginRoute: LoginRoute,
@@ -873,12 +894,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
