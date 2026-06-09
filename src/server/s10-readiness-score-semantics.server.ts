@@ -477,6 +477,15 @@ export function normaliseReadinessScoreJudgement(input: {
         close_gap: text(item.close_gap),
         confidence: oneOf(item.confidence, ["low", "medium", "high"], "low") as Confidence,
         blocked_or_not_assessable_reason: text(item.blocked_or_not_assessable_reason) || null,
+        // Δ5-S2: per-dimension evidence anchor. Default to [] and keep only
+        // non-empty string IDs so no path emits an undefined/garbage value.
+        // The deterministic orphan-check (run after marking, against the
+        // GUARDED Step-1 ID set) drops anchors with no matching observation.
+        supported_by: Array.isArray(item.supported_by)
+          ? item.supported_by.filter(
+              (id): id is string => typeof id === "string" && id.trim().length > 0,
+            )
+          : [],
       }))
     : [];
 
