@@ -11,6 +11,7 @@ import { CreditUseNotice } from "@/components/credit-balance-panel";
 import { VideoDurationNotice } from "@/components/video-duration-notice";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { UploadPolicyNotice } from "@/components/legal-policy-links";
+import { ProcessingHero } from "@/components/audition/processing-hero";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
