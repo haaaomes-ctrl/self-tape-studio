@@ -3,6 +3,10 @@
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?project_ref=sdsrmeomaafvuhdedlnl"
+    },
+    "supabase-cfo-ro": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=sdsrmeomaafvuhdedlnl&read_only=true&features=database"
     }
   }
 }

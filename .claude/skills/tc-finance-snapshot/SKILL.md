@@ -19,12 +19,14 @@ names below are the contract the queries run against.
 - **Write-boundary:** writes only under `knowledge/60-finance/`, as a `tc-vault-note`
   note. Never edits the spine, code, or any other corpus area.
 
-> **Read-only is interim at the connection layer.** The MCP `execute_sql` path is
-> structurally dual-use (it _can_ run DML). Read-only is enforced here by (a) the `cfo`
-> agent's tool grant omitting every mutation tool and (b) this skill's SELECT-only rule —
-> a contract, not yet a structural guarantee. The structural fix (a dedicated read-only
-> Postgres role with only `USAGE` + `SELECT` on the finance views, or running the Supabase
-> MCP in `--read-only` mode) is a follow-up BA item; see `knowledge/60-finance/finance-area-readme.md`.
+> **No-write is structural; finance-scoping is the remaining follow-up.** The CFO's DB path
+> is the dedicated `supabase-cfo-ro` MCP (`read_only=true`), so every query runs as a
+> read-only Postgres user and DML/DDL cannot succeed — no-write is **structural**, not a
+> contract. A finance-scoped `cfo_readonly` role also exists and is verified (`USAGE` +
+> `SELECT` on the 20 finance relations only). The remaining step — the CFO connecting **as**
+> `cfo_readonly` via a direct read-only DSN, so finance-scoping is structural at the
+> connection too — is a tracked follow-up; until then, honour finance-scoping by querying
+> only this skill's grounded query set. See `knowledge/60-finance/finance-area-readme.md`.
 
 ## Grounded schema (verified against the live schema, 2026-06-08)
 
