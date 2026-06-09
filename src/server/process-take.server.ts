@@ -1232,6 +1232,18 @@ export const REPORT_TOOL = {
           description:
             "A one-line interpretive read of the tape's castability, e.g. 'Highly castable commercially, less suited for dramatic roles.'",
         },
+        /**
+         * @deprecated Δ4-S1 — the model's flat `scores` object is NON-AUTHORITATIVE.
+         * It arrives as a zeroed/null skeleton on every take and must not feed the
+         * deterministic overall. The authoritative flat L1 dimension scores are now
+         * a deterministic projection of the marked L2 category scores
+         * (`readiness_score_judgement.category_scores`) via
+         * `deriveDimensionScoresFromCategoryScores` — see the finalising recompute,
+         * which overwrites `report.scores` with that projection before recompute,
+         * audio cap and persistence. This schema field is retained ONLY because the
+         * model still emits it and removing it is a staged schema-contract change
+         * (do not remove here).
+         */
         scores: {
           type: "object",
           properties: {
@@ -5271,14 +5283,80 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     report.audition_type = resolvedAuditionType;
     const auditionType = resolvedAuditionType;
     const weights = weightsForType(auditionType);
+
+    // ---- Δ4-S1: single source of truth for the flat L1 dimension scores ----
+    // The model's own flat `report.scores` arrives as a zeroed/null skeleton and
+    // must NOT feed the deterministic overall. On the S10 path the authoritative
+    // marks live in report.readiness_score_judgement.category_scores ("L2"); we
+    // project them to the flat map via the SAME normalised source buildV2Report
+    // consumes (buildS10PerformerReportViewModel(...).score_summary.category_scores)
+    // and the SAME helper it now uses, so the process-take-derived map is
+    // byte-identical to the persisted JSONB `scores`. score_summary.category_scores
+    // depends ONLY on report.readiness_score_judgement (already set), so the
+    // brief/observation context mirrored here cannot change the derivation; the
+    // same-video context (not yet classified at this point) is likewise irrelevant.
+    const { buildS10PerformerReportViewModel: buildS10ViewForScores } =
+      await import("./s10-report-view-model.server");
+    const { deriveDimensionScoresFromCategoryScores } = await import("./score-projection.server");
+    const s10ViewForScores = buildS10ViewForScores({
+      report: report as Record<string, unknown>,
+      context: {
+        briefContext: extractedBrief?.brief_context ?? null,
+        briefRequirements: extractedBrief?.brief_requirements ?? [],
+        observedTapeSequence: s10ObservationContext.observed_tape_sequence,
+        componentVerifications: s10ObservationContext.component_verifications,
+        mediaObservationSummary: s10ObservationContext.media_observation_summary,
+        observationSourceKind: s10ObservationContext.source_kind,
+      },
+    });
+    const derivedCategoryScores = s10ViewForScores?.score_summary?.category_scores ?? [];
+    const derivedDimensionScores = deriveDimensionScoresFromCategoryScores(derivedCategoryScores);
+    const isS10ScorePath = Object.keys(derivedDimensionScores).length > 0;
+    if (isS10ScorePath) {
+      // Overwrite the working report.scores with the L2-derived projection so the
+      // recompute, the audio cap AND the persisted `scores` column all consume
+      // real marks. Legacy / non-S10 reports (no category_scores) are left
+      // untouched — never overwritten, never zeroed.
+      report.scores = derivedDimensionScores;
+    }
+
     const modelScores = (report.scores ?? {}) as Record<string, number | null>;
     const recomputed = recomputeOverall(modelScores, weights);
-    let overall = recomputed.overall || (report.overall_score as number) || 0;
+    // Δ4-S1: the deterministic recompute D is the single source of truth for the
+    // overall. The model's holistic overall A (report.overall_score) must NEVER
+    // substitute for D on the S10 path. recompute over real marks renormalises
+    // over present categories, so D is well-defined whenever any mark exists.
+    let overall: number;
+    if (isS10ScorePath) {
+      if (Number.isFinite(recomputed.overall) && recomputed.overall > 0) {
+        overall = recomputed.overall;
+      } else {
+        // Genuinely missing/NaN D on the S10 path: surface explicitly rather than
+        // silently substituting A. Marks were present (isS10ScorePath) yet D is
+        // 0/NaN — a contract anomaly worth a metric, not a silent A fallback.
+        overall = recomputed.overall || 0;
+        console.warn("[take-pipeline] s10_deterministic_overall_missing", {
+          take_id: takeId,
+          recomputed_overall: recomputed.overall,
+          derived_dimension_count: Object.keys(derivedDimensionScores).length,
+        });
+        metric("s10_deterministic_overall_missing", { take_id: takeId });
+      }
+    } else {
+      // Legacy / non-S10 path unchanged: recompute may legitimately be 0 and
+      // report.overall_score is the legacy authoritative value.
+      overall = recomputed.overall || (report.overall_score as number) || 0;
+    }
     console.log("[take-pipeline] finalising_score_recompute_completed", {
       take_id: takeId,
       duration_ms: Date.now() - scoreRecomputeStartedAt,
     });
 
+    // Δ4-S1: with the L2-derived projection above, modelScores.audio is now the
+    // real marked audio score on the S10 path, so the audio cap is correctly
+    // armed. The `?? 100` default (a genuinely missing audio suppresses the cap)
+    // is retained as prior behaviour; tightening it is out of scope for Δ4-S1
+    // (flagged for follow-up).
     const audioScore = modelScores.audio ?? 100;
     // Tiered audio caps mirror applyCapsAndLabel:
     //   <35 → 60, <50 → 62, <60 → 75
