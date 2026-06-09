@@ -12,11 +12,14 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
+          # Pinned to 22 to match the committed package-lock.json (npm 10).
+          # Keep in sync with .nvmrc — regenerating the lockfile under a
+          # different npm major (e.g. node 24 / npm 11) drifts `npm ci`.
           node-version: 22
           cache: npm
 
