@@ -13,6 +13,9 @@ import { normaliseReadinessScoreJudgement } from "./s10-readiness-score-semantic
 import { applyS10FixHierarchyNextAction } from "./s10-fix-hierarchy-next-action.server";
 import { normaliseS10ProfessionalCritique } from "./s10-strengths-preserve-professional-critique.server";
 import { normaliseS10TechniqueCommentary } from "./s10-technique-library-commentary.server";
+// Δ4-S1 addendum: shared [0,100]-with-numeric-fallback clamp (previously a
+// byte-identical local copy here and in s10-readiness-score-semantics).
+import { clampScoreWithFallback as clampScore } from "./score-projection.server";
 import { normaliseS10TimestampedCommentary } from "./s10-timestamped-commentary.server";
 
 type FallbackMode = "brief" | "baseline";
@@ -70,11 +73,6 @@ function evidenceList(values: unknown[], limit = 8): string[] {
     if (out.length >= limit) break;
   }
   return out;
-}
-
-function clampScore(value: unknown, fallback = 0): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
-  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 function averageScore(values: Array<number | null | undefined>): number {

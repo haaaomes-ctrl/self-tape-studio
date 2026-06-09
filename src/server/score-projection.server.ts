@@ -1,5 +1,6 @@
 // SERVER-ONLY. Δ4-S1 — single source of truth for the flat dimension-score
-// projection ("L1").
+// projection ("L1") AND the finalising overall resolution (recompute + S10/legacy
+// gating + audio cap).
 //
 // The performer-visible flat dimension scores (the six PUBLIC_CATEGORIES) are a
 // DETERMINISTIC PROJECTION of the authoritative marked category scores ("L2"):
@@ -13,13 +14,20 @@
 // (`process-take.server.ts`) consume byte-identical values. It also owns
 // PUBLIC_CATEGORIES and the score clamp so there is one place to change them.
 //
-// Import-cycle note: this module depends ONLY on the leaf type module
-// `@/lib/audition-rules` (type-only import). `v2-report-builder.server.ts` and
-// `process-take.server.ts` import FROM here; nothing here imports back, so no
-// cycle is introduced. `PUBLIC_CATEGORIES` is re-exported from
-// `v2-report-builder.server.ts` so existing importers keep working.
+// Import-cycle note: this module depends ONLY on the leaf module
+// `@/lib/audition-rules` (types + the pure `recomputeOverall`/`applyAudioCap`
+// helpers). `v2-report-builder.server.ts` and `process-take.server.ts` import
+// FROM here; nothing here imports back, so no cycle is introduced.
+// `PUBLIC_CATEGORIES` is re-exported from `v2-report-builder.server.ts` so
+// existing importers keep working.
 
-import type { CategoryScore } from "@/lib/audition-rules";
+import {
+  applyAudioCap,
+  recomputeOverall,
+  type CategoryScore,
+  type CategoryScores,
+  type CategoryWeights,
+} from "@/lib/audition-rules";
 
 /** Fixed list mirroring the six production score fields. */
 export const PUBLIC_CATEGORIES = [
@@ -36,6 +44,11 @@ export type PublicCategory = (typeof PUBLIC_CATEGORIES)[number];
 /**
  * Clamp a raw score to an integer in [0, 100]. Returns null for non-finite /
  * non-numeric input so callers can OMIT (never invent zeros for) missing rows.
+ *
+ * Intentionally a DISTINCT contract from `clampScoreWithFallback` (which
+ * substitutes a numeric fallback) and from the max-bounded `clampScore` in
+ * s10-brief-achievement-matrix.server.ts. Do not merge these — the null return
+ * is load-bearing for the projection's "omit missing" semantics.
  */
 export function clampScore(value: unknown): number | null {
   const n = typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -65,4 +78,77 @@ export function deriveDimensionScoresFromCategoryScores(
     }
     return acc;
   }, {});
+}
+
+/**
+ * Clamp a raw score to an integer in [0, 100], substituting `fallback` for
+ * non-finite / non-numeric input. Shared by s10-readiness-score-semantics and
+ * s10-report-polish-fallback (previously byte-identical local copies). DISTINCT
+ * from the null-returning `clampScore` above and the max-bounded variant in
+ * s10-brief-achievement-matrix.server.ts — those keep their own contracts.
+ */
+export function clampScoreWithFallback(value: unknown, fallback = 0): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/**
+ * Δ4-S1 — resolve the finalising overall score deterministically.
+ *
+ * Extracts the recompute + S10/legacy gating + audio cap that the finalising
+ * block in process-take.server.ts previously inlined. PURE: no logging, no
+ * metrics, no I/O. Side effects (the recompute-completed log, the
+ * s10_deterministic_overall_missing warn + metric) stay in the pipeline, driven
+ * off the returned flags.
+ *
+ *  - S10 path: the deterministic recompute D is the sole source of truth; the
+ *    model's holistic overall A (modelOverall) is NEVER substituted. If marks
+ *    were present (isS10ScorePath) yet D is 0/NaN, `deterministicMissing` flags
+ *    the contract anomaly for the caller to surface.
+ *  - Legacy path: recompute may legitimately be 0; modelOverall stands in.
+ *  - The audio cap (applyAudioCap) is applied on BOTH paths. Absent audio
+ *    (modelScores.audio == null) never caps — behaviourally identical to the
+ *    prior `?? 100` default, but without the magic sentinel.
+ */
+export function resolveFinalisedOverall(input: {
+  modelScores: Record<string, number | null>;
+  weights: CategoryWeights;
+  isS10ScorePath: boolean;
+  modelOverall: number | null;
+}): {
+  overall: number;
+  deterministicMissing: boolean;
+  usedLegacyModel: boolean;
+  audioCapApplied: boolean;
+  audioCapReason?: string;
+  // The renormalised weights the recompute actually used — surfaced for the
+  // pipeline's score-breakdown diagnostics (previously read off `recomputed`).
+  usedWeights: CategoryWeights;
+} {
+  const recomputed = recomputeOverall(input.modelScores as CategoryScores, input.weights);
+
+  let base: number;
+  let deterministicMissing = false;
+  let usedLegacyModel = false;
+  if (input.isS10ScorePath) {
+    if (Number.isFinite(recomputed.overall) && recomputed.overall > 0) {
+      base = recomputed.overall;
+    } else {
+      base = recomputed.overall || 0;
+      deterministicMissing = true;
+    }
+  } else {
+    base = recomputed.overall || input.modelOverall || 0;
+    usedLegacyModel = !recomputed.overall && (input.modelOverall ?? 0) > 0;
+  }
+
+  const capped = applyAudioCap(base, input.modelScores.audio ?? null);
+  return {
+    overall: capped.overall,
+    deterministicMissing,
+    usedLegacyModel,
+    audioCapApplied: capped.capped,
+    audioCapReason: capped.reason,
+    usedWeights: recomputed.usedWeights,
+  };
 }

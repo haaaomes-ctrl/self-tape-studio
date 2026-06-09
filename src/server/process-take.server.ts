@@ -1135,10 +1135,10 @@ import {
   buildAuditionDisciplinePromptLine,
   buildS10PerformerLevelPromptBlock,
   computeBlockers,
+  applyAudioCap,
   deterministicCompliance,
   disciplineToAuditionType,
   isAuditionDiscipline,
-  recomputeOverall,
   toUKTerms,
   ukifyDeep,
   weightsForType,
@@ -5297,7 +5297,8 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     // same-video context (not yet classified at this point) is likewise irrelevant.
     const { buildS10PerformerReportViewModel: buildS10ViewForScores } =
       await import("./s10-report-view-model.server");
-    const { deriveDimensionScoresFromCategoryScores } = await import("./score-projection.server");
+    const { deriveDimensionScoresFromCategoryScores, resolveFinalisedOverall } =
+      await import("./score-projection.server");
     const s10ViewForScores = buildS10ViewForScores({
       report: report as Record<string, unknown>,
       context: {
@@ -5321,48 +5322,35 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     }
 
     const modelScores = (report.scores ?? {}) as Record<string, number | null>;
-    const recomputed = recomputeOverall(modelScores, weights);
     // Δ4-S1: the deterministic recompute D is the single source of truth for the
     // overall. The model's holistic overall A (report.overall_score) must NEVER
-    // substitute for D on the S10 path. recompute over real marks renormalises
-    // over present categories, so D is well-defined whenever any mark exists.
-    let overall: number;
-    if (isS10ScorePath) {
-      if (Number.isFinite(recomputed.overall) && recomputed.overall > 0) {
-        overall = recomputed.overall;
-      } else {
-        // Genuinely missing/NaN D on the S10 path: surface explicitly rather than
-        // silently substituting A. Marks were present (isS10ScorePath) yet D is
-        // 0/NaN — a contract anomaly worth a metric, not a silent A fallback.
-        overall = recomputed.overall || 0;
-        console.warn("[take-pipeline] s10_deterministic_overall_missing", {
-          take_id: takeId,
-          recomputed_overall: recomputed.overall,
-          derived_dimension_count: Object.keys(derivedDimensionScores).length,
-        });
-        metric("s10_deterministic_overall_missing", { take_id: takeId });
-      }
-    } else {
-      // Legacy / non-S10 path unchanged: recompute may legitimately be 0 and
-      // report.overall_score is the legacy authoritative value.
-      overall = recomputed.overall || (report.overall_score as number) || 0;
+    // substitute for D on the S10 path. The recompute + S10/legacy gating + audio
+    // cap now live in the pure resolveFinalisedOverall helper so this pipeline and
+    // its unit tests share byte-identical logic. The audio cap inside it uses
+    // `modelScores.audio ?? null` with an `audio != null` guard — behaviourally
+    // identical to the prior `?? 100` magic default (absent audio ⇒ no cap).
+    const resolved = resolveFinalisedOverall({
+      modelScores,
+      weights,
+      isS10ScorePath,
+      modelOverall: (report.overall_score as number) ?? null,
+    });
+    let overall = resolved.overall;
+    if (resolved.deterministicMissing) {
+      // Genuinely missing/NaN D on the S10 path: surface explicitly rather than
+      // silently substituting A. Marks were present (isS10ScorePath) yet D is
+      // 0/NaN — a contract anomaly worth a metric, not a silent A fallback.
+      console.warn("[take-pipeline] s10_deterministic_overall_missing", {
+        take_id: takeId,
+        recomputed_overall: overall,
+        derived_dimension_count: Object.keys(derivedDimensionScores).length,
+      });
+      metric("s10_deterministic_overall_missing", { take_id: takeId });
     }
     console.log("[take-pipeline] finalising_score_recompute_completed", {
       take_id: takeId,
       duration_ms: Date.now() - scoreRecomputeStartedAt,
     });
-
-    // Δ4-S1: with the L2-derived projection above, modelScores.audio is now the
-    // real marked audio score on the S10 path, so the audio cap is correctly
-    // armed. The `?? 100` default (a genuinely missing audio suppresses the cap)
-    // is retained as prior behaviour; tightening it is out of scope for Δ4-S1
-    // (flagged for follow-up).
-    const audioScore = modelScores.audio ?? 100;
-    // Tiered audio caps mirror applyCapsAndLabel:
-    //   <35 → 60, <50 → 62, <60 → 75
-    if (audioScore < 35 && overall > 60) overall = 60;
-    else if (audioScore < 50 && overall > 62) overall = 62;
-    else if (audioScore < 60 && overall > 75) overall = 75;
 
     // Track safety-validator rewrites for downstream debugging/audit.
     let safetyRewriteApplied = false;
@@ -5442,12 +5430,15 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
       roleFitModifier = 0;
       safetyRewriteApplied = true;
     }
-    // Re-apply audio cap after role-fit so role-fit cannot bypass it.
+    // Re-apply the audio cap after role-fit so a positive role-fit nudge cannot
+    // lift the score back above the audio ceiling. This caps a GENUINELY
+    // different value (the post-role-fit overall), so it is not a redundant
+    // double-cap of the finalising overall — it is intentionally retained.
     const postRoleFit = overall + roleFitModifier;
-    overall = Math.max(0, Math.min(100, postRoleFit));
-    if (audioScore < 35 && overall > 60) overall = 60;
-    else if (audioScore < 50 && overall > 62) overall = 62;
-    else if (audioScore < 60 && overall > 75) overall = 75;
+    overall = applyAudioCap(
+      Math.max(0, Math.min(100, postRoleFit)),
+      modelScores.audio ?? null,
+    ).overall;
     report.role_fit_modifier = roleFitModifier;
     if (
       report.role_fit_confidence !== "low" &&
@@ -6695,7 +6686,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     const scoreBreakdown = {
       audition_type: auditionType,
       level: auditionLevel,
-      weights: recomputed.usedWeights,
+      weights: resolved.usedWeights,
       thresholds: bandsForLevel(auditionLevel),
       overall_score_model: overallScoreModel,
       overall_before_role_fit: overallBeforeRoleFit,

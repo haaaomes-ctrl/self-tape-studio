@@ -15,6 +15,9 @@ import type {
   ScoreContradictionWarning,
 } from "@/lib/audition-rules";
 import { getS10PerformerLevelStandard, toS10PerformerLevel } from "@/lib/audition-rules";
+// Δ4-S1 addendum: shared [0,100]-with-numeric-fallback clamp (previously a
+// byte-identical local copy here and in s10-report-polish-fallback).
+import { clampScoreWithFallback as clampScore } from "./score-projection.server";
 
 type Confidence = "low" | "medium" | "high";
 
@@ -79,11 +82,6 @@ function optionalOneOf<T extends string>(value: unknown, allowed: readonly T[]):
 
 function confidence(value: unknown, fallback: "low" | "medium" | "high" = "low") {
   return oneOf(value, ["low", "medium", "high"], fallback);
-}
-
-function clampScore(value: unknown, fallback = 0): number {
-  const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
-  return Math.max(0, Math.min(100, Math.round(n)));
 }
 
 export function readinessBandLabel(score: number): ReadinessScoreBandLabel {
