@@ -26,6 +26,7 @@ import {
   enforceLockedFields,
   enforceUnsupportedClaims,
   enforcePractitionerVoiceModule,
+  evaluateReportPositivityBalance,
   enforceScoreAlignment,
   isRecoverableReportPolishResponseShapeError,
   buildS10ModuleRepairRetryInstruction,
@@ -1924,7 +1925,7 @@ export const REPORT_TOOL = {
         s10_practitioner_voice: {
           type: "object",
           description:
-            "Δ6 P2 OPTIONAL — a single subjective practitioner's developmental view. 2–3 sentences of forward-looking, craft-level reflection framed as ONE subjective opinion. It MUST NOT make or imply any submission/readiness verdict (no 'ready to submit', 'not ready', 'good to go', 'send it', etc.) — it is downstream prose that never moves the score or verdict. Omit (or leave note empty) when there is nothing developmental worth saying.",
+            "OPTIONAL — the brutally-honest Director's perspective. 2–3 sentences in the four-persona register (casting director, musical director, agent, trainer/coach fused into one, brief-adaptive), evaluative and direct, never opening with praise; on a not-ready or blocked take it leads with the disqualifier, named descriptively (the missing material, the silent audio, the wrong orientation). It MUST NOT make or imply any submission/readiness verdict (no 'ready to submit', 'not ready', 'good to go', 'send it', etc.) and must not contradict the canonical verdict/score — it is downstream prose that never moves the score or verdict. Omit (or leave note empty) when there is nothing specific and evidence-grounded to say.",
           properties: {
             note: { type: "string" },
           },
@@ -2399,6 +2400,7 @@ Single-pass S10 recovery rules:
 - Use category_rationale for every visible category whose score is below 100, including what_works, why_not_full_score, close_gap and standout_delta when useful.
 - For each category_scores entry, populate supported_by with the Step 1 observation IDs that justify the score: the observed_tape_sequence[].id and/or component_verifications[].requirement_id values that the mark rests on. For a not-assessable or blocked dimension (score null or blocked_or_not_assessable_reason set), leave supported_by empty.
 - Preserve discipline depth: musical theatre needs acting-through-song where supported; dance/movement needs rhythm/timing, control, pathway, dynamics and performance intention where visible.
+- Write in the Director's perspective — the brutally-honest four-persona register (casting director, musical director, agent, trainer/coach), brief-adaptive, never opening with praise. Do not default to positive: mark a strength only where it is genuinely strong and strictly grounded in verified component evidence, and couple praise/polish volume to the readiness band (capped to at most one evidence-bound item on a not-ready or blocked take, none beyond the score explanation at 98+). A genuine submission-affecting issue is never suppressed to fit a band. Where a component is verified, use the relevant specialist's working vocabulary anchored to observable evidence (vocal: registers, passaggio, support, resonance, onset, diction, intonation; acting: intention, actioning, beats, stakes, subtext; movement: alignment, line, musicality, control), with no medical/vocal-health diagnosis and no named-method authority claims.
 - Never fill missing modules with generic fallback copy. If a module is unavailable, say exactly what is not assessable and what the performer should record/check next.
 
 Output via the submit_audition_report tool. The casting_headline is one plain sentence pinpointing the single most important thing the user should know. casting_insight must explain submission readiness without castability, bookability, marketability or guaranteed outcome claims.`;
@@ -3577,7 +3579,7 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
       extractedBlock,
       signalsBlock,
       `Analysis tier: ${tier} rendition (the user's original performance is intact — only technical encoding was standardised).`,
-      "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre). Be specific, prioritised, and constructive.",
+      "Watch and listen to the attached self-tape, structure it (detect components), and submit a structured report via the submit_audition_report tool. Use British English throughout (recall not callback, casting brief, self-tape, analysing, prioritised, behaviour, centre). Be specific and prioritised, and write in the honest, direct Director's perspective — name the fault and the fix, never open with praise, and keep praise earned and proportionate to the score.",
     ].join("\n\n");
 
     const aiProvider = params.aiProvider;
@@ -6192,6 +6194,22 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     report.safety_rewrite_applied = safetyRewriteApplied;
     // Persist the recomputed overall back onto the report so UI is consistent.
     report.overall_score = overall;
+
+    // S11-CAL-01 (item 6) — positivity-ratio honesty guard. Deterministic, READ-ONLY
+    // diagnostic fired now that the canonical verdict/score/block_reasons are final:
+    // flags a not-ready report carrying more positive than critical surface. It only
+    // emits a metric; it never touches any score/cap/verdict field.
+    {
+      const positivityBalance = evaluateReportPositivityBalance(report, takeId);
+      if (positivityBalance.flagged) {
+        console.log("[take-pipeline] s10_positivity_ratio_guard_flagged", {
+          take_id: takeId,
+          positive_surface_count: positivityBalance.positiveSurfaceCount,
+          critical_surface_count: positivityBalance.criticalSurfaceCount,
+          verdict_final: verdict.label,
+        });
+      }
+    }
 
     // ---- Feedback reliability correction (user-facing) ----
     // The UI computes a friendly Feedback reliability label from confidence +
