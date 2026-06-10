@@ -32,7 +32,12 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAccountCompliance } from "@/lib/account-compliance-client";
-import { buildGuidedBrief, readVideoDurationSeconds, type GuidedFields } from "@/lib/checklist";
+import {
+  buildGuidedBrief,
+  readVideoMediaMetadata,
+  type GuidedFields,
+  type VideoMediaMetadata,
+} from "@/lib/checklist";
 import {
   buildUploadIdentityMetadata,
   preflightVideoBasics,
@@ -100,7 +105,9 @@ function NewAuditionPage() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+  // S11-AUDIO-01: metadata-only (duration + display dimensions), no perceptual QC.
+  const [mediaMeta, setMediaMeta] = useState<VideoMediaMetadata | null>(null);
+  const durationSeconds = mediaMeta?.durationSeconds ?? null;
   const [durationWarningAccepted, setDurationWarningAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -119,13 +126,14 @@ function NewAuditionPage() {
 
   async function onPickFile(f: File | null) {
     setFile(f);
-    setDurationSeconds(null);
+    setMediaMeta(null);
     setDurationWarningAccepted(false);
     if (!f) return;
     setChecking(true);
     try {
-      // S11-AUDIO-01: read duration only (no brief-blind QC / audio probe).
-      setDurationSeconds(await readVideoDurationSeconds(f));
+      // S11-AUDIO-01: read metadata only (duration + display dimensions); no
+      // brief-blind QC / audio decode probe.
+      setMediaMeta(await readVideoMediaMetadata(f));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not read this video");
     } finally {
@@ -223,14 +231,18 @@ function NewAuditionPage() {
       if (audErr || !aud) throw audErr ?? new Error("Could not create audition");
 
       // 3. Insert take row (no video_path — Mux owns the file)
-      // S11-AUDIO-01: signals carry only non-perceptual, identity/duration
-      // metadata. No browser audio/brightness/orientation QC is persisted —
-      // the model governs audio/video from the file_url, and orientation
-      // compliance is re-pointed to the model-evidence source server-side.
+      // S11-AUDIO-01: signals carry only non-perceptual METADATA — duration,
+      // display dimensions (width/height, which deterministically source the
+      // server-side orientation_mismatch gate) and identity. No browser audio /
+      // brightness / orientation QC is persisted: the model governs audio/video
+      // from the file_url, and orientation compliance is derived server-side
+      // from these dimensions (NOT a perceptual probe, NOT model prose).
       const signals =
         durationSeconds != null
           ? {
               duration: durationSeconds,
+              ...(mediaMeta?.width != null ? { width: mediaMeta.width } : {}),
+              ...(mediaMeta?.height != null ? { height: mediaMeta.height } : {}),
               ...buildVideoDurationSignals(durationSeconds),
               upload_identity: await buildUploadIdentityMetadata(file, durationSeconds),
             }

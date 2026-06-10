@@ -15,16 +15,22 @@
 //  2. signalsBlock clean — the serialised TECHNICAL SIGNALS block contains no
 //     browser perceptual key/value (audio_peak/audio_rms/brightness) and no
 //     checklist object, even when those linger on an old persisted take.
-//  3. Re-point (LOAD-BEARING) — a landscape tape against a portrait-required
-//     brief still raises orientation_mismatch when orientation comes from the
-//     model-evidence source; duration flags compute from mux_duration_seconds.
+//  3. Deterministic DIMENSION-SOURCED orientation (LOAD-BEARING) — orientation
+//     is derived from DISPLAY DIMENSIONS (width > height ⇒ landscape) and that
+//     value drives the orientation_mismatch gate end-to-end. The gate is NOT
+//     sourced from the prose regex or a browser perceptual signal. A guard test
+//     pins the server wiring so a re-point back to either would fail.
 //  4. No ChecklistView pre-upload — the upload routes no longer render the
 //     pre-upload ChecklistView / brief-blind QC.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { deterministicCompliance, type ExtractedBrief } from "@/lib/audition-rules";
+import {
+  deriveOrientationFromDimensions,
+  deterministicCompliance,
+  type ExtractedBrief,
+} from "@/lib/audition-rules";
 
 function portraitBrief(): ExtractedBrief {
   return {
@@ -65,29 +71,60 @@ describe("S11-AUDIO-01 — clause 1: de-contamination (no audio_low_signal branc
   });
 });
 
-describe("S11-AUDIO-01 — clause 3: re-point (orientation from model evidence; duration from mux)", () => {
-  it("LOAD-BEARING: a landscape tape against a portrait brief STILL raises orientation_mismatch", () => {
+// The deterministic orientation source. deriveOrientationFromDimensions is the
+// SAME helper the server feeds into deterministicCompliance (over signals.width
+// / signals.height), so this exercises the real gating path — not a value
+// hand-fed straight into deterministicCompliance (which would be a tautology).
+describe("S11-AUDIO-01 — clause 3: orientation is deterministic from DISPLAY DIMENSIONS", () => {
+  it("derives landscape from width > height (1280x720)", () => {
+    expect(deriveOrientationFromDimensions(1280, 720)).toBe("landscape");
+  });
+
+  it("derives portrait from height > width (720x1280)", () => {
+    expect(deriveOrientationFromDimensions(720, 1280)).toBe("portrait");
+  });
+
+  it("derives square from equal dimensions, and null when dimensions are absent", () => {
+    expect(deriveOrientationFromDimensions(1000, 1000)).toBe("square");
+    expect(deriveOrientationFromDimensions(null, 720)).toBeNull();
+    expect(deriveOrientationFromDimensions(1280, null)).toBeNull();
+    expect(deriveOrientationFromDimensions(0, 0)).toBeNull();
+    expect(deriveOrientationFromDimensions(undefined, undefined)).toBeNull();
+  });
+
+  it("LOAD-BEARING: 1280x720 (landscape) against a portrait brief raises orientation_mismatch — driven by DIMENSIONS, with NO prose-regex match and NO browser orientation signal", () => {
+    // Mirrors the server wiring exactly: dimensions → derive → gate. There is
+    // no model-prose input here and no signals.orientation — the flag can ONLY
+    // come from the width>height derivation. If orientation were re-pointed to
+    // the prose regex (landscapeObserved) or a browser signal, this stays unlit
+    // and the assertion fails: that is the anti-tautology / anti-regression pin.
+    const orientation = deriveOrientationFromDimensions(1280, 720);
+    expect(orientation).toBe("landscape");
     const flags = deterministicCompliance({
       extracted: portraitBrief(),
-      orientation: "landscape", // sourced from the model-evidence derivation, not browser signals
+      orientation,
       durationSeconds: 30,
     });
     expect(flags.some((f) => f.code === "orientation_mismatch")).toBe(true);
   });
 
-  it("does not raise orientation_mismatch when the observed orientation matches the brief", () => {
+  it("720x1280 (portrait) against a portrait brief raises NO orientation_mismatch", () => {
+    const orientation = deriveOrientationFromDimensions(720, 1280);
+    expect(orientation).toBe("portrait");
     const flags = deterministicCompliance({
       extracted: portraitBrief(),
-      orientation: "portrait",
+      orientation,
       durationSeconds: 30,
     });
     expect(flags.some((f) => f.code === "orientation_mismatch")).toBe(false);
   });
 
-  it("does not raise orientation_mismatch when the model orientation is unknown (null)", () => {
+  it("unknown dimensions (null orientation) raise NO orientation_mismatch (no false positive)", () => {
+    const orientation = deriveOrientationFromDimensions(null, null);
+    expect(orientation).toBeNull();
     const flags = deterministicCompliance({
       extracted: portraitBrief(),
-      orientation: null,
+      orientation,
       durationSeconds: 30,
     });
     expect(flags.some((f) => f.code === "orientation_mismatch")).toBe(false);
@@ -96,7 +133,7 @@ describe("S11-AUDIO-01 — clause 3: re-point (orientation from model evidence; 
   it("computes duration_over from the (mux-sourced) durationSeconds", () => {
     const flags = deterministicCompliance({
       extracted: portraitBrief(),
-      orientation: "portrait",
+      orientation: deriveOrientationFromDimensions(720, 1280),
       durationSeconds: 120, // >> 60 + 5
     });
     expect(flags.some((f) => f.code === "duration_over")).toBe(true);
@@ -105,10 +142,33 @@ describe("S11-AUDIO-01 — clause 3: re-point (orientation from model evidence; 
   it("computes duration_under from the (mux-sourced) durationSeconds", () => {
     const flags = deterministicCompliance({
       extracted: portraitBrief(),
-      orientation: "portrait",
+      orientation: deriveOrientationFromDimensions(720, 1280),
       durationSeconds: 9, // < max(8, 60*0.4=24)
     });
     expect(flags.some((f) => f.code === "duration_under")).toBe(true);
+  });
+});
+
+// Server-wiring guard (source-level): pins that the gate's orientation is the
+// dimension derivation over signals.width/height, NOT technicalMediaSignals
+// (whose .landscape OR's the prose regex) and NOT a browser orientation signal.
+// This is what makes the clause-3 tests non-tautological: it would FAIL if
+// someone re-pointed observedOrientation back to the prose-regex/browser source.
+describe("S11-AUDIO-01 — clause 3: server sources orientation from dimensions, not prose", () => {
+  const src = readFileSync(path.join(process.cwd(), "src/server/process-take.server.ts"), "utf8");
+
+  it("derives the compliance orientation via deriveOrientationFromDimensions", () => {
+    expect(src).toContain("const observedOrientation = deriveOrientationFromDimensions(");
+  });
+
+  it("no longer falls back to technicalMediaSignals.landscape for the gate", () => {
+    // The pre-round-2 expression OR'd in the prose-regex-inclusive .landscape.
+    expect(src).not.toContain("technicalMediaSignals.landscape === true");
+  });
+
+  it("feeds the dimension-derived orientation straight into deterministicCompliance", () => {
+    const gateCall = src.slice(src.indexOf("const complianceFlags = deterministicCompliance({"));
+    expect(gateCall).toContain("orientation: observedOrientation,");
   });
 });
 

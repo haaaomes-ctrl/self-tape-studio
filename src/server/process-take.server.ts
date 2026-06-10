@@ -210,6 +210,9 @@ function runtimeString(value: unknown): string | null {
 // (RMS 0, Peak 0)". The model genuinely hears file_url audio, so its hearing must
 // govern. We strip these keys defensively even if they linger on an old persisted
 // take, and we drop the whole checklist object (it was the browser perceptual QC).
+// Top-level-key-only: the sanitiser below matches these against the TOP-LEVEL
+// signals keys, which is sufficient because the persisted perceptual fields are
+// flat (audio_peak / audio_rms / brightness sit directly on signals, never nested).
 const MODEL_SIGNALS_PERCEPTUAL_DENYLIST = new Set(["audio_peak", "audio_rms", "brightness"]);
 
 // Build the model-facing TECHNICAL SIGNALS block. Serialises ONLY non-perceptual,
@@ -1191,6 +1194,7 @@ import {
   buildS10PerformerLevelPromptBlock,
   computeBlockers,
   applyAudioCap,
+  deriveOrientationFromDimensions,
   deterministicCompliance,
   disciplineToAuditionType,
   isAuditionDiscipline,
@@ -5317,31 +5321,30 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     const overallScoreModel =
       typeof report.overall_score === "number" ? report.overall_score : null;
 
-    // ---- Deterministic compliance vs server/model-authoritative signals ----
-    // S11-AUDIO-01: orientation is re-pointed to the model-evidence source
-    // (technicalMediaSignals, derived from observed-tape evidence + dimensions),
-    // NOT the removed browser perceptual probe. A landscape tape against a
-    // portrait brief still raises orientation_mismatch via this source. Duration
-    // is server-authoritative (mux_duration_seconds), falling back to the
+    // ---- Deterministic compliance vs server-authoritative signals ----
+    // S11-AUDIO-01: the orientation_mismatch gate is DETERMINISTIC, derived
+    // from the tape's DISPLAY DIMENSIONS (width > height ⇒ landscape) via
+    // deriveOrientationFromDimensions. Those dimensions are persisted in
+    // signals.width / signals.height by the upload routes from a cheap
+    // loadedmetadata read — reliable on any file. This is NOT the removed
+    // browser perceptual DECODE (audio/brightness), and it is deliberately NOT
+    // technicalMediaSignals.landscape (which OR's a regex over model prose; a
+    // deterministic gating flag must never depend on prose-regex evidence).
+    // When dimensions are genuinely unavailable the derivation returns null and
+    // the gate raises NO orientation flag (no false positive). Duration is
+    // server-authoritative (mux_duration_seconds), falling back to the
     // browser-captured signals.duration only when Mux duration is null. The
     // browser audio number is no longer consulted (audio is the model's job).
-    const rawSignalsDuration = isRuntimeRecord(take.signals)
-      ? runtimeNumber(take.signals.duration)
-      : null;
+    const rawSignalsRecord = isRuntimeRecord(take.signals) ? take.signals : null;
+    const rawSignalsDuration = rawSignalsRecord ? runtimeNumber(rawSignalsRecord.duration) : null;
     const complianceDurationSeconds =
       typeof take.mux_duration_seconds === "number" && Number.isFinite(take.mux_duration_seconds)
         ? take.mux_duration_seconds
         : rawSignalsDuration;
-    const observedOrientation: "portrait" | "landscape" | "square" | null =
-      typeof technicalMediaSignals.orientation === "string" &&
-      technicalMediaSignals.orientation.trim()
-        ? (technicalMediaSignals.orientation.trim().toLowerCase() as
-            | "portrait"
-            | "landscape"
-            | "square")
-        : technicalMediaSignals.landscape === true
-          ? "landscape"
-          : null;
+    const observedOrientation = deriveOrientationFromDimensions(
+      rawSignalsRecord ? runtimeNumber(rawSignalsRecord.width) : null,
+      rawSignalsRecord ? runtimeNumber(rawSignalsRecord.height) : null,
+    );
     const complianceFlags = deterministicCompliance({
       extracted: extractedBrief,
       orientation: observedOrientation,

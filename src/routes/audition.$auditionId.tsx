@@ -32,7 +32,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAccountCompliance } from "@/lib/account-compliance-client";
-import { readVideoDurationSeconds } from "@/lib/checklist";
+import { readVideoMediaMetadata, type VideoMediaMetadata } from "@/lib/checklist";
 import {
   buildUploadIdentityMetadata,
   preflightVideoBasics,
@@ -101,19 +101,23 @@ function recordVideoDurationEvent(
   }).catch(() => {});
 }
 
-// S11-AUDIO-01: signals carry only non-perceptual, identity/duration metadata.
-// No browser audio/brightness/orientation QC is persisted — the model governs
-// audio/video, and orientation compliance is re-pointed to the model-evidence
-// source server-side.
-async function buildTakeUploadSignals(file: File, durationSeconds: number | null) {
-  if (durationSeconds == null) {
+// S11-AUDIO-01: signals carry only non-perceptual METADATA — duration, display
+// dimensions (width/height, which deterministically source the server-side
+// orientation_mismatch gate) and identity. No browser audio / brightness /
+// orientation QC is persisted: the model governs audio/video, and orientation
+// compliance is derived server-side from these dimensions (NOT a perceptual
+// probe, NOT model prose).
+async function buildTakeUploadSignals(file: File, meta: VideoMediaMetadata | null) {
+  if (meta == null) {
     return { upload_identity: await buildUploadIdentityMetadata(file, null) };
   }
 
   return {
-    duration: durationSeconds,
-    ...buildVideoDurationSignals(durationSeconds),
-    upload_identity: await buildUploadIdentityMetadata(file, durationSeconds),
+    duration: meta.durationSeconds,
+    ...(meta.width != null ? { width: meta.width } : {}),
+    ...(meta.height != null ? { height: meta.height } : {}),
+    ...buildVideoDurationSignals(meta.durationSeconds),
+    upload_identity: await buildUploadIdentityMetadata(file, meta.durationSeconds),
   };
 }
 
@@ -561,13 +565,15 @@ function FailedTakeView({
     if (!f || !user) return;
     setBusy(true);
     try {
-      // S11-AUDIO-01: read duration only (no brief-blind QC / audio probe).
-      let durationSeconds: number | null = null;
+      // S11-AUDIO-01: read metadata only (duration + display dimensions); no
+      // brief-blind QC / audio decode probe.
+      let mediaMeta: VideoMediaMetadata | null = null;
       try {
-        durationSeconds = await readVideoDurationSeconds(f);
+        mediaMeta = await readVideoMediaMetadata(f);
       } catch {
         // best-effort
       }
+      const durationSeconds = mediaMeta?.durationSeconds ?? null;
 
       if (durationSeconds != null) {
         const durationDecision = buildVideoDurationDecision(durationSeconds);
@@ -610,7 +616,7 @@ function FailedTakeView({
         if (pf.warning && pf.durationStatus !== "over_soft_guidance") toast.warning(pf.warning);
       }
 
-      const signals = await buildTakeUploadSignals(f, durationSeconds);
+      const signals = await buildTakeUploadSignals(f, mediaMeta);
 
       const replacement = await resetTakeForReupload({
         data: { takeId: take.id, signals, checklist: null },
@@ -1934,7 +1940,9 @@ function AddTakeBlock({
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+  // S11-AUDIO-01: metadata-only (duration + display dimensions), no perceptual QC.
+  const [mediaMeta, setMediaMeta] = useState<VideoMediaMetadata | null>(null);
+  const durationSeconds = mediaMeta?.durationSeconds ?? null;
   const [durationWarningAccepted, setDurationWarningAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -1953,12 +1961,13 @@ function AddTakeBlock({
 
   async function pick(f: File | null) {
     setFile(f);
-    setDurationSeconds(null);
+    setMediaMeta(null);
     setDurationWarningAccepted(false);
     if (!f) return;
     try {
-      // S11-AUDIO-01: read duration only (no brief-blind QC / audio probe).
-      setDurationSeconds(await readVideoDurationSeconds(f));
+      // S11-AUDIO-01: read metadata only (duration + display dimensions); no
+      // brief-blind QC / audio decode probe.
+      setMediaMeta(await readVideoMediaMetadata(f));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not read this video");
     }
@@ -2012,7 +2021,7 @@ function AddTakeBlock({
         }
       }
 
-      const signals = await buildTakeUploadSignals(file, durationSeconds);
+      const signals = await buildTakeUploadSignals(file, mediaMeta);
       const analyticsAttribution = buildAnalyticsAttributionMetadata(
         readStoredAnalyticsAttribution(),
       );

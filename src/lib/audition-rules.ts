@@ -985,10 +985,45 @@ export type ComplianceFlag = {
   message: string;
 };
 
-// S11-AUDIO-01: orientation and duration are re-pointed to server/model-
-// authoritative sources, NOT the (now-removed) browser perceptual probe.
-//   - orientation  → the model-evidence-derived observed orientation
-//                    (process-take.server.ts buildTechnicalMediaSignals).
+export type DerivedOrientation = "portrait" | "landscape" | "square";
+
+// S11-AUDIO-01: the single deterministic orientation source feeding the
+// orientation_mismatch gate. Given the tape's display dimensions (captured on
+// upload via the loadedmetadata read — cheap metadata available on ANY file,
+// NOT a perceptual decode), it returns the orientation by pure arithmetic:
+//   width  > height ⇒ landscape
+//   height > width  ⇒ portrait
+//   width === height ⇒ square
+// Missing / non-finite / non-positive dimensions ⇒ null (orientation unknown →
+// the gate raises NO flag rather than guessing). This must remain the gate's
+// source: a deterministic gating flag must never depend on a regex over model
+// prose (which misses real-world phrasings) or on a browser perceptual probe.
+export function deriveOrientationFromDimensions(
+  width: number | null | undefined,
+  height: number | null | undefined,
+): DerivedOrientation | null {
+  if (
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+  if (width > height) return "landscape";
+  if (height > width) return "portrait";
+  return "square";
+}
+
+// S11-AUDIO-01: orientation derives DETERMINISTICALLY from the tape's display
+// dimensions (width > height ⇒ landscape) via deriveOrientationFromDimensions
+// below — it is server-side and reliable, and it is NOT the (now-removed)
+// browser perceptual DECODE (audio RMS/peak, brightness) and NOT a regex over
+// model prose. The contaminant the fix removed was the perceptual decode; the
+// width×height metadata (read on ANY file via loadedmetadata) was never the bug.
+//   - orientation  → deriveOrientationFromDimensions(signals.width, signals.height).
 //   - durationSeconds → take.mux_duration_seconds (falls back to
 //                    signals.duration only when Mux duration is null).
 // The browser audio probe is gone, so there is no audio_low_signal flag here

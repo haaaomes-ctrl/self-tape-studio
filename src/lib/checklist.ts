@@ -21,15 +21,24 @@ export function buildGuidedBrief(g: GuidedFields): string | null {
 }
 
 // S11-AUDIO-01: the brief-blind pre-upload checklist (orientation / lighting /
-// audio / resolution QC, plus the in-browser audio decode probe) was removed.
-// The probe could be skipped on large files, persisting audio_peak=0, which the
-// model then parroted as silence; orientation/lighting/sound are now governed by
+// audio / resolution QC, plus the in-browser audio DECODE probe) was removed.
+// The audio probe could be skipped on large files, persisting audio_peak=0,
+// which the model then parroted as silence; lighting/sound are now governed by
 // the brief-aware analysis (the model observes audio/video from the file_url).
 //
-// Pre-upload still needs the video's DURATION for the brief-independent length
-// policy (hard cap / soft-guidance notice / identity duration capture). This
-// reads metadata only — no audio decode, no frame sampling, no QC verdicts.
-export async function readVideoDurationSeconds(file: File): Promise<number> {
+// Pre-upload still needs the video's DURATION (for the brief-independent length
+// policy) and its DISPLAY DIMENSIONS (width×height ⇒ deterministic orientation
+// for the server-side orientation_mismatch gate). Both are cheap container
+// METADATA, read in one loadedmetadata pass — NOT a perceptual decode: no audio
+// sampling, no frame sampling, no QC verdicts. Dimensions are reliable on any
+// playable file, so they were never the contamination the audio fix removed.
+export interface VideoMediaMetadata {
+  durationSeconds: number;
+  width: number | null;
+  height: number | null;
+}
+
+export async function readVideoMediaMetadata(file: File): Promise<VideoMediaMetadata> {
   const url = URL.createObjectURL(file);
   try {
     const video = document.createElement("video");
@@ -41,8 +50,22 @@ export async function readVideoDurationSeconds(file: File): Promise<number> {
       video.onloadedmetadata = () => resolve();
       video.onerror = () => reject(new Error("Could not read this video file"));
     });
-    return Number.isFinite(video.duration) ? video.duration : 0;
+    const width =
+      Number.isFinite(video.videoWidth) && video.videoWidth > 0 ? video.videoWidth : null;
+    const height =
+      Number.isFinite(video.videoHeight) && video.videoHeight > 0 ? video.videoHeight : null;
+    return {
+      durationSeconds: Number.isFinite(video.duration) ? video.duration : 0,
+      width,
+      height,
+    };
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// Duration-only convenience wrapper over readVideoMediaMetadata for call sites
+// that do not persist dimensions.
+export async function readVideoDurationSeconds(file: File): Promise<number> {
+  return (await readVideoMediaMetadata(file)).durationSeconds;
 }
