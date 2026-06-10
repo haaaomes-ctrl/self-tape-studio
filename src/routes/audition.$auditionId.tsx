@@ -11,7 +11,7 @@ import { CreditUseNotice } from "@/components/credit-balance-panel";
 import { VideoDurationNotice } from "@/components/video-duration-notice";
 import { ConfirmDestructive } from "@/components/confirm-destructive";
 import { UploadPolicyNotice } from "@/components/legal-policy-links";
-import { ProcessingHero } from "@/components/audition/processing-hero";
+import { OrbitHero } from "@/components/audition/orbit-hero";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -788,7 +788,7 @@ function ProcessingTakeView({ take }: { take: Take }) {
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6 text-center shadow-soft sm:p-10">
-      <ProcessingHero stage={phase} />
+      <OrbitHero />
       <p className="mt-6 font-display text-lg font-semibold">{title}</p>
       <p className="mt-1 text-sm text-muted-foreground">{sub}</p>
       <p className="mt-3 text-xs text-muted-foreground tabular-nums">
