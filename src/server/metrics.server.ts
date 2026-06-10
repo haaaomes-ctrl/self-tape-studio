@@ -172,7 +172,13 @@ export type MetricName =
   // only when a timestamped note's AI valence was "strength" yet the note links a
   // fix or is a missing-component note and links no strength — a self-contradiction
   // corrected to "improvement". Display-only; never moves any score or verdict.
-  | "s10_valence_reconciled_to_improvement";
+  | "s10_valence_reconciled_to_improvement"
+  // S11-CAL-01 positivity-ratio honesty guard: deterministic post-report check that
+  // fires only when a NOT-READY canonical verdict (blocked / non-positive label /
+  // block_reasons present) carries MORE positive surfaces (strengths/preserve/
+  // do-not-overfix) than critical surfaces (fix hierarchy + block_reasons). Purely
+  // diagnostic — never performer-facing, never an input to any score/cap/verdict.
+  | "s10_positivity_ratio_guard_flagged";
 
 export interface MetricFields {
   take_id?: string | null;

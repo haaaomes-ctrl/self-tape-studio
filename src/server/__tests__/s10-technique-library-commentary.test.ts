@@ -14,6 +14,7 @@ import type { ComponentVerification, MediaObservationSummary } from "@/server/ev
 import { normaliseBriefAchievementMatrix } from "@/server/s10-brief-achievement-matrix.server";
 import {
   applyS10TechniqueLibraryCommentary,
+  hasForbiddenTechniqueCommentaryPhrase,
   normaliseS10TechniqueCommentary,
   scrubS10TechniqueCommentaryProjection,
 } from "@/server/s10-technique-library-commentary.server";
@@ -572,5 +573,85 @@ describe("S10.8 technique-library commentary", () => {
     expect(JSON.stringify(report)).not.toMatch(
       /Naturalistic acting with good pace|Bookable|Healthy voice|Continue refining/i,
     );
+  });
+});
+
+// S11-CAL-01 (item 8) — strain-token calibration in MEDICAL_RE.
+//
+// Item 8 lets the Director's perspective name observable sound quality ("the tone
+// strains as the support drops") using working vocal vocabulary, while the medical
+// guard MUST still strip any strain claim attached to the voice/cords/throat/larynx
+// or to performer effort/health. The bare `strain` token used to be the only term
+// changed; every other MEDICAL_RE term and the model's own is_medical_or_health_claim
+// self-flag are untouched, so this re-pins ONLY the strain boundary.
+describe("S11-CAL-01 — strain craft-vs-medical calibration (hasForbiddenTechniqueCommentaryPhrase)", () => {
+  // ALLOW (survives): strain describing the SOUND. The PASS case in the architect's
+  // ruling — observable sound quality, item-8 permitted.
+  it("ALLOWS strain describing the sound (craft) — not forbidden", () => {
+    const allowed = [
+      "the tone strains slightly as the support drops",
+      "the note strains at the top of the phrase",
+      "a strained quality creeps into the upper register",
+      "the sound strains as the breath runs out",
+      "The sustained G goes sharp and the tone strains as the support drops.",
+    ];
+    for (const phrase of allowed) {
+      expect(hasForbiddenTechniqueCommentaryPhrase(phrase), phrase).toBe(false);
+    }
+  });
+
+  // BLOCK (stripped): strain attached to the voice/cords/throat/larynx OR to
+  // performer effort/health. The CAUGHT cases in the architect's ruling — these
+  // FAIL-first against current code for "you're straining your cords" / "strained
+  // vocal cords" (current `\bstrain\b` misses the inflected effort/medical forms).
+  it("BLOCKS strain attached to the voice/cords/throat or performer effort — forbidden", () => {
+    const blocked = [
+      "vocal strain",
+      "vocal cord strain",
+      "vocal-cord strain",
+      "strain injury",
+      "strained vocal cords",
+      "you're straining your cords",
+      "straining the voice",
+      "throat strain",
+      "There is audible vocal strain on the belt.",
+      "You are straining your cords on the sustained notes.",
+    ];
+    for (const phrase of blocked) {
+      expect(hasForbiddenTechniqueCommentaryPhrase(phrase), phrase).toBe(true);
+    }
+  });
+
+  // BLOCK (stripped) — `folds` at parity with `cords`. Vocal folds = vocal cords:
+  // the same anatomical/medical sense the architect's ruling wanted BLOCKED. These
+  // FAIL-first before the `folds?` alternation is added (the strain guard previously
+  // covered cord/cords/throat/larynx/voice but not folds).
+  it("BLOCKS strain attached to the vocal folds (anatomical parity with cords) — forbidden", () => {
+    const blocked = ["strained vocal folds", "strain on the vocal folds"];
+    for (const phrase of blocked) {
+      expect(hasForbiddenTechniqueCommentaryPhrase(phrase), phrase).toBe(true);
+    }
+  });
+
+  // The narrowing must NOT weaken the rest of the medical/health guard: every other
+  // MEDICAL_RE term still strips.
+  it("keeps every other MEDICAL_RE term stripping (guard not weakened)", () => {
+    const stillBlocked = [
+      "vocal damage",
+      "vocal pathology",
+      "nodule",
+      "nodules",
+      "this needs a medical opinion",
+      "diagnose",
+      "diagnosis",
+      "vocal injury",
+      "an injured voice",
+      "vocal health",
+      "pathology",
+      "healthy voice",
+    ];
+    for (const phrase of stillBlocked) {
+      expect(hasForbiddenTechniqueCommentaryPhrase(phrase), phrase).toBe(true);
+    }
   });
 });

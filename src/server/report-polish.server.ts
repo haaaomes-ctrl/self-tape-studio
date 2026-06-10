@@ -915,6 +915,83 @@ export function enforcePractitionerVoiceModule(
   return { suppressed: false, truncated };
 }
 
+/**
+ * S11-CAL-01 (item 6) — positivity-ratio honesty guard.
+ *
+ * A deterministic, READ-ONLY post-report diagnostic. On a NOT-READY canonical
+ * verdict it counts the report's positive surfaces (strengths / preserve /
+ * do-not-overfix) against its critical surfaces (the fix hierarchy + block_reasons)
+ * and, when positive surface DOMINATES, emits `s10_positivity_ratio_guard_flagged`.
+ *
+ * This is the anti-positivity-bias telemetry only — it counts surfaces; it does NOT
+ * read or write any score/cap/verdict/threshold/evidence field, and the headline is
+ * owned by the deterministic D path. "Not-ready" is keyed off the CANONICAL verdict
+ * (submission_verdict.blocked / label + block_reasons), never off raw signals.
+ *
+ * Score-inert by construction: it never assigns to `report` (it only reads), and the
+ * only side effect is the diagnostic metric line.
+ */
+export function evaluateReportPositivityBalance(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report: any,
+  takeId?: string | null,
+): {
+  notReady: boolean;
+  positiveSurfaceCount: number;
+  criticalSurfaceCount: number;
+  flagged: boolean;
+} {
+  const arrayLen = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+
+  // ---- Not-ready determination (canonical verdict only) ----
+  const verdict = report?.submission_verdict;
+  const verdictLabel: string =
+    typeof verdict?.label === "string"
+      ? verdict.label
+      : typeof report?.verdict_final === "string"
+        ? report.verdict_final
+        : "";
+  const blockedFlag = verdict?.blocked === true;
+  const nonPositiveLabel =
+    verdictLabel === "Worth another take" || verdictLabel === "Not ready yet";
+  const blockReasonsCount = arrayLen(report?.block_reasons);
+  const notReady = blockedFlag || nonPositiveLabel || blockReasonsCount > 0;
+
+  // ---- Positive surfaces: strengths + preserve + do-not-overfix ----
+  const critique = report?.s10_professional_critique ?? {};
+  const positiveSurfaceCount =
+    arrayLen(critique.performance_strengths) +
+    arrayLen(critique.brief_package_strengths) +
+    arrayLen(critique.technical_presentation_strengths) +
+    arrayLen(critique.vocal_or_singing_strengths) +
+    arrayLen(critique.acting_strengths) +
+    arrayLen(critique.movement_or_physical_strengths) +
+    arrayLen(critique.professional_presentation_notes) +
+    arrayLen(critique.preserve) +
+    arrayLen(critique.do_not_overfix);
+
+  // ---- Critical surfaces: the fix hierarchy + the plain-language block_reasons ----
+  const fixes = report?.s10_fix_hierarchy ?? {};
+  const criticalSurfaceCount =
+    (fixes.fix_first ? 1 : 0) +
+    arrayLen(fixes.priority_fixes) +
+    arrayLen(fixes.must_fix_before_submitting) +
+    arrayLen(fixes.should_improve_if_retaking) +
+    blockReasonsCount;
+
+  const flagged = notReady && positiveSurfaceCount > criticalSurfaceCount;
+  if (flagged) {
+    metric("s10_positivity_ratio_guard_flagged", {
+      take_id: takeId ?? null,
+      positive_surface_count: positiveSurfaceCount,
+      critical_surface_count: criticalSurfaceCount,
+      verdict_label: verdictLabel || null,
+    });
+  }
+
+  return { notReady, positiveSurfaceCount, criticalSurfaceCount, flagged };
+}
+
 // ---------- Legacy deterministic failure renderer ----------
 
 /**

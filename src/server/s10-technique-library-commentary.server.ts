@@ -66,8 +66,31 @@ export const S10_FORBIDDEN_TECHNIQUE_COMMENTARY_PHRASES = [
 
 const CASTING_OUTCOME_RE =
   /\b(bookable|castable|callback[-\s]?ready|recall[-\s]?ready|booking|booked|hire|hired|job|employment|will get cast|guaranteed)\b/i;
-const MEDICAL_RE =
-  /\b(healthy voice|vocal damage|vocal pathology|nodules?|medical|diagnos(?:e|is)|injur(?:y|ed)|strain|vocal health|pathology)\b/i;
+// S11-CAL-01 (item 8): the `strain` token is the ONLY change here. Item 8 lets
+// technique prose name observable SOUND quality ("the tone strains as the support
+// drops") with working vocal vocabulary, so a bare `strain` (which used to strip
+// that craft phrasing) is replaced with strain bound to the voice/cords/folds/throat/
+// larynx OR to performer effort/health. Every other term stays byte-identical, and
+// the model's own is_medical_or_health_claim self-flag is unaffected. `folds` mirrors
+// `cords` everywhere (vocal folds = vocal cords, the same anatomical/medical sense),
+// so the body/anatomical sense is caught at parity — this only TIGHTENS the guard.
+//   ALLOW (sound): "the tone/note/sound strains", "strained quality", "strains at the top".
+//   BLOCK (medical/effort): "vocal strain", "vocal cord strain", "strain injury",
+//   "strained vocal cords/folds", "strain on the vocal cords/folds",
+//   "straining your/the voice/cords/folds/throat", "throat strain".
+const STRAIN_MEDICAL =
+  "(?:vocal(?:[-\\s]?(?:cord|fold))?[-\\s]?strain(?:ing|ed|s)?" +
+  "|strain(?:ing|ed)?[-\\s]+(?:injur|damage)" +
+  "|strain(?:ing|ed)[-\\s]+(?:vocal[-\\s]?cords?|vocal[-\\s]?folds?|cords?|folds?|throat|larynx|voice)" +
+  "|strain(?:ing|ed|s)?[-\\s]+(?:on|of)[-\\s]+(?:the[-\\s]+)?(?:vocal[-\\s]?cords?|vocal[-\\s]?folds?|cords?|folds?|throat|larynx|voice)" +
+  "|(?:cord|cords|fold|folds|throat|larynx|voice)[-\\s]+strain(?:ing|ed|s)?" +
+  "|straining\\s+(?:your|the|his|her|their)\\s+(?:voice|cords?|folds?|throat|larynx))";
+const MEDICAL_RE = new RegExp(
+  "\\b(healthy voice|vocal damage|vocal pathology|nodules?|medical|diagnos(?:e|is)|injur(?:y|ed)|" +
+    STRAIN_MEDICAL +
+    "|vocal health|pathology)\\b",
+  "i",
+);
 const BODY_OR_PROTECTED_RE =
   /\b(body|appearance|weight|thin|heavy|attractive|pretty|handsome|age|race|ethnicity|gender|class|disability|mobility aid|medical device)\b/i;
 const UNSUPPORTED_CERTAINTY_RE =
