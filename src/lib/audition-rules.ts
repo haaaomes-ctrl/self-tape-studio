@@ -980,61 +980,58 @@ export function applyCapsAndLabel(input: {
 // -------------------- Deterministic compliance vs signals --------------------
 
 export type ComplianceFlag = {
-  code:
-    | "orientation_mismatch"
-    | "duration_over"
-    | "duration_under"
-    | "audio_low_signal"
-    | "slate_unknown";
+  code: "orientation_mismatch" | "duration_over" | "duration_under" | "slate_unknown";
   severity: "low" | "medium" | "high";
   message: string;
 };
 
+// S11-AUDIO-01: orientation and duration are re-pointed to server/model-
+// authoritative sources, NOT the (now-removed) browser perceptual probe.
+//   - orientation  → the model-evidence-derived observed orientation
+//                    (process-take.server.ts buildTechnicalMediaSignals).
+//   - durationSeconds → take.mux_duration_seconds (falls back to
+//                    signals.duration only when Mux duration is null).
+// The browser audio probe is gone, so there is no audio_low_signal flag here
+// any more: audio assessability is the model's job (it hears file_url audio).
 export function deterministicCompliance(input: {
   extracted: ExtractedBrief | null;
-  signals: {
-    orientation?: "portrait" | "landscape" | "square" | string;
-    duration?: number; // seconds
-    audio_peak?: number;
-  } | null;
+  orientation?: "portrait" | "landscape" | "square" | string | null;
+  durationSeconds?: number | null;
 }): ComplianceFlag[] {
   const flags: ComplianceFlag[] = [];
   const e = input.extracted;
-  const s = input.signals;
-  if (!e || !s) return flags;
+  if (!e) return flags;
 
-  if (e.orientation_required && s.orientation && e.orientation_required !== "either") {
-    if (s.orientation !== e.orientation_required) {
+  const orientation = input.orientation ?? null;
+  const duration =
+    typeof input.durationSeconds === "number" && Number.isFinite(input.durationSeconds)
+      ? input.durationSeconds
+      : null;
+
+  if (e.orientation_required && orientation && e.orientation_required !== "either") {
+    if (orientation !== e.orientation_required) {
       flags.push({
         code: "orientation_mismatch",
         severity: "high",
-        message: `Casting brief asks for ${e.orientation_required}; tape is ${s.orientation}.`,
+        message: `Casting brief asks for ${e.orientation_required}; tape is ${orientation}.`,
       });
     }
   }
 
-  if (e.time_limit_seconds && s.duration) {
-    if (s.duration > e.time_limit_seconds + 5) {
+  if (e.time_limit_seconds && duration) {
+    if (duration > e.time_limit_seconds + 5) {
       flags.push({
         code: "duration_over",
         severity: "medium",
-        message: `Tape runs ${Math.round(s.duration)}s; brief asks for under ${e.time_limit_seconds}s.`,
+        message: `Tape runs ${Math.round(duration)}s; brief asks for under ${e.time_limit_seconds}s.`,
       });
-    } else if (s.duration < Math.max(8, e.time_limit_seconds * 0.4)) {
+    } else if (duration < Math.max(8, e.time_limit_seconds * 0.4)) {
       flags.push({
         code: "duration_under",
         severity: "low",
-        message: `Tape is short (${Math.round(s.duration)}s) versus the brief's expected length.`,
+        message: `Tape is short (${Math.round(duration)}s) versus the brief's expected length.`,
       });
     }
-  }
-
-  if (s.audio_peak != null && s.audio_peak < 0.05) {
-    flags.push({
-      code: "audio_low_signal",
-      severity: "medium",
-      message: "Audio peak is very low — voice may be hard to hear.",
-    });
   }
 
   return flags;

@@ -3,27 +3,18 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Phase 3B: the audition route now branches to V2ReportView when the
-// persisted report carries schema_version "v2-component". The checklist
-// view (Step 1 surface) MUST stay schema-agnostic and never branch on
-// report schema. Forbidden internal tokens must never leak into either.
+// persisted report carries schema_version "v2-component". Forbidden internal
+// tokens must never leak into the route renderer.
+//
+// S11-AUDIO-01: the brief-blind pre-upload checklist view (Step 1 surface) was
+// retired, so the schema-agnostic checklist guards it carried no longer apply —
+// the component no longer exists. The route-level guards below still hold.
 describe("renderer surface (Phase 3B)", () => {
-  const ROUTE = readFileSync(
-    resolve(__dirname, "../../routes/audition.$auditionId.tsx"),
-    "utf8",
-  );
-  const CHECKLIST = readFileSync(
-    resolve(__dirname, "../../components/checklist-view.tsx"),
-    "utf8",
-  );
+  const ROUTE = readFileSync(resolve(__dirname, "../../routes/audition.$auditionId.tsx"), "utf8");
 
   it("audition route branches via readReportSchemaVersion only", () => {
     expect(ROUTE).toContain("readReportSchemaVersion");
     expect(ROUTE).toContain("V2ReportView");
-  });
-
-  it("checklist view does not branch on schema_version v2-component", () => {
-    expect(CHECKLIST).not.toContain("v2-component");
-    expect(CHECKLIST).not.toContain("schema_version");
   });
 
   it("no v2 forbidden tokens are referenced by renderers", () => {
@@ -40,7 +31,6 @@ describe("renderer surface (Phase 3B)", () => {
       "qa_trace",
     ]) {
       expect(ROUTE).not.toContain(tok);
-      expect(CHECKLIST).not.toContain(tok);
     }
   });
 });

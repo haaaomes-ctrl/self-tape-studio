@@ -419,10 +419,13 @@ export interface PreflightResult {
   durationStatus?: "within_target" | "over_soft_guidance" | "over_hard_cap";
 }
 
+// S11-AUDIO-01: brief-independent, reliable usability preflight only (file size
+// + video length). The browser audio-peak warning was removed with the rest of
+// the browser perceptual probe — audio assessability is the model's job (it
+// hears the file_url audio directly), so no pre-upload audio verdict is given.
 export function preflightVideoBasics(
   file: File,
   durationSeconds: number,
-  audioPeak: number,
   opts: PreflightOptions = {},
 ): PreflightResult {
   const maxBytes = opts.maxBytes ?? 500 * 1024 * 1024; // 500 MB
@@ -451,14 +454,6 @@ export function preflightVideoBasics(
       ok: true,
       warning: durationDecision.message ?? undefined,
       durationStatus: "over_soft_guidance",
-    };
-  }
-  if (audioPeak === 0) {
-    return {
-      ok: true,
-      warning:
-        "We couldn't detect any audio in this file — the analysis will continue but audio scoring may be unreliable.",
-      durationStatus: durationDecision.status,
     };
   }
   return { ok: true, durationStatus: durationDecision.status };
