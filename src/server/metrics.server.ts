@@ -164,10 +164,11 @@ export type MetricName =
   // ended with no valid supporting Step-1 anchor — visible incomplete adoption,
   // not a hard failure.
   | "s10_supported_by_missing_for_scored_dimension"
-  // Δ6 P2 MD-voice: fires when the subjective practitioner's-perspective note was
-  // suppressed because it contained submission/readiness-verdict language (it must
-  // never imply a verdict that could contradict the canonical one).
-  | "md_voice_suppressed_verdict_claim"
+  // Δ6 P2 / S11-CAL-02 MD-voice: fires when the Director's-perspective note was
+  // suppressed because its verdict read DIVERGED from the canonical verdict (opposite
+  // polarity, an incoherent both-polarity note, or any verdict language when the
+  // canonical verdict is indeterminate). An IN-SYNC verdict echo is KEPT, not flagged.
+  | "md_voice_suppressed_verdict_divergence"
   // Δ6 P5 per-note valence: deterministic display-only reconciliation guard. Fires
   // only when a timestamped note's AI valence was "strength" yet the note links a
   // fix or is a missing-component note and links no strength — a self-contradiction

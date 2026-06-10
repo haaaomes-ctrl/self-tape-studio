@@ -1925,7 +1925,7 @@ export const REPORT_TOOL = {
         s10_practitioner_voice: {
           type: "object",
           description:
-            "OPTIONAL — the brutally-honest Director's perspective. 2–3 sentences in the four-persona register (casting director, musical director, agent, trainer/coach fused into one, brief-adaptive), evaluative and direct, never opening with praise; on a not-ready or blocked take it leads with the disqualifier, named descriptively (the missing material, the silent audio, the wrong orientation). It MUST NOT make or imply any submission/readiness verdict (no 'ready to submit', 'not ready', 'good to go', 'send it', etc.) and must not contradict the canonical verdict/score — it is downstream prose that never moves the score or verdict. Omit (or leave note empty) when there is nothing specific and evidence-grounded to say.",
+            "OPTIONAL — the brutally-honest Director's perspective. 2–3 sentences in the four-persona register (casting director, musical director, agent, trainer/coach fused into one, brief-adaptive), evaluative and direct, never opening with praise; on a not-ready or blocked take it leads with the disqualifier, named descriptively (the missing material, the silent audio, the wrong orientation). It MAY summarise or echo the canonical verdict when in sync with readiness_score_judgement (an in-sync read reinforces the report and is desired); the only hard guard is non-divergence — it MUST NOT contradict or diverge from the canonical verdict/score. It is downstream prose that never moves the score or verdict. Omit (or leave note empty) when there is nothing specific and evidence-grounded to say.",
           properties: {
             note: { type: "string" },
           },

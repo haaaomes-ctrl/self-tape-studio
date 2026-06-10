@@ -17,6 +17,7 @@ import {
   buildS10StrongCompleteProfessionalReportInput,
   buildS10StrongCompleteProfessionalViewContext,
 } from "@/test-fixtures/s10-strong-complete-professional";
+import { buildS10CanaryAReportInput } from "@/test-fixtures/s10-canary-a-incomplete-package";
 
 type AnyRec = Record<string, unknown>;
 
@@ -77,44 +78,124 @@ describe("Δ6 P2 — enforcePractitionerVoiceModule", () => {
     expect((report.s10_practitioner_voice as { note: string }).note).toContain("closing beat");
   });
 
-  // Clause (d): verdict-non-contradiction guard. MUST FAIL before the guard exists.
-  it("verdict-guard: a note containing 'ready to submit' is nulled and emits the metric", () => {
+  // Clause (d): SYNC-AWARE divergence guard (S11-CAL-02). The Director's view summarising
+  // or echoing the canonical verdict IN SYNC is desired and KEPT; only a verdict read that
+  // DIVERGES from the canonical verdict (or cannot be proven in-sync) is nulled + flagged.
+  const divergenceMetric = "md_voice_suppressed_verdict_divergence";
+
+  function metricEmitted(logSpy: ReturnType<typeof vi.spyOn>): boolean {
+    return logSpy.mock.calls.some((call: unknown[]) => String(call[0]).includes(divergenceMetric));
+  }
+
+  // IN-SYNC ALLOWED — a ready/strong report whose voice echoes "ready to submit" agrees with
+  // the canonical positive verdict, so the note is RETAINED and NO divergence metric fires.
+  // This case FAILS against the old blanket phrase-blocklist (which nulled on any verdict phrase).
+  it("in-sync positive: 'ready to submit' on a ready report is KEPT, no divergence metric", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const report = strongReportWithVoice(
-        "This take feels ready to submit to me. The instincts are alive.",
+        "This is ready to submit on the evidence here. The instincts are alive and specific.",
       );
-      const result = enforcePractitionerVoiceModule(report, "take-md-1");
-      expect(report.s10_practitioner_voice).toBeNull();
-      expect(result.suppressed).toBe(true);
-      const emitted = logSpy.mock.calls.some((call) =>
-        String(call[0]).includes("md_voice_suppressed_verdict_claim"),
-      );
-      expect(emitted).toBe(true);
+      const result = enforcePractitionerVoiceModule(report, "take-md-sync-pos");
+      expect(report.s10_practitioner_voice).not.toBeNull();
+      expect((report.s10_practitioner_voice as { note: string }).note).toContain("ready to submit");
+      expect(result.suppressed).toBe(false);
+      expect(metricEmitted(logSpy)).toBe(false);
     } finally {
       logSpy.mockRestore();
     }
   });
 
-  it("verdict-guard: a note containing 'not ready' is nulled and emits the metric", () => {
+  // IN-SYNC NEGATIVE — a not-ready/blocked report whose voice echoes "not ready" agrees with
+  // the canonical negative verdict, so the note is RETAINED and NO divergence metric fires.
+  it("in-sync negative: 'not ready' on a blocked report is KEPT, no divergence metric", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const report = buildS10CanaryAReportInput() as AnyRec;
+      report.s10_practitioner_voice = {
+        note: "Side 1 is missing, so this is not ready yet. Record the scene before another take.",
+      };
+      const result = enforcePractitionerVoiceModule(report, "take-md-sync-neg");
+      expect(report.s10_practitioner_voice).not.toBeNull();
+      expect((report.s10_practitioner_voice as { note: string }).note).toContain("not ready");
+      expect(result.suppressed).toBe(false);
+      expect(metricEmitted(logSpy)).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  // DIVERGENT (i) — positive voice on a negative canonical verdict → nulled + metric.
+  it("divergent: 'ready to submit' on a blocked report is nulled and flags divergence", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const report = buildS10CanaryAReportInput() as AnyRec;
+      report.s10_practitioner_voice = {
+        note: "Honestly this is ready to submit to me. The instincts are alive.",
+      };
+      const result = enforcePractitionerVoiceModule(report, "take-md-div-1");
+      expect(report.s10_practitioner_voice).toBeNull();
+      expect(result.suppressed).toBe(true);
+      expect(metricEmitted(logSpy)).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  // DIVERGENT (ii) — negative voice on a positive canonical verdict → nulled + metric.
+  it("divergent: 'not ready' on a ready report is nulled and flags divergence", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const report = strongReportWithVoice(
         "Honestly this is not ready yet in my view. The arc needs another pass.",
       );
-      const result = enforcePractitionerVoiceModule(report, "take-md-2");
+      const result = enforcePractitionerVoiceModule(report, "take-md-div-2");
       expect(report.s10_practitioner_voice).toBeNull();
       expect(result.suppressed).toBe(true);
-      const emitted = logSpy.mock.calls.some((call) =>
-        String(call[0]).includes("md_voice_suppressed_verdict_claim"),
-      );
-      expect(emitted).toBe(true);
+      expect(metricEmitted(logSpy)).toBe(true);
     } finally {
       logSpy.mockRestore();
     }
   });
 
-  it("verdict-guard: developmental, non-verdict prose is preserved", () => {
+  // INCOHERENT — a note asserting BOTH polarities can never be in sync → nulled + metric.
+  it("incoherent: a note with both 'ready to submit' and 'not ready' is nulled and flags divergence", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const report = strongReportWithVoice(
+        "Part of me says ready to submit, part of me says not ready. It is a genuinely close call.",
+      );
+      const result = enforcePractitionerVoiceModule(report, "take-md-incoherent");
+      expect(report.s10_practitioner_voice).toBeNull();
+      expect(result.suppressed).toBe(true);
+      expect(metricEmitted(logSpy)).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  // INDETERMINATE canonical — verdict language can't be proven in-sync → safe default null + metric.
+  it("indeterminate canonical: a verdict note with no canonical verdict is nulled and flags divergence", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const report = buildS10StrongCompleteProfessionalReportInput() as AnyRec;
+      // Strip the canonical verdict so polarity is indeterminate (no label, not blocked, no reasons).
+      delete report.submission_verdict;
+      delete report.verdict_final;
+      delete report.block_reasons;
+      report.s10_practitioner_voice = {
+        note: "This is ready to submit from where the evidence sits. The choices are specific.",
+      };
+      const result = enforcePractitionerVoiceModule(report, "take-md-indeterminate");
+      expect(report.s10_practitioner_voice).toBeNull();
+      expect(result.suppressed).toBe(true);
+      expect(metricEmitted(logSpy)).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("non-verdict prose: developmental prose with no verdict language is preserved", () => {
     const note =
       "The transition into the song carries real intention. I'd keep leaning into those quiet beats.";
     const report = strongReportWithVoice(note);
