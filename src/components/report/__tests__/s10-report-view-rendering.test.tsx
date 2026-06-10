@@ -243,7 +243,7 @@ describe("S10 report view rendering", () => {
     expect(html).not.toContain("93"); // the old false-positive D never renders
   });
 
-  it("renders supplied brief details and requirement classifications for Canary A", () => {
+  it("renders supplied brief details and the consolidated requirement table for Canary A", () => {
     const text = routeText(render(canaryV2Report()));
 
     expect(text).toContain("Supplied brief details");
@@ -256,13 +256,11 @@ describe("S10 report view rendering", () => {
     // convention explicit; the value (which carries the convention) is unchanged.
     expect(text).toContain("Required filename: Use LASTNAME_FIRSTNAME_CANARYA.mp4.");
 
-    expect(text).toContain("Requirement classification");
-    expect(text).toContain("Mandatory: 6");
-    expect(text).toContain("Ambiguous: 1");
-    expect(text).toContain("Material: 2");
-    expect(text).toContain("Admin process: 3");
-    expect(text).toContain("Technical: 1");
-    expect(text).toContain("Role context: 1");
+    // S11-UX-05 / Δ6 — the "Requirement classification" count pills and the
+    // Overall/Mandatory/Readiness-impact status pills are removed; the constructive
+    // per-requirement table is what surfaces classification now.
+    expect(text).not.toContain("Requirement classification");
+    expect(text).not.toContain("Mandatory: 6");
 
     // Δ6 P4 — the per-requirement listing is consolidated into ONE table. Each
     // requirement summary still appears, with its evidence / submission impact /
@@ -309,11 +307,14 @@ describe("S10 report view rendering", () => {
     expect(html).not.toMatch(/retake required/i);
   });
 
-  it("renders scoring basis and diagnostic score visibility for brief-supplied reports", () => {
+  it("renders diagnostic score visibility without the scoring-basis chip or summary", () => {
     const text = routeText(render(strongCompleteV2Report()));
 
-    expect(text).toContain("Scoring basis: Brief supplied");
-    expect(text).toContain("Score language may include supplied brief achievement");
+    // S11-UX-05 / Δ6 — the "Scoring basis: <mode>" header chip and the scoring-basis
+    // summary line are removed; the constructive score-visibility explanation stays.
+    // (brief_supplied has no required_limitations, so only score-visibility remains.)
+    expect(text).not.toContain("Scoring basis: Brief supplied");
+    expect(text).not.toContain("Score language may include supplied brief achievement");
     expect(text).toContain("Score visibility:");
     expect(text).toContain("not public customer score-release approval");
   });
@@ -402,7 +403,7 @@ describe("S10 report view rendering", () => {
     expect(text).not.toContain("Acting objective and scene partner focus are clear");
   });
 
-  it("renders active take-version context without exposing raw take IDs", () => {
+  it("omits the Take context block from the web report and never exposes raw take IDs", () => {
     const text = routeText(
       render(strongCompleteV2Report(), {
         takeNumber: 2,
@@ -414,19 +415,22 @@ describe("S10 report view rendering", () => {
       }),
     );
 
-    expect(text).toContain("Take context");
-    expect(text).toContain("Take: Take 2");
-    expect(text).toContain("Active version: Version 3");
-    expect(text).toContain("Version status: Active");
-    expect(text).toContain("Replacement version; prior take proof is retained separately.");
-    expect(text).toContain("Same-video status: Same video confirmed");
+    // S11-UX-05 / Δ6 — the "Take context" sub-block is removed from the web
+    // report (it is intentionally retained for the PDF path, S11-PDF-01). None of
+    // its rows render here, and the raw replaced-take ID is still never exposed.
+    expect(text).not.toContain("Take context");
+    expect(text).not.toContain("Active version: Version 3");
+    expect(text).not.toContain("Replacement version; prior take proof is retained separately.");
+    expect(text).not.toContain("Same-video status: Same video confirmed");
     expect(text).not.toContain("raw-replaced-take-id");
   });
 
   it("renders no-brief baseline scoring limits without claiming brief achievement", () => {
     const text = routeText(render(noBriefBaselineV2Report()));
 
-    expect(text).toContain("Scoring basis: No brief baseline");
+    // S11-UX-05 / Δ6 — the "Scoring basis: <mode>" chip is removed, but the
+    // no-brief required limitations still render under the "Scoring basis" card.
+    expect(text).not.toContain("Scoring basis: No brief baseline");
     expect(text).toContain("No casting brief was supplied");
     expect(text).toContain("baseline assessment of the observable tape");
     expect(text).not.toContain("What the brief asked for");
@@ -437,7 +441,9 @@ describe("S10 report view rendering", () => {
   it("renders partial-brief scoring limits without full-compliance language", () => {
     const text = routeText(render(partialBriefV2Report()));
 
-    expect(text).toContain("Scoring basis: Partial brief supplied");
+    // S11-UX-05 / Δ6 — the chip is removed; the partial-brief required limitation
+    // still renders, and the "Requirement classification" pills are gone for good.
+    expect(text).not.toContain("Scoring basis: Partial brief supplied");
     expect(text).toContain("Formal brief requirements are incomplete");
     expect(text).toContain("Supplied brief details");
     expect(text).not.toContain("Requirement classification");
