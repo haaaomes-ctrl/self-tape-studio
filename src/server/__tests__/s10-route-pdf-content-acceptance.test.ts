@@ -184,7 +184,8 @@ describe("S10.15 route/PDF content acceptance harness", () => {
         "Scoring basis",
         "Brief achievement",
         "Supplied brief details",
-        "Requirement classification",
+        // S11-UX-05 (A5): the "Requirement classification" count block is removed;
+        // the consolidated per-requirement table carries classification now.
         // Δ6 P4 (S11-UX-03): the dual per-requirement listing ("What the brief
         // asked for" + "Requirement result") is consolidated into ONE table.
         "Brief requirements checked",
@@ -224,7 +225,7 @@ describe("S10.15 route/PDF content acceptance harness", () => {
         "Scoring basis",
         "Brief achievement",
         "Supplied brief details",
-        "Requirement classification",
+        // S11-UX-05 (A5): "Requirement classification" count block removed.
         "Observed tape",
         "Strengths and preserve",
         "Technique commentary",
@@ -611,7 +612,10 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       // Mandatory at-a-glance line in the hero.
       expect(html).toContain("Overall readiness");
       expect(html).toContain("Judged against:");
-      expect(html).toContain("Scoring basis:");
+      // S11-UX-05 (A4): the "Scoring basis: <mode>" hero chip is removed; the
+      // constructive "Scoring basis" card (score-visibility / limitations) stays.
+      expect(html).not.toContain("Scoring basis:");
+      expect(html).toContain("Score visibility:");
 
       // Operator-approved verdict chip copy (submit decision).
       expect(html).toContain("Ready to submit");

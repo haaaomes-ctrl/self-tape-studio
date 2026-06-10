@@ -91,8 +91,12 @@ describe("Δ6 P3b — report topology: card promotion (S10 path)", () => {
   // report-experience topology. On the S10 path, "Category scores" and
   // "Prioritised fixes" must render BEFORE the brief/observed-tape sections and
   // before Component breakdown / Strengths / Technique commentary / Timestamped
-  // notes / Next action plan. (Pre-implementation these sit mid-sequence — after
-  // Observed tape — so this fails against the current order.)
+  // notes. (Pre-implementation these sit mid-sequence — after Observed tape — so
+  // this fails against the current order.)
+  //
+  // S11-UX-05 / Δ6 — "Next action plan" was relocated OUT of the grid to a
+  // standalone full-width block beneath the Director's-perspective block, so it now
+  // precedes the promoted grid cards rather than following them (asserted below).
   it("renders Category scores and Prioritised fixes at the TOP of the grid", () => {
     const html = renderV2(strongCompleteS10Report());
 
@@ -109,7 +113,6 @@ describe("Δ6 P3b — report topology: card promotion (S10 path)", () => {
       "Strengths",
       "Technique commentary",
       "Timestamped and time-banded notes",
-      "Next action plan",
     ];
     for (const heading of laterSections) {
       const headingIdx = html.indexOf(heading);
@@ -119,6 +122,12 @@ describe("Δ6 P3b — report topology: card promotion (S10 path)", () => {
         headingIdx,
       );
     }
+
+    // S11-UX-05 / Δ6 — the relocated "Next action plan" block now precedes the
+    // promoted grid cards (it sits beneath Director's perspective, above the grid).
+    const nextActionIdx = html.indexOf("Next action plan");
+    expect(nextActionIdx).toBeGreaterThanOrEqual(0);
+    expect(nextActionIdx).toBeLessThan(categoryIdx);
 
     // Promoted order: Category scores first, then Prioritised fixes.
     expect(categoryIdx).toBeLessThan(prioritisedIdx);

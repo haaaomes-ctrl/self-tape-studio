@@ -484,42 +484,6 @@ function hasRenderableBriefRequirement(value: unknown): boolean {
   ].some((candidate) => !!safeStr(candidate));
 }
 
-const BRIEF_REQUIREMENT_IMPORTANCE_ORDER = [
-  ["mandatory", "Mandatory"],
-  ["preferred", "Preferred"],
-  ["optional", "Optional"],
-  ["ambiguous", "Ambiguous"],
-] as const;
-
-const BRIEF_REQUIREMENT_CATEGORY_ORDER = [
-  ["material", "Material"],
-  ["performance", "Performance"],
-  ["technical", "Technical"],
-  ["admin_process", "Admin process"],
-  ["deadline", "Deadline"],
-  ["logistics", "Logistics"],
-  ["role_context", "Role context"],
-] as const;
-
-function briefRequirementClassificationRows(
-  requirements: Array<Record<string, unknown>>,
-): Array<[string, number]> {
-  const counts = new Map<string, number>();
-  for (const requirement of requirements) {
-    for (const key of [safeStr(requirement.importance), safeStr(requirement.category)]) {
-      if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  }
-
-  return [...BRIEF_REQUIREMENT_IMPORTANCE_ORDER, ...BRIEF_REQUIREMENT_CATEGORY_ORDER].flatMap(
-    ([key, label]) => {
-      const count = counts.get(key) ?? 0;
-      return count > 0 ? ([[label, count]] as Array<[string, number]>) : [];
-    },
-  );
-}
-
 function hasRenderableBriefAchievementRow(value: unknown): boolean {
   const row = safeObj(value);
   if (!row) return false;
@@ -953,28 +917,6 @@ export function V2ReportView({
     (s): s is string => typeof s === "string" && s.trim().length > 0,
   );
   const t: AuditionTypeForLabels = auditionType ?? safeStr(report.audition_type);
-  const takeLabel =
-    typeof takeSlot === "number"
-      ? `Take ${takeSlot}`
-      : typeof takeNumber === "number"
-        ? `Take ${takeNumber}`
-        : null;
-  const takeVersionLabel =
-    typeof takeVersionNumber === "number" ? `Version ${takeVersionNumber}` : null;
-  const takeVersionStatusLabel = safeStr(takeVersionStatus)
-    ? sentenceLabelize(takeVersionStatus)
-    : null;
-  const takeReplacementLabel = safeStr(replacesTakeId)
-    ? "Replacement version; prior take proof is retained separately."
-    : null;
-  const takeSameVideoLabel = safeStr(sameVideoStatus) ? sentenceLabelize(sameVideoStatus) : null;
-  const takeContextRows = [
-    ["Take", takeLabel],
-    ["Active version", takeVersionLabel],
-    ["Version status", takeVersionStatusLabel],
-    ["Replacement", takeReplacementLabel],
-    ["Same-video status", takeSameVideoLabel],
-  ].filter((row): row is [string, string] => Boolean(row[1]));
   const s10ScoreAuthorized = hasS10SectionRenderAuthority(s10SectionSourceMap, "score_summary");
   const s10RoleMaterialAuthorized = hasS10SectionRenderAuthority(
     s10SectionSourceMap,
@@ -1022,8 +964,6 @@ export function V2ReportView({
   const legacyFixFirst = safeStr(report.fix_first);
   const s10Decision = s10SubmissionGuidanceAuthorized ? s10CanonicalDecision : null;
   const s10HasBlockingDecision = !!s10Decision && !["submit"].includes(s10Decision);
-  const s10SubmissionRiskSource = safeObj(s10SectionSourceMap?.submission_risk);
-  const s10HasRiskSource = safeStr(s10SubmissionRiskSource?.source) === "s10_authoritative_module";
   const s10Rationale = s10SubmissionGuidanceAuthorized
     ? renderableListItems(safeArr(s10Recommendation?.rationale))
     : [];
@@ -1041,12 +981,6 @@ export function V2ReportView({
   const s10LevelComparison = safeStr(s10LevelCalibration?.comparison_to_other_levels);
   const s10MeetsLevel = displayStrings(s10LevelCalibration?.what_meets_level);
   const s10FallsShortLevel = displayStrings(s10LevelCalibration?.what_falls_short);
-  const s10ScoringBasis =
-    safeStr(s10ScoringContext?.scoring_basis_label) ??
-    (safeStr(s10ScoringContext?.scoring_mode)
-      ? labelize(safeStr(s10ScoringContext?.scoring_mode))
-      : null);
-  const s10ScoringBasisSummary = safeStr(s10ScoringContext?.scoring_basis_summary);
   const s10ScoringLimitations = displayStrings(s10ScoringContext?.required_limitations);
   const s10ScoreVisibility = safeObj(s10ScoringContext?.score_visibility);
   const s10ScoreVisibilityExplanation = safeStr(s10ScoreVisibility?.explanation);
@@ -1061,14 +995,13 @@ export function V2ReportView({
     s10MeetsLevel.length > 0 ||
     s10FallsShortLevel.length > 0;
   const blockers = (
-    isS10 && (s10HasBlockingDecision || s10HasRiskSource)
+    isS10 && s10HasBlockingDecision
       ? s10Rationale
       : !isS10
         ? safeArr<string>(report.block_reasons)
         : []
   ).filter(hasRenderableItem);
-  const recommendationRationale =
-    isS10 && !s10HasBlockingDecision && !s10HasRiskSource ? s10Rationale : [];
+  const recommendationRationale = isS10 && !s10HasBlockingDecision ? s10Rationale : [];
   const strengths = safeArr(report.strengths);
   const legacyImprovements = safeArr(report.improvements);
   const tsNotes = safeArr<{ timestamp?: string; note?: string }>(report.timestamped_notes);
@@ -1562,11 +1495,6 @@ export function V2ReportView({
                     {s10JudgedAgainst}
                   </span>
                 )}
-                {isS10 && s10ScoringBasis && (
-                  <span>
-                    <span className="font-medium text-white">Scoring basis:</span> {s10ScoringBasis}
-                  </span>
-                )}
                 {reliability && (
                   <span>
                     <span className="font-medium text-white">Reliability:</span> {reliability}
@@ -1579,33 +1507,13 @@ export function V2ReportView({
         </div>
       </div>
 
-      {/* Context card — take context, blockers, rationale, scoring basis.
+      {/* Context card — blockers, rationale, scoring basis.
           Content unchanged from the legacy header card. */}
-      {(takeContextRows.length > 0 ||
-        blockers.length > 0 ||
+      {(blockers.length > 0 ||
         recommendationRationale.length > 0 ||
-        (isS10 &&
-          (s10ScoringBasisSummary ||
-            s10ScoringLimitations.length > 0 ||
-            s10ScoreVisibilityExplanation)) ||
+        (isS10 && (s10ScoringLimitations.length > 0 || s10ScoreVisibilityExplanation)) ||
         (!isS10 && report.at_risk)) && (
         <div className="tc-report-print-section rounded-[14px] border border-border bg-card p-6 shadow-soft">
-          {takeContextRows.length > 0 && (
-            <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Take context
-              </p>
-              <div className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
-                {takeContextRows.map(([label, value]) => (
-                  <p key={label}>
-                    <span className="font-medium">{label}:</span>{" "}
-                    <span className="text-muted-foreground">{value}</span>
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
-
           {blockers.length > 0 && (
             <div className="mt-5 rounded-md border border-warning/40 bg-warning/10 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-warning">
@@ -1652,32 +1560,28 @@ export function V2ReportView({
               </ul>
             </div>
           )}
-          {isS10 &&
-            (s10ScoringBasisSummary ||
-              s10ScoringLimitations.length > 0 ||
-              s10ScoreVisibilityExplanation) && (
-              <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Scoring basis
+          {isS10 && (s10ScoringLimitations.length > 0 || s10ScoreVisibilityExplanation) && (
+            <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Scoring basis
+              </p>
+              {s10ScoringLimitations.length > 0 && (
+                <ul className="mt-2 space-y-1.5 text-sm">
+                  {s10ScoringLimitations.map((limitation, index) => (
+                    <li key={index} className="flex gap-2">
+                      <span className="text-muted-foreground">•</span>
+                      <span>{limitation}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {s10ScoreVisibilityExplanation && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Score visibility: {s10ScoreVisibilityExplanation}
                 </p>
-                {s10ScoringBasisSummary && <p className="mt-2 text-sm">{s10ScoringBasisSummary}</p>}
-                {s10ScoringLimitations.length > 0 && (
-                  <ul className="mt-2 space-y-1.5 text-sm">
-                    {s10ScoringLimitations.map((limitation, index) => (
-                      <li key={index} className="flex gap-2">
-                        <span className="text-muted-foreground">•</span>
-                        <span>{limitation}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {s10ScoreVisibilityExplanation && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Score visibility: {s10ScoreVisibilityExplanation}
-                  </p>
-                )}
-              </div>
-            )}
+              )}
+            </div>
+          )}
           {!isS10 && report.at_risk && blockers.length === 0 && (
             <div className="mt-4 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
               <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
@@ -1690,20 +1594,92 @@ export function V2ReportView({
         </div>
       )}
 
-      {/* Δ6 P2 — A practitioner's perspective. Subjective, developmental note
+      {/* Δ6 P2 — Director's perspective. Subjective, developmental note
           rendered BELOW the score/verdict block. Already gated/enforced at process
           time; render nothing when absent. Carries tc-report-print-section for PDF. */}
       {isS10 && s10PractitionerVoice && (
         <div className="tc-report-print-section rounded-[14px] border border-border bg-card p-6 shadow-soft">
-          <p className="font-display text-lg font-semibold leading-snug">
-            A practitioner's perspective
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            One subjective view — it doesn't affect your score.
-          </p>
+          <p className="font-display text-lg font-semibold leading-snug">Director's perspective</p>
           <p className="mt-3 text-sm leading-relaxed">{s10PractitionerVoice}</p>
         </div>
       )}
+
+      {/* S11-UX-05 / Δ6 — Next action plan rendered as a standalone full-width
+          block directly beneath the Director's-perspective block (relocated out of
+          the card grid). S10-only: legacy keeps the separate "Next steps" block in
+          the grid below. */}
+      {(() => {
+        if (!s10NextActionPlan) {
+          return isS10 && s10NextActionLimitation ? (
+            <Section title="Next action plan">
+              <p className="text-sm text-muted-foreground">{s10NextActionLimitation}</p>
+            </Section>
+          ) : null;
+        }
+        const retakePlan = renderableListItems(safeArr(s10NextActionPlan.retake_plan));
+        const playbackChecks = renderableListItems(safeArr(s10NextActionPlan.playback_checks));
+        const finalChecks = renderableListItems(safeArr(s10NextActionPlan.final_checks));
+        const submitChecklist = renderableListItems(safeArr(s10NextActionPlan.submit_checklist));
+        const noRetakeReason = safeStr(s10NextActionPlan.no_retake_needed_reason);
+        if (
+          retakePlan.length === 0 &&
+          playbackChecks.length === 0 &&
+          finalChecks.length === 0 &&
+          submitChecklist.length === 0 &&
+          !noRetakeReason
+        ) {
+          return s10NextActionLimitation ? (
+            <Section title="Next action plan">
+              <p className="text-sm text-muted-foreground">{s10NextActionLimitation}</p>
+            </Section>
+          ) : null;
+        }
+        return (
+          <Section title="Next action plan">
+            {retakePlan.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Retake plan
+                </p>
+                <div className="mt-2">
+                  <SimpleList items={retakePlan} />
+                </div>
+              </div>
+            )}
+            {playbackChecks.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Playback checks
+                </p>
+                <div className="mt-2">
+                  <SimpleList items={playbackChecks} />
+                </div>
+              </div>
+            )}
+            {finalChecks.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Final checks
+                </p>
+                <div className="mt-2">
+                  <SimpleList items={finalChecks} />
+                </div>
+              </div>
+            )}
+            {submitChecklist.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Submit checklist
+                </p>
+                <div className="mt-2">
+                  <SimpleList items={submitChecklist} />
+                </div>
+              </div>
+            )}
+            {noRetakeReason && <p className="mt-3 text-sm">{noRetakeReason}</p>}
+          </Section>
+        );
+      })()}
 
       {/* Colour-coded card grid — 2 columns, stacks on mobile */}
       <div className="tc-tpl3-grid">
@@ -2027,26 +2003,16 @@ export function V2ReportView({
               const reqs = safeArr<Record<string, unknown>>(s10?.brief_requirements).filter(
                 hasRenderableBriefRequirement,
               );
-              const classificationRows = briefRequirementClassificationRows(reqs);
               const rows = safeArr<Record<string, unknown>>(s10Matrix?.requirement_results).filter(
                 hasRenderableBriefAchievementRow,
               );
               // Δ6 P4 — consolidate the matrix rows + orphan supplied
               // requirements into ONE per-requirement table (no double listing).
               const tableRows = briefAchievementTableRows(rows, reqs);
-              const matrixStatusRows = [
-                ["Overall", s10Matrix?.overall_status],
-                ["Mandatory", s10Matrix?.mandatory_status],
-                ["Readiness impact", s10Matrix?.readiness_impact],
-              ].flatMap(([label, raw]) => {
-                const value = safeStr(raw);
-                return value ? ([[label as string, value]] as Array<[string, string]>) : [];
-              });
               const hasMatrixSummary = !!safeStr(s10Matrix?.summary);
               if (
                 contextRows.length === 0 &&
                 !hasMatrixSummary &&
-                matrixStatusRows.length === 0 &&
                 reqs.length === 0 &&
                 rows.length === 0
               )
@@ -2075,29 +2041,6 @@ export function V2ReportView({
                     <p className={cn("text-sm", contextRows.length > 0 && "mt-3")}>
                       {safeStr(s10Matrix?.summary)}
                     </p>
-                  )}
-                  {matrixStatusRows.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      {matrixStatusRows.map(([label, value]) => (
-                        <Badge key={label} variant="outline" className="capitalize">
-                          {label}: {labelize(value)}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                  {classificationRows.length > 0 && (
-                    <div className="mt-3">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Requirement classification
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                        {classificationRows.map(([label, count]) => (
-                          <Badge key={label} variant="secondary">
-                            {label}: {count}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
                   )}
                   {tableRows.length > 0 && <BriefAchievementTable rows={tableRows} />}
                 </Section>
@@ -2656,12 +2599,15 @@ export function V2ReportView({
                     return (
                       <li
                         key={safeStr(n.id) ?? i}
-                        className={cn("flex gap-3 border-l-2 pl-3", railClass)}
+                        className={cn("flex gap-3 border-l-4 pl-4", railClass)}
                       >
                         <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
                           {safeStr(n.display_label) ?? safeStr(n.timecode) ?? "Timing unavailable"}
                         </span>
                         <span>
+                          {/* S11-UX-05 / Δ6 — the leading header carries only the
+                              valence cue so the eye leads time → cue → note text;
+                              linked_category is demoted to a quiet trailing tag. */}
                           <span className="mb-0.5 flex flex-wrap items-center gap-1.5">
                             <span
                               className={cn(
@@ -2671,11 +2617,6 @@ export function V2ReportView({
                             >
                               {cueLabel}
                             </span>
-                            {categoryLabel && (
-                              <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                {categoryLabel}
-                              </span>
-                            )}
                           </span>
                           {(safeStr(n.title) ?? safeStr(n.detail)) && (
                             <span className="font-medium">
@@ -2691,6 +2632,11 @@ export function V2ReportView({
                           {safeStr(n.evidence_summary) && (
                             <span className="block text-xs text-muted-foreground">
                               {safeStr(n.evidence_summary)}
+                            </span>
+                          )}
+                          {categoryLabel && (
+                            <span className="mt-1 inline-block rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {categoryLabel}
                             </span>
                           )}
                         </span>
@@ -2722,79 +2668,6 @@ export function V2ReportView({
             </ul>
           </Section>
         )}
-
-        {(() => {
-          if (!s10NextActionPlan) {
-            return isS10 && s10NextActionLimitation ? (
-              <Section title="Next action plan">
-                <p className="text-sm text-muted-foreground">{s10NextActionLimitation}</p>
-              </Section>
-            ) : null;
-          }
-          const retakePlan = renderableListItems(safeArr(s10NextActionPlan.retake_plan));
-          const playbackChecks = renderableListItems(safeArr(s10NextActionPlan.playback_checks));
-          const finalChecks = renderableListItems(safeArr(s10NextActionPlan.final_checks));
-          const submitChecklist = renderableListItems(safeArr(s10NextActionPlan.submit_checklist));
-          const noRetakeReason = safeStr(s10NextActionPlan.no_retake_needed_reason);
-          if (
-            retakePlan.length === 0 &&
-            playbackChecks.length === 0 &&
-            finalChecks.length === 0 &&
-            submitChecklist.length === 0 &&
-            !noRetakeReason
-          ) {
-            return s10NextActionLimitation ? (
-              <Section title="Next action plan">
-                <p className="text-sm text-muted-foreground">{s10NextActionLimitation}</p>
-              </Section>
-            ) : null;
-          }
-          return (
-            <Section title="Next action plan">
-              {retakePlan.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Retake plan
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={retakePlan} />
-                  </div>
-                </div>
-              )}
-              {playbackChecks.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Playback checks
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={playbackChecks} />
-                  </div>
-                </div>
-              )}
-              {finalChecks.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Final checks
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={finalChecks} />
-                  </div>
-                </div>
-              )}
-              {submitChecklist.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Submit checklist
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={submitChecklist} />
-                  </div>
-                </div>
-              )}
-              {noRetakeReason && <p className="mt-3 text-sm">{noRetakeReason}</p>}
-            </Section>
-          );
-        })()}
 
         {!isS10 && legacyNextPlan.length > 0 && (
           <Section title="Next steps">

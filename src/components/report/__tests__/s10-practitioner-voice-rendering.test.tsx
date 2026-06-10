@@ -25,7 +25,11 @@ const VOICE_NOTE =
 // renderToStaticMarkup HTML-escapes the apostrophe, so match on the unambiguous
 // apostrophe-free fragments of the heading/sub-note rather than the literal copy.
 const HEADING = "perspective";
-const HEADING_LEAD = "A practitioner";
+// S11-UX-05 / Δ6 — the V2 (S10) heading was renamed "Director's perspective" and the
+// "One subjective view…" sub-note removed. The LEGACY path is byte-identical, so it
+// keeps the original "A practitioner's perspective" heading + sub-note.
+const V2_HEADING_LEAD = "Director";
+const LEGACY_HEADING_LEAD = "A practitioner";
 const SUBNOTE = "One subjective view";
 
 function buildReport(opts: { withVoice: boolean; mdVoiceEnabled?: boolean }): AnyRec {
@@ -64,8 +68,11 @@ describe("Δ6 P2 — practitioner-voice render (V2ReportView)", () => {
   it("renders the section AFTER the score/verdict block when present", () => {
     const html = renderV2(buildReport({ withVoice: true, mdVoiceEnabled: true }));
     expect(html).toContain(HEADING);
-    expect(html).toContain(HEADING_LEAD);
-    expect(html).toContain(SUBNOTE);
+    // S11-UX-05 / Δ6 — V2 heading is now "Director's perspective" and the
+    // "One subjective view…" sub-note is removed on the S10 path.
+    expect(html).toContain(V2_HEADING_LEAD);
+    expect(html).not.toContain(LEGACY_HEADING_LEAD);
+    expect(html).not.toContain(SUBNOTE);
     expect(html).toContain("closing image");
     // Heading appears after the verdict hero (Overall readiness ring label).
     const verdictIdx = html.indexOf("Overall readiness");
@@ -99,7 +106,8 @@ describe("Δ6 P2 — practitioner-voice render (V2ReportViewLegacy)", () => {
   it("renders the section below the score/verdict block when present", () => {
     const html = renderLegacy(buildReport({ withVoice: true, mdVoiceEnabled: true }));
     expect(html).toContain(HEADING);
-    expect(html).toContain(HEADING_LEAD);
+    // Legacy is byte-identical: keeps the original heading + sub-note.
+    expect(html).toContain(LEGACY_HEADING_LEAD);
     expect(html).toContain(SUBNOTE);
     const verdictIdx = html.indexOf("Overall readiness");
     const voiceIdx = html.indexOf(HEADING);
