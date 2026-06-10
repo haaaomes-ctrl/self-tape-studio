@@ -846,23 +846,75 @@ export function enforceScoreAlignment(
 
 // ---------- Δ6 P2 — practitioner's-voice (MD-voice) enforcement ----------
 
-// Tight, documented submission/readiness-VERDICT family. The practitioner's
-// voice is developmental prose ONLY; it must never make or imply a submission/
-// readiness verdict that could contradict the canonical one. This list is
-// deliberately narrow — verdict language only, never general craft language.
-// If something here is not verdict-language, it does not belong in this list.
-const MD_VOICE_VERDICT_PATTERNS: RegExp[] = [
+// Tight, documented submission/readiness-VERDICT family, split by POLARITY.
+// S11-CAL-02: the Director's voice MAY summarise/echo the canonical verdict when
+// IN SYNC (it reinforces the report); the only guard that matters is non-divergence.
+// So the verdict family is partitioned into the two polarities, and step (d) below
+// compares the note's polarity against the canonical verdict's. These lists are
+// deliberately narrow — verdict language only, never general craft language. If
+// something here is not verdict-language, it does not belong in either list.
+//
+// POSITIVE — asserts / urges submission.
+const MD_VOICE_VERDICT_POSITIVE: RegExp[] = [
   /\bready to submit\b/i,
   /\bready for submission\b/i,
-  /\bnot ready\b/i,
-  /\bwouldn'?t submit\b/i,
-  /\bdo\s?n'?t submit\b/i,
-  /\bdo not submit\b/i,
   /\bsubmit (?:it|this)\b/i,
   /\bsend (?:it|this)\b/i,
   /\bgood to go\b/i,
   /\bsafe to submit\b/i,
 ];
+
+// NEGATIVE — asserts NOT submittable.
+const MD_VOICE_VERDICT_NEGATIVE: RegExp[] = [
+  /\bnot ready\b/i,
+  /\bwouldn'?t submit\b/i,
+  /\bdo\s?n'?t submit\b/i,
+  /\bdo not submit\b/i,
+];
+
+/**
+ * S11-CAL-02 — canonical verdict polarity, derived from the SAME source
+ * `evaluateReportPositivityBalance` reads (submission_verdict label/blocked +
+ * verdict_final + block_reasons). Shared so the divergence guard and the
+ * positivity balance can never disagree about what "not-ready" means.
+ *
+ * READ-ONLY: it never assigns to `report`; it only reads verdict-polarity fields.
+ *  - "negative": blocked === true OR a non-positive label OR any block_reasons.
+ *  - "positive": a positive label AND not blocked AND no block_reasons.
+ *  - "indeterminate": otherwise (cannot prove sync → guard defaults to suppress).
+ */
+function canonicalVerdictPolarity(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report: any,
+): "positive" | "negative" | "indeterminate" {
+  const arrayLen = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+  const verdict = report?.submission_verdict;
+  const label: string =
+    typeof verdict?.label === "string"
+      ? verdict.label
+      : typeof report?.verdict_final === "string"
+        ? report.verdict_final
+        : "";
+  const blocked = verdict?.blocked === true;
+  const blockReasonsCount = arrayLen(report?.block_reasons);
+
+  if (
+    blocked ||
+    label === "Worth another take" ||
+    label === "Not ready yet" ||
+    blockReasonsCount > 0
+  ) {
+    return "negative";
+  }
+  if (
+    (label === "Ready to submit" || label === "Strong for this level") &&
+    !blocked &&
+    blockReasonsCount === 0
+  ) {
+    return "positive";
+  }
+  return "indeterminate";
+}
 
 /**
  * Δ6 P2 — normalise and gate the subjective practitioner's-voice module.
@@ -872,8 +924,11 @@ const MD_VOICE_VERDICT_PATTERNS: RegExp[] = [
  *      value) to a trimmed string;
  *  (b) empty/whitespace → set the module to null and return early;
  *  (c) truncate to the FIRST 3 sentences;
- *  (d) if it contains submission/readiness-verdict language → set null AND emit
- *      `md_voice_suppressed_verdict_claim`;
+ *  (d) SYNC-AWARE divergence guard (S11-CAL-02): an in-sync verdict echo is KEPT
+ *      (it reinforces the canonical verdict); only a verdict read that DIVERGES
+ *      from the canonical verdict — opposite polarity, an incoherent both-polarity
+ *      note, or any verdict language when the canonical verdict is indeterminate —
+ *      is set null AND emits `md_voice_suppressed_verdict_divergence`;
  *  (e) NEVER touch any score/verdict field.
  *
  * Returns a small summary for logging.
@@ -904,10 +959,19 @@ export function enforcePractitionerVoiceModule(
   const truncated = sentences.length > 3;
   const bounded = (truncated ? sentences.slice(0, 3) : sentences).join(" ").trim();
 
-  // (d) verdict-non-contradiction guard.
-  if (MD_VOICE_VERDICT_PATTERNS.some((re) => re.test(bounded))) {
+  // (d) SYNC-AWARE verdict-divergence guard (S11-CAL-02). An in-sync verdict echo
+  // reinforces the canonical verdict and is KEPT; only a divergent read is nulled.
+  const hasPos = MD_VOICE_VERDICT_POSITIVE.some((re) => re.test(bounded));
+  const hasNeg = MD_VOICE_VERDICT_NEGATIVE.some((re) => re.test(bounded));
+  const canonical = canonicalVerdictPolarity(report);
+  const diverges =
+    (hasPos && hasNeg) || // incoherent: both polarities
+    (hasPos && canonical === "negative") || // positive note vs negative verdict
+    (hasNeg && canonical === "positive") || // negative note vs positive verdict
+    ((hasPos || hasNeg) && canonical === "indeterminate"); // can't prove sync → safe default
+  if (diverges) {
     report.s10_practitioner_voice = null;
-    metric("md_voice_suppressed_verdict_claim", { take_id: takeId ?? null });
+    metric("md_voice_suppressed_verdict_divergence", { take_id: takeId ?? null });
     return { suppressed: true, truncated };
   }
 
@@ -951,11 +1015,11 @@ export function evaluateReportPositivityBalance(
       : typeof report?.verdict_final === "string"
         ? report.verdict_final
         : "";
-  const blockedFlag = verdict?.blocked === true;
-  const nonPositiveLabel =
-    verdictLabel === "Worth another take" || verdictLabel === "Not ready yet";
   const blockReasonsCount = arrayLen(report?.block_reasons);
-  const notReady = blockedFlag || nonPositiveLabel || blockReasonsCount > 0;
+  // S11-CAL-02: derive not-ready from the shared canonical-polarity helper so the
+  // divergence guard and this balance check can never disagree about "not-ready".
+  // Semantics are identical to the prior `blocked || non-positive label || block_reasons`.
+  const notReady = canonicalVerdictPolarity(report) === "negative";
 
   // ---- Positive surfaces: strengths + preserve + do-not-overfix ----
   const critique = report?.s10_professional_critique ?? {};
