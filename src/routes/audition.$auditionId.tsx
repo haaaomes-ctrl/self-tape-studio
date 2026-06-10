@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
-import { ChecklistView } from "@/components/checklist-view";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { CreditUseNotice } from "@/components/credit-balance-panel";
 import { VideoDurationNotice } from "@/components/video-duration-notice";
@@ -33,7 +32,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAccountCompliance } from "@/lib/account-compliance-client";
-import { analyzeVideoFile, type ChecklistResult } from "@/lib/checklist";
+import { readVideoMediaMetadata, type VideoMediaMetadata } from "@/lib/checklist";
 import {
   buildUploadIdentityMetadata,
   preflightVideoBasics,
@@ -102,21 +101,23 @@ function recordVideoDurationEvent(
   }).catch(() => {});
 }
 
-async function buildTakeUploadSignals(file: File, checklist: ChecklistResult | null) {
-  if (!checklist) {
+// S11-AUDIO-01: signals carry only non-perceptual METADATA — duration, display
+// dimensions (width/height, which deterministically source the server-side
+// orientation_mismatch gate) and identity. No browser audio / brightness /
+// orientation QC is persisted: the model governs audio/video, and orientation
+// compliance is derived server-side from these dimensions (NOT a perceptual
+// probe, NOT model prose).
+async function buildTakeUploadSignals(file: File, meta: VideoMediaMetadata | null) {
+  if (meta == null) {
     return { upload_identity: await buildUploadIdentityMetadata(file, null) };
   }
 
   return {
-    orientation: checklist.orientation.value,
-    width: checklist.resolution.width,
-    height: checklist.resolution.height,
-    duration: checklist.duration.seconds,
-    ...buildVideoDurationSignals(checklist.duration.seconds),
-    brightness: checklist.brightness.value,
-    audio_peak: checklist.audio.peak,
-    audio_rms: checklist.audio.rms,
-    upload_identity: await buildUploadIdentityMetadata(file, checklist.duration.seconds),
+    duration: meta.durationSeconds,
+    ...(meta.width != null ? { width: meta.width } : {}),
+    ...(meta.height != null ? { height: meta.height } : {}),
+    ...buildVideoDurationSignals(meta.durationSeconds),
+    upload_identity: await buildUploadIdentityMetadata(file, meta.durationSeconds),
   };
 }
 
@@ -564,15 +565,18 @@ function FailedTakeView({
     if (!f || !user) return;
     setBusy(true);
     try {
-      let checklist: ChecklistResult | null = null;
+      // S11-AUDIO-01: read metadata only (duration + display dimensions); no
+      // brief-blind QC / audio decode probe.
+      let mediaMeta: VideoMediaMetadata | null = null;
       try {
-        checklist = await analyzeVideoFile(f);
+        mediaMeta = await readVideoMediaMetadata(f);
       } catch {
         // best-effort
       }
+      const durationSeconds = mediaMeta?.durationSeconds ?? null;
 
-      if (checklist) {
-        const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
+      if (durationSeconds != null) {
+        const durationDecision = buildVideoDurationDecision(durationSeconds);
         if (!durationDecision.canUpload) {
           recordVideoDurationEvent(
             "video_duration_hard_cap_blocked",
@@ -604,7 +608,7 @@ function FailedTakeView({
           );
         }
 
-        const pf = preflightVideoBasics(f, checklist.duration.seconds, checklist.audio.peak);
+        const pf = preflightVideoBasics(f, durationSeconds);
         if (!pf.ok) {
           toast.error(pf.error ?? "Video failed pre-upload checks");
           return;
@@ -612,10 +616,10 @@ function FailedTakeView({
         if (pf.warning && pf.durationStatus !== "over_soft_guidance") toast.warning(pf.warning);
       }
 
-      const signals = await buildTakeUploadSignals(f, checklist);
+      const signals = await buildTakeUploadSignals(f, mediaMeta);
 
       const replacement = await resetTakeForReupload({
-        data: { takeId: take.id, signals, checklist },
+        data: { takeId: take.id, signals, checklist: null },
       });
       const replacementTakeId = replacement.replacementTakeId;
       let uploadUrl: string | undefined;
@@ -954,11 +958,10 @@ function buildTrustIndicator(
 } {
   const audio = report?.scores?.audio ?? null;
   const technical = report?.scores?.technical ?? null;
+  // S11-AUDIO-01: only the (server-fallback) duration is read here; the browser
+  // audio_peak is gone — audio reliability comes from report.scores.audio.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const signals = (take as any).signals as
-    | { duration?: number; audio_peak?: number }
-    | null
-    | undefined;
+  const signals = (take as any).signals as { duration?: number } | null | undefined;
   const hasBrief = report?.mode === "brief";
   const components = Array.isArray(report?.detected_components) ? report.detected_components : [];
   // Authoritative duration is the server-side Mux duration. Client-supplied
@@ -1618,17 +1621,9 @@ function TakeView({
         </div>
       )}
 
-      {/* Signals */}
-      {take.checklist && (
-        <details className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-          <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-            Show technical signals
-          </summary>
-          <div className="mt-4">
-            <ChecklistView checklist={take.checklist} briefSource={audition.brief_source} />
-          </div>
-        </details>
-      )}
+      {/* S11-AUDIO-01: the persisted brief-blind technical-signals checklist was
+          retired with the rest of the pre-upload QC. Assessment of orientation /
+          lighting / sound is brief-aware and lives in the report itself. */}
     </div>
   );
 }
@@ -1945,7 +1940,9 @@ function AddTakeBlock({
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
+  // S11-AUDIO-01: metadata-only (duration + display dimensions), no perceptual QC.
+  const [mediaMeta, setMediaMeta] = useState<VideoMediaMetadata | null>(null);
+  const durationSeconds = mediaMeta?.durationSeconds ?? null;
   const [durationWarningAccepted, setDurationWarningAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -1964,11 +1961,13 @@ function AddTakeBlock({
 
   async function pick(f: File | null) {
     setFile(f);
-    setChecklist(null);
+    setMediaMeta(null);
     setDurationWarningAccepted(false);
     if (!f) return;
     try {
-      setChecklist(await analyzeVideoFile(f));
+      // S11-AUDIO-01: read metadata only (duration + display dimensions); no
+      // brief-blind QC / audio decode probe.
+      setMediaMeta(await readVideoMediaMetadata(f));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not read this video");
     }
@@ -1981,8 +1980,8 @@ function AddTakeBlock({
       return;
     }
 
-    if (checklist) {
-      const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
+    if (durationSeconds != null) {
+      const durationDecision = buildVideoDurationDecision(durationSeconds);
       if (!durationDecision.canUpload) {
         recordVideoDurationEvent(
           "video_duration_hard_cap_blocked",
@@ -1999,7 +1998,7 @@ function AddTakeBlock({
         );
         return;
       }
-      const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
+      const pf = preflightVideoBasics(file, durationSeconds);
       if (!pf.ok) {
         toast.error(pf.error ?? "Video failed pre-upload checks");
         return;
@@ -2022,7 +2021,7 @@ function AddTakeBlock({
         }
       }
 
-      const signals = await buildTakeUploadSignals(file, checklist);
+      const signals = await buildTakeUploadSignals(file, mediaMeta);
       const analyticsAttribution = buildAnalyticsAttributionMetadata(
         readStoredAnalyticsAttribution(),
       );
@@ -2051,7 +2050,7 @@ function AddTakeBlock({
             mux_status: "uploading",
             processing_phase: "uploading",
             signals: signals as never,
-            checklist: (checklist ?? null) as never,
+            checklist: null as never,
             analytics_attribution: analyticsAttribution as never,
           },
         ])
@@ -2173,34 +2172,41 @@ function AddTakeBlock({
           <Progress value={uploadPct} />
         </div>
       )}
-      {checklist && (
-        <div className="mt-4">
-          <ChecklistView checklist={checklist} briefSource={audition.brief_source} />
-          <VideoDurationNotice
-            className="mt-4"
-            seconds={checklist.duration.seconds}
-            accepted={durationWarningAccepted}
-            onShown={(status) => {
-              if (status !== "over_soft_guidance") return;
-              recordVideoDurationEvent(
-                "video_duration_warning_shown",
-                checklist.duration.seconds,
-                status,
-                "add_take_upload",
-              );
-            }}
-            onAccept={() => {
-              const decision = buildVideoDurationDecision(checklist.duration.seconds);
-              setDurationWarningAccepted(true);
-              recordVideoDurationEvent(
-                "video_duration_warning_accepted",
-                decision.durationSeconds,
-                decision.status,
-                "add_take_upload",
-              );
-            }}
-            onChooseShorter={() => fileRef.current?.click()}
-          />
+      {/* S11-AUDIO-01: no brief-blind pre-upload QC. Warm affordance + the
+          brief-independent length guidance only; the brief-aware analysis does
+          the real assessment of orientation / lighting / sound. */}
+      {file && (
+        <div className="mt-4 rounded-xl border border-border bg-card px-5 py-4">
+          <p className="text-sm text-muted-foreground">
+            Upload your tape — we&rsquo;ll review it against the brief.
+          </p>
+          {durationSeconds != null && (
+            <VideoDurationNotice
+              className="mt-4"
+              seconds={durationSeconds}
+              accepted={durationWarningAccepted}
+              onShown={(status) => {
+                if (status !== "over_soft_guidance") return;
+                recordVideoDurationEvent(
+                  "video_duration_warning_shown",
+                  durationSeconds,
+                  status,
+                  "add_take_upload",
+                );
+              }}
+              onAccept={() => {
+                const decision = buildVideoDurationDecision(durationSeconds);
+                setDurationWarningAccepted(true);
+                recordVideoDurationEvent(
+                  "video_duration_warning_accepted",
+                  decision.durationSeconds,
+                  decision.status,
+                  "add_take_upload",
+                );
+              }}
+              onChooseShorter={() => fileRef.current?.click()}
+            />
+          )}
         </div>
       )}
       <div className="mt-5 flex justify-end gap-2">

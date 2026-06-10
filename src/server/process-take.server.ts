@@ -203,6 +203,47 @@ function runtimeString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+// S11-AUDIO-01: browser-measured PERCEPTUAL decode values that must NEVER reach
+// the model. A skipped >80 MB browser audio probe persisted audio_peak=0 /
+// audio_rms=0; the old signalsBlock JSON.stringify'd take.signals + take.checklist
+// straight into the model userText, so the model parroted "completely silent
+// (RMS 0, Peak 0)". The model genuinely hears file_url audio, so its hearing must
+// govern. We strip these keys defensively even if they linger on an old persisted
+// take, and we drop the whole checklist object (it was the browser perceptual QC).
+// Top-level-key-only: the sanitiser below matches these against the TOP-LEVEL
+// signals keys, which is sufficient because the persisted perceptual fields are
+// flat (audio_peak / audio_rms / brightness sit directly on signals, never nested).
+const MODEL_SIGNALS_PERCEPTUAL_DENYLIST = new Set(["audio_peak", "audio_rms", "brightness"]);
+
+// Build the model-facing TECHNICAL SIGNALS block. Serialises ONLY non-perceptual,
+// server-reliable context (file name / identity metadata, dimensions, server
+// duration). Any browser perceptual measurement (audio/brightness) and the entire
+// checklist object are excluded — the model's own observation governs audio/video.
+export function buildModelTechnicalSignalsBlock(input: {
+  signals: unknown;
+  checklist?: unknown;
+  muxDurationSeconds?: number | null;
+}): string {
+  const rawSignals = isRuntimeRecord(input.signals) ? input.signals : {};
+  const sanitisedSignals: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rawSignals)) {
+    if (MODEL_SIGNALS_PERCEPTUAL_DENYLIST.has(key)) continue;
+    sanitisedSignals[key] = value;
+  }
+  // Server-authoritative duration helps the model (non-perceptual metadata).
+  const payload: Record<string, unknown> = { signals: sanitisedSignals };
+  if (typeof input.muxDurationSeconds === "number" && Number.isFinite(input.muxDurationSeconds)) {
+    payload.mux_duration_seconds = input.muxDurationSeconds;
+  }
+  // NOTE: the checklist object is intentionally NOT included — it carried browser
+  // perceptual QC (audio/brightness/orientation verdicts) that the model overrides.
+  return `TECHNICAL SIGNALS (non-perceptual context only; you observe audio/video yourself):\n${JSON.stringify(
+    payload,
+    null,
+    2,
+  )}`;
+}
+
 function nestedRuntimeValue(source: unknown, path: string[]): unknown {
   let current: unknown = source;
   for (const key of path) {
@@ -1153,6 +1194,7 @@ import {
   buildS10PerformerLevelPromptBlock,
   computeBlockers,
   applyAudioCap,
+  deriveOrientationFromDimensions,
   deterministicCompliance,
   disciplineToAuditionType,
   isAuditionDiscipline,
@@ -3514,11 +3556,13 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
       ? `STRUCTURED BRIEF (parsed):\n${JSON.stringify(extractedBrief, null, 2)}`
       : "STRUCTURED BRIEF: none.";
 
-    const signalsBlock = `TECHNICAL SIGNALS (modifiers, not primary):\n${JSON.stringify(
-      { signals: take.signals, checklist: take.checklist },
-      null,
-      2,
-    )}`;
+    // S11-AUDIO-01: de-contaminated signals block — never inject browser
+    // perceptual audio/brightness or the checklist into the model prompt.
+    const signalsBlock = buildModelTechnicalSignalsBlock({
+      signals: take.signals,
+      checklist: take.checklist,
+      muxDurationSeconds: take.mux_duration_seconds ?? null,
+    });
 
     const levelBlock = buildS10PerformerLevelPromptBlock(auditionLevel);
     // ARCH-Δ2: deterministic discipline context line (level-block precedent)
@@ -5277,15 +5321,34 @@ export async function runAnalysisJob(params: RunAnalysisJobParams): Promise<RunP
     const overallScoreModel =
       typeof report.overall_score === "number" ? report.overall_score : null;
 
-    // ---- Deterministic compliance vs signals (orientation/duration/audio) ----
-    const signalsForCompliance = (take.signals ?? null) as {
-      orientation?: string;
-      duration?: number;
-      audio_peak?: number;
-    } | null;
+    // ---- Deterministic compliance vs server-authoritative signals ----
+    // S11-AUDIO-01: the orientation_mismatch gate is DETERMINISTIC, derived
+    // from the tape's DISPLAY DIMENSIONS (width > height ⇒ landscape) via
+    // deriveOrientationFromDimensions. Those dimensions are persisted in
+    // signals.width / signals.height by the upload routes from a cheap
+    // loadedmetadata read — reliable on any file. This is NOT the removed
+    // browser perceptual DECODE (audio/brightness), and it is deliberately NOT
+    // technicalMediaSignals.landscape (which OR's a regex over model prose; a
+    // deterministic gating flag must never depend on prose-regex evidence).
+    // When dimensions are genuinely unavailable the derivation returns null and
+    // the gate raises NO orientation flag (no false positive). Duration is
+    // server-authoritative (mux_duration_seconds), falling back to the
+    // browser-captured signals.duration only when Mux duration is null. The
+    // browser audio number is no longer consulted (audio is the model's job).
+    const rawSignalsRecord = isRuntimeRecord(take.signals) ? take.signals : null;
+    const rawSignalsDuration = rawSignalsRecord ? runtimeNumber(rawSignalsRecord.duration) : null;
+    const complianceDurationSeconds =
+      typeof take.mux_duration_seconds === "number" && Number.isFinite(take.mux_duration_seconds)
+        ? take.mux_duration_seconds
+        : rawSignalsDuration;
+    const observedOrientation = deriveOrientationFromDimensions(
+      rawSignalsRecord ? runtimeNumber(rawSignalsRecord.width) : null,
+      rawSignalsRecord ? runtimeNumber(rawSignalsRecord.height) : null,
+    );
     const complianceFlags = deterministicCompliance({
       extracted: extractedBrief,
-      signals: signalsForCompliance,
+      orientation: observedOrientation,
+      durationSeconds: complianceDurationSeconds,
     });
 
     // Compliance severity normalisation:

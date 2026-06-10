@@ -20,13 +20,9 @@ describe("Phase 0 posture — no behaviour change", () => {
     expect(readReportSchemaVersion(null)).toBe("v1-legacy");
   });
 
-  it("checklist (Step 1 surface) does not branch on schema_version", () => {
-    // Phase 3B: only the audition report route may branch on schema_version.
-    // The checklist remains schema-agnostic.
-    const src = read("src/components/checklist-view.tsx");
-    expect(src).not.toMatch(/schema_version/);
-    expect(src).not.toMatch(/v2-component/);
-  });
+  // S11-AUDIO-01: the brief-blind pre-upload checklist surface
+  // (components/checklist-view.tsx) was retired, so the schema-agnostic guard it
+  // carried is moot — the component no longer exists to branch on schema_version.
 
   it("public score-field set is preserved in audition-rules", () => {
     const src = read("src/lib/audition-rules.ts");

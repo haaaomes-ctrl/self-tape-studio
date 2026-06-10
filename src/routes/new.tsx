@@ -6,7 +6,6 @@ import { z } from "zod";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { PageHeader } from "@/components/page-header";
-import { ChecklistView } from "@/components/checklist-view";
 import { AccountCompliancePanel } from "@/components/account-compliance-panel";
 import { CreditUseNotice } from "@/components/credit-balance-panel";
 import { VideoDurationNotice } from "@/components/video-duration-notice";
@@ -34,10 +33,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useAccountCompliance } from "@/lib/account-compliance-client";
 import {
-  analyzeVideoFile,
   buildGuidedBrief,
-  type ChecklistResult,
+  readVideoMediaMetadata,
   type GuidedFields,
+  type VideoMediaMetadata,
 } from "@/lib/checklist";
 import {
   buildUploadIdentityMetadata,
@@ -106,7 +105,9 @@ function NewAuditionPage() {
   });
   const [file, setFile] = useState<File | null>(null);
   const [checking, setChecking] = useState(false);
-  const [checklist, setChecklist] = useState<ChecklistResult | null>(null);
+  // S11-AUDIO-01: metadata-only (duration + display dimensions), no perceptual QC.
+  const [mediaMeta, setMediaMeta] = useState<VideoMediaMetadata | null>(null);
+  const durationSeconds = mediaMeta?.durationSeconds ?? null;
   const [durationWarningAccepted, setDurationWarningAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
@@ -125,14 +126,14 @@ function NewAuditionPage() {
 
   async function onPickFile(f: File | null) {
     setFile(f);
-    setChecklist(null);
+    setMediaMeta(null);
     setDurationWarningAccepted(false);
     if (!f) return;
     setChecking(true);
     try {
-      const requiresLandscape = briefMode === "guided" && guided.orientation === "landscape";
-      const result = await analyzeVideoFile(f, { requiresLandscape });
-      setChecklist(result);
+      // S11-AUDIO-01: read metadata only (duration + display dimensions); no
+      // brief-blind QC / audio decode probe.
+      setMediaMeta(await readVideoMediaMetadata(f));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not read this video");
     } finally {
@@ -160,9 +161,10 @@ function NewAuditionPage() {
       return;
     }
 
-    // Pre-upload preflight: hard reject oversized / overlong files.
-    if (checklist) {
-      const durationDecision = buildVideoDurationDecision(checklist.duration.seconds);
+    // Pre-upload preflight: hard reject oversized / overlong files. Brief-
+    // independent (file size + video length only); no brief-blind QC.
+    if (durationSeconds != null) {
+      const durationDecision = buildVideoDurationDecision(durationSeconds);
       if (!durationDecision.canUpload) {
         recordVideoDurationEvent(
           "video_duration_hard_cap_blocked",
@@ -178,7 +180,7 @@ function NewAuditionPage() {
         );
         return;
       }
-      const pf = preflightVideoBasics(file, checklist.duration.seconds, checklist.audio.peak);
+      const pf = preflightVideoBasics(file, durationSeconds);
       if (!pf.ok) {
         toast.error(pf.error ?? "Video failed pre-upload checks");
         return;
@@ -229,19 +231,22 @@ function NewAuditionPage() {
       if (audErr || !aud) throw audErr ?? new Error("Could not create audition");
 
       // 3. Insert take row (no video_path — Mux owns the file)
-      const signals = checklist
-        ? {
-            orientation: checklist.orientation.value,
-            width: checklist.resolution.width,
-            height: checklist.resolution.height,
-            duration: checklist.duration.seconds,
-            ...buildVideoDurationSignals(checklist.duration.seconds),
-            brightness: checklist.brightness.value,
-            audio_peak: checklist.audio.peak,
-            audio_rms: checklist.audio.rms,
-            upload_identity: await buildUploadIdentityMetadata(file, checklist.duration.seconds),
-          }
-        : { upload_identity: await buildUploadIdentityMetadata(file, null) };
+      // S11-AUDIO-01: signals carry only non-perceptual METADATA — duration,
+      // display dimensions (width/height, which deterministically source the
+      // server-side orientation_mismatch gate) and identity. No browser audio /
+      // brightness / orientation QC is persisted: the model governs audio/video
+      // from the file_url, and orientation compliance is derived server-side
+      // from these dimensions (NOT a perceptual probe, NOT model prose).
+      const signals =
+        durationSeconds != null
+          ? {
+              duration: durationSeconds,
+              ...(mediaMeta?.width != null ? { width: mediaMeta.width } : {}),
+              ...(mediaMeta?.height != null ? { height: mediaMeta.height } : {}),
+              ...buildVideoDurationSignals(durationSeconds),
+              upload_identity: await buildUploadIdentityMetadata(file, durationSeconds),
+            }
+          : { upload_identity: await buildUploadIdentityMetadata(file, null) };
 
       const { data: take, error: takeErr } = await supabase
         .from("takes")
@@ -255,7 +260,7 @@ function NewAuditionPage() {
             mux_status: "uploading",
             processing_phase: "uploading",
             signals: signals as never,
-            checklist: (checklist ?? null) as never,
+            checklist: null as never,
             analytics_attribution: analyticsAttribution as never,
           },
         ])
@@ -548,51 +553,43 @@ function NewAuditionPage() {
 
               {checking && (
                 <p className="mt-5 inline-flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Running checks…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Reading your video…
                 </p>
               )}
 
-              {checklist && (
-                <div className="mt-6">
-                  <p className="mb-2 text-sm font-medium">Pre-upload checklist</p>
-                  <ChecklistView
-                    checklist={checklist}
-                    briefSource={
-                      briefMode === "full" && fullBrief.trim()
-                        ? "full"
-                        : briefMode === "guided" && buildGuidedBrief(guided)
-                          ? "guided"
-                          : "none"
-                    }
-                    readerDeclared={
-                      briefMode === "guided" && (guided.reader === "yes" || guided.reader === "no")
-                        ? (guided.reader as "yes" | "no")
-                        : undefined
-                    }
-                  />
-                  <VideoDurationNotice
-                    className="mt-4"
-                    seconds={checklist.duration.seconds}
-                    accepted={durationWarningAccepted}
-                    onShown={(status) => {
-                      if (status !== "over_soft_guidance") return;
-                      recordVideoDurationEvent(
-                        "video_duration_warning_shown",
-                        checklist.duration.seconds,
-                        status,
-                      );
-                    }}
-                    onAccept={() => {
-                      const decision = buildVideoDurationDecision(checklist.duration.seconds);
-                      setDurationWarningAccepted(true);
-                      recordVideoDurationEvent(
-                        "video_duration_warning_accepted",
-                        decision.durationSeconds,
-                        decision.status,
-                      );
-                    }}
-                    onChooseShorter={() => fileRef.current?.click()}
-                  />
+              {/* S11-AUDIO-01: no brief-blind pre-upload QC. Warm, brief-oriented
+                  affordance — the brief-aware analysis does the real assessment.
+                  Only the brief-independent length guidance remains. */}
+              {file && !checking && (
+                <div className="mt-6 rounded-xl border border-border bg-card px-5 py-4">
+                  <p className="text-sm text-muted-foreground">
+                    Upload your tape — we&rsquo;ll review it against the brief.
+                  </p>
+                  {durationSeconds != null && (
+                    <VideoDurationNotice
+                      className="mt-4"
+                      seconds={durationSeconds}
+                      accepted={durationWarningAccepted}
+                      onShown={(status) => {
+                        if (status !== "over_soft_guidance") return;
+                        recordVideoDurationEvent(
+                          "video_duration_warning_shown",
+                          durationSeconds,
+                          status,
+                        );
+                      }}
+                      onAccept={() => {
+                        const decision = buildVideoDurationDecision(durationSeconds);
+                        setDurationWarningAccepted(true);
+                        recordVideoDurationEvent(
+                          "video_duration_warning_accepted",
+                          decision.durationSeconds,
+                          decision.status,
+                        );
+                      }}
+                      onChooseShorter={() => fileRef.current?.click()}
+                    />
+                  )}
                 </div>
               )}
             </section>
