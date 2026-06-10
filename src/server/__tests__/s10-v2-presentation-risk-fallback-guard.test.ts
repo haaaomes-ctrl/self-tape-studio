@@ -70,7 +70,17 @@ describe("S10.P1d V2 presentation/risk fallback guard", () => {
         "Professional nuance: final upload discipline.",
       ]),
     );
-    expect(html).toContain("Presentation notes");
+    // S11-UX-06 B4 re-pin: the standalone "Presentation notes" section was merged
+    // into "Observed tape" as a labelled "Presentation" sub-block. Intent
+    // preserved — the S10 presentation content still surfaces, now inside the
+    // merged Observed-tape section (not a separate "Presentation notes" card).
+    const observedIdx = html.indexOf("Observed tape");
+    const presentationIdx = html.indexOf("Presentation", observedIdx);
+    const contentIdx = html.indexOf("Audio and framing are assessable.", presentationIdx);
+    expect(observedIdx).toBeGreaterThanOrEqual(0);
+    expect(presentationIdx).toBeGreaterThan(observedIdx);
+    expect(contentIdx).toBeGreaterThan(presentationIdx);
+    expect(html).not.toContain("Presentation notes");
     expect(html).toContain("Audio and framing are assessable.");
     expect(v2.s10_view_model?.section_source_map.presentation_notes).toMatchObject({
       source: "s10_authoritative_module",

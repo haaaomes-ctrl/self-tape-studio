@@ -636,7 +636,10 @@ describe("S10.P1e source-map validation", () => {
 
     const html = renderS10View(view);
     expect(html).not.toContain("Fix first");
-    expect(html).not.toContain("What is working");
+    // S11-UX-06 B2 re-pin: the lane heading was renamed to "What's working"
+    // (the green lane). Intent preserved — a lane with no renderable item (only
+    // a non-renderable {confidence} entry) suppresses its heading entirely.
+    expect(html).not.toContain("What&#x27;s working");
     expect(html).not.toContain("[object Object]");
   });
 
@@ -907,7 +910,10 @@ describe("S10.P1e source-map validation", () => {
 
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
     const html = renderS10View(view);
-    expect(html).toContain("What is working");
+    // S11-UX-06 B2 re-pin: the technique "What is working" lane heading was
+    // renamed to "What's working" (the green/positive valence lane). Intent
+    // preserved — what_is_working content renders under its lane heading.
+    expect(html).toContain("What&#x27;s working");
     expect(html).toContain("The opening beat is playable and clear.");
     expect(html).not.toContain("[object Object]");
   });
@@ -936,7 +942,11 @@ describe("S10.P1e source-map validation", () => {
 
     expect(validateAuthenticatedS10RouteSurface(view).ok).toBe(true);
     const html = renderS10View(view);
-    expect(html).toContain("What could improve");
+    // S11-UX-06 B2 re-pin: the technique "What could improve" lane heading was
+    // renamed to "What to improve" (the red/critical valence lane, rendered
+    // ABOVE "What's working" per B2/B3). Intent preserved — what_could_improve
+    // content renders under its lane heading.
+    expect(html).toContain("What to improve");
     expect(html).toContain("Let the final phrase release cleanly.");
     expect(html).not.toContain("[object Object]");
   });

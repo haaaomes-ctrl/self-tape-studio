@@ -191,7 +191,9 @@ const SECTION_STYLE: Record<string, { accent: Tpl3AccentKey; icon: Tpl3IconName;
   "Brief achievement": { accent: "green", icon: "clip" },
   "Observed tape": { accent: "blue", icon: "film", span: 2 },
   "Prioritised fixes": { accent: "red", icon: "arrow" },
-  "Fix this first": { accent: "amber", icon: "wrench" },
+  // S11-UX-06 B6 — red = must-address (was amber). Amber is reserved for
+  // optional/caution ("Optional polish" below stays amber).
+  "Fix this first": { accent: "red", icon: "wrench" },
   "Why this score": { accent: "royal", icon: "target" },
   "Category scores": { accent: "royal", icon: "target" },
   "Component breakdown": { accent: "blue", icon: "list" },
@@ -432,6 +434,34 @@ function hasRenderableComponentRow(value: unknown): boolean {
     row.completion_status,
     row.evidence_summary,
     row.assessability_notes,
+  ].some((candidate) => !!safeStr(candidate));
+}
+
+// S11-UX-06 B5 — value-only component breakdown. The "Component breakdown" card
+// renders the MAPPED component shape ({ type, score, note, what_it_shows,
+// what_is_assessable, key_evidence, score_driver, close_gap, style_or_task_confidence }).
+// A row that merely restates its label/type — no score AND no note AND no
+// assessable detail field — carries nothing useful, so it is dropped entirely
+// (no empty cells, no N/A rows). A row with any real assessable content is kept.
+function hasRenderableComponentBreakdownRow(row: {
+  score?: number | null;
+  note?: string | null;
+  what_it_shows?: string | null;
+  what_is_assessable?: string | null;
+  key_evidence?: string | null;
+  score_driver?: string | null;
+  close_gap?: string | null;
+  style_or_task_confidence?: string | null;
+}): boolean {
+  if (safeNum(row.score) != null) return true;
+  return [
+    row.note,
+    row.what_it_shows,
+    row.what_is_assessable,
+    row.key_evidence,
+    row.score_driver,
+    row.close_gap,
+    row.style_or_task_confidence,
   ].some((candidate) => !!safeStr(candidate));
 }
 
@@ -705,15 +735,20 @@ function hasRenderableTimestampedNote(value: unknown): boolean {
   );
 }
 
+// S11-UX-06 B1 — value-only suppression: return the genuine, information-bearing
+// limitation reason the builder authored, or null. The previous generic `??
+// fallback` ("X was unavailable for this S10 report") is dropped — the builder
+// (s10-report-view-model.server.ts:source()) ALWAYS sets a non-empty `limitation`
+// for every `specific_limitation` entry, so the fallback was dead/redundant and
+// never load-bearing. Consumers gate `{limitation ? <Section/> : null}`, so a
+// section with no real reason now omits entirely rather than rendering a generic
+// "unavailable" anchor.
 function sourceLimitation(
   sourceMap: Record<string, unknown> | null,
   section: string,
-  fallback: string,
 ): string | null {
   const entry = safeObj(sourceMap?.[section]);
-  return safeStr(entry?.source) === "specific_limitation"
-    ? (safeStr(entry?.limitation) ?? fallback)
-    : null;
+  return safeStr(entry?.source) === "specific_limitation" ? safeStr(entry?.limitation) : null;
 }
 
 function hasS10SectionRenderAuthority(
@@ -866,36 +901,15 @@ export function V2ReportView({
   // Δ6 P2 — subjective practitioner's-voice note. Already process-time gated/enforced
   // into the persisted view model (null when suppressed/absent); render nothing if null.
   const s10PractitionerVoice = safeStr(safeObj(s10?.practitioner_voice)?.note);
-  const s10FixHierarchyLimitation = sourceLimitation(
-    s10SectionSourceMap,
-    "fix_hierarchy",
-    "Fix hierarchy was unavailable for this S10 report.",
-  );
-  const s10NextActionLimitation = sourceLimitation(
-    s10SectionSourceMap,
-    "next_action_plan",
-    "Next action plan was unavailable for this S10 report.",
-  );
-  const s10CategoryScoresLimitation = sourceLimitation(
-    s10SectionSourceMap,
-    "category_scores",
-    "S10 category score semantics are not available for this report.",
-  );
+  const s10FixHierarchyLimitation = sourceLimitation(s10SectionSourceMap, "fix_hierarchy");
+  const s10NextActionLimitation = sourceLimitation(s10SectionSourceMap, "next_action_plan");
+  const s10CategoryScoresLimitation = sourceLimitation(s10SectionSourceMap, "category_scores");
   const s10ComponentBreakdownLimitation = sourceLimitation(
     s10SectionSourceMap,
     "component_breakdown",
-    "Component verification was unavailable for this S10 report.",
   );
-  const s10StrengthsLimitation = sourceLimitation(
-    s10SectionSourceMap,
-    "strengths_and_preserve",
-    "Strengths and preserve guidance are not available for this report.",
-  );
-  const s10TechniqueLimitation = sourceLimitation(
-    s10SectionSourceMap,
-    "technique_commentary",
-    "Technique commentary is not available for this report.",
-  );
+  const s10StrengthsLimitation = sourceLimitation(s10SectionSourceMap, "strengths_and_preserve");
+  const s10TechniqueLimitation = sourceLimitation(s10SectionSourceMap, "technique_commentary");
   const s10StrengthsAndPreserve = safeObj(s10?.strengths_and_preserve);
   const s10Technique = safeObj(s10?.technique_commentary);
   const s10Timestamped = safeObj(s10?.timestamped_commentary);
@@ -2046,76 +2060,106 @@ export function V2ReportView({
                 </Section>
               );
             })()}
-
-            {(() => {
-              const sequence = safeArr<Record<string, unknown>>(
-                safeObj(s10?.observed_tape)?.observed_tape_sequence,
-              ).filter(hasRenderableObservedTapeSequenceRow);
-              const verifications = safeArr<Record<string, unknown>>(
-                safeObj(s10?.observed_tape)?.component_verifications,
-              ).filter(hasRenderableComponentRow);
-              if (sequence.length === 0 && verifications.length === 0) return null;
-              return (
-                <Section
-                  title="Observed tape"
-                  hint="Requested material and observed material are kept separate."
-                >
-                  {sequence.length > 0 && (
-                    <div className="space-y-2 text-sm">
-                      {/* Δ6 P4 — observed tape carries what the tape physically
-                          contains (label + evidence + assessability). The
-                          per-item present/completion status re-statement was
-                          dropped; achievement status now lives only in the
-                          brief-achievement table above. */}
-                      {sequence.map((item, i) => (
-                        <p key={safeStr(item.id) ?? i}>
-                          <span className="font-medium">
-                            {safeStr(item.label) ??
-                              safeStr(item.evidence_summary) ??
-                              "Observed item"}
-                          </span>
-                          {safeStr(item.evidence_summary) && safeStr(item.label) && (
-                            <span className="block text-xs text-muted-foreground">
-                              {safeStr(item.evidence_summary)}
-                            </span>
-                          )}
-                          {safeStr(item.assessability_notes) && (
-                            <span className="block text-xs text-muted-foreground">
-                              {safeStr(item.assessability_notes)}
-                            </span>
-                          )}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {verifications.length > 0 && (
-                    <ul className="mt-3 space-y-2 text-sm">
-                      {verifications.map((item, i) => (
-                        <li key={safeStr(item.requirement_id) ?? i}>
-                          <span className="font-medium">
-                            {safeStr(item.requirement_summary) ??
-                              safeStr(item.evidence_summary) ??
-                              "Observed component"}
-                          </span>
-                          {safeStr(item.evidence_summary) && (
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {safeStr(item.evidence_summary)}
-                            </p>
-                          )}
-                          {safeStr(item.assessability_notes) && (
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {safeStr(item.assessability_notes)}
-                            </p>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </Section>
-              );
-            })()}
           </>
         )}
+
+        {/* S11-UX-06 B4 — Observed tape + Presentation notes merged into ONE
+            section. Sequence/component verifications are S10-only (s10?.observed_tape);
+            the camera-readability presentation notes (`presentation`, built on both
+            the S10 and legacy paths) fold in as a labelled sub-block. Rendered
+            outside the isS10 fragment so the legacy presentation source still
+            surfaces (the standalone "Presentation notes" section is removed).
+            Suppressed entirely when sequence, verifications AND presentation are
+            all empty (B1). Kept where Observed tape sat (after Brief achievement on
+            the S10 path); on the legacy path it stands in for the removed section. */}
+        {(() => {
+          const sequence = safeArr<Record<string, unknown>>(
+            safeObj(s10?.observed_tape)?.observed_tape_sequence,
+          ).filter(hasRenderableObservedTapeSequenceRow);
+          const verifications = safeArr<Record<string, unknown>>(
+            safeObj(s10?.observed_tape)?.component_verifications,
+          ).filter(hasRenderableComponentRow);
+          if (sequence.length === 0 && verifications.length === 0 && presentation.length === 0)
+            return null;
+          return (
+            <Section
+              title="Observed tape"
+              hint="Requested material and observed material are kept separate."
+            >
+              {sequence.length > 0 && (
+                <div className="space-y-2 text-sm">
+                  {/* Δ6 P4 — observed tape carries what the tape physically
+                      contains (label + evidence + assessability). The
+                      per-item present/completion status re-statement was
+                      dropped; achievement status now lives only in the
+                      brief-achievement table above. */}
+                  {sequence.map((item, i) => (
+                    <p key={safeStr(item.id) ?? i}>
+                      <span className="font-medium">
+                        {safeStr(item.label) ?? safeStr(item.evidence_summary) ?? "Observed item"}
+                      </span>
+                      {safeStr(item.evidence_summary) && safeStr(item.label) && (
+                        <span className="block text-xs text-muted-foreground">
+                          {safeStr(item.evidence_summary)}
+                        </span>
+                      )}
+                      {safeStr(item.assessability_notes) && (
+                        <span className="block text-xs text-muted-foreground">
+                          {safeStr(item.assessability_notes)}
+                        </span>
+                      )}
+                    </p>
+                  ))}
+                </div>
+              )}
+              {verifications.length > 0 && (
+                <ul className="mt-3 space-y-2 text-sm">
+                  {verifications.map((item, i) => (
+                    <li key={safeStr(item.requirement_id) ?? i}>
+                      <span className="font-medium">
+                        {safeStr(item.requirement_summary) ??
+                          safeStr(item.evidence_summary) ??
+                          "Observed component"}
+                      </span>
+                      {safeStr(item.evidence_summary) && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {safeStr(item.evidence_summary)}
+                        </p>
+                      )}
+                      {safeStr(item.assessability_notes) && (
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {safeStr(item.assessability_notes)}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {presentation.length > 0 && (
+                <div
+                  className={cn(
+                    sequence.length > 0 || verifications.length > 0 ? "mt-4" : undefined,
+                  )}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Presentation
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Practical camera-readability tips. These do not affect your score.
+                  </p>
+                  <ul className="mt-2 space-y-2 text-sm">
+                    {presentation.map((n, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="text-muted-foreground">•</span>
+                        <span>{n}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Section>
+          );
+        })()}
 
         {!isS10 && prioritisedFixesSection}
 
@@ -2183,14 +2227,17 @@ export function V2ReportView({
 
         {/* Components */}
         {(() => {
-          if (components.length > 0) {
+          // S11-UX-06 B5 — only value-bearing rows reach the card; a label-only
+          // row (no score, note, or assessable detail) is dropped entirely.
+          const breakdownRows = components.filter(hasRenderableComponentBreakdownRow);
+          if (breakdownRows.length > 0) {
             return (
               <Section
                 title="Component breakdown"
                 hint="Each performance component is assessed separately."
               >
                 <div className="space-y-4">
-                  {components.map((c, i) => {
+                  {breakdownRows.map((c, i) => {
                     const type = safeStr(c.type) ?? "component";
                     const score = safeNum(c.score);
                     const weight = safeNum(c.weight);
@@ -2268,107 +2315,10 @@ export function V2ReportView({
           return null;
         })()}
 
-        {(() => {
-          if (!s10StrengthsAndPreserve) {
-            return s10StrengthsLimitation ? (
-              <Section title="Strengths and preserve">
-                <p className="text-sm text-muted-foreground">{s10StrengthsLimitation}</p>
-              </Section>
-            ) : null;
-          }
-          const strengthItems = renderableListItems(safeArr(s10StrengthsAndPreserve.strengths));
-          const preserveItems = renderableListItems(safeArr(s10StrengthsAndPreserve.preserve));
-          const doNotOverfixItems = renderableListItems(
-            safeArr(s10StrengthsAndPreserve.do_not_overfix),
-          );
-          const limitationItems = renderableListItems(safeArr(s10StrengthsAndPreserve.limitations));
-          if (
-            !safeStr(s10StrengthsAndPreserve.summary) &&
-            strengthItems.length === 0 &&
-            preserveItems.length === 0 &&
-            doNotOverfixItems.length === 0 &&
-            limitationItems.length === 0
-          ) {
-            return s10StrengthsLimitation ? (
-              <Section title="Strengths and preserve">
-                <p className="text-sm text-muted-foreground">{s10StrengthsLimitation}</p>
-              </Section>
-            ) : null;
-          }
-          return (
-            <Section title="Strengths and preserve">
-              {safeStr(s10StrengthsAndPreserve.summary) && (
-                <p className="text-sm">{safeStr(s10StrengthsAndPreserve.summary)}</p>
-              )}
-              {strengthItems.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Strengths
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={strengthItems} marker="✓" />
-                  </div>
-                </div>
-              )}
-              {preserveItems.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Preserve
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={preserveItems} marker="✓" />
-                  </div>
-                </div>
-              )}
-              {doNotOverfixItems.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Do not overfix
-                  </p>
-                  <div className="mt-2">
-                    <SimpleList items={doNotOverfixItems} marker="•" />
-                  </div>
-                </div>
-              )}
-              {limitationItems.length > 0 && (
-                <div className="mt-3 text-sm text-muted-foreground">
-                  <SimpleList items={limitationItems} />
-                </div>
-              )}
-            </Section>
-          );
-        })()}
-
-        {!isS10 && strengths.length > 0 && (
-          <Section title="Strengths">
-            <ul className="space-y-2 text-sm">
-              {strengths.map((s, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-success">✓</span>
-                  <span>
-                    {typeof s === "string" ? s : (safeStr((s as { point?: unknown })?.point) ?? "")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
-        {!isS10 && legacyImprovements.length > 0 && (
-          <Section title="Improvements">
-            <ul className="space-y-2 text-sm">
-              {legacyImprovements.map((s, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-warning">→</span>
-                  <span>
-                    {typeof s === "string" ? s : (safeStr((s as { point?: unknown })?.point) ?? "")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
-
+        {/* S11-UX-06 B3 — critique above praise. "Technique commentary" (with its
+            "What to improve" lane on top, B2) now renders BEFORE "Strengths and
+            preserve" (S10) and the legacy Improvements/Strengths pair, which were
+            relocated below this block. Fix surfaces above remain at the grid top. */}
         {(() => {
           if (!s10Technique) {
             return s10TechniqueLimitation ? (
@@ -2456,6 +2406,10 @@ export function V2ReportView({
                       limitations,
                     }) => (
                       <div key={label}>
+                        {/* S11-UX-06 B2 — neutral, uncoloured lead: discipline
+                            label + status + headline + observations, ABOVE the two
+                            colour-keyed valence lanes. (Ratified default: observations
+                            render as a neutral lead, never inside a valence lane.) */}
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-medium">{label}</p>
                           {safeStr(section.status) && (
@@ -2477,44 +2431,55 @@ export function V2ReportView({
                             <SimpleList items={observations} marker="•" />
                           </div>
                         )}
-                        {working.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              What is working
+                        {/* S11-UX-06 B2/B3 — "What to improve" lane FIRST (critique
+                            above praise), RED/critical accent + left rail, since
+                            improve = must-address craft. Reuses the UX-05
+                            valence-rail pattern (border-l-4 pl-4) in red. Suppressed
+                            when the lane has no renderable items (B1). */}
+                        {(improve.length > 0 || actions.length > 0) && (
+                          <div className="mt-2 border-l-4 border-destructive pl-4">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-destructive">
+                              What to improve
                             </p>
-                            <div className="mt-1">
-                              <SimpleList items={working} marker="✓" />
-                            </div>
+                            {improve.length > 0 && (
+                              <div className="mt-1">
+                                <SimpleList items={improve} marker="→" />
+                              </div>
+                            )}
+                            {actions.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Practical action
+                                </p>
+                                <div className="mt-1">
+                                  <SimpleList items={actions} marker="→" />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
-                        {improve.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              What could improve
+                        {/* S11-UX-06 B2 — "What's working" lane BELOW, GREEN/positive
+                            accent + left rail. Suppressed when empty (B1). */}
+                        {(working.length > 0 || preserve.length > 0) && (
+                          <div className="mt-2 border-l-4 border-success pl-4">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-success">
+                              What&apos;s working
                             </p>
-                            <div className="mt-1">
-                              <SimpleList items={improve} marker="→" />
-                            </div>
-                          </div>
-                        )}
-                        {actions.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              Practical action
-                            </p>
-                            <div className="mt-1">
-                              <SimpleList items={actions} marker="→" />
-                            </div>
-                          </div>
-                        )}
-                        {preserve.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              Preserve
-                            </p>
-                            <div className="mt-1">
-                              <SimpleList items={preserve} marker="✓" />
-                            </div>
+                            {working.length > 0 && (
+                              <div className="mt-1">
+                                <SimpleList items={working} marker="✓" />
+                              </div>
+                            )}
+                            {preserve.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  Preserve
+                                </p>
+                                <div className="mt-1">
+                                  <SimpleList items={preserve} marker="✓" />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                         {limitations.length > 0 && (
@@ -2535,6 +2500,110 @@ export function V2ReportView({
             </Section>
           );
         })()}
+
+        {/* S11-UX-06 B3 — relocated BELOW Technique commentary (critique above
+            praise). On the S10 path: "Strengths and preserve". On the legacy path:
+            Improvements then Strengths (Improvements first per B3). */}
+        {(() => {
+          if (!s10StrengthsAndPreserve) {
+            return s10StrengthsLimitation ? (
+              <Section title="Strengths and preserve">
+                <p className="text-sm text-muted-foreground">{s10StrengthsLimitation}</p>
+              </Section>
+            ) : null;
+          }
+          const strengthItems = renderableListItems(safeArr(s10StrengthsAndPreserve.strengths));
+          const preserveItems = renderableListItems(safeArr(s10StrengthsAndPreserve.preserve));
+          const doNotOverfixItems = renderableListItems(
+            safeArr(s10StrengthsAndPreserve.do_not_overfix),
+          );
+          const limitationItems = renderableListItems(safeArr(s10StrengthsAndPreserve.limitations));
+          if (
+            !safeStr(s10StrengthsAndPreserve.summary) &&
+            strengthItems.length === 0 &&
+            preserveItems.length === 0 &&
+            doNotOverfixItems.length === 0 &&
+            limitationItems.length === 0
+          ) {
+            return s10StrengthsLimitation ? (
+              <Section title="Strengths and preserve">
+                <p className="text-sm text-muted-foreground">{s10StrengthsLimitation}</p>
+              </Section>
+            ) : null;
+          }
+          return (
+            <Section title="Strengths and preserve">
+              {safeStr(s10StrengthsAndPreserve.summary) && (
+                <p className="text-sm">{safeStr(s10StrengthsAndPreserve.summary)}</p>
+              )}
+              {strengthItems.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Strengths
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={strengthItems} marker="✓" />
+                  </div>
+                </div>
+              )}
+              {preserveItems.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Preserve
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={preserveItems} marker="✓" />
+                  </div>
+                </div>
+              )}
+              {doNotOverfixItems.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Do not overfix
+                  </p>
+                  <div className="mt-2">
+                    <SimpleList items={doNotOverfixItems} marker="•" />
+                  </div>
+                </div>
+              )}
+              {limitationItems.length > 0 && (
+                <div className="mt-3 text-sm text-muted-foreground">
+                  <SimpleList items={limitationItems} />
+                </div>
+              )}
+            </Section>
+          );
+        })()}
+
+        {!isS10 && legacyImprovements.length > 0 && (
+          <Section title="Improvements">
+            <ul className="space-y-2 text-sm">
+              {legacyImprovements.map((s, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-warning">→</span>
+                  <span>
+                    {typeof s === "string" ? s : (safeStr((s as { point?: unknown })?.point) ?? "")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {!isS10 && strengths.length > 0 && (
+          <Section title="Strengths">
+            <ul className="space-y-2 text-sm">
+              {strengths.map((s, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-success">✓</span>
+                  <span>
+                    {typeof s === "string" ? s : (safeStr((s as { point?: unknown })?.point) ?? "")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        )}
 
         {(() => {
           if (!s10Timestamped) return null;
@@ -2737,21 +2806,8 @@ export function V2ReportView({
           </Section>
         )}
 
-        {presentation.length > 0 && (
-          <Section
-            title="Presentation notes"
-            hint="Practical camera-readability tips. These do not affect your score."
-          >
-            <ul className="space-y-2 text-sm">
-              {presentation.map((n, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-muted-foreground">•</span>
-                  <span>{n}</span>
-                </li>
-              ))}
-            </ul>
-          </Section>
-        )}
+        {/* S11-UX-06 B4 — the standalone "Presentation notes" section was merged
+            into "Observed tape" above (one section, no duplication). */}
 
         {/* Full-visibility additions — view-model driven */}
         {renderFixBucketCards(viewModel)}
