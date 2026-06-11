@@ -1210,6 +1210,14 @@ export function buildReportViewModel(
   const durationSummary = safeStr(mediaSummary?.duration_summary);
   if (durationSummary) mediaRows.push(["Duration", durationSummary]);
   const mediaUncertainties = displayStrings(mediaSummary?.uncertainties);
+  // S11-UX-04a (B4 follow-up): when nothing was observed (no sequence, no media),
+  // the observed-tape module must NOT render a stray "Observed tape — Not assessed"
+  // empty card beside the merged Observed+Presentation section. Suppress it (hidden)
+  // UNLESS a genuine readiness reason exists for the observed-tape module — that
+  // reason is real information and must still surface as a not-assessed card.
+  const observedTapeHasReadinessReason = Boolean(
+    readinessForModule(readinessResults, "observedTape").reason,
+  );
 
   const componentVerificationsRaw = [
     ...safeArr<Record<string, unknown>>(s10?.component_breakdown),
@@ -1749,6 +1757,10 @@ export function buildReportViewModel(
         uncertainties: mediaUncertainties,
       },
       hasContent: observedSequenceRows.length > 0 || mediaRows.length > 0,
+      // Nothing observed + no genuine readiness reason → hide the empty card
+      // entirely (the merged section already omits via B1); a real readiness
+      // reason still surfaces a visible not-assessed card. See S11-UX-04a.
+      emptyKindWhenAbsent: observedTapeHasReadinessReason ? "not_assessed" : "hidden",
     }),
     componentBreakdown: env<unknown, ComponentBreakdownDisplay>({
       key: "componentBreakdown",

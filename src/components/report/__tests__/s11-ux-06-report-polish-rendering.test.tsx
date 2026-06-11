@@ -324,6 +324,43 @@ describe("S11-UX-06 B4 — Observed tape + Presentation merged", () => {
 });
 
 // ---------------------------------------------------------------------------
+// S11-UX-04a — B4 follow-up: the stray empty observed-tape card is suppressed.
+// ---------------------------------------------------------------------------
+// B4 merged "Observed tape" + "Presentation notes". Edge left open in #273: a
+// report with presentation content but an EMPTY observed sequence AND empty media
+// rendered a stray empty "Observed tape — Not assessed" card (via EMPTY_CARD_DEFS)
+// beside the merged section. The view-model now suppresses that card (emptyKind
+// "hidden") when there is genuinely nothing observed and no readiness reason, so
+// only the presentation content shows. (A genuine readiness reason still surfaces
+// — covered in the report-view-model unit suite.)
+describe("S11-UX-04a — empty observed-tape card suppressed in merged section", () => {
+  it("shows only the presentation sub-block (no stray 'Observed tape — Not assessed' card) when observed is empty but presentation remains", () => {
+    const report = strongCompleteV2Report();
+    const view = mutableS10View(report);
+    // Nothing observed — sequence, verifications and media all empty. The
+    // presentation sources are left intact (the strong-complete fixture carries
+    // them), so the merged section still renders with ONLY its presentation block.
+    view.observed_tape = {
+      observed_tape_sequence: [],
+      component_verifications: [],
+      media_observation_summary: null,
+    };
+
+    const html = render(report);
+
+    // The merged section is PRESENT (not omitted by B1) and carries presentation.
+    expect(html).toContain("Requested material and observed material are kept separate.");
+    expect(html).toContain(">Presentation<");
+
+    // No stray empty-state card: the "Observed tape" heading appears exactly once
+    // (the merged section), not twice (merged section + an EMPTY_CARD_DEFS "Not
+    // assessed" card). CCardShell renders each card title in a single <h3>.
+    const observedTapeHeadings = html.split("Observed tape").length - 1;
+    expect(observedTapeHeadings).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B5 — Value-only component breakdown.
 // ---------------------------------------------------------------------------
 describe("S11-UX-06 B5 — value-only component breakdown", () => {

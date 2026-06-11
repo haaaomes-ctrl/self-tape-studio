@@ -164,6 +164,64 @@ describe("red-line guards", () => {
   });
 });
 
+// S11-UX-04a — B4 follow-up: when nothing was observed, the observed-tape module
+// must not leave a stray "Not assessed" empty card beside the merged
+// Observed+Presentation section. The empty card is governed by the module's
+// emptyKind: "hidden" suppresses it; "not_assessed" keeps it visible. A genuine
+// readiness reason must still surface (never suppress real information).
+describe("S11-UX-04a — observed-tape empty card suppression (B4 follow-up)", () => {
+  function emptyObservedReport(): Record<string, unknown> {
+    const report = strongCompleteV2Report();
+    const view = report.s10_view_model as Record<string, unknown>;
+    // Nothing observed: no sequence, no component verifications, no media.
+    view.observed_tape = {
+      observed_tape_sequence: [],
+      component_verifications: [],
+      media_observation_summary: null,
+    };
+    return report;
+  }
+
+  it("hides the empty card when nothing was observed and there is no readiness reason", () => {
+    const report = emptyObservedReport();
+    expect(report.s10_module_readiness).toBeUndefined();
+
+    const observed = vm(report).modules.observedTape;
+    expect(observed.state).toBe("empty");
+    // "hidden" → renderEmptyStateCards skips it (no stray "Not assessed" card).
+    expect(observed.emptyKind).toBe("hidden");
+    expect(observed.reason).toBeNull();
+  });
+
+  it("still surfaces a not-assessed card when a genuine readiness reason exists", () => {
+    const report = emptyObservedReport();
+    report.s10_module_readiness = {
+      results: [
+        {
+          report_module: "observed tape",
+          status: "missing",
+          reason: "The observed-tape pass produced no usable evidence for this run.",
+          repair_triggered: true,
+          blocks_report_value: false,
+          decision_critical: false,
+        },
+      ],
+    };
+
+    const observed = vm(report).modules.observedTape;
+    expect(observed.state).toBe("empty");
+    // A real readiness reason must remain visible — never suppressed.
+    expect(observed.emptyKind).toBe("not_assessed");
+    expect(observed.reason).toContain("no usable evidence");
+  });
+
+  it("leaves the populated observed-tape case unchanged", () => {
+    const observed = vm(strongCompleteV2Report()).modules.observedTape;
+    expect(observed.state).toBe("populated");
+    expect(observed.emptyKind).toBeNull();
+  });
+});
+
 describe("canary A (incomplete mandatory package) through the shim", () => {
   it("builds a populated S10 view-model with the fixture's decision and level", () => {
     const model = vm(canaryV2Report());
