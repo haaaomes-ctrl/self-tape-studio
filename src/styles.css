@@ -328,14 +328,28 @@
   }
 }
 
+/* Print-only content (e.g. the PDF running header): hidden on screen, revealed
+   inside @media print. Inverse of .tc-print-exclude / .tc-print-action. */
+.tc-print-only {
+  display: none;
+}
+
 @media print {
   @page {
     margin: 14mm;
   }
 
+  .tc-print-only {
+    display: block !important;
+  }
+
   body {
     background: white !important;
     color: #111827 !important;
+    /* Deliberate print typography: physical units so the PDF reads as a
+       document, not a screenshot of a webpage. */
+    font-size: 10.5pt;
+    line-height: 1.45;
   }
 
   /* Template 3: print stacks every card full-width in document order —
@@ -344,8 +358,10 @@
     display: block;
   }
 
+  /* Deliberate vertical rhythm between stacked cards in print (mm units, a
+     touch tighter than the on-screen gap so the document reads densely). */
   .tc-tpl3-grid > * {
-    margin-bottom: 0.75rem;
+    margin-bottom: 5mm;
   }
 
   .tc-tpl3-hero {
@@ -384,6 +400,74 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+
+  /* Running header — the PDF "letterhead": take/audition context at the top of
+     the document. Borders (not background fills) carry the structure so it
+     prints cleanly in mono. */
+  .tc-print-running-header {
+    margin-bottom: 6mm;
+    padding-bottom: 2.5mm;
+    border-bottom: 1.5pt solid #111827;
+    break-after: avoid;
+    page-break-after: avoid;
+    color-adjust: exact;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .tc-print-running-header__bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #6b7280;
+  }
+  .tc-print-running-header__take {
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+  }
+  .tc-print-running-header__title {
+    margin-top: 1.5mm;
+    font-size: 13pt;
+    font-weight: 700;
+    line-height: 1.25;
+    color: #111827;
+  }
+  .tc-print-running-header__meta {
+    margin-top: 0.5mm;
+    font-size: 9.5pt;
+    color: #374151;
+  }
+  .tc-print-running-header__admin {
+    margin-top: 1mm;
+    font-size: 8.5pt;
+    color: #6b7280;
+  }
+
+  /* Page-break discipline: keep a card whole where it fits, and never strand a
+     section heading at the foot of a page away from its content. Verified to
+     cover the UX-05/UX-06 merged + laned sections, which all render through the
+     CCardShell .tc-report-print-section. */
+  .tc-report-print-section h1,
+  .tc-report-print-section h2,
+  .tc-report-print-section h3 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  .tc-report-print-section p,
+  .tc-report-print-section li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Strip interactive affordances that would otherwise leak into the PDF as
+     dead chrome (the Print button is already excluded via .tc-print-action;
+     this is the belt-and-braces catch for any other control in the surface). */
+  .tc-report-print-surface button,
+  .tc-report-print-surface [role="button"] {
+    display: none !important;
+  }
 }
-
-
