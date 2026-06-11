@@ -660,5 +660,63 @@ describe("S10.15 route/PDF content acceptance harness", () => {
       expect(html).toContain("Prioritised fixes");
       expect(html).toContain("Brief achievement");
     });
+
+    // S11-PDF-01 — take/audition context as a print-only running header (FLOOR).
+    it("renders the take/audition context as a print-only running header at the top of the PDF", () => {
+      const { html } = buildStrongV2();
+
+      // The print-only running header exists (hidden on screen via tc-print-only,
+      // revealed inside @media print).
+      expect(html).toContain("tc-print-only tc-print-running-header");
+
+      // It precedes the hero, and carries the take/audition context sourced from
+      // brief_context. Asserted within the header slice — these values also appear
+      // later inside Brief achievement, so scoping to the header proves the header
+      // itself carries them (not a false match elsewhere).
+      const start = html.indexOf("tc-print-running-header");
+      const heroIdx = html.indexOf("tc-tpl3-hero", start);
+      expect(heroIdx).toBeGreaterThan(start);
+      const header = html.slice(start, heroIdx);
+      expect(header).toContain("Take 1");
+      expect(header).toContain("Strong Complete MT package"); // project_name
+      expect(header).toContain("performer"); // role_name
+      expect(header).toContain("Musical theatre"); // discipline (sentence-cased)
+      expect(header).toContain("LASTNAME_FIRSTNAME_STRONG.mp4"); // file_naming_summary
+    });
+
+    // S11-PDF-01 — P5 valence colour survives mono printing: a short TEXT cue
+    // accompanies the colour rail, and the rail sits inside a print-color-adjusted
+    // section. (The cue itself predates this slice — UX-05; this locks it for PDF.)
+    it("renders a B&W-robust non-colour valence cue on timestamped notes", () => {
+      const report = buildS10StrongCompleteProfessionalReportInput();
+      const v2 = buildV2Report({
+        legacyReport: report,
+        futureDimensions: null,
+        auditionType: "musical_theatre",
+        mode: "brief",
+        s10Context: buildS10StrongCompleteProfessionalViewContext() as never,
+      });
+      // Set explicit valences on the built view-model notes (a display-only field)
+      // so the strength/improvement cues render — exercises the cue, not the parser.
+      const ts = (v2.s10_view_model as Record<string, unknown>).timestamped_commentary as
+        | Record<string, unknown>
+        | undefined;
+      const notes = Array.isArray(ts?.notes) ? (ts.notes as Array<Record<string, unknown>>) : [];
+      expect(notes.length).toBeGreaterThanOrEqual(2);
+      notes[0].valence = "strength";
+      notes[1].valence = "improvement";
+
+      const html = render(v2 as unknown as Record<string, unknown>);
+
+      const tsStart = html.indexOf("Timestamped and time-banded notes");
+      expect(tsStart).toBeGreaterThanOrEqual(0);
+      const tsSlice = html.slice(tsStart, tsStart + 6000);
+      // The non-colour cue text carries valence independent of colour (greyscale-safe).
+      expect(tsSlice).toContain(">Strength<");
+      expect(tsSlice).toContain(">Work on<");
+      // The valence rail renders inside a print-color-adjusted print section, so
+      // the colour also survives where colour printing is available.
+      expect(html).toContain("tc-report-print-section");
+    });
   });
 });

@@ -1450,6 +1450,44 @@ export function V2ReportView({
         </Button>
       </div>
 
+      {/* S11-PDF-01 — print-only running header ("letterhead"): the take/audition
+          context at the top of the PDF. Sourced from the existing s10 brief_context
+          (no re-fetch / no reshape); hidden on screen (tc-print-only) where this
+          context already lives inside Brief achievement. FLOOR: a prominent top
+          block. STRETCH (position:fixed per-page repeat) is deferred — it needs a
+          rendered-PDF check to confirm cross-page repetition without overlap. */}
+      {(() => {
+        if (!isS10) return null;
+        const project = safeStr(s10BriefContext?.project_name);
+        const role = safeStr(s10BriefContext?.role_name);
+        const discipline = sentenceLabelize(s10BriefContext?.discipline) || null;
+        const audition = sentenceLabelize(s10BriefContext?.audition_type) || null;
+        const deadline = safeStr(s10BriefContext?.deadline_summary);
+        const filename = safeStr(s10BriefContext?.file_naming_summary);
+        const meta = [discipline, audition].filter(Boolean).join(" · ");
+        const title = [project, role].filter(Boolean).join(" — ");
+        if (!(typeof takeNumber === "number" || title || meta || deadline || filename)) return null;
+        return (
+          <div className="tc-print-only tc-print-running-header" aria-hidden="true">
+            <div className="tc-print-running-header__bar">
+              <span className="tc-print-running-header__brand">TapeCoach — self-tape report</span>
+              {typeof takeNumber === "number" && (
+                <span className="tc-print-running-header__take">Take {takeNumber}</span>
+              )}
+            </div>
+            {title && <p className="tc-print-running-header__title">{title}</p>}
+            {meta && <p className="tc-print-running-header__meta">{meta}</p>}
+            {(deadline || filename) && (
+              <p className="tc-print-running-header__admin">
+                {deadline && <span>Deadline: {deadline}</span>}
+                {deadline && filename && <span aria-hidden="true"> · </span>}
+                {filename && <span>File: {filename}</span>}
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Hero — Template 3 navy gradient (design bundle tpl3-colour.jsx) */}
       <div
         className="tc-report-print-section tc-tpl3-hero overflow-hidden rounded-[14px] shadow-soft"
