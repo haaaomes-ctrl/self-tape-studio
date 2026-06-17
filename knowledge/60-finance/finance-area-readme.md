@@ -12,7 +12,7 @@ source: claude-code
 source_ref: cfo-advisory-role
 discipline: null
 monday_ref: null
-tags: [finance, cfo, ds-16, ds-17, open-question]
+tags: [finance, cfo, ds-16, ds-17]
 confidence: high
 created: 2026-06-08
 updated: 2026-06-09
@@ -76,30 +76,33 @@ queries don't drift:
 The full verified view/column list lives in the `tc-finance-snapshot` skill — that skill
 is the single grounding anchor for finance queries.
 
-## Open questions
+## Resolved
 
-- **Structural read-only Supabase path — no-write now structural, finance-scoping the
-  remaining follow-up.** Two-part picture as of 2026-06-09:
-  - **No-write is now structural.** The CFO's only DB path is the dedicated
-    `supabase-cfo-ro` MCP (`.mcp.json`), configured `read_only=true&features=database` —
-    every query runs as a read-only Postgres user, so DML/DDL cannot succeed. This replaces
-    the earlier contract-only guarantee (the `cfo` tool grant + the `tc-finance-snapshot`
-    SELECT-only rule); the writable shared `supabase` MCP is no longer in the CFO's tool
-    grant. The `cfo` agent's DB tools are now `mcp__supabase-cfo-ro__execute_sql` /
-    `mcp__supabase-cfo-ro__list_tables`.
-  - **A finance-scoped `cfo_readonly` role exists and is verified.** Created on the live DB
+- **Structural read-only Supabase path — resolved (2026-06-09): both no-write and
+  finance-scoping are now structural at the connection.** The CFO's only DB path is the
+  dedicated `supabase-cfo-ro` MCP (`.mcp.json`), now a **Postgres-protocol MCP**
+  (`@modelcontextprotocol/server-postgres`) that connects **as the `cfo_readonly` role** via
+  a read-only DSN. The DSN is supplied by the operator out-of-band as the env var
+  `CFO_READONLY_DATABASE_URL` (no password/connection string in git or this repo); the MCP
+  exposes a single read-only `query` tool, so the `cfo` agent's DB tool is now
+  `mcp__supabase-cfo-ro__query` (there is no `execute_sql`/`list_tables` — schema names are
+  confirmed via `information_schema` SELECTs through `query`).
+  - **No-write is structural.** The `cfo_readonly` role has zero write grants, so any
+    INSERT/UPDATE/DELETE/DDL is rejected as `permission denied`; the Postgres MCP also wraps
+    every query in a read-only transaction — double-enforced. The writable shared `supabase`
+    MCP is not in the CFO's tool grant.
+  - **Finance-scoping is now structural too.** Because the CFO connects **as**
+    `cfo_readonly`, it can `SELECT` only the 20 finance relations and nothing else — the role
+    has `USAGE` on schema `public` + `SELECT` on exactly the 20 finance relations
+    (DS-04/06/13/16/17), **zero write privileges, zero readable relations outside finance**
     (migration `20260609115531_cfo_readonly_finance_role.sql`, recorded in
-    `supabase/migrations/` for repo↔DB parity): `USAGE` on schema `public` + `SELECT` on
-    exactly the 20 finance relations (DS-04/06/13/16/17), **zero write privileges, zero
-    readable relations outside finance**. Created `NOLOGIN` (privilege bundle only; no
-    secret in git).
-  - **Remaining follow-up (tracked BA item):** the CFO connects **as** `cfo_readonly` via a
-    direct read-only DSN, so finance-scoping is structural **at the connection** too (not
-    just no-write). That needs the operator to set the role's LOGIN+password out-of-band and
-    provide a connection string, plus a Postgres-protocol MCP used only by the CFO — an
-    engineer-pair/operator item, not something the advisory CFO does itself. Until that
-    lands, **finance-scoping remains a contract** (honoured via the grounded query set)
-    while **no-write is structural**. The question is narrowed, not fully closed.
+    `supabase/migrations/` for repo↔DB parity; created and verified live). The operator sets
+    the role's LOGIN+password out-of-band and builds the read-only DSN; the secret never
+    enters git.
+  - This **closes the prior interim/contractual caveat**: finance-scoping is no longer a
+    contract honoured via the grounded query set — it is enforced at the connection. (It
+    replaces the earlier hosted `read_only=true` MCP approach, which could not be
+    independently OAuth-authenticated as a second same-host hosted MCP.)
 
 ## Links
 
